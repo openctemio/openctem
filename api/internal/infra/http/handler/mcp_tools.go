@@ -375,7 +375,12 @@ func (h *MCPHandler) toolExplainPriority(ctx context.Context, tenantID string, r
 	if err != nil {
 		return nil, toolInputError{"invalid finding id"}
 	}
-	return h.priority.ExplainFinding(ctx, tid, fid)
+	exp, err := h.priority.ExplainFinding(ctx, tid, fid)
+	if err != nil {
+		return nil, err
+	}
+	// reason and rule_name are written by people in the tenant.
+	return untrustedResult(exp, map[string]any{"finding_id": id}), nil
 }
 
 // toolListFindingTransitions lists the key owner's allowed moves of one

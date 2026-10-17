@@ -60,6 +60,60 @@ Team roles are used for team management operations:
 | `member` | 2 | Team member - create/edit resources |
 | `viewer` | 1 | Team viewer - read-only access |
 
+### One authority for the team role
+
+A person's team role is the highest system role they hold in `user_roles`, read
+through the `v_user_effective_role` view (when they hold none, the membership
+label capped at member). The label in `tenant_members.role` is what the
+membership routes write; a trigger copies it into `user_roles`.
+
+- **System roles change only through the membership.** `owner`, `admin`,
+  `member` and `viewer` change with `PATCH /api/v1/tenants/{tenant}/members/{id}`
+  (administrator needs the owner plus a recent authentication) and, for
+  ownership, with the ownership transfer. The Roles API
+  (`POST` / `PUT /api/v1/users/{id}/roles`, `DELETE /api/v1/users/{id}/roles/{roleId}`,
+  `POST /api/v1/roles/{roleId}/members/bulk`) and team role bindings accept
+  custom roles only and answer 400 for a system role, the owner included. A
+  `PUT` replaces the user's custom roles and leaves their team role alone; an
+  empty list clears the custom roles. An invitation or an account created by an
+  administrator still carries `admin`, `member` or `viewer`, never `owner`.
+- **The database backs it up.** A trigger on `user_roles` refuses a new or moved
+  owner role row unless the person's membership label is `owner`. The label
+  change is the way in and out, so a co-owner cannot be planted.
+- **Authorization queries read the view.** Counting owners, approvers or
+  notification recipients uses `v_user_effective_role`, never the raw label.
+  `tools/lint/rawrole` fails on a new SQL literal that reads `tenant_members.role`
+  outside its allowlist (the membership writers, the post-transfer invariant
+  check and the owner-role repair controller).
+
+**Owner role without the owner membership (existing data).** Organizations that
+planted a co-owner through the old Roles API keep that row; the migration only
+checks new writes. List them and decide per organization (remove it with the
+membership route as described below, or transfer ownership):
+
+```sql
+SELECT ur.tenant_id, ur.user_id, tm.role AS membership_role
+FROM user_roles ur
+JOIN tenant_members tm ON tm.user_id = ur.user_id AND tm.tenant_id = ur.tenant_id
+WHERE ur.role_id = '00000000-0000-0000-0000-000000000001'
+  AND tm.role <> 'owner';
+```
+
+**Remediation.** The organization's real owner (owner membership label) removes
+the row with the membership role route (`PATCH /api/v1/organization/members/{id}`
+with the role the person should have). For a target whose owner role row has no
+owner membership, the service accepts the change only when the caller holds the
+owner label, is active, is not the target and passed a fresh step-up
+re-authentication; anyone else, a system path and a self change are refused. In
+one transaction the owner role row is deleted and the chosen role applied (label
+and role row together). The change is audited as `owner_role_drift_removed`
+(Critical). A member whose label is owner is not drift and still changes only by
+an ownership transfer.
+
+Until such a row is resolved, the ownership transfer of that organization is
+refused by its post-transfer check (it expects exactly one owner by membership
+and by role).
+
 ## Middleware Stack
 
 The authorization is implemented through a middleware chain:
@@ -183,6 +237,23 @@ Details: [api-keys.md](./api-keys.md).
 > Deleting a business unit drops its asset links and detaches its child units
 > for the whole organization, so it is owner/admin only (owner decision
 > 2026-10-02); members keep creating, editing and linking assets.
+
+#### AI applications (MCP) (`/api/v1/mcp-access`, `/api/v1/oauth/requests`)
+
+API keys are refused on both prefixes; the tenant is the session's. Design: `mcp-authorization.md`.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/oauth/requests/{id}`, `POST /{id}/approve`, `/{id}/deny` | any member, on a consent request they claimed (404 otherwise); the grant never exceeds what they hold |
+| `POST /api/v1/oauth/requests/{id}/access-request` | any active member, on a consent request they claimed and only when the application is blocked because its publisher is not approved; at most 5 new requests per member per day, 50 waiting per organization (429); audited |
+| `POST /api/v1/oauth/requests/{id}/allow-publisher` | `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
+| `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / `settings:write` + a recent sign-in; audited |
+| `GET /api/v1/mcp-access/requests` | `settings:read` (the organization's waiting requests; requester name, no e-mail or IP) |
+| `POST /api/v1/mcp-access/requests/{id}/approve` | `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
+| `POST /api/v1/mcp-access/requests/{id}/deny` | `settings:write` (tightens nothing, no step-up); 404 across organizations; audited |
+| `GET`/`POST`/`DELETE /api/v1/mcp-access/clients` | `settings:read` / `settings:write` + a recent sign-in |
+| `GET`/`DELETE /api/v1/mcp-access/connections` | owner or administrator (`RequireAdmin`) |
+| `GET`/`DELETE /api/v1/mcp-access/my-connections` | any member, own connections only |
 
 #### Components (`/api/v1/components`)
 
@@ -405,7 +476,8 @@ authenticator code, and is audited.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/{id}/config-report` (setup checklist, research/26) · `/available-capabilities` · `/content-policy` | `sensors:read` |
+| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` · `/content-policy` | `sensors:read`; host name and addresses (`hostname`, `ip_address`, `key_last_used_ip`) are returned to owners and administrators only |
+| `GET /api/v1/sensors/{id}/config-report` (setup checklist, research/26) · `GET /quarantined-results` · `/quarantined-results/{qid}` (the preview carries asset values and finding titles from the raw report) | `sensors:write` (owner/admin) |
 | `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write`; creating a sensor and regenerating its key also need **step-up** (they mint a persistent key) |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
@@ -454,8 +526,8 @@ authenticator code, and is audited.
 
 | Endpoint | Gate |
 |----------|------|
-| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) |
-| `GET /api/v1/audit-logs/user/{id}` | `audit:read`, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
+| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) **and** full data access: a caller whose data scope is restricted gets 403 (`details.required = "full data access"`), because audit rows carry the names, messages and change diffs of assets and findings outside their scope |
+| `GET /api/v1/audit-logs/user/{id}` | `audit:read` and full data access, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
 | `GET /api/v1/audit-logs/verify` | owner/admin (`RequireAdmin`) |
 | (no tenant rebaseline) | the audit-chain rebaseline is admin-console only: `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` |
 
@@ -568,7 +640,9 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete` |
+
+> Writing the credential store is owner/admin only: its one consumer, a template source, is owner/admin only, so a member could otherwise replace the credential an administrator's source authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
 
 > **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
 > leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
@@ -2137,7 +2211,8 @@ deliberately.
     decision 2026-10-03).** `POST /api/v1/commands` with `type: "scan"`
     makes a sensor scan whatever the payload names, so it is refused (403)
     for anyone but owners and administrators, although members keep
-    `commands:write` for the other command types. For an administrator the
+    `commands:write` for `health_check`. `collect`, `config_update` and `cancel`
+    steer a sensor as well and are owner/admin only too. For an administrator the
     payload's `target`/`targets` go through the checks of a scan trigger
     (`scan.Service.GateCommandPayload`): the target validator with the
     private-range policy (internal addresses only inside a scan zone), active
@@ -2193,7 +2268,7 @@ lets anyone build a role above their own grants.
 | `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
 | `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
-| `researcher` | bug-bounty researchers: programs, scans and findings of their programs (RFC-065) | no |
+| `researcher` (v2) | bug-bounty researchers: programs, scans and findings of their programs (RFC-065); no sensor access since v2 (migration `002905` removes `sensors:read` from existing copies) | no |
 | `bounty-triager` | triages researcher reports; never approves or changes program scope | no |
 | `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
 | `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |

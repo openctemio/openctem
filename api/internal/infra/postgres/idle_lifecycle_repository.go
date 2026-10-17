@@ -146,7 +146,8 @@ func (r *IdleLifecycleRepository) ReadOnly(ctx context.Context, tenantID shared.
 func (r *IdleLifecycleRepository) Recipients(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT u.email FROM tenant_members m JOIN users u ON u.id = m.user_id
-		 WHERE m.tenant_id = $1 AND m.status = 'active' AND m.role IN ('owner', 'admin') AND u.status = 'active'
+		 JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		 WHERE m.tenant_id = $1 AND m.status = 'active' AND ver.role IN ('owner', 'admin') AND u.status = 'active'
 		 ORDER BY u.email`, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("list idle recipients: %w", err)

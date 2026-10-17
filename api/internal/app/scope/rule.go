@@ -208,11 +208,11 @@ func (s *RuleService) CreateRule(ctx context.Context, input CreateRuleInput, cre
 	// Run initial reconciliation for this rule
 	rr, err := s.reconcileRule(ctx, rule)
 	if err != nil {
-		s.logger.Warn("initial reconciliation failed", "rule_id", rule.ID().String(), "error", err)
+		s.logger.Warn("initial reconciliation failed", "rule_id", rule.ID().String(), "error", logger.SanitizeError(err))
 	} else {
 		s.logger.Info("scope rule created and reconciled",
 			"rule_id", rule.ID().String(),
-			"name", rule.Name(),
+			"name", logger.SanitizeValue(rule.Name()),
 			"assets_added", rr.added,
 		)
 	}
