@@ -335,6 +335,7 @@ jobs:
           build-args: |
             API_IMAGE=${{ env.REGISTRY }}/openctem-api:${{ needs.prepare.outputs.version }}
             WEB_IMAGE=${{ env.REGISTRY }}/openctem-web:${{ needs.prepare.outputs.version }}
+            CONSOLE_IMAGE=${{ env.REGISTRY }}/openctem-console:${{ needs.prepare.outputs.version }}
           load: true
           tags: smoke/openctem:${{ matrix.arch }}
           provenance: false
@@ -366,6 +367,7 @@ jobs:
           build-args: |
             API_IMAGE=${{ env.REGISTRY }}/openctem-api:${{ needs.prepare.outputs.version }}
             WEB_IMAGE=${{ env.REGISTRY }}/openctem-web:${{ needs.prepare.outputs.version }}
+            CONSOLE_IMAGE=${{ env.REGISTRY }}/openctem-console:${{ needs.prepare.outputs.version }}
           labels: |
             org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
