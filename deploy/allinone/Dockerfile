@@ -117,7 +117,8 @@ RUN ln -s server /opt/openctem/api/bootstrap-admin \
  && mkdir -p /data/ca /config /certs /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache \
  && chown nextjs:nodejs /data /data/ca /config /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache
 
-# The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + entrypoint.sh).
+# The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + admin/ + entrypoint.sh).
+# admin/ holds the console-site snippets the Caddyfile imports (off.* is the default).
 # sensors/ holds the layer-4 sensor routing the Caddyfile imports; this image's
 # Caddy has no layer4 module, so only OPENCTEM_SENSOR_GATEWAY=off applies here.
 COPY --from=gateway Caddyfile planes.caddy /etc/caddy/

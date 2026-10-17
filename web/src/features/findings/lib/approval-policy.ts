@@ -340,6 +340,22 @@ export function approveErrorOutcome(t: Translate, err: unknown): ApproveOutcome 
           'Nobody eligible can complete this approval. Add an approver or change the security pool.'
         ),
       }
+    case 'BATCH_NOT_PENDING':
+      return {
+        kind: 'refused',
+        message: t(
+          'findingApprovals.group.notPending',
+          'This group exception was already decided, canceled or expired.'
+        ),
+      }
+    case 'BATCH_MEMBER':
+      return {
+        kind: 'refused',
+        message: t(
+          'findingApprovals.group.memberRefused',
+          'This request is part of a group exception: decide the group instead.'
+        ),
+      }
     case 'STEP_UP_REQUIRED':
       // The client already offered re-authentication; the user cancelled it.
       return {
@@ -351,5 +367,19 @@ export function approveErrorOutcome(t: Translate, err: unknown): ApproveOutcome 
       }
     default:
       return { kind: 'failed' }
+  }
+}
+
+/** Why the group exception preview left a finding out. */
+export function groupSkipText(t: Translate, code: string): string {
+  switch (code) {
+    case 'not_found':
+      return t('findingApprovals.group.skip.not_found', 'Finding no longer exists')
+    case 'cannot_move':
+      return t('findingApprovals.group.skip.cannot_move', 'Cannot take this status')
+    case 'pending_request':
+      return t('findingApprovals.group.skip.pending_request', 'Has a pending request')
+    default:
+      return code
   }
 }

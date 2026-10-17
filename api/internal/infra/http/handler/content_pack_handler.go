@@ -346,7 +346,7 @@ func (h *ContentPackHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		apierror.New(http.StatusBadRequest, apierror.CodeBadRequest, cleanErrorMessage(err, "Invalid content pack")).WriteJSON(w)
 	default:
-		h.logger.Error("content pack error", "error", err)
+		h.logger.Error("content pack error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }
