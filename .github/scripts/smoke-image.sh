@@ -35,6 +35,7 @@ case "$comp" in
   migrations)   bin=/usr/local/bin/migrate; run=(migrate -version) ;;
   seed)         bin=""; run=(sh -c 'true') ;;
   openctem-web) bin=/usr/local/bin/node;    run=(node -e 'process.exit(0)') ;;
+  openctem-console) bin=/usr/local/bin/node; run=(node -e "require('fs').accessSync('/app/console/server.js')") ;;
   openctem)     bin=/opt/openctem/api/server; run=(migrate -version) ;;
   openctem-gateway) bin=/usr/bin/caddy;   run=(caddy version) ;;
   *) echo "unknown component $comp" >&2; exit 2 ;;
