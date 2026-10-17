@@ -67,7 +67,6 @@ var findingStatusWriters = map[string]int{
 	"finding_repo_coverage_autoresolve.go": 1, // autoResolveFromSQL
 	"finding_repository.go":                3, // entity Update; UpdateStatusBatch ($7); scan reopen batch
 	"finding_retest_repository.go":         2, // moveFindingInTx checks the lifecycle
-	"finding_vex_document.go":              1, // vexFalsePositiveFromSQL
 	"softwarematch_repository.go":          1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, vexFalsePositiveFromSQL (stale is observation_state)
 	"suppression_apply.go":                 1, // suppressionApplyFrom (SuppressionApplyFromStatuses)
 	"suppression_repository.go":            2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
