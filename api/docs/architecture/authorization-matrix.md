@@ -209,7 +209,7 @@ and SBOM import write it.
 | `POST /api/v1/findings` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
-| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; also `findings:approve` when either finding is a false positive or risk acceptance (service check). Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
+| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
@@ -259,7 +259,10 @@ and SBOM import write it.
 > for the same disposition applies it, and `/{id}/disposition/reject` drops it
 > (the requester's own reject cancels). The requester never confirms their own
 > request; the owner may, only when nobody else holds the route's permissions
-> (audited Critical). Low and medium exposures keep the one-step path. See
+> (audited Critical). Low and medium exposures keep the one-step path. The
+> rule reads the **highest** severity the exposure ever had
+> (`exposure_events.peak_severity`, only raised), so re-ingesting the same
+> exposure with a lower severity does not turn it into a one-step decision. See
 > [finding-status-lifecycle.md](finding-status-lifecycle.md#four-eyes-on-exposure-dispositions).
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
