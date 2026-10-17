@@ -121,7 +121,7 @@ is still accepted.
 Sending campaign content to an AI application hands it to the model provider
 behind that application, which a TLP:RED engagement typically does not allow.
 
-- **Organization policy** `max_tlp` (Settings, AI access (MCP), organization
+- **Organization policy** `max_tlp` (Settings, AI assistants (MCP), Policy tab, organization
   policy; `GET/PUT /api/v1/mcp-access/settings`, `settings:write` and a
   recent sign-in to change; audited with the before/after values, high): the most restrictive TLP of a campaign AI applications may read,
   `clear`, `green`, `amber` (default), `amber_strict` or `red`.

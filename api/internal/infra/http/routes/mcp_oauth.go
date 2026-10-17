@@ -34,6 +34,10 @@ func registerMCPOAuthRoutes(router Router, h *handler.MCPOAuthHandler, rateLimit
 		r.GET("/{id}", h.GetConsentRequest)
 		r.POST("/{id}/approve", h.ApproveConsent)
 		r.POST("/{id}/deny", h.DenyConsent)
+		// Blocked application: the member asks an administrator, or a
+		// caller who may change the policy approves the publisher here.
+		r.POST("/{id}/access-request", h.RequestPublisherAccess)
+		r.POST("/{id}/allow-publisher", h.AllowPublisher, middleware.Require(permission.SettingsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }
 
@@ -81,6 +85,13 @@ func registerMCPClientRoutes(router Router, h *handler.MCPClientsHandler, authMi
 		r.GET("/", h.List, middleware.Require(permission.SettingsRead))
 		r.POST("/", h.Create, middleware.Require(permission.SettingsWrite), requireStepUp())
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SettingsWrite), requireStepUp())
+	}, tenantMiddlewares...)
+	// Members' requests to approve a publisher: approving loosens the
+	// policy (step-up); declining does not.
+	router.Group("/api/v1/mcp-access/requests", func(r Router) {
+		r.GET("/", h.ListAccessRequests, middleware.Require(permission.SettingsRead))
+		r.POST("/{id}/approve", h.ApproveAccessRequest, middleware.Require(permission.SettingsWrite), requireStepUp())
+		r.POST("/{id}/deny", h.DenyAccessRequest, middleware.Require(permission.SettingsWrite))
 	}, tenantMiddlewares...)
 	router.POST("/oauth/register", h.Register, newAuthRateLimiter("mcp-register").RegisterMiddleware())
 }
