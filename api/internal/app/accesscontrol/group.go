@@ -268,6 +268,16 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 		return nil, err
 	}
 
+	// Switching a team on or off changes what its members hold (scope rows
+	// and bound roles), so it is a grant: checked before anything changes.
+	flip := input.IsActive != nil && *input.IsActive != g.IsActive()
+	var flipMembers []shared.ID
+	if flip {
+		if flipMembers, err = s.authorizeActiveFlip(ctx, g, *input.IsActive, actx); err != nil {
+			return nil, err
+		}
+	}
+
 	if input.Name != nil {
 		if err := g.UpdateName(*input.Name); err != nil {
 			return nil, err
@@ -311,6 +321,10 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 	if err := s.repo.Update(ctx, g); err != nil {
 		return nil, fmt.Errorf("failed to update group: %w", err)
 	}
+	if flip {
+		// Members' cached permissions follow the team's state.
+		s.invalidateMembers(ctx, g.TenantID(), flipMembers)
+	}
 
 	s.logger.Info("group updated", "id", groupID)
 
@@ -342,9 +356,14 @@ func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx aud
 	tenantID := g.TenantID().String()
 	groupName := g.Name()
 
+	// The bindings and memberships go with the team: read the members first,
+	// then drop their cached permissions.
+	members := s.activeMemberIDs(ctx, g)
+
 	if err := s.repo.Delete(ctx, g.TenantID(), id); err != nil {
 		return err
 	}
+	s.invalidateMembers(ctx, g.TenantID(), members)
 
 	s.logger.Info("group deleted", "id", groupID)
 
