@@ -115,10 +115,10 @@ func (h *AdminInstanceScanZoneHandler) List(w http.ResponseWriter, r *http.Reque
 // @Description  One instance scan zone. Any administrator.
 // @Tags         Admin System
 // @Produce      json
-// @Param        zoneId  path      string  true  "Zone ID"
+// @Param        zone_id path      string  true  "Zone ID"
 // @Success      200  {object}  InstanceScanZoneResponse
 // @Failure      404  {object}  apierror.Error
-// @Router       /admin/instance-scan-zones/{zoneId} [get]
+// @Router       /admin/instance-scan-zones/{zone_id} [get]
 func (h *AdminInstanceScanZoneHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, ok := zoneIDParam(w, r)
 	if !ok {
@@ -162,11 +162,11 @@ func (h *AdminInstanceScanZoneHandler) Create(w http.ResponseWriter, r *http.Req
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
-// @Param        zoneId   path      string                   true  "Zone ID"
+// @Param        zone_id  path      string                   true  "Zone ID"
 // @Param        request  body      InstanceScanZoneRequest  true  "Zone"
 // @Success      200  {object}  InstanceScanZoneResponse
 // @Failure      404  {object}  apierror.Error
-// @Router       /admin/instance-scan-zones/{zoneId} [put]
+// @Router       /admin/instance-scan-zones/{zone_id} [put]
 func (h *AdminInstanceScanZoneHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, ok := zoneIDParam(w, r)
 	if !ok {
@@ -190,11 +190,11 @@ func (h *AdminInstanceScanZoneHandler) Update(w http.ResponseWriter, r *http.Req
 // @Description  Super admin with a reason and a fresh authenticator code (route-level step-up). Queued shared jobs of the zone are never signed again. Audited (critical).
 // @Tags         Admin System
 // @Accept       json
-// @Param        zoneId   path  string                         true  "Zone ID"
+// @Param        zone_id  path  string                         true  "Zone ID"
 // @Param        request  body  DeleteInstanceScanZoneRequest  true  "Reason"
 // @Success      204
 // @Failure      404  {object}  apierror.Error
-// @Router       /admin/instance-scan-zones/{zoneId} [delete]
+// @Router       /admin/instance-scan-zones/{zone_id} [delete]
 func (h *AdminInstanceScanZoneHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, ok := zoneIDParam(w, r)
 	if !ok {
@@ -218,10 +218,10 @@ func (h *AdminInstanceScanZoneHandler) Delete(w http.ResponseWriter, r *http.Req
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
-// @Param        zoneId   path      string                          true  "Zone ID"
+// @Param        zone_id  path      string                          true  "Zone ID"
 // @Param        request  body      InstanceScanZoneMembersRequest  true  "Sensor IDs"
 // @Success      200  {object}  InstanceScanZoneResponse
-// @Router       /admin/instance-scan-zones/{zoneId}/sensors [put]
+// @Router       /admin/instance-scan-zones/{zone_id}/sensors [put]
 func (h *AdminInstanceScanZoneHandler) SetSensors(w http.ResponseWriter, r *http.Request) {
 	h.setMembers(w, r, h.svc.SetSensors)
 }
@@ -232,10 +232,10 @@ func (h *AdminInstanceScanZoneHandler) SetSensors(w http.ResponseWriter, r *http
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
-// @Param        zoneId   path      string                          true  "Zone ID"
+// @Param        zone_id  path      string                          true  "Zone ID"
 // @Param        request  body      InstanceScanZoneMembersRequest  true  "Organization IDs"
 // @Success      200  {object}  InstanceScanZoneResponse
-// @Router       /admin/instance-scan-zones/{zoneId}/organizations [put]
+// @Router       /admin/instance-scan-zones/{zone_id}/organizations [put]
 func (h *AdminInstanceScanZoneHandler) SetOrganizations(w http.ResponseWriter, r *http.Request) {
 	h.setMembers(w, r, h.svc.SetTenants)
 }
@@ -291,7 +291,7 @@ func (h *AdminInstanceScanZoneHandler) decode(w http.ResponseWriter, r *http.Req
 }
 
 func zoneIDParam(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
-	id, err := shared.IDFromString(chi.URLParam(r, "zoneId"))
+	id, err := shared.IDFromString(chi.URLParam(r, "zone_id"))
 	if err != nil {
 		apierror.NotFound("Instance scan zone").WriteJSON(w)
 		return shared.ID{}, false
