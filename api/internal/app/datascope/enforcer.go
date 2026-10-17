@@ -144,7 +144,17 @@ func (e *Enforcer) Resolve(ctx context.Context, tenantID shared.ID) (*shared.Dat
 
 // ResolveFor is Resolve for an explicit caller.
 func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
-	if e == nil || e.repo == nil || c.UserID == "" || c.IsOwner {
+	if e == nil || e.repo == nil {
+		return nil, nil
+	}
+	// An API key with no user (a legacy organization key) is not an internal
+	// call: it resolves to a scope with no rows, so it reads nothing scoped.
+	// Only a context with neither a user nor an API key is trusted as
+	// internal.
+	if c.APIKey && c.UserID == "" {
+		return &shared.DataScope{TenantID: tenantID}, nil
+	}
+	if c.UserID == "" || c.IsOwner {
 		return nil, nil
 	}
 	userID, err := shared.IDFromString(c.UserID)
@@ -469,10 +479,71 @@ func (e *Enforcer) Delegable(ctx context.Context, tenantID shared.ID, assetIDs [
 // scope (adding themselves to a group) need it.
 func (e *Enforcer) FullDataCaller(ctx context.Context, tenantID shared.ID) (bool, error) {
 	c := e.CallerOf(ctx)
+	if c.APIKey && c.UserID == "" {
+		return false, nil
+	}
 	if c.IsAdmin || c.UserID == "" {
 		return true, nil
 	}
 	return e.FullData(ctx, tenantID, c.UserID)
+}
+
+// ErrActOutOfScope is returned by RequireActOnAssets / RequireActOnFindings
+// when the caller may not act on every asset (or finding) a shared object is
+// linked to.
+var ErrActOutOfScope = fmt.Errorf("%w: the object is linked to assets outside your data scope", shared.ErrForbidden)
+
+// RequireActOnAssets is the rule for changing or deleting an object that
+// feeds the risk of the assets it links (a business service, a compensating
+// control): a caller restricted to their scope rows needs every linked asset
+// inside it, otherwise ErrActOutOfScope. Unrestricted callers pass; a nil
+// enforcer never restricts. A lookup error also refuses.
+func (e *Enforcer) RequireActOnAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {
+	if e == nil || e.repo == nil || len(assetIDs) == 0 {
+		return nil
+	}
+	scope, err := e.Resolve(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if !scope.Restricted() {
+		return nil
+	}
+	admit, err := e.Filter(ctx, scope, assetIDs)
+	if err != nil {
+		return err
+	}
+	for _, id := range assetIDs {
+		if !admit(id) {
+			return ErrActOutOfScope
+		}
+	}
+	return nil
+}
+
+// RequireActOnFindings is RequireActOnAssets for the findings an object is
+// linked to (the asset of each finding must be in scope).
+func (e *Enforcer) RequireActOnFindings(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) error {
+	if e == nil || e.repo == nil || len(findingIDs) == 0 {
+		return nil
+	}
+	scope, err := e.Resolve(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if !scope.Restricted() {
+		return nil
+	}
+	admit, err := e.FilterFindings(ctx, scope, findingIDs)
+	if err != nil {
+		return err
+	}
+	for _, id := range findingIDs {
+		if !admit(id) {
+			return ErrActOutOfScope
+		}
+	}
+	return nil
 }
 
 // FilterForCaller is Filter for the request's caller.
