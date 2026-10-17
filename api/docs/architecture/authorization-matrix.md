@@ -60,6 +60,49 @@ Team roles are used for team management operations:
 | `member` | 2 | Team member - create/edit resources |
 | `viewer` | 1 | Team viewer - read-only access |
 
+### One authority for the team role
+
+A person's team role is the highest system role they hold in `user_roles`, read
+through the `v_user_effective_role` view (when they hold none, the membership
+label capped at member). The label in `tenant_members.role` is what the
+membership routes write; a trigger copies it into `user_roles`.
+
+- **System roles change only through the membership.** `owner`, `admin`,
+  `member` and `viewer` change with `PATCH /api/v1/tenants/{tenant}/members/{id}`
+  (administrator needs the owner plus a recent authentication) and, for
+  ownership, with the ownership transfer. The Roles API
+  (`POST` / `PUT /api/v1/users/{id}/roles`, `DELETE /api/v1/users/{id}/roles/{roleId}`,
+  `POST /api/v1/roles/{roleId}/members/bulk`) and team role bindings accept
+  custom roles only and answer 400 for a system role, the owner included. A
+  `PUT` replaces the user's custom roles and leaves their team role alone; an
+  empty list clears the custom roles. An invitation or an account created by an
+  administrator still carries `admin`, `member` or `viewer`, never `owner`.
+- **The database backs it up.** A trigger on `user_roles` refuses a new or moved
+  owner role row unless the person's membership label is `owner`. The label
+  change is the way in and out, so a co-owner cannot be planted.
+- **Authorization queries read the view.** Counting owners, approvers or
+  notification recipients uses `v_user_effective_role`, never the raw label.
+  `tools/lint/rawrole` fails on a new SQL literal that reads `tenant_members.role`
+  outside its allowlist (the membership writers, the post-transfer invariant
+  check and the owner-role repair controller).
+
+**Owner role without the owner membership (existing data).** Organizations that
+planted a co-owner through the old Roles API keep that row; the migration only
+checks new writes. List them and decide per organization (demote with the
+membership route, or transfer ownership):
+
+```sql
+SELECT ur.tenant_id, ur.user_id, tm.role AS membership_role
+FROM user_roles ur
+JOIN tenant_members tm ON tm.user_id = ur.user_id AND tm.tenant_id = ur.tenant_id
+WHERE ur.role_id = '00000000-0000-0000-0000-000000000001'
+  AND tm.role <> 'owner';
+```
+
+Until such a row is resolved, the ownership transfer of that organization is
+refused by its post-transfer check (it expects exactly one owner by membership
+and by role).
+
 ## Middleware Stack
 
 The authorization is implemented through a middleware chain:

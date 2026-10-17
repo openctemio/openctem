@@ -51,6 +51,10 @@ func (h *grbHarness) user(tenant shared.ID, kind string, systemRole string) shar
 	} else {
 		h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, id.String(), tenant.String())
 	}
+	// The owner role needs the owner membership (database trigger).
+	if systemRole == roledom.OwnerRoleID.String() {
+		h.exec(`UPDATE tenant_members SET role = 'owner' WHERE user_id = $1 AND tenant_id = $2`, id.String(), tenant.String())
+	}
 	// The membership trigger grants the label role; start from no role.
 	h.exec(`DELETE FROM user_roles WHERE user_id = $1 AND tenant_id = $2`, id.String(), tenant.String())
 	if systemRole != "" {

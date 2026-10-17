@@ -163,8 +163,10 @@ type AssignRoleRequest struct {
 }
 
 // SetUserRolesRequest represents the request to set all roles for a user.
+// An empty list clears the user's custom roles; their team role is not part
+// of it.
 type SetUserRolesRequest struct {
-	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=50,dive,uuid"`
+	RoleIDs []string `json:"role_ids" validate:"required,max=50,dive,uuid"`
 }
 
 // BulkAssignRoleMembersRequest represents the request to assign a role to multiple users.
