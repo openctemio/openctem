@@ -32,6 +32,8 @@ type Service struct {
 	audit   AuditLogger
 	logger  *logger.Logger
 	now     func() time.Time
+
+	compiled compiledCache
 }
 
 // NewService returns the service. limits and audit may be nil (no plans, no audit).

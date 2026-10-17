@@ -64,6 +64,11 @@ import (
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
+//	/admin/settings/shared-sensors, /admin/tenants/{id}/shared-sensors
+//	                          any admin         super_admin + fresh TOTP code +
+//	                                            reason (critical audit, admins
+//	                                            emailed); switch-on refused until
+//	                                            shared sensors are ready
 //	/admin/tenants/{id}/audit-chain
 //	                          any admin         rebaseline: super_admin + fresh
 //	                                            TOTP code (audited, both logs)
@@ -274,6 +279,12 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/platform-sensor-proof", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetProof)
 			r.PUT("/", h.AdminScanPolicy.UpdateProof, requireSuper, stepUp("settings.platform_sensor_proof"))
+		}, adminMiddlewares...)
+		// Shared sensor access (RFC-100 §5): same gate, step-up and audit;
+		// turning the switch on is refused until shared sensors are ready.
+		router.Group("/api/v1/admin/settings/shared-sensors", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensors)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensors, requireSuper, stepUp("settings.shared_sensors"))
 		}, adminMiddlewares...)
 	}
 
@@ -489,6 +500,10 @@ func registerAdminRoutes(
 			if h.AdminScanPolicy != nil {
 				r.GET("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.GetOrganization, read...)
 				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, superWrite, stepUp("organization.scan_approval"), scope)
+				// Shared sensor access of the organization (RFC-100 §5):
+				// allow, deny or the instance default; same gate.
+				r.GET("/{tenantId}/shared-sensors", h.AdminScanPolicy.GetOrganizationSharedSensors, read...)
+				r.PUT("/{tenantId}/shared-sensors", h.AdminScanPolicy.UpdateOrganizationSharedSensors, superWrite, stepUp("organization.shared_sensors"), scope)
 			}
 
 			if h.VerifiedDomain != nil {

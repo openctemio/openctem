@@ -125,14 +125,15 @@ func (h *SensorControlV2Handler) Content() *SensorContentV2Handler { return h.co
 func (h *SensorControlV2Handler) HasSuppressions() bool { return h.suppressions != nil }
 
 // sensorForV2 returns the authenticated tenant sensor, or writes 401 / 403
-// scope-denied (a tenant-less platform sensor, RFC-026 §10.1) and returns nil.
+// scope-denied (a shared sensor, which has no tenant, RFC-026 §10.1) and
+// returns nil.
 func sensorForV2(w http.ResponseWriter, r *http.Request) *sensor.Sensor {
 	s := SensorFromContext(r.Context())
 	if s == nil {
 		protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
 		return nil
 	}
-	if s.TenantID == nil {
+	if s.TenantID == nil || s.IsShared() {
 		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
 		return nil
 	}
