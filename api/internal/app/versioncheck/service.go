@@ -35,7 +35,7 @@ const (
 	ErrCodeRollback    = "rollback"
 	ErrCodeConflict    = "conflict"
 	ErrCodeExpired     = "expired"
-	ErrCodeNoRoot      = "no_root"
+	ErrCodeNoKey       = "no_key"
 )
 
 // Schedule.
@@ -59,7 +59,6 @@ type State struct {
 	FeedDigest          string
 	Origin              string
 	AppliedSequence     uint64
-	KeySetVersion       uint64
 	AppliedAt           *time.Time
 	LastAttemptAt       *time.Time
 	LastError           string
@@ -92,8 +91,8 @@ type Config struct {
 	// URL is the feed location (VERSION_CHECK_URL, https; validated by the
 	// configuration).
 	URL string
-	// Roots are the pinned roots (releasefeed.PinnedRoots in production).
-	Roots []string
+	// Keys are the pinned feed keys (releasefeed.PinnedKeys in production).
+	Keys []string
 	// Running is the running version.
 	Running string
 	// Client fetches the feed; nil: the SSRF-guarded client.
@@ -153,7 +152,7 @@ func newClient() *http.Client {
 }
 
 // Configured reports whether this build pins a release feed root.
-func (s *Service) Configured() bool { return len(s.cfg.Roots) > 0 }
+func (s *Service) Configured() bool { return len(s.cfg.Keys) > 0 }
 
 // RunDue runs the online check when it is due. It never returns an upstream
 // failure: an offline or air-gapped instance only records it and backs off.
@@ -225,8 +224,7 @@ func (s *Service) fetch(ctx context.Context) ([]byte, string, error) {
 // apply verifies raw against the stored state and stores it.
 func (s *Service) apply(ctx context.Context, st State, raw []byte, origin string) (*releasefeed.Verified, string, error) {
 	now := s.cfg.Now()
-	v, err := releasefeed.Verify(raw, releasefeed.Trust{Roots: s.cfg.Roots,
-		MinKeySetVersion: st.KeySetVersion, MinSequence: st.AppliedSequence}, now)
+	v, err := releasefeed.Verify(raw, releasefeed.Trust{Keys: s.cfg.Keys, MinSequence: st.AppliedSequence}, now)
 	if err != nil {
 		return nil, codeOf(err), err
 	}
@@ -250,8 +248,8 @@ var errSequenceConflict = errors.New("another release feed with the applied sequ
 
 func codeOf(err error) string {
 	switch {
-	case errors.Is(err, releasefeed.ErrNoRoot):
-		return ErrCodeNoRoot
+	case errors.Is(err, releasefeed.ErrNoKey):
+		return ErrCodeNoKey
 	case errors.Is(err, releasefeed.ErrRollback):
 		return ErrCodeRollback
 	case errors.Is(err, releasefeed.ErrExpired):
@@ -273,7 +271,7 @@ func (e *ImportError) Unwrap() error { return e.Err }
 // verified exactly like a fetched one, rollback and expiry included.
 func (s *Service) Import(ctx context.Context, raw []byte) (*releasefeed.Verified, error) {
 	if !s.Configured() {
-		return nil, &ImportError{Code: ErrCodeNoRoot, Err: releasefeed.ErrNoRoot}
+		return nil, &ImportError{Code: ErrCodeNoKey, Err: releasefeed.ErrNoKey}
 	}
 	if len(raw) > releasefeed.MaxBundleBytes {
 		return nil, &ImportError{Code: ErrCodeTooLarge, Err: httpsec.ErrBodyTooLarge}
