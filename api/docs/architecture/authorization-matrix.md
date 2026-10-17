@@ -1296,7 +1296,7 @@ business unit, boundary, attacker profile, threat model and cycle totals of
 **Team membership end dates are read at scope time.** A membership whose
 `expires_at` has passed grants no data scope even before the expiry
 controller deletes the row: the scope refresh functions skip expired
-memberships (migration `002898`), the same rule team roles already follow.
+memberships (migration `002903`), the same rule team roles already follow.
 Objects that feed the risk of the assets they link follow the same rule
 (`Enforcer.RequireActOnAssets` / `RequireActOnFindings`): linking an asset or
 finding to a **compensating control** admits only ids the caller can see (404
