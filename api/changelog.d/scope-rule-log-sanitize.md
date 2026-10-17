@@ -1,0 +1,1 @@
+- Scope rule names and reconciliation errors are sanitized before they are logged.
