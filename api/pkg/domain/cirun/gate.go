@@ -554,8 +554,10 @@ func Evaluate(in GateInput) GateVerdict {
 		if in.FindingURL != nil && !f.ID.IsZero() {
 			base.URL = in.FindingURL(f.ID)
 		}
-		// A secret in the code fails whatever its age and severity.
-		if f.FindingType == "secret" {
+		// A secret in the code fails whatever its age and severity, unless it
+		// is known to be dead or only a heuristic rule matched it (SecretPages):
+		// those follow the policy like any finding.
+		if f.SecretPages() {
 			// A new secret always blocks. One already open on the baseline
 			// branch blocks the default branch, and is a note on any other
 			// branch: a pull request did not add it and cannot remove it from
