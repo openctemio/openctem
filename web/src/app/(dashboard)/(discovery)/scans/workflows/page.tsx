@@ -101,7 +101,6 @@ import {
   type ScanWorkflow,
   type CreateScanWorkflowRequest,
   type UpdateScanWorkflowRequest,
-  SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
 } from '@/lib/api'
 import { useTranslation } from '@/context/i18n-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -726,7 +725,7 @@ export default function ScanWorkflowsPage() {
                           ) : pref === 'tenant' ? (
                             <Server className="h-3.5 w-3.5 text-muted-foreground" />
                           ) : null}
-                          {SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS[pref]}
+                          {t(`scans.sensorPrefRun.${pref}.label`)}
                         </span>
                       </DetailField>
                     </DetailFieldGrid>

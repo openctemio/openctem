@@ -124,7 +124,7 @@ func (s *Service) Seed(ctx context.Context) error {
 		return err
 	}
 	if created {
-		s.log.Info("sign-up policy seeded from the environment", "mode", string(p.Mode))
+		s.log.Info("sign-up policy seeded from the environment", "mode", string(p.Mode), "accounts", string(p.Accounts))
 	}
 	return nil
 }
@@ -144,9 +144,9 @@ func (s *Service) Current(ctx context.Context) signupdom.Policy {
 // ceiling, and, when public sign-up would need it, working e-mail.
 func (s *Service) Effective(p signupdom.Policy) signupdom.Policy {
 	p = s.ceiling.Clamp(p)
-	if p.AllowsSelfService() && s.mailReady != nil && !s.mailReady() {
+	if p.AllowsPublicSignup() && s.mailReady != nil && !s.mailReady() {
 		s.log.Warn("platform e-mail is not configured; public sign-up is closed until it is (System > E-mail)")
-		p.Mode = signupdom.ModeAdminOnly
+		p.Mode, p.Accounts = signupdom.ModeAdminOnly, signupdom.AccountsClosed
 	}
 	return p
 }
@@ -190,6 +190,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, p signupdo
 	if err := p.Validate(); err != nil {
 		return signupdom.State{}, err
 	}
+	p = p.Normalized()
 	if !s.ceiling.Permits(p) {
 		return signupdom.State{}, signupdom.ErrLockedByDeployment
 	}
@@ -243,8 +244,10 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 			Context(ip, userAgent).
 			Request("PUT", "/api/v1/admin/settings/signup", map[string]any{
 				"previous_mode":           string(prev.Mode),
+				"previous_accounts":       string(prev.AccountSignup()),
 				"previous_request_access": prev.RequestAccess,
 				"mode":                    string(next.Policy.Mode),
+				"accounts":                string(next.Policy.AccountSignup()),
 				"request_access":          next.Policy.RequestAccess,
 				"version":                 next.Version,
 			}).
@@ -273,6 +276,7 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 		"alert", AlertPolicyChanged,
 		"admin_id", actor.ID().String(),
 		"from_mode", logger.SanitizeValue(string(prev.Mode)), "to_mode", logger.SanitizeValue(string(next.Policy.Mode)),
+		"from_accounts", string(prev.AccountSignup()), "to_accounts", string(next.Policy.AccountSignup()),
 		"request_access", strconv.FormatBool(next.Policy.RequestAccess),
 		"notified", len(recipients),
 	)

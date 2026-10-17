@@ -325,6 +325,40 @@ export const settingsNav: SettingsNavGroup[] = [
     ],
   },
   {
+    id: 'findings',
+    title: 'Findings',
+    items: [
+      {
+        id: 'finding-lifecycle',
+        title: 'Finding lifecycle',
+        description: 'Your own sub-statuses, moves and the requirements each move needs.',
+        url: '/settings/finding-lifecycle',
+        icon: GitBranch,
+        permission: Permission.FindingsRead,
+        module: 'findings',
+        keywords: ['sub-status', 'status', 'transition', 'move', 'lifecycle', 'publish'],
+      },
+      {
+        id: 'finding-approvals',
+        title: 'Finding approvals',
+        description: 'Who decides false positives and accepted risks, and who is told.',
+        url: '/settings/finding-approvals',
+        icon: ClipboardCheck,
+        permission: Permission.SettingsRead,
+        keywords: ['approval', 'four-eyes', 'false positive', 'accepted risk', 'backup contact'],
+      },
+      {
+        id: 'vulnerability-matching',
+        title: 'Vulnerability matching',
+        description: 'Which CVEs affecting your software versions become findings.',
+        url: '/settings/vulnerability-matching',
+        icon: Bug,
+        permission: Permission.TeamUpdate,
+        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
+      },
+    ],
+  },
+  {
     id: 'policies',
     title: 'Policies',
     items: [
@@ -349,15 +383,6 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['sla', 'deadline', 'due date'],
       },
       {
-        id: 'finding-approvals',
-        title: 'Finding approvals',
-        description: 'Who decides false positives and accepted risks, and who is told.',
-        url: '/settings/finding-approvals',
-        icon: ClipboardCheck,
-        permission: Permission.SettingsRead,
-        keywords: ['approval', 'four-eyes', 'false positive', 'accepted risk', 'backup contact'],
-      },
-      {
         id: 'asset-lifecycle',
         title: 'Asset lifecycle',
         description: 'When stale assets are retired automatically.',
@@ -365,15 +390,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Clock,
         permission: Permission.TeamUpdate,
         keywords: ['stale', 'retire', 'archive'],
-      },
-      {
-        id: 'vulnerability-matching',
-        title: 'Vulnerability matching',
-        description: 'Which CVEs affecting your software versions become findings.',
-        url: '/settings/vulnerability-matching',
-        icon: Bug,
-        permission: Permission.TeamUpdate,
-        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
       },
       {
         id: 'asset-sources',

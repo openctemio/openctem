@@ -487,8 +487,8 @@ func LimitMessage(lim *limits.ErrLimitReached) string {
 		limits.Seats: "seats", limits.Assets: "assets", limits.Sensors: "sensors", limits.APIKeys: "API keys",
 		limits.CITrusts: "CI trust configurations", limits.InvitesPerDay: "invitations a day",
 		limits.OrgsPerUser: "organizations per person", limits.Findings: "findings",
+		limits.PlatformScansPerDay: "shared sensor scans a day", limits.PlatformScansConcurrent: "shared sensor jobs at a time",
 		limits.LifecycleSubStatuses: "finding sub-statuses", limits.LifecycleSchemes: "finding lifecycles",
-		limits.PlatformScansPerDay: "platform scans a day", limits.PlatformScansConcurrent: "concurrent platform scans",
 	}[lim.Key]
 	if label == "" {
 		label = string(lim.Key)

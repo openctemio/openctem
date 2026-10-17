@@ -256,7 +256,7 @@ func (r *SensorPairingRepository) Approve(ctx context.Context, a sensordom.Pairi
 		res, err := tx.ExecContext(ctx, `UPDATE sensors
 			SET auth_kind = 'key_bound', api_key_hash = $3, api_key_prefix = '', key_expires_at = NULL,
 			    identity_cloned_at = NULL, updated_at = $4
-			WHERE tenant_id = $1 AND id = $2 AND status <> 'revoked' AND NOT is_platform_sensor`,
+			WHERE tenant_id = $1 AND id = $2 AND status <> 'revoked' AND scope = 'organization'`,
 			a.TenantID.String(), target.String(), sensordom.KeyBoundHashPlaceholder(), a.Now)
 		if err != nil {
 			return nil, fmt.Errorf("re-pair sensor: %w", err)

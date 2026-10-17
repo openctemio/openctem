@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/onboarding"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -27,7 +28,9 @@ import (
 
 // LocalAuthHandler handles local authentication requests.
 type LocalAuthHandler struct {
-	authService    *auth.AuthService
+	authService *auth.AuthService
+	// onboarding serves the fork of an account without an organization.
+	onboarding     *onboarding.Service
 	sessionService *auth.SessionService
 	emailService   *auth.EmailService
 	platformAdmin  PlatformAdminChecker
@@ -61,11 +64,11 @@ const CodeCaptchaFailed apierror.Code = "CAPTCHA_FAILED"
 // SetSignupPolicy wires the platform sign-up policy.
 func (h *LocalAuthHandler) SetSignupPolicy(p signupdom.PolicySource) { h.signupPolicy = p }
 
-// registrationEnabled reports whether anyone may create an account: the
-// self_service sign-up mode.
+// registrationEnabled reports whether some public account sign-up is open
+// (accounts domain or open in the policy in force).
 func (h *LocalAuthHandler) registrationEnabled(r *http.Request) bool {
 	if h.signupPolicy != nil {
-		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+		return h.signupPolicy.Current(r.Context()).AllowsPublicSignup()
 	}
 	return h.authConfig.SignupOpen()
 }
@@ -80,6 +83,16 @@ const CodeSignupNotAvailable apierror.Code = "SIGNUP_NOT_AVAILABLE"
 func writeSignupNotAvailable(w http.ResponseWriter) {
 	apierror.New(http.StatusForbidden, CodeSignupNotAvailable,
 		"Your organization isn't set up yet. Ask your administrator to invite you.").WriteJSON(w)
+}
+
+// CodeSignupSSORequired is the error code of a sign-up refused because the
+// address's domain requires its organization's SSO. The answer names no
+// organization; the web sends the person through email-first discovery.
+const CodeSignupSSORequired apierror.Code = "SSO_REQUIRED"
+
+func writeSignupSSORequired(w http.ResponseWriter) {
+	apierror.New(http.StatusForbidden, CodeSignupSSORequired,
+		"Your organization requires single sign-on for this address. Sign in with your organization's SSO.").WriteJSON(w)
 }
 
 // NewLocalAuthHandler creates a new LocalAuthHandler.
@@ -1282,6 +1295,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case WriteLimitError(w, err):
 	case errors.Is(err, auth.ErrRegistrationDisabled), errors.Is(err, auth.ErrSignupNotAvailable):
 		writeSignupNotAvailable(w)
+	case errors.Is(err, auth.ErrSignupSSORequired):
+		writeSignupSSORequired(w)
 	case errors.Is(err, auth.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):

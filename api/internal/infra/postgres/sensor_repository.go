@@ -23,7 +23,7 @@ import (
 type SensorRepository struct {
 	db *DB
 	tokenPepper
-	limitChecks // sensors (the organization's own; platform sensors never count)
+	limitChecks // sensors (the organization's own; shared sensors never count)
 }
 
 // NewSensorRepository creates a new SensorRepository.
@@ -33,10 +33,22 @@ func NewSensorRepository(db *DB) *SensorRepository {
 
 // Create persists a new sensor.
 func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
-	if !a.IsPlatformSensor && a.TenantID != nil {
+	if a.Scope == "" {
+		a.Scope = sensor.ScopeOrganization
+	}
+	// The scope and the tenant agree (the table's CHECK says the same): an
+	// organization sensor has a tenant, a shared sensor never has one.
+	if !a.Scope.IsValid() || (a.Scope == sensor.ScopeOrganization) != (a.TenantID != nil) {
+		return shared.NewDomainError("VALIDATION", "sensor scope and tenant do not match", shared.ErrValidation)
+	}
+	if !a.IsShared() {
 		if err := r.checkLimit(ctx, *a.TenantID, limits.Sensors, 1); err != nil {
 			return err
 		}
+	}
+	var tenantID sql.NullString
+	if a.TenantID != nil {
+		tenantID = sql.NullString{String: a.TenantID.String(), Valid: true}
 	}
 	metadata, err := json.Marshal(a.Metadata)
 	if err != nil {
@@ -57,7 +69,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		INSERT INTO sensors (
 			id, tenant_id, name, type, description, capabilities,
 			execution_mode, status, health, status_message,
-			is_platform_sensor,
+			scope,
 			api_key_hash, api_key_prefix, metadata, labels, config,
 			version, hostname, ip_address,
 			max_concurrent_jobs, current_jobs,
@@ -74,7 +86,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 
 	_, err = r.db.ExecContext(ctx, query,
 		a.ID.String(),
-		a.TenantID.String(),
+		tenantID,
 		a.Name,
 		string(a.Type),
 		a.Description,
@@ -83,7 +95,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		string(a.Status),
 		string(a.Health),
 		a.StatusMessage,
-		a.IsPlatformSensor,
+		string(a.Scope),
 		a.APIKeyHash,
 		a.InlineKeyPrefix,
 		metadata,
@@ -116,13 +128,13 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 	return nil
 }
 
-// CountByTenant counts the number of tenant-owned sensors (excluding platform sensors).
+// CountByTenant counts the number of tenant-owned sensors (shared sensors have no tenant and never count).
 // Used for enforcing sensor limits per plan.
 func (r *SensorRepository) CountByTenant(ctx context.Context, tenantID shared.ID) (int, error) {
 	query := `
 		SELECT COUNT(*)
 		FROM sensors
-		WHERE tenant_id = $1 AND is_platform_sensor = FALSE
+		WHERE tenant_id = $1 AND scope = 'organization'
 	`
 	var count int
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count)
@@ -143,10 +155,10 @@ func (r *SensorRepository) GetByID(ctx context.Context, id shared.ID) (*sensor.S
 }
 
 // GetByTenantAndID retrieves one of the tenant's own sensors by ID. A shared
-// platform sensor is never one of them, whatever its row's tenant_id: it is
-// not found here, so every tenant read and write of it answers not found.
+// sensor (scope instance, no tenant) is never one of them: it is not found
+// here, so every tenant read and write of it answers not found.
 func (r *SensorRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sensor.Sensor, error) {
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2 AND NOT is_platform_sensor"
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2 AND scope = 'organization'"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 	return r.scanSensor(row)
 }
@@ -644,7 +656,7 @@ func (r *SensorRepository) IncrementStats(ctx context.Context, id shared.ID, fin
 
 // FindByCapabilities finds sensors with the given capabilities.
 func (r *SensorRepository) FindByCapabilities(ctx context.Context, tenantID shared.ID, capabilities []string, tool string) ([]*sensor.Sensor, error) {
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND NOT is_platform_sensor AND status = 'active'"
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND scope = 'organization' AND status = 'active'"
 	args := []any{tenantID.String()}
 	argIndex := 2
 
@@ -696,7 +708,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 		// Exclude health='unknown' as those sensors have never sent a heartbeat
 		query := r.selectQuery() + `
 			WHERE tenant_id = $1
-			  AND NOT is_platform_sensor
+			  AND scope = 'organization'
 			  AND status = 'active'
 			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
@@ -720,7 +732,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 	// Only select sensors with health='online' (have sent heartbeat recently)
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
-		  AND NOT is_platform_sensor
+		  AND scope = 'organization'
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
@@ -751,7 +763,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenantID shared.ID, capabilities []string, tool string) ([]*sensor.Sensor, error) {
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
-		  AND NOT is_platform_sensor
+		  AND scope = 'organization'
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
@@ -852,7 +864,7 @@ func (r *SensorRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, name, type, description, capabilities,
 		       execution_mode, status, health, status_message,
-		       is_platform_sensor, tier,
+		       scope, tier,
 		       api_key_hash, api_key_prefix, metadata, labels, config,
 		       version, hostname, ip_address,
 		       cpu_percent, memory_percent, max_concurrent_jobs, ` + sensorActiveCommandsSQL("sensors") + ` AS current_jobs, region,
@@ -887,9 +899,9 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 	argIndex := 1
 
 	if filter.TenantID != nil {
-		// A tenant's sensors are its own: shared platform sensors are never
-		// listed to a tenant, whatever their row's tenant_id.
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d AND is_platform_sensor = FALSE", argIndex))
+		// A tenant's sensors are its own: shared sensors (scope instance)
+		// are never listed to a tenant.
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d AND scope = 'organization'", argIndex))
 		args = append(args, filter.TenantID.String())
 		argIndex++
 	}
@@ -976,7 +988,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	a := &sensor.Sensor{}
 	var (
 		id               string
-		tenantID         sql.NullString // Nullable for platform sensors
+		tenantID         sql.NullString // NULL for a shared sensor (scope instance)
 		sensorType       string
 		executionMode    string
 		status           string
@@ -987,7 +999,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		config           []byte
 		description      sql.NullString
 		statusMessage    sql.NullString
-		isPlatformSensor sql.NullBool
+		scope            sql.NullString
 		tier             sql.NullString
 		version          sql.NullString
 		hostname         sql.NullString
@@ -1059,7 +1071,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&status,
 		&health,
 		&statusMessage,
-		&isPlatformSensor,
+		&scope,
 		&tier,
 		&a.APIKeyHash,
 		&a.InlineKeyPrefix,
@@ -1158,8 +1170,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	if statusMessage.Valid {
 		a.StatusMessage = statusMessage.String
 	}
-	if isPlatformSensor.Valid {
-		a.IsPlatformSensor = isPlatformSensor.Bool
+	if scope.Valid {
+		a.Scope = sensor.Scope(scope.String)
 	}
 	if version.Valid {
 		a.Version = version.String
@@ -1301,7 +1313,7 @@ func (r *SensorRepository) GetAvailableToolsForTenant(ctx context.Context, tenan
 		SELECT DISTINCT unnest(` + sensorDispatchTools("sensors") + `) AS tool_name
 		FROM sensors
 		WHERE tenant_id = $1
-		  AND NOT is_platform_sensor
+		  AND scope = 'organization'
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
@@ -1336,7 +1348,7 @@ func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared
 		SELECT EXISTS (
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
-			  AND NOT is_platform_sensor
+			  AND scope = 'organization'
 			  AND status = 'active'
 			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
@@ -1360,7 +1372,7 @@ func (r *SensorRepository) GetAvailableCapabilitiesForTenant(ctx context.Context
 		SELECT DISTINCT unnest(effective_capabilities) AS capability_name
 		FROM sensors
 		WHERE tenant_id = $1
-		  AND NOT is_platform_sensor
+		  AND scope = 'organization'
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
@@ -1471,7 +1483,7 @@ func (r *SensorRepository) PlatformScanningSummary(ctx context.Context, tenantID
 		       COALESCE(bool_or(`+online+`), FALSE),
 		       COALESCE(bool_or(`+online+` AND `+sensorFreeSlotsSQL("sensors")+` > 0), FALSE)
 		FROM sensors
-		WHERE is_platform_sensor AND status = 'active'
+		WHERE scope = 'instance' AND status = 'active'
 		GROUP BY 1
 		ORDER BY 1`)
 	if err != nil {
@@ -1492,7 +1504,7 @@ func (r *SensorRepository) PlatformScanningSummary(ctx context.Context, tenantID
 	tools, err := r.db.QueryContext(ctx, `
 		SELECT DISTINCT unnest(`+sensorDispatchTools("sensors")+`) AS tool
 		FROM sensors
-		WHERE is_platform_sensor AND `+online+`
+		WHERE scope = 'instance' AND `+online+`
 		ORDER BY tool`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read platform scanning tools: %w", err)
@@ -1536,8 +1548,8 @@ WITH tenant_sensors AS (
   SELECT id, status, health, type, execution_mode, ` + sensorActiveCommandsSQL("sensors") + ` AS current_jobs, last_seen_at
   FROM sensors
   -- The same rows GET /sensors lists: the tenant's own sensors, without
-  -- shared platform sensors (those have their own page).
-  WHERE tenant_id = $1 AND is_platform_sensor = FALSE
+  -- shared sensors (those have their own page).
+  WHERE tenant_id = $1 AND scope = 'organization'
 )
 SELECT category, key, value FROM (
   SELECT 'total'::text         AS category, ''::text       AS key, COUNT(*)::float8 AS value FROM tenant_sensors
@@ -1600,7 +1612,7 @@ func (r *SensorRepository) HasSensorForCapability(ctx context.Context, tenantID 
 		SELECT EXISTS (
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
-			  AND NOT is_platform_sensor
+			  AND scope = 'organization'
 			  AND status = 'active'
 			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL

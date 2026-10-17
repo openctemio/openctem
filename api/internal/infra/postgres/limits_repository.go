@@ -236,7 +236,7 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		SELECT
 		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'),
 		  (SELECT count(*) FROM assets WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'archived'),
-		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND is_platform_sensor = false AND status <> 'revoked'),
+		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND scope = 'organization' AND status <> 'revoked'),
 		  (SELECT count(*) FROM api_keys WHERE tenant_id = $1 AND status = 'active'),
 		  (SELECT count(*) FROM ci_trust_configs WHERE tenant_id = $1),
 		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours'),
@@ -251,6 +251,17 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		limits.APIKeys: keys, limits.CITrusts: trusts, limits.InvitesPerDay: invites,
 		limits.LifecycleSubStatuses: subStatuses, limits.LifecycleSchemes: schemes,
 	}
+	// Shared-sensor scans started today (UTC): one per run (a run's chunks
+	// count once), or per command outside a run.
+	var sharedToday int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT count(DISTINCT COALESCE(payload->>'scan_run_id', id::text)) FROM commands
+		WHERE tenant_id = $1 AND is_platform_job
+		  AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
+		tenantID.String()).Scan(&sharedToday); err != nil {
+		return nil, fmt.Errorf("count shared sensor scans: %w", err)
+	}
+	usage[limits.PlatformScansPerDay] = sharedToday
 	if withFindings {
 		var n int
 		if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM findings WHERE tenant_id = $1`, tenantID.String()).Scan(&n); err != nil {
