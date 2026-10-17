@@ -176,6 +176,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Platform admin console (RFC-022): the administrator signs in on the normal
 	// /login with their users-table account, then the console adds a TOTP step
 	// and its own session, accepted by the admin auth middleware alongside API keys.
+	// The console CSRF token is bound to its session under a key every
+	// replica derives from the session-signing secret.
+	middleware.SetAdminCSRFSecret(cfg.Auth.JWTSecret)
 	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor,
 		adminAccountDirectory{auth: svc.Auth}, log)
 	// Administrators' platform identity provider (RFC-022 revision 4): every
