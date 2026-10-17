@@ -61,12 +61,25 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
     setSaving(true)
     try {
       const c = await createOrgClient(name.trim(), parseRedirectUris(uris))
-      toast.success(`${c.name} registered. Give its client id to the application.`)
+      toast.success(
+        t(
+          'mcp.orgClients.registered',
+          '{name} registered. Give its client id to the application.',
+          {
+            name: c.name,
+          }
+        )
+      )
       setOpen(false)
       setName('')
       setUris('')
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not register the application'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('mcp.orgClients.registerFailed', 'Could not register the application')
+        )
+      )
     } finally {
       setSaving(false)
     }
@@ -77,10 +90,16 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
     setSaving(true)
     try {
       await deleteOrgClient(pendingDelete.id)
-      toast.success(`${pendingDelete.name} deleted; its connections ended`)
+      toast.success(
+        t('mcp.orgClients.deleted', '{name} deleted; its connections ended', {
+          name: pendingDelete.name,
+        })
+      )
       setPendingDelete(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not delete the application'))
+      toast.error(
+        getErrorMessage(err, t('mcp.orgClients.deleteFailed', 'Could not delete the application'))
+      )
     } finally {
       setSaving(false)
     }
@@ -90,16 +109,18 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="space-y-1.5">
-          <CardTitle>Applications registered by your organization</CardTitle>
+          <CardTitle>{t('mcp.orgClients.title', 'Registered by your organization')}</CardTitle>
           <CardDescription>
-            For an AI application your organization runs or vouches for. Give it the client id; it
-            can only return to the addresses listed here.
+            {t(
+              'mcp.orgClients.description',
+              'For an AI application your organization runs or vouches for. Give it the client id; it can only return to the addresses listed here.'
+            )}
           </CardDescription>
         </div>
         {canEdit && (
           <Button size="sm" onClick={() => setOpen(true)}>
             <Plus className="mr-2 h-4 w-4" aria-hidden />
-            Register
+            {t('mcp.orgClients.register', 'Register')}
           </Button>
         )}
       </CardHeader>
@@ -107,7 +128,9 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
         {isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : !data || data.data.length === 0 ? (
-          <p className="text-muted-foreground text-sm">None registered.</p>
+          <p className="text-muted-foreground text-sm">
+            {t('mcp.orgClients.none', 'None registered.')}
+          </p>
         ) : (
           <ul className="divide-y rounded-md border">
             {data.data.map((c) => (
@@ -130,7 +153,7 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
                     className="shrink-0"
                   >
                     <Trash2 className="mr-2 h-4 w-4" aria-hidden />
-                    Delete
+                    {t('mcp.orgClients.delete', 'Delete')}
                   </Button>
                 )}
               </li>
@@ -142,16 +165,18 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
       <Dialog open={open} onOpenChange={(v) => !saving && setOpen(v)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Register an application</DialogTitle>
+            <DialogTitle>{t('mcp.orgClients.dialogTitle', 'Register an application')}</DialogTitle>
             <DialogDescription>
-              Return addresses must be https, or http on 127.0.0.1, [::1] or localhost (any port)
-              for applications that run on a computer.
+              {t(
+                'mcp.orgClients.dialogDesc',
+                'Return addresses must be https, or http on 127.0.0.1, [::1] or localhost (any port) for applications that run on a computer.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="mcp-client-name">Name</Label>
+                <Label htmlFor="mcp-client-name">{t('mcp.orgClients.name', 'Name')}</Label>
                 <Input
                   id="mcp-client-name"
                   value={name}
@@ -159,7 +184,9 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="mcp-client-uris">Return addresses (redirect URIs)</Label>
+                <Label htmlFor="mcp-client-uris">
+                  {t('mcp.orgClients.uris', 'Return addresses (redirect URIs)')}
+                </Label>
                 <Textarea
                   id="mcp-client-uris"
                   rows={3}
@@ -174,11 +201,11 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
-              Cancel
+              {t('mcp.common.cancel', 'Cancel')}
             </Button>
             <Button onClick={() => void create()} disabled={saving || !name.trim() || !uris.trim()}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-              Register
+              {t('mcp.orgClients.register', 'Register')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -188,14 +215,14 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
         open={pendingDelete !== null}
         onOpenChange={(v) => !v && !saving && setPendingDelete(null)}
         destructive
-        title={t('confirm.mcpClient.deleteTitle', 'Delete the application {name}?', {
+        title={t('mcp.orgClients.deleteTitle', 'Delete the application {name}?', {
           name: pendingDelete?.name ?? '',
         })}
         desc={t(
-          'confirm.mcpClient.deleteDesc',
+          'mcp.orgClients.deleteDesc',
           'Every connection made with it ends at once and it can no longer be authorized. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('mcp.orgClients.delete', 'Delete')}
         isLoading={saving}
         handleConfirm={() => remove()}
       />

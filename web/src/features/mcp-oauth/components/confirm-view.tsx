@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 
 import { decideConfirmation, fetchConfirmation, type McpConfirmation } from '../api/confirmations'
@@ -26,20 +27,28 @@ import { isRequestId } from '../api/consent'
  * application run it once within five minutes.
  */
 export function ConfirmView({ id }: { id: string | null }) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const [item, setItem] = useState<McpConfirmation | null | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<'approved' | 'denied' | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<'load' | 'notOpen' | null>(null)
   const valid = isRequestId(id)
+  const errorText =
+    error === 'load'
+      ? t('mcp.confirm.loadFailed', 'Could not load the request.')
+      : error === 'notOpen'
+        ? t('mcp.confirm.notOpen', 'This request is no longer open (expired or already answered).')
+        : null
   const tenantId = currentTenant?.id
+  const orgName = currentTenant?.name ?? t('mcp.confirm.thisOrganization', 'this organization')
 
   const load = useCallback(async () => {
     if (!valid || !tenantId) return
     try {
       setItem(await fetchConfirmation(id))
     } catch {
-      setError('Could not load the request')
+      setError('load')
       setItem(null)
     }
   }, [id, valid, tenantId])
@@ -55,11 +64,16 @@ export function ConfirmView({ id }: { id: string | null }) {
     const ok = await decideConfirmation(id, approve)
     setBusy(false)
     if (ok) setDone(approve ? 'approved' : 'denied')
-    else setError('This request is no longer open (expired or already answered).')
+    else setError('notOpen')
   }
 
   if (!valid)
-    return <Message title="Nothing to confirm" text="This link is not a valid confirmation." />
+    return (
+      <Message
+        title={t('mcp.confirm.nothing', 'Nothing to confirm')}
+        text={t('mcp.confirm.invalidLink', 'This link is not a valid confirmation.')}
+      />
+    )
   if (item === undefined && !error) {
     return (
       <Card>
@@ -75,10 +89,14 @@ export function ConfirmView({ id }: { id: string | null }) {
   if (!item) {
     return (
       <Message
-        title="Nothing to confirm"
+        title={t('mcp.confirm.nothing', 'Nothing to confirm')}
         text={
-          error ??
-          `No such request for you in ${currentTenant?.name ?? 'this organization'}. Make sure you are signed in as the person who connected the application, in the same organization.`
+          errorText ??
+          t(
+            'mcp.confirm.notFound',
+            'No such request for you in {org}. Make sure you are signed in as the person who connected the application, in the same organization.',
+            { org: orgName }
+          )
         }
       />
     )
@@ -86,11 +104,21 @@ export function ConfirmView({ id }: { id: string | null }) {
   if (done) {
     return (
       <Message
-        title={done === 'approved' ? 'Confirmed' : 'Refused'}
+        title={
+          done === 'approved'
+            ? t('mcp.confirm.confirmed', 'Confirmed')
+            : t('mcp.confirm.refused', 'Refused')
+        }
         text={
           done === 'approved'
-            ? `Go back to ${item.client_name}: it can now make this change once, within five minutes.`
-            : `${item.client_name} will not make this change.`
+            ? t(
+                'mcp.confirm.confirmedDesc',
+                'Go back to {client}: it can now make this change once, within five minutes.',
+                { client: item.client_name }
+              )
+            : t('mcp.confirm.refusedDesc', '{client} will not make this change.', {
+                client: item.client_name,
+              })
         }
         icon={done === 'approved' ? 'ok' : 'no'}
       />
@@ -102,11 +130,16 @@ export function ConfirmView({ id }: { id: string | null }) {
     <Card>
       <CardHeader className="space-y-2">
         <CardTitle className="text-xl break-words">
-          {item.client_name} wants to make a change
+          {t('mcp.confirm.title', '{client} wants to make a change', { client: item.client_name })}
         </CardTitle>
         <CardDescription>
-          Check exactly what it will do. It acts as you, in{' '}
-          {currentTenant?.name ?? 'this organization'}.
+          {t(
+            'mcp.confirm.description',
+            'Check exactly what it will do. It acts as you, in {org}.',
+            {
+              org: orgName,
+            }
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -116,20 +149,24 @@ export function ConfirmView({ id }: { id: string | null }) {
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            Only confirm if you asked the application to do this. An application can be tricked by
-            content it reads.
+            {t(
+              'mcp.confirm.warning',
+              'Only confirm if you asked the application to do this. An application can be tricked by content it reads.'
+            )}
           </AlertDescription>
         </Alert>
         {!open && (
           <Alert variant="destructive">
             <AlertDescription>
-              {item.expired ? 'This request expired.' : `This request was already ${item.status}.`}
+              {item.expired
+                ? t('mcp.confirm.expired', 'This request expired.')
+                : t('mcp.confirm.alreadyDecided', 'This request was already answered.')}
             </AlertDescription>
           </Alert>
         )}
         {error && (
           <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>{errorText}</AlertDescription>
           </Alert>
         )}
       </CardContent>
@@ -140,7 +177,7 @@ export function ConfirmView({ id }: { id: string | null }) {
           onClick={() => void decide(false)}
           className="w-full sm:w-auto"
         >
-          Refuse
+          {t('mcp.confirm.refuse', 'Refuse')}
         </Button>
         <Button
           disabled={busy || !open}
@@ -148,7 +185,7 @@ export function ConfirmView({ id }: { id: string | null }) {
           className="w-full sm:w-auto"
         >
           {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-          Confirm
+          {t('mcp.confirm.confirm', 'Confirm')}
         </Button>
       </CardFooter>
     </Card>

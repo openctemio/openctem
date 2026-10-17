@@ -109,20 +109,29 @@ export async function updateMcpPolicy(p: McpPolicyUpdate): Promise<McpPolicy> {
   return saved
 }
 
-/** The scope list in words, for a connection row. */
-export function scopeLabel(scope: string): string {
-  switch (scope) {
-    case 'mcp:findings.read':
-      return 'Findings'
-    case 'mcp:assets.read':
-      return 'Assets'
-    case 'mcp:compliance.read':
-      return 'Compliance'
-    case 'mcp:pentest.read':
-      return 'Pentest'
-    default:
-      return scope
+/** The writable fields of a policy read from the server. */
+export function policyUpdate(p: McpPolicy): McpPolicyUpdate {
+  return {
+    enabled: p.enabled,
+    any_client: p.any_client,
+    client_hosts: p.client_hosts,
+    scopes: p.scopes,
+    api_keys_allowed: p.api_keys_allowed,
+    refresh_days: p.refresh_days,
+    require_dpop: p.require_dpop,
+    max_tlp: p.max_tlp,
   }
+}
+
+/**
+ * Changes some fields of the stored policy and keeps the rest as last read
+ * (the API replaces the whole policy).
+ */
+export function patchMcpPolicy(
+  current: McpPolicy,
+  patch: Partial<McpPolicyUpdate>
+): Promise<McpPolicy> {
+  return updateMcpPolicy({ ...policyUpdate(current), ...patch })
 }
 
 export interface McpOrgClient {
