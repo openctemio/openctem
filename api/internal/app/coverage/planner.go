@@ -257,7 +257,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 					return total, err
 				}
 				s.logger.Info("coverage batch refused, pairs blocked", "tenant_id", tenantID.String(),
-					"capability", capability, "targets", len(targets), "code", de.Code)
+					"capability", logger.SanitizeValue(capability), "targets", len(targets), "code", logger.SanitizeValue(de.Code))
 				continue
 			}
 			s.logger.Warn("coverage run not started", "tenant_id", tenantID.String(), "capability", capability,
