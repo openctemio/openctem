@@ -42,7 +42,7 @@ import en_org from './en/org.json'
 import en_pentest from './en/pentest.json'
 import en_pentestCampaigns from './en/pentestCampaigns.json'
 import en_pentestChecklists from './en/pentestChecklists.json'
-import en_plan from './en/plan.json'
+import en_limits from './en/limits.json'
 import en_prioritization from './en/prioritization.json'
 import en_programs from './en/programs.json'
 import en_remediation from './en/remediation.json'
@@ -99,7 +99,7 @@ import vi_org from './vi/org.json'
 import vi_pentest from './vi/pentest.json'
 import vi_pentestCampaigns from './vi/pentestCampaigns.json'
 import vi_pentestChecklists from './vi/pentestChecklists.json'
-import vi_plan from './vi/plan.json'
+import vi_limits from './vi/limits.json'
 import vi_prioritization from './vi/prioritization.json'
 import vi_programs from './vi/programs.json'
 import vi_remediation from './vi/remediation.json'
@@ -161,7 +161,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   pentest: en_pentest,
   pentestCampaigns: en_pentestCampaigns,
   pentestChecklists: en_pentestChecklists,
-  plan: en_plan,
+  limits: en_limits,
   prioritization: en_prioritization,
   programs: en_programs,
   remediation: en_remediation,
@@ -221,7 +221,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   pentest: vi_pentest,
   pentestCampaigns: vi_pentestCampaigns,
   pentestChecklists: vi_pentestChecklists,
-  plan: vi_plan,
+  limits: vi_limits,
   prioritization: vi_prioritization,
   programs: vi_programs,
   remediation: vi_remediation,

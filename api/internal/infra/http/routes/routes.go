@@ -266,9 +266,10 @@ type Handlers struct {
 	AdminAuditChain         *handler.AdminAuditChainHandler
 	// AccessRequest: the request-access queue (public form + console).
 	AccessRequest *handler.AccessRequestHandler
-	// Plan: plans and limits (console plan defaults, organization plans and
-	// overrides, the organization's own usage).
-	Plan *handler.PlanHandler
+	// Limits: per-organization limits and feature denies (console
+	// self-service defaults, an organization's limits and denies, the
+	// organization's own usage).
+	Limits *handler.LimitsHandler
 	// IdleWorkspace: an organization's idle lifecycle in the console.
 	IdleWorkspace *handler.IdleWorkspaceHandler
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
@@ -285,6 +286,8 @@ type Handlers struct {
 	// AdminScanPolicy: the platform policy for scan approval
 	// (RFC-073), platform default and per organization.
 	AdminScanPolicy *handler.AdminScanPolicyHandler
+	// AdminSharedFleet: the console's shared sensor fleet (RFC-100 §12).
+	AdminSharedFleet *handler.AdminSharedFleetHandler
 	// AdminSharedSensor: shared sensor enrollment tokens (RFC-100).
 	AdminSharedSensor *handler.AdminSharedSensorHandler
 	// ScanGovernance: the organization's scan approval settings (RFC-073).
@@ -555,7 +558,7 @@ func Register(
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
 		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
-		registerOrganizationPlanRoutes(router, h.Plan, authMiddleware, userSync)
+		registerOrganizationLimitsRoutes(router, h.Limits, authMiddleware, userSync)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized

@@ -87,6 +87,11 @@ export interface SettingsNavItem {
   badge?: 'Soon'
   /** Extra words the rail filter and ⌘K match on. */
   keywords?: string[]
+  /**
+   * Listed only while a limit or a module deny applies to the organization
+   * (GET /organization/limits says applies). Nothing applies by default.
+   */
+  onlyWhenLimitsApply?: boolean
 }
 
 export interface SettingsNavGroup {
@@ -179,16 +184,17 @@ export const settingsNav: SettingsNavGroup[] = [
         url: '/settings/modules',
         icon: Boxes,
         permission: Permission.TeamUpdate,
-        keywords: ['features', 'plan', 'license', 'enable', 'disable'],
+        keywords: ['features', 'enable', 'disable'],
       },
       {
-        id: 'plan',
-        title: 'Plan & usage',
-        description: 'Your plan, its limits and what this organization uses.',
-        url: '/settings/plan',
+        id: 'limits',
+        title: 'Usage & limits',
+        description: 'The limits that apply to this organization and what it uses.',
+        url: '/settings/limits',
         icon: Gauge,
         permission: Permission.TeamUpdate,
-        keywords: ['plan', 'limits', 'quota', 'seats', 'usage', 'free', 'pro', 'enterprise'],
+        keywords: ['limits', 'quota', 'seats', 'usage'],
+        onlyWhenLimitsApply: true,
       },
       {
         // What the verified SSO domains do to accounts on them (api RFC-104):

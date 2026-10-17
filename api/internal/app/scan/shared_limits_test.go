@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -15,15 +15,15 @@ import (
 // noLimits allows every shared-sensor scan.
 type noLimits struct{}
 
-func (noLimits) Check(context.Context, shared.ID, plan.Key, int) error { return nil }
+func (noLimits) Check(context.Context, shared.ID, limits.Key, int) error { return nil }
 
 // fixedLimits answers one error for every check, recording the key asked.
 type fixedLimits struct {
 	err  error
-	keys *[]plan.Key
+	keys *[]limits.Key
 }
 
-func (l fixedLimits) Check(_ context.Context, _ shared.ID, key plan.Key, _ int) error {
+func (l fixedLimits) Check(_ context.Context, _ shared.ID, key limits.Key, _ int) error {
 	if l.keys != nil {
 		*l.keys = append(*l.keys, key)
 	}
@@ -37,8 +37,8 @@ func (l fixedLimits) Check(_ context.Context, _ shared.ID, key plan.Key, _ int) 
 func TestSharedScanDailyLimit(t *testing.T) {
 	ctx := context.Background()
 	public := []string{"app.example.com"}
-	over := &plan.ErrLimitReached{Key: plan.PlatformScansPerDay, Limit: 10, Used: 10}
-	unreadable := &plan.ErrLimitReached{Key: plan.PlatformScansPerDay, Unavailable: true}
+	over := &limits.ErrLimitReached{Key: limits.PlatformScansPerDay, Limit: 10, Used: 10}
+	unreadable := &limits.ErrLimitReached{Key: limits.PlatformScansPerDay, Unavailable: true}
 	for _, tc := range []struct {
 		name    string
 		limits  SharedScanLimits
@@ -70,13 +70,13 @@ func TestSharedScanDailyLimit(t *testing.T) {
 		}
 	}
 
-	// The check asks for the daily key, never a plan.
-	var keys []plan.Key
+	// The check asks for the daily key, never a limits.
+	var keys []limits.Key
 	svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(),
 		zoneResolver: publicResolver{}, sharedLimits: fixedLimits{keys: &keys}}
 	sc := testScan("nuclei")
 	sc.SensorPreference = scan.SensorPreferencePlatform
-	if _, err := svc.shouldUsePlatformSensor(ctx, sc, public); err != nil || len(keys) != 1 || keys[0] != plan.PlatformScansPerDay {
+	if _, err := svc.shouldUsePlatformSensor(ctx, sc, public); err != nil || len(keys) != 1 || keys[0] != limits.PlatformScansPerDay {
 		t.Fatalf("checked keys %v (err %v), want [platform_scans_per_day]", keys, err)
 	}
 
