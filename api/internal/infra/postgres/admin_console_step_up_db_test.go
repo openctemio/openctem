@@ -76,6 +76,66 @@ func TestAdminConsoleSessionStepUp_DB(t *testing.T) {
 	}
 }
 
+// A step-up mark is spent by one fresh action: consuming clears it, a second
+// consume finds nothing, and a mark older than the cut-off is not honored.
+// Requires DATABASE_URL.
+func TestAdminConsoleConsumeSessionStepUp_DB(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set")
+	}
+	raw, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	if err := raw.Ping(); err != nil {
+		testdb.Skipf(t, "cannot reach DATABASE_URL: %v", err)
+	}
+	ctx := context.Background()
+	repo := NewAdminConsoleRepository(&DB{DB: raw})
+
+	adminID := uuid.NewString()
+	if _, err := raw.ExecContext(ctx, `INSERT INTO admin_users (id, email, name, role) VALUES ($1, $2, 'Consume IT', 'super_admin')`,
+		adminID, "consume-"+adminID[:8]+"@example.com"); err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = raw.ExecContext(ctx, `DELETE FROM admin_sessions WHERE admin_id = $1`, adminID)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM admin_users WHERE id = $1`, adminID)
+	})
+	aid, _ := shared.IDFromString(adminID)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	s := &admin.Session{ID: shared.NewID(), AdminID: aid, TokenHash: uuid.NewString(), MFAVerified: true,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastSeenAt: now, AuthMethod: admin.AuthMethodPassword}
+	if err := repo.CreateSession(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, err := repo.ConsumeSessionStepUp(ctx, s.ID, now.Add(-time.Minute)); err != nil || ok {
+		t.Fatalf("never stepped up: ok=%v err=%v", ok, err)
+	}
+	if err := repo.MarkSessionStepUp(ctx, s.ID, now.Add(-2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := repo.ConsumeSessionStepUp(ctx, s.ID, now.Add(-time.Minute)); ok {
+		t.Fatal("a mark older than the cut-off was honored")
+	}
+	if err := repo.MarkSessionStepUp(ctx, s.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := repo.ConsumeSessionStepUp(ctx, s.ID, now.Add(-time.Minute)); err != nil || !ok {
+		t.Fatalf("fresh mark: ok=%v err=%v", ok, err)
+	}
+	if ok, _ := repo.ConsumeSessionStepUp(ctx, s.ID, now.Add(-time.Minute)); ok {
+		t.Fatal("a mark was spent twice")
+	}
+	got, _ := repo.GetSessionByTokenHash(ctx, s.TokenHash)
+	if got.StepUpAt != nil {
+		t.Fatal("consuming must clear the window too")
+	}
+}
+
 // A verified session stores and clears its elevation; a pending session never
 // holds one. Requires DATABASE_URL.
 func TestAdminConsoleSessionElevation_DB(t *testing.T) {
