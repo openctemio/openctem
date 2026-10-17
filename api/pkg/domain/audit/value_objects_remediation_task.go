@@ -14,6 +14,9 @@ const (
 	// ActionRemediationTaskExceptionRequested: a person asked for one
 	// exception (accepted risk or false positive) over the task's findings.
 	ActionRemediationTaskExceptionRequested Action = "remediation_task.exception_requested"
+	// ActionRemediationTaskIssueCreated: a person created the task's tracker
+	// issue (the task's title and counts leave the platform).
+	ActionRemediationTaskIssueCreated Action = "remediation_task.issue_created"
 )
 
 // ResourceTypeRemediationTask is a remediation task (table remediation_tasks).
@@ -32,6 +35,7 @@ var _ = registerActions("remediation_task", map[Action]Severity{
 	ActionRemediationTaskFixClaimed: SeverityMedium,
 	// One request to hide the risk of every open finding of the task.
 	ActionRemediationTaskExceptionRequested: SeverityMedium,
+	ActionRemediationTaskIssueCreated:       SeverityLow,
 })
 
 // Remediation suggestion decisions (RFC-098 §5). The generator itself writes
