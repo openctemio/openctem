@@ -44,7 +44,7 @@ document.getElementById("manifest").value = JSON.stringify({
   "setup_on_update": true,
   "request_oauth_on_install": true,
   "default_permissions": { "checks": "write", "pull_requests": "write", "metadata": "read", "members": "read" },
-  "default_events": []
+  "default_events": ["repository"]
 });
 </script>
 ```
@@ -54,6 +54,14 @@ document.getElementById("manifest").value = JSON.stringify({
   created without it binds no organization installation; add it under the
   app's **Permissions & events > Organization permissions > Members: Read**,
   and each organization accepts the new permission.
+- `default_events: ["repository"]` sends repository renamed, transferred,
+  archived and unarchived events. OpenCTEM then renames the repository's asset
+  and CI pipelines (matched by GitHub's repository id, in the organization the
+  installation is bound to) and archives or revives its pipelines, without
+  waiting for the next CI run. A name pattern in a CI trust configuration is
+  never edited by a webhook: update it yourself when a repository is renamed.
+  An app created without the event: add **Repository** under **Permissions &
+  events > Subscribe to events**.
 - `public: true` lets other GitHub organizations install it (the hosted
   service). A deployment used by one GitHub organization can set `false`.
 - For a GitHub Enterprise Server, post to
