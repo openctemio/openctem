@@ -34,6 +34,11 @@
 # mode is a pair of small files under modes/. Environment placeholders
 # {$NAME:default} are substituted when the file is read.
 #
+# Platform console (RFC-022 revision 20): OPENCTEM_ADMIN_SITE=port serves it on
+# https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT, 8444>, =host on
+# https://<OPENCTEM_ADMIN_HOST>, only to OPENCTEM_ADMIN_ALLOWED_CIDRS (default
+# private networks), and the main site then answers 404 for it (admin/).
+#
 # Sensor protocol v3 gRPC binding (RFC-059): with OPENCTEM_SENSOR_GATEWAY=alpn,
 # a TLS connection that offers the sensor ALPN id openctem-sensor/3 is passed
 # through at layer 4 to the API's mTLS listener on this same port
@@ -162,6 +167,9 @@ import planes.caddy
 		respond 404
 	}
 
+	# With the console on its own site, it does not exist on this one.
+	import admin/{$OPENCTEM_ADMIN_SITE_FILE:off}.tenant
+
 	# The planes the gateway sends straight to the API (generated).
 	import planes
 
@@ -218,6 +226,8 @@ import planes.caddy
 	header_up X-Real-IP {client_ip}
 	header_up -Cf-Connecting-Ip
 	header_up -True-Client-Ip
+	# Only the admin site (admin/on.site) may mark a request as the console's.
+	header_up -X-OpenCTEM-Plane
 	flush_interval -1
 }
 
@@ -234,3 +244,6 @@ import planes.caddy
 }
 
 import modes/{$OPENCTEM_TLS_MODE}.site
+
+# The platform console's own site, or nothing (OPENCTEM_ADMIN_SITE).
+import admin/{$OPENCTEM_ADMIN_SITE_FILE:off}.site
