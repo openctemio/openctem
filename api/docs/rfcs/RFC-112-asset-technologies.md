@@ -118,4 +118,5 @@ kept asset's row for a name. `asset_technology_backfill` records the tenants the
 |---|---|---|
 | 1 | model, ingest, read endpoint | #2413 |
 | 2 | backfill and cleanup of non-software component links | #2415 |
-| 3 | one store: rows are the reconciled set, property retired, responses embed technologies | open |
+| 3 | one store: rows are the reconciled set, property retired, responses embed technologies | #2425 |
+| 4 | console: Technologies section and tab, Software tab wording and empty state, tab overflow, default zone hidden | open |
