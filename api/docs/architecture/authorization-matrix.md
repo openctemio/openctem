@@ -405,7 +405,8 @@ authenticator code, and is audited.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/{id}/config-report` (setup checklist, research/26) · `/available-capabilities` · `/content-policy` | `sensors:read` |
+| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` · `/content-policy` | `sensors:read`; host name and addresses (`hostname`, `ip_address`, `key_last_used_ip`) are returned to owners and administrators only |
+| `GET /api/v1/sensors/{id}/config-report` (setup checklist, research/26) · `GET /quarantined-results` · `/quarantined-results/{qid}` (the preview carries asset values and finding titles from the raw report) | `sensors:write` (owner/admin) |
 | `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write`; creating a sensor and regenerating its key also need **step-up** (they mint a persistent key) |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
@@ -454,8 +455,8 @@ authenticator code, and is audited.
 
 | Endpoint | Gate |
 |----------|------|
-| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) |
-| `GET /api/v1/audit-logs/user/{id}` | `audit:read`, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
+| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) **and** full data access: a caller whose data scope is restricted gets 403 (`details.required = "full data access"`), because audit rows carry the names, messages and change diffs of assets and findings outside their scope |
+| `GET /api/v1/audit-logs/user/{id}` | `audit:read` and full data access, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
 | `GET /api/v1/audit-logs/verify` | owner/admin (`RequireAdmin`) |
 | (no tenant rebaseline) | the audit-chain rebaseline is admin-console only: `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` |
 
@@ -568,7 +569,9 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete` |
+
+> Writing the credential store is owner/admin only: its one consumer, a template source, is owner/admin only, so a member could otherwise replace the credential an administrator's source authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
 
 > **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
 > leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
@@ -2137,7 +2140,8 @@ deliberately.
     decision 2026-10-03).** `POST /api/v1/commands` with `type: "scan"`
     makes a sensor scan whatever the payload names, so it is refused (403)
     for anyone but owners and administrators, although members keep
-    `commands:write` for the other command types. For an administrator the
+    `commands:write` for `health_check`. `collect`, `config_update` and `cancel`
+    steer a sensor as well and are owner/admin only too. For an administrator the
     payload's `target`/`targets` go through the checks of a scan trigger
     (`scan.Service.GateCommandPayload`): the target validator with the
     private-range policy (internal addresses only inside a scan zone), active
@@ -2193,7 +2197,7 @@ lets anyone build a role above their own grants.
 | `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
 | `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
-| `researcher` | bug-bounty researchers: programs, scans and findings of their programs (RFC-065) | no |
+| `researcher` (v2) | bug-bounty researchers: programs, scans and findings of their programs (RFC-065); no sensor access since v2 (migration `002905` removes `sensors:read` from existing copies) | no |
 | `bounty-triager` | triages researcher reports; never approves or changes program scope | no |
 | `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
 | `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |
