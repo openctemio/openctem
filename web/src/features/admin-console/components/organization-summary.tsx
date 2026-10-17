@@ -80,7 +80,11 @@ export function OrganizationSummary({
             onClick: () => onOpenTab('users'),
           }}
         >
-          {org.owner_emails.length === 0 ? (
+          {org.owner_emails.length === 0 && org.owner_count > 0 ? (
+            <span className="text-muted-foreground">
+              {t('admin.org.ownerCount', '{count} owner(s)', { count: org.owner_count })}
+            </span>
+          ) : org.owner_emails.length === 0 ? (
             <span className="flex items-center gap-1.5 font-medium text-warning">
               <AlertTriangle className="size-4" aria-hidden="true" />
               {t('admin.org.noOwner', 'No owner')}
