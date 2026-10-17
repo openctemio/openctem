@@ -49,6 +49,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@console': path.resolve(__dirname, './console/src'),
     },
   },
 })

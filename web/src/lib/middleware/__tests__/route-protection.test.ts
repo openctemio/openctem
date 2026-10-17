@@ -42,8 +42,6 @@ const PUBLIC_PAGES = [
   '/invitations/tok123',
   '/auth/callback/google',
   '/auth/sso/callback/entra',
-  '/admin/login',
-  '/admin/login/callback',
   '/icon',
 ]
 
@@ -60,9 +58,10 @@ const PROTECTED_PAGES = [
   '/loginx',
   '/invitationsx',
   '/administrators',
+  // No console on this site (RFC-022 revision 21): an ordinary page path.
+  '/admin',
+  '/admin/login',
 ]
-
-const ADMIN_PAGES = ['/admin', '/admin/organizations', '/admin/security/activity']
 
 describe('decideAuth: routes x cookie states', () => {
   for (const [state, cookies] of Object.entries(COOKIE_STATES)) {
@@ -83,14 +82,6 @@ describe('decideAuth: routes x cookie states', () => {
             expect(decision.location.startsWith('/login')).toBe(true)
           }
         }
-      })
-
-      // The console shell checks its session with the API and sends the
-      // browser to its sign-in; no page cookie stands for a console session.
-      it.each(ADMIN_PAGES)('%s is left to the console shell', (pathname) => {
-        expect(decideAuth({ pathname, search: '', cookie: jar(cookies) })).toEqual({
-          type: 'allow',
-        })
       })
     })
   }
@@ -163,14 +154,6 @@ describe('no redirect loop', () => {
   it('a stale (expired, revoked) but well-formed cookie reaches the page', () => {
     expect(
       decideAuth({ pathname: '/findings', search: '', cookie: jar({ refresh_token: JWT }) })
-    ).toEqual({
-      type: 'allow',
-    })
-  })
-
-  it('/admin/login is let through without a console cookie', () => {
-    expect(
-      decideAuth({ pathname: '/admin/login', search: '?next=%2Fadmin', cookie: jar({}) })
     ).toEqual({
       type: 'allow',
     })

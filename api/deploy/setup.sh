@@ -132,8 +132,8 @@ mv "$tmp" "$env_file"
 trap - EXIT
 
 port="${admin_port:-8443}"
-console="https://$host:$port/admin"
-[[ -z "$admin_host" ]] || console="https://$admin_host/admin"
+console="https://$host:$port/"
+[[ -z "$admin_host" ]] || console="https://$admin_host/"
 reach="from private networks only (loopback, 10/8, 172.16/12, 192.168/16, IPv6 ULA)"
 [[ -z "$admin_cidrs" ]] || reach="from $admin_cidrs"
 [[ -z "$admin_public" ]] || reach="from EVERY network (--admin-public)"
@@ -144,7 +144,7 @@ else
 From outside those networks, use your VPN"
   if [[ "$admin_site" = port ]]; then
     console_msg="$console_msg or an SSH tunnel, e.g.:
-  ssh -L $port:127.0.0.1:$port you@$host   then open https://localhost:$port/admin
+  ssh -L $port:127.0.0.1:$port you@$host   then open https://localhost:$port/
 For production, give the console its own DNS name (--admin-host): the
 browser then isolates it from the main site entirely."
   else
