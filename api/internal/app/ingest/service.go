@@ -13,6 +13,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
@@ -69,6 +70,7 @@ type Service struct {
 	software     *softwareRecorder
 	attributes   AttributeReconciler
 	sets         SetReconciler
+	techs        assettech.Repository
 	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
@@ -541,6 +543,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	src := attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}
 	s.recordAttributes(ctx, tenantID, scope, src, observedAt, report, assetMap)
 	s.recordSets(ctx, tenantID, scope, src, observedAt, report, binding, assetMap)
+	// What each asset was fingerprinted with (RFC-112), after the sets
+	// decided which technologies the asset shows.
+	s.recordTechnologies(ctx, tenantID, scope, src, observedAt, report, assetMap)
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,

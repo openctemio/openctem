@@ -48,6 +48,7 @@ type TaskService struct {
 	audit     TaskAuditLogger
 	claimer   TaskFixClaimer
 	guard     TaskBulkGuard
+	moves     TaskMoveNotifier
 	logger    *logger.Logger
 }
 
@@ -362,6 +363,13 @@ func (s *TaskService) writableTask(ctx context.Context, tenantID, taskID shared.
 		return nil, remediationdom.ErrTaskHiddenMembers
 	}
 	return t, nil
+}
+
+// TaskForChange returns a task the caller may change (visible, with no
+// member outside their scope): what an action that carries the task
+// elsewhere, such as creating its tracker issue, checks first.
+func (s *TaskService) TaskForChange(ctx context.Context, tenantID, taskID shared.ID) (*remediationdom.Task, error) {
+	return s.writableTask(ctx, tenantID, taskID)
 }
 
 // AddMembersInput adds findings to a task.

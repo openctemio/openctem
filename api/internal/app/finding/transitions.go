@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -33,6 +35,12 @@ func transitionActor(ctx context.Context, actorID string, p TransitionPermission
 	a := vulnerability.TransitionActor{
 		Kind:      vulnerability.TransitionActorAPIKey,
 		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write,
+	}
+	// A verified Jira/GitHub webhook is the ticket actor: the engine lets it
+	// report work state only (never a close).
+	if _, ok := vulnerability.TicketInboundFrom(ctx); ok {
+		a.Kind = vulnerability.TransitionActorTicket
+		return a
 	}
 	if isSystemMove(ctx) {
 		a.Kind = vulnerability.TransitionActorWorkflow
@@ -147,7 +155,7 @@ func transitionError(d vulnerability.TransitionDecision, note string) error {
 // and data scope (404 otherwise, never 403).
 func (s *VulnerabilityService) ListFindingTransitions(ctx context.Context, tenantID, findingID, actorID string,
 	perms TransitionPermissions,
-) ([]vulnerability.TransitionDecision, vulnerability.FindingStatus, error) {
+) ([]lc.Decision, vulnerability.FindingStatus, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -168,7 +176,13 @@ func (s *VulnerabilityService) ListFindingTransitions(ctx context.Context, tenan
 	if err != nil {
 		return nil, "", err
 	}
-	return vulnerability.AvailableTransitions(facts[f.ID()], a), f.Status(), nil
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return nil, "", err
+	}
+	lf := lifecycleFacts(f, facts[f.ID()])
+	scheme := lc.SelectScheme(cands, lf.ConditionFacts())
+	return lc.AvailableMoves(scheme, lf, lifecycleActor(ctx, a)), f.Status(), nil
 }
 
 // MaxTransitionEvaluate caps the findings of one dry run (the bulk status cap).
@@ -178,15 +192,15 @@ const MaxTransitionEvaluate = 100
 // set (and Decision empty) for an id that is not a finding the caller can
 // see: another tenant's, out of the caller's data scope, or absent.
 type EvaluatedTransition struct {
-	FindingID string                            `json:"finding_id"`
-	NotFound  bool                              `json:"not_found,omitempty"`
-	Decision  *vulnerability.TransitionDecision `json:"decision,omitempty"`
+	FindingID string       `json:"finding_id"`
+	NotFound  bool         `json:"not_found,omitempty"`
+	Decision  *lc.Decision `json:"decision,omitempty"`
 }
 
 // EvaluateFindingTransitions is the bulk dry run: for each finding, whether
 // the caller may move it to target and why not. It changes nothing.
 func (s *VulnerabilityService) EvaluateFindingTransitions(ctx context.Context, tenantID string, findingIDs []string,
-	target, actorID string, perms TransitionPermissions,
+	target, subStatusID, actorID string, perms TransitionPermissions,
 ) ([]EvaluatedTransition, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -195,6 +209,10 @@ func (s *VulnerabilityService) EvaluateFindingTransitions(ctx context.Context, t
 	to, err := vulnerability.ParseFindingStatus(target)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+	}
+	subID, err := parseSubStatus(subStatusID)
+	if err != nil {
+		return nil, err
 	}
 	if len(findingIDs) == 0 || len(findingIDs) > MaxTransitionEvaluate {
 		return nil, fmt.Errorf("%w: finding_ids must hold 1 to %d ids", shared.ErrValidation, MaxTransitionEvaluate)
@@ -224,6 +242,11 @@ func (s *VulnerabilityService) EvaluateFindingTransitions(ctx context.Context, t
 	if err != nil {
 		return nil, err
 	}
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	la := lifecycleActor(ctx, a)
 	out := make([]EvaluatedTransition, 0, len(ids))
 	for _, id := range ids {
 		f, ok := visible[id]
@@ -231,7 +254,7 @@ func (s *VulnerabilityService) EvaluateFindingTransitions(ctx context.Context, t
 			out = append(out, EvaluatedTransition{FindingID: id.String(), NotFound: true})
 			continue
 		}
-		d := vulnerability.EvaluateTransition(facts[f.ID()], a, to)
+		d, _ := lifecycleDecision(cands, f, facts[f.ID()], la, lc.Target{Status: to, SubStatus: subID})
 		out = append(out, EvaluatedTransition{FindingID: id.String(), Decision: &d})
 	}
 	return out, nil

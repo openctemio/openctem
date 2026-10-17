@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks. Designed: moves/split/merge, task-level "mark fixed", the new Remediation console |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -134,8 +134,13 @@ suggestions and 5000 findings, each on its own. Turning auto-join on needs a cal
   to the pool and are excluded from that fix's suggestions. `POST /tasks/{task_id}/splits` creates a task of
   the same fix (campaign and manual deadline kept; owner kept unless named) for some findings (at least one
   stays); `POST /tasks/{task_id}/merges` moves every finding of up to 20 same-fix tasks into it and archives
-  them. Archived tasks are not restored (a move into them is refused). Task tickets get a comment once tasks
-  carry tickets (the RFC-097 engine).
+  them. Archived tasks are not restored (a move into them is refused).
+- Ticket comments: after a move, split, merge or detach is stored, the task service hands a `TaskMoveEvent`
+  (kind, source and target task with titles, finding count, source archived) to its `TaskMoveNotifier`;
+  `TaskMoveEvent.Comments()` gives one comment per task touched (source and target), with counts and task titles
+  only, never finding identifiers or titles (people who see the issue may not see every finding). The ticket
+  integration implements the notifier for tasks that carry an issue; the call is best effort and never fails or
+  undoes the move. Until it is wired, a move writes the task timeline only.
 
 ## 8. Mark fixed at task level
 
@@ -157,6 +162,19 @@ One ticket per task. The tracker field and status mapping is RFC-097 (object kin
 gives it the task's state, deadline and members. A tracker "Done" is a fix claim (task-level mark fixed),
 never a close.
 
+Implemented (built-in map; task profiles follow): a person who may change the task (every member in their data
+scope, `remediation:write`) creates its Jira issue in a project configured for ticketing; one active issue per
+task (a per-task guard covers two clicks at once). The issue carries the task's title, fix, finding count,
+deadline and a link back, and names no finding. The link is a `ticket_links` row with `task_id` (one object per
+link, composite tenant foreign key) and the task state last pushed. The task ticket controller pushes every task
+whose state differs from that state, each in its own tenant, once a minute: in progress → "In Progress", done or
+closed without a verified fix → "Done", every move with a progress comment; a state without a status (verifying,
+on hold, canceled) or a workflow without the move gets the comment alone. A transient tracker error is retried on
+the next pass; a refusal is not. Inbound, a status change of the task's issue applies to the task's open primary
+findings through the finding service (Done is a fix claim for each); the echo of our own move (the status we
+pushed, within ten minutes) is ignored. `SyncService.TaskChanged` pushes a task at once for a caller that wants it
+before the next pass.
+
 ## 10. API
 
 ```
@@ -167,6 +185,8 @@ PATCH /api/v1/remediation/tasks/{task_id}                title, description, own
 GET   /api/v1/remediation/tasks/{task_id}/members
 POST  /api/v1/remediation/tasks/{task_id}/members        add primary or related findings; version required
 POST  /api/v1/remediation/tasks/{task_id}/resolve        mark fixed: each open finding claimed fixed and re-checked
+GET   /api/v1/remediation/tasks/{task_id}/ticket-links   the task's tracker issue links
+POST  /api/v1/remediation/tasks/{task_id}/ticket-links   create the task's Jira issue (409 when it has one)
 POST  /api/v1/remediation/tasks/{task_id}/splits         split findings into a new task of the same fix
 POST  /api/v1/remediation/tasks/{task_id}/merges         merge tasks of the same fix
 POST  /api/v1/remediation/moves[/preview]                move findings between tasks (or out of any)
@@ -186,7 +206,10 @@ PATCH /api/v1/remediation/actions/{id}                   auto_join on or off
 ```
 
 Reads need `findings:remediation:read` (members also `findings:read`); changes need
-`findings:remediation:write`. Marking findings fixed will also need `findings:fix_apply`. The routes are in the
+`findings:remediation:write`, with one exception (owner decision D10): an asset owner with only
+`findings:remediation:read` may accept, as it is, a `join` into their own task or a `task_route` to them (or
+one of their groups) when every finding is in their scope and on an asset they own; a new fix, edits and
+auto-join stay with write. Marking findings fixed will also need `findings:fix_apply`. The routes are in the
 `remediation` module.
 
 ## 11. Authorization, tenant isolation and threat model
@@ -217,7 +240,9 @@ Reads need `findings:remediation:read` (members also `findings:read`); changes n
 |---|---|---|
 | 1 | Task model, derived state, deadline, membership, timeline, API with data scope | Implemented |
 | 2 | Suggestions engine (deterministic keys, owner partition, ranking, lifecycle, dedup, dismissal memory, rate limit, digest) | Implemented |
-| 3 | Accept flows (as is, edit, bulk, auto-join rule) | Implemented |
-| 4 | Moves, split, merge, detach with compatibility rules, undo (ticket comments once tasks carry tickets) | Implemented |
+| 3 | Accept flows (as is, edit, bulk, auto-join rule; asset owners accept their own join or task route as is) | Implemented |
+| 4 | Moves, split, merge, detach with compatibility rules, undo; the ticket comment hook (wired by the task ticket integration) | Implemented |
 | 5 | Task-level mark fixed and regression tasks | Implemented |
-| 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Designed |
+| 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Implemented |
+| 7 | Finding drawer band: the task a finding is tracked in, its state and deadline | Implemented |
+| 8 | My Work tasks tab: my open tasks (mine or my groups), earliest deadline first | Implemented |

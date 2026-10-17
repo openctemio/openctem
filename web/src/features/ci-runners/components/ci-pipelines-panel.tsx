@@ -288,7 +288,7 @@ export function CIPipelinesPanel() {
               canWrite
                 ? t(
                     'scans.ci.noPipelines',
-                    'A pipeline appears after its first run. Add a CI trust configuration, then add the OpenCTEM CI scan to a pipeline.'
+                    'A pipeline appears after its first run. Add a CI trust configuration, then add the {product} CI scan to a pipeline.'
                   )
                 : t(
                     'scans.ci.noPipelinesScoped',

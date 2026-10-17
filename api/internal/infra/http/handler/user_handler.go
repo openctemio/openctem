@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/accountdeletion"
+
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -23,6 +25,8 @@ type UserHandler struct {
 	platformAdmin PlatformAdminChecker
 	validator     *validator.Validator
 	logger        *logger.Logger
+	// accountDeletion serves DELETE /users/me (account_deletion_handler.go).
+	accountDeletion *accountdeletion.Service
 }
 
 // NewUserHandler creates a new user handler.

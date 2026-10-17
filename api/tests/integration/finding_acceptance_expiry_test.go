@@ -82,6 +82,9 @@ func (f *acceptanceFixture) state(t *testing.T) (string, *time.Time) {
 func (f *acceptanceFixture) service() *finding.VulnerabilityService {
 	svc := finding.NewVulnerabilityService(nil, postgres.NewFindingRepository(f.pdb), logger.NewNop())
 	svc.SetApprovalRepository(postgres.NewFindingApprovalRepository(f.pdb))
+	// The approver re-authenticated recently (a high finding's acceptance
+	// is the security tier).
+	svc.SetStepUpGate(recentAuth{})
 	return svc
 }
 
@@ -98,7 +101,7 @@ func TestFindingAcceptance_EndIsWrittenClearedAndEndsTheGate(t *testing.T) {
 	endStr := end.Format(time.RFC3339)
 	req, err := svc.RequestApproval(ctx, finding.RequestApprovalInput{
 		TenantID: f.tenant.String(), FindingID: f.findingID.String(), RequestedStatus: "accepted", ClosureReason: "risk_accepted",
-		Justification: "compensating control", RequestedBy: f.requester.String(), ExpiresAt: &endStr,
+		Justification: "compensating control: WAF rule blocks the path", RequestedBy: f.requester.String(), ExpiresAt: &endStr,
 	})
 	if err != nil {
 		t.Fatalf("request: %v", err)

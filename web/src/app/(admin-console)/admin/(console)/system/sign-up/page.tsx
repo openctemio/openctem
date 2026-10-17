@@ -7,24 +7,27 @@ import { useAdmin } from '@/features/admin-console/components/admin-console-shel
 import { useSignupPolicy } from '@/features/admin-console/api/use-signup-policy'
 import { SignupPolicyForm } from '@/features/admin-console/components/signup-policy-form'
 import { adminCan } from '@/features/admin-console/types'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * System -> Sign-up: who may create an organization on this deployment. Any
  * administrator sees it; super admins change it.
  */
 export default function SignupPolicyPage() {
+  const { t } = useTranslation()
   const me = useAdmin()
   const { data, error, isLoading, mutate } = useSignupPolicy()
 
   return (
     <Main>
-      <PageHeader
-        title="Sign-up"
-        description="Who may create an organization on this deployment."
-      />
+      <PageHeader title={t('admin.signup.pageTitle')} description={t('admin.signup.pageDesc')} />
       <div className="mt-5">
         {error ? (
-          <ErrorState title="the sign-up policy" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.signup.errorTitle')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : isLoading || !data ? (
           <Skeleton className="h-72 w-full" />
         ) : (

@@ -20,6 +20,7 @@
     - CIAlertsController
     - CIDecorationController
     - CIRetentionController
+    - CISweepController
     - CommandEventRetentionController
     - CommandLogRetentionController
     - WebSurfaceRetentionController

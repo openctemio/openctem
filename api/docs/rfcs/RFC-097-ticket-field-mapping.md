@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-15). Implemented: the mapping model (profiles per integration, project, issue type and object kind; versions with draft, publish and rollback), the attribute catalog with fixed inbound capabilities, the template language, validation against the tracker's create fields and workflow, drift detection, transition path planning, inbound intents and decisions, presets, auto-suggest, copy, import and export, outbound and inbound preview, the simulator, the API; the console (Settings → Integrations → Ticket field mapping: two-column field mapper with transforms and a sample render, workflow graph with outbound and inbound status maps and the simulator, previews, history with diff and rollback, import/export, dry run, drift check). Designed: the outbound and inbound engines that use published profiles when issues are created and changed, a nightly drift check |
+| Status | Proposed (2026-10-15). Implemented: the mapping model (profiles per integration, project, issue type and object kind; versions with draft, publish and rollback), the attribute catalog with fixed inbound capabilities, the template language, validation against the tracker's create fields and workflow, drift detection, transition path planning, inbound intents and decisions, presets, auto-suggest, copy, import and export, outbound and inbound preview, the simulator, the API; the console (Settings → Integrations → Ticket field mapping: two-column field mapper with transforms and a sample render, workflow graph with outbound and inbound status maps and the simulator, previews, history with diff and rollback, import/export, dry run, drift check). the outbound engine (create from the published profile, status moves along the workflow path) and the inbound engine (status intents through the finding service; request intents open pending requests by the ticket actor). Designed: task issues from task profiles, field updates on change, a nightly drift check |
 | Scope | api, web |
 | Related | RFC-006 (ticketing provider and mapping), RFC-006 phase 3 (bidirectional status sync), RFC-015 (remediation groups), RFC-040 (output encoding of sensor-controlled text) |
 
@@ -86,6 +86,18 @@ while OpenCTEM still verifies keeps the claim (no ping-pong), a closed finding i
 and the request intents always need approval. Our own transitions are recognized by the integration's account and
 by the last pushed status within 10 minutes (`IsEcho`). A task's state derives from its members
 (`DeriveTaskState`); a task with mixed members shows In Progress with a progress comment.
+
+**Inbound engine.** When the issue's project has a published finding profile with inbound rules, a Jira status
+change goes through them instead of the built-in name map; a profile that cannot be read fails the delivery
+(Jira retries) and never falls back. The status is read from the issue's status id, category and resolution
+(the changelog's status id wins over the snapshot). In progress and reopen move the linked findings to
+`in_progress`, a fix claim is "mark fixed" (`fix_applied`, verification queued), both through the finding
+service. A request intent opens a **pending** risk-acceptance or false-positive request per linked finding,
+made by the `ticket` actor (no person, so any approver may decide it, and a person always must); an in-progress
+finding first goes back to `confirmed` (the work stopped), a finding with a pending request keeps it, and a
+closed or fix-claimed finding is refused. An accepted risk gets the default end for the finding's priority.
+The issue gets one comment saying what was requested or refused; a duplicate suggestion only comments (a person
+marks duplicates). An unmapped status changes nothing.
 
 Also in the status map: a label while a claimed fix is verified (`openctem:verifying` by default), a label on SLA
 breach, and the regression policy (a new linked issue by default, or reopen).

@@ -17,7 +17,7 @@
 //
 // With -org-name and -org-owner-email it also creates the first organization
 // (organizations are created by the platform administrator,
-// TENANT_CREATION_MODE=admin_only by default). It
+// SIGNUP_MODE=disabled by default). It
 // goes through the same services as the admin console's Organizations ->
 // Create: audited tenant.created and user.created, the owner's membership and
 // role, and a one-time set-password link for a new owner, emailed when SMTP is
@@ -210,6 +210,12 @@ func databaseURLFrom(getenv func(string) string) string {
 	dbHost := getenv("DB_HOST")
 	dbUser := getenv("DB_USER")
 	dbPassword := getenv("DB_PASSWORD")
+	// With a separate console role the app role cannot write admin_users, and
+	// the console role itself cannot create or delete the sign-in account in
+	// users, so the CLI connects as the schema owner (DB_MIGRATE_USER).
+	if u := getenv("DB_MIGRATE_USER"); u != "" {
+		dbUser, dbPassword = u, getenv("DB_MIGRATE_PASSWORD")
+	}
 	dbName := getenv("DB_NAME")
 	if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
 		return ""
