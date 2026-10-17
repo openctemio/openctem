@@ -236,9 +236,13 @@ type Repositories struct {
 	Plan            *postgres.PlanRepository
 	IdleLifecycle   *postgres.IdleLifecycleRepository
 	AdminAuditLog   *postgres.AuditLogRepository
-	AdminOrg        *postgres.AdminOrganizationRepository
-	AdminConsole    *postgres.AdminConsoleRepository
-	PlatformIdP     *postgres.PlatformIdPRepository
+	// SupportAccess stores support grants and sessions; SupportRead is the
+	// read model a support session sees (RFC-063).
+	SupportAccess *postgres.SupportAccessRepository
+	SupportRead   *postgres.SupportReadRepository
+	AdminOrg      *postgres.AdminOrganizationRepository
+	AdminConsole  *postgres.AdminConsoleRepository
+	PlatformIdP   *postgres.PlatformIdPRepository
 	// AdminDB is the pool of the console's identity tables (UseAdminDB).
 	AdminDB *postgres.DB
 
@@ -313,6 +317,9 @@ type Repositories struct {
 	FindingEvidence         *postgres.FindingEvidenceRepository
 	FindingSLARestart       *postgres.FindingSLARestartRepository
 	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
+	// FindingMaterialChange: standing decisions for the material-change
+	// controller (RFC-111).
+	FindingMaterialChange *postgres.FindingMaterialChangeRepository
 
 	// Runtime-telemetry reads for Stage-4 detection correlation
 	// (migration 000203)
@@ -542,6 +549,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Plan:            postgres.NewPlanRepository(db),
 		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
 		AdminAuditLog:   postgres.NewAuditLogRepository(db),
+		SupportAccess:   postgres.NewSupportAccessRepository(db),
+		SupportRead:     postgres.NewSupportReadRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:    postgres.NewAdminConsoleRepository(db),
 		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
@@ -601,6 +610,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
 		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
 		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),
+		FindingMaterialChange:   postgres.NewFindingMaterialChangeRepository(db),
 
 		// Runtime-telemetry reads for detection correlation (migration 000203).
 		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),

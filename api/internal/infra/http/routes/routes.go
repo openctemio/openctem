@@ -314,6 +314,11 @@ type Handlers struct {
 	// SSOChange lists and decides admin-console SSO changes that wait for an
 	// owner's approval (RFC-022). nil if SAML/SSO is not initialized.
 	SSOChange *handler.SSOChangeHandler
+	// SupportAccess is the organization side of support access (RFC-063):
+	// grants, revocation, the active list. nil if not initialized.
+	SupportAccess *handler.SupportAccessHandler
+	// AdminSupport is the console side of support access (RFC-063).
+	AdminSupport *handler.AdminSupportHandler
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
@@ -634,6 +639,7 @@ func Register(
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
+	registerOrganizationSupportAccessRoutes(router, h.SupportAccess, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {

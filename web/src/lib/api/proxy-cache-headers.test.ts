@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { proxyCacheHeaders } from './proxy-cache-headers'
+import { CONDITIONAL_REQUEST_HEADERS, proxyCacheHeaders } from './proxy-cache-headers'
 
 describe('proxyCacheHeaders', () => {
   it("forwards the API's no-store on secrets", () => {
@@ -44,5 +44,15 @@ describe('proxyCacheHeaders', () => {
   it('never passes an ETag with no-store, or without the API caching decision', () => {
     expect(proxyCacheHeaders('no-store', true, '"abc"')).toEqual({ 'Cache-Control': 'no-store' })
     expect(proxyCacheHeaders(null, true, '"abc"')).toEqual({ 'Cache-Control': 'no-store' })
+  })
+})
+
+describe('CONDITIONAL_REQUEST_HEADERS', () => {
+  // A save with If-Match (settings sections, policies, lifecycle drafts) must
+  // reach the API: dropped, the API refuses the save or cannot detect a
+  // concurrent change.
+  it('forwards If-None-Match and If-Match', () => {
+    expect(CONDITIONAL_REQUEST_HEADERS).toContain('if-none-match')
+    expect(CONDITIONAL_REQUEST_HEADERS).toContain('if-match')
   })
 })

@@ -120,7 +120,7 @@ export function RoutingNote({ routing }: { routing?: ApiScopeCheckRouting }) {
     case 'platform_needs_proof':
       text = t(
         'scans.routing.ownBecauseProof',
-        'runs on your sensor {name}, because platform sensors need a verified domain',
+        'runs on your sensor {name}, because shared sensors need a verified domain',
         { name }
       )
       break
@@ -133,12 +133,12 @@ export function RoutingNote({ routing }: { routing?: ApiScopeCheckRouting }) {
       text = t('scans.routing.busy', 'waits for one of your sensors (all are busy)')
       break
     case 'platform_sensors':
-      text = t('scans.routing.platform', "runs on the platform's sensors")
+      text = t('scans.routing.platform', 'runs on shared sensors')
       break
     case 'internal_targets':
       text = t(
         'scans.routing.internal',
-        'waits for one of your sensors: private targets never go to platform sensors'
+        'waits for one of your sensors: private targets never go to shared sensors'
       )
       break
     default:

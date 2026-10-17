@@ -137,6 +137,9 @@ type ActionOrigin string
 const (
 	ActionOriginManual     ActionOrigin = "manual"
 	ActionOriginSuggestion ActionOrigin = "suggestion"
+	// ActionOriginSystem: the platform created the action itself (the
+	// rotation task of a secret a CI run found on a branch).
+	ActionOriginSystem ActionOrigin = "system"
 )
 
 // Limits.
@@ -334,6 +337,10 @@ var (
 	// has members outside their data scope.
 	ErrTaskHiddenMembers = fmt.Errorf("%w: the task has findings outside your access; ask someone who can see all of them", shared.ErrForbidden)
 )
+
+// ErrActiveTaskExists is returned by task creation when the action already has
+// an active task: the caller joins that task instead of opening a second one.
+var ErrActiveTaskExists = fmt.Errorf("the action already has an active task: %w", shared.ErrConflict)
 
 // FindingsInOtherTaskError lists findings that are already the primary
 // member of another active task (a finding has one primary task).

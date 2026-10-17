@@ -609,14 +609,14 @@ type LoginResult struct {
 	MFAChallenge *MFAChallengeInfo
 }
 
-// Login authenticates a user and creates a session.
-// Returns a global refresh token and list of tenant memberships.
-// Client should call ExchangeToken to get a tenant-scoped access token.
-func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
-	defer func() { recordLoginFailure(err) }()
-
+// authenticatePassword checks an email and password the way every password
+// sign-in does: the same cost whether the account exists or not, the password
+// checked before the account state is revealed, a wrong password counted
+// toward the lockout and audited. It returns the user only when the password
+// is right and the account may sign in; it opens no session.
+func (s *AuthService) authenticatePassword(ctx context.Context, rawEmail, password, ipAddress, userAgent string) (*userdom.User, error) {
 	// Normalize email
-	email := strings.TrimSpace(strings.ToLower(input.Email))
+	email := strings.TrimSpace(strings.ToLower(rawEmail))
 
 	// Get user by email
 	u, err := s.userRepo.GetByEmailForAuth(ctx, email)
@@ -625,7 +625,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 			// Constant-time defense: run a dummy bcrypt verify so the
 			// user-not-found path costs the same as a real (wrong-password)
 			// login, preventing account enumeration via response timing.
-			_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
+			_ = s.passwordHasher.Verify(password, s.dummyPasswordHash())
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -637,10 +637,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 	// password holder learns why a correct password was refused.
 	passwordHash := u.PasswordHash()
 	if u.AuthProvider() != userdom.AuthProviderLocal || passwordHash == nil {
-		_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
+		_ = s.passwordHasher.Verify(password, s.dummyPasswordHash())
 		return nil, ErrInvalidCredentials
 	}
-	if err := s.passwordHasher.Verify(input.Password, *passwordHash); err != nil {
+	if err := s.passwordHasher.Verify(password, *passwordHash); err != nil {
 		if u.IsLocked() {
 			// Already locked: do not extend the lockout or audit each guess
 			// against it; the answer is the same as any wrong password.
@@ -652,8 +652,8 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 		// Audit failed login
 		actx := auditapp.AuditContext{
 			ActorEmail: email,
-			ActorIP:    input.IPAddress,
-			UserAgent:  input.UserAgent,
+			ActorIP:    ipAddress,
+			UserAgent:  userAgent,
 		}
 		_ = s.auditService.LogAuthFailed(ctx, actx, "invalid credentials")
 
@@ -666,6 +666,58 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 	}
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended
+	}
+
+	return u, nil
+}
+
+// VerifyConsolePassword is the platform console's own first factor (RFC-022
+// revision 20): the account's password, checked like a sign-in (lockout,
+// enumeration-safe), without opening a /login session or asking the
+// account's own second factor; the console asks its own next. It does not
+// reset the failed-sign-in counter: the caller does that with
+// RecordConsolePasswordSuccess only once the account is known to be an active,
+// unlocked administrator, so a tenant password cannot clear the lockout
+// through the console.
+func (s *AuthService) VerifyConsolePassword(ctx context.Context, email, password, ipAddress, userAgent string) (*userdom.User, error) {
+	u, err := s.authenticatePassword(ctx, email, password, ipAddress, userAgent)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// RecordConsolePasswordSuccess resets the failed-sign-in counter of an account
+// the console has accepted as an active, unlocked administrator.
+func (s *AuthService) RecordConsolePasswordSuccess(ctx context.Context, userID shared.ID) {
+	if err := s.userRepo.RecordSuccessfulLogin(ctx, userID); err != nil {
+		s.logger.Error("failed to reset failed login attempts", "error", err)
+	}
+}
+
+// RecordConsolePasswordFailure counts a refused console sign-in (a correct
+// password the console still turned away) toward the account's lockout.
+func (s *AuthService) RecordConsolePasswordFailure(ctx context.Context, userID shared.ID) {
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		s.logger.Error("failed to load account to record a refused console sign-in", "error", err)
+		return
+	}
+	if u.IsLocked() {
+		return
+	}
+	s.recordPasswordFailure(ctx, u)
+}
+
+// Login authenticates a user and creates a session.
+// Returns a global refresh token and list of tenant memberships.
+// Client should call ExchangeToken to get a tenant-scoped access token.
+func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
+	defer func() { recordLoginFailure(err) }()
+
+	u, err := s.authenticatePassword(ctx, input.Email, input.Password, input.IPAddress, input.UserAgent)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if email is verified.

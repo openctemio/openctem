@@ -213,10 +213,10 @@ describe('taskStatusNote', () => {
 
 describe('taskSensorLabel', () => {
   it('never names a shared platform sensor', () => {
-    expect(taskSensorLabel({ platform: true, status: 'running' })).toBe('Platform scanning')
+    expect(taskSensorLabel({ platform: true, status: 'running' })).toBe('Shared sensors')
     // A platform task never shows a sensor name, even if one arrives.
     expect(taskSensorLabel({ platform: true, sensor_name: 'plat-node-1', status: 'running' })).toBe(
-      'Platform scanning'
+      'Shared sensors'
     )
     expect(taskSensorLabel({ sensor_name: 'edge-1', status: 'running' })).toBe('edge-1')
     expect(taskSensorLabel({ status: 'failed' })).toBe('-')

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // A CAPTCHA after repeated failed sign-ins (docs/rfcs/RFC-104): when the
@@ -40,15 +41,22 @@ func (h *LocalAuthHandler) SetLoginFailureCounter(c LoginFailureCounter) { h.log
 // When the counter cannot be read the CAPTCHA is asked (fail closed): a human
 // passes it, an automated sprayer does not get a free pass.
 func (h *LocalAuthHandler) loginNeedsCaptcha(r *http.Request, ip string) bool {
-	if h.captcha == nil || h.loginFailures == nil {
+	return captchaNeeded(r.Context(), h.captcha, h.loginFailures, ip, h.logger)
+}
+
+// captchaNeeded is the shared rule behind the tenant and console sign-ins.
+// It fails closed: an attempt without a usable client key, or with an
+// unreadable counter, is asked for the CAPTCHA.
+func captchaNeeded(ctx context.Context, c Captcha, f LoginFailureCounter, key string, log *logger.Logger) bool {
+	if c == nil || f == nil {
 		return false
 	}
-	if ip == "" {
+	if key == "" {
 		return true
 	}
-	n, err := h.loginFailures.Failures(r.Context(), ip)
+	n, err := f.Failures(ctx, key)
 	if err != nil {
-		h.logger.Warn("failed sign-in counter unreadable; CAPTCHA asked (fail closed)", "error", err)
+		log.Warn("failed sign-in counter unreadable; CAPTCHA asked (fail closed)", "error", err)
 		return true
 	}
 	return n >= LoginCaptchaAfter
