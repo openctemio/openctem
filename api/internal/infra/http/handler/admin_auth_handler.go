@@ -36,6 +36,9 @@ type ValidateResponse struct {
 	IsBreakGlass bool `json:"is_break_glass"`
 	// PasswordChangeRequired: the session may only change the temporary password.
 	PasswordChangeRequired bool `json:"password_change_required"`
+	// FactorEnrollmentRequired: the console requires security keys and this
+	// administrator must register them (and recovery codes) first.
+	FactorEnrollmentRequired bool `json:"factor_enrollment_required"`
 	// MaxRole is the administrator's own role: the most this session may
 	// elevate to. Role is what the session acts as now.
 	MaxRole string `json:"max_role,omitempty"`
@@ -77,6 +80,7 @@ func (h *AdminAuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 			response.ElevatedUntil = sess.ElevatedUntil
 		}
 		response.PasswordChangeRequired = adminUser.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
+		response.FactorEnrollmentRequired = sess.EnrollmentRequired
 	}
 	// The session's own CSRF token (bound to the session cookie that
 	// authenticated this request).

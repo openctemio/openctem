@@ -146,6 +146,19 @@ provider's redirect URI is `<console origin>/login/callback`.
 The all-in-one image runs the console too: publish `-p 8443:8443` (or set
 `OPENCTEM_ADMIN_SITE=host` and `OPENCTEM_ADMIN_HOST`).
 
+### System page and host operations
+
+The platform console has a read-only **System** page (platform administrators
+only): service health, free space of the data volumes and the database size,
+the age of the last backup, certificate expiry, and the running version with
+the version-check result. When free space drops below 20% (warning) or 10%
+(critical), the backup is older than 26 hours, or a certificate is close to
+expiry, the platform administrators are emailed through the system mailer and
+a metric and a log line are written. Backup, restore, upgrade and key rotation
+stay in the Ansible kit's command line over SSH; the kit installs no host web
+console. An operator who wants one can follow the optional recipe in
+[RFC-114](../rfcs/RFC-114-system-page.md), appendix A.
+
 ### Outbound connection: the version check
 
 The version check is **on by default**. Once a day the API downloads one public

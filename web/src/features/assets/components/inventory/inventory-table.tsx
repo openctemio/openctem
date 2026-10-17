@@ -16,6 +16,7 @@
  * the type's actions (lib/type-actions), Edit and Delete.
  */
 
+import Link from '@/components/link'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -42,6 +43,7 @@ import {
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
 import { rowActionsFor } from '../../lib/type-actions'
@@ -53,6 +55,7 @@ import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
 import { getAsset, updateAsset } from '../../hooks'
 import { useAssetTags } from '../../hooks/use-asset-tags'
+import { isPlainLeftClick } from '../../lib/plain-click'
 import { AssetTypeIcon } from '../../lib/asset-type-icon'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { ASSET_TYPE_LABELS, type Asset } from '../../types/asset.types'
@@ -227,7 +230,18 @@ export function InventoryTable({
               className="h-4 w-4 shrink-0 text-muted-foreground"
             />
             <div className="min-w-0">
-              <p className="truncate font-medium">{row.original.name}</p>
+              <Link
+                href={assetDetailHref(row.original.id)}
+                onClick={(e) => {
+                  // Plain click opens the drawer; ctrl/cmd/middle-click follow the link.
+                  if (!isPlainLeftClick(e)) return
+                  e.preventDefault()
+                  setSelectedAsset(row.original)
+                }}
+                className="block truncate font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {row.original.name}
+              </Link>
               {row.original.description && (
                 <p className="line-clamp-1 text-xs text-muted-foreground">
                   {row.original.description}
