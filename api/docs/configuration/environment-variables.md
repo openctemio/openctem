@@ -74,6 +74,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `DB_MAX_IDLE_CONNS` | int | `5` |  |  | Maximum idle connections kept in the pool. |
 | `DB_MAX_OPEN_CONNS` | int | `25` |  |  | Maximum open connections in the API's pool. |
 | `DB_NAME` | string | `openctem` |  |  | Database name. |
+| `DB_ADMIN_PASSWORD` | string | empty |  | yes | Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`. |
+| `DB_ADMIN_USER` | string | empty |  |  | Role the platform console's identity tables (administrators, console sessions and credentials, the platform identity provider) are written with, through a second small pool. The least-privilege bootstrap (`admin_user`) creates it and takes write on those tables away from `DB_USER`. Unset: one role, as before. |
 | `DB_PASSWORD` | string | empty | yes | yes | Password of `DB_USER`. Required outside `APP_ENV=development`; there is no default. |
 | `DB_PORT` | int | `5432` |  |  | PostgreSQL port. |
 | `DB_SSLMODE` | string | `disable` | production |  | libpq `sslmode`. Production refuses `disable`: use `require`, `verify-ca` or `verify-full`. |
@@ -368,9 +370,26 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `ADMIN_AUDIT_RETENTION_BATCH_SIZE` | int | `10000` |  |  | Rows per delete transaction. |
-| `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box: every row with its hash-chain position and hash (no request body), and the chain head every `ADMIN_AUDIT_SINK_HEAD_INTERVAL`. `https://collector/path` (one JSON object per POST, `Authorization: Bearer ADMIN_AUDIT_SINK_TOKEN`, no redirects), `syslog+tls://host:6514`, `syslog+tcp://host:514`, `syslog+udp://host:514` (RFC 5424) or `file:///path` (JSON lines, 0600). A destination that cannot be used stops the start-up. Empty: off. |
-| `ADMIN_AUDIT_SINK_TOKEN` | string | empty |  | yes | Bearer token sent to an `https://` `ADMIN_AUDIT_SINK`. |
-| `ADMIN_AUDIT_SINK_HEAD_INTERVAL` | duration | `15m` |  |  | How often the administrators' audit chain head (position and hash) is sent to `ADMIN_AUDIT_SINK`. A later re-signing of the chain cannot match a head already sent. |
+
+### Admin console
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_ALLOWED_CIDRS` | list | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` |  |  | Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address. |
+| `ADMIN_LISTEN_ADDR` | string | empty |  |  | The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener. |
+| `ADMIN_LISTEN_ALLOW_ALL_INTERFACES` | bool | `false` |  |  | `true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port. |
+| `ADMIN_ELEVATION` | string | `required` |  |  | `required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in. |
+
+### Audit log retention
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off. |
+| `ADMIN_AUDIT_SINK_SECRET` | string | empty |  | yes | HMAC-SHA256 key that signs each request to an `https://` `ADMIN_AUDIT_SINK` (`X-OpenCTEM-Signature`, `X-OpenCTEM-Timestamp`, `X-OpenCTEM-Batch-Id`). At least 32 bytes, required for https, refused for other destinations. Never logged. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CA_FILE` | path | empty |  |  | PEM bundle that replaces the system roots when verifying a `syslog+tls://` `ADMIN_AUDIT_SINK`. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT` | path | empty |  |  | PEM client certificate presented to a `syslog+tls://` `ADMIN_AUDIT_SINK` (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY`. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY` | path | empty |  |  | PEM private key of `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT`. |
+| `ADMIN_AUDIT_SINK_HEAD_INTERVAL` | duration | `15m` |  |  | How often the administrators' audit chain head (position and hash) and the chain verification state are sent to `ADMIN_AUDIT_SINK` when no row is new. A later re-signing of the chain cannot match a head already sent. |
 | `ADMIN_AUDIT_RETENTION_DAYS` | int | `365` |  |  | Age threshold. At least 30 when deletion is enabled. |
 | `ADMIN_AUDIT_RETENTION_DRY_RUN` | bool | `true` |  |  | Report what would be deleted instead of deleting. Set `false` to enforce retention (irreversible). |
 | `ADMIN_AUDIT_RETENTION_ENABLED` | bool | `true` |  |  | Run the platform admin audit-log retention controller. |
@@ -379,6 +398,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AUDIT_RETENTION_DAYS` | int | `365` |  |  | Organization audit entries older than this are archived and deleted, keeping the hash chain verifiable. |
 | `ADMIN_SESSION_PURGE_INTERVAL` | duration | `1h` |  |  | How often platform-admin console sessions past their absolute expiry are deleted. |
 | `ASSET_CHANGE_RETENTION_DAYS` | int | `400` |  |  | Days the asset change timeline keeps events. Minimum 30. |
+| `ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY` | bool | `true` |  |  | The asset technology backfill logs the component links it would remove (a count and a sample) instead of deleting them. Set `false` to delete links that have no version and no CPE; each deleted link is recorded. |
 | `INVITATION_PURGE_INTERVAL` | duration | `1h` |  |  | How often expired, unaccepted invitations are deleted. |
 
 ### AI triage
@@ -449,6 +469,8 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
+| `ADMIN_API_URL` | string | empty |  |  | Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. |
+| `OPENCTEM_ADMIN_PLANE` | string | `shared` |  |  | `separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`. |
 | `BACKEND_API_URL` | string | `http://localhost:8080` | yes |  | Internal URL of the API. The console proxies the browser's `/api/v1` calls and the WebSocket upgrade to it. Compose: `http://api:8080`. |
 | `SECURE_COOKIES` | string | `true` |  |  | `Secure` flag on the cookies the console sets. Only `false` turns it off (local `http://` development). |
 | `TRUST_PROXY_HEADERS` | string | `false` |  |  | Forward `X-Real-IP` / `X-Forwarded-For` to the API. Set `true` only when a proxy in front of the console overwrites those headers (the gateway does), otherwise a browser could choose its own address. |

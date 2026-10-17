@@ -84,6 +84,8 @@ var stepUpRoutes = []string{
 	// ownership floor, finding priorities (docs/architecture/scoring-versions.md).
 	"PATCH /api/v1/tenants/acme/settings/risk-scoring",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
+	// A domain's sign-up policy decides who may join and who must use SSO.
+	"PUT /api/v1/organization/settings/domains/{id}/signup-policy",
 	"DELETE /api/v1/tenants/acme",
 	// Deleting one's own account (RFC-104).
 	"DELETE /api/v1/me/account",

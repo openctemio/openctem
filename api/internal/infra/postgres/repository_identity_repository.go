@@ -109,3 +109,29 @@ func (r *RepositoryIdentityRepository) RepositoryAssetOfPipelineRepo(ctx context
 	out, err := shared.IDFromString(id)
 	return out, err == nil, err
 }
+
+// RenamePipelineRepository sets the display name of the tenant's pipelines of
+// a provider repository (matched by the host's repository id, never by name).
+func (r *RepositoryIdentityRepository) RenamePipelineRepository(ctx context.Context, tenantID shared.ID, provider, issuer, repoID, name string) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `UPDATE ci_pipelines SET repository_name = $5, updated_at = NOW()
+		WHERE tenant_id = $1 AND provider = $2 AND issuer = $3 AND external_repo_id = $4 AND repository_name <> $5`,
+		tenantID.String(), provider, issuer, repoID, name)
+	if err != nil {
+		return 0, fmt.Errorf("rename pipelines: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// SetPipelinesRepositoryArchived marks (or clears) the code host's archived
+// flag on the tenant's pipelines of a provider repository.
+func (r *RepositoryIdentityRepository) SetPipelinesRepositoryArchived(ctx context.Context, tenantID shared.ID, provider, issuer, repoID string, archived bool) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `UPDATE ci_pipelines SET updated_at = NOW(),
+			repository_archived_at = CASE WHEN $5 THEN COALESCE(repository_archived_at, NOW()) ELSE NULL END
+		WHERE tenant_id = $1 AND provider = $2 AND issuer = $3 AND external_repo_id = $4
+		  AND (repository_archived_at IS NOT NULL) <> $5`,
+		tenantID.String(), provider, issuer, repoID, archived)
+	if err != nil {
+		return 0, fmt.Errorf("set pipelines archived: %w", err)
+	}
+	return res.RowsAffected()
+}

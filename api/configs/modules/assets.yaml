@@ -13,6 +13,7 @@
     - list_assets
   jobs:
     - AssetIdentityBackfillController
+    - AssetTechnologyBackfillController
     - AssetChangeTimelineController
     - AssetLifecycleController
     - AssetPurgeController

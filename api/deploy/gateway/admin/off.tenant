@@ -1,0 +1,2 @@
+# No admin site (OPENCTEM_ADMIN_SITE=off): the platform console, if the web
+# console serves it, shares the main site. See admin/on.site.

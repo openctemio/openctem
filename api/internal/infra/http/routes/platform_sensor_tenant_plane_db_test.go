@@ -22,6 +22,7 @@ import (
 
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
+	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -56,8 +57,17 @@ func newPlatformPlaneHarness(t *testing.T) *platformPlaneHarness {
 	ch := handler.NewCommandHandler(commandapp.NewService(postgres.NewCommandRepository(db), log,
 		commandapp.WithSensorLookup(sensorRepo)), validator.New(), log)
 	ch.SetCommandLogs(commandlog.NewService(postgres.NewCommandLogRepository(db)))
+	// The egress addresses the console publishes, read as the server does.
+	pol := scanpolicy.NewService(postgres.NewScanPolicyRepository(db), nil, nil, nil, nil, log)
+	egress := func(ctx context.Context) ([]sensorapp.PlatformEgress, error) {
+		v, _, err := pol.SharedSensorsEgress(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return sensorapp.EgressFromLists(v.Global, v.Regions), nil
+	}
 	ps := handler.NewPlatformScanningHandler(sensorapp.NewPlatformScanningService(sensorRepo,
-		func(context.Context, shared.ID) (bool, string) { return h.allowed, "not in this test" }), log)
+		func(context.Context, shared.ID) (bool, string) { return h.allowed, "not in this test" }).WithEgress(egress), log)
 
 	cfg := &config.Config{}
 	cfg.Auth.Provider = config.AuthProviderLocal
@@ -111,8 +121,8 @@ func (h *platformPlaneHarness) platformJob(tenantID, sensorID, status, errMsg st
 	if sensorID != "" {
 		sid = sensorID
 	}
-	h.exec(`INSERT INTO commands (id, tenant_id, type, payload, status, is_platform_job, sensor_id, platform_sensor_id, error_message, result)
-	        VALUES ($1, $2, 'scan', '{}'::jsonb, $3, TRUE, $4, $4, $5,
+	h.exec(`INSERT INTO commands (id, tenant_id, type, payload, status, is_platform_job, sensor_id, error_message, result)
+	        VALUES ($1, $2, 'scan', '{}'::jsonb, $3, TRUE, $4, $5,
 	                '{"metadata":{"workdir":"/opt/sensor/work/x","peer":"10.9.8.7:443","target":"93.184.216.34"}}'::jsonb)`,
 		id, tenantID, status, sid, errMsg)
 	return id
@@ -179,12 +189,23 @@ func TestPlatformScanning_AggregatedView_DB(t *testing.T) {
 	h.platformJob(other, "", "pending", "")
 	h.platformJob(other, "", "pending", "")
 
-	// Not offered: says nothing else, not even that platform sensors exist.
+	// The egress addresses the instance administrator published.
+	h.exec(`DELETE FROM platform_settings WHERE key = $1`, scanpolicy.SharedSensorsEgressKey)
+	t.Cleanup(func() { h.exec(`DELETE FROM platform_settings WHERE key = $1`, scanpolicy.SharedSensorsEgressKey) })
+	if _, err := postgres.NewScanPolicyRepository(&postgres.DB{DB: h.db}).SetSharedSensorsEgress(context.Background(),
+		scanpolicy.SharedSensorsEgress{Global: []string{"203.0.113.0/28"}, Regions: map[string][]string{"eu": {"198.51.100.7"}}},
+		0, uuid.NewString(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Not offered: says nothing else, not even that platform sensors exist
+	// or where they send traffic from.
 	h.allowed = false
 	body := h.expect(viewer, http.MethodGet, "/api/v1/platform/scanning", "", http.StatusOK)
 	var off sensorapp.PlatformScanning
 	mustJSON(t, body, &off)
-	if off.Offered || off.Status != "" || len(off.Regions) != 0 || len(off.Tools) != 0 || off.YourJobs.Queued != 0 {
+	if off.Offered || off.Status != "" || len(off.Regions) != 0 || len(off.Tools) != 0 || off.YourJobs.Queued != 0 ||
+		len(off.Egress) != 0 || strings.Contains(body, "203.0.113") || strings.Contains(body, "198.51.100") {
 		t.Fatalf("not offered, yet: %s", body)
 	}
 
@@ -209,6 +230,11 @@ func TestPlatformScanning_AggregatedView_DB(t *testing.T) {
 	// The organization's own jobs only.
 	if got.YourJobs.Queued != 1 || got.YourJobs.Running != 1 {
 		t.Fatalf("your jobs: %+v", got.YourJobs)
+	}
+	// The published egress addresses, to allowlist: global first, then regions.
+	if len(got.Egress) != 2 || got.Egress[0].Region != "" || strings.Join(got.Egress[0].Addresses, ",") != "203.0.113.0/28" ||
+		got.Egress[1].Region != "eu" || strings.Join(got.Egress[1].Addresses, ",") != "198.51.100.7" {
+		t.Fatalf("egress: %s", body)
 	}
 	// Nothing that identifies a platform sensor, nor any count or load.
 	for _, leak := range []string{eu, "plat-eu-1", "plat.internal", "10.9.8.7", "v9.9.9", "sensors", "capacity", "load", "slots"} {

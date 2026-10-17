@@ -68,7 +68,10 @@ most needs more than accepting it elsewhere.
 
 The **sole member** of an organization (exactly one active person) keeps the existing own-approval path
 (fresh authenticator code, reason, halved acceptance caps, alerts). It is the only way a person approves
-their own request, and it is not a tier: it is refused while a second eligible person exists.
+their own request, and it is not a tier: it is refused while a second active person exists, whether or not
+that person holds the approve permission (taking the permission from the others does not open it). This holds
+for suppression rules too. A rule that matches more open findings than the approval cap is refused as too
+broad: its tier and the asset owners are read from every finding it matches, never a sample.
 
 ### 3.1 Floors and defaults
 
@@ -124,7 +127,9 @@ relaxation.
 - **Security pool.** The members of `security_pool_group_id` within the approver pool. When the
   organization has none, or nobody in it is eligible after the exclusions, the request falls back to the
   approver pool; the decision records `pool_fallback` and the inbox says so. `security_pool_strict` turns
-  the fallback off.
+  the fallback off. A person counts as a pool member only 24 hours after joining the group (the pool is
+  read live when someone signs, so an account added a moment ago must not sign as the pool), and adding or
+  removing a member of the pool group, or deleting it, needs a recent re-authentication.
 - **Excluded (floor):** the requester (except the sole member); the owners of the finding's asset (user
   owners, and members of owner groups, ownership `primary` or `secondary`): a person never approves the
   hiding of a risk on an asset they own. For a rule bound to an asset, that asset's owners; for a task
@@ -134,6 +139,9 @@ relaxation.
   in, in the same transaction as the status change. A person signs once. The last sign-off must come from
   the security pool when none of the earlier ones did. Sign-offs collected before the facts changed count
   only if the signer still qualifies for the tier computed now.
+- **Requests made by an actor** (AI triage, VEX, a linked ticket) have no person behind them, and the
+  account that moved a ticket is not known as a member, so they need one sign-off more than the tier asks
+  (peer: two, dual: three). A ticket's proposed end is within the organization's cap for the finding.
 - **Nobody eligible.** The evaluator says so (`no_eligible_approver`, with the reason) and the request
   stays pending; nothing approves on a timeout.
 
@@ -152,7 +160,11 @@ relaxation.
 A decision is valid for the facts it was made on. When an accepted risk is approved, or a false positive
 is decided by one person, the approval row stores the facts (`decision_facts`) and a moving baseline
 (`facts_baseline`). A controller (every 10 minutes, bounded batches, one transaction per finding)
-compares the baseline with the facts now.
+compares the baseline with the facts now. The batch takes the decisions checked least recently first
+(`last_checked_at`, set on every attempt, a failed one included), so a decision that keeps failing cannot
+hold the batch and starve other organizations. Ending or withdrawing a decision locks its approved request
+and stops when the request is no longer approved or the finding holds a newer approved request: a decision
+made after the change was seen is not undone by it.
 
 **Signals:** `severity_raised`, `priority_raised`, `kev_added`, `epss_crossed` (the score reached the
 threshold), `exploit_validated`, `exposure_raised` (the asset became internet-exposed or a crown jewel).
@@ -186,7 +198,9 @@ threshold), `exploit_validated`, `exposure_raised` (the asset became internet-ex
   preview lists every member with its tier and end.
 - **One decision:** `POST /api/v1/approvals/batches/{id}/approve | reject | cancel`. Sign-offs are on the
   batch. The last sign-off applies every member in one transaction; a member that moved since is canceled
-  with the reason and listed. A member request of a batch cannot be decided alone.
+  with the reason and listed, and so is a member whose finding left the task after the request was made
+  (`finding_left_task`). `GET /api/v1/approvals/batches` takes `source_id` (the task) to list one task's
+  exceptions. A member request of a batch cannot be decided alone.
 - Afterwards each member is an ordinary decision: its own end, expiry and material-change check.
 - Findings that join the task later are not covered.
 
@@ -208,7 +222,7 @@ A request always carries a structured code and a note:
 | `POST /api/v1/findings/{id}/approvals` | evaluated; the request stores tier, class and required approvals |
 | `POST /api/v1/approvals/{id}/approve` | a sign-off; answers 200 with `approvals_collected` / `approvals_required`; applies on the last one |
 | `GET /api/v1/approvals` | each request carries tier, required and collected approvals, and `batch_id` |
-| `GET, PUT /api/v1/organization/settings/finding-approvals/` | `policy`, `pending_policy`, `pending_policy_at`, and the floors and defaults for the editor |
+| `GET, PUT /api/v1/organization/settings/finding-approvals/` | `policy`, `pending_policy`, `pending_policy_at`, and the floors and defaults for the editor; `PUT` with `cancel_pending: true` drops every waiting lowering (level, second look, policy) and keeps the values in force |
 | `POST /api/v1/suppressions/rules` | `reason_code` required; approval evaluated |
 | task exception routes | §7 |
 
@@ -243,6 +257,7 @@ and validated in a separate migration, so no step holds a long lock on a populat
 | T7 | A decision outliving the facts | material-change controller ends or flags | controller tests per signal |
 | T8 | A group exception smuggling a critical finding | the batch takes the highest member tier and per-member caps | mixed-batch test |
 | T9 | Cross-tenant or out-of-scope approval | every read and write is by `(tenant_id, id)`; the pool is per tenant and data scope; the security pool group must be the tenant's | two-tenant negatives |
+| T11 | The person who moved a ticket approving the request their ticket made, or an accomplice added to the security pool in the same sitting | actor requests need one extra sign-off; pool members count after 24 hours; edits of the pool group need step-up | actor sign-off, fresh pool member and pool edit tests |
 | T10 | Request text used to steer the approver | the note is untrusted plain text; the code is from a closed list | |
 
 ## 12. UI
