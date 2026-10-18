@@ -12,7 +12,7 @@
   answers 404, like an unknown CVE. Catalog responses no longer carry
   `created_at`/`updated_at`, and sorting by them sorts by `published_at` /
   `modified_at`.
-- Migration 002933 (`catalog_report_stubs`) archives the report-written
+- Migration 002934 (`catalog_report_stubs`) archives the report-written
   content of existing report-created rows, resets them to stubs and fills
   those the corpus already holds. No operator step; its down migration
   restores the archived content.
