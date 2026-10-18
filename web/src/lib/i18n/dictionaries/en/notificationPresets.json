@@ -1,0 +1,4 @@
+{
+  "notificationPresets.discord.description": "Send notifications to a Discord channel through its webhook",
+  "notificationPresets.mattermost.description": "Send notifications to a Mattermost channel through an incoming webhook"
+}
