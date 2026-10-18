@@ -18,6 +18,7 @@ import {
 // Use centralized sidebar data from features
 import { sidebarData } from '@/config/sidebar-data'
 import { useFilteredSidebarData } from '@/lib/permissions'
+import { anchorHref, announceSettingsAnchor } from '@/config/settings-search'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { useTranslation } from '@/context/i18n-provider'
 import { commandFilter } from '@/lib/command-filter'
@@ -144,6 +145,30 @@ export function CommandMenu() {
                   {group.label} <ChevronRight /> {item.label}
                 </CommandItem>
               ))
+            )}
+            {/* The settings inside pages (settings-nav.ts anchors): opening one
+                scrolls to it and outlines it. */}
+            {settingsGroups.flatMap((group) =>
+              group.items.flatMap((item) =>
+                item.searchAnchors.map((a) => (
+                  <CommandItem
+                    key={`settings-${item.id}-${a.id}`}
+                    value={`${a.label} (${item.label})`}
+                    keywords={[a.title, ...(a.keywords ?? [])]}
+                    onSelect={() => {
+                      runCommand(() => {
+                        router.push(anchorHref(item.url, a.id))
+                        announceSettingsAnchor()
+                      })
+                    }}
+                  >
+                    <div className="flex size-4 items-center justify-center">
+                      <ArrowRight className="text-muted-foreground/80 size-2" />
+                    </div>
+                    {item.label} <ChevronRight /> {a.label}
+                  </CommandItem>
+                ))
+              )
             )}
           </CommandGroup>
           <CommandGroup heading={t('help.menu', 'Help')}>
