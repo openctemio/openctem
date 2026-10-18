@@ -373,9 +373,8 @@
   "org.danger.transferDesc": "Chuyển một thành viên khác thành chủ sở hữu. Bạn chọn vai trò mới của mình; chủ sở hữu mới phải chấp nhận. Mở thành viên đó trong mục Thành viên và chọn Chuyển quyền sở hữu.",
   "org.danger.transferAction": "Chọn chủ sở hữu mới",
   "org.danger.deleteFailed": "Không thể xóa tổ chức",
-  "org.danger.deleted": "Đã xóa tổ chức \"{name}\"",
   "org.danger.deleteTitle": "Xóa tổ chức này",
-  "org.danger.deleteDesc": "Xóa vĩnh viễn tổ chức và mọi thứ bên trong: tài sản, phát hiện, lần quét, thành viên, vai trò, cài đặt và nhật ký kiểm toán. Tài khoản thành viên được giữ lại. Không thể hoàn tác.",
+  "org.danger.deleteDesc": "Đóng tổ chức với mọi người ngay bây giờ và xóa nó cùng mọi thứ bên trong sau 14 ngày: tài sản, phát hiện, bản quét, thành viên, vai trò, cài đặt và nhật ký kiểm toán. Chủ sở hữu có thể hủy trước thời điểm đó. Tài khoản thành viên được giữ lại.",
   "org.danger.deleteAction": "Xóa tổ chức",
   "org.auth.loosen.mfaOff": "Xác thực hai lớp không còn bắt buộc với mọi người.",
   "org.auth.loosen.mfaAdminsOff": "Chủ sở hữu và quản trị viên không còn cần xác thực hai lớp.",
@@ -412,5 +411,7 @@
   "org.sso.managedText": "{what} được thiết lập cho tổ chức của bạn trong bảng điều khiển quản trị nền tảng. Để thêm hoặc thay đổi, hãy liên hệ quản trị viên nền tảng.",
   "org.sso.authLink": "Cài đặt xác thực",
   "org.sso.title": "Đăng nhập một lần (SSO)",
-  "org.sso.noticeText": "Đăng nhập một lần (SAML hoặc OIDC), cùng các tên miền đã xác minh, được thiết lập cho tổ chức của bạn trong bảng điều khiển quản trị nền tảng. Để thêm hoặc thay đổi, hãy liên hệ quản trị viên nền tảng."
+  "org.sso.noticeText": "Đăng nhập một lần (SAML hoặc OIDC), cùng các tên miền đã xác minh, được thiết lập cho tổ chức của bạn trong bảng điều khiển quản trị nền tảng. Để thêm hoặc thay đổi, hãy liên hệ quản trị viên nền tảng.",
+  "org.danger.scheduled": "Tổ chức \"{name}\" sẽ bị xóa vào {date}.",
+  "org.danger.scheduledHint": "Tổ chức đã đóng với mọi người. Chủ sở hữu có thể hủy việc xóa từ trang đăng nhập trước thời điểm đó."
 }

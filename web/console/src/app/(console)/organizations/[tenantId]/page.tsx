@@ -1,6 +1,7 @@
 'use client'
 
 import { use } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from '@/components/link'
 import { ChevronLeft } from 'lucide-react'
 import { Main } from '@/components/layout'
@@ -16,6 +17,7 @@ import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
 import { OrganizationSummary } from '@console/features/admin-console/components/organization-summary'
 import {
+  OrganizationPurgeAction,
   OrganizationStatusBadge,
   OrganizationSuspendedNotice,
   OrganizationSuspensionAction,
@@ -108,12 +110,15 @@ export default function AdminOrganizationPage({
 }) {
   const { tenantId } = use(params)
   const admin = useAdmin()
+  const router = useRouter()
   // SSO decides who can sign in to the organization: super admins only.
   const canManageSSO = adminCan(admin.role, 'super_admin')
   // Adding people to an organization: operations admins and up.
   const canManageUsers = adminCan(admin.role, 'ops_admin')
   // Suspending an organization (abuse response): operations admins and up.
   const canSuspend = adminCan(admin.role, 'ops_admin')
+  // Deleting an organization now is irreversible: super admins only.
+  const canPurge = adminCan(admin.role, 'super_admin')
   // Re-signing the organization's audit chain is irreversible: super admins only.
   const canRebaselineAuditChain = adminCan(admin.role, 'super_admin')
   const { data: org, error, isLoading, mutate } = useOrganization(tenantId)
@@ -156,6 +161,9 @@ export default function AdminOrganizationPage({
           >
             <OrganizationStatusBadge org={org} />
             {canSuspend && <OrganizationSuspensionAction org={org} onDone={refresh} />}
+            {canPurge && (
+              <OrganizationPurgeAction org={org} onDone={() => router.push('/organizations')} />
+            )}
           </PageHeader>
           <OrganizationSuspendedNotice org={org} />
           <Tabs value={tab} onValueChange={setTab} className="mt-5">
