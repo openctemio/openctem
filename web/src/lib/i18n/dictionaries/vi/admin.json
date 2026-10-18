@@ -1083,5 +1083,11 @@
   "admin.system.checkFailed": "Lần kiểm tra gần nhất thất bại",
   "admin.system.latest": "Bản phát hành mới nhất",
   "admin.system.updateAvailable": "Có bản cập nhật",
-  "admin.system.advisories": "Khuyến cáo cho phiên bản này"
+  "admin.system.advisories": "Khuyến cáo cho phiên bản này",
+  "admin.versionCheck.components.title": "Sensor và SDK",
+  "admin.versionCheck.components.hint": "Các bản phát hành sensor và SDK mới nhất. Các tổ chức thấy chúng dưới dạng \"có bản cập nhật\" và lệnh cài đặt dùng chúng, không cần nâng cấp instance này.",
+  "admin.versionCheck.components.none": "Chưa có thông tin phát hành: áp dụng các phiên bản đi kèm bản phát hành này, và chúng có thể đã cũ.",
+  "admin.versionCheck.components.name.sensor": "Sensor quét",
+  "admin.versionCheck.components.name.connector-tenable": "Connector Tenable.sc",
+  "admin.versionCheck.components.name.sdk": "SDK sensor (sdk-go)"
 }

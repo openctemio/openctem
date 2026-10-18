@@ -4,7 +4,10 @@ Design and decisions: [RFC-105](../rfcs/RFC-105-version-check-and-usage-telemetr
 
 The platform console tells platform administrators when a newer OpenCTEM
 release exists and, above all, when the running release is affected by a
-published security advisory. The instance learns this from one public,
+published security advisory. The same feed tells the instance the newest
+release of each first-party sensor product and of the sensor SDK, so a sensor
+or SDK release reaches the Sensors page and the install snippets without a
+platform release ([RFC-037 §12](../rfcs/RFC-037-versioning-and-release-train.md)). The instance learns this from one public,
 signed, static file — the **release feed** — and compares it with its own
 version locally. Nothing about the instance is sent.
 
@@ -28,7 +31,10 @@ The file `openctem-releases.json` holds one DSSE envelope in the shared
 signed-feed format (`pkg/feedsign`): the **feed**
 (`openctem.io/release-feed/v1`) signed directly by one online key: a sequence
 (the issue time in Unix seconds), an issue and an expiry time (at most 45 days
-apart), the releases and the advisories.
+apart), the releases, the advisories and the components (the newest
+release of each first-party sensor product and of the SDK: the
+`versions.yaml` section, the version, the publication time, the notes link and,
+for an image, its manifest digest).
 
 The instance trusts only the public keys pinned in the binary
 (`releasefeed.PinnedKeys`, at most two, so a rotation can overlap); there is
@@ -39,14 +45,19 @@ no configuration override. See [signing keys](signing-keys.md). It refuses:
   signatures never verify as a feed), with a sequence below the one it applied (rollback), with the applied sequence but
   other content (the SHA-256 of the signed payload is stored; the publisher
   never signs two feeds with one sequence), expired or issued in the future;
-- any field out of bounds: versions must be `vX.Y.Z`, severities
+- any field out of bounds: versions must be `vX.Y.Z`, component names a
+  `versions.yaml` section name and digests `sha256:` + 64 hex, severities
   low/medium/high/critical, titles at most 200 characters without control
   characters, links HTTPS under `github.com/openctemio/`, `openctem.io` or
-  `docs.openctem.io`, at most 200 releases and 200 advisories, at most 256 KiB
-  in all, no unknown fields.
+  `docs.openctem.io`, at most 200 releases, 200 advisories and 32 components,
+  at most 256 KiB in all, no unknown fields.
 
 Anything refused is discarded and the previous state kept. The feed is
 display-only: the instance never downloads or runs anything because of it.
+Component versions go into the install commands an administrator copies;
+the image repository always comes from the catalog built into the instance,
+a learned version is used only when it is not older than the built-in one,
+and the digest pins exactly the image the feed was signed for.
 
 Until a key is pinned in the build, the check is inert (no request) and the
 console says the feed cannot be verified.
@@ -108,14 +119,22 @@ fetches a due check. Instance-level; no tenant data.
 ```bash
 # Release pipeline:
 gh release list --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > releases.json
+go run ./cmd/release-feed components > components.txt   # sensor products + sdk-go, from versions.yaml
+bash ../.github/scripts/release/feed-components.sh components.txt > components.json
 go run ./cmd/release-feed build -key-env RELEASE_FEED_SIGNING_KEY -releases releases.json \
-    -advisories ../.github/release-feed/advisories.json -out openctem-releases.json
+    -advisories ../.github/release-feed/advisories.json -components components.json \
+    -out openctem-releases.json
 go run ./cmd/release-feed verify -key <online public key hex> openctem-releases.json
 ```
 
 The workflow `.github/workflows/release-feed.yml` runs on every release (called
-by `release.yml`), every week (so the feed never expires between releases)
-and by hand. Its job runs only on `main` or a `v*` tag (an explicit guard; the
+by `release.yml`), every 6 hours (new sensor and SDK releases reach the feed
+within that time, and the feed never expires between releases) and by hand.
+`feed-components.sh` picks, for each component, the newest stable release
+whose image tag is published and records the image digest; it reads only
+public release lists and public images, so the sensor and sdk-go
+repositories need no step and no secret. A component it cannot resolve fails
+the run (the previous feed stays published). Its job runs only on `main` or a `v*` tag (an explicit guard; the
 `release-feed` environment is restricted the same way). It uploads the file to
 the latest release, which is what the
 default URL `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`

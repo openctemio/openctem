@@ -95,6 +95,11 @@ type Config struct {
 	Keys []string
 	// Running is the running version.
 	Running string
+	// OnFeed receives the applied feed (nil when none) whenever the
+	// service loads it: at Refresh and after an online check or an import
+	// stores one. The server uses it to learn the first-party component
+	// releases (internal/versions.SetLearned). Optional.
+	OnFeed func(*releasefeed.Feed)
 	// Client fetches the feed; nil: the SSRF-guarded client.
 	Client *http.Client
 	// Now and Jitter are for tests.
@@ -175,7 +180,10 @@ func (s *Service) RunDue(ctx context.Context) error {
 	}
 	raw, code, err := s.fetch(ctx)
 	if err == nil {
-		_, code, err = s.apply(ctx, st, raw, OriginOnline)
+		var v *releasefeed.Verified
+		if v, code, err = s.apply(ctx, st, raw, OriginOnline); err == nil {
+			s.publish(&v.Feed)
+		}
 	}
 	if err != nil {
 		failures, rerr := s.repo.RecordFailure(ctx, code, now, func(failures int) time.Time {
@@ -287,7 +295,29 @@ func (s *Service) Import(ctx context.Context, raw []byte) (*releasefeed.Verified
 		}
 		return nil, &ImportError{Code: code, Err: err}
 	}
+	s.publish(&v.Feed)
 	return v, nil
+}
+
+// Refresh loads the applied feed and hands it to OnFeed. Every replica calls
+// it at start-up and on each controller tick, so a feed one replica fetched
+// (or an administrator imported) reaches all of them within the hour.
+func (s *Service) Refresh(ctx context.Context) error {
+	if s.cfg.OnFeed == nil {
+		return nil
+	}
+	st, err := s.repo.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("version check: state: %w", err)
+	}
+	s.publish(st.Feed)
+	return nil
+}
+
+func (s *Service) publish(f *releasefeed.Feed) {
+	if s.cfg.OnFeed != nil {
+		s.cfg.OnFeed(f)
+	}
 }
 
 // View is what the console shows.
@@ -308,6 +338,9 @@ type View struct {
 	// success.
 	LastError   string     `json:"last_error,omitempty"`
 	NextCheckAt *time.Time `json:"next_check_at,omitempty"`
+	// Components are the first-party sensor and SDK releases the applied
+	// feed lists (what the Sensors page and the install snippets use).
+	Components []releasefeed.Component `json:"components"`
 	releasefeed.Status
 }
 
@@ -319,13 +352,14 @@ func (s *Service) View(ctx context.Context) (View, error) {
 	}
 	v := View{Enabled: s.cfg.Enabled, Configured: s.Configured(), FeedURL: s.cfg.URL, Source: st.Origin,
 		AppliedAt: st.AppliedAt, LastAttemptAt: st.LastAttemptAt, LastError: st.LastError,
-		Status: releasefeed.Evaluate(st.Feed, s.cfg.Running, s.cfg.Now())}
+		Status: releasefeed.Evaluate(st.Feed, s.cfg.Running, s.cfg.Now()), Components: []releasefeed.Component{}}
 	if s.cfg.Enabled && s.Configured() {
 		v.NextCheckAt = st.NextCheckAt
 	}
 	if st.Feed != nil {
 		issued, expires := st.Feed.IssuedAt, st.Feed.ExpiresAt
 		v.FeedIssuedAt, v.FeedExpiresAt = &issued, &expires
+		v.Components = append(v.Components, st.Feed.Components...)
 	}
 	return v, nil
 }
