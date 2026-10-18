@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	"github.com/openctemio/openctem/api/internal/app/securityoverview"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
 	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
@@ -880,6 +881,19 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Entitlement != nil {
 		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
 		handlers.Limits.SetAccountPortalURL(cfg.AccountPortalURL)
+	}
+	// Security overview: posture checks for owners and administrators. A nil
+	// source omits the checks that need it.
+	{
+		var tenants securityoverview.TenantReader
+		if svc.Tenant != nil {
+			tenants = svc.Tenant
+		}
+		var counter securityoverview.Counter
+		if repos.SecurityOverview != nil {
+			counter = repos.SecurityOverview
+		}
+		handlers.SecurityOverview = handler.NewSecurityOverviewHandler(securityoverview.NewService(tenants, counter), log)
 	}
 	if svc.IdleWorkspaces != nil {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
