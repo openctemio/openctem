@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -56,6 +58,9 @@ type OrgCreator interface {
 
 // Service runs the queue.
 type Service struct {
+	// signups reports each stored request to the console's sign-up feed
+	// (docs/architecture/signup-activity.md); optional.
+	signups signupevent.Recorder
 	repo    ardom.Repository
 	policy  signupdom.PolicySource
 	orgs    OrgCreator
@@ -97,6 +102,9 @@ func ipHash(ip string) string {
 	}
 	return crypto.HashToken("access-request-ip:" + ip)
 }
+
+// SetSignupRecorder wires the sign-up feed.
+func (s *Service) SetSignupRecorder(r signupevent.Recorder) { s.signups = r }
 
 // Submit records a request. It returns ErrClosed, ErrCaptcha or ErrInvalid
 // for a refusal the caller may know about; every other outcome (stored,
@@ -163,6 +171,9 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) error {
 			s.log.Warn("access request confirmation email failed", "error", logger.SanitizeError(err))
 		}
 	}
+	if s.signups != nil {
+		s.signups.Record(ctx, signupevent.Event{Kind: signupevent.KindAccessRequested, Source: signupevent.SourcePublic, Email: email})
+	}
 	s.log.Info("access request received", "id", req.ID.String(), "confirm", confirm)
 	return nil
 }
@@ -226,7 +237,7 @@ func (s *Service) Approve(ctx context.Context, actor *admin.AdminUser, id shared
 	}
 	created, err := s.orgs.Create(ctx, tenantapp.CreateOrganizationInput{
 		Name: name, Slug: strings.ToLower(strings.TrimSpace(in.Slug)), OwnerEmail: req.Email,
-		Description: "Created from an access request",
+		Description: "Created from an access request", SignupSource: signupevent.SourceAccessRequest,
 	}, actx)
 	if err != nil {
 		req.Status, req.DecidedAt, req.DecidedBy = ardom.StatusPending, nil, nil

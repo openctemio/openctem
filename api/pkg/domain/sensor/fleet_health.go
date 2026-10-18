@@ -60,6 +60,7 @@ const (
 	ReasonIdentityCloned     HealthReasonCode = "identity_cloned"
 	ReasonVersionUnsupported HealthReasonCode = "version_unsupported"
 	ReasonSDKAdvisory        HealthReasonCode = "sdk_advisory"
+	ReasonSDKUnsupported     HealthReasonCode = "sdk_unsupported"
 	ReasonNoTools            HealthReasonCode = "no_tools"
 	ReasonErrorReported      HealthReasonCode = "error_reported"
 	ReasonHeartbeatLate      HealthReasonCode = "heartbeat_late"
@@ -111,15 +112,22 @@ type HealthPolicy struct {
 	OfflineAfter time.Duration
 	// KeyExpiryWarning: an API key expiring within this is reported.
 	KeyExpiryWarning time.Duration
-	// Products maps a product token to its release line (the sensor
-	// product catalog, versions.yaml). A sensor is judged against its own
-	// product's line (BuildInfo.ProductID); a product not listed (a custom
-	// sensor) gets no version verdict.
+	// Products maps a product token to its release line: the sensor
+	// product catalog (versions.yaml with the releases learned from the
+	// release feed) plus, per organization, the release lines it records
+	// for its own products. A sensor is judged against its own product's
+	// line (BuildInfo.ProductID); a product not listed (a custom sensor
+	// without release information) gets no version verdict, only the SDK
+	// and protocol compatibility.
 	Products map[string]ReleaseLine
 	// SDKLatestVersion is the newest SDK release (versions.yaml sdk.latest);
 	// empty = not configured. Informational: a sensor built with an older
 	// SDK is "outdated", with no health effect.
 	SDKLatestVersion string
+	// SDKMinVersion is the oldest SDK release the platform supports
+	// (versions.yaml sdk.min; "" = none). A heartbeating sensor built with an
+	// older sdk-go is degraded (sdk_unsupported), whatever its product.
+	SDKMinVersion string
 	// SDKAdvisories are SDK releases with a published security advisory
 	// (versions.yaml sdk.advisories). A heartbeating sensor built with one
 	// is degraded with a warning.
@@ -158,6 +166,7 @@ func (p HealthPolicy) Normalized() HealthPolicy {
 		p.Products = products
 	}
 	p.SDKLatestVersion = releaseOrEmpty(p.SDKLatestVersion)
+	p.SDKMinVersion = releaseOrEmpty(p.SDKMinVersion)
 	if len(p.SDKAdvisories) > 0 {
 		advisories := make([]string, 0, len(p.SDKAdvisories))
 		for _, v := range p.SDKAdvisories {
@@ -236,7 +245,7 @@ func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
 		KnownProduct:  known,
 		Line:          line,
 		VersionStatus: ClassifyVersion(a.Version, line.Latest, line.Min),
-		SDKStatus:     ClassifySDK(a.Build.SDKVersion, p.SDKLatestVersion, p.SDKAdvisories),
+		SDKStatus:     a.Build.SDKStatusFor(p.SDKLatestVersion, p.SDKMinVersion, p.SDKAdvisories),
 	}
 	out.Reasons = a.healthReasons(now, p, line, out.VersionStatus, out.SDKStatus)
 
@@ -377,6 +386,12 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, line ReleaseLine, 
 		add(ReasonVersionUnsupported, SeverityCritical, fmt.Sprintf(
 			"Version %s is older than the minimum supported version %s of %s. Upgrade the sensor.",
 			NormalizeVersion(a.Version), line.Min, a.Build.ProductID()))
+	}
+
+	if sdk == SDKUnsupported {
+		add(ReasonSDKUnsupported, SeverityCritical, fmt.Sprintf(
+			"Built with %s %s, older than %s, the oldest SDK this platform supports. Rebuild the sensor with sdk-go %s or later.",
+			SDKGoName, a.Build.SDKVersion, p.SDKMinVersion, p.SDKMinVersion))
 	}
 
 	if sdk == SDKAdvisory {

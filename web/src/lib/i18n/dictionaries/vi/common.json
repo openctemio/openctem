@@ -91,5 +91,6 @@
   "common.openFullPage": "Mở trang đầy đủ",
   "common.contextFilters.label": "Bộ lọc ngữ cảnh",
   "common.contextFilters.remove": "Bỏ bộ lọc {kind}",
-  "common.contextFilters.removeNamed": "Bỏ bộ lọc {kind}: {label}"
+  "common.contextFilters.removeNamed": "Bỏ bộ lọc {kind}: {label}",
+  "common.dangerZone": "Vùng nguy hiểm"
 }

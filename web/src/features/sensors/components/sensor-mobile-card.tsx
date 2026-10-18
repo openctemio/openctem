@@ -78,6 +78,16 @@ export function SensorMobileCard({
       tone: 'warning',
     })
   }
+  if (sdkStatus === 'unsupported') {
+    facts.push({
+      text: sdk
+        ? t('sensors.version.sdkUnsupportedFact', 'SDK {version} is unsupported', {
+            version: sdk,
+          })
+        : t('sensors.version.sdkUnsupported', 'SDK unsupported'),
+      tone: 'destructive',
+    })
+  }
   const k = keyExpiry(sensor.key_expires_at, now)
   if (k.kind === 'soon')
     facts.push({

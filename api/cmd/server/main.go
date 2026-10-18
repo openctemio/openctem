@@ -356,6 +356,7 @@ func run() int {
 			accessRequestMailer{email: services.Email, appName: cfg.Brand.DisplayName(), log: log},
 			captcha, cfg.SMTP.BaseURL, log)
 	}
+	wireSignupEvents(services, repos, redisClient, cfg, log)
 
 	// Wire AI triage job enqueuer if service is enabled
 	if services.AITriage != nil {

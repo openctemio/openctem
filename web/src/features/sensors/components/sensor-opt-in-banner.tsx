@@ -62,7 +62,7 @@ export function SensorOptInBanner({ showSettingsLink = true }: { showSettingsLin
         {showSettingsLink && (
           <p className="mt-2">
             {t('sensors.optInBanner.ownerBefore')}{' '}
-            <Link href="/settings/authentication" className="underline underline-offset-2">
+            <Link href="/settings/scanning/sensor-safety" className="underline underline-offset-2">
               {t('sensors.optInBanner.settingsLink')}
             </Link>
             {t('sensors.optInBanner.ownerAfter')}

@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -23,6 +25,15 @@ type AdminSignupHandler struct {
 	svc    *signup.Service
 	stepUp StepUpVerifier
 	logger *logger.Logger
+	// approvals is the four-eyes gate: opening sign-up needs a second
+	// super admin.
+	approvals approvalGate
+}
+
+// WithApprovals wires the four-eyes gate.
+func (h *AdminSignupHandler) WithApprovals(g approvalGate) *AdminSignupHandler {
+	h.approvals = g
+	return h
 }
 
 // NewAdminSignupHandler creates the handler.
@@ -156,12 +167,31 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		signupLockedError().WriteJSON(w)
 		return
 	}
+	// Opening sign-up wider than the stored policy needs a second super
+	// admin. Checked before the authenticator code is spent; a spent
+	// approval is handed back when the change then fails.
+	var grant *adminapproval.Grant
+	cur, err := h.svc.Get(r.Context())
+	if err != nil {
+		h.logger.Error("read sign-up policy", "error", err)
+		apierror.InternalServerError("could not read the sign-up policy").WriteJSON(w)
+		return
+	}
+	if policy.OpensBeyond(cur.Policy) {
+		target := "mode=" + string(policy.Mode) + ";accounts=" + string(policy.Accounts)
+		var ok bool
+		if grant, ok = requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalSignupOpen, target, h.logger); !ok {
+			return
+		}
+	}
 	if !confirmAdminStepUp(w, r, h.stepUp, req.TOTPCode, stepUpPurposeSignupPolicy, h.logger) {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		return
 	}
 
 	st, err := h.svc.Update(r.Context(), actor, policy, req.Version, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		switch {
 		case errors.Is(err, signupdom.ErrLockedByDeployment):
 			signupLockedError().WriteJSON(w)

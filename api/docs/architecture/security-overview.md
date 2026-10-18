@@ -23,17 +23,17 @@ same overview.
 
 | Check id | Rule | Link |
 | --- | --- | --- |
-| `sign_in.mfa_admins_required` | two-factor required for everyone or for owners and administrators: pass, else risk | `/settings/authentication` |
+| `sign_in.mfa_admins_required` | two-factor required for everyone or for owners and administrators: pass, else risk | `/settings/authentication#two-factor` |
 | `sign_in.admins_without_mfa` | active owners and administrators with a local account and no second factor (single sign-on accounts are covered by their identity provider): none pass, else risk | `/settings/members` |
-| `sign_in.email_verification` | mode `never`: warn, else pass | `/settings/authentication` |
-| `sign_in.ip_allowlist` | configured: pass, empty: info | `/settings/authentication` |
+| `sign_in.email_verification` | mode `never`: warn, else pass | `/settings/authentication#email-verification` |
+| `sign_in.ip_allowlist` | configured: pass, empty: info | `/settings/authentication#ip-allowlist` |
 | `people.dormant_members` | active people (not service accounts) who last signed in over 90 days ago, or never signed in and joined over 30 days ago: warn | `/settings/members` |
 | `people.join_requests` | pending, unexpired join requests: warn | `/settings/members` |
 | `credentials.api_keys_expiring` | active keys expiring within 14 days: warn | `/settings/api-keys` |
 | `credentials.api_keys_unused` | active, unexpired keys never used and created over 30 days ago, or last used over 90 days ago: warn | `/settings/api-keys` |
 | `credentials.scim_tokens_unused` | active tokens unused (same windows): warn; no active token: info | `/settings/scim` |
-| `scanning.sensor_opt_ins` | out-of-band callbacks or custom templates allowed for sensors: warn | `/settings/authentication` |
-| `scanning.private_target_policy` | sensors without a local policy may take private targets: info | `/settings/authentication` |
+| `scanning.sensor_opt_ins` | out-of-band callbacks or custom templates allowed for sensors: warn | `/settings/scanning/sensor-safety#opt-ins` |
+| `scanning.private_target_policy` | sensors without a local policy may take private targets: info | `/settings/scanning/sensor-safety#private-targets` |
 | `organization.verified_domain` | at least one verified SSO domain: pass, else info | `/settings/domains` |
 | `organization.support_access` | an active support grant: warn | `/settings/support-access` |
 
@@ -79,3 +79,6 @@ of 500, without loading the result in memory.
   values), the row count and whether it was truncated or ended early.
 - Isolation: the repository refuses a filter without a tenant; system rows
   (no tenant) are never exported.
+
+A link carries the setting's anchor (`#two-factor`), so the web opens the page
+at that setting and outlines it.

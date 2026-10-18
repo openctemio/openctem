@@ -88,7 +88,7 @@ func newResetMFAHarness(t *testing.T) *resetMFAHarness {
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{
 		Tenant:    handler.NewTenantHandler(tenant.NewTenantService(tenantRepo, log, tenant.WithTenantAuditService(auditSvc)), v, log),
-		LocalAuth: handler.NewLocalAuthHandler(authSvc, nil, nil, nil, authCfgApp, log),
+		LocalAuth: handler.NewLocalAuthHandler(authSvc, nil, nil, authCfgApp, log),
 		// Not about step-up (step_up_db_test.go is): every session is fresh.
 		StepUp: alwaysSteppedUp{},
 	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}, tenantRepo, tenant.NewUserService(userRepo, log), nil, nil, nil)

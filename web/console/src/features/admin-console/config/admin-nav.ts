@@ -22,6 +22,7 @@ import {
   Cloud,
   Server,
   SlidersHorizontal,
+  UserCheck,
   UserCog,
   UserPlus,
   UserSearch,
@@ -103,6 +104,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/requests',
         icon: Inbox,
         keywords: ['requests', 'sign-up', 'approve', 'inbox', 'pending'],
+      },
+      {
+        title: 'Sign-ups',
+        i18nKey: 'admin.nav.signups',
+        url: '/requests/sign-ups',
+        icon: UserPlus,
+        keywords: ['sign-up', 'signups', 'registrations', 'burst', 'abuse', 'alerts'],
       },
       {
         title: 'Support access',
@@ -197,6 +205,14 @@ export const adminNav: AdminNavSection[] = [
         icon: MonitorSmartphone,
         minRole: 'super_admin',
         keywords: ['signed in', 'console sessions', 'sign out', 'devices'],
+      },
+      {
+        title: 'Approvals',
+        i18nKey: 'admin.nav.approvals',
+        url: '/security/approvals',
+        icon: UserCheck,
+        minRole: 'super_admin',
+        keywords: ['four-eyes', 'second approval', 'approve', 'dual control'],
       },
       {
         title: 'Admin sign-in',
