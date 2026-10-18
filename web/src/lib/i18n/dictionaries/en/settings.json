@@ -414,5 +414,10 @@
   "settings.anchor.sensor-safety.opt-ins": "Out-of-band callbacks and custom templates",
   "settings.anchor.sensor-safety.tool-http": "User-Agent and TLS of scan tools",
   "settings.anchor.sensor-safety.sensor-policies": "Sensor identity and key binding",
-  "settings.anchor.sensor-safety.shared-sensors": "Shared sensors"
+  "settings.anchor.sensor-safety.shared-sensors": "Shared sensors",
+  "settings.item.security-overview": "Security overview",
+  "settings.desc.security-overview": "A score and checklist of what to fix first in your organization.",
+  "settings.securityCard.counts": "{risks} risks · {warns} warnings",
+  "settings.securityCard.allGood": "Nothing needs attention right now.",
+  "settings.securityCard.open": "Open the security overview"
 }

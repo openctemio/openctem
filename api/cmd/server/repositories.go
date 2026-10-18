@@ -240,8 +240,10 @@ type Repositories struct {
 	// read model a support session sees (RFC-063).
 	SupportAccess *postgres.SupportAccessRepository
 	SupportRead   *postgres.SupportReadRepository
-	AdminOrg      *postgres.AdminOrganizationRepository
-	AdminConsole  *postgres.AdminConsoleRepository
+	// SecurityOverview counts the rows behind the security overview.
+	SecurityOverview *postgres.SecurityOverviewRepository
+	AdminOrg         *postgres.AdminOrganizationRepository
+	AdminConsole     *postgres.AdminConsoleRepository
 	// AdminFactor stores console security keys and recovery codes (RFC-078).
 	AdminFactor *postgres.AdminFactorRepository
 	PlatformIdP *postgres.PlatformIdPRepository
@@ -540,23 +542,24 @@ func newRepositories(db *postgres.DB) *Repositories {
 		UserMFA:      postgres.NewUserMFARepository(db),
 
 		// Admin (Platform Admin)
-		Admin:           postgres.NewAdminRepository(db),
-		SignupPolicy:    postgres.NewSignupPolicyRepository(db),
-		JoinRequest:     postgres.NewJoinRequestRepository(db),
-		AccountDeletion: postgres.NewAccountDeletionRepository(db),
-		PlatformSetting: postgres.NewPlatformSettingRepository(db),
-		ScanPolicy:      postgres.NewScanPolicyRepository(db),
-		ScanApproval:    postgres.NewScanApprovalRepository(db),
-		AccessRequest:   postgres.NewAccessRequestRepository(db),
-		Limits:          postgres.NewLimitsRepository(db),
-		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
-		AdminAuditLog:   postgres.NewAuditLogRepository(db),
-		SupportAccess:   postgres.NewSupportAccessRepository(db),
-		SupportRead:     postgres.NewSupportReadRepository(db),
-		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
-		AdminConsole:    postgres.NewAdminConsoleRepository(db),
-		AdminFactor:     postgres.NewAdminFactorRepository(db),
-		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
+		Admin:            postgres.NewAdminRepository(db),
+		SignupPolicy:     postgres.NewSignupPolicyRepository(db),
+		JoinRequest:      postgres.NewJoinRequestRepository(db),
+		AccountDeletion:  postgres.NewAccountDeletionRepository(db),
+		PlatformSetting:  postgres.NewPlatformSettingRepository(db),
+		ScanPolicy:       postgres.NewScanPolicyRepository(db),
+		ScanApproval:     postgres.NewScanApprovalRepository(db),
+		AccessRequest:    postgres.NewAccessRequestRepository(db),
+		Limits:           postgres.NewLimitsRepository(db),
+		IdleLifecycle:    postgres.NewIdleLifecycleRepository(db),
+		AdminAuditLog:    postgres.NewAuditLogRepository(db),
+		SupportAccess:    postgres.NewSupportAccessRepository(db),
+		SupportRead:      postgres.NewSupportReadRepository(db),
+		SecurityOverview: postgres.NewSecurityOverviewRepository(db),
+		AdminOrg:         postgres.NewAdminOrganizationRepository(db),
+		AdminConsole:     postgres.NewAdminConsoleRepository(db),
+		AdminFactor:      postgres.NewAdminFactorRepository(db),
+		PlatformIdP:      postgres.NewPlatformIdPRepository(db),
 
 		// Target Mappings
 		TargetMapping: postgres.NewTargetMappingRepository(db),

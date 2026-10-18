@@ -64,6 +64,7 @@ import {
   Settings2,
   Shield,
   SlidersHorizontal,
+  ShieldAlert,
   ShieldCheck,
   ShieldHalf,
   Timer,
@@ -240,6 +241,18 @@ export const settingsNav: SettingsNavGroup[] = [
     id: 'security',
     title: 'Security',
     items: [
+      {
+        // The organization's posture checks and score (api: GET
+        // /organization/security-overview, owners and admins): the Security
+        // group's landing page.
+        id: 'security-overview',
+        title: 'Security overview',
+        description: 'A score and checklist of what to fix first in your organization.',
+        url: '/settings/security',
+        icon: ShieldAlert,
+        permission: Permission.TeamUpdate,
+        keywords: ['security', 'health', 'score', 'checklist', 'posture', '2fa', 'mfa'],
+      },
       {
         id: 'authentication',
         title: 'Authentication',

@@ -414,5 +414,10 @@
   "settings.anchor.sensor-safety.opt-ins": "Callback ngoài băng và template tùy chỉnh",
   "settings.anchor.sensor-safety.tool-http": "User-Agent và TLS của công cụ quét",
   "settings.anchor.sensor-safety.sensor-policies": "Danh tính sensor và ràng buộc khóa",
-  "settings.anchor.sensor-safety.shared-sensors": "Sensor dùng chung"
+  "settings.anchor.sensor-safety.shared-sensors": "Sensor dùng chung",
+  "settings.item.security-overview": "Tổng quan bảo mật",
+  "settings.desc.security-overview": "Điểm số và danh sách việc cần xử lý trước trong tổ chức của bạn.",
+  "settings.securityCard.counts": "{risks} rủi ro · {warns} cảnh báo",
+  "settings.securityCard.allGood": "Hiện không có gì cần xử lý.",
+  "settings.securityCard.open": "Mở tổng quan bảo mật"
 }

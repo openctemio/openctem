@@ -9,6 +9,7 @@ import { PageHeader, SettingsSection } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { searchSettings } from '@/config/settings-search'
+import { SecurityScoreCard } from '@/features/security-overview/components/security-score-card'
 
 /**
  * /settings: a search box over every page and the settings inside them, then
@@ -30,6 +31,8 @@ export default function SettingsIndexPage() {
     [groups, query]
   )
   const searching = query.trim() !== ''
+  // The overview card follows the same access as its nav item.
+  const canSeeOverview = groups.some((g) => g.items.some((i) => i.id === 'security-overview'))
   const searchLabel = t('settings.search.label', 'Search settings')
 
   return (
@@ -94,6 +97,7 @@ export default function SettingsIndexPage() {
         </div>
       ) : (
         <div className="mt-6 space-y-7">
+          <SecurityScoreCard enabled={canSeeOverview} />
           {groups.map((group) => (
             <SettingsSection key={group.id} id={`settings-${group.id}`} title={group.label}>
               <ul className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
