@@ -156,7 +156,7 @@ var Features = []Feature{
 		ID: "dashboards-reports", Title: "Dashboards and reports",
 		Description: "Dashboards, personal dashboards and scheduled reports.",
 		Stages:      []string{StageMobilization},
-		Registers:   []string{"registerDashboardRoutes", "registerUserDashboardRoutes", "registerReportScheduleRoutes"},
+		Registers:   []string{"registerDashboardRoutes", "registerDashboardDataRoutes", "registerUserDashboardRoutes", "registerReportScheduleRoutes"},
 	},
 	{
 		ID: "integrations", Title: "Integrations and API keys",
