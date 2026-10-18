@@ -1221,5 +1221,17 @@
   "admin.org.suspension.noticeTitle": "Tổ chức này đang bị tạm ngưng",
   "admin.org.suspension.noticeBody": "Mọi thông tin xác thực bị từ chối và công việc theo lịch bị bỏ qua cho đến khi gỡ tạm ngưng.",
   "admin.org.suspension.reason": "Lý do: {reason}",
-  "admin.org.suspension.since": "Tạm ngưng"
+  "admin.org.suspension.since": "Tạm ngưng",
+  "admin.nav.health": "Tình trạng hệ thống",
+  "admin.health.description": "Tình trạng của hệ thống này: dịch vụ, dung lượng, sao lưu, chứng chỉ, phiên bản, hàng đợi công việc, sensor và tác vụ nền. Chỉ đọc: sao lưu, khôi phục và nâng cấp chạy từ bộ triển khai trên máy chủ.",
+  "admin.health.certsSchema": "Chứng chỉ, lược đồ và phiên bản",
+  "admin.scanning.pageDesc": "Quy tắc cho các lượt quét chạy trên sensor của nền tảng và, khi được bật, đội sensor dùng chung.",
+  "admin.scanning.unavailable.title": "Sensor dùng chung chưa khả dụng trong bản phát hành này",
+  "admin.scanning.unavailable.body": "Đội sensor, hàng đợi, vùng quét, địa chỉ đầu ra và ngưỡng cảnh báo của sensor dùng chung sẽ hiện ở đây khi bản phát hành bật tính năng này. Chính sách chứng minh tên miền bên dưới áp dụng cho sensor của nền tảng ngay từ bây giờ.",
+  "admin.scanning.tab.policy": "Chính sách",
+  "admin.scanning.tab.fleet": "Đội sensor",
+  "admin.scanning.tab.queue": "Hàng đợi",
+  "admin.scanning.tab.zones": "Vùng quét",
+  "admin.scanning.tab.egress": "Địa chỉ đầu ra",
+  "admin.scanning.tab.anomalies": "Bất thường"
 }

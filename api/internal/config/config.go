@@ -92,7 +92,7 @@ type Config struct {
 	// AdminAuditSink streams the administrators' audit log off the box.
 	AdminAuditSink AdminAuditSinkConfig
 
-	// System is the platform console's System page and its watcher (RFC-114).
+	// System is the platform console's Health page and its watcher (RFC-114).
 	System SystemConfig
 
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
@@ -112,7 +112,7 @@ type Config struct {
 	GitHubApp GitHubAppConfig
 }
 
-// SystemConfig configures the System page (RFC-114). Everything is optional
+// SystemConfig configures the Health page (RFC-114). Everything is optional
 // and comes from the operator's environment, never from a request.
 type SystemConfig struct {
 	// StoragePaths is SYSTEM_STORAGE_PATHS, "name=path,name=path". Empty:
@@ -2663,7 +2663,7 @@ var retiredEnv = []retiredName{
 	// Sensor protocol v3 picks its bindings itself; off is the only switch.
 	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off", ""},
 	// The proof requirement is a platform setting edited in the console.
-	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > System > Platform scanning"},
+	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > Scanning > Platform scanning"},
 }
 
 // retiredName is a retired variable: its replacement (New) or, when there is

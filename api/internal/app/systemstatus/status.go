@@ -1,4 +1,4 @@
-// Package systemstatus is the platform console's System page (RFC-114): a
+// Package systemstatus is the platform console's Health page (RFC-114): a
 // read-only, aggregate-only view of the installation's essentials (service
 // health, free space, backup age, certificate expiry, version) and the watcher
 // that tells the platform administrators when one gets worse.
