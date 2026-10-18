@@ -12,11 +12,8 @@ import {
 } from '@/components/ui/sidebar'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
-import {
-  activeSettingsItem,
-  isSettingsShellPath,
-  matchesSettingsQuery,
-} from '@/config/settings-nav'
+import { activeSettingsItem, isSettingsShellPath } from '@/config/settings-nav'
+import { searchSettings } from '@/config/settings-search'
 import { GroupedNav, type GroupedNavSection } from './grouped-nav'
 import { NAV_BUTTON_CLASS } from './nav-group'
 import { NavPendingHint, SidebarLink } from './sidebar-link'
@@ -55,8 +52,8 @@ function readReturnPath(): string {
  * The settings rail: rendered in the left sidebar on every settings route
  * (see isSettingsShellPath), in place of the CTEM navigation.
  *
- * "Back to app", a filter box that matches titles, descriptions and keywords
- * (so it doubles as search in settings), then the groups from
+ * "Back to app", a search box that finds pages and the settings inside them
+ * (src/config/settings-search.ts), then the groups from
  * src/config/settings-nav.ts, hidden per permission and module.
  */
 export function SettingsSidebarNav() {
@@ -81,32 +78,35 @@ export function SettingsSidebarNav() {
     [pathname, groups]
   )
 
+  // No query: the groups. A query: the matching pages and the matching
+  // settings inside them ("Authentication › IP allowlist"), per group.
   const sections: GroupedNavSection[] = useMemo(
     () =>
       groups.map((group) => ({
         key: group.id,
         label: group.label,
-        items: group.items
-          .filter((item) =>
-            matchesSettingsQuery(item, query, {
+        items: query.trim()
+          ? searchSettings(group.items, query).map((r) => ({
+              key: r.key,
+              // A setting row shows the setting; it follows its page's row
+              // when the page matches too, and keeps the page's icon.
+              title: r.label,
+              url: r.href,
+              icon: r.icon,
+            }))
+          : group.items.map((item) => ({
+              key: item.id,
               title: item.label,
-              description: item.desc,
-              group: item.groupLabel,
-            })
-          )
-          .map((item) => ({
-            key: item.id,
-            title: item.label,
-            url: item.url,
-            icon: item.icon,
-            badge: item.badge ? t('settings.badge.soon', 'Soon') : undefined,
-          })),
+              url: item.url,
+              icon: item.icon,
+              badge: item.badge ? t('settings.badge.soon', 'Soon') : undefined,
+            })),
       })),
     [groups, query, t]
   )
   const noMatch = query.trim() !== '' && sections.every((s) => s.items.length === 0)
   const backLabel = t('settings.backToApp', 'Back to app')
-  const filterLabel = t('settings.filter', 'Filter settings')
+  const filterLabel = t('settings.filter', 'Search settings')
 
   return (
     <nav aria-label={t('nav.item.settings', 'Settings')} className="flex flex-col gap-1">

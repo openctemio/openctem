@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface DangerZoneProps {
   /** Defaults to "Danger zone". */
@@ -20,17 +21,15 @@ interface DangerZoneProps {
  * theme tokens only. Pair the action with a destructive ConfirmDialog, and
  * typeToConfirm for the ones that cannot be undone at all.
  */
-export function DangerZone({
-  title = 'Danger zone',
-  as: Heading = 'h2',
-  children,
-  className,
-}: DangerZoneProps) {
+export function DangerZone({ title, as: Heading = 'h2', children, className }: DangerZoneProps) {
+  const { t } = useTranslation()
   return (
     <section className={cn('@container rounded-xl border border-destructive/40', className)}>
       <div className="flex items-center gap-2 border-b border-destructive/20 px-4 py-3">
         <AlertTriangle className="size-4 shrink-0 text-destructive" aria-hidden />
-        <Heading className="text-sm font-semibold text-destructive">{title}</Heading>
+        <Heading className="text-sm font-semibold text-destructive">
+          {title ?? t('common.dangerZone', 'Danger zone')}
+        </Heading>
       </div>
       <div className="divide-y divide-destructive/15">{children}</div>
     </section>

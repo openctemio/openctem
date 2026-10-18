@@ -290,6 +290,10 @@ platform  settle items → retry, reroute, resume, coverage
 | Capability | `id@major` | unchanged (RFC-055 §10) |
 | Deprecation | one release train | no long-lived shims |
 
+How the platform judges a sensor's SDK, protocol and product version, and
+how an organization records its own product's release line:
+[sensor compatibility](../architecture/sensor-compatibility.md).
+
 ## 5. Use cases
 
 | Use case | Tool author | SDK runtime | Platform |

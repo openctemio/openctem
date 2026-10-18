@@ -311,7 +311,7 @@ SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'admin_user') FROM
 -- Tenant data (findings, assets, ...) is not readable or writable by it.
 SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO %I', t, :'admin_user')
-FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states']) AS t
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 SELECT format('GRANT SELECT, INSERT ON public.%I TO %I', t, :'admin_user')
 FROM unnest(ARRAY['admin_audit_logs']) AS t
@@ -328,12 +328,13 @@ SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I REVOKE ALL ON TABLES FROM %I
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migrator_user', :'admin_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'admin_user') \gexec
 
--- The app keeps reading admin_users, nothing else of the console's identity.
+-- The app keeps reading admin_users, nothing else of the console's identity
+-- (four-eyes approvals included: a tenant-plane injection cannot forge one).
 SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
-FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states']) AS t
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 SELECT format('REVOKE SELECT ON public.%I FROM %I', t, :'app_user')
-FROM unnest(ARRAY['admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states']) AS t
+FROM unnest(ARRAY['admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 
 DO $$

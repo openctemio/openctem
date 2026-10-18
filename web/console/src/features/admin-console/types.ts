@@ -388,6 +388,51 @@ export interface AdminConsoleSession {
   current: boolean
 }
 
+/** The protected actions of four-eyes approvals. */
+export type AdminApprovalAction =
+  | 'admin.grant_super_admin'
+  | 'admin.revoke_super_admin'
+  | 'console_mfa.disable'
+  | 'platform_idp.remove'
+  | 'signup.open'
+  | 'audit_chain.rebaseline'
+
+export type AdminApprovalStatus =
+  'pending' | 'approved' | 'rejected' | 'canceled' | 'expired' | 'used'
+
+/** GET /admin/approvals: one request for a second super admin's approval. */
+export interface AdminApproval {
+  id: string
+  action: AdminApprovalAction | string
+  target: string
+  target_label?: string
+  reason: string
+  status: AdminApprovalStatus
+  requested_by_id: string
+  requested_by_email?: string
+  requested_at: string
+  expires_at: string
+  decided_by_email?: string
+  decided_at?: string
+  decision_note?: string
+  used_at?: string
+  /** The caller asked: may cancel, never decide. */
+  mine: boolean
+}
+
+export interface AdminApprovalList {
+  four_eyes: {
+    /** Another super admin can approve the caller's requests. */
+    active: boolean
+    /** Active, named (not break-glass) super admins. */
+    approvers: number
+    /** The caller may approve others' requests (not break-glass). */
+    can_approve: boolean
+  }
+  ttl_hours: number
+  data: AdminApproval[]
+}
+
 interface AdminOpsComponent {
   ok: boolean
   latency_ms: number

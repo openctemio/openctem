@@ -75,11 +75,17 @@ connector-tenable:
 # a sensor works with this platform is its protocol version and the
 # capabilities it advertises, not its SDK release. latest: the SDK release
 # this platform release was built with (the release feed raises it); a sensor
-# built with an older SDK shows "outdated" (no health effect). advisories: SDK releases
-# with a published security advisory, separated by spaces; a sensor built with
-# one is degraded with a warning. "" = none.
+# built with an older SDK shows "outdated" (no health effect). min: the oldest
+# SDK release this platform supports: a sensor of any product (first-party or
+# an organization's own) built with an older sdk-go is degraded
+# ("sdk_unsupported"); "" = no minimum. It is the platform's compatibility
+# floor: raise it only when a protocol change requires it, and announce it in
+# sdk-go's changelog. advisories: SDK releases with a published security
+# advisory, separated by spaces; a sensor built with one is degraded with a
+# warning. "" = none.
 sdk:
   latest: v0.34.0
+  min: ""
   advisories: ""
 
 # CI runner (openctemio/ci: the openctem-ci action, image and templates). Its

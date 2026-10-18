@@ -22,6 +22,7 @@ import { env } from '@/lib/env'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { proxyBackendPath } from '@/lib/api/proxy-path'
 import { csrfRejection } from '@/lib/server-auth-cookies'
+import { CONSOLE_CSRF_COOKIE } from '@console/lib/csrf-cookie'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,8 +67,8 @@ const PASS_RESPONSE_HEADERS = [
 async function proxy(request: NextRequest, path: string[]): Promise<NextResponse> {
   // Same origin and a double-submit pair on every write, the console's sign-in
   // steps included. The header matches `admin_csrf` once the console session
-  // exists (the API checks that pair again), the page's `csrf_token` before.
-  const csrf = csrfRejection(request, ['admin_csrf'])
+  // exists (the API checks that pair again), the page's `console_csrf` before.
+  const csrf = csrfRejection(request, ['admin_csrf'], CONSOLE_CSRF_COOKIE)
   if (csrf) return csrf
 
   // Each segment is re-encoded below, but refuse dot segments outright too so

@@ -239,6 +239,8 @@ type Repositories struct {
 	// (docs/architecture/organization-suspension.md).
 	OrganizationStatus *postgres.OrganizationStatusRepository
 	AdminAuditLog      *postgres.AuditLogRepository
+	// SignupEvent stores the console's sign-up feed and its burst thresholds.
+	SignupEvent *postgres.SignupEventRepository
 	// SupportAccess stores support grants and sessions; SupportRead is the
 	// read model a support session sees (RFC-063).
 	SupportAccess *postgres.SupportAccessRepository
@@ -553,6 +555,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScanPolicy:         postgres.NewScanPolicyRepository(db),
 		ScanApproval:       postgres.NewScanApprovalRepository(db),
 		AccessRequest:      postgres.NewAccessRequestRepository(db),
+		SignupEvent:        postgres.NewSignupEventRepository(db),
 		Limits:             postgres.NewLimitsRepository(db),
 		IdleLifecycle:      postgres.NewIdleLifecycleRepository(db),
 		OrganizationStatus: postgres.NewOrganizationStatusRepository(db),

@@ -13,7 +13,7 @@ This guide splits the database into three roles.
 | superuser (`DB_SUPERUSER`, e.g. `postgres`) | `initdb`, and the bootstrap script below | everything; the API never holds its password |
 | `openctem_migrator` (`DB_MIGRATE_USER`) | the migrations (`migrate` job, all-in-one start-up) | own the application schemas: create, alter and drop tables, indexes (including `CREATE INDEX CONCURRENTLY`), functions, triggers, policies |
 | `openctem_app` (`DB_USER`) | the API server and its workers | `SELECT`/`INSERT`/`UPDATE`/`DELETE` on the application tables; nothing else |
-| `openctem_console` (`DB_ADMIN_USER`, optional) | the API's second, small pool for the platform console's identity tables | full DML on `admin_users`, `admin_credentials`, `admin_sessions`, `platform_identity_provider` and `admin_idp_login_states` (alone), insert and read on `admin_audit_logs`, read on `admin_audit_chain_anchors` and `tenant_members`, read and update on `users`; nothing else |
+| `openctem_console` (`DB_ADMIN_USER`, optional) | the API's second, small pool for the platform console's identity tables | full DML on `admin_users`, `admin_credentials`, `admin_sessions`, `platform_identity_provider`, `admin_idp_login_states` and `admin_approvals` (alone), insert and read on `admin_audit_logs`, read on `admin_audit_chain_anchors` and `tenant_members`, read and update on `users`; nothing else |
 
 Neither role is `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `REPLICATION` or
 `BYPASSRLS`. Neither belongs to `pg_read_server_files`, `pg_write_server_files`
@@ -88,8 +88,9 @@ creates the console role (same attributes as the app, no memberships) and
 moves the platform console's identity tables to it:
 
 - the app role loses `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` on `admin_users`,
-  `admin_credentials`, `admin_sessions`, `platform_identity_provider` and
-  `admin_idp_login_states`, and `SELECT` on all of them but `admin_users`
+  `admin_credentials`, `admin_sessions`, `platform_identity_provider`,
+  `admin_idp_login_states` and `admin_approvals` (four-eyes approvals), and
+  `SELECT` on all of them but `admin_users`
   (the trigger that keeps platform administrators out of organizations and the
   "is this account an administrator" checks read it);
 - the console role gets no other table privilege than the ones listed in the

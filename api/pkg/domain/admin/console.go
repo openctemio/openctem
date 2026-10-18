@@ -16,6 +16,9 @@ import (
 const (
 	// SessionTTL is the absolute lifetime of a verified console session.
 	SessionTTL = 8 * time.Hour
+	// MaxVerifiedSessions caps the verified sessions one administrator may
+	// hold at once; opening another ends the oldest.
+	MaxVerifiedSessions = 3
 	// SessionIdleTimeout ends a verified session that has not been used:
 	// 15 minutes, the inactivity bound for the highest authenticator
 	// assurance level (the absolute lifetime above stays under its 12 hours).
@@ -159,6 +162,9 @@ type ConsoleRepository interface {
 	DeleteSession(ctx context.Context, id shared.ID) error
 	// DeleteSessionsForAdmin ends every session of one admin.
 	DeleteSessionsForAdmin(ctx context.Context, adminID shared.ID) error
+	// EndOldestVerifiedSessions keeps the newest `keep` verified sessions of
+	// one admin and ends the rest, returning how many it ended.
+	EndOldestVerifiedSessions(ctx context.Context, adminID shared.ID, keep int) (int64, error)
 	// DeleteExpiredSessions removes sessions past their absolute expiry.
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 	// DeletePasswordSessionsExceptBreakGlass ends every password-authenticated
