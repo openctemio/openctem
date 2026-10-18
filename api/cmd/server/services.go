@@ -18,6 +18,7 @@ import (
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	"github.com/openctemio/openctem/api/internal/app/suspension"
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
@@ -896,6 +897,10 @@ type Services struct {
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
+	// OrganizationGate refuses every credential of a suspended organization;
+	// Suspension suspends and restores organizations (console).
+	OrganizationGate *suspension.Gate
+	Suspension       *suspension.Service
 	// FindingLifecycle manages the organization's finding sub-statuses and
 	// lifecycle schemes (RFC-110).
 	FindingLifecycle *findinglifecycleapp.Service
@@ -995,6 +1000,20 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
+	// Suspended organizations: one access gate every credential path asks,
+	// in front of a shared Redis cache so a change reaches every replica on
+	// its next request (docs/architecture/organization-suspension.md).
+	var orgStatusCache suspension.StatusCache
+	if deps.RedisClient != nil {
+		c, cerr := redis.NewCache[suspension.CachedStatus](deps.RedisClient, suspension.CachePrefix, suspension.CacheTTL)
+		if cerr != nil {
+			log.Warn("organization status cache off; every check reads the database", "error", cerr)
+		} else {
+			orgStatusCache = c
+		}
+	}
+	s.OrganizationGate = suspension.NewGate(repos.OrganizationStatus, orgStatusCache, log)
+	s.Suspension = suspension.NewService(repos.OrganizationStatus, s.OrganizationGate, repos.AdminAuditLog, s.Audit, log)
 	for _, r := range []interface{ SetLimits(limits.Checker) }{
 		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing, repos.Finding,
 	} {
@@ -1736,7 +1755,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Gate user-scoped keys on active membership so member offboarding revokes
 	// them immediately (the key's own status can't reflect member lifecycle).
 	// The account must be active too. Fails closed on a lookup error.
-	s.APIKey.SetMembershipChecker(apikey.NewMembershipChecker(repos.Tenant, repos.User))
+	s.APIKey.SetMembershipChecker(apikey.NewMembershipChecker(repos.Tenant, repos.User, s.OrganizationGate))
 	// Audit oct_ key create / revoke / delete.
 	s.APIKey.SetAuditService(s.Audit)
 	// During an encryption-key rotation, keys hashed under the old key
@@ -1746,6 +1765,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
 	repos.ScimToken.SetKeyPepperID(crypto.PepperID(cfg.Encryption.Key))
 	s.SCIMToken = scim.NewTokenService(repos.ScimToken, cfg.Encryption.Key, log)
+	// A suspended organization takes no provisioning.
+	s.SCIMToken.SetOrganizationGate(s.OrganizationGate)
 	s.SCIMToken.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
 	s.SCIMProvisioning = scim.NewProvisioningService(
 		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
@@ -1867,6 +1888,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize sensor & command services
 	s.Sensor = sensorapp.NewSensorService(repos.Sensor, s.Audit, log)
+	// A sensor of a suspended organization is refused on every key path.
+	s.Sensor.SetOrganizationGate(s.OrganizationGate)
 	// A tool a sensor declares in its manifest joins its organization's
 	// tool catalog (RFC-092).
 	s.Sensor.SetDeclaredTools(repos.Tool)
@@ -2746,6 +2769,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			hub.RevokeAccess(ctx, tenantID, userID)
 		})
 	}
+	// A suspended organization's live sockets close at once.
+	if s.Suspension != nil {
+		s.Suspension.SetSocketCloser(s.WebSocketHub)
+	}
 	log.Info("websocket hub initialized")
 
 	// Wire WebSocket broadcasters - must be done AFTER WebSocketHub is initialized
@@ -2885,6 +2912,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// No tenant token for a suspended organization.
+	s.Auth.SetOrganizationGate(s.OrganizationGate)
 	if s.Entitlement != nil {
 		s.Auth.SetSelfServiceLimits(s.Entitlement)
 	}

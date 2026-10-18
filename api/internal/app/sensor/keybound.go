@@ -66,6 +66,9 @@ func (s *SensorService) SigningIdentity(ctx context.Context, keyID string, allow
 	if err != nil {
 		return SensorIdentity{}, nil, errSignedUnauthorized
 	}
+	if err := s.organizationOpen(ctx, a); err != nil {
+		return SensorIdentity{}, nil, err
+	}
 	kid := k.ID
 	return SensorIdentity{Sensor: a, Paused: paused, signingKeyID: &kid, keyThumbprint: k.Thumbprint}, ed25519.PublicKey(k.PublicKey), nil
 }
