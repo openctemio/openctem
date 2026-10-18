@@ -23,7 +23,7 @@ func TestParseAliasEntries(t *testing.T) {
 	ok := `{"kind":"cpe","value":"a:google_inc:chrome","target":"a:google:chrome","basis":"learned","support":3}`
 	gz, m := gzLines(t, ok)
 	got, err := ParseAliasEntries(gz, m)
-	if err != nil || len(got) != 1 || got[0].Value != "a:google_inc:chrome" || got[0].Target != "a:google:chrome" {
+	if err != nil || len(got) != 1 || got[0].Value != "a:google_inc:chrome" || got[0].Target != "a:google:chrome" || got[0].Basis != "learned" {
 		t.Fatalf("%v %v", got, err)
 	}
 	bad := []struct {

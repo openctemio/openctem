@@ -224,7 +224,7 @@ func charCases() []charCase {
 			wantWarnings: []string{
 				"1 target(s) were skipped: they are outside the data scope of whoever runs this scan, or not scope targets",
 				"1 internal address target(s) were skipped: internal addresses are scanned only inside a scan zone of this organization",
-				"1 target(s) were skipped: nuclei runs t1 probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Targets)",
+				"1 target(s) were skipped: nuclei runs t1 probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Scope)",
 			},
 			wantActTargets: []string{"ok.example.com", "passive-only.example.com", "both.example.com", "10.1.2.3"},
 		},
@@ -331,7 +331,7 @@ func charCases() []charCase {
 			name: "every target above its ceiling", scanner: "nuclei", noGroup: true,
 			direct: []string{"p.example.com"}, ceiling: map[string]scopedom.Tier{"p.example.com": scopedom.TierPassive},
 			wantTier:       1,
-			wantWarnings:   []string{"1 target(s) were skipped: nuclei runs t1 probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Targets)"},
+			wantWarnings:   []string{"1 target(s) were skipped: nuclei runs t1 probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Scope)"},
 			wantActTargets: []string{"p.example.com"},
 			wantRecordCode: codeTierExceeds,
 		},

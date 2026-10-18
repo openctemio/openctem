@@ -14,7 +14,7 @@ import (
 // charter evaluation and the program metrics follow the same rules as the
 // dashboards: the viewer's data scope, the pentest member-visibility rule of
 // the findings list (no draft or in-review finding for anyone), and
-// organization figures only with dashboard:aggregate or full data access.
+// organization figures only with dashboards:org:view or full data access.
 // Viewers: a scoped non-member, a full-data non-member, a campaign tester
 // and client, an administrator, a scoped aggregate viewer, and another
 // organization.
@@ -96,7 +96,7 @@ func (e *gapEnv) as(user shared.ID, admin bool, perms []string, path string) (in
 }
 
 func gapAggregatePerms() []string {
-	return append(append([]string{}, dsMemberPerms...), permission.DashboardAggregate.String())
+	return append(append([]string{}, dsMemberPerms...), permission.DashboardsOrgView.String())
 }
 
 func TestThreatIntelCounts_PentestVisibility_DB(t *testing.T) {
@@ -246,7 +246,7 @@ func TestProgramMetrics_PentestVisibility_DB(t *testing.T) {
 	// pentest in review, pentest draft (the last two count for nobody), plus
 	// the two resolved ones.
 	if code, _ := e.as(h.memberA, false, nil, "/api/v1/dashboard/program-metrics"); code != http.StatusForbidden {
-		t.Errorf("scoped viewer without dashboard:aggregate = %d, want 403", code)
+		t.Errorf("scoped viewer without dashboards:org:view = %d, want 403", code)
 	}
 	for _, tc := range []struct {
 		name  string
@@ -267,7 +267,7 @@ func TestProgramMetrics_PentestVisibility_DB(t *testing.T) {
 }
 
 // A cycle's charter evaluation is computed from organization-wide metrics: a
-// scoped viewer without dashboard:aggregate still reads the cycle, without the
+// scoped viewer without dashboards:org:view still reads the cycle, without the
 // evaluation, on the single read and in the list.
 func TestCTEMCycleCharterEvaluation_OrgViewersOnly_DB(t *testing.T) {
 	e := newGapEnv(t)

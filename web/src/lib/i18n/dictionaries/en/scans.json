@@ -1656,7 +1656,7 @@
   "scans.failure.NO_COMPATIBLE_TARGETS.text": "No target suits the scan's scanner.",
   "scans.failure.NO_COMPATIBLE_TARGETS.fix": "Pick a scanner for these targets (a network range goes to port scans and host discovery), or change the targets in Edit.",
   "scans.failure.TIER_EXCEEDS.text": "The scope entries covering the targets allow less than this scanner probes.",
-  "scans.failure.TIER_EXCEEDS.fix": "Raise the entry's tier in Scoping > Targets, or use a less intrusive scanner.",
+  "scans.failure.TIER_EXCEEDS.fix": "Raise the entry's tier in Scoping > Scope, or use a less intrusive scanner.",
   "scans.failure.INTERNAL_TARGET_OUTSIDE_ZONES.text": "Internal addresses outside every scan zone.",
   "scans.failure.INTERNAL_TARGET_OUTSIDE_ZONES.fix": "Add the ranges to a scan zone in Settings > Scan zones.",
   "scans.failure.NO_RESOLVING_TARGETS.text": "No target name has resolved recently.",

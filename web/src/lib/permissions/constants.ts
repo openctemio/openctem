@@ -75,8 +75,10 @@ export const Permission = {
   // CORE MODULES
   // ===========================================
   DashboardRead: 'dashboard:read',
-  /** Organization-wide dashboard totals for a viewer with a restricted data scope (D6). */
-  DashboardAggregate: 'dashboard:aggregate',
+  /** Organization dashboards: organization-wide numbers and names, whatever the viewer's own scope. */
+  DashboardsOrgView: 'dashboards:org:view',
+  /** Create, edit, order and delete organization dashboards; default, audience, schedule. */
+  DashboardsOrgManage: 'dashboards:org:manage',
   AuditRead: 'audit:read',
   SettingsRead: 'settings:read',
   SettingsWrite: 'settings:write',
@@ -615,7 +617,8 @@ export const PermissionGroups = {
 export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   // Core
   [Permission.DashboardRead]: 'View Dashboard',
-  [Permission.DashboardAggregate]: 'View Organization Totals',
+  [Permission.DashboardsOrgView]: 'View Organization Dashboards',
+  [Permission.DashboardsOrgManage]: 'Manage Organization Dashboards',
   [Permission.AuditRead]: 'View Audit Logs',
   [Permission.SettingsRead]: 'View Settings',
   [Permission.SettingsWrite]: 'Manage Settings',
@@ -827,7 +830,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
   [Role.Owner]: [
     // Core
     Permission.DashboardRead,
-    Permission.DashboardAggregate,
+    Permission.DashboardsOrgView,
+    Permission.DashboardsOrgManage,
     Permission.AuditRead,
     Permission.SettingsRead,
     Permission.SettingsWrite,
@@ -996,7 +1000,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
   [Role.Admin]: [
     // Core
     Permission.DashboardRead,
-    Permission.DashboardAggregate,
+    Permission.DashboardsOrgView,
+    Permission.DashboardsOrgManage,
     Permission.AuditRead,
     Permission.SettingsRead,
     Permission.SettingsWrite,
