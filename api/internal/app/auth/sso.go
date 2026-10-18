@@ -87,6 +87,7 @@ type SSOService struct {
 	tokenGenerator   *jwt.Generator
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
+	platformAdmins   PlatformAdminGate
 	httpClient       *http.Client
 	// oidcVerifier verifies id_tokens and logout tokens (pkg/oidc).
 	oidcVerifier *oidc.Client
@@ -1693,6 +1694,10 @@ type federatedBinding struct {
 const freshAuthMaxAge = 5 * time.Minute
 
 func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod, idpTenant shared.ID, fed federatedBinding) (*SessionResult, error) {
+	// A platform administrator signs in on the admin console only.
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "sso") {
+		return nil, ErrSSOExchangeFailed
+	}
 	// Bind the token to its session: generate the session id first, embed it in
 	// the JWT, then persist the session under the SAME id — so an SSO session is
 	// revocable (mirrors the password Login flow). Previously the token was

@@ -83,6 +83,7 @@ type OAuthService struct {
 	config           config.OAuthConfig
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
+	platformAdmins   PlatformAdminGate
 	httpClient       *http.Client
 	// oidcVerifier validates the signed id_token for providers that return one
 	// (Microsoft/Entra), so identity is taken from verified claims rather than
@@ -323,6 +324,12 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	u, err := s.findOrCreateUser(ctx, userInfo, input.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find or create user: %w", err)
+	}
+
+	// A platform administrator signs in on the admin console only; the answer
+	// is the generic provider failure.
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "oauth") {
+		return nil, ErrOAuthExchangeFailed
 	}
 
 	// Create session

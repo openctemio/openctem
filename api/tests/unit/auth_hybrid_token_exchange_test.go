@@ -31,7 +31,7 @@ func TestHybridTokenExchange_LocalTokens(t *testing.T) {
 	}
 	rt, _ := loginPassword(t, svc, deps, "hybrid@example.com")
 	sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
-	lh := handler.NewLocalAuthHandler(svc, sess, nil, nil, cfg, logger.NewNop())
+	lh := handler.NewLocalAuthHandler(svc, sess, nil, cfg, logger.NewNop())
 
 	t.Run("member tenant", func(t *testing.T) {
 		rec := postJSON(t, lh.ExchangeToken, map[string]string{"refresh_token": rt, "tenant_id": member.ID().String()})

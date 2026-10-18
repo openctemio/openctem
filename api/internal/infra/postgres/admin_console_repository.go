@@ -241,6 +241,26 @@ func (r *AdminConsoleRepository) DeleteExpiredSessions(ctx context.Context, now 
 	return res.RowsAffected()
 }
 
+// EndOldestVerifiedSessions keeps the newest `keep` verified sessions of the
+// admin (by creation time, id as tie-break) and deletes the others.
+func (r *AdminConsoleRepository) EndOldestVerifiedSessions(ctx context.Context, adminID shared.ID, keep int) (int64, error) {
+	if keep < 0 {
+		keep = 0
+	}
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM admin_sessions
+		WHERE id IN (
+			SELECT id FROM admin_sessions
+			WHERE admin_id = $1 AND mfa_verified
+			ORDER BY created_at DESC, id DESC
+			OFFSET $2
+		)`, adminID.String(), keep)
+	if err != nil {
+		return 0, fmt.Errorf("end oldest admin sessions: %w", err)
+	}
+	return res.RowsAffected()
+}
+
 // DeletePasswordSessionsExceptBreakGlass ends every password-authenticated
 // session (verified or pending) of a non-break-glass administrator.
 func (r *AdminConsoleRepository) DeletePasswordSessionsExceptBreakGlass(ctx context.Context) (int64, error) {
