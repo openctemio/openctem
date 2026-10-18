@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -116,7 +117,8 @@ func clearFindingTransition(ctx context.Context, tx *sql.Tx) error {
 func (db *DB) execStatusWrite(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	t, platform := vulnerability.StatusTransitionFrom(ctx)
 	person := vulnerability.IsPersonMove(ctx)
-	if !platform && !person {
+	jobs := len(durablejob.FromContext(ctx)) > 0
+	if !platform && !person && !jobs {
 		return db.ExecContext(ctx, query, args...)
 	}
 	var res sql.Result
@@ -132,15 +134,18 @@ func (db *DB) execStatusWrite(ctx context.Context, query string, args ...any) (s
 			}
 		}
 		var err error
-		res, err = tx.ExecContext(ctx, query, args...)
-		return err
+		if res, err = tx.ExecContext(ctx, query, args...); err != nil {
+			return err
+		}
+		// Ticket status sync queued with the status it pushes.
+		return enqueueContextJobsTx(ctx, tx, res)
 	})
 	return res, err
 }
 
 // queryStatusWriteIDs is execStatusWrite for a status write that ends in
 // RETURNING id: it returns the ids of the rows the statement changed.
-func (db *DB) queryStatusWriteIDs(ctx context.Context, query string, args ...any) ([]shared.ID, error) {
+func (db *DB) queryStatusWriteIDs(ctx context.Context, attempted []shared.ID, query string, args ...any) ([]shared.ID, error) {
 	var ids []shared.ID
 	err := db.Transaction(ctx, func(tx *sql.Tx) error {
 		if err := markStatusWriteTx(ctx, tx); err != nil {
@@ -162,7 +167,12 @@ func (db *DB) queryStatusWriteIDs(ctx context.Context, query string, args ...any
 			}
 			ids = append(ids, parsed)
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		// The ticket status pushes of the findings this write moved, with
+		// the moves.
+		return enqueueContextJobsForTx(ctx, tx, attempted, ids)
 	})
 	return ids, err
 }

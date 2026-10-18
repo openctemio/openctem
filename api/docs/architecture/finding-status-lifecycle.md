@@ -244,10 +244,15 @@ moved finding it fires, once:
 
 - the `finding_status_changed` workflow event;
 - the assignee's in-app notification (not when the assignee made the move);
-- the outbound ticket sync, for a finding with a work-item link (not for a
-  move the ticket webhook itself made);
 - a proof-of-fix re-check, for a finding that reached `fix_applied` (the
   single status PATCH now queues one too).
+
+The outbound ticket status push of a linked finding is not fired afterwards:
+it is a durable job (`durable_jobs`) the status write queues in its own
+transaction, only for the findings it moved (`ticketSyncCtx` /
+`TicketSyncContext` put the candidates on the context; the status writes,
+approvals and VEX effects queue those that moved). A move made by a ticket
+webhook is not pushed back to the ticket.
 
 Batch writes are status-guarded and return the ids they changed
 (`StatusMoveWriter.MoveStatusBatch`, `UPDATE … RETURNING id`): a finding that

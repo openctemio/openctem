@@ -198,7 +198,7 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 	if err != nil {
 		return nil, fmt.Errorf("failed to build approval activity: %w", err)
 	}
-	if err := s.approvalRepo.ApproveAndApply(ctx, a, entry); err != nil {
+	if err := s.approvalRepo.ApproveAndApply(s.ticketSyncCtx(ctx, tid, []*vulnerability.Finding{f}), a, entry); err != nil {
 		return nil, err
 	}
 	s.afterApplied(ctx, tid, in.UserID, []*vulnerability.Finding{f}, status)

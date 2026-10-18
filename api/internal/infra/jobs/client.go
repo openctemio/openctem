@@ -48,30 +48,6 @@ func (c *Client) Close() error {
 	return c.client.Close()
 }
 
-// EnqueueTeamInvitation enqueues a team invitation email job.
-func (c *Client) EnqueueTeamInvitation(ctx context.Context, payload TeamInvitationPayload) error {
-	task, err := NewTeamInvitationTask(payload)
-	if err != nil {
-		return fmt.Errorf("failed to create task: %w", err)
-	}
-
-	info, err := c.client.EnqueueContext(ctx, task)
-	if err != nil {
-		c.logger.Error("failed to enqueue team invitation email",
-			"email", payload.RecipientEmail,
-			"error", err,
-		)
-		return fmt.Errorf("failed to enqueue task: %w", err)
-	}
-
-	c.logger.Info("team invitation email queued",
-		"task_id", info.ID,
-		"email", payload.RecipientEmail,
-		"queue", info.Queue,
-	)
-	return nil
-}
-
 // EnqueueWelcomeEmail enqueues a welcome email job.
 func (c *Client) EnqueueWelcomeEmail(ctx context.Context, payload WelcomeEmailPayload) error {
 	task, err := NewWelcomeEmailTask(payload)
@@ -145,34 +121,6 @@ func (c *Client) EnqueuePasswordReset(ctx context.Context, payload PasswordReset
 }
 
 // EnqueueAITriage enqueues an AI triage job with optional delay.
-// EnqueueJiraSyncFindingStatus queues an outbound Jira status-sync for a finding
-// (RFC-006 Phase 3c). Best-effort from the caller's perspective: the handler
-// no-ops when the tenant hasn't opted in.
-func (c *Client) EnqueueJiraSyncFindingStatus(ctx context.Context, payload JiraSyncFindingStatusPayload) error {
-	task, err := NewJiraSyncFindingStatusTask(payload)
-	if err != nil {
-		return fmt.Errorf("failed to create task: %w", err)
-	}
-	if _, err := c.client.EnqueueContext(ctx, task); err != nil {
-		return fmt.Errorf("failed to enqueue jira sync task: %w", err)
-	}
-	return nil
-}
-
-// EnqueueGitHubSyncFindingStatus queues an outbound GitHub issue status-sync for
-// a finding. Best-effort: the handler no-ops when the finding has no linked
-// GitHub issue.
-func (c *Client) EnqueueGitHubSyncFindingStatus(ctx context.Context, payload GitHubSyncFindingStatusPayload) error {
-	task, err := NewGitHubSyncFindingStatusTask(payload)
-	if err != nil {
-		return fmt.Errorf("failed to create task: %w", err)
-	}
-	if _, err := c.client.EnqueueContext(ctx, task); err != nil {
-		return fmt.Errorf("failed to enqueue github sync task: %w", err)
-	}
-	return nil
-}
-
 func (c *Client) EnqueueAITriage(ctx context.Context, payload AITriagePayload, delay time.Duration) error {
 	task, err := NewAITriageTask(payload, delay)
 	if err != nil {

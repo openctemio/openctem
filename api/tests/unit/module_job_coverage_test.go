@@ -21,6 +21,7 @@ var jobInfrastructure = map[string]string{
 	"PurgeController":        "generic table purge, configured per retention policy",
 	"ControlChangePublisher": "publishes control changes for other jobs; schedules nothing",
 	"VersionCheckController": "instance-level release feed check for the platform console; no organization module (RFC-105)",
+	"DurableJobsController":  "runner of durable jobs queued by other features (ticket status sync, invitation e-mail); schedules nothing itself",
 }
 
 // Every background controller the server builds is owned by exactly one

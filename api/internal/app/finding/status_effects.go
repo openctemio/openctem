@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -23,11 +24,57 @@ import (
 // same transaction) or, for a person's move with lifecycle details, by the
 // caller right after the write.
 
-// StatusEffectsFunc runs the side effects of applied status moves and
-// returns the number of proof-of-fix re-checks queued. Services outside
-// VulnerabilityService (finding actions, VEX) are handed
-// VulnerabilityService.AfterStatusMoves at the composition root.
-type StatusEffectsFunc func(ctx context.Context, tenantID shared.ID, actorID string, moves []vulnerability.StatusMove) int
+// StatusEffects is the side-effect path services outside
+// VulnerabilityService (finding actions, VEX) are handed at the composition
+// root; VulnerabilityService implements it.
+type StatusEffects interface {
+	// TicketSyncContext puts the outbound ticket status pushes of the linked
+	// findings among ids on ctx; the status write queues them in its own
+	// transaction for the findings it moves.
+	TicketSyncContext(ctx context.Context, tenantID shared.ID, ids []shared.ID) context.Context
+	// AfterStatusMoves runs the side effects of applied moves and returns
+	// the proof-of-fix re-checks queued.
+	AfterStatusMoves(ctx context.Context, tenantID shared.ID, actorID string, moves []vulnerability.StatusMove) int
+}
+
+var _ StatusEffects = (*VulnerabilityService)(nil)
+
+// TicketSyncContext reads the findings (tenant-scoped) and puts the ticket
+// status pushes of the linked ones on ctx (see StatusEffects).
+func (s *VulnerabilityService) TicketSyncContext(ctx context.Context, tenantID shared.ID, ids []shared.ID) context.Context {
+	if !s.ticketStatusSync || len(ids) == 0 {
+		return ctx
+	}
+	if _, inbound := vulnerability.TicketInboundFrom(ctx); inbound {
+		return ctx
+	}
+	found, err := s.findingRepo.GetByIDs(ctx, tenantID, ids)
+	if err != nil {
+		s.logger.Warn("ticket status sync: read findings", "error", err, "count", len(ids))
+		return ctx
+	}
+	return s.ticketSyncCtx(ctx, tenantID, found)
+}
+
+// ticketSyncCtx puts the outbound ticket status pushes (Jira, GitHub
+// Issues) of the linked findings on ctx, for the status write to queue in
+// its transaction for each finding it moves. A move a ticket webhook makes
+// is not pushed back to the ticket; unlinked findings queue nothing.
+func (s *VulnerabilityService) ticketSyncCtx(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) context.Context {
+	if !s.ticketStatusSync {
+		return ctx
+	}
+	if _, inbound := vulnerability.TicketInboundFrom(ctx); inbound {
+		return ctx
+	}
+	var jobs []durablejob.Job
+	for _, f := range findings {
+		if f != nil && len(f.WorkItemURIs()) > 0 {
+			jobs = append(jobs, durablejob.StatusSyncJobs(tenantID, f.ID())...)
+		}
+	}
+	return durablejob.WithEnqueue(ctx, jobs...)
+}
 
 // statusChange is one applied move (old to new) with the finding it moved.
 type statusChange struct {
@@ -71,10 +118,8 @@ func (s *VulnerabilityService) AfterStatusMoves(ctx context.Context, tenantID sh
 
 // afterStatusChange fires the side effects of applied moves (best effort:
 // none of them undoes the move). A label change inside one status is not a
-// status change and fires nothing. A move a ticket webhook made is not pushed
-// back to the ticket.
+// status change and fires nothing.
 func (s *VulnerabilityService) afterStatusChange(ctx context.Context, tenantID shared.ID, actorID string, changes []statusChange) int {
-	_, ticketInbound := vulnerability.TicketInboundFrom(ctx)
 	fixClaims := make([]shared.ID, 0)
 	for _, c := range changes {
 		newStatus := c.new
@@ -91,11 +136,6 @@ func (s *VulnerabilityService) afterStatusChange(ctx context.Context, tenantID s
 			fmt.Sprintf("Finding status changed: %s → %s", c.old, newStatus),
 			c.f.Message(),
 		)
-		// Outbound ticket sync only for findings with a work-item link; the
-		// worker no-ops unless the tenant opted in.
-		if !ticketInbound && s.jiraStatusSync != nil && len(c.f.WorkItemURIs()) > 0 {
-			s.jiraStatusSync(ctx, tenantID, c.f.ID())
-		}
 		if newStatus == vulnerability.FindingStatusFixApplied {
 			fixClaims = append(fixClaims, c.f.ID())
 		}
