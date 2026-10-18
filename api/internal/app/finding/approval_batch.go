@@ -17,6 +17,7 @@ package finding
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -451,6 +452,17 @@ func (s *VulnerabilityService) ApproveGroupException(ctx context.Context, tenant
 		return nil, err
 	}
 	out.RequiredApprovals = res.Required
+	if applied > 0 {
+		// Each member the group decision moved gets the status change's
+		// side effects, once.
+		moved := make([]*vulnerability.Finding, 0, len(findings))
+		for _, f := range findings {
+			if !slices.Contains(canceled, f.ID()) {
+				moved = append(moved, f)
+			}
+		}
+		s.afterApplied(ctx, tenantID, approver.String(), moved, b.RequestedStatus)
+	}
 	return &GroupExceptionDecision{Batch: out, Applied: applied, Canceled: canceled, Shortened: shortened}, nil
 }
 
