@@ -407,5 +407,10 @@
   "org.personal.reason": "Reason",
   "org.personal.reasonPlaceholder": "Contractor without an account in our identity provider",
   "org.personal.until": "Until",
-  "org.personal.add": "Add exception"
+  "org.personal.add": "Add exception",
+  "org.sso.managedTitle": "SSO is configured by your platform administrator",
+  "org.sso.managedText": "{what} is set up for your organization in the platform administration console. To add or change it, contact your platform administrator.",
+  "org.sso.authLink": "Authentication settings",
+  "org.sso.title": "Single sign-on",
+  "org.sso.noticeText": "Single sign-on (SAML or OIDC), with verified domains, is set up for your organization in the platform administration console. To add or change it, contact your platform administrator."
 }
