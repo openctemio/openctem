@@ -48,7 +48,7 @@ func (h *LocalAuthHandler) loginNeedsCaptcha(r *http.Request, ip string) bool {
 // It fails closed: an attempt without a usable client key, or with an
 // unreadable counter, is asked for the CAPTCHA.
 func captchaNeeded(ctx context.Context, c Captcha, f LoginFailureCounter, key string, log *logger.Logger) bool {
-	if c == nil || f == nil {
+	if !captchaOn(ctx, c) || f == nil {
 		return false
 	}
 	if key == "" {
@@ -60,6 +60,23 @@ func captchaNeeded(ctx context.Context, c Captcha, f LoginFailureCounter, key st
 		return true
 	}
 	return n >= LoginCaptchaAfter
+}
+
+// captchaActivity is a CAPTCHA whose keys change at runtime (the console
+// setting): it is asked only while keys are configured.
+type captchaActivity interface {
+	Active(ctx context.Context) bool
+}
+
+// captchaOn reports whether c is to be asked: wired, and configured now.
+func captchaOn(ctx context.Context, c Captcha) bool {
+	if c == nil {
+		return false
+	}
+	if a, ok := c.(captchaActivity); ok {
+		return a.Active(ctx)
+	}
+	return true
 }
 
 // memoryLoginFailures is the in-process counter (one replica, or no Redis).

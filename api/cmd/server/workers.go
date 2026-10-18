@@ -707,11 +707,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// set metrics and email the platform administrators. Read-only.
 	if deps.DB != nil {
 		sys := newSystemCollector(cfg, deps.DB, nil, svc.VersionCheck)
-		var mailer systemstatus.Notifier
-		if repos.Admin != nil && svc.Email != nil {
-			mailer = systemMailer{admins: repos.Admin, email: svc.Email, appName: cfg.Brand.DisplayName(), log: log}
-		}
-		w.ControllerManager.Register(systemstatus.NewWatcher(sys, mailer, cfg.System.WatchInterval, log))
+		w.ControllerManager.Register(systemstatus.NewWatcher(sys, newAdminNotifier(cfg, repos, svc, log), cfg.System.WatchInterval, log))
 	}
 
 	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data

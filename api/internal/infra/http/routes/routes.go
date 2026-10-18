@@ -150,6 +150,9 @@ type Handlers struct {
 	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
 	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	AdminConfiguration  *handler.AdminConfigurationHandler  // Configuration page: setting sources (RFC-022 rev. 22)
+	// AdminPlatformSettings serves the settings moved from the environment
+	// into the console (CAPTCHA, region, storage quota, alerts, AI).
+	AdminPlatformSettings *handler.AdminPlatformSettingsHandler
 	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
