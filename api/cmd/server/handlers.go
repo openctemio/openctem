@@ -1079,7 +1079,6 @@ func InitLocalAuthHandler(
 			svc.Auth,
 			svc.Session,
 			svc.Email,
-			platformAdminChecker{admins: repos.Admin},
 			cfg.Auth,
 			log,
 		)
