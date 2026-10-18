@@ -131,7 +131,7 @@ func (e *Enforcer) SetOwnerLookup(fn OwnerLookup) {
 }
 
 // SetAggregateCheck wires the decision "this caller may see organization
-// totals" (the dashboard:aggregate permission). Unset, nobody does.
+// totals" (the dashboards:org:view permission). Unset, nobody does.
 func (e *Enforcer) SetAggregateCheck(fn func(ctx context.Context) bool) {
 	if e != nil {
 		e.aggregate = fn
@@ -139,7 +139,7 @@ func (e *Enforcer) SetAggregateCheck(fn func(ctx context.Context) bool) {
 }
 
 // AggregateViewer reports whether the caller may see organization totals
-// whatever their data scope (the dashboard:aggregate permission).
+// whatever their data scope (the dashboards:org:view permission).
 func (e *Enforcer) AggregateViewer(ctx context.Context) bool {
 	return e != nil && e.aggregate != nil && e.aggregate(ctx)
 }

@@ -160,7 +160,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	})
 
 	enforcer.SetAggregateCheck(func(ctx context.Context) bool {
-		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+		return middleware.HasPermission(ctx, permission.DashboardsOrgView.String())
 	})
 
 	assetRepo := postgres.NewAssetRepository(db)

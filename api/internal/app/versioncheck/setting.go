@@ -11,7 +11,7 @@ import (
 )
 
 // The daily online check is switched on and off in the platform console
-// (System > Software updates) instead of by editing VERSION_CHECK_ENABLED and
+// (Monitoring > Software updates) instead of by editing VERSION_CHECK_ENABLED and
 // restarting. The environment value stays a ceiling: an operator who set
 // VERSION_CHECK_ENABLED=false (an air-gapped or no-egress installation) has
 // forbidden the outbound request, and no console session can turn it back

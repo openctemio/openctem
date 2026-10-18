@@ -118,7 +118,7 @@ func ParseAliasEntries(gz []byte, m *AliasManifest) ([]software.FeedAlias, error
 		if len(out) >= f.Records {
 			return errors.New("more entries than the manifest states")
 		}
-		out = append(out, software.FeedAlias{Kind: e.Kind, Value: e.Value, Target: e.Target})
+		out = append(out, software.FeedAlias{Kind: e.Kind, Value: e.Value, Target: e.Target, Basis: e.Basis})
 		return nil
 	})
 	if err != nil {

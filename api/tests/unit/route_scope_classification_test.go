@@ -191,15 +191,17 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/mcp":                                         {classScoped, "each tool runs as the key's user (API keys never get full data)"},
 
 	// --- partial -------------------------------------------------------------------
-	"/api/v1/asset-groups":      {classPartial, "members, findings, adds and counts scoped (counts, risk and finding_count follow the reader, L-18); the group list is tenant configuration"},
-	"/api/v1/attack-surface":    {classPartial, "chains dropped unless every hop is in scope; stats counts, breakdown and average risk and the chain summary follow the scope; the attack-path summary stays an organization-wide count with no ids"},
-	"/api/v1/easm":              {classPartial, "summary scoped; candidates are tenant discovery output"},
-	"/api/v1/business-services": {classScoped, "asset links scoped (L-10); update and delete need every linked asset in scope (403); asset_count counts only in-scope links; the service list itself is tenant configuration"},
-	"/api/v1/business-units":    {classPartial, "asset links scoped (L-10); the rollup counters in the response count only the caller's in-scope assets; the unit list itself is organization configuration"},
-	"/api/v1/ctem-cycles":       {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
-	"/api/v1/approvals":         {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too; group exceptions (batches) are listed, read and decided only with every member finding in scope (RFC-111)"},
-	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope (RFC-098)"},
-	"/api/v1/dashboard":         {classScoped, "counts, velocity, data quality, process metrics and the executive summary follow the viewer (countScope, D6); the risk-trend history and the program metrics are organization-wide and a restricted viewer needs dashboard:aggregate (empty / 403 otherwise)"},
+	"/api/v1/asset-groups":                     {classPartial, "members, findings, adds and counts scoped (counts, risk and finding_count follow the reader, L-18); the group list is tenant configuration"},
+	"/api/v1/attack-surface":                   {classPartial, "chains dropped unless every hop is in scope; stats counts, breakdown and average risk and the chain summary follow the scope; the attack-path summary stays an organization-wide count with no ids"},
+	"/api/v1/easm":                             {classPartial, "summary scoped; candidates are tenant discovery output"},
+	"/api/v1/business-services":                {classScoped, "asset links scoped (L-10); update and delete need every linked asset in scope (403); asset_count counts only in-scope links; the service list itself is tenant configuration"},
+	"/api/v1/business-units":                   {classPartial, "asset links scoped (L-10); the rollup counters in the response count only the caller's in-scope assets; the unit list itself is organization configuration"},
+	"/api/v1/ctem-cycles":                      {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
+	"/api/v1/approvals":                        {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too; group exceptions (batches) are listed, read and decided only with every member finding in scope (RFC-111)"},
+	"/api/v1/remediation":                      {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope (RFC-098)"},
+	"/api/v1/organization/dashboards":          {classConfig, "organization dashboard layouts, no asset data (docs/architecture/dashboards.md): dashboards:org:view plus the dashboard's audience to read, dashboards:org:manage to change"},
+	"/api/v1/organization/settings/dashboards": {classConfig, "organization dashboard defaults (default refresh schedule, refresh floor)"},
+	"/api/v1/dashboard":                        {classScoped, "counts, velocity, data quality, process metrics and the executive summary follow the viewer (countScope, D6); the risk-trend history and the program metrics are organization-wide and a restricted viewer needs dashboards:org:view (empty / 403 otherwise)"},
 
 	// --- separate ------------------------------------------------------------------
 	"/api/v1/pentest":                     {classSeparate, "campaign membership (D5 engagement scope is P2)"},

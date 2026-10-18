@@ -69,6 +69,8 @@ type Service struct {
 	logger     *logger.Logger
 	now        func() time.Time
 	keys       RemediationKeyApplier
+	// maxRows bounds one pass's read of a tenant's matches (memory).
+	maxRows int
 }
 
 // RemediationKeyApplier keys persisted findings into remediation groups
@@ -82,7 +84,7 @@ func (s *Service) SetRemediationKeyApplier(k RemediationKeyApplier) { s.keys = k
 
 // NewService creates the matcher. classifier, sla and assets are optional.
 func NewService(store softwarematch.Store, policy PolicyReader, findings FindingWriter, log *logger.Logger) *Service {
-	return &Service{store: store, policy: policy, findings: findings, logger: log, now: time.Now}
+	return &Service{store: store, policy: policy, findings: findings, logger: log, now: time.Now, maxRows: maxTenantRows}
 }
 
 // SetEnrichment wires the optional pre-insert enrichment.
@@ -108,6 +110,9 @@ type Stats struct {
 	Created           int
 	Reopened          int
 	Closed            int
+	// CloseSkipped counts tenants whose close phase was skipped because
+	// the pass could not read all of their matches.
+	CloseSkipped int
 }
 
 // Run does one pass within budget: feed changes reset the affected
@@ -271,12 +276,17 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 		return nil
 	}
 	currentSince := s.now().Add(-softwarematch.StaleAfter)
-	matches, err := s.store.TenantMatches(ctx, tenantID, currentSince, maxTenantRows)
+	// One row more than the pass keeps tells a complete read from a
+	// truncated one.
+	matches, err := s.store.TenantMatches(ctx, tenantID, currentSince, s.maxRows+1)
 	if err != nil {
 		return err
 	}
-	if len(matches) >= maxTenantRows {
-		s.logger.Warn("vulnerability matching: tenant has more matches than one pass reads", "tenant_id", tenantID.String())
+	complete := len(matches) <= s.maxRows
+	if !complete {
+		matches = matches[:s.maxRows]
+		s.logger.Error("vulnerability matching: tenant has more matches than one pass reads; nothing is closed until it fits",
+			"tenant_id", tenantID.String(), "limit", s.maxRows)
 	}
 	desired, matched := s.plan(tenantID, policy, matches)
 
@@ -311,6 +321,13 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 	}
 	if err := s.create(ctx, tenantID, create, st); err != nil {
 		return err
+	}
+	if !complete {
+		// matched lacks the matches past the limit, so their live findings
+		// would look unmatched and be closed. Creating and reopening from
+		// what was read is safe; closing is not.
+		st.CloseSkipped++
+		return nil
 	}
 	return s.close(ctx, tenantID, existing, matched, currentSince, st)
 }

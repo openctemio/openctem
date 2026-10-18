@@ -289,14 +289,14 @@ type Handlers struct {
 	// AdminSuspension: Console > Organizations suspend / lift, and
 	// Console > Users block / unblock.
 	AdminSuspension *handler.AdminSuspensionHandler
-	// AdminSignup: Console > System > Sign-up (the sign-up policy).
+	// AdminSignup: Console > Settings > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
-	// AdminSignupEvents: Console > Requests > Sign-ups (the sign-up feed and
+	// AdminSignupEvents: Console > Customers > Sign-ups (the sign-up feed and
 	// its burst alert thresholds).
 	AdminSignupEvents *handler.AdminSignupEventHandler
-	// AdminEmail: Console > System > E-mail (the platform SMTP server, RFC-079).
+	// AdminEmail: Console > Settings > E-mail (the platform SMTP server, RFC-079).
 	AdminEmail *handler.AdminEmailHandler
-	// AdminLegal: Console > System > Legal and the public GET /api/v1/legal (RFC-079).
+	// AdminLegal: Console > Settings > Legal and the public GET /api/v1/legal (RFC-079).
 	AdminLegal *handler.AdminLegalHandler
 	// Brand: the public instance brand (GET /api/v1/brand).
 	Brand *handler.BrandHandler

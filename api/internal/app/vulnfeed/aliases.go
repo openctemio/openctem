@@ -101,12 +101,18 @@ func (im *Importer) applyAliases(ctx context.Context, f smallFetcher, sequence, 
 	meta["aliases_version"] = m.Version
 	meta["aliases_entries"] = len(entries)
 	meta["aliases_coverage"] = cov.Coverage
+	// Entries held for review: learned entries that would fold a product
+	// with data of its own (public advisory strings, no tenant data).
+	meta["aliases_held"] = res.Held
+	meta["aliases_held_values"] = res.HeldValues
+	meta["aliases_removed"] = res.Removed
 	st.SetMetadata(meta)
 	if err := im.status.Update(ctx, st); err != nil {
 		return 0, err
 	}
 	im.logger.Info("vulnerability alias dictionary applied", "version", m.Version, "entries", len(entries),
 		"written", res.Written, "repointed", res.Repointed, "merged", res.Merged, "skipped", res.Skipped,
+		"held", res.Held, "removed", res.Removed,
 		"cves_requeued", res.Requeued, "coverage", cov.Coverage)
 	return m.Version, nil
 }

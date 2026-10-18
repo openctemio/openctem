@@ -207,16 +207,62 @@ func VerifyDir(dir string, opt Options) (*Verified, error) {
 		return nil, err
 	}
 	if v.Latest.Delta != "" {
-		var d Manifest
-		if err := v.manifest(dir, KindDelta, &d, opt.Now); err != nil {
+		if err := v.verifyDelta(dir, opt.Now); err != nil {
 			return nil, err
 		}
-		if d.BaseSequence != v.Latest.BaseSequence || d.BaseSequence >= d.Sequence {
-			return nil, errors.New("delta: base sequence does not match the pointer")
-		}
-		v.Delta = &d
 	}
 	return v, nil
+}
+
+// ErrDeltaBase: the delta does not start at the applied sequence; the
+// snapshot is the one to apply.
+var ErrDeltaBase = errors.New("delta does not start at the applied sequence")
+
+// DeltaApplies reports whether a pointer-verified bundle's delta starts at
+// the applied sequence, so the delta alone brings the platform up to date.
+func (v *Verified) DeltaApplies(applied uint64) bool {
+	return applied != 0 && v.Latest.Delta != "" && v.Latest.BaseSequence == applied
+}
+
+// VerifyOne verifies the pointer and one manifest, kind, with its record
+// files: what a platform needs for the bundle part it applies, so a
+// platform that applied the delta's base never needs the snapshot files. A
+// delta must start at opt.AppliedSeq (ErrDeltaBase otherwise).
+func VerifyOne(dir string, opt Options, kind string) (*Verified, error) {
+	v, err := VerifyPointer(dir, opt)
+	if err != nil {
+		return nil, err
+	}
+	switch kind {
+	case KindSnapshot:
+		if err := v.manifest(dir, KindSnapshot, &v.Snapshot, opt.Now); err != nil {
+			return nil, err
+		}
+	case KindDelta:
+		if !v.DeltaApplies(opt.AppliedSeq) {
+			return nil, fmt.Errorf("%w: base %d, applied %d", ErrDeltaBase, v.Latest.BaseSequence, opt.AppliedSeq)
+		}
+		if err := v.verifyDelta(dir, opt.Now); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("bundle kind %q", kind)
+	}
+	return v, nil
+}
+
+// verifyDelta verifies the delta manifest and its files, and that its base
+// is the one the pointer names.
+func (v *Verified) verifyDelta(dir string, now time.Time) error {
+	var d Manifest
+	if err := v.manifest(dir, KindDelta, &d, now); err != nil {
+		return err
+	}
+	if d.BaseSequence != v.Latest.BaseSequence || d.BaseSequence >= d.Sequence {
+		return errors.New("delta: base sequence does not match the pointer")
+	}
+	v.Delta = &d
+	return nil
 }
 
 func (v *Verified) manifestOnly(dir, kind string, m *Manifest) error {

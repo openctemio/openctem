@@ -31,7 +31,7 @@ other stored secrets.
 
 ## Platform e-mail (`email.smtp`)
 
-- `internal/app/platformemail`; Console > System > E-mail
+- `internal/app/platformemail`; Console > Settings > E-mail
   (`GET/PUT /api/v1/admin/settings/email`, `POST .../test`).
 - Any administrator reads; a super admin saves with a fresh authenticator code.
   The test message goes to the acting administrator's own address only, so the
@@ -48,7 +48,7 @@ other stored secrets.
 
 ## Legal information (`legal`)
 
-- `internal/app/platformlegal`; Console > System > Legal
+- `internal/app/platformlegal`; Console > Settings > Legal
   (`GET/PUT /api/v1/admin/settings/legal`, super admin + fresh authenticator
   code to save, critical audit with the values).
 - Public read `GET /api/v1/legal` (cached 60 s): the web console renders the

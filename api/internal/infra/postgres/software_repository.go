@@ -34,6 +34,10 @@ func (r *SoftwareRepository) EnsureCurated(ctx context.Context, products []softw
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	// The curated list folds products too (alternate CPEs below).
+	if err := aliasLocks(ctx, tx); err != nil {
+		return err
+	}
 	for _, p := range products {
 		var id string
 		err := tx.QueryRowContext(ctx, `
@@ -81,7 +85,7 @@ func (r *SoftwareRepository) EnsureCurated(ctx context.Context, products []softw
 			if err != nil {
 				return fmt.Errorf("curated alternate %s: %w", k, err)
 			}
-			cves, err := mergeGlobalProduct(ctx, tx, from, id)
+			cves, err := mergeGlobalProduct(ctx, tx, from, id, mergeReason{kind: "cpe", value: k.String(), basis: "platform-curated"})
 			if err != nil {
 				return err
 			}

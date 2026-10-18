@@ -81,5 +81,6 @@
   "limits.usage.description": "Những gì tổ chức này có thể thêm. Để thay đổi giới hạn, hãy liên hệ quản trị viên của bản cài đặt này.",
   "limits.usage.title": "Giới hạn",
   "limits.accountPortal": "Quản lý tài khoản dịch vụ",
-  "limits.key.storage_mb": "Lưu trữ (MiB)"
+  "limits.key.storage_mb": "Lưu trữ (MiB)",
+  "limits.key.dashboard_refresh_floor_minutes": "Chu kỳ làm mới bảng điều khiển tối thiểu (phút)"
 }

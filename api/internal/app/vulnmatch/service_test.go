@@ -168,7 +168,10 @@ func (f *fakeStore) DequeueTenants(context.Context, int) ([]shared.ID, error) {
 	f.dequeueIDs = nil
 	return ids, nil
 }
-func (f *fakeStore) TenantMatches(context.Context, shared.ID, time.Time, int) ([]softwarematch.Match, error) {
+func (f *fakeStore) TenantMatches(_ context.Context, _ shared.ID, _ time.Time, limit int) ([]softwarematch.Match, error) {
+	if limit > 0 && len(f.matches) > limit {
+		return f.matches[:limit], nil // the store's LIMIT
+	}
 	return f.matches, nil
 }
 func (f *fakeStore) AssetMatches(context.Context, shared.ID, shared.ID) ([]softwarematch.Match, error) {
@@ -459,5 +462,58 @@ func TestReconcile_StaleOpenFindingMatchedAgainIsPresent(t *testing.T) {
 	}
 	if len(w.created) != 0 || len(store.reopened) != 1 || store.reopened[0] != stale {
 		t.Fatalf("created %d, reopened %v; want the stale finding passed to the store", len(w.created), store.reopened)
+	}
+}
+
+// A tenant with more matches than one pass reads: the findings of matches
+// past the limit are alive, so a truncated read must never close anything.
+// Before, the pass warned and then closed them as "advisory updated".
+func TestReconcile_TruncatedReadClosesNothing(t *testing.T) {
+	product, version := shared.NewID(), shared.NewID()
+	live := match(shared.NewID(), "CVE-2021-0003", 80)
+	live.ProductID, live.VersionID = product, version
+	setup := func(limit int) (*fakeStore, *Service) {
+		store := newFakeStore()
+		store.matches = []softwarematch.Match{match(shared.NewID(), "CVE-2021-0001", 80), match(shared.NewID(), "CVE-2021-0002", 80), live}
+		store.existing = []softwarematch.MatcherFinding{{ID: shared.NewID(), AssetID: live.AssetID, CVEID: live.Result.CVEID,
+			Fingerprint: fp(live), Status: "new", ProductID: &product, VersionID: &version, Location: live.Location}}
+		// Were it not matched, the link would close it (evaluated, CVE no longer covers it).
+		store.links[softwarematch.LinkKey{AssetID: live.AssetID, ProductID: product, VersionID: version, Location: live.Location}] =
+			softwarematch.LinkInfo{State: softwarematch.LinkCurrent, VersionEvaluated: true}
+		svc, _ := newSvc(store, true)
+		svc.maxRows = limit
+		return store, svc
+	}
+
+	store, svc := setup(2) // reads 2 of 3 matches
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.closed) != 0 || st.Closed != 0 {
+		t.Fatalf("truncated read closed %v", store.closed)
+	}
+	if st.Created != 2 {
+		t.Fatalf("created %d, want the 2 read matches", st.Created)
+	}
+	if st.CloseSkipped != 1 {
+		t.Fatalf("CloseSkipped = %d, want 1", st.CloseSkipped)
+	}
+
+	// Exactly the limit is a complete read: closing still works.
+	store, svc = setup(3)
+	store.matches = store.matches[:2] // the live match is gone
+	st = Stats{}
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	store2, svc2 := setup(2)
+	store2.matches = store2.matches[:2]
+	st2 := Stats{}
+	if err := svc2.ReconcileTenant(context.Background(), shared.NewID(), &st2); err != nil {
+		t.Fatal(err)
+	}
+	if st.Closed != 1 || st2.Closed != 1 || st2.CloseSkipped != 0 {
+		t.Fatalf("complete read: closed %d / %d (skipped %d), want 1 / 1 (0)", st.Closed, st2.Closed, st2.CloseSkipped)
 	}
 }
