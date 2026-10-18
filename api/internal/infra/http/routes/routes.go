@@ -1272,7 +1272,8 @@ var organizationAccessMiddleware Middleware //nolint:gochecknoglobals // set onc
 var organizationGate tenant.AccessGate //nolint:gochecknoglobals // set once during init
 
 // ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
-// user sessions. Set once during Register; nil disables it (tests).
+// every principal acting as an organization member (session, OIDC token,
+// `oct_` key, MCP OAuth token). Set once during Register; nil disables it (tests).
 var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
 // stepUpChecker answers RequireRecentAuth (step-up re-authentication,
