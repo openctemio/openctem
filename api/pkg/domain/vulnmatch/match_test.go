@@ -170,8 +170,11 @@ func TestMatchVersion_UnknownOrUnparseableVersion(t *testing.T) {
 			t.Errorf("version %q matched: %+v", v, got)
 		}
 	}
-	if got := MatchVersion(Observed{Version: "1.0", Scheme: SchemeSemver}, []Range{{VulnID: "CVE-1", Scheme: SchemeSemver, End: "2"}}); got != nil {
-		t.Fatalf("semver has no comparator yet: %+v", got)
+	if got := MatchVersion(Observed{Version: "1.0", Scheme: Scheme("cargo-x")}, []Range{{VulnID: "CVE-1", Scheme: Scheme("cargo-x"), End: "2"}}); got != nil {
+		t.Fatalf("a scheme without a comparator matched: %+v", got)
+	}
+	if got := MatchVersion(Observed{Version: "not a version", Scheme: SchemeNPM}, []Range{{VulnID: "CVE-1", End: "2"}}); got != nil {
+		t.Fatalf("an unparseable npm version matched: %+v", got)
 	}
 }
 
@@ -238,7 +241,12 @@ func TestRangeDescribe(t *testing.T) {
 }
 
 func TestSchemes(t *testing.T) {
-	if len(Schemes()) != 9 || !SchemeGeneric.Comparable() || SchemeDeb.Comparable() {
+	if len(Schemes()) != 9 || Scheme("cargo-x").Comparable() || Scheme("").Comparable() {
 		t.Fatal("schemes")
+	}
+	for _, s := range Schemes() {
+		if !s.Comparable() {
+			t.Errorf("scheme %s has no comparator", s)
+		}
 	}
 }

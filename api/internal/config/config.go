@@ -958,7 +958,7 @@ func (c *OAuthConfig) HasAnyProvider() bool {
 
 // SMTPConfig is what the e-mail templates need from the deployment: the base
 // URL of links. The SMTP server itself is the platform e-mail setting in the
-// admin console (System > E-mail, RFC-079), not an environment variable.
+// admin console (Settings > E-mail, RFC-079), not an environment variable.
 type SMTPConfig struct {
 	BaseURL string // Frontend base URL for email links (e.g., https://app.openctem.io)
 }
@@ -2682,7 +2682,7 @@ func (r retiredName) instead() string {
 }
 
 // smtpMoved is the hint for the SMTP_* variables.
-const smtpMoved = "unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
+const smtpMoved = "unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
 
 // removedEnv lists settings that were removed without a replacement
 // variable. Startup refuses to run while one is set, saying what to do
@@ -2693,7 +2693,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
-	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > Settings > Sign-up)"},
 	{"TENANT_CREATION_MODE", "unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open"},
 	// The platform SMTP server is set in the admin console (RFC-079).
 	{"SMTP_ENABLED", smtpMoved},
