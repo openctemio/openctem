@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toast } from 'sonner'
-import { csrfFetch } from '@/lib/api/client'
+import { csrfFetch, del } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can } from '@/lib/permissions'
 import {
@@ -124,8 +124,8 @@ export default function SIEMIntegrationPage() {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      const res = await csrfFetch(`/api/v1/integrations/${deleteTarget.id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(`Delete failed (HTTP ${res.status})`)
+      // apiClient path: a STEP_UP_REQUIRED answer opens the re-authentication dialog and retries.
+      await del(`/api/v1/integrations/${deleteTarget.id}`)
       toast.success('Integration deleted')
       setDeleteTarget(null)
       await invalidateNotificationIntegrationsCache()

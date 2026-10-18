@@ -101,11 +101,18 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 type AuthService struct {
 	// signups records sign-up events for the platform console (optional).
 	signups signupevent.Recorder
+	// orgGate refuses a token for a suspended organization
+	// (docs/architecture/organization-suspension.md). nil admits all
+	// (tests and tools without the gate).
+	orgGate tenantdom.AccessGate
 	// selfServiceLimits gives a self-service organization the instance's
 	// self-service default limits (none unless an operator set some).
 	selfServiceLimits SelfServiceLimits
 	// onSignIn runs after a sign-in created a session (signin_hook.go).
 	onSignIn SignInHook
+	// onSessionsRevoked runs after the account's sessions were revoked for a
+	// credential change (sessions_revoked_hook.go).
+	onSessionsRevoked SessionsRevokedHook
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -598,6 +605,9 @@ type TenantMembershipInfo struct {
 	TenantSlug string `json:"tenant_slug"`
 	TenantName string `json:"tenant_name"`
 	Role       string `json:"role"`
+	// OrganizationSuspended: the organization is suspended by a platform
+	// administrator; the client shows tenant.MessageOrganizationSuspended.
+	OrganizationSuspended bool `json:"organization_suspended,omitempty"`
 }
 
 // LoginResult represents the result of login.
@@ -835,10 +845,11 @@ func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddr
 		suspendedInfos = make([]TenantMembershipInfo, 0, len(memberships.Suspended))
 		for _, m := range memberships.Suspended {
 			suspendedInfos = append(suspendedInfos, TenantMembershipInfo{
-				TenantID:   m.TenantID,
-				TenantSlug: m.TenantSlug,
-				TenantName: m.TenantName,
-				Role:       m.Role,
+				TenantID:              m.TenantID,
+				TenantSlug:            m.TenantSlug,
+				TenantName:            m.TenantName,
+				Role:                  m.Role,
+				OrganizationSuspended: m.OrganizationSuspended,
 			})
 		}
 	}
@@ -1185,6 +1196,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
+	if err := s.organizationOpen(ctx, input.TenantID); err != nil {
+		return nil, err
+	}
 
 	// Rotate before minting: the presented token is spent first, and a
 	// failure to record that refuses the exchange. Marking it after minting
@@ -1440,6 +1454,13 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// A suspended organization is refused before the refresh token is
+	// spent: the session stays usable for the member's other
+	// organizations.
+	if err := s.organizationOpen(ctx, input.TenantID); err != nil {
+		return nil, err
 	}
 
 	// Mark old token as used (token rotation)
@@ -1872,6 +1893,33 @@ type SelfServiceLimits interface {
 // SetSelfServiceLimits wires the self-service default limits.
 func (s *AuthService) SetSelfServiceLimits(l SelfServiceLimits) { s.selfServiceLimits = l }
 
+// SetOrganizationGate wires the organization access gate: no tenant-scoped
+// token is minted or refreshed for a suspended organization.
+func (s *AuthService) SetOrganizationGate(g tenantdom.AccessGate) { s.orgGate = g }
+
+// organizationOpen refuses a suspended organization (and one whose status
+// cannot be read: the gate fails closed). It runs with the other per-tenant
+// sign-in policies, before the refresh token is spent.
+func (s *AuthService) organizationOpen(ctx context.Context, tenantID string) error {
+	if s.orgGate == nil {
+		return nil
+	}
+	id, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return ErrTenantAccessDenied
+	}
+	if err := s.orgGate.CheckAccess(ctx, id); err != nil {
+		if errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+			return err
+		}
+		if errors.Is(err, shared.ErrNotFound) {
+			return ErrTenantAccessDenied
+		}
+		return fmt.Errorf("organization status: %w", err)
+	}
+	return nil
+}
+
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
@@ -2299,6 +2347,11 @@ func (s *AuthService) generateTenantScopedAccessToken(
 	isAdmin bool,
 	authMethod string,
 ) (*jwt.TenantScopedAccessToken, error) {
+	// Backstop for every mint path: never a token for a suspended
+	// organization (the callers check earlier, before any side effect).
+	if err := s.organizationOpen(ctx, membership.TenantID); err != nil {
+		return nil, err
+	}
 	// Current permission version, stamped into the token so the permission-sync
 	// middleware can detect a post-issuance role change (AUTHZ-3).
 	permVersion := s.currentPermVersion(ctx, membership.TenantID, userID)

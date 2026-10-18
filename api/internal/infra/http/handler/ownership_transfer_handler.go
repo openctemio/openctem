@@ -86,16 +86,26 @@ func (h *TenantHandler) writeOwnershipTransfer(w http.ResponseWriter, status int
 
 // GetOwnershipTransfer returns the pending ownership transfer.
 // @Summary      Pending ownership transfer
-// @Description  The open request, when the caller is the owner who asked or the member asked; 404 otherwise (also for everyone else).
+// @Description  The open request, when the caller is the owner who asked or the member asked; JSON null when there is none the caller may see (also for everyone else).
 // @Tags         Tenants
 // @Produce      json
 // @Success      200  {object}  tenantapp.OwnershipTransferView
-// @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /organization/ownership-transfer [get]
 func (h *TenantHandler) GetOwnershipTransfer(w http.ResponseWriter, r *http.Request) {
 	actx := h.tokenTenantAuditContext(r)
 	v, err := h.service.PendingOwnershipTransfer(r.Context(), actx)
+	h.writePendingOwnershipTransfer(w, v, err)
+}
+
+// writePendingOwnershipTransfer answers the pending-transfer read. No pending
+// transfer is not an error for this read: it answers 200 with JSON null, so a
+// page that polls it does not log a failed request.
+func (h *TenantHandler) writePendingOwnershipTransfer(w http.ResponseWriter, v *tenantapp.OwnershipTransferView, err error) {
+	if errors.Is(err, tenant.ErrOwnershipTransferNotFound) {
+		h.writeOwnershipTransfer(w, http.StatusOK, nil)
+		return
+	}
 	if err != nil {
 		h.writeOwnershipError(w, err)
 		return

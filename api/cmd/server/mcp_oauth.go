@@ -94,7 +94,7 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 		Pepper:      cfg.Encryption.Key,
 		OldPeppers:  cfg.Encryption.PreviousKeys,
 		Fetcher:     mcpoauthapp.NewHTTPMetadataFetcher(),
-		Members:     apikey.NewMembershipChecker(repos.Tenant, repos.User),
+		Members:     apikey.NewMembershipChecker(repos.Tenant, repos.User, svc.OrganizationGate),
 		Permissions: apikey.NewHolderPermissions(repos.Tenant, svc.PermCache),
 		Audit:       audit,
 		Logger:      log,

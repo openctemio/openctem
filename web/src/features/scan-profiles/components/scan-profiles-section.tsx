@@ -31,7 +31,7 @@ import { AddScanProfileDialog } from './add-scan-profile-dialog'
 import { EditScanProfileDialog } from './edit-scan-profile-dialog'
 import { CloneScanProfileDialog } from './clone-scan-profile-dialog'
 import { AddPresetDialog } from './add-preset-dialog'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, useCanMutate } from '@/lib/permissions'
 import {
   useScanProfiles,
   useDeleteScanProfile,
@@ -71,6 +71,8 @@ export function ScanProfilesSection() {
 
   // Set default mutation
   const { trigger: setDefaultProfile, isMutating: isSettingDefault } = useSetDefaultScanProfile()
+  // The default profile is organization-wide: owner/admin only (the API gate).
+  const canSetDefault = useCanMutate('POST /api/v1/scan-profiles/{id}/set-default')
 
   // Handlers
   const handleRefresh = useCallback(async () => {
@@ -190,7 +192,7 @@ export function ScanProfilesSection() {
             <Can permission={[Permission.ScanProfilesWrite, Permission.ScanProfilesDelete]}>
               <DataTableRowActions
                 actions={[
-                  ...(!profile.is_default
+                  ...(!profile.is_default && canSetDefault
                     ? ([
                         {
                           label: 'Set as default',
@@ -232,7 +234,14 @@ export function ScanProfilesSection() {
         },
       },
     ],
-    [handleSetDefault, handleEditProfile, handleCloneProfile, handleDeleteClick, isSettingDefault]
+    [
+      handleSetDefault,
+      handleEditProfile,
+      handleCloneProfile,
+      handleDeleteClick,
+      isSettingDefault,
+      canSetDefault,
+    ]
   )
 
   const addMenu = (
