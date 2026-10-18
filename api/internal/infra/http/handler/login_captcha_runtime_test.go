@@ -12,7 +12,7 @@ import (
 type switchableCaptcha struct{ on bool }
 
 func (c *switchableCaptcha) Verify(context.Context, string, string) (bool, error) { return false, nil }
-func (c *switchableCaptcha) Active(context.Context) bool                       { return c.on }
+func (c *switchableCaptcha) Active(context.Context) bool                          { return c.on }
 
 // A CAPTCHA set in the console is asked only while keys are configured, and
 // from the moment they are, without a restart.

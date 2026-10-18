@@ -147,7 +147,7 @@ func (f fakeCaptcha) Verify(context.Context, string, string) (bool, error) { ret
 type inactiveCaptcha struct{}
 
 func (inactiveCaptcha) Verify(context.Context, string, string) (bool, error) { return false, nil }
-func (inactiveCaptcha) Active(context.Context) bool                       { return false }
+func (inactiveCaptcha) Active(context.Context) bool                          { return false }
 
 var openPolicy = signupdom.Static{Mode: signupdom.ModeAdminOnly, RequestAccess: true}
 
