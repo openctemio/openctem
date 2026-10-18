@@ -94,7 +94,7 @@ export function TotpStepForm({
             <li>
               {t(
                 'admin.login.enrollStep1',
-                'Open an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password...).'
+                'Open an authenticator app on your phone or in your password manager.'
               )}
             </li>
             <li>
