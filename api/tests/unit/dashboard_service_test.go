@@ -38,6 +38,9 @@ type mockDashboardRepo struct {
 	lastTenantID shared.ID
 	lastLimit    int
 	lastMonths   int
+
+	lastViewer    shared.FindingViewer
+	lastViewerSet bool
 }
 
 func newMockDashboardRepo() *mockDashboardRepo {
@@ -79,8 +82,9 @@ func (m *mockDashboardRepo) GetFindingTrend(_ context.Context, tenantID shared.I
 	return m.findingTrend, nil
 }
 
-func (m *mockDashboardRepo) GetAllStats(_ context.Context, tenantID shared.ID, _ *shared.DataScope) (*module.DashboardAllStats, error) {
+func (m *mockDashboardRepo) GetAllStats(ctx context.Context, tenantID shared.ID, _ *shared.DataScope) (*module.DashboardAllStats, error) {
 	m.getAllStatsCalls++
+	m.lastViewer, m.lastViewerSet = shared.FindingViewerOf(ctx)
 	m.lastTenantID = tenantID
 	if m.getAllStatsErr != nil {
 		return nil, m.getAllStatsErr
@@ -104,7 +108,7 @@ func (m *mockDashboardRepo) GetRiskTrend(_ context.Context, _ shared.ID, _ int) 
 	return nil, nil
 }
 
-func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) (*module.ExecutiveSummary, error) {
+func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ *shared.DataScope, _ *shared.DataScope, _ int) (*module.ExecutiveSummary, error) {
 	return &module.ExecutiveSummary{}, nil
 }
 
@@ -607,5 +611,23 @@ func TestDashboardService_GetStats_LargeDataSet(t *testing.T) {
 	}
 	if len(stats.FindingTrend) != 12 {
 		t.Errorf("FindingTrend has %d entries, want 12", len(stats.FindingTrend))
+	}
+}
+
+// The dashboards are only read on behalf of a caller: a context with no
+// caller (or an unwired enforcer) still reaches the repository with a
+// viewer that is a member of no campaign, never as an unfiltered read.
+func TestDashboardService_NoCaller_FailsClosedViewer(t *testing.T) {
+	repo := newMockDashboardRepo()
+	repo.allStats = &module.DashboardAllStats{}
+	svc := module.NewDashboardService(repo, logger.NewNop())
+	if _, err := svc.GetStats(context.Background(), shared.NewID()); err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if !repo.lastViewerSet {
+		t.Fatal("no finding viewer on the repository context: the pentest visibility rule would be skipped")
+	}
+	if repo.lastViewer.Admin || !repo.lastViewer.UserID.IsZero() {
+		t.Fatalf("viewer = %+v, want a non-admin zero-id viewer", repo.lastViewer)
 	}
 }

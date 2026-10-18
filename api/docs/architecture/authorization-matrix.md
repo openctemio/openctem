@@ -1754,7 +1754,19 @@ computed with the same SQL condition as every scoped list:
 | Restricted member with **`dashboard:aggregate`** (new permission, migration `000774`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
 
 Recent activity and top risks are row data and stay limited to the viewer's
-scope whatever the permission. MTTR (`GET /dashboard/mttr` and
+own scope whatever the permission: an aggregate viewer's top risks are queried
+with their own row scope, not cut down from the organization's top five (the
+totals keep the organization scope and the k-floor).
+
+Pentest findings follow the findings list on every dashboard query: for
+anyone who is not an organization administrator, a pentest finding is counted
+or shown only to a member of its campaign, and never as a draft or in-review
+finding for the campaign's `client` role. The dashboard SQL ANDs the same
+predicate the findings list compiles (`vulnerability.FindingMemberVisibilitySQL`,
+one rule for both), with the user taken from the authenticated principal.
+Recent activity, the monthly trend, velocity and the executive new-finding
+count also leave out unpublished pentest findings (draft, in review) for
+everyone, administrators included. MTTR (`GET /dashboard/mttr` and
 `/dashboard/mttr-analytics`) follows the viewer the same way (research 24
 §5.1): a restricted member averages their own in-scope findings, with
 `dashboard:aggregate` the organization. The other dashboard metrics

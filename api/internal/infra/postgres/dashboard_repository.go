@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/module"
@@ -39,7 +40,7 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 	query := `
 		WITH base AS (
 			SELECT id, severity, status, vulnerability_id, cvss_score FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only` + findingExcl(ctx, "asset_id") + `
 		),
 		total AS (SELECT COUNT(*) AS cnt FROM base),
 		by_sev AS (SELECT severity, COUNT(*) AS cnt FROM base GROUP BY severity),
@@ -105,7 +106,7 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 	// Get count of repositories with findings
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+`
 		 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository'`,
 		tenantID.String(),
 	).Scan(&stats.WithFindings)
@@ -131,7 +132,7 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 		        f.message as description,
 		        f.created_at
 		 FROM findings f
-		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+` AND `+scopeCond+`
+		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+publishedExcl("f")+` AND `+scopeCond+`
 		 ORDER BY f.created_at DESC
 		 LIMIT $`+itoa(len(args)),
 		args...,
@@ -193,7 +194,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			SELECT GROUPING(severity) AS g_sev, GROUPING(status) AS g_status,
 				severity, status, COUNT(*) AS cnt
 			FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only`+programFindingExcl(ctx, "asset_id")+` AND `+findingIn+`
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only`+findingExcl(ctx, "asset_id")+` AND `+findingIn+`
 			GROUP BY GROUPING SETS ((severity), (status), ())
 		),
 		asset_agg AS (
@@ -210,13 +211,13 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		avg_cvss AS (
 			SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) AS val
 			FROM findings f JOIN vulnerabilities v ON f.vulnerability_id = v.id
-			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review') AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+` AND `+fIn+`
+			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review') AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+` AND `+fIn+`
 		),
 		repo_with_findings AS (
 			SELECT COUNT(*) AS cnt
 			FROM assets a
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository' AND `+aIn+`
-				AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`)
+				AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+`)
 		)
 		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'atype', asset_type, cnt, 0 FROM asset_agg WHERE g_type = 0
@@ -285,7 +286,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		        f.message as description,
 		        f.created_at
 		 FROM findings f
-		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
+		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+publishedExcl("f")+`
 		 ORDER BY f.created_at DESC
 		 LIMIT 10`,
 		tid,
@@ -344,7 +345,7 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 				AND f.created_at >= date_trunc('month', NOW()) - ($2::int - 1) * interval '1 month'
 				AND f.created_at < date_trunc('month', NOW()) + interval '1 month'
 				AND f.status NOT IN ('draft', 'in_review')
-				AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
+				AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+`
 				AND `+inScope+`
 			GROUP BY 1
 		)
@@ -398,7 +399,7 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 		COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) as avg_hours
 		FROM findings
 		WHERE tenant_id = $1
-		AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+		AND NOT branch_only` + findingExcl(ctx, "asset_id") + `
 		AND ` + vulnerability.RemediatedSQL("") + `
 		AND resolved_at IS NOT NULL AND first_detected_at IS NOT NULL
 		AND resolved_at >= first_detected_at
@@ -464,7 +465,7 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 		COALESCE(SUM(CASE WHEN f.resolved_at >= w.week_start AND f.resolved_at < w.week_start + '1 week'::interval
 			AND ` + vulnerability.RemediatedSQL("f") + ` THEN 1 ELSE 0 END), 0) as resolved_count
 	FROM weeks w
-	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
+	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + publishedExcl("f") + ` AND ` + inScope("f.asset_id") + `
 	GROUP BY w.week_start
 	ORDER BY w.week_start`
 
@@ -660,7 +661,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 			SELECT
 				COUNT(*) AS total,
 				COUNT(*) FILTER(WHERE metadata IS NOT NULL AND metadata != '{}'::jsonb) AS with_evidence
-			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
+			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 		),
 		dedup_stats AS (
 			` + dedupSQL + `
@@ -699,7 +700,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 }
 
 // GetExecutiveSummary returns executive-level metrics for a time period using CTEs.
-func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*module.ExecutiveSummary, error) {
+func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, scope, rowScope *shared.DataScope, days int) (*module.ExecutiveSummary, error) {
 	if days <= 0 || days > 365 {
 		days = 30
 	}
@@ -724,27 +725,27 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				COUNT(*) FILTER (WHERE priority_class = 'P1') AS p1,
 				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + `
 		),
 		resolved_in_period AS (
 			SELECT severity, priority_class, resolved_at, first_detected_at
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 				AND ` + vulnerability.RemediatedSQL("") + `
 				AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		),
 		total_resolved AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.RemediatedSQL("") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.RemediatedSQL("") + `
 		),
 		regressions AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND is_regression = true
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND is_regression = true
 			  AND last_reopened_at >= NOW() - ($2::int || ' days')::interval
 		),
 		new_in_period AS (
 			SELECT id FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND created_at >= NOW() - ($2::int || ' days')::interval
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + publishedExcl("findings") + ` AND ` + inScope("asset_id") + ` AND created_at >= NOW() - ($2::int || ' days')::interval
 		),
 		risk_score AS (
 			-- Average over SCORED assets only (risk_score > 0), matching the
@@ -766,7 +767,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		crown_jewels AS (
 			SELECT COUNT(DISTINCT a.id) AS cnt
 			FROM assets a
-			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
+			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
 				AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
@@ -837,14 +838,16 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	// Top 5 risks: open findings ordered by priority class, EPSS score.
 	// title is nullable (most scanner findings only carry a message); scanning
 	// a NULL into a string failed the whole summary with a 500.
-	topIn, topArgs := dashboardScope(scope, 2)
+	// Top risks are row data: they follow the viewer's own row scope, never
+	// the scope the totals are counted over (nil for an aggregate viewer).
+	topIn, topArgs := dashboardScope(rowScope, 2)
 	topQuery := `
 		SELECT f.id::text, COALESCE(f.title, '') AS title, f.severity, COALESCE(f.priority_class, 'P3') AS priority_class,
 			COALESCE(f.asset_id::text, '') AS asset_id,
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
-		WHERE f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + topIn("f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		WHERE f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + ` AND ` + topIn("f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
 		LIMIT 5
 	`
@@ -906,7 +909,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 			COUNT(*) AS sample_size
 		FROM findings
 		WHERE tenant_id = $1
-			AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+			AND NOT branch_only` + findingExcl(ctx, "asset_id") + `
 			AND ` + vulnerability.RemediatedSQL("") + `
 			AND resolved_at >= NOW() - ($2::int || ' days')::interval
 			AND resolved_at IS NOT NULL
@@ -979,7 +982,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 			SELECT
 				COUNT(*) FILTER(WHERE assigned_to IS NULL AND ` + vulnerability.OpenStatusSQL("status") + `) AS unassigned,
 				COALESCE(AVG(EXTRACT(epoch FROM assigned_at - created_at) / 3600) FILTER(WHERE assigned_at IS NOT NULL), 0) AS avg_assign_hours
-			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
+			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 			AND created_at >= NOW() - ($2 || ' days')::interval
 		)
 		SELECT
@@ -1013,6 +1016,41 @@ func newSeverityCounts() map[string]int {
 		m[s] = 0
 	}
 	return m
+}
+
+// findingExcl is the predicate every dashboard query over findings ANDs: the
+// program-asset rule, then the pentest member-visibility rule of the findings
+// list for a viewer who is not an administrator (a pentest finding only for
+// members of its campaign, never a draft or in-review one for the client
+// role), through the one shared rule (vulnerability.FindingMemberVisibilitySQL).
+// col is the finding's asset column, alias-qualified when the findings table
+// is aliased; the tenant is $1. A context with no viewer is an internal
+// call that is not on behalf of a user.
+func findingExcl(ctx context.Context, col string) string {
+	return programFindingExcl(ctx, col) + pentestVisibilityExcl(ctx, findingAlias(col))
+}
+
+// findingAlias is the findings alias of an asset column ("f.asset_id" is "f";
+// an unqualified column reads the bare table).
+func findingAlias(col string) string {
+	if i := strings.LastIndex(col, "."); i > 0 {
+		return col[:i]
+	}
+	return "findings"
+}
+
+func pentestVisibilityExcl(ctx context.Context, alias string) string {
+	v, ok := shared.FindingViewerOf(ctx)
+	if !ok || v.Admin {
+		return ""
+	}
+	return " AND " + vulnerability.FindingMemberVisibilitySQL(alias, "$1", "'"+v.UserID.String()+"'::uuid")
+}
+
+// publishedExcl leaves out the findings still in pentest review (draft,
+// in review): they are not part of activity, new-finding counts or velocity.
+func publishedExcl(alias string) string {
+	return " AND " + alias + ".status NOT IN ('draft', 'in_review')"
 }
 
 // programFindingExcl leaves out the findings of program-only assets
