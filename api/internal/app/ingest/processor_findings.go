@@ -279,9 +279,12 @@ func (p *FindingProcessor) processBatch(
 		// identity is the version-2 identity (RFC-043 §4.2), nil when no
 		// recipe applies and the finding keeps its version-1 key.
 		identity *vulnerability.IdentityKey
-		// former is the version-2 key the finding may still be stored under
-		// (sastFormerLineKey), "" when none.
-		former string
+		// formers are the version-2 keys the finding may still be stored
+		// under (sastFormerLineKey, a secret's mask keys), oldest last.
+		formers []string
+		// legacy is the key the old ingest built from the report's own
+		// fingerprint (legacyClientFingerprint), "" when none.
+		legacy string
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -389,6 +392,7 @@ func (p *FindingProcessor) processBatch(
 				fingerprint: fp,
 				base:        base,
 				v1:          fp,
+				legacy:      legacyClientFingerprint(targetAssetID, &ctisFinding),
 			})
 		}
 	}
@@ -399,11 +403,11 @@ func (p *FindingProcessor) processBatch(
 
 	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
 	applyIdentityV2Of(p, tenantID, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
-		func(fm *findingMeta, k vulnerability.IdentityKey, former string) {
+		func(fm *findingMeta, k vulnerability.IdentityKey, formers []string) {
 			fm.identity = &k
 			fm.fingerprint = k.Fingerprint()
 			fm.base = ""
-			fm.former = former
+			fm.formers = formers
 		})
 
 	// Step 1b: a network finding without a CVE used to be keyed without its
@@ -418,11 +422,28 @@ func (p *FindingProcessor) processBatch(
 
 	// Step 1b': a finding still keyed by its version-1 key takes its
 	// version-2 key on this sighting; the old key stays its alias (RFC-043 §6).
-	adoptV1KeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.v1, fm.identity })
+	adoptV1KeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) adoptKeys {
+		return adoptKeys{from: fm.v1, identity: fm.identity, guard: adoptGuardOf(fm.assetID, &fm.finding, report)}
+	})
+	// A finding the old ingest keyed on the report's own fingerprint is taken
+	// over only by the same issue (asset, rule, tool, location), never on
+	// the fingerprint alone.
+	adoptLegacyClientKeysOf(ctx, p, tenantID, candidates,
+		func(fm findingMeta) (string, string, *vulnerability.IdentityKey, vulnerability.AdoptGuard) {
+			return fm.legacy, fm.fingerprint, fm.identity, adoptGuardOf(fm.assetID, &fm.finding, report)
+		})
 	// A SAST finding stored under its line-anchored key takes its
 	// code-anchored key once a report carries the code (a producer that
 	// started sending the snippet or its hash), keeping its triage.
-	adoptFormerKeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.former, fm.identity })
+	for i := range 2 {
+		adoptFormerKeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) adoptKeys {
+			ak := adoptKeys{identity: fm.identity, guard: adoptGuardOf(fm.assetID, &fm.finding, report)}
+			if i < len(fm.formers) {
+				ak.from = fm.formers[i]
+			}
+			return ak
+		})
+	}
 
 	// Step 1c: a key a finding gave up (an asset merge, a duplicate folded
 	// into another finding, an older recipe) is an alias of the finding that
@@ -935,10 +956,11 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 	// Generate base fingerprint
 	var baseFingerprint string
 
-	if ctisFinding.Fingerprint != "" && isValidFingerprint(ctisFinding.Fingerprint) {
-		// Use provided fingerprint as base (only if valid hash-like string)
-		baseFingerprint = ctisFinding.Fingerprint
-	} else if cve, port, ok := networkVACVEKey(ctisFinding); ok {
+	// The report's own Fingerprint is never the base: an uploader who knows
+	// another finding's base would otherwise choose which stored finding (and
+	// its triage) a different issue lands on. It is a sighting hint only
+	// (legacyClientFingerprint, partialSensorFingerprint).
+	if cve, port, ok := networkVACVEKey(ctisFinding); ok {
 		// Network/host vulnerability (Nessus/Qualys/Tenable): a CVE observed on a
 		// host with no package and no code location. Left to fingerprint.DetectType
 		// this falls to TypeGeneric (rule id + file + message) — or, if TargetHost
@@ -1007,6 +1029,49 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 	// Create composite fingerprint including assetID
 	// This ensures the same vulnerability on different assets produces different fingerprints
 	return createCompositeFingerprint(assetID.String(), baseFingerprint), baseFingerprint
+}
+
+// clientPartialFingerprints is a report's partial fingerprints without the
+// keys only the server writes: the pre-composite base an asset merge re-keys
+// by (composite/*) and the sensor's own fingerprint (sensor/*). A report that
+// set them could choose the key its finding takes after a merge.
+func clientPartialFingerprints(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		if vulnerability.IsServerPartialFingerprintKey(k) {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// adoptGuardOf names the issue a result is, in the columns buildFinding
+// stores it under: asset, rule, tool and location path.
+func adoptGuardOf(assetID shared.ID, f *ctis.Finding, report *ctis.Report) vulnerability.AdoptGuard {
+	g := vulnerability.AdoptGuard{AssetID: assetID.String(), RuleID: f.RuleID, Tool: UnknownValue}
+	if report != nil && report.Tool != nil {
+		g.Tool = report.Tool.Name
+	}
+	if f.Location != nil {
+		g.Path = f.Location.Path
+	}
+	return g
+}
+
+// legacyClientFingerprint is the key a finding got before the server decided
+// identity on its own: the composite of the asset and the report's own
+// fingerprint. "" when the report carries none (or not a hash-like one). A row
+// still stored under it is taken over only by a result with the same asset,
+// rule, tool and location (adoptLegacyClientKeysOf), never on the key alone.
+func legacyClientFingerprint(assetID shared.ID, ctisFinding *ctis.Finding) string {
+	if ctisFinding.Fingerprint == "" || !isValidFingerprint(ctisFinding.Fingerprint) {
+		return ""
+	}
+	return createCompositeFingerprint(assetID.String(), ctisFinding.Fingerprint)
 }
 
 // networkVACVEKey reports whether a CTIS finding is a network/host vulnerability
@@ -1692,8 +1757,8 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 	}
 
 	// SARIF extended fields
-	if len(ctisFinding.PartialFingerprints) > 0 {
-		f.SetPartialFingerprints(ctisFinding.PartialFingerprints)
+	if pf := clientPartialFingerprints(ctisFinding.PartialFingerprints); len(pf) > 0 {
+		f.SetPartialFingerprints(pf)
 	}
 	if len(ctisFinding.RelatedLocations) > 0 {
 		relLocs := make([]vulnerability.FindingLocation, 0, len(ctisFinding.RelatedLocations))
