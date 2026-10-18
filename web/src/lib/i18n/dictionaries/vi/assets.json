@@ -997,6 +997,7 @@
   "assets.software.belowPolicy": "Dưới ngưỡng chính sách",
   "assets.software.range": "Dải bị ảnh hưởng:",
   "assets.software.rangeNotStated": "không nêu",
+  "assets.software.reason.backport_possible": "Gói của bản phân phối khớp với dải của bản gốc: bản phân phối có thể đã vá ngược bản sửa lỗi",
   "assets.software.reason.all_versions": "Khuyến cáo nêu mọi phiên bản, không phải một dải",
   "assets.software.reason.edition_unverified": "Khuyến cáo dành cho một phiên bản đặc thù; lượt quét không cho biết phiên bản nào đang chạy",
   "assets.software.reason.platform_condition_unverified": "Khuyến cáo chỉ áp dụng trên một nền tảng mà tài sản chưa được thấy chạy",
