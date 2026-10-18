@@ -52,6 +52,8 @@ import en_remediation from './en/remediation.json'
 import en_reports from './en/reports.json'
 import en_scanWindows from './en/scanWindows.json'
 import en_tenableSc from './en/tenableSc.json'
+import en_siemIntegration from './en/siemIntegration.json'
+import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
 import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
@@ -113,6 +115,8 @@ import vi_remediation from './vi/remediation.json'
 import vi_reports from './vi/reports.json'
 import vi_scanWindows from './vi/scanWindows.json'
 import vi_tenableSc from './vi/tenableSc.json'
+import vi_siemIntegration from './vi/siemIntegration.json'
+import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
 import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
@@ -180,6 +184,8 @@ export const enNamespaces: Record<string, Dictionary> = {
   riskScore: en_riskScore,
   scanWindows: en_scanWindows,
   tenableSc: en_tenableSc,
+  siemIntegration: en_siemIntegration,
+  integrationsHub: en_integrationsHub,
   ticketMapping: en_ticketMapping,
   scans: en_scans,
   scope: en_scope,
@@ -244,6 +250,8 @@ export const viNamespaces: Record<string, Dictionary> = {
   riskScore: vi_riskScore,
   scanWindows: vi_scanWindows,
   tenableSc: vi_tenableSc,
+  siemIntegration: vi_siemIntegration,
+  integrationsHub: vi_integrationsHub,
   ticketMapping: vi_ticketMapping,
   scans: vi_scans,
   scope: vi_scope,
