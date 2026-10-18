@@ -228,6 +228,40 @@ export interface Paged<T> {
   total_pages: number
 }
 
+/** The Users list's state tabs (the API's `state` values). */
+export const PLATFORM_USER_STATES = [
+  'all',
+  'active',
+  'unverified',
+  'locked',
+  'blocked',
+  'mfa_off',
+  'platform_admins',
+] as const
+export type PlatformUserState = (typeof PLATFORM_USER_STATES)[number]
+
+/** One account in the Users list: no name, no organization data. */
+export interface PlatformUserListItem {
+  id: string
+  email: string
+  status: string
+  auth_provider: string
+  email_verified: boolean
+  locked: boolean
+  blocked: boolean
+  last_login_at?: string
+  created_at: string
+  memberships: number
+  mfa_enabled: boolean
+  is_platform_admin: boolean
+  erased: boolean
+}
+
+/** A page of the Users list with the count of each state under the search. */
+export interface PlatformUserList extends Paged<PlatformUserListItem> {
+  counts: Partial<Record<PlatformUserState, number>>
+}
+
 export interface AdminAuditEntry {
   id: string
   admin_id?: string
