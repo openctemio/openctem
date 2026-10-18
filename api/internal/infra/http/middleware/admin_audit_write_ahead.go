@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -53,7 +54,7 @@ func (m *AuditMiddleware) WriteAhead() func(http.Handler) http.Handler {
 			defer cancel()
 			if err := m.auditRepo.Create(ctx, entry); err != nil {
 				m.logger.Error("admin write-ahead audit failed; write refused",
-					"error", err, "method", r.Method, "path", r.URL.Path)
+					"error", err, "method", r.Method, "path", logSafe(r.URL.Path))
 				apierror.New(http.StatusServiceUnavailable, CodeAuditUnavailable,
 					"The administrators' audit log cannot be written; the change was not made.").WriteJSON(w)
 				return
@@ -69,4 +70,10 @@ func writeAheadApplies(r *http.Request) bool {
 		return false
 	}
 	return GetAdminRole(r.Context()) == string(admin.AdminRoleSuperAdmin)
+}
+
+// logSafe strips CR/LF from a request-controlled value before it is logged.
+func logSafe(s string) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	return strings.ReplaceAll(s, "\n", " ")
 }
