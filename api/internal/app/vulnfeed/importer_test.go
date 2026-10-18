@@ -219,8 +219,15 @@ func TestImport_OverHTTP(t *testing.T) {
 	if err != nil || res.Sequence != 2 {
 		t.Fatalf("%+v %v (%v)", res, err, paths)
 	}
-	if len(paths) != 10 || paths[0] != "/releases/latest/download/keyset.dsse.json" {
+	// A first import fetches the snapshot only: key set, pointer, the
+	// snapshot manifest and its three record files.
+	if len(paths) != 6 || paths[0] != "/releases/latest/download/keyset.dsse.json" {
 		t.Fatalf("paths %v", paths)
+	}
+	for _, p := range paths {
+		if strings.Contains(p, "/delta") {
+			t.Fatalf("a first import fetched the delta: %v", paths)
+		}
 	}
 	// Already applied: only the key set and the pointer are fetched.
 	paths = nil
