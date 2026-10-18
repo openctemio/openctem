@@ -5,7 +5,20 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { PlatformUser } from '../types'
 
 /** Sign-in state of one account: blocked, locked, unverified, MFA, platform admin, erased. */
-export function PlatformUserBadges({ user }: { user: PlatformUser }) {
+export function PlatformUserBadges({
+  user,
+}: {
+  user: Pick<
+    PlatformUser,
+    | 'erased'
+    | 'is_platform_admin'
+    | 'locked'
+    | 'blocked'
+    | 'status'
+    | 'email_verified'
+    | 'mfa_enabled'
+  >
+}) {
   const { t } = useTranslation()
   return (
     <div className="flex flex-wrap gap-1">

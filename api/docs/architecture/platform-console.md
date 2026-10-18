@@ -29,7 +29,7 @@ doing:
 |-------|-------|
 | (top) | Overview |
 | Customers | Organizations, Users, Access requests, Support access |
-| Scanning | Scan approval, Platform scanning, Shared sensors, Target mappings, Content packs, Threat intelligence |
+| Scanning | Scan approval, Platform scanning, Shared sensors, Target mappings, Content packs, Content catalog, Threat intelligence |
 | Security | Administrators, Sessions, Admin sign-in, Admin activity |
 | Settings | Sign-up, Limits, E-mail, Legal, Announcements, AI applications |
 | Monitoring | Health, System, Software updates |
@@ -49,6 +49,28 @@ certificate close to expiry, and a newer release (a warning when it fixes
 security advisories).
 Suspending an organization and blocking an account (the console's kill
 switches): [organization-suspension.md](organization-suspension.md).
+
+## Users and the content catalog
+
+Customers > Users (`GET /api/v1/admin/platform-users`, operations admin and
+up) lists every account newest first with state tabs (all, active, not
+verified, locked, blocked, no MFA, platform admins) and their counts, an
+optional search (email, name or id) and pagination. The list is the least
+personal data that tells accounts apart: email, state flags, sign-in method,
+number of organizations, last sign-in and creation date; the name, failed
+sign-ins, block reason, memberships and sessions are on the account's page,
+whose viewing is audited. Every list view writes an admin audit row
+(`platform_user.list`, with the state, search and page).
+
+Scanning > Content catalog (`/api/v1/admin/content-catalog`, any role reads)
+shows the instance catalog organizations install from: its trust state (the
+trust roots come from `CONTENT_TRUST_ROOT_KEY_IDS` on the server and are shown
+read-only: a console session cannot trust new content), its packages and
+versions, and the actions a super admin takes with a reason and a step-up:
+import a signed bundle, publish an instance package, revoke a version. The
+listing reads the instance catalog only, never an organization's private
+packages or installations. The program feed admin routes were removed
+(no console page used them).
 
 ## Configuration page
 
