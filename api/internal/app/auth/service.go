@@ -545,7 +545,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	s.logger.Info("user registered", "user_id", newUser.ID().String(), "email", email)
+	s.logger.Info("user registered", "user_id", newUser.ID().String())
 	source := signupevent.SourcePassword
 	if invited {
 		source = signupevent.SourceInvitation
