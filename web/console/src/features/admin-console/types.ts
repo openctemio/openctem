@@ -109,10 +109,12 @@ export interface AdminOrganization {
   /** At least one limit or module deny is set for the organization. */
   limits_apply: boolean
   /** Platform status: a suspended organization is refused to every credential. */
-  status: 'active' | 'suspended'
+  status: 'active' | 'suspended' | 'pending_deletion'
   suspended_at?: string
   /** For administrators only; members never see it. */
   suspended_reason?: string
+  /** An owner scheduled the deletion for this time. */
+  deletion_due_at?: string
 }
 
 export interface AdminOrganizationList {
@@ -396,6 +398,7 @@ export type AdminApprovalAction =
   | 'platform_idp.remove'
   | 'signup.open'
   | 'audit_chain.rebaseline'
+  | 'organization.purge'
 
 export type AdminApprovalStatus =
   'pending' | 'approved' | 'rejected' | 'canceled' | 'expired' | 'used'
