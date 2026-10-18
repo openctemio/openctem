@@ -21,10 +21,10 @@ func TestRenderExecutiveSummaryHTML_ContainsHeadlineMetrics(t *testing.T) {
 		P0Resolved:        7,
 		P1Open:            22,
 		P1Resolved:        14,
-		SLACompliancePct:  91.3,
+		SLACompliancePct:  ptrF(91.3),
 		SLABreached:       3,
-		MTTRCriticalHrs:   14.2,
-		MTTRHighHrs:       42.6,
+		MTTRCriticalHrs:   ptrF(14.2),
+		MTTRHighHrs:       ptrF(42.6),
 		CrownJewelsAtRisk: 2,
 		RegressionCount:   1,
 		RegressionRatePct: 0.7,
@@ -112,5 +112,28 @@ func TestRenderExecutiveSummaryHTML_EscapesHTMLInRiskTitle(t *testing.T) {
 	}
 	if !strings.Contains(out, "&lt;script&gt;") {
 		t.Fatalf("expected HTML-encoded script tag, got: %s", out)
+	}
+}
+
+func ptrF(f float64) *float64 { return &f }
+
+// A figure that is not measured renders as a dash in the report, never as a
+// compliant 100% or a 0 h fix time.
+func TestRenderExecutiveSummaryHTML_NotMeasuredIsDash(t *testing.T) {
+	var buf bytes.Buffer
+	if err := renderExecutiveSummaryHTML(&buf, &module.ExecutiveSummary{Period: "last 30 days"}, "2026-04-20"); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	for _, label := range []string{"Open within SLA", "MTTR Critical", "MTTR High"} {
+		at := strings.Index(out, label)
+		if at < 0 {
+			t.Fatalf("report has no %q card", label)
+		}
+		end := strings.Index(out[at:], `<div class="delta">`)
+		card := out[at : at+end]
+		if strings.Contains(card, "0.0") || strings.Contains(card, "100") || !strings.Contains(card, "\u2014") {
+			t.Errorf("not-measured %q card = %q, want a dash", label, card)
+		}
 	}
 }
