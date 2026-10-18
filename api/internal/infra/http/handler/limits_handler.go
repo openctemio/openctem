@@ -25,7 +25,7 @@ const (
 
 // LimitsHandler serves per-organization limits and feature denies
 // (docs/architecture/limits.md): the instance's self-service defaults
-// (Console > System > Limits), one organization's limits and denies
+// (Console > Settings > Limits), one organization's limits and denies
 // (Console > Organizations), and the organization's own Usage & limits view.
 type LimitsHandler struct {
 	svc    *entitlement.Service
