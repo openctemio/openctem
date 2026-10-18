@@ -94,6 +94,7 @@ dash_asset_rank
 dash_asset_state
 dash_dirty_assets
 dash_fact_status
+dashboard_audience
 definition_identifiers
 definition_relations
 definition_taxonomy

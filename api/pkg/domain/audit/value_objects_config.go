@@ -91,6 +91,7 @@ var configResourceTypes = map[ResourceType]struct{}{
 	ResourceTypeScopeRule:          {},
 	ResourceTypeAssignmentRule:     {},
 	ResourceTypeTicketMapping:      {},
+	ResourceTypeDashboard:          {},
 }
 
 func isConfigAction(a Action) bool {

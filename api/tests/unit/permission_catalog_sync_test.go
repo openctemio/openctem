@@ -43,6 +43,7 @@ var permSeedMigrations = []string{
 	"content_catalog",                         // content:read, content:install (RFC-099)
 	"content_private_packages",                // content:publish (RFC-099)
 	"finding_lifecycles_permission",           // findings:lifecycles:write (RFC-110)
+	"dashboard_ownership",                     // dashboards:org:manage
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
@@ -51,6 +52,7 @@ var permSeedMigrations = []string{
 var permRenameMigrations = []string{
 	"001285_scan_workflow_rename.up.sql",            // integrations:pipelines:* -> scans:workflows:*
 	"001761_scan_window_override_permission.up.sql", // scans:freeze:override -> scans:windows:override
+	"dashboard_ownership",                           // dashboard:aggregate -> dashboards:org:view
 }
 
 // permRemoveMigrations delete permission ids. Each lists the removed ids as
@@ -115,6 +117,9 @@ func seededPermissionIDs(t *testing.T) map[string]string {
 			t.Fatalf("read seed migration %s: %v (update permSeedMigrations if a file was renamed)", m, err)
 		}
 		for i, line := range strings.Split(string(data), "\n") {
+			if renameRow.MatchString(line) {
+				continue // an (old, new) rename row, read by the rename pass
+			}
 			if mm := tupleID.FindStringSubmatch(line); mm != nil {
 				id := mm[1]
 				if prev, dup := out[id]; dup {
@@ -128,7 +133,7 @@ func seededPermissionIDs(t *testing.T) map[string]string {
 		t.Fatal("parsed zero permissions from seed migrations — the parser or file list is broken")
 	}
 	for _, m := range permRenameMigrations {
-		data, err := os.ReadFile(filepath.Join(root, "migrations", m))
+		data, err := os.ReadFile(migrationFile(t, root, m))
 		if err != nil {
 			t.Fatalf("read rename migration %s: %v", m, err)
 		}

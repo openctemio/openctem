@@ -67,8 +67,8 @@ OpenCTEM compose stack and publishes nothing on a public interface.
    | `REDIS_PASSWORD` | The stack's Redis password (already there). |
    | `OBS_PUBLIC_URL` | The URL users open, e.g. `https://openctem.example.com`. |
    | `OBS_PUBLIC_PROBE_MODULE` | `http_2xx` for a public CA; `http_2xx_internal_ca` when the gateway uses its internal CA. |
-   | `OBS_APP_NETWORK` | The stack's docker network (default `openctemio_openctem-network`). |
-   | `OBS_API_UPSTREAM`, `OBS_WEB_UPSTREAM` | Defaults `api:8080`, `ui:3000`. |
+   | `OBS_APP_NETWORK` | The stack's docker network (default `openctemio_openctem-network`; `openctem_openctem` with the Compose overlay below). |
+   | `OBS_API_UPSTREAM`, `OBS_WEB_UPSTREAM` | Defaults `api:8080`, `ui:3000`. The shipped Compose stack's web service is `web`: add `-f deploy/observability/docker-compose.openctem.yml`, which sets `web:3000` and the network above. |
    | `OBS_TEXTFILE_DIR` | Host directory of `*.prom` status files (backups), default `/var/lib/node_exporter/textfile`. |
    | `OBS_CONTAINER_REGEX` | Containers watched for restarts/OOM, default `openctemio-.*\|openctem-sensor.*`. |
    | `OBS_RETENTION_TIME`, `OBS_RETENTION_SIZE` | Defaults `15d`, `2GB`. |
@@ -462,7 +462,7 @@ addresses in the audit log (failed sign-ins) and block them at the edge.
 
 The API counted more sign-ups of one kind (accounts, organizations, access
 requests) from one client network (/24 for IPv4, /48 for IPv6) or one email
-domain than the threshold within the window (Console > Requests > Sign-ups >
+domain than the threshold within the window (Console > Customers > Sign-ups >
 Alert thresholds; defaults 10 per network and 20 per domain an hour). The
 platform administrators were also emailed and the console admin audit log has
 a `platform.signup_burst` row naming the prefix or the domain. Open the
@@ -608,8 +608,8 @@ Fix the rule and run `deploy/observability/test/check-config.sh`.
 
 ## Built-in Health page (no monitoring stack needed)
 
-The platform console's **System** page (`/admin/system`, every platform
-administrator role, read-only) shows service health, free space of the
+The platform console's **Monitoring > Health** page (`/health` on the console's
+site, every platform administrator role, read-only) shows service health, free space of the
 configured data volumes, the database size, the last successful backup,
 certificate expiry and the running version. A watcher checks the same values
 every `SYSTEM_WATCH_INTERVAL` (5 minutes), sets the metrics below, and emails
