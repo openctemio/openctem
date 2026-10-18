@@ -7,7 +7,7 @@ refresh schedule build on it and are described here as they ship.
 | Part | Status |
 |---|---|
 | Fact layer: per-asset fact tables, dirty queue, change triggers, recompute and rebuild functions | **Shipped** (migration `002916_dashboard_fact_tables`) |
-| Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002920_dashboard_facts_maintainer`) |
+| Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002931_dashboard_facts_maintainer`) |
 | Widget registry reading the facts; viewer-scope and published-scope reads | Planned |
 | Published snapshots, refresh schedule, Refresh now | Planned |
 
@@ -277,7 +277,7 @@ and `DashboardFactsDrift` (any drift in a day); runbooks in
   their own organization per hour; the run is batched (200 assets per short
   transaction) and time-boxed per tick.
 
-Key files: `migrations/002920_dashboard_facts_maintainer.up.sql`,
+Key files: `migrations/002931_dashboard_facts_maintainer.up.sql`,
 `internal/infra/postgres/dashboard_facts_maintainer.go`,
 `internal/infra/controller/dashboard_facts.go`,
 `internal/app/dashboard/facts/service.go`,
