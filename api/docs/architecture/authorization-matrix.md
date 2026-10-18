@@ -1716,7 +1716,11 @@ a personal address, or be a work domain nobody has verified.
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values. The group list itself stays tenant configuration |
-| `GET /attack-surface/attack-paths` | **bypass** | `top_assets` filtered |
+| `GET /attack-surface/attack-paths` | **bypass (summary counts over the whole graph)** | `top_assets` filtered and `summary` recomputed over the assets the caller may see (entry points, reachable assets, critical reachable, crown jewels at risk, total paths, max depth); reachability itself is still the whole graph's. A viewer with `dashboard:aggregate` keeps the organization summary and still gets only their own rows |
+| `GET /threat-intel/stats` (EPSS and KEV counts) | **bypass (organization-wide exposure counts)** | the open findings counted (EPSS high / critical, KEV past due) are those on assets in the caller's scope; `dashboard:aggregate` or full data access counts the organization. The catalog totals (entries, ransomware, recently added) are public feed context |
+| `GET /validation/coverage` | **bypass (organization-wide KPI)** | per-severity totals, validated, downgrade and priority-class coverage count the findings on assets in the caller's scope; `dashboard:aggregate` or full data access counts the organization |
+| `GET /scans/coverage` | **bypass (organization-wide estate)** | the scannable estate counted (total, never scanned, covered, stale, critical uncovered, oldest dispatch) is the caller's in-scope assets; `dashboard:aggregate` or full data access counts the organization |
+| `GET /ctem-cycles/metrics/trend` | **bypass (organization-wide cycle metrics)** | the series and maturity are computed per organization, so a restricted member without `dashboard:aggregate` or full data access gets 403 |
 | `GET /attack-surface/exposure-chains`, MCP `get_exposure_chains` | **bypass** | a chain is returned only when every hop is in scope |
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
 | `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
@@ -1836,13 +1840,14 @@ read permission; none exposes a row, name, title or id of an out-of-scope
 object. This is **debt, not a decision**: owner decision D6 (2026-10-04) is
 that aggregates follow the viewer's scope, with org-wide totals only through
 `dashboard:aggregate` and a k ≥ 5 floor. Scoping them is RFC-050 W16;
-`/dashboard/stats` already follows D6.
+`/dashboard/stats` already follows D6, and so do the threat intel, validation
+coverage, scan coverage and attack-path summary counts (section "Data scope"
+above); the cycle metrics trend needs `dashboard:aggregate` or full data access.
 
 | Endpoint | Why tenant-wide |
 |---|---|
 | `GET /dashboard/{velocity,data-quality,risk-trend,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
 | `GET /attack-surface/stats` average risk score and per-type breakdown | aggregate; the counts and row lists on that endpoint are scoped |
-| `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
 

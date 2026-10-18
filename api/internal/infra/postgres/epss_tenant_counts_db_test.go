@@ -56,7 +56,7 @@ func TestEPSSRepository_CountTenantOpenAboveScores(t *testing.T) {
 	seedCVEFinding(ctx, t, db, tenantA, assetA, "CVE-2099-90004", "resolved")  // closed: excluded
 	seedCVEFinding(ctx, t, db, tenantB, assetB, "CVE-2099-90004", "new")       // other tenant
 
-	got, err := repo.CountTenantOpenAboveScores(ctx, tenantA, []float64{0.1, 0.5})
+	got, err := repo.CountTenantOpenAboveScores(ctx, tenantA, nil, []float64{0.1, 0.5})
 	if err != nil {
 		t.Fatalf("CountTenantOpenAboveScores: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestEPSSRepository_CountTenantOpenAboveScores(t *testing.T) {
 		t.Fatalf("want [3 2] (high, critical), got %v", got)
 	}
 
-	gotB, err := repo.CountTenantOpenAboveScores(ctx, tenantB, []float64{0.1, 0.5})
+	gotB, err := repo.CountTenantOpenAboveScores(ctx, tenantB, nil, []float64{0.1, 0.5})
 	if err != nil {
 		t.Fatalf("tenant B: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestEPSSRepository_CountTenantOpenAboveScores(t *testing.T) {
 		t.Fatalf("tenant B: want [1 1], got %v", gotB)
 	}
 
-	empty, err := repo.CountTenantOpenAboveScores(ctx, tenantA, nil)
+	empty, err := repo.CountTenantOpenAboveScores(ctx, tenantA, nil, nil)
 	if err != nil || len(empty) != 0 {
 		t.Fatalf("no thresholds: got %v, %v", empty, err)
 	}
