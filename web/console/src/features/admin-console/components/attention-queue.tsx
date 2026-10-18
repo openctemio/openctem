@@ -12,21 +12,19 @@ import type { AttentionItem, AttentionSeverity } from '../lib/attention'
 
 const SEVERITY: Record<
   AttentionSeverity,
-  { icon: typeof Info; className: string; labelKey: string; label: string }
+  { icon: typeof Info; className: string; labelKey: string }
 > = {
   critical: {
     icon: OctagonAlert,
     className: 'text-destructive',
     labelKey: 'admin.attention.critical',
-    label: 'Critical',
   },
   warning: {
     icon: AlertTriangle,
     className: 'text-warning',
     labelKey: 'admin.attention.warning',
-    label: 'Warning',
   },
-  info: { icon: Info, className: 'text-info', labelKey: 'admin.attention.info', label: 'Info' },
+  info: { icon: Info, className: 'text-info', labelKey: 'admin.attention.info' },
 }
 
 /**
@@ -86,7 +84,7 @@ export function AttentionQueue({
                   />
                   <div className="min-w-0">
                     <p className="text-sm font-medium">
-                      <span className="sr-only">{t(sev.labelKey, sev.label)}: </span>
+                      <span className="sr-only">{t(sev.labelKey)}: </span>
                       {t(item.titleKey, item.title, item.vars)}
                     </p>
                     <p className="text-sm text-muted-foreground">

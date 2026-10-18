@@ -375,5 +375,8 @@
   "confirm.verifiedDomain.removeTitle": "Gỡ tên miền {domain}?",
   "confirm.workflowStep.builderDeleteDesc": "Bước này rời khỏi quy trình bạn đang chỉnh sửa và các bước phụ thuộc vào nó mất phụ thuộc đó. Không có gì thay đổi cho tới khi bạn lưu.",
   "confirm.workflowStep.deleteDesc": "Bước này rời khỏi bản nháp và các bước phụ thuộc vào nó mất phụ thuộc đó. Quy trình đã xuất bản không thay đổi cho tới khi bạn xuất bản.",
-  "confirm.workflowStep.deleteTitle": "Xóa bước này?"
+  "confirm.workflowStep.deleteTitle": "Xóa bước này?",
+  "confirm.mcpClient.blockTitle": "Chặn {name} trên toàn hệ thống?",
+  "confirm.mcpClient.blockDesc": "Mọi tổ chức trên hệ thống này mất quyền dùng ứng dụng ngay lập tức: token của nó ngừng hoạt động và không thể được cấp quyền lại cho đến khi bạn bỏ chặn.",
+  "confirm.mcpClient.block": "Chặn"
 }
