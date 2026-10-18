@@ -34,9 +34,13 @@ type SensorHandler struct {
 	service         *sensorapp.SensorService
 	templateService *sensorapp.SensorConfigTemplateService
 	publicAPIURL    string // Public URL sensors will connect to (defaults to SENSOR_API_URL env var)
-	// products is the sensor product catalog (versions.yaml): each
-	// product's install snippets and image, with its pinned tag.
-	products []SensorInstallProduct
+	// productSource returns the sensor product catalog (versions.yaml, with
+	// the releases learned from the release feed): each product's install
+	// snippets and image, with its pinned tag. Called per request.
+	productSource func() []SensorInstallProduct
+	// sdkLatestSource returns the latest SDK release; nil keeps the
+	// health policy's value.
+	sdkLatestSource func() string
 	// collectorImage is the image a collector's install snippets run.
 	collectorImage string
 	// caCertFile is the platform CA the snippets install (SENSOR_CA_CERT_FILE);
@@ -79,18 +83,15 @@ func NewSensorHandler(service *sensorapp.SensorService, v *validator.Validator, 
 		validator:    v,
 		logger:       log.With("handler", "sensor"),
 	}
-	h.SetProducts(CatalogInstallProducts())
+	h.SetProductSource(CatalogInstallProducts)
 	return h
 }
 
 // SetHealthPolicy sets the heartbeat windows and the SDK entries used for the
 // computed state, health reasons and version status. Unset values take the
-// defaults; a policy without product release lines keeps the catalog's
-// (SetProducts).
+// defaults. The product release lines always come from the catalog
+// (SetProducts, SetProductSource), resolved per request.
 func (h *SensorHandler) SetHealthPolicy(p sensor.HealthPolicy) {
-	if p.Products == nil {
-		p.Products = h.healthPolicy.Products
-	}
 	h.healthPolicy = p.Normalized()
 }
 
@@ -107,7 +108,7 @@ func (h *SensorHandler) SetContentPolicySource(src ContentPolicySource) {
 // policyFor is the health policy for one tenant: the handler's thresholds
 // and release channel, plus the tenant's content policy.
 func (h *SensorHandler) policyFor(ctx context.Context, tenantID string) sensor.HealthPolicy {
-	p := h.healthPolicy
+	p := h.currentPolicy()
 	if h.contentPolicies == nil {
 		return p
 	}
