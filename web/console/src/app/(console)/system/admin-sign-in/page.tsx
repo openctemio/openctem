@@ -1,15 +1,16 @@
 'use client'
 
-import { ShieldAlert } from 'lucide-react'
 import { Main } from '@/components/layout'
+import { useTranslation } from '@/context/i18n-provider'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState, ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useAdminUsers } from '@console/features/admin-console/api/use-admin-users'
 import { usePlatformIdP } from '@console/features/admin-console/api/use-platform-idp'
 import { PlatformIdPForm } from '@console/features/admin-console/components/platform-idp-form'
 import { ConsoleMfaPolicyCard } from '@console/features/admin-console/components/console-mfa-policy-card'
 import { adminCan } from '@console/features/admin-console/types'
+import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
 /**
  * System -> Admin sign-in: the administrators' identity provider and the
@@ -18,6 +19,7 @@ import { adminCan } from '@console/features/admin-console/types'
  */
 export default function AdminSignInPage() {
   const me = useAdmin()
+  const { t } = useTranslation()
   const isSuper = adminCan(me.role, 'super_admin')
   const { data, error, isLoading, mutate } = usePlatformIdP(isSuper)
   const { data: admins } = useAdminUsers(1, isSuper)
@@ -25,13 +27,8 @@ export default function AdminSignInPage() {
   if (!isSuper) {
     return (
       <Main>
-        <PageHeader title="Admin sign-in" />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldAlert}
-          title="Super admin only"
-          description="How administrators sign in is configured by super admins."
-        />
+        <PageHeader title={t('admin.nav.adminSignIn', 'Admin sign-in')} />
+        <RoleRequiredNotice needed="super_admin" variant="page" />
       </Main>
     )
   }
@@ -43,7 +40,7 @@ export default function AdminSignInPage() {
   return (
     <Main>
       <PageHeader
-        title="Admin sign-in"
+        title={t('admin.nav.adminSignIn', 'Admin sign-in')}
         description="How administrators sign in to this console. Separate from organization sign-in."
       />
       <div className="mt-5 space-y-4">

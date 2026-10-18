@@ -177,6 +177,10 @@ func registerAuditRoutes(
 		// List and search audit logs
 		r.GET("/", h.List, middleware.Require(permission.AuditRead))
 
+		// Export the filtered list as CSV or JSON lines (newest first, capped,
+		// audited). Same gate as the list, plus the heavy-read cap.
+		r.GET("/export", h.Export, middleware.Require(permission.AuditRead), heavyReads.Middleware())
+
 		// Get audit log statistics
 		r.GET("/stats", h.GetStats, middleware.Require(permission.AuditRead))
 

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -261,26 +262,50 @@ func redactSensitiveFields(body map[string]interface{}) map[string]interface{} {
 		"private_key", "privateKey", "access_token", "accessToken",
 		"refresh_token", "refreshToken", "client_secret", "clientSecret",
 		"totp_code", "totpCode",
+		"code", "totp", "recovery_code", "recovery_codes",
 	}
 
 	redactFields(result, sensitiveFields)
 	return result
 }
 
+// sensitiveSuffixes redact any key that ends with one of them, whatever its
+// case (client_secret, Signing_Key, reset_token, new_password, ...).
+var sensitiveSuffixes = []string{"_secret", "_key", "_token", "_password", "secret", "password"}
+
+func isSensitiveKey(key string, exact []string) bool {
+	for _, sensitive := range exact {
+		if strings.EqualFold(key, sensitive) {
+			return true
+		}
+	}
+	lower := strings.ToLower(key)
+	for _, suffix := range sensitiveSuffixes {
+		if strings.HasSuffix(lower, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 // redactFields recursively redacts sensitive fields.
 func redactFields(data map[string]interface{}, sensitiveFields []string) {
 	for key, value := range data {
 		// Check if this key should be redacted
-		for _, sensitive := range sensitiveFields {
-			if key == sensitive {
-				data[key] = "[REDACTED]"
-				break
-			}
+		if isSensitiveKey(key, sensitiveFields) {
+			data[key] = "[REDACTED]"
 		}
 
 		// Recurse into nested maps
-		if nested, ok := value.(map[string]interface{}); ok {
-			redactFields(nested, sensitiveFields)
+		switch v := value.(type) {
+		case map[string]interface{}:
+			redactFields(v, sensitiveFields)
+		case []interface{}:
+			for _, item := range v {
+				if nested, ok := item.(map[string]interface{}); ok {
+					redactFields(nested, sensitiveFields)
+				}
+			}
 		}
 	}
 }

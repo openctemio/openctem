@@ -26,6 +26,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { ScanApprovalMode, ScanApprovalPolicy } from '../api/use-scan-policy'
 import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { RoleRequiredNotice } from './role-required-notice'
 
 const POLICIES: ScanApprovalPolicy[] = ['tenant_controlled', 'off', 'on', 'strict']
 
@@ -188,9 +189,7 @@ export function ScanPolicyForm({
               </Button>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.scanPolicy.superOnly', 'Only a super admin can change it.')}
-            </p>
+            <RoleRequiredNotice needed="super_admin" />
           )}
         </CardContent>
       </Card>
