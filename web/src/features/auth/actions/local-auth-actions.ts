@@ -102,9 +102,6 @@ export interface LoginBackendResponse {
     /** The organization itself is suspended by the platform operator. */
     organization_suspended?: boolean
   }>
-  // True for a platform administrator (RFC-022). The account belongs to no
-  // organization; it goes to the admin console, not onboarding.
-  platform_admin?: boolean
   // Present only on the response that completes a forced 2FA enrollment.
   recovery_codes?: string[]
 }
@@ -145,8 +142,6 @@ export interface LoginResult {
   // The login form surfaces this so the user knows why they have no
   // accessible team, instead of being routed to create-team onboarding.
   suspendedTenants?: LoginTenant[]
-  // A platform administrator: the client opens the admin console.
-  platformAdmin?: boolean
   // The password was right but a second factor is needed. No session exists
   // yet: the form shows the code step (verify) or the setup step (enroll).
   mfaRequired?: boolean
@@ -385,12 +380,6 @@ async function completeLogin(
     roles: [],
     emailVerified: true, // Assume verified if can login
     authProvider: 'local',
-  }
-
-  // A platform administrator belongs to no organization: the sign-in page
-  // points them to the platform console (its own site) instead of onboarding.
-  if (loginData.platform_admin) {
-    return { success: true, user, platformAdmin: true, tenants: [] }
   }
 
   // Case 1: No tenants - user needs to create or join a team.
@@ -662,7 +651,6 @@ export async function confirmMfaEnrollmentAction(code: string): Promise<LoginRes
         user: data.user,
         tenants: data.tenants,
         suspended_tenants: data.suspended_tenants,
-        platform_admin: data.platform_admin,
       },
     }
     const encoded = Buffer.from(JSON.stringify(pending)).toString('base64url')
