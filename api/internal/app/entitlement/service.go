@@ -68,7 +68,7 @@ type Service struct {
 // ErrStartLimitsRequired refuses self-service sign-up while no starting
 // limits are configured.
 var ErrStartLimitsRequired = errors.New("self-service sign-up needs starting limits: set SELF_SERVICE_START_LIMITS " +
-	"(a JSON object of limits, or \"unlimited\" to choose none), save them in Console > System > Limits, " +
+	"(a JSON object of limits, or \"unlimited\" to choose none), save them in Console > Settings > Limits, " +
 	"or turn on the internal entitlements API")
 
 // SetStartLimits reads SELF_SERVICE_START_LIMITS: empty (not configured),

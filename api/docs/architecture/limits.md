@@ -117,7 +117,7 @@ never hand out unlimited organizations by accident, so while sign-up is
 
 - the API refuses to start, and the console refuses to switch sign-up to
   self-service (409), unless starting limits are configured;
-- configured means one of: a saved console setting (System > Limits, even an
+- configured means one of: a saved console setting (Settings > Limits, even an
   empty one), `SELF_SERVICE_START_LIMITS` (a JSON object of limits, or
   `unlimited` for an explicit choice of none), or the internal entitlements
   API of a hosted service (its control plane sets them);
