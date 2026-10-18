@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Search } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Input } from '@/components/ui/input'

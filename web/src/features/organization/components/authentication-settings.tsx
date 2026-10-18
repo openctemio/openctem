@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { AlertCircle, ShieldHalf } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
