@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Settings › Policies › Scope policy (RFC-054 §6.3): the organization's scope
+ * Settings › Scanning › Scope policy (RFC-054 §6.3): the organization's scope
  * knobs and the values in effect. Reading needs scope:read; saving needs
  * scope:approve and step-up (enforced by the API).
  */

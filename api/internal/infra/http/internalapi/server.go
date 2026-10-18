@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
+
 	"golang.org/x/time/rate"
 
 	"github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -405,6 +407,7 @@ func (h *Handler) provision(w http.ResponseWriter, r *http.Request) {
 	created, err := h.d.Provisioner.Create(r.Context(), tenantapp.CreateOrganizationInput{
 		Name: strings.TrimSpace(req.Name), Slug: strings.ToLower(strings.TrimSpace(req.Slug)),
 		OwnerEmail: req.OwnerEmail, OwnerName: req.OwnerName, NewOwnerOnly: true,
+		SignupSource: signupevent.SourceControlPlane,
 		Provisioned: &tenantapp.ProvisionedEntitlements{
 			Limits: lims, DeniedFeatures: req.DeniedFeatures, IdlePolicy: req.IdlePolicy, Reason: strings.TrimSpace(req.Reason),
 		},

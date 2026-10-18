@@ -38,6 +38,11 @@
 > `/admin` path in the tenant app; the API's internal sensor listener moves to
 > 9443 (see [Revision 21](#revision-21-the-consoles-own-service-and-port)).
 
+> **Revision 23** (2026-10-18): console hardening: at most three verified
+> sessions per administrator, a write-ahead audit row for super administrator
+> writes, administrator accounts refused on the main site, and the console's
+> own pre-session cookie (see [Revision 23](#revision-23-console-hardening)).
+
 > **Revision 22** (2026-10-18): console sessions and the administrator
 > roster are hardened: background refreshes no longer keep a session alive,
 > a credential change on the account ends its console sessions, every
@@ -1004,6 +1009,36 @@ session could do more, or last longer, than intended. Each is closed here.
   network error text (addresses, resolver errors) to the browser when the API
   cannot be reached.
 
+## Revision 23: console hardening
+
+- **Three sessions per administrator.** Opening a verified session ends the
+  administrator's oldest verified sessions beyond three
+  (`console.session_evicted`, audited), so a stolen token cannot sit beside
+  an unbounded number of live ones.
+- **Write-ahead audit for super administrator writes.** The outcome rows are
+  written after the response, in the background, and can be lost. A write
+  whose acting role is super_admin now first writes one `admin.write_started`
+  row (method, path, redacted body) in the request, with a five-second limit;
+  if it cannot be written the request is refused (503 `AUDIT_UNAVAILABLE`)
+  and the handler does not run. Other roles and reads are unaffected. With
+  `MANAGED_SERVICE=true` in production the API refuses to start without the
+  off-box audit sink (`ADMIN_AUDIT_SINK`). Redaction of request bodies now
+  matches keys by suffix (`secret`, `password`, `_key`, `_token`, any case)
+  and the keys `code`, `totp`, `recovery_code`, `recovery_codes`.
+- **Administrator accounts do not sign in on the main site.** The account
+  that is linked to an active administrator is refused on the tenant site
+  (password, second-factor completion, token exchange, social and SSO
+  sign-in) with the wrong-password answer, so the endpoint is no password
+  oracle and does not reveal which emails are administrators; the attempt is
+  logged (`alert=platform_admin_main_site_sign_in`). The sign-in page says
+  where administrators sign in; it no longer gets a `platform_admin` flag.
+- **Own pre-session cookie.** The console's sign-in steps echo `console_csrf`
+  instead of the tenant site's `csrf_token`, which a same-host tenant site on
+  another port shares.
+- The route table at the top of `routes/admin.go` now states, per route,
+  whether it takes the route-level step-up, the fresh step-up and a fresh
+  code in the body.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
@@ -1149,3 +1184,17 @@ session could do more, or last longer, than intended. Each is closed here.
   owner count without owner emails, and the account search
   (`/platform-users`) is ops_admin+. Every member-list view is audited
   (`organization.users_view`).
+
+## Revision 22: sign-up feed and burst alerts
+
+Requests > Sign-ups (`/requests/sign-ups`) lists accounts created,
+organizations created and access requests submitted, with today / 7-day /
+30-day counts per kind, kept 90 days. Each event shows the registrable email
+domain and the client network prefix (/24, /48) only, so every console role,
+the read-only one included, may read it: it names no person. When sign-ups of
+one kind from one prefix or one domain reach a threshold within a window
+(default 10 / 20 an hour), the API raises one alert per window: metric, WARN
+line `alert=signup_burst`, a high admin audit row `platform.signup_burst` and
+an email to every administrator. A super admin changes the thresholds and the
+ignored domains with a reason and a fresh authenticator code (audited
+critical). Details: `docs/architecture/signup-activity.md`.

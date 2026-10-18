@@ -37,6 +37,7 @@ import (
 // Audit actions written to admin_audit_logs.
 const (
 	ActionLogin            = "console.login"
+	ActionSessionEvicted   = "console.session_evicted"
 	ActionLoginFailed      = "console.login_failed"
 	ActionMFAEnrolled      = "console.mfa_enrolled"
 	ActionMFAFailed        = "console.mfa_failed"
@@ -460,6 +461,14 @@ func (s *Service) openVerifiedSession(ctx context.Context, a *admin.AdminUser, a
 	token, err := s.newSession(ctx, a.ID(), true, admin.SessionTTL, authMethod, client)
 	if err != nil {
 		return "", err
+	}
+	// A new verified session ends the oldest beyond the cap, so a stolen
+	// token cannot sit beside an unbounded number of live ones.
+	if n, err := s.console.EndOldestVerifiedSessions(ctx, a.ID(), admin.MaxVerifiedSessions); err != nil {
+		s.log.Warn("end oldest admin console sessions", "error", err)
+	} else if n > 0 {
+		s.recordNote(ctx, a, ActionSessionEvicted, client,
+			fmt.Sprintf("ended %d older session(s): at most %d verified sessions per administrator", n, admin.MaxVerifiedSessions))
 	}
 	// Compared with the last address before RecordUsage replaces it.
 	s.noteSignInNetwork(ctx, a, client)
