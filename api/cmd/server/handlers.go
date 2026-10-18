@@ -27,7 +27,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/securityoverview"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
-	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
@@ -596,6 +595,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminVersionCheck: handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
+		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
@@ -1108,9 +1108,10 @@ func InitLocalAuthHandler(
 				handlers.LocalAuth.SetOnboarding(svc.Onboarding)
 			}
 		}
-		// The same CAPTCHA as the request-access form, on registration.
-		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
-			handlers.LocalAuth.SetCaptcha(t)
+		// The same CAPTCHA as the request-access form, on registration
+		// (asked only while keys are configured).
+		if svc.PlatformCaptcha != nil {
+			handlers.LocalAuth.SetCaptcha(svc.PlatformCaptcha)
 		}
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {

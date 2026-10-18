@@ -225,8 +225,6 @@ func run() int {
 	// ==========================================================================
 	repos := NewRepositories(db)
 	repos.UseAdminDB(adminDB)
-	// New organizations get the deployment's region, fixed for their life.
-	repos.Tenant.SetDefaultRegion(cfg.App.Region)
 	repos.InitIntegrationExtensions(db)
 	log.Info("repositories initialized")
 
@@ -262,6 +260,9 @@ func run() int {
 		log.Error("failed to initialize email services", "error", err)
 		return 1
 	}
+	// Console setting changes are told to every administrator (e-mail and
+	// the alert webhook).
+	services.SettingRecorder.SetNotifier(newAdminNotifier(cfg, repos, services, log))
 
 	// Account security e-mails (2FA turned off, recovery code used, password
 	// changed) go to the user through the system SMTP server.
@@ -347,9 +348,11 @@ func run() int {
 	// The request-access queue: approval creates the organization with the
 	// requester as owner, through the same creator as the console.
 	if services.Signup != nil && services.Tenant != nil {
+		// The CAPTCHA in force (console keys, or the environment's), asked
+		// only while keys are configured.
 		var captcha accessrequestapp.Captcha
-		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
-			captcha = t
+		if services.PlatformCaptcha != nil {
+			captcha = services.PlatformCaptcha
 		}
 		services.AccessRequest = accessrequestapp.NewService(repos.AccessRequest, services.Signup,
 			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
@@ -388,16 +391,16 @@ func run() int {
 		InitLocalAuthHandler(&handlers, services, repos, cfg, log)
 		// The CAPTCHA after repeated failed sign-ins counts failures per
 		// client address across replicas.
-		if handlers.LocalAuth != nil && cfg.Auth.CaptchaTurnstileSecret != "" {
+		// The counter is always wired: the CAPTCHA keys can be set in the
+		// console at any time, and it is asked only while they are.
+		if handlers.LocalAuth != nil && services.PlatformCaptcha != nil {
 			handlers.LocalAuth.SetLoginFailureCounter(newLoginFailureCounter(redisClient, log))
 		}
 	}
 	// The console sign-in gets the same CAPTCHA after repeated failures, with
 	// its own per-address counter keys.
-	if handlers.AdminConsole != nil && cfg.Auth.CaptchaTurnstileSecret != "" {
-		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
-			handlers.AdminConsole.SetLoginGuard(t, newLoginFailureCounter(redisClient, log))
-		}
+	if handlers.AdminConsole != nil && services.PlatformCaptcha != nil {
+		handlers.AdminConsole.SetLoginGuard(services.PlatformCaptcha, newLoginFailureCounter(redisClient, log))
 	}
 	wireStepUpGate(&handlers, services)
 
