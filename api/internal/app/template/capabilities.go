@@ -464,7 +464,13 @@ func toInt(v any) (int, bool) {
 	case string:
 		s := strings.TrimSpace(x)
 		if n, err := strconv.ParseInt(s, 0, 64); err == nil {
-			return clampInt(float64(n)), true
+			switch {
+			case n > math.MaxInt32:
+				return math.MaxInt32, true
+			case n < math.MinInt32:
+				return math.MinInt32, true
+			}
+			return int(int32(n)), true
 		}
 		if f, err := strconv.ParseFloat(s, 64); err == nil && !math.IsNaN(f) {
 			return clampInt(math.Ceil(f)), true
