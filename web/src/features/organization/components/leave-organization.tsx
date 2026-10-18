@@ -13,18 +13,26 @@ import { post } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { removeCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
+import { usePermissions } from '@/lib/permissions'
+import { useMemberStats } from '../api/use-members'
 
 /**
- * Organization › General › Danger zone: leave this organization (api
- * RFC-104). Any member, for themselves only. The API refuses the only owner
- * and someone who still owns work an administrator must reassign; its
- * message is shown.
+ * My account › Profile › Organization membership: leave this organization
+ * (api RFC-104). Any member, for themselves only, so it lives on the account
+ * page that every member can open. The only owner sees the button disabled
+ * with the reason; the API still refuses them, and someone who owns work an
+ * administrator must reassign, and shows its message.
  */
 export function LeaveOrganization() {
   const { t } = useTranslation()
   const { currentTenant, tenants, switchTeam, loadTenants } = useTenant()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const { isOwner } = usePermissions()
+  // Only an owner can be the sole owner, and an owner may read the member
+  // statistics, so the count is known exactly when it matters.
+  const { stats } = useMemberStats(currentTenant?.slug)
+  const soleOwner = isOwner() && stats?.role_counts?.owner === 1
 
   if (!currentTenant) return null
   const name = currentTenant.name
@@ -57,14 +65,15 @@ export function LeaveOrganization() {
 
   return (
     <>
-      <DangerZone>
+      <DangerZone title={t('org.leave.section')}>
         <DangerZoneItem
           title={t('org.leave.title')}
-          description={t('org.leave.desc')}
+          description={soleOwner ? t('org.leave.soleOwner') : t('org.leave.desc')}
           action={
             <Button
               variant="outline"
               size="sm"
+              disabled={soleOwner}
               onClick={() => {
                 loadTenants()
                 setOpen(true)

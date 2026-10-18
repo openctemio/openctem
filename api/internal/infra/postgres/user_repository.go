@@ -191,7 +191,8 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 	query := `
 		UPDATE users
 		SET keycloak_id = $2, email = $3, name = $4, avatar_url = $5, phone = $6,
-		    status = $7, preferences = $8, last_login_at = $9, updated_at = $10,
+		    status = CASE WHEN users.status = 'suspended' THEN users.status ELSE $7::user_status END,
+		    preferences = $8, last_login_at = $9, updated_at = $10,
 		    auth_provider = $11, email_verified = $12,
 		    email_verification_token = $13, email_verification_expires_at = $14,
 		    password_reset_token = $15, password_reset_expires_at = $16
@@ -199,6 +200,10 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 	`
 	// password_hash, failed_login_attempts and locked_until are not written
 	// here: see RecordFailedLogin, RecordSuccessfulLogin, UpdatePasswordHash.
+	// A blocked account (status 'suspended') stays blocked: an entity loaded
+	// before the block and saved after it (a sign-in stamp, a profile edit)
+	// must not lift it. Only the platform console's unblock does
+	// (PlatformUserDirectory.SetBlocked).
 
 	result, err := r.db.ExecContext(ctx, query,
 		u.ID().String(),
