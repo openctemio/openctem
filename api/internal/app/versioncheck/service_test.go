@@ -222,11 +222,12 @@ func TestRunDue_RefusedAnswers(t *testing.T) {
 		body   func(t *testing.T) []byte
 		code   string
 	}{
-		"http error":   {http.StatusNotFound, func(*testing.T) []byte { return nil }, ErrCodeHTTPStatus},
-		"oversize":     {http.StatusOK, func(*testing.T) []byte { return bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1) }, ErrCodeTooLarge},
-		"garbage":      {http.StatusOK, func(*testing.T) []byte { return []byte("<html>") }, ErrCodeInvalid},
-		"unpinned key": {http.StatusOK, func(t *testing.T) []byte { return other.feed(t, 5, t0, "v0.9.8") }, ErrCodeInvalid},
-		"expired":      {http.StatusOK, func(t *testing.T) []byte { return k.feed(t, 5, t0.Add(-31*24*time.Hour), "v0.9.8") }, ErrCodeExpired},
+		"not published": {http.StatusNotFound, func(*testing.T) []byte { return nil }, ErrCodeNotPublished},
+		"http error":    {http.StatusBadGateway, func(*testing.T) []byte { return nil }, ErrCodeHTTPStatus},
+		"oversize":      {http.StatusOK, func(*testing.T) []byte { return bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1) }, ErrCodeTooLarge},
+		"garbage":       {http.StatusOK, func(*testing.T) []byte { return []byte("<html>") }, ErrCodeInvalid},
+		"unpinned key":  {http.StatusOK, func(t *testing.T) []byte { return other.feed(t, 5, t0, "v0.9.8") }, ErrCodeInvalid},
+		"expired":       {http.StatusOK, func(t *testing.T) []byte { return k.feed(t, 5, t0.Add(-31*24*time.Hour), "v0.9.8") }, ErrCodeExpired},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -342,5 +343,77 @@ func TestClientRedirectPolicy(t *testing.T) {
 	}
 	if err := c.CheckRedirect(req("https://objects.example.com/x"), via[:1]); err != nil {
 		t.Fatalf("refused a normal redirect: %v", err)
+	}
+}
+
+// componentFeed is a feed that lists one sensor release.
+func (k keys) componentFeed(t *testing.T, seq uint64, issued time.Time, sensorVersion string) []byte {
+	t.Helper()
+	raw, err := releasefeed.Build(k.online, releasefeed.Feed{
+		Sequence: seq, IssuedAt: issued, ExpiresAt: issued.Add(30 * 24 * time.Hour),
+		Releases:   []releasefeed.Release{{Version: "v0.9.8", PublishedAt: issued}},
+		Advisories: []releasefeed.Advisory{},
+		Components: []releasefeed.Component{{Component: "sensor", Version: sensorVersion, PublishedAt: issued}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// OnFeed receives the feed after an online check stores it, after an import,
+// and on Refresh (what every replica runs each tick); a refused feed is
+// never handed on. The console view lists the components.
+func TestOnFeed_OnlineImportRefresh(t *testing.T) {
+	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
+	var got []string
+	onFeed := func(f *releasefeed.Feed) {
+		if f == nil {
+			got = append(got, "nil")
+			return
+		}
+		got = append(got, f.ComponentVersions()["sensor"].Version)
+	}
+	svc := New(repo, Config{Enabled: true, URL: srv.srv.URL, Keys: []string{k.pinned()}, Running: "v0.9.7",
+		Client: http.DefaultClient, Now: c.Now, Jitter: func(time.Duration) time.Duration { return 0 }, OnFeed: onFeed}, logger.NewNop())
+	ctx := context.Background()
+
+	// Nothing stored yet: Refresh hands on nil (the built-in versions apply).
+	if err := svc.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	srv.body = k.componentFeed(t, 100, t0.Add(-time.Hour), "v0.30.0")
+	_ = svc.RunDue(ctx) // schedules the first check
+	c.now = c.now.Add(FirstCheckMin)
+	if err := svc.RunDue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// An imported newer feed.
+	if _, err := svc.Import(ctx, k.componentFeed(t, 200, t0, "v0.31.0")); err != nil {
+		t.Fatal(err)
+	}
+	// SECURITY: a replayed older feed is refused and not handed on.
+	if _, err := svc.Import(ctx, k.componentFeed(t, 150, t0, "v0.1.0")); err == nil {
+		t.Fatal("older feed accepted")
+	}
+	if err := svc.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"nil", "v0.30.0", "v0.31.0", "v0.31.0"}
+	if len(got) != len(want) {
+		t.Fatalf("OnFeed calls = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("OnFeed calls = %v, want %v", got, want)
+		}
+	}
+	v, err := svc.View(ctx)
+	if err != nil || len(v.Components) != 1 || v.Components[0].Version != "v0.31.0" {
+		t.Fatalf("view components = %+v (%v)", v.Components, err)
+	}
+	// Without a hook, Refresh is a no-op.
+	if err := newService(repo, []string{k.pinned()}, "", c, "v0.9.7").Refresh(ctx); err != nil {
+		t.Fatal(err)
 	}
 }

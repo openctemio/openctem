@@ -4,7 +4,10 @@ Design and decisions: [RFC-105](../rfcs/RFC-105-version-check-and-usage-telemetr
 
 The platform console tells platform administrators when a newer OpenCTEM
 release exists and, above all, when the running release is affected by a
-published security advisory. The instance learns this from one public,
+published security advisory. The same feed tells the instance the newest
+release of each first-party sensor product and of the sensor SDK, so a sensor
+or SDK release reaches the Sensors page and the install snippets without a
+platform release ([RFC-037 §12](../rfcs/RFC-037-versioning-and-release-train.md)). The instance learns this from one public,
 signed, static file — the **release feed** — and compares it with its own
 version locally. Nothing about the instance is sent.
 
@@ -28,7 +31,10 @@ The file `openctem-releases.json` holds one DSSE envelope in the shared
 signed-feed format (`pkg/feedsign`): the **feed**
 (`openctem.io/release-feed/v1`) signed directly by one online key: a sequence
 (the issue time in Unix seconds), an issue and an expiry time (at most 45 days
-apart), the releases and the advisories.
+apart), the releases, the advisories and the components (the newest
+release of each first-party sensor product and of the SDK: the
+`versions.yaml` section, the version, the publication time, the notes link and,
+for an image, its manifest digest).
 
 The instance trusts only the public keys pinned in the binary
 (`releasefeed.PinnedKeys`, at most two, so a rotation can overlap); there is
@@ -39,14 +45,19 @@ no configuration override. See [signing keys](signing-keys.md). It refuses:
   signatures never verify as a feed), with a sequence below the one it applied (rollback), with the applied sequence but
   other content (the SHA-256 of the signed payload is stored; the publisher
   never signs two feeds with one sequence), expired or issued in the future;
-- any field out of bounds: versions must be `vX.Y.Z`, severities
+- any field out of bounds: versions must be `vX.Y.Z`, component names a
+  `versions.yaml` section name and digests `sha256:` + 64 hex, severities
   low/medium/high/critical, titles at most 200 characters without control
   characters, links HTTPS under `github.com/openctemio/`, `openctem.io` or
-  `docs.openctem.io`, at most 200 releases and 200 advisories, at most 256 KiB
-  in all, no unknown fields.
+  `docs.openctem.io`, at most 200 releases, 200 advisories and 32 components,
+  at most 256 KiB in all, no unknown fields.
 
 Anything refused is discarded and the previous state kept. The feed is
 display-only: the instance never downloads or runs anything because of it.
+Component versions go into the install commands an administrator copies;
+the image repository always comes from the catalog built into the instance,
+a learned version is used only when it is not older than the built-in one,
+and the digest pins exactly the image the feed was signed for.
 
 Until a key is pinned in the build, the check is inert (no request) and the
 console says the feed cannot be verified.
@@ -108,19 +119,28 @@ fetches a due check. Instance-level; no tenant data.
 ```bash
 # Release pipeline:
 gh release list --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > releases.json
+go run ./cmd/release-feed components > components.txt   # sensor products + sdk-go, from versions.yaml
+bash ../.github/scripts/release/feed-components.sh components.txt > components.json
 go run ./cmd/release-feed build -key-env RELEASE_FEED_SIGNING_KEY -releases releases.json \
-    -advisories ../.github/release-feed/advisories.json -out openctem-releases.json
+    -advisories ../.github/release-feed/advisories.json -components components.json \
+    -out openctem-releases.json
 go run ./cmd/release-feed verify -key <online public key hex> openctem-releases.json
 ```
 
 The workflow `.github/workflows/release-feed.yml` runs on every release (called
-by `release.yml`), every week (so the feed never expires between releases)
-and by hand. Its job runs only on `main` or a `v*` tag (an explicit guard; the
+by `release.yml`), every 6 hours (new sensor and SDK releases reach the feed
+within that time, and the feed never expires between releases) and by hand.
+`feed-components.sh` picks, for each component, the newest stable release
+whose image tag is published and records the image digest; it reads only
+public release lists and public images, so the sensor and sdk-go
+repositories need no step and no secret. A component it cannot resolve fails
+the run (the previous feed stays published). Its job runs only on `main` or a `v*` tag (an explicit guard; the
 `release-feed` environment is restricted the same way). It uploads the file to
 the latest release, which is what the
 default URL `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
-serves. It skips with a warning while the
-`RELEASE_FEED_SIGNING_KEY` secret is missing, so a release never fails on it.
+serves. While the `RELEASE_FEED_SIGNING_KEY` secret is missing it fails with
+an error that links the setup below (it runs after the release job, so the
+release itself is complete): a missing feed must never go unnoticed.
 
 Advisories: add an entry to `.github/release-feed/advisories.json` when an
 advisory is published (with or after the fixing release, never before), then
@@ -128,15 +148,57 @@ run the workflow by hand.
 
 ### Setup (maintainers)
 
-1. Run `scripts/signing/init-keys.sh` on your own machine and follow what it
-   prints ([signing keys](signing-keys.md)).
-2. Add the printed release feed public key to `releasefeed.PinnedKeys` in a pull
-   request.
-3. Store the release feed key as the secret `RELEASE_FEED_SIGNING_KEY` of the
-   GitHub environment `release-feed`, restricted to `main` and `v*` tags (the
-   printed `gh secret set` command reads it from the file). The catalog online
-   key is a separate key with its own secret and environment.
-4. Rotation and compromise: see [signing keys](signing-keys.md).
+One time, by the owner, about 15 minutes. Until it is done the feed is not
+published: the `Release Feed` workflow fails with an error that links here,
+instances log one warning ("no release feed key is pinned in this build"),
+and Console > System shows "No release feed key in this build". Installs
+keep the sensor and SDK versions built into their release.
+
+1. **Create the keys on your own machine** (not CI, not a shared host), from a
+   checkout of this repository with Go installed:
+
+   ```bash
+   scripts/signing/init-keys.sh ~/openctem-signing-keys
+   ```
+
+   It writes `online.key` (the release feed key, secret), `online.pub` (its
+   public key, hex) and the separate content catalog keys, and prints only
+   public material plus the exact commands for the next steps. Back the
+   directory up offline; `catalog-root.key` never leaves it.
+2. **Create the GitHub environment** `release-feed` in `openctemio/openctem`
+   (Settings > Environments > New environment), with deployment branches and
+   tags limited to `main` and `v*`.
+3. **Store the secret** in that environment:
+
+   ```bash
+   gh secret set RELEASE_FEED_SIGNING_KEY --env release-feed -R openctemio/openctem \
+     < ~/openctem-signing-keys/online.key
+   ```
+4. **Pin the public key** in a pull request: add the content of
+   `online.pub` (64 hex characters) to `releasefeed.PinnedKeys` in
+   `api/pkg/releasefeed/releasefeed.go`. Instances trust the feed from the
+   first release that contains the pin.
+5. **Publish once by hand** (Actions > Release Feed > Run workflow, branch
+   `main`) and check the run summary says "ok: sequence …, N components".
+   `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
+   then answers 200.
+6. On an instance with that release: Console > System shows the version check
+   "OK" and a "Last release information" time; System > Software updates lists
+   the sensor and SDK releases.
+
+Rotation and compromise: see [signing keys](signing-keys.md). The catalog
+online key is a separate key with its own secret and environment.
+
+### What an instance shows when the feed is missing
+
+| State | Log (one warning when the state changes) | Console > System |
+|---|---|---|
+| No key pinned in the build | once at start-up | "No release feed key in this build" |
+| Feed URL answers 404 | `reason=not_published` | "Release feed not published" |
+| Signature or content refused | `reason=invalid` | "Release feed signature invalid" |
+| No network / DNS / TLS | `reason=unreachable` | "Release feed unreachable" |
+| Feed past its expiry | `reason=expired` | "Release feed expired" |
+| OK again | one info line | "OK" and the last success time |
 
 ## Key files
 

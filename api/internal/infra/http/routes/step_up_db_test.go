@@ -105,7 +105,7 @@ func newStepUpHarness(t *testing.T) *stepUpHarness {
 	v := validator.New()
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{
-		LocalAuth: handler.NewLocalAuthHandler(authSvc, nil, nil, nil, authCfgApp, log),
+		LocalAuth: handler.NewLocalAuthHandler(authSvc, nil, nil, authCfgApp, log),
 		APIKey:    handler.NewAPIKeyHandler(apikey.NewService(postgres.NewAPIKeyRepository(db), "step-up-pepper", log), v, log),
 	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}, tenantRepo, tenantapp.NewUserService(userRepo, log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())

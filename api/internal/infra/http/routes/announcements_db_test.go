@@ -90,6 +90,8 @@ func TestAnnouncements(t *testing.T) {
 
 	ops := h.newAdmin(admin.AdminRoleOpsAdmin)
 	ops.verify()
+	// Publishing and ending a banner take a step-up (a fresh code each).
+	ops.autoStepUp = true
 
 	t.Run("bad input is refused", func(t *testing.T) {
 		bad := []map[string]any{

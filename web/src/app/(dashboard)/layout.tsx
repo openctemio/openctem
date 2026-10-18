@@ -13,6 +13,7 @@ import {
 import { SkipToMain } from '@/components/skip-to-main'
 import { RouteGuard } from '@/components/route-guard'
 import { StepUpDialogHost } from '@/components/step-up-dialog'
+import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
 
@@ -81,6 +82,7 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
           </TenantGate>
           {/* Re-authentication prompt for sensitive actions (STEP_UP_REQUIRED). */}
           <StepUpDialogHost />
+          <SettingsAnchorHighlighter />
         </LayoutProvider>
       </SearchProvider>
     </DashboardProviders>

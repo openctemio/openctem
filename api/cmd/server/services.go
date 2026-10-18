@@ -117,6 +117,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -1263,7 +1264,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
+		OnFeed: learnComponentReleases,
 	}, log)
+	// The first-party sensor and SDK releases the stored feed lists, before
+	// the first request (the controller reloads them every hour).
+	refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := s.VersionCheck.Refresh(refreshCtx); err != nil {
+		log.Warn("release feed not loaded at start-up; built-in sensor and SDK versions apply until the next reload", "error", err)
+	}
+	cancelRefresh()
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
 	// transaction (research/22 P0-7, decision E4).
@@ -2927,6 +2936,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
 		s.Audit, tenantapp.ErasedUserLabel, log)
 	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+	// Platform administrators sign in on the admin console only.
+	s.Auth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2987,6 +2998,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
+	s.SSO.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 	if s.AccountDeletion != nil {
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
@@ -3091,6 +3103,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
 		if redisClient != nil {
@@ -3504,4 +3517,18 @@ func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.Platfor
 		return nil, err
 	}
 	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
+}
+
+// learnComponentReleases makes the first-party component releases of the
+// verified release feed the effective latest versions (internal/versions):
+// install snippets, "update available" and the SDK status follow a sensor or
+// SDK release without an API release (docs/rfcs/RFC-037 §12). A nil feed
+// forgets them (the built-in versions apply).
+func learnComponentReleases(f *releasefeed.Feed) {
+	cs := f.ComponentVersions()
+	learned := make(map[string]versions.Learned, len(cs))
+	for k, c := range cs {
+		learned[k] = versions.Learned{Version: c.Version, Digest: c.Digest}
+	}
+	versions.SetLearned(learned)
 }

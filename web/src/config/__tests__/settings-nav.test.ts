@@ -3,7 +3,7 @@
  * the route guard, the i18n catalogs and the old Settings sidebar group.
  */
 import { describe, expect, it } from 'vitest'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -21,6 +21,25 @@ import type { NavCollapsible, NavItem } from '@/components/types'
 
 const APP_DIR = join(process.cwd(), 'src', 'app')
 
+/** Every literal id="…" in the app and feature components (anchor targets). */
+const SOURCE_IDS: Set<string> = (() => {
+  const ids = new Set<string>()
+  const walk = (dir: string) => {
+    for (const dirent of readdirSync(dir, { withFileTypes: true })) {
+      const entry = dirent.name
+      const full = join(dir, entry)
+      if (dirent.isDirectory()) {
+        if (entry !== '__tests__' && entry !== 'node_modules') walk(full)
+      } else if (entry.endsWith('.tsx')) {
+        for (const m of readFileSync(full, 'utf8').matchAll(/\bid="([a-z0-9-]+)"/g)) ids.add(m[1])
+      }
+    }
+  }
+  walk(join(process.cwd(), 'src', 'app'))
+  walk(join(process.cwd(), 'src', 'features'))
+  return ids
+})()
+
 /** Resolve a URL to its page file through route groups (see sidebar-no-scaffolds). */
 function findPageFile(url: string): string | null {
   function walk(dir: string, rest: string[]): string | null {
@@ -29,9 +48,10 @@ function findPageFile(url: string): string | null {
       return existsSync(page) ? page : null
     }
     const [head, ...tail] = rest
-    for (const entry of readdirSync(dir)) {
+    for (const dirent of readdirSync(dir, { withFileTypes: true })) {
+      const entry = dirent.name
       const full = join(dir, entry)
-      if (!statSync(full).isDirectory()) continue
+      if (!dirent.isDirectory()) continue
       if (entry.startsWith('(') && entry.endsWith(')')) {
         const hit = walk(full, rest)
         if (hit) return hit
@@ -49,9 +69,10 @@ function findPageFile(url: string): string | null {
 function staticPagesUnder(prefix: string): string[] {
   const out: string[] = []
   function walk(dir: string, segs: string[]) {
-    for (const entry of readdirSync(dir)) {
+    for (const dirent of readdirSync(dir, { withFileTypes: true })) {
+      const entry = dirent.name
       const full = join(dir, entry)
-      if (statSync(full).isDirectory()) {
+      if (dirent.isDirectory()) {
         if (entry.startsWith('[')) continue
         const grouped = entry.startsWith('(') && entry.endsWith(')')
         walk(full, grouped ? segs : [...segs, entry])
@@ -67,14 +88,15 @@ function staticPagesUnder(prefix: string): string[] {
 const isPersonal = (url: string) => url === '/account' || url.startsWith('/account/')
 
 describe('settings nav config', () => {
-  it('has the seven groups in order', () => {
+  it('has the eight groups in order', () => {
     expect(settingsNav.map((g) => g.id)).toEqual([
       'account',
       'organization',
+      'security',
       'access',
       'findings',
-      'policies',
       'scanning',
+      'content',
       'integrations',
     ])
   })
@@ -150,6 +172,18 @@ describe('every settings item', () => {
           expect(dict[`settings.desc.${item.id}`], `settings.desc.${item.id}`).toBeTruthy()
         }
         expect((en as Record<string, string>)[`settings.item.${item.id}`]).toBe(item.title)
+      })
+
+      it('anchors: unique ids, en (equal to the title) and vi strings, an element with that id', () => {
+        const ids = (item.anchors ?? []).map((a) => a.id)
+        expect(new Set(ids).size).toBe(ids.length)
+        for (const a of item.anchors ?? []) {
+          expect(a.id).toMatch(/^[a-z0-9][a-z0-9-]*$/)
+          const key = `settings.anchor.${item.id}.${a.id}`
+          expect((en as Record<string, string>)[key], key).toBe(a.title)
+          expect((vi as Record<string, string>)[key], key).toBeTruthy()
+          expect(SOURCE_IDS.has(a.id), `no element with id="${a.id}" in src`).toBe(true)
+        }
       })
     })
   }

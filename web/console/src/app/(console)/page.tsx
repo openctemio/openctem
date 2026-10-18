@@ -17,16 +17,29 @@ import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
 import { AttentionQueue } from '@console/features/admin-console/components/attention-queue'
-import { buildAttention } from '@console/features/admin-console/lib/attention'
+import { useAdminSystem } from '@console/features/admin-console/api/use-admin-system'
+import {
+  buildAttention,
+  buildSystemAttention,
+  mergeAttention,
+} from '@console/features/admin-console/lib/attention'
 
 export default function AdminOverviewPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
   const overview = useAdminOverview()
   const activity = useAdminAuditLogs({ page: 1 })
+  // The installation's own state (disk, backup, certificates, services,
+  // updates) belongs in the attention queue too.
+  const system = useAdminSystem()
   const o = overview.data
+  const sys = system.data
 
-  const attention = useMemo(() => (o ? buildAttention(o, admin.role) : []), [o, admin.role])
+  const attention = useMemo(
+    () =>
+      mergeAttention(o ? buildAttention(o, admin.role) : [], sys ? buildSystemAttention(sys) : []),
+    [o, sys, admin.role]
+  )
 
   const metrics: MetricStripItem[] = o
     ? [
@@ -92,7 +105,7 @@ export default function AdminOverviewPage() {
       <div className="mt-5 space-y-6">
         {overview.error && !o ? (
           <ErrorState
-            title="the overview"
+            title={t('admin.overview.errorTitle', 'the overview')}
             error={overview.error}
             onRetry={() => void overview.mutate()}
           />

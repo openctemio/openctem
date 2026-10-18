@@ -36,7 +36,6 @@ type LocalAuthHandler struct {
 	onboarding     *onboarding.Service
 	sessionService *auth.SessionService
 	emailService   *auth.EmailService
-	platformAdmin  PlatformAdminChecker
 	authConfig     config.AuthConfig
 	cookieConfig   CookieConfig
 	csrfConfig     middleware.CSRFConfig
@@ -103,7 +102,6 @@ func NewLocalAuthHandler(
 	authService *auth.AuthService,
 	sessionService *auth.SessionService,
 	emailService *auth.EmailService,
-	platformAdmin PlatformAdminChecker,
 	authConfig config.AuthConfig,
 	log *logger.Logger,
 ) *LocalAuthHandler {
@@ -111,7 +109,6 @@ func NewLocalAuthHandler(
 		authService:    authService,
 		sessionService: sessionService,
 		emailService:   emailService,
-		platformAdmin:  platformAdmin,
 		authConfig:     authConfig,
 		cookieConfig:   NewCookieConfig(authConfig),
 		csrfConfig:     middleware.NewCSRFConfig(authConfig, log),
@@ -285,10 +282,6 @@ type LoginResponse struct {
 	// user to /onboarding/create-team. Suspended tenants are NOT
 	// accessible — the user cannot pick one and exchange a token.
 	SuspendedTenants []TenantInfo `json:"suspended_tenants,omitempty"`
-	// PlatformAdmin is true when the account is a platform administrator
-	// (RFC-022). Such an account belongs to no organization; the client sends
-	// it to the admin console rather than organization onboarding.
-	PlatformAdmin bool `json:"platform_admin,omitempty"`
 	// RecoveryCodes is present only on the response that completes a forced
 	// 2FA enrollment (POST /auth/mfa/enroll/confirm). Shown once.
 	RecoveryCodes []string `json:"recovery_codes,omitempty"`
@@ -431,9 +424,6 @@ func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Requ
 		Tenants:          tenants,
 		SuspendedTenants: suspendedTenants,
 		RecoveryCodes:    recoveryCodes,
-	}
-	if h.platformAdmin != nil {
-		resp.PlatformAdmin = h.platformAdmin.IsPlatformAdmin(r.Context(), result.User.ID())
 	}
 
 	w.Header().Set("Content-Type", "application/json")

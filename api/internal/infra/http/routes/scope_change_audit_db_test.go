@@ -329,19 +329,21 @@ http:
 	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+tool+"/settings",
 		`{"is_enabled":true,"config":{"rate_limit":10,"api_key":"fake-key-Zq8vT3mP0wX7rL2kN9sB4yH6"}}`, http.StatusBadRequest)
 	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+tool+"/settings", `{"is_enabled":true,"config":{"rate_limit":10}}`, http.StatusOK)
-	h.expect(member, http.MethodPatch, "/api/v1/tools/"+tool+"/settings", `{"is_enabled":false}`, http.StatusOK)
+	// The organization's tool switches are owner/admin only.
+	h.expect(member, http.MethodPatch, "/api/v1/tools/"+tool+"/settings", `{"is_enabled":false}`, http.StatusForbidden)
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+tool+"/settings", `{"is_enabled":false}`, http.StatusOK)
 	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+tool+"/settings", `{"config":{}}`, http.StatusOK)
-	h.expect(member, http.MethodPatch, "/api/v1/tools/settings", `{"tool_ids":["`+tool+`"],"is_enabled":true}`, http.StatusNoContent)
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/settings", `{"tool_ids":["`+tool+`"],"is_enabled":true}`, http.StatusNoContent)
 	h.expect(admin, http.MethodDelete, "/api/v1/tools/"+tool, "", http.StatusNoContent)
 	rows = h.auditRows(tid, "tool.")
 	requireAudited(t, rows, "bulk", []auditRow{
-		{action: "tool.config_updated", actor: member.id, after: map[string]any{"is_enabled": true}},
+		{action: "tool.config_updated", actor: admin.id, after: map[string]any{"is_enabled": true}},
 	})
 	requireAudited(t, rows, tool, []auditRow{
 		{action: "tool.created", actor: admin.id, after: map[string]any{"name": "audit-tool"}},
 		{action: "tool.updated", actor: admin.id, before: map[string]any{"display_name": "Audit tool"}, after: map[string]any{"display_name": "Audit tool 2"}},
 		{action: "tool.config_updated", actor: admin.id, after: map[string]any{"is_enabled": true}},
-		{action: "tool.config_updated", actor: member.id, before: map[string]any{"is_enabled": true}, after: map[string]any{"is_enabled": false}},
+		{action: "tool.config_updated", actor: admin.id, before: map[string]any{"is_enabled": true}, after: map[string]any{"is_enabled": false}},
 		{action: "tool.config_updated", actor: admin.id, before: map[string]any{"is_enabled": false}, after: map[string]any{"is_enabled": false}},
 		{action: "tool.deleted", actor: admin.id, before: map[string]any{"name": "audit-tool"}},
 	})

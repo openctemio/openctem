@@ -2095,6 +2095,10 @@ func (c *Config) validateAdminPublicURL() error {
 // sink is built, which also stops the start-up.
 func (c *Config) validateAdminAuditSink() error {
 	k := c.AdminAuditSink
+	if k.URL == "" && c.App.ManagedService && c.IsProduction() {
+		return fmt.Errorf("MANAGED_SERVICE in production requires the off-box administrators' audit sink: " +
+			"set ADMIN_AUDIT_SINK (a https, syslog+tls or file URL); without it a hosted operator could rewrite the console's audit history")
+	}
 	if k.URL == "" {
 		if k.Secret != "" || k.SyslogCAFile != "" || k.SyslogClientCert != "" || k.SyslogClientKey != "" {
 			return fmt.Errorf("ADMIN_AUDIT_SINK_SECRET / ADMIN_AUDIT_SINK_SYSLOG_* are set but ADMIN_AUDIT_SINK is not")

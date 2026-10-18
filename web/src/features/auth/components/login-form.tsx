@@ -137,6 +137,8 @@ export function LoginForm({
   const [captchaRequired, setCaptchaRequired] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
+  // After a failed sign-in: administrators of the platform sign in elsewhere.
+  const [signInFailed, setSignInFailed] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -227,13 +229,6 @@ export function LoginForm({
         }
       }
 
-      // Platform administrator: the console is a separate site with its own
-      // sign-in (RFC-022); this app has no console to go to.
-      if (result.platformAdmin) {
-        toast.info(t('auth.login.platformAdminUseConsole'))
-        return
-      }
-
       // Case 1: Multiple tenants - redirect to tenant selection
       if (result.requiresTenantSelection) {
         toast.success(t('auth.login.selectTeam', 'Please select a team to continue'))
@@ -270,6 +265,7 @@ export function LoginForm({
       setCaptchaRequired(true)
       toast.error(t('auth.login.captchaRequired'))
     } else {
+      setSignInFailed(true)
       toast.error(result.error || t('auth.login.failed', 'Sign-in failed'))
     }
   }
@@ -407,6 +403,12 @@ export function LoginForm({
             onToken={setCaptchaToken}
             resetSignal={captchaReset}
           />
+        )}
+
+        {signInFailed && (
+          <p className="text-muted-foreground text-sm" role="note">
+            {t('auth.login.platformAdminHint')}
+          </p>
         )}
 
         {/* Submit Button */}

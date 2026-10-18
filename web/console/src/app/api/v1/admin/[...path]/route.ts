@@ -22,12 +22,23 @@ import { env } from '@/lib/env'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { proxyBackendPath } from '@/lib/api/proxy-path'
 import { csrfRejection } from '@/lib/server-auth-cookies'
+import { CONSOLE_CSRF_COOKIE } from '@console/lib/csrf-cookie'
 
 export const dynamic = 'force-dynamic'
 
 const ADMIN_COOKIES = ['admin_session', 'admin_mfa', 'admin_csrf', 'admin_idp'] as const
-/** x-admin-step-up: the fresh authenticator code of a protected action. */
-const FORWARD_HEADERS = ['x-csrf-token', 'x-admin-step-up', 'x-request-id', 'user-agent'] as const
+/**
+ * x-admin-step-up: the fresh authenticator code of a protected action.
+ * x-admin-background: a read the console made on its own, which the API does
+ * not count as activity for the idle timeout.
+ */
+const FORWARD_HEADERS = [
+  'x-csrf-token',
+  'x-admin-step-up',
+  'x-admin-background',
+  'x-request-id',
+  'user-agent',
+] as const
 const MAX_BODY_BYTES = 1024 * 1024
 /**
  * A platform content pack upload (POST /content-packs, multipart): the API
@@ -56,8 +67,8 @@ const PASS_RESPONSE_HEADERS = [
 async function proxy(request: NextRequest, path: string[]): Promise<NextResponse> {
   // Same origin and a double-submit pair on every write, the console's sign-in
   // steps included. The header matches `admin_csrf` once the console session
-  // exists (the API checks that pair again), the page's `csrf_token` before.
-  const csrf = csrfRejection(request, ['admin_csrf'])
+  // exists (the API checks that pair again), the page's `console_csrf` before.
+  const csrf = csrfRejection(request, ['admin_csrf'], CONSOLE_CSRF_COOKIE)
   if (csrf) return csrf
 
   // Each segment is re-encoded below, but refuse dot segments outright too so
@@ -116,9 +127,11 @@ async function proxy(request: NextRequest, path: string[]): Promise<NextResponse
       cache: 'no-store',
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
+    // The cause (an address, a resolver or TLS error) stays in the server log:
+    // the browser only learns that the API could not be reached.
+    console.error('console API proxy: backend unreachable', error)
     return NextResponse.json(
-      { error: 'PROXY_ERROR', message: `Failed to connect to backend: ${message}` },
+      { error: 'PROXY_ERROR', message: 'The API could not be reached. Try again shortly.' },
       { status: 502 }
     )
   }
