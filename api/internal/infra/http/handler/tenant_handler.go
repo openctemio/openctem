@@ -22,6 +22,7 @@ import (
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/app/onboarding"
+	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
 	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -49,6 +50,9 @@ var recalculateLastRun sync.Map
 // TenantHandler handles tenant-related HTTP requests.
 // Note: "Team" is the UI-facing name for tenants.
 type TenantHandler struct {
+	// deletions schedules a deletion with a grace period
+	// (docs/architecture/organization-deletion.md).
+	deletions       *orgdeletion.Service
 	service         *tenantapp.TenantService
 	roleService     *accesscontrol.RoleService
 	assetService    *assetapp.AssetService
@@ -839,21 +843,43 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toTenantResponse(t))
 }
 
-// Delete handles DELETE /api/v1/tenants/{tenant}
+// Delete handles DELETE /api/v1/tenants/{tenant}: an owner's request to
+// delete the organization. It is scheduled, not carried out: from the next
+// request on the organization is refused to every credential, and it is
+// deleted when the grace period ends unless an owner cancels
+// (docs/architecture/organization-deletion.md).
+//
+// @Summary      Schedule the organization's deletion (owner)
+// @Description  The organization is closed at once and deleted after the grace period (14 days); an owner can cancel until then. Owner, team:delete, recent sign-in.
+// @Tags         Tenants
+// @Produce      json
+// @Param        tenant  path  string  true  "Organization id or slug"
+// @Success      202  {object}  OrganizationDeletionResponse
+// @Failure      403  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error "Not active"
+// @Security     BearerAuth
+// @Router       /tenants/{tenant} [delete]
 func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())
 	if tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
-
-	actx := h.buildAuditContext(r)
-	if err := h.service.DeleteTenant(r.Context(), actx, tenantID.String()); err != nil {
-		h.handleServiceError(w, err)
+	userID := middleware.GetLocalUserID(r.Context())
+	if userID.IsZero() {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
 		return
 	}
-
-	w.WriteHeader(http.StatusNoContent)
+	if h.deletions == nil {
+		apierror.ServiceUnavailable("Organization deletion is not available").WriteJSON(w)
+		return
+	}
+	due, err := h.deletions.Schedule(r.Context(), h.buildAuditContext(r), tenantID, userID)
+	if err != nil {
+		writeDeletionError(w, err, h.logger)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, OrganizationDeletionResponse{Status: "pending_deletion", DeletionDueAt: &due})
 }
 
 // =============================================================================
