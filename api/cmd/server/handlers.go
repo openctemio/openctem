@@ -882,6 +882,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.AccessRequest != nil {
 		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
 	}
+	if svc.SignupEvents != nil {
+		handlers.AdminSignupEvents = handler.NewAdminSignupEventHandler(svc.SignupEvents, adminConsoleSvc, log)
+	}
 	if svc.Entitlement != nil {
 		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
 		handlers.Limits.SetAccountPortalURL(cfg.AccountPortalURL)

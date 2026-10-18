@@ -124,6 +124,7 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/shared-sensors/jobs/{job_id}/view":          {routine, "reads a job's targets and logs; changes nothing; reason required, ops_admin+, rate-limited, audited high before data is returned"},
 	"PUT /api/v1/admin/settings/shared-sensor-internal-zones/":      {stepUpRoute, "whether shared sensors may scan internal zones"},
 	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":             {stepUpRoute, "shared sensor anomaly alert thresholds"},
+	"PUT /api/v1/admin/settings/signup-alerts/":                     {stepUpRoute, "sign-up burst alert thresholds"},
 	"PUT /api/v1/admin/settings/shared-sensors/egress":              {stepUpRoute, "egress addresses every organization is told to allowlist"},
 	"PUT /api/v1/admin/program-feed/local-bundle":                   {stepUpRoute, "program feed source"},
 	"POST /api/v1/admin/shared-sensors/enrollment-tokens":           {stepUpRoute, "shared sensor enrollment token"},

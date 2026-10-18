@@ -248,6 +248,9 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"scopes": "{findings}", "reason": "seeded support grant", "access_level": "read",
 			"starts_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
 	},
+	"signup_events": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "account_created", "source": "password"}
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},

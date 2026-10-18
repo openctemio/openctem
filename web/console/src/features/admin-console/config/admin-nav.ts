@@ -104,6 +104,13 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['requests', 'sign-up', 'approve', 'inbox', 'pending'],
       },
       {
+        title: 'Sign-ups',
+        i18nKey: 'admin.nav.signups',
+        url: '/requests/sign-ups',
+        icon: UserPlus,
+        keywords: ['sign-up', 'signups', 'registrations', 'burst', 'abuse', 'alerts'],
+      },
+      {
         title: 'Support access',
         i18nKey: 'admin.nav.supportAccess',
         url: '/support',

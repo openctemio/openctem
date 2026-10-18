@@ -1008,6 +1008,9 @@ empty `owner_emails`. Every member-list view is audited
 | `PUT/DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny` | **ops_admin+** + reason + a fresh authenticator code (audited high; a denied module keeps read access for 30 days) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
+| `GET /api/v1/admin/signup-events`, `/daily` | any admin; the sign-up feed holds email domains and network prefixes only (no address, name or account id; `docs/architecture/signup-activity.md`) |
+| `GET /api/v1/admin/settings/signup-alerts` | any admin |
+| `PUT /api/v1/admin/settings/signup-alerts` | **super_admin** + reason + a fresh authenticator code; optimistic version (409); audited **critical**; administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
