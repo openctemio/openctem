@@ -15,6 +15,7 @@ export const LIMIT_KEYS = [
   'findings',
   'lifecycle_sub_statuses',
   'lifecycle_schemes',
+  'storage_mb',
   'orgs_per_user',
 ] as const
 export type LimitKey = (typeof LIMIT_KEYS)[number]
@@ -40,6 +41,7 @@ export const LIMIT_KEY_LABEL: Record<LimitKey, string> = {
   findings: 'Findings',
   lifecycle_sub_statuses: 'Finding sub-statuses',
   lifecycle_schemes: 'Finding lifecycles',
+  storage_mb: 'Storage (MiB)',
   orgs_per_user: 'Organizations per person',
 }
 

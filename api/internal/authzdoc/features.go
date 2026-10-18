@@ -205,7 +205,7 @@ var Features = []Feature{
 	{
 		ID: "admin-console", Title: "Platform admin console",
 		Description: "The platform operator's console. Its administrators are a separate realm and never members of an organization.",
-		Registers:   []string{"registerAdminRoutes"},
+		Registers:   []string{"registerAdminRoutes", "registerAdminPlatformSettingsRoutes"},
 	},
 	{
 		ID: "system", Title: "System endpoints",

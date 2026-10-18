@@ -11,6 +11,7 @@ export const CONFIG_GROUPS: ConfigurationItem['group'][] = [
   'console',
   'audit',
   'updates',
+  'alerts',
 ]
 
 /** English group names (i18n fallback; keys admin.config.group.<group>). */
@@ -24,6 +25,7 @@ export const CONFIG_GROUP_LABELS: Record<ConfigurationItem['group'], string> = {
   console: 'Platform console',
   audit: 'Audit',
   updates: 'Software updates',
+  alerts: 'Alerts',
 }
 
 /** English setting names (i18n fallback; keys admin.config.item.<key>). */
@@ -37,17 +39,17 @@ export const CONFIG_ITEM_LABELS: Record<string, string> = {
   shared_sensors: 'Shared sensors',
   console_mfa_policy: 'Security keys required for administrators',
   version_check: 'Daily version check',
+  'captcha.turnstile': 'CAPTCHA (Turnstile) keys',
+  'deployment.region': 'Deployment region',
+  'storage.tenant_quota_mb': 'Default storage quota per organization',
+  'alerts.webhook': 'Alert webhook',
+  'ai.platform': 'Platform AI provider',
   APP_URL: 'Public address',
   ADMIN_PUBLIC_URL: 'Console address',
   MANAGED_SERVICE: 'Managed service defaults',
-  DEPLOYMENT_REGION: 'Deployment region',
   SIGNUP_MODE: 'Sign-up ceiling',
-  CAPTCHA_TURNSTILE_SECRET: 'CAPTCHA (Turnstile) keys',
   SENSOR_PUBLIC_API_URL: 'Address sensors connect to',
   STORAGE_PROVIDER: 'Attachment storage',
-  STORAGE_TENANT_QUOTA_MB: 'Storage quota per organization (MB)',
-  AI_PLATFORM_PROVIDER: 'Platform AI provider',
-  AI_PLATFORM_API_KEY: 'Platform AI key',
   ADMIN_ALLOWED_CIDRS: 'Networks allowed to reach the console',
   ADMIN_ELEVATION: 'Time-boxed elevation',
   OPENCTEM_PLANE: 'API plane',
