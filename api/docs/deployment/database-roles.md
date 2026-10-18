@@ -106,7 +106,9 @@ session or credential, or swap the platform identity provider.
 The console's organization, member and settings screens run on the app pool
 (the same services as the tenant plane); only the repositories above use the
 console pool. `bootstrap-admin` and `rekey` connect as the schema owner
-(`DB_MIGRATE_USER`): they create or delete the sign-in account in `users` and
+(`DB_MIGRATE_USER`; in Compose run `docker compose run --rm bootstrap-admin ...`, a one-off
+container that receives the owner credentials from `.env`, never `exec api`, whose
+container must not hold them): they create or delete the sign-in account in `users` and
 re-encrypt every location, which the console role cannot do. The script reruns after the migrations (`db-grants` in compose), so a
 console table a release adds is moved before the API starts. If
 `DB_ADMIN_USER` is set but the script did not run with `admin_user`, the API
