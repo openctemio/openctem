@@ -16,6 +16,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -82,19 +83,22 @@ func (c *DashboardFactsController) Reconcile(ctx context.Context) (int, error) {
 	}
 	deadline := c.now().Add(c.budget)
 	processed := 0
+	var failed []error
 	for _, tid := range rotateAfter(tenants, c.last) {
 		if ctx.Err() != nil || !c.now().Before(deadline) {
 			break
 		}
-		n, err := c.drainTenant(ctx, tid, minTime(c.now().Add(c.slice), deadline))
+		n, drainErr := c.drainTenant(ctx, tid, minTime(c.now().Add(c.slice), deadline))
 		processed += n
 		c.last = tid
-		if err != nil {
-			// One tenant's failure must not stop the others.
-			c.logger.Error("dashboard facts: processing changes failed", "tenant_id", tid.String(), "error", err)
+		if drainErr != nil {
+			// One tenant's failure must not stop the others; it is reported
+			// as the tick's error after the loop.
+			c.logger.Error("dashboard facts: processing changes failed", "tenant_id", tid.String(), "error", drainErr)
+			failed = append(failed, drainErr)
 		}
 	}
-	return processed, nil
+	return processed, errors.Join(failed...)
 }
 
 // drainTenant claims batches of one tenant until its queue is empty or the
@@ -231,18 +235,22 @@ func (c *DashboardFactReconcileController) Reconcile(ctx context.Context) (int, 
 		return 0, err
 	}
 	steps := 0
+	var failed []error
 	for _, p := range pending {
 		if ctx.Err() != nil || !c.now().Before(deadline) {
 			break
 		}
-		n, err := c.advance(ctx, p, deadline)
+		n, runErr := c.advance(ctx, p, deadline)
 		steps += n
-		if err != nil {
+		if runErr != nil {
+			// One tenant's failure must not stop the others; it is reported
+			// as the tick's error (controller error metric) after the loop.
 			c.logger.Error("dashboard facts: full run failed", "tenant_id", p.TenantID.String(),
-				"kind", string(p.Kind), "error", err)
+				"kind", string(p.Kind), "error", runErr)
+			failed = append(failed, runErr)
 		}
 	}
-	return steps, nil
+	return steps, errors.Join(failed...)
 }
 
 // advance starts (when needed) and steps one tenant's run until it is done

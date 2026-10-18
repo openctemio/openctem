@@ -60,8 +60,8 @@ func TestDashboardFactsController_DrainsEveryTenantAndSurvivesFailures(t *testin
 	q := &fakeFactQueue{tenants: ids, left: map[shared.ID]int{ids[0]: 1200, ids[2]: 3}, fail: ids[1]}
 	c := NewDashboardFactsController(q, nil)
 	n, err := c.Reconcile(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("a failing tenant must surface as the tick's error")
 	}
 	if n != 1203 || q.left[ids[0]] != 0 || q.left[ids[2]] != 0 {
 		t.Fatalf("processed %d, left %v", n, q.left)
