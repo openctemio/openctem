@@ -191,14 +191,14 @@ func mergeGlobalProduct(ctx context.Context, tx *sql.Tx, from, into string) ([]s
 	steps := []struct{ name, query string }{
 		// Versions equal to one of into's (mergeVersionMap): links and
 		// findings move to it.
-		{"duplicate links", `DELETE FROM asset_software a USING `+mergeVersionMap+` m
+		{"duplicate links", `DELETE FROM asset_software a USING ` + mergeVersionMap + ` m
 			WHERE a.software_version_id = m.old_id AND EXISTS (SELECT 1 FROM asset_software b
 			  WHERE b.tenant_id = a.tenant_id AND b.asset_id = a.asset_id AND b.location = a.location
 			    AND b.software_version_id = m.new_id)`},
 		{"links", `UPDATE asset_software a SET product_id = $2, software_version_id = m.new_id, updated_at = now()
-			FROM `+mergeVersionMap+` m WHERE a.software_version_id = m.old_id`},
-		{"findings", `UPDATE findings f SET component_id = m.new_id FROM `+mergeVersionMap+` m WHERE f.component_id = m.old_id`},
-		{"versions", `DELETE FROM software_versions WHERE id IN (SELECT old_id FROM `+mergeVersionMap+` m)`},
+			FROM ` + mergeVersionMap + ` m WHERE a.software_version_id = m.old_id`},
+		{"findings", `UPDATE findings f SET component_id = m.new_id FROM ` + mergeVersionMap + ` m WHERE f.component_id = m.old_id`},
+		{"versions", `DELETE FROM software_versions WHERE id IN (SELECT old_id FROM ` + mergeVersionMap + ` m)`},
 		// The other versions move as they are.
 		{"versions", `UPDATE software_versions SET product_id = $2, matched_at = NULL WHERE product_id = $1`},
 		{"links", `UPDATE asset_software SET product_id = $2, updated_at = now() WHERE product_id = $1`},
