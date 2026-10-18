@@ -168,3 +168,42 @@ func TestTemplates_OnlyWellFormedSetsLoad(t *testing.T) {
 		t.Fatal("an unknown format was loaded")
 	}
 }
+
+// A release learned from the release feed pins the image by tag and digest;
+// the signature check still names the release tag (never a piece of the
+// digest), so an image signed for another release does not verify.
+func TestTemplates_DigestPinnedImage(t *testing.T) {
+	t.Cleanup(func() { versions.SetLearned(nil) })
+	digest := "sha256:" + strings.Repeat("0f", 32)
+	versions.SetLearned(map[string]versions.Learned{"connector-tenable": {Version: "v9.8.7", Digest: digest}})
+	p, ok := versions.LookupProduct("openctemio-connector-tenable")
+	if !ok {
+		t.Skip("connector-tenable is not in the catalog")
+	}
+	data := fullData(t)
+	data.Image, data.Install, data.ReleaseIdentity = p.ImageRef(), p.Install, p.ReleaseIdentity
+	out := render(t, shippedTemplatesDir, data)
+	for _, want := range []string{
+		p.Image + ":v9.8.7@" + digest,
+		"--certificate-identity '" + p.ReleaseIdentity + "@refs/tags/v9.8.7'",
+	} {
+		if !strings.Contains(out.Docker, want) {
+			t.Errorf("docker lacks %q:\n%s", want, out.Docker)
+		}
+	}
+}
+
+func TestImageTag(t *testing.T) {
+	for in, want := range map[string]string{
+		"ghcr.io/openctemio/sensor:v1.2.3":                                   "v1.2.3",
+		"ghcr.io/openctemio/sensor:v1.2.3@sha256:" + strings.Repeat("a", 64): "v1.2.3",
+		"registry.local:5000/sec/sensor:v1.2.3":                              "v1.2.3",
+		"registry.local:5000/sec/sensor":                                     "",
+		"ghcr.io/openctemio/sensor@sha256:" + strings.Repeat("a", 64):        "",
+		"registry.local:5000/sec/sensor@sha256:" + strings.Repeat("a", 64):   "",
+	} {
+		if got := imageTag(in); got != want {
+			t.Errorf("imageTag(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

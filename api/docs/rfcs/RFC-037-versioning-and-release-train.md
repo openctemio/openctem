@@ -6,6 +6,9 @@
 > `pkg/version`); P3 and P4 belong to the sdk-go, sensor and helm-charts
 > repositories (§9). The sensor product catalog (§11) is implemented: the API
 > embeds `versions.yaml`, and each sensor product has its own release line.
+> Sensor and SDK releases without a platform release (§12) are implemented:
+> the release feed carries the first-party component releases and a running
+> instance learns them.
 > Scope: `openctemio/openctem` (api + web), `openctemio/sdk-go`,
 > `openctemio/sensor`, `openctemio/helm-charts`, `openctemio/docs`.
 >
@@ -290,7 +293,9 @@ Same rule, own tags, no merge queue (both ship from `main`):
 - **Release Tag** workflow: when that PR merges, tags the merge commit. The
   tag then runs the existing publish workflows.
 - sdk-go: after tagging, opens `deps: sdk-go vX.Y.Z` in `openctemio/sensor`
-  (needs `RELEASE_TOKEN`).
+  (needs `RELEASE_TOKEN`; Dependabot proposes the same bump weekly without it).
+- Neither opens anything in `openctemio/openctem`: the platform learns their
+  releases from its release feed (§12).
 - sensor: dev builds report `<highest tag>-dev+<sha>` (Makefile), never
   `git describe`; the compiled-in default is `dev`, not a release number.
 - Releases already in flight when this lands (sdk-go v0.15.0, sensor v0.7.0)
@@ -369,9 +374,9 @@ Go code in `config.go` and the sensor handler.
   (the token the sensor reports), `latest`, `min`, `image` (no tag), `install`
   (its install-snippet set) and `release_identity` (the workflow that signs
   its image). The format stays two levels so the release scripts in every
-  repository keep reading and writing it with `rel_yaml_get`/`rel_yaml_set`,
-  and the sensor and sdk-go release workflows keep bumping `sensor.latest`
-  and `sdk.latest` unchanged.
+  repository keep reading and writing it with `rel_yaml_get`/`rel_yaml_set`.
+  (The sensor and sdk-go release workflows bumped `sensor.latest` and
+  `sdk.latest` through a pull request here; §12 removed that.)
 - **Embedded, never copied into Go.** `go:embed` cannot reach outside the Go
   module (`api/`), so `sync-versions.sh` writes a byte-for-byte copy to
   `api/internal/versions/versions.yaml`; `--check` (CI) fails while they
@@ -428,12 +433,98 @@ Go code in `config.go` and the sensor handler.
 
 ### 11.4 Later (documented, not built)
 
-- **Updatable catalog feed.** A signed catalog document fetched from the
-  project, verified with a public key built into the API (the way the
-  vulnerability feed is), so a new product or release reaches a running
-  platform without an upgrade; off by default and for air-gapped
-  installations, which keep the embedded catalog.
+- **Updatable catalog feed.** New releases of the listed products now reach
+  a running platform through the release feed (§12). A new *product* (its
+  image, install snippets and signing identity) still comes with a platform
+  release or the operator's `SENSOR_PRODUCTS_FILE`.
 - **Tenant-registered custom products.** A tenant names its own sensor
   product with its own release line, scoped to that tenant, so its sensors get
   update verdicts too.
+
+## 12. Sensor and SDK releases without a platform release (2026-10-18)
+
+### 12.1 Problem
+
+`versions.yaml` held the newest release of other repositories
+(`sensor.latest`, `sdk.latest`). Every sensor or SDK release had to open a
+pull request here (the sensor and sdk-go release workflows did it, only with
+`RELEASE_TOKEN`, and skipped it with a warning otherwise), and a running
+instance saw the release only after the next platform release. In practice
+the platform kept showing an old sensor and SDK as "latest", and its install
+snippets pinned the old sensor.
+
+### 12.2 Design
+
+Compatibility and availability are separate:
+
+- **Compatibility** stays in `versions.yaml`, owned by this repository: each
+  product's `min`, `sdk.advisories`, and the protocols the API serves. It
+  changes only when the platform's contract changes.
+- **Availability** (the newest release, which drives "update available",
+  the SDK's "outdated" and the version the install snippets pin) is learned at
+  runtime:
+  - The release feed (RFC-105) gains `components`: for each first-party
+    component, the `versions.yaml` section (`sensor`, `connector-tenable`,
+    `sdk`), its newest stable `vX.Y.Z`, the publication time, the notes link
+    and, for a component with an image, the image manifest digest.
+  - `.github/workflows/release-feed.yml` builds it every 6 hours (and after
+    each platform release): `release-feed components` lists the components
+    from the embedded manifest (the repository from each product's
+    `release_identity`, plus sdk-go), and
+    `.github/scripts/release/feed-components.sh` picks each one's newest
+    release that is neither a draft nor a pre-release and whose image tag is
+    published, reading its digest from the registry. A component that cannot
+    be resolved fails the run, so a published feed never drops one. The
+    sensor and sdk-go repositories do nothing and need no secret.
+  - The instance verifies the feed as before (pinned key, rollback, expiry),
+    stores it in `version_check_state`, and hands its components to
+    `internal/versions` at start-up, after each online check or import, and on
+    every hourly controller tick on every replica. The effective latest
+    release of a built-in product or the SDK is the learned one when it is
+    newer than or equal to the built-in one, else the built-in one; the
+    learned digest is used only with the learned version. An operator's
+    product (`SENSOR_PRODUCTS_FILE`) is never changed by the feed.
+  - Handlers resolve the catalog on every request, so the Sensors page, the
+    health verdicts and the install snippets follow without a restart. The
+    snippets pin `image:tag@sha256:...` when the feed gave a digest and the
+    image is the published one; a mirror (`SENSOR_IMAGE`) is pinned by tag.
+- `latest` in `versions.yaml` now means the release this platform release was
+  built with: the fallback and the floor. Moving it forward at a platform
+  release is optional hygiene; a sensor or SDK release never needs it.
+  `api/deploy/docker-compose.sensor.yml` (the bundled sensor) follows it
+  through `sync-versions.sh`.
+- The console says where the latest version comes from
+  (`latest_source`: `feed`, `built_in`, `operator`): a sensor on the built-in
+  latest reads "the newest release this platform knows" instead of "the
+  latest release". System > Software updates lists the component releases.
+
+### 12.3 Offline and air-gapped instances
+
+Without the feed (no pinned key, `VERSION_CHECK_ENABLED=false`, no outbound
+access) the built-in versions apply, marked as such. The override is the
+existing import of the signed feed file in the console (System > Software
+updates > Import): one file updates the platform and component releases
+together. No per-product setting is added: §11.2 removed those because a
+second source of truth drifted.
+
+### 12.4 Threat model
+
+| Threat | Control |
+|---|---|
+| A forged feed points the install snippets at another image | Ed25519 signature by a key pinned in the binary; the image repository always comes from the built-in catalog, the feed carries only a version and a digest |
+| A replayed or stale feed pushes sensors back to an older release | sequence rollback check, and the effective latest is never below the built-in one |
+| A re-pointed tag in the registry | the digest is inside the signed feed and the snippets pin tag and digest, so a different image fails to pull |
+| A withheld feed hides new releases | bounded by the 45-day expiry; the console shows the feed as out of date |
+| Cross-tenant effects | instance-level data from a signed file, no tenant input, routes and gates unchanged |
+
+Authorization and tenant isolation are unchanged: no route, permission or
+query is added; the stats and templates responses keep their `sensors:read`
+gates and gain only the `latest_source` field.
+
+### 12.5 Maintainer setup
+
+The runtime path is inert until a release feed key is pinned
+(`releasefeed.PinnedKeys`) and the `RELEASE_FEED_SIGNING_KEY` secret exists
+([version check](../architecture/version-check.md#setup-maintainers)).
+`RELEASE_TOKEN` is not needed for any of this.
 

@@ -26,7 +26,7 @@ func registerOpsMetrics(db *sql.DB, cfg *config.Config, log *logger.Logger) {
 		return postgres.ReadOpsSnapshot(ctx, db)
 	}, opsmetrics.Config{
 		ShippedSchemaVersion: shipped,
-		SDKLatest:            versions.SDKLatest(),
+		SDKLatestFunc:        versions.SDKLatest,
 		SDKAdvisories:        versions.SDKAdvisories(),
 	}, log)
 	// go_sql_* (db_name="openctem"): the API's connection pool, for the

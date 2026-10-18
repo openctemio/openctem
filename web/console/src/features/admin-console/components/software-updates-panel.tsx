@@ -55,6 +55,8 @@ const SEVERITY_TONE: Record<ReleaseFeedAdvisory['severity'], PillTone> = {
 
 const ERROR_FALLBACK: Record<VersionCheckErrorCode, string> = {
   unreachable: 'The release feed could not be reached (no internet access?).',
+  not_published:
+    'No release feed is published at this address yet. Release information comes from the version built into this release; import a feed file to update it.',
   http_status: 'The release feed host answered with an error.',
   too_large: 'The file is larger than a release feed can be.',
   invalid: 'Not a valid signed release feed.',
@@ -82,6 +84,12 @@ function readText(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error)
     reader.readAsText(file)
   })
+}
+
+const COMPONENT_FALLBACK: Record<string, string> = {
+  sensor: 'Scanning sensor',
+  'connector-tenable': 'Tenable.sc connector',
+  sdk: 'Sensor SDK (sdk-go)',
 }
 
 function dateOnly(iso: string | undefined) {
@@ -133,6 +141,13 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
 
   const errorText = (code: VersionCheckErrorCode) =>
     t(`admin.versionCheck.error.${code}`, ERROR_FALLBACK[code])
+
+  // A component the console has no name for (a product added later) shows
+  // its id.
+  const componentName = (id: string) =>
+    COMPONENT_FALLBACK[id]
+      ? t(`admin.versionCheck.components.name.${id}`, COMPONENT_FALLBACK[id])
+      : id
 
   const doImport = async () => {
     if (!file) return
@@ -391,6 +406,56 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            {t('admin.versionCheck.components.title', 'Sensors and SDK')}
+          </CardTitle>
+          <CardDescription>
+            {t(
+              'admin.versionCheck.components.hint',
+              'The newest sensor and SDK releases. Organizations see them as "update available" and the install commands use them, without an upgrade of this instance.'
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {(status.components ?? []).length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              {t(
+                'admin.versionCheck.components.none',
+                'No release information yet: the versions this release was built with apply, and they may be outdated.'
+              )}
+            </p>
+          ) : (
+            <ul className="divide-y text-sm">
+              {(status.components ?? []).map((c) => {
+                const link = releaseLink(c.notes_url)
+                return (
+                  <li
+                    key={c.component}
+                    className="flex flex-wrap items-center justify-between gap-3 py-2"
+                  >
+                    <span>{componentName(c.component)}</span>
+                    <span className="flex items-center gap-3">
+                      <span className="font-mono">
+                        {link ? (
+                          <SafeExternalLink href={link} className="underline underline-offset-4">
+                            {c.version}
+                          </SafeExternalLink>
+                        ) : (
+                          c.version
+                        )}
+                      </span>
+                      <span className="text-muted-foreground">{dateOnly(c.published_at)}</span>
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {canImport && (
         <Card>

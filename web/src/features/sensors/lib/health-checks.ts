@@ -14,6 +14,7 @@ import {
 import {
   normalizeSensorVersion,
   releaseLineOf,
+  sensorProductId,
   sensorSdkStatus,
   sensorSdkVersion,
   sensorVersionStatus,
@@ -387,9 +388,16 @@ export function sensorHealthChecks(
                 key: 'version',
                 label: L.version,
                 status: 'ok',
-                text: msg(tr, 'sensors.checks.version.latest', '{version}, the latest release', {
-                  version: v,
-                }),
+                text: latestIsBuiltIn(sensor, channel)
+                  ? msg(
+                      tr,
+                      'sensors.checks.version.latestBuiltIn',
+                      '{version}, the newest release this platform knows. Newer releases may exist: the platform has no current release information.',
+                      { version: v }
+                    )
+                  : msg(tr, 'sensors.checks.version.latest', '{version}, the latest release', {
+                      version: v,
+                    }),
               }
             : { key: 'version', label: L.version, status: 'info', text: v }
   )
@@ -526,4 +534,13 @@ export function sensorHealthChecks(
   if (err) checks.push({ key: 'error', label: L.error, status: 'warning', text: err.message })
 
   return checks
+}
+
+/**
+ * True when the sensor's product line comes from the version built into the
+ * platform (no release feed applied), so "latest" may be out of date.
+ */
+function latestIsBuiltIn(sensor: Sensor, channel: ReleaseChannel): boolean {
+  const id = sensorProductId(sensor)
+  return channel.products?.find((p) => p.id === id)?.latest_source === 'built_in'
 }

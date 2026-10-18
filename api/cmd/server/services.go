@@ -116,6 +116,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -1260,12 +1261,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
+		OnFeed: learnComponentReleases,
 	}, log)
-	// System > Software updates switches the daily check without a restart;
-	// VERSION_CHECK_ENABLED=false stays a ceiling.
-	if repos.PlatformSetting != nil {
-		s.VersionCheck.SetSettings(repos.PlatformSetting)
+	// The first-party sensor and SDK releases the stored feed lists, before
+	// the first request (the controller reloads them every hour).
+	refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := s.VersionCheck.Refresh(refreshCtx); err != nil {
+		log.Warn("release feed not loaded at start-up; built-in sensor and SDK versions apply until the next reload", "error", err)
 	}
+	cancelRefresh()
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
 	// transaction (research/22 P0-7, decision E4).
@@ -3499,4 +3503,18 @@ func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.Platfor
 		return nil, err
 	}
 	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
+}
+
+// learnComponentReleases makes the first-party component releases of the
+// verified release feed the effective latest versions (internal/versions):
+// install snippets, "update available" and the SDK status follow a sensor or
+// SDK release without an API release (docs/rfcs/RFC-037 §12). A nil feed
+// forgets them (the built-in versions apply).
+func learnComponentReleases(f *releasefeed.Feed) {
+	cs := f.ComponentVersions()
+	learned := make(map[string]versions.Learned, len(cs))
+	for k, c := range cs {
+		learned[k] = versions.Learned{Version: c.Version, Digest: c.Digest}
+	}
+	versions.SetLearned(learned)
 }
