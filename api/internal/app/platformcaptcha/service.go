@@ -136,8 +136,9 @@ func (s *Service) keys(ctx context.Context) (site, secret string, undecryptable 
 	}
 	plain, derr := s.encryptor.DecryptString(st.SecretEncrypted)
 	if derr != nil {
-		s.log.Error("CAPTCHA secret does not decrypt (was APP_ENCRYPTION_KEY rotated without rekey?); every CAPTCHA is refused until the secret is replaced")
-		return st.SiteKey, "", true, nil
+		s.log.Error("CAPTCHA secret does not decrypt (was APP_ENCRYPTION_KEY rotated without rekey?); every CAPTCHA is refused until the secret is replaced",
+			"error", derr)
+		return st.SiteKey, "", true, nil //nolint:nilerr // fail closed: reported as undecryptable, not as a read error
 	}
 	return st.SiteKey, plain, false, nil
 }
