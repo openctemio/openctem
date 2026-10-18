@@ -23,7 +23,7 @@ import { usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 /** Where the owner's opt-out switch lives (organization settings). */
-export const SHARED_SENSORS_OPT_OUT_HREF = '/settings/authentication#tenant-shared-sensors-opt-out'
+export const SHARED_SENSORS_OPT_OUT_HREF = '/settings/scanning/sensor-safety#shared-sensors'
 
 /** Theme tokens only: a tint and a dot per state; the word carries the meaning. */
 const STATUS: Record<PlatformScanningStatus, { key: string; pill: string; dot: string }> = {
