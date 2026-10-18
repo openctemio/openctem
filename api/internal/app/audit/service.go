@@ -763,14 +763,14 @@ type ListAuditLogsInput struct {
 	ExcludeSystem bool
 }
 
-// ListAuditLogs retrieves audit logs with filtering and pagination.
-func (s *AuditService) ListAuditLogs(ctx context.Context, input ListAuditLogsInput) (pagination.Result[*auditdom.AuditLog], error) {
+// filter converts the input into the repository filter.
+func (input ListAuditLogsInput) filter() (auditdom.Filter, error) {
 	filter := auditdom.NewFilter()
 
 	if input.TenantID != "" {
 		tenantID, err := shared.IDFromString(input.TenantID)
 		if err != nil {
-			return pagination.Result[*auditdom.AuditLog]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+			return filter, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 		}
 		filter = filter.WithTenantID(tenantID)
 	}
@@ -778,7 +778,7 @@ func (s *AuditService) ListAuditLogs(ctx context.Context, input ListAuditLogsInp
 	if input.ActorID != "" {
 		actorID, err := shared.IDFromString(input.ActorID)
 		if err != nil {
-			return pagination.Result[*auditdom.AuditLog]{}, fmt.Errorf("%w: invalid actor id format", shared.ErrValidation)
+			return filter, fmt.Errorf("%w: invalid actor id format", shared.ErrValidation)
 		}
 		filter = filter.WithActorID(actorID)
 	}
@@ -842,7 +842,15 @@ func (s *AuditService) ListAuditLogs(ctx context.Context, input ListAuditLogsInp
 	if input.ExcludeSystem {
 		filter = filter.WithExcludeSystem(true)
 	}
+	return filter, nil
+}
 
+// ListAuditLogs retrieves audit logs with filtering and pagination.
+func (s *AuditService) ListAuditLogs(ctx context.Context, input ListAuditLogsInput) (pagination.Result[*auditdom.AuditLog], error) {
+	filter, err := input.filter()
+	if err != nil {
+		return pagination.Result[*auditdom.AuditLog]{}, err
+	}
 	page := pagination.New(input.Page, input.PerPage)
 	return s.auditRepo.List(ctx, filter, page)
 }
