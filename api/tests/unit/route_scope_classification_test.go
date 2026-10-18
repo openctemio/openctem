@@ -198,6 +198,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/ctem-cycles":       {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
 	"/api/v1/approvals":         {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too; group exceptions (batches) are listed, read and decided only with every member finding in scope (RFC-111)"},
 	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope (RFC-098)"},
+	"/api/v1/dashboard-data":    {classConfig, "owner/admin only: status of the organization's derived dashboard facts (times and counts, no rows) and the once-per-hour rebuild request"},
 	"/api/v1/dashboard":         {classScoped, "counts, velocity, data quality, process metrics and the executive summary follow the viewer (countScope, D6); the risk-trend history and the program metrics are organization-wide and a restricted viewer needs dashboard:aggregate (empty / 403 otherwise)"},
 
 	// --- separate ------------------------------------------------------------------

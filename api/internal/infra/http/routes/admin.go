@@ -684,6 +684,17 @@ func registerAdminRoutes(
 				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, stepUp("organization.audit_chain_rebaseline"), scope)
 			}
 
+			// Dashboard data of an organization (docs/architecture/dashboards.md,
+			// "Facts maintainer"): any admin reads the status; ops_admin+ asks
+			// for a rebuild of derived data (once per hour per organization,
+			// shared with the organization's own request; audited, no step-up:
+			// no identity, privilege or trust changes).
+			if h.DashboardFacts != nil {
+				r.GET("/{tenantId}/dashboard-data", h.DashboardFacts.Status, read...)
+				r.POST("/{tenantId}/dashboard-data/rebuild", h.DashboardFacts.ConsoleRequestRebuild,
+					with([]Middleware{opsWrite, scope}, audit("organization.dashboard_data_rebuild"))...)
+			}
+
 			// Idle policy of an organization (off by default): any admin
 			// reads; ops_admin+ turns it on or off (audited by the service).
 			if h.IdleWorkspace != nil {
