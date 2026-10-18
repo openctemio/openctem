@@ -138,7 +138,8 @@ func (n *Notifier) Count() int {
 	return len(n.Subjects)
 }
 
-const testKey = "9f2c4e6a8b0d1f3e5a7c9b1d3f5e7a9c0b2d4f6e8a1c3e5b7d9f0a2c4e6b8d0f"
+// testKey is a fixed, obviously-not-secret 32-byte hex key for tests.
+var testKey = strings.Repeat("0123456789abcdef", 4)
 
 // Cipher is a real AES-GCM cipher with a fixed test key.
 func Cipher(t *testing.T) crypto.Encryptor {
