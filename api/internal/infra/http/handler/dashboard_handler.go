@@ -245,10 +245,14 @@ func (h *DashboardHandler) ExportExecutiveSummary(w http.ResponseWriter, r *http
 			{"p0_resolved_period", strconv.Itoa(summary.P0Resolved)},
 			{"p1_open", strconv.Itoa(summary.P1Open)},
 			{"p1_resolved_period", strconv.Itoa(summary.P1Resolved)},
-			{"sla_compliance_pct", formatFloat(summary.SLACompliancePct)},
+			{"sla_compliance_pct", formatOptFloat(summary.SLACompliancePct)},
 			{"sla_breached", strconv.Itoa(summary.SLABreached)},
-			{"mttr_critical_hours", formatFloat(summary.MTTRCriticalHrs)},
-			{"mttr_high_hours", formatFloat(summary.MTTRHighHrs)},
+			{"mttr_critical_hours", formatOptFloat(summary.MTTRCriticalHrs)},
+			{"mttr_critical_median_hours", formatOptFloat(summary.MTTRCriticalMedianHrs)},
+			{"mttr_critical_p90_hours", formatOptFloat(summary.MTTRCriticalP90Hrs)},
+			{"mttr_high_hours", formatOptFloat(summary.MTTRHighHrs)},
+			{"mttr_high_median_hours", formatOptFloat(summary.MTTRHighMedianHrs)},
+			{"mttr_high_p90_hours", formatOptFloat(summary.MTTRHighP90Hrs)},
 			{"crown_jewels_at_risk", strconv.Itoa(summary.CrownJewelsAtRisk)},
 			{"regression_count", strconv.Itoa(summary.RegressionCount)},
 			{"regression_rate_pct", formatFloat(summary.RegressionRatePct)},
@@ -296,6 +300,15 @@ func (h *DashboardHandler) ExportExecutiveSummary(w http.ResponseWriter, r *http
 		fmt.Sprintf(`attachment; filename="executive-summary-%s.json"`, filenameDate))
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(summary)
+}
+
+// formatOptFloat is formatFloat for a figure that may not be measured: nil is
+// an empty cell, never 0.
+func formatOptFloat(f *float64) string {
+	if f == nil {
+		return ""
+	}
+	return formatFloat(*f)
 }
 
 // formatFloat formats a float with up to 4 digits after the decimal, trimming trailing zeros.
