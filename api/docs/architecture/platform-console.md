@@ -19,6 +19,9 @@ The sensor protocol's internal mTLS listener is `api:9443`; sensors reach it
 only through the gateway's port 443 (ALPN routing on that listener alone), so
 port 8443 means only the console.
 
+Suspending an organization and blocking an account (the console's kill
+switches): [organization-suspension.md](organization-suspension.md).
+
 ## Settings
 
 The same four settings in every installer (Compose and `setup.sh`, the Helm
