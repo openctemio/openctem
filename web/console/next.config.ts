@@ -34,6 +34,9 @@ const nextConfig: NextConfig = {
       {
         source: '/:path*',
         headers: [
+          // HTTPS only from the first visit on: in host mode (its own host
+          // name) nothing else sets it. Browsers ignore it over plain HTTP.
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'no-referrer' },
