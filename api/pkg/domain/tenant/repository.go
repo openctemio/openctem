@@ -228,6 +228,9 @@ type UserMembership struct {
 	TenantSlug string // Tenant slug for URL-friendly access
 	TenantName string // Tenant display name
 	Role       string // Role in tenant (owner, admin, member, viewer)
+	// OrganizationSuspended: the organization itself is suspended by a
+	// platform administrator (set by GetUserMembershipsWithStatus).
+	OrganizationSuspended bool
 }
 
 // UserMembershipsByStatus partitions a user's memberships by lifecycle
