@@ -12,7 +12,11 @@ ALTER TABLE tenants
     ADD CONSTRAINT chk_tenants_status CHECK (status IN ('active', 'suspended', 'pending_deletion')),
     ADD COLUMN deletion_requested_at timestamptz,
     ADD COLUMN deletion_requested_by uuid REFERENCES users(id) ON DELETE SET NULL,
-    ADD COLUMN deletion_due_at timestamptz,
+    ADD COLUMN deletion_due_at timestamptz;
+
+-- A separate statement: the columns above are nullable, and the check below
+-- only mentions NOT NULL in its predicate.
+ALTER TABLE tenants
     ADD CONSTRAINT chk_tenants_deletion_due CHECK ((status = 'pending_deletion') = (deletion_due_at IS NOT NULL));
 
 -- The purge worker's question: which organizations are due.
