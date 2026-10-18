@@ -286,7 +286,7 @@ func registerAdminRoutes(
 	if h.AdminOverview != nil {
 		router.GET("/api/v1/admin/overview", h.AdminOverview.Get, adminMiddlewares...)
 	}
-	// System > Announcements: any admin reads; ops_admin+ publishes or ends
+	// Settings > Announcements: any admin reads; ops_admin+ publishes or ends
 	// one with a reason (audited).
 	if h.Announcement != nil {
 		opsAnn := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
@@ -319,7 +319,7 @@ func registerAdminRoutes(
 		router.GET("/api/v1/admin/system", h.AdminSystem.Get, adminMiddlewares...)
 	}
 
-	// Default limits of self-service organizations (Console > System >
+	// Default limits of self-service organizations (Console > Settings >
 	// Limits): any admin reads; a super admin changes them with a fresh
 	// authenticator code (checked in the handler, audited critical).
 	if h.Limits != nil {
@@ -330,7 +330,7 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// The sign-up policy (Console > System > Sign-up): who may create an
+	// The sign-up policy (Console > Settings > Sign-up): who may create an
 	// organization. Any admin reads; a super admin changes it with a fresh
 	// authenticator code (checked in the handler, which also writes the
 	// critical audit row and tells the other administrators).
@@ -344,7 +344,7 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// The sign-up feed (Console > Requests > Sign-ups) and its burst alert
+	// The sign-up feed (Console > Customers > Sign-ups) and its burst alert
 	// thresholds: any admin reads; a super admin changes the thresholds with
 	// a reason and a fresh authenticator code (critical audit, admins
 	// emailed). The feed holds email domains and network prefixes only.
@@ -370,7 +370,7 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// Platform e-mail (Console > System > E-mail, RFC-079): any admin reads;
+	// Platform e-mail (Console > Settings > E-mail, RFC-079): any admin reads;
 	// a super admin changes it with a fresh authenticator code and sends the
 	// test message (to their own address only).
 	if h.AdminEmail != nil {
@@ -385,7 +385,7 @@ func registerAdminRoutes(
 	// Settings moved from the environment into the console (RFC-079).
 	registerAdminPlatformSettingsRoutes(router, h, adminMiddlewares, stepUp, freshStepUp)
 
-	// Legal information (Console > System > Legal, RFC-079): any admin reads;
+	// Legal information (Console > Settings > Legal, RFC-079): any admin reads;
 	// a super admin changes it with a fresh authenticator code.
 	if h.AdminLegal != nil {
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)

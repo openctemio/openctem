@@ -25,7 +25,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 
 | Module group | Count | Example permissions |
 |--------------|-------|---------------------|
-| Core (dashboard, audit, settings) | 4 | `dashboard:read`, `audit:read`, `settings:read/write` |
+| Core (dashboard, audit, settings) | 6 | `dashboard:read`, `dashboards:org:view`, `dashboards:org:manage`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
@@ -763,6 +763,28 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 |----------|---------------------|
 | `GET /api/v1/dashboard-data/` | owner or administrator (`RequireAdmin`) |
 | `POST /api/v1/dashboard-data/rebuild` | owner or administrator (`RequireAdmin`); once per organization per hour, shared with the console route (`docs/architecture/dashboards.md`) |
+
+#### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
+
+Two kinds ([dashboards](dashboards.md)). Personal dashboards are the caller's
+own: `/me/*` is self-scoped (no permission gate) and every query filters on
+the caller's tenant and user, so another user's or tenant's dashboard is 404.
+Organization dashboards belong to the organization.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
+| `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
+| `GET /api/v1/organization/dashboards`, `GET …/{id}` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
+| `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
+| `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
+| `GET /api/v1/organization/settings/dashboards` | `dashboard:read` |
+| `PUT /api/v1/organization/settings/dashboards` | owner or admin, audited |
+
+`dashboards:org:view` replaced `dashboard:aggregate` (migration
+`dashboard_ownership`) and counts as full-data grade (`permission.IsFullDataGrade`):
+a role holding it is privileged, so an outside member holding it needs a
+second factor and binding it to a team is owner-only.
 
 ### URL-Tenant Routes (Tenant from URL)
 
@@ -1723,17 +1745,17 @@ a personal address, or be a work domain nobody has verified.
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values. The group list itself stays tenant configuration |
-| `GET /attack-surface/attack-paths` | **bypass (summary counts over the whole graph)** | `top_assets` filtered and `summary` recomputed over the assets the caller may see (entry points, reachable assets, critical reachable, crown jewels at risk, total paths, max depth); reachability itself is still the whole graph's. A viewer with `dashboard:aggregate` keeps the organization summary and still gets only their own rows |
-| `GET /threat-intel/stats` (EPSS and KEV counts) | **bypass (organization-wide exposure counts)** | the open findings counted (EPSS high / critical, KEV past due) are those on assets in the caller's scope; `dashboard:aggregate` or full data access counts the organization. The catalog totals (entries, ransomware, recently added) are public feed context |
-| `GET /validation/coverage` | **bypass (organization-wide KPI)** | per-severity totals, validated, downgrade and priority-class coverage count the findings on assets in the caller's scope; `dashboard:aggregate` or full data access counts the organization |
-| `GET /scans/coverage` | **bypass (organization-wide estate)** | the scannable estate counted (total, never scanned, covered, stale, critical uncovered, oldest dispatch) is the caller's in-scope assets; `dashboard:aggregate` or full data access counts the organization |
-| `GET /ctem-cycles/metrics/trend` | **bypass (organization-wide cycle metrics)** | the series and maturity are computed per organization, so a restricted member without `dashboard:aggregate` or full data access gets 403 |
+| `GET /attack-surface/attack-paths` | **bypass (summary counts over the whole graph)** | `top_assets` filtered and `summary` recomputed over the assets the caller may see (entry points, reachable assets, critical reachable, crown jewels at risk, total paths, max depth); reachability itself is still the whole graph's. A viewer with `dashboards:org:view` keeps the organization summary and still gets only their own rows |
+| `GET /threat-intel/stats` (EPSS and KEV counts) | **bypass (organization-wide exposure counts)** | the open findings counted (EPSS high / critical, KEV past due) are those on assets in the caller's scope; `dashboards:org:view` or full data access counts the organization. The catalog totals (entries, ransomware, recently added) are public feed context |
+| `GET /validation/coverage` | **bypass (organization-wide KPI)** | per-severity totals, validated, downgrade and priority-class coverage count the findings on assets in the caller's scope; `dashboards:org:view` or full data access counts the organization |
+| `GET /scans/coverage` | **bypass (organization-wide estate)** | the scannable estate counted (total, never scanned, covered, stale, critical uncovered, oldest dispatch) is the caller's in-scope assets; `dashboards:org:view` or full data access counts the organization |
+| `GET /ctem-cycles/metrics/trend` | **bypass (organization-wide cycle metrics)** | the series and maturity are computed per organization, so a restricted member without `dashboards:org:view` or full data access gets 403 |
 | `GET /attack-surface/exposure-chains`, MCP `get_exposure_chains` | **bypass** | a chain is returned only when every hop is in scope |
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
 | `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
 | `GET /dashboard/executive-summary` (+ export) `top_risks` | bypass | filtered |
-| `GET /dashboard/executive-summary` (+ export) totals, `/dashboard/velocity`, `/dashboard/data-quality`, `/dashboard/process-metrics` | **bypass (organization-wide totals)** | count the viewer's own scope (same rule as `/dashboard/stats`: `dashboard:aggregate` or full data access for the organization); the executive score change and the data-quality deduplication rate are not reported for a restricted viewer |
-| `GET /dashboard/risk-trend`, `GET /dashboard/program-metrics` | **bypass (organization-wide history and KPIs)** | kept for the whole organization: a restricted viewer without `dashboard:aggregate` gets an empty trend and a 403 on the program metrics |
+| `GET /dashboard/executive-summary` (+ export) totals, `/dashboard/velocity`, `/dashboard/data-quality`, `/dashboard/process-metrics` | **bypass (organization-wide totals)** | count the viewer's own scope (same rule as `/dashboard/stats`: `dashboards:org:view` or full data access for the organization); the executive score change and the data-quality deduplication rate are not reported for a restricted viewer |
+| `GET /dashboard/risk-trend`, `GET /dashboard/program-metrics` | **bypass (organization-wide history and KPIs)** | kept for the whole organization: a restricted viewer without `dashboards:org:view` gets an empty trend and a 403 on the program metrics |
 | `GET/PUT/POST/DELETE /suppressions...` | **bypass (rule patterns of any asset; an organization-wide rule could be approved by a restricted approver)** | an asset-bound rule needs its asset in the caller's scope to be read, edited, approved or deleted (404 otherwise) and is left out of the list; an organization-wide rule needs full data access to create, edit, approve or delete |
 | MCP `get_finding`, `explain_priority`, `list_finding_transitions`, `add_finding_comment` (by-id read, `GetFindingWithScope`) | **bypass (private program findings of a full-data role)** | the same decision as the route guard (`datascope.Enforcer`): a full-data role does not read a private bug-bounty program's findings it is not a member of; scope rows apply to everyone else |
 | `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
@@ -1762,7 +1784,7 @@ computed with the same SQL condition as every scoped list:
 |---|---|
 | Owner / admin / full-data role / unrestricted member | the organization |
 | Restricted member | only their in-scope assets and those assets' findings (0 in a fail-closed organization without a group) |
-| Restricted member with **`dashboard:aggregate`** (new permission, migration `000774`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
+| Restricted member with **`dashboards:org:view`** (was `dashboard:aggregate`, renamed by migration `dashboard_ownership`; owner and admin by default, custom roles when granted; full-data grade, see [dashboards](dashboards.md)) | the organization totals on these legacy endpoints; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see. Organization dashboards themselves show organization-wide numbers and names |
 
 Recent activity and top risks are row data and stay limited to the viewer's
 own scope whatever the permission: an aggregate viewer's top risks are queried
@@ -1783,7 +1805,7 @@ KEV, `GET /threat-intel/stats`), the validation coverage and downgrade figures
 (`GET /validation/coverage`) and the program metrics (`GET
 /dashboard/program-metrics`), where a pentest draft or in-review finding
 counts for nobody. Program metrics and the risk trend are kept for the
-organization, so a restricted viewer needs `dashboard:aggregate` (or full data
+organization, so a restricted viewer needs `dashboards:org:view` (or full data
 access) for them; the risk trend is a daily organization snapshot and cannot
 follow the pentest rule per viewer. A CTEM cycle's `charter_evaluation` is
 computed from the organization's metrics: `GET /ctem-cycles` and
@@ -1791,13 +1813,13 @@ computed from the organization's metrics: `GET /ctem-cycles` and
 one field out for a viewer who would be refused the cycle metrics, and the rest
 of the cycle stays readable. Every dashboard figure computed for the caller
 reads the data-scope enforcer's `ViewerScope` (one decision for the
-`dashboard:aggregate` check) and refuses when the enforcer is not wired; the
+`dashboards:org:view` check) and refuses when the enforcer is not wired; the
 attack-path and exposure-chain reads for a caller refuse likewise
 (`datascope.ErrNotConfigured`) instead of returning the organization's result.
 MTTR (`GET /dashboard/mttr` and
 `/dashboard/mttr-analytics`) follows the viewer the same way (research 24
 §5.1): a restricted member averages their own in-scope findings, with
-`dashboard:aggregate` the organization. The other dashboard metrics
+`dashboards:org:view` the organization. The other dashboard metrics
 (velocity, data quality, risk trend, program, process and executive metrics)
 move the same way in a follow-up; until then they stay in the table below.
 
@@ -1875,10 +1897,10 @@ These still return aggregates over the whole tenant to every holder of the
 read permission; none exposes a row, name, title or id of an out-of-scope
 object. This is **debt, not a decision**: owner decision D6 (2026-10-04) is
 that aggregates follow the viewer's scope, with org-wide totals only through
-`dashboard:aggregate` and a k ≥ 5 floor. Scoping them is RFC-050 W16;
+`dashboards:org:view` and a k ≥ 5 floor. Scoping them is RFC-050 W16;
 `/dashboard/stats` already follows D6, and so do the threat intel, validation
 coverage, scan coverage and attack-path summary counts (section "Data scope"
-above); the cycle metrics trend needs `dashboard:aggregate` or full data access.
+above); the cycle metrics trend needs `dashboards:org:view` or full data access.
 
 | Endpoint | Why tenant-wide |
 |---|---|
@@ -2125,7 +2147,8 @@ JWT-Tenant Routes (Permission-based):
 ├── /api/v1/components/*       → components:read/write/delete
 ├── /api/v1/findings/*         → findings:read/write/delete
 ├── /api/v1/vulnerabilities/*  → vulnerabilities:read/write/delete
-└── /api/v1/dashboard/*        → dashboard:read
+├── /api/v1/dashboard/*        → dashboard:read
+└── /api/v1/organization/dashboards/* → dashboards:org:view (read), dashboards:org:manage (write)
 
 URL-Tenant Routes (Role-based):
 ├── /api/v1/tenants                      → Any authenticated

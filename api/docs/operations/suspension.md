@@ -40,7 +40,7 @@ with the console session and the `X-Admin-Step-Up` header.
 ## Checking
 
 - The organization list filters by status (`?status=suspended`).
-- Every action is a **critical** row in Console > Audit log
+- Every action is a **critical** row in Console > Security > Admin activity
   (`organization.suspended`, `organization.unsuspended`,
   `platform_user.blocked`, `platform_user.unblocked`).
 - A suspended organization's own audit log shows "A platform administrator

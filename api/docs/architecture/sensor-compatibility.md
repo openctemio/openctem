@@ -50,7 +50,7 @@ minimum):
 |---|---|---|
 | First-party (`openctemio-*`: the scanning sensor, the Tenable.sc connector) | latest: the signed release feed (fallback: the version the platform release was built with, shown as possibly outdated); minimum: `versions.yaml` | `latest`, `update_available`, `unsupported` |
 | An operator's product (`SENSOR_PRODUCTS_FILE`) | the operator's file | the same |
-| An organization's own product, with a release line recorded | the organization (Sensors > Custom products, or `PUT /api/v1/sensors/custom-products/{product}`) | the same, for that organization only |
+| An organization's own product, with a release line recorded | the organization (Settings > Scanning > Sensor products, or `PUT /api/v1/sensors/custom-products/{product}`) | the same, for that organization only |
 | An organization's own product, nothing recorded | none | `unknown`: only the SDK and protocol verdicts |
 
 An organization records, per product, an optional latest and an optional

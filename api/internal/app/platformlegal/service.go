@@ -1,7 +1,7 @@
 // Package platformlegal is the operator's legal information (links to the
 // terms and privacy policy, the built-in legal pages' values, the
 // security.txt contact), set by a platform administrator in the admin
-// console (System > Legal) instead of LEGAL_* / SECURITY_* environment
+// console (Settings > Legal) instead of LEGAL_* / SECURITY_* environment
 // variables of the web console. Nothing in it is secret: the web console reads
 // it through a public endpoint to render the sign-in notice, the legal pages
 // and /.well-known/security.txt.

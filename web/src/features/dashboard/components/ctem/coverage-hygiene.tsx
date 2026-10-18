@@ -56,7 +56,10 @@ export function CoverageHygiene({ scan, validation, slaPct, isLoading }: Coverag
         ) : (
           <div className="flex flex-col gap-3">
             <Row label={t('dashboardMetrics.coverage.scan')} pct={scan?.coverage_percent ?? 0} />
-            <Row label="Validation" pct={validation?.overall_pct ?? 0} />
+            <Row
+              label={t('dashboardMetrics.coverage.validation')}
+              pct={validation?.overall_pct ?? 0}
+            />
             <Row label={t('dashboardMetrics.coverage.sla')} pct={slaPct ?? null} />
           </div>
         )}

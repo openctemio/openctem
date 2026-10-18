@@ -12,7 +12,7 @@ import (
 
 // Dashboard counts follow the viewer (owner decision D6, research doc 15
 // P1-4): a restricted member counts only their own assets and findings; with
-// dashboard:aggregate they see organization totals, with breakdowns under 5
+// dashboards:org:view they see organization totals, with breakdowns under 5
 // left out; owners and unrestricted members see the organization.
 func TestDashboardStats_FollowTheViewer_DB(t *testing.T) {
 	h := newDSHarness(t)
@@ -72,12 +72,12 @@ func TestDashboardStats_FollowTheViewer_DB(t *testing.T) {
 			t.Errorf("%s counts = %+v, want 2 assets and 2 findings", who.name, s)
 		}
 	}
-	// With dashboard:aggregate the restricted member sees the totals, and
+	// With dashboards:org:view the restricted member sees the totals, and
 	// the breakdowns under 5 are left out (both are 2 here).
-	perms := append(append([]string{}, dsMemberPerms...), permission.DashboardAggregate.String())
+	perms := append(append([]string{}, dsMemberPerms...), permission.DashboardsOrgView.String())
 	s := get(req(h.memberA.String(), false, perms))
 	if s.AssetCount != 2 || s.FindingCount != 2 {
-		t.Errorf("restricted member with dashboard:aggregate = %+v, want the organization totals", s)
+		t.Errorf("restricted member with dashboards:org:view = %+v, want the organization totals", s)
 	}
 	if len(s.FindingsBySeverity) != 0 || len(s.AssetsByType) != 0 {
 		t.Errorf("breakdowns under the k-floor shown to a restricted viewer: %+v", s)
