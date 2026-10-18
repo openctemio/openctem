@@ -304,19 +304,6 @@ func (r *AssetServiceRepository) List(ctx context.Context, tenantID shared.ID, o
 	return services, total, nil
 }
 
-// ListPublic retrieves all public (internet-exposed) services for a tenant.
-func (r *AssetServiceRepository) ListPublic(ctx context.Context, tenantID shared.ID, limit, offset int) ([]*asset.AssetService, int, error) {
-	isPublic := true
-	opts := asset.ListAssetServicesOptions{
-		IsPublic:  &isPublic,
-		Limit:     limit,
-		Offset:    offset,
-		SortBy:    "risk_score",
-		SortOrder: "desc",
-	}
-	return r.List(ctx, tenantID, opts)
-}
-
 // ListByServiceType retrieves services of a specific type.
 func (r *AssetServiceRepository) ListByServiceType(ctx context.Context, tenantID shared.ID, serviceType asset.ServiceType, limit, offset int) ([]*asset.AssetService, int, error) {
 	opts := asset.ListAssetServicesOptions{
@@ -327,42 +314,6 @@ func (r *AssetServiceRepository) ListByServiceType(ctx context.Context, tenantID
 		SortOrder:   "asc",
 	}
 	return r.List(ctx, tenantID, opts)
-}
-
-// ListHighRisk retrieves services with risk score above threshold.
-func (r *AssetServiceRepository) ListHighRisk(ctx context.Context, tenantID shared.ID, minRiskScore int, limit, offset int) ([]*asset.AssetService, int, error) {
-	query := r.selectQuery() + " WHERE s.tenant_id = $1 AND s.risk_score >= $2 ORDER BY s.risk_score DESC"
-	countQuery := "SELECT COUNT(*) FROM asset_services s WHERE s.tenant_id = $1 AND s.risk_score >= $2"
-
-	var total int
-	err := r.db.QueryRowContext(ctx, countQuery, tenantID.String(), minRiskScore).Scan(&total)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to count high risk services: %w", err)
-	}
-
-	finalQuery := query
-	args := []interface{}{tenantID.String(), minRiskScore}
-	if limit > 0 {
-		finalQuery += " LIMIT $3"
-		args = append(args, limit)
-	}
-	if offset > 0 {
-		finalQuery += " OFFSET $4"
-		args = append(args, offset)
-	}
-
-	rows, err := r.db.QueryContext(ctx, finalQuery, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to query high risk services: %w", err)
-	}
-	defer rows.Close()
-
-	services, err := r.scanServices(rows)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return services, total, nil
 }
 
 // =============================================================================

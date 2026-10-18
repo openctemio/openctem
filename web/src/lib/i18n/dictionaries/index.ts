@@ -37,6 +37,7 @@ import en_help from './en/help.json'
 import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_notificationTypes from './en/notificationTypes.json'
+import en_notificationPresets from './en/notificationPresets.json'
 import en_lookalikes from './en/lookalikes.json'
 import en_mcp from './en/mcp.json'
 import en_nav from './en/nav.json'
@@ -52,7 +53,10 @@ import en_remediation from './en/remediation.json'
 import en_reports from './en/reports.json'
 import en_scanWindows from './en/scanWindows.json'
 import en_tenableSc from './en/tenableSc.json'
+import en_siemIntegration from './en/siemIntegration.json'
+import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
+import en_ticketingIntegration from './en/ticketingIntegration.json'
 import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
 import en_sensors from './en/sensors.json'
@@ -98,6 +102,7 @@ import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_notificationTypes from './vi/notificationTypes.json'
+import vi_notificationPresets from './vi/notificationPresets.json'
 import vi_lookalikes from './vi/lookalikes.json'
 import vi_mcp from './vi/mcp.json'
 import vi_nav from './vi/nav.json'
@@ -113,7 +118,10 @@ import vi_remediation from './vi/remediation.json'
 import vi_reports from './vi/reports.json'
 import vi_scanWindows from './vi/scanWindows.json'
 import vi_tenableSc from './vi/tenableSc.json'
+import vi_siemIntegration from './vi/siemIntegration.json'
+import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
+import vi_ticketingIntegration from './vi/ticketingIntegration.json'
 import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
 import vi_sensors from './vi/sensors.json'
@@ -164,6 +172,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   insights: en_insights,
   licensePolicy: en_licensePolicy,
   notificationTypes: en_notificationTypes,
+  notificationPresets: en_notificationPresets,
   lookalikes: en_lookalikes,
   mcp: en_mcp,
   nav: en_nav,
@@ -180,7 +189,10 @@ export const enNamespaces: Record<string, Dictionary> = {
   riskScore: en_riskScore,
   scanWindows: en_scanWindows,
   tenableSc: en_tenableSc,
+  siemIntegration: en_siemIntegration,
+  integrationsHub: en_integrationsHub,
   ticketMapping: en_ticketMapping,
+  ticketingIntegration: en_ticketingIntegration,
   scans: en_scans,
   scope: en_scope,
   sensors: en_sensors,
@@ -228,6 +240,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   insights: vi_insights,
   licensePolicy: vi_licensePolicy,
   notificationTypes: vi_notificationTypes,
+  notificationPresets: vi_notificationPresets,
   lookalikes: vi_lookalikes,
   mcp: vi_mcp,
   nav: vi_nav,
@@ -244,7 +257,10 @@ export const viNamespaces: Record<string, Dictionary> = {
   riskScore: vi_riskScore,
   scanWindows: vi_scanWindows,
   tenableSc: vi_tenableSc,
+  siemIntegration: vi_siemIntegration,
+  integrationsHub: vi_integrationsHub,
   ticketMapping: vi_ticketMapping,
+  ticketingIntegration: vi_ticketingIntegration,
   scans: vi_scans,
   scope: vi_scope,
   sensors: vi_sensors,
