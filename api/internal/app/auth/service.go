@@ -22,6 +22,7 @@ import (
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/emaildomain"
@@ -98,6 +99,8 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// signups records sign-up events for the platform console (optional).
+	signups signupevent.Recorder
 	// orgGate refuses a token for a suspended organization
 	// (docs/architecture/organization-suspension.md). nil admits all
 	// (tests and tools without the gate).
@@ -130,6 +133,7 @@ type AuthService struct {
 	tokenGenerator *jwt.Generator
 	config         config.AuthConfig
 	logger         *logger.Logger
+	platformAdmins PlatformAdminGate
 	auditService   *auditapp.AuditService
 	roleService    *accesscontrol.RoleService // Optional: for database-driven role permissions
 	smtpChecker    SMTPAvailabilityCheck      // Optional: enables smart email verification
@@ -542,6 +546,11 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	}
 
 	s.logger.Info("user registered", "user_id", newUser.ID().String(), "email", email)
+	source := signupevent.SourcePassword
+	if invited {
+		source = signupevent.SourceInvitation
+	}
+	recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindAccountCreated, Source: source, Email: email, UserID: newUser.ID()})
 
 	// Log audit event
 	actx := auditapp.AuditContext{
@@ -734,6 +743,13 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 		return nil, err
 	}
 
+	// A platform administrator signs in on the admin console only. The answer
+	// is the wrong-password one, given before any other account state (email
+	// verification, second factor) can tell the account apart.
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "password") {
+		return nil, ErrInvalidCredentials
+	}
+
 	// Check if email is verified.
 	// If the user is already verified, allow login. Otherwise:
 	//
@@ -779,6 +795,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 // password plus second factor) and returns the global refresh token and the
 // user's memberships.
 func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddress, userAgent string) (*LoginResult, error) {
+	// Backstop for the second-factor steps: no session for an administrator.
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "login_completion") {
+		return nil, ErrInvalidCredentials
+	}
 	// Check session limit
 	activeCount, err := s.sessionRepo.CountActiveByUserID(ctx, u.ID())
 	if err != nil {
@@ -1153,6 +1173,10 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "token_exchange") {
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+
 	// Verify user has access to the requested tenant
 	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
 	if err != nil {
@@ -1446,6 +1470,12 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// A platform administrator holds no main-site session (one issued before
+	// the account became an administrator stops here too).
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "refresh_token") {
+		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// A suspended organization is refused before the refresh token is
@@ -2060,6 +2090,8 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to create team: %w", err)
 	}
 
+	recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindOrganizationCreated, Source: signupevent.SourceSelfService,
+		Email: u.Email(), TenantID: newTenant.ID(), UserID: u.ID()})
 	s.logger.Info("first team created",
 		"user_id", u.ID().String(),
 		"tenant_id", newTenant.ID().String(),

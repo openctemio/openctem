@@ -10,6 +10,8 @@ import (
 	"net"
 	"time"
 
+	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
+
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
@@ -910,6 +912,8 @@ type Services struct {
 	ScanGovernance *scangovapp.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
+	// SignupEvents is the console's sign-up feed and burst alerts.
+	SignupEvents *signupeventapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
@@ -2963,6 +2967,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
 		s.Audit, tenantapp.ErasedUserLabel, log)
 	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+	// Platform administrators sign in on the admin console only.
+	s.Auth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -3023,6 +3029,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
+	s.SSO.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 	if s.AccountDeletion != nil {
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
@@ -3127,6 +3134,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
 		if redisClient != nil {

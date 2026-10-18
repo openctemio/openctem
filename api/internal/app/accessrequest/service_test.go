@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	ardom "github.com/openctemio/openctem/api/pkg/domain/accessrequest"
@@ -344,7 +346,8 @@ func TestApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	if len(orgs.calls) != 1 || orgs.calls[0].OwnerEmail != "owner@acme.com" || orgs.calls[0].Name != "Acme" {
+	if len(orgs.calls) != 1 || orgs.calls[0].OwnerEmail != "owner@acme.com" || orgs.calls[0].Name != "Acme" ||
+		orgs.calls[0].SignupSource != signupevent.SourceAccessRequest {
 		t.Fatalf("the requester owns the new organization, got %+v", orgs.calls)
 	}
 	if req.Status != ardom.StatusApproved || req.TenantID == nil || *req.TenantID != created.Tenant.ID() || req.DecidedBy == nil {
@@ -428,5 +431,27 @@ func TestPurge(t *testing.T) {
 	}
 	if _, ok := repo.rows["d"]; !ok {
 		t.Fatal("a pending request is kept until decided")
+	}
+}
+
+type recordedSignups struct{ events []signupevent.Event }
+
+func (r *recordedSignups) Record(_ context.Context, e signupevent.Event) {
+	r.events = append(r.events, e)
+}
+
+// A stored request reaches the sign-up feed; a dropped one (disposable
+// address) does not.
+func TestSubmit_ReportsToSignupFeed(t *testing.T) {
+	svc, _, _ := newSvc(t, openPolicy, nil, nil)
+	rec := &recordedSignups{}
+	svc.SetSignupRecorder(rec)
+	if err := submit(svc, "owner@acme.com", "203.0.113.1"); err != nil {
+		t.Fatal(err)
+	}
+	_ = submit(svc, "x@mailinator.com", "203.0.113.2")
+	if len(rec.events) != 1 || rec.events[0].Kind != signupevent.KindAccessRequested ||
+		rec.events[0].Source != signupevent.SourcePublic || rec.events[0].Email != "owner@acme.com" {
+		t.Fatalf("events = %+v", rec.events)
 	}
 }

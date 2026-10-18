@@ -190,6 +190,8 @@ func (r *AccountDeletionRepository) EraseAccount(ctx context.Context, userID sha
 			// The person's own API keys stop working in every organization.
 			`UPDATE api_keys SET status = 'revoked', revoked_at = NOW(), updated_at = NOW()
 			  WHERE user_id = $1 AND status <> 'revoked'`,
+			// The console's sign-up feed no longer links to the person.
+			`UPDATE signup_events SET user_id = NULL WHERE user_id = $1`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, userID.String()); err != nil {
 				return fmt.Errorf("erase account: %w", err)
