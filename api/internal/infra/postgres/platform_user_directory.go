@@ -222,7 +222,7 @@ func (d *PlatformUserDirectory) List(ctx context.Context, f PlatformUserFilter, 
 		return nil, 0, nil, fmt.Errorf("list users: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]PlatformUserSummary, 0, limit)
+	out := []PlatformUserSummary{}
 	for rows.Next() {
 		s, err := scanPlatformUser(rows)
 		if err != nil {
