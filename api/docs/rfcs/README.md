@@ -123,6 +123,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-112](RFC-112-asset-technologies.md) | Asset technologies (detected technology fingerprint per asset) | Accepted (2026-10-16). |
 | [RFC-113](RFC-113-sensor-tool-standard.md) | Sensor tool standard (one contract for jobs, targets and results) | Proposed (2026-10-17). |
 | [RFC-114](RFC-114-system-page.md) | System page and host operations for self-managed installs | Proposed (2026-10-17) |
+| [RFC-115](RFC-115-custom-query-language.md) | Custom query language | Accepted (2026-10-18). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
