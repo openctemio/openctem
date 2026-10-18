@@ -134,7 +134,7 @@ func newHarness(t *testing.T) *harness {
 			clientID:  {ClientID: clientID, Kind: mcpoauthdom.ClientKindMetadataDocument, Name: "Desk Assistant", RedirectURIs: []string{redirect}},
 			otherCIMD: {ClientID: otherCIMD, Kind: mcpoauthdom.ClientKindMetadataDocument, Name: "Other", RedirectURIs: []string{otherRedir}},
 		},
-		Members:     apikey.NewMembershipChecker(postgres.NewTenantRepository(db), postgres.NewUserRepository(db)),
+		Members:     apikey.NewMembershipChecker(postgres.NewTenantRepository(db), postgres.NewUserRepository(db), nil),
 		Permissions: h.held,
 		Policies:    h.policies,
 		// The default policy admits verified clients only: the platform

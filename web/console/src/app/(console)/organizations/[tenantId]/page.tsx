@@ -15,6 +15,11 @@ import { useListParams } from '@/hooks/use-list-params'
 import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin-audit'
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
 import { OrganizationSummary } from '@console/features/admin-console/components/organization-summary'
+import {
+  OrganizationStatusBadge,
+  OrganizationSuspendedNotice,
+  OrganizationSuspensionAction,
+} from '@console/features/admin-console/components/organization-suspension'
 import { useOrganization } from '@console/features/admin-console/api/use-admin-organizations'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { OrganizationAuditChainPanel } from '@console/features/admin-console/components/organization-audit-chain-panel'
@@ -97,6 +102,8 @@ export default function AdminOrganizationPage({
   const canManageSSO = adminCan(admin.role, 'super_admin')
   // Adding people to an organization: operations admins and up.
   const canManageUsers = adminCan(admin.role, 'ops_admin')
+  // Suspending an organization (abuse response): operations admins and up.
+  const canSuspend = adminCan(admin.role, 'ops_admin')
   // Re-signing the organization's audit chain is irreversible: super admins only.
   const canRebaselineAuditChain = adminCan(admin.role, 'super_admin')
   const { data: org, error, isLoading, mutate } = useOrganization(tenantId)
@@ -124,10 +131,11 @@ export default function AdminOrganizationPage({
         </div>
       ) : (
         <>
-          <PageHeader
-            title={org.name}
-            description={org.description || `Organization ${org.slug}`}
-          />
+          <PageHeader title={org.name} description={org.description || `Organization ${org.slug}`}>
+            <OrganizationStatusBadge org={org} />
+            {canSuspend && <OrganizationSuspensionAction org={org} onDone={refresh} />}
+          </PageHeader>
+          <OrganizationSuspendedNotice org={org} />
           <Tabs value={tab} onValueChange={setTab} className="mt-5">
             <div className="-mx-1 overflow-x-auto px-1">
               <TabsList>

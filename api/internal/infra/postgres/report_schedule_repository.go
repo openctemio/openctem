@@ -166,6 +166,7 @@ func (r *ReportScheduleRepository) ListDue(ctx context.Context, now time.Time) (
 			created_by, created_at, updated_at
 		FROM report_schedules
 		WHERE is_active = true AND (next_run_at IS NULL OR next_run_at <= $1)
+		  AND ` + organizationActiveSQL("report_schedules.tenant_id") + `
 		ORDER BY next_run_at ASC NULLS FIRST
 		LIMIT 500
 	`

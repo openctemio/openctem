@@ -338,6 +338,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
+	jiraWebhookHandler.SetOrganizationGate(svc.OrganizationGate)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
 	jiraWebhookHandler.SetAuditService(svc.Audit)
 	var ticketMappingHandler *handler.TicketMappingHandler
@@ -352,6 +353,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
+	githubWebhookHandler.SetOrganizationGate(svc.OrganizationGate)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
 	// Replays of a verified delivery are ignored for 24 hours (all replicas).
@@ -683,7 +685,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			repos.Admin, shippedSchemaVersion(log), log),
 		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
 			postgres.NewPlatformUserDirectory(deps.DB),
-			newPlatformUserService(repos, svc, cfg, deps.DB),
+			newPlatformUserService(repos, svc, cfg, deps.DB, log),
 			log),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
@@ -880,6 +882,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), baseURL: cfg.SMTP.BaseURL, log: log})
 	}
+	// Suspended organizations: one gate for every credential path, and the
+	// console's suspend / block actions.
+	if svc.OrganizationGate != nil {
+		handlers.OrganizationGate = svc.OrganizationGate
+	}
+	handlers.AdminSuspension = handler.NewAdminSuspensionHandler(svc.Suspension,
+		newPlatformUserService(repos, svc, cfg, deps.DB, log), log)
 	// The platform policy for scan approval (RFC-073).
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
@@ -1545,6 +1554,8 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 		Audit:    audit,
 		Alerts:   ciAlerts,
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
+	// No CI run token is issued or accepted for a suspended organization.
+	ciSvc.SetOrganizationGate(svc.OrganizationGate)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
 		ds = svc.DataScope
