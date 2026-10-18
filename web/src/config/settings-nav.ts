@@ -163,7 +163,7 @@ export const settingsNav: SettingsNavGroup[] = [
       {
         id: 'org-general',
         title: 'General',
-        description: 'Organization name, branding, localization and file storage.',
+        description: 'Organization name, branding and file storage.',
         url: '/settings/general',
         icon: Building,
         permission: Permission.TeamUpdate,
@@ -291,11 +291,11 @@ export const settingsNav: SettingsNavGroup[] = [
       {
         id: 'authentication',
         title: 'Authentication',
-        description: 'Two-factor, session length and sign-in restrictions.',
+        description: 'Two-factor and sign-in restrictions.',
         url: '/settings/authentication',
         icon: LockKeyhole,
         permission: Permission.TeamUpdate,
-        keywords: ['2fa', 'mfa', 'session timeout', 'ip allowlist', 'domains', 'sso', 'saml'],
+        keywords: ['2fa', 'mfa', 'ip allowlist', 'domains', 'sso', 'saml'],
       },
       {
         id: 'scim',
