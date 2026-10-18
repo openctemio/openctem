@@ -3,7 +3,16 @@ import { render, screen } from '@testing-library/react'
 import { daysLeft, formatBytes, levelKey, levelTone } from '../lib/system'
 import type { AdminSystem } from '../types'
 
-const state = vi.hoisted(() => ({ data: undefined as unknown }))
+const state = vi.hoisted(() => ({ data: undefined as unknown, ops: undefined as unknown }))
+
+vi.mock('@console/features/admin-console/api/use-admin-operations', () => ({
+  useAdminOperations: () => ({
+    data: state.ops,
+    error: undefined,
+    isLoading: !state.ops,
+    mutate: vi.fn(),
+  }),
+}))
 
 vi.mock('@console/features/admin-console/api/use-admin-system', () => ({
   useAdminSystem: () => ({
@@ -14,7 +23,7 @@ vi.mock('@console/features/admin-console/api/use-admin-system', () => ({
   }),
 }))
 
-import AdminSystemPage from '@console/app/(console)/system/page'
+import AdminHealthPage from '@console/app/(console)/health/page'
 
 function system(patch: Partial<AdminSystem> = {}): AdminSystem {
   return {
@@ -97,10 +106,10 @@ describe('System page helpers', () => {
   })
 })
 
-describe('System page', () => {
+describe('Health page', () => {
   it('shows each service, volume, backup, certificate and version', () => {
     state.data = system()
-    render(<AdminSystemPage />)
+    render(<AdminHealthPage />)
     expect(screen.getByText('Connected sensors')).toBeInTheDocument()
     expect(screen.getByText('3 online')).toBeInTheDocument()
     expect(screen.getByText('Not configured')).toBeInTheDocument()
@@ -116,13 +125,55 @@ describe('System page', () => {
 
   it('says so when no backup status is reported', () => {
     state.data = system({ backup: { reported: false, level: 0 } })
-    render(<AdminSystemPage />)
+    render(<AdminHealthPage />)
     expect(screen.getByText(/No backup status is reported/)).toBeInTheDocument()
   })
 
   it('offers no action: no button changes the host', () => {
     state.data = system()
-    render(<AdminSystemPage />)
+    render(<AdminHealthPage />)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('merges the host and API views once: schema, queues and jobs, no second version block', () => {
+    state.data = system()
+    state.ops = {
+      build: { version: 'v0.10.0', commit: 'abc1234', channel: 'release' },
+      schema: { applied: 7, shipped: 9, dirty: false, known: true },
+      database: {
+        ok: true,
+        configured: true,
+        latency_ms: 1,
+        open_connections: 2,
+        in_use: 1,
+        idle: 1,
+        max_open: 25,
+        wait_count: 0,
+      },
+      redis: { ok: true, configured: true, latency_ms: 1 },
+      queues: {
+        commands_pending: 4,
+        commands_running: 0,
+        command_oldest_pending_seconds: 0,
+        scan_runs_open: 0,
+        scan_runs_past_deadline: 0,
+        outbox_pending: 0,
+        outbox_failed: 0,
+        outbox_dead: 0,
+        outbox_oldest_pending_seconds: 0,
+      },
+      sensors: [],
+      controllers: [],
+      checked_at: '2026-10-17T12:00:00Z',
+    }
+    render(<AdminHealthPage />)
+    expect(screen.getByText('Work queues')).toBeInTheDocument()
+    expect(screen.getByText('Database schema')).toBeInTheDocument()
+    expect(screen.getByText('Background jobs')).toBeInTheDocument()
+    expect(screen.getByText(/abc1234/)).toBeInTheDocument()
+    expect(screen.getByText(/Pool 1 in use of 2 open/)).toBeInTheDocument()
+    expect(screen.getAllByText('Sensor fleet')).toHaveLength(1)
+    expect(screen.queryByText('Version')).not.toBeInTheDocument()
+    state.ops = undefined
   })
 })

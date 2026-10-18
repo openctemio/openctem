@@ -41,23 +41,33 @@ import {
 } from '@console/features/verified-domains'
 
 function VerifiedDomainsSection({ tenantId, canManage }: { tenantId: string; canManage: boolean }) {
+  const { t } = useTranslation()
+
   const { data, error, isLoading, mutate } = useVerifiedDomains(tenantId)
   const refresh = () => void mutate()
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="space-y-1.5">
-          <CardTitle>Verified domains</CardTitle>
+          <CardTitle>
+            {t('admin.organizationsDetailPage.verifiedDomains', 'Verified domains')}
+          </CardTitle>
           <p className="text-sm text-muted-foreground">
-            SSO auto-join only admits people whose email is at a domain the organization has proven
-            it owns (DNS TXT record).
+            {t(
+              'admin.organizationsDetailPage.ssoAutoJoinOnlyAdmits',
+              'SSO auto-join only admits people whose email is at a domain the organization has proven it owns (DNS TXT record).'
+            )}
           </p>
         </div>
         {canManage && <AddDomainDialog tenantId={tenantId} onAdded={refresh} />}
       </CardHeader>
       <CardContent>
         {error ? (
-          <ErrorState title="verified domains" error={error} onRetry={refresh} />
+          <ErrorState
+            title={t('admin.organizationsDetailPage.verifiedDomains2', 'verified domains')}
+            error={error}
+            onRetry={refresh}
+          />
         ) : isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : (
@@ -128,7 +138,11 @@ export default function AdminOrganizationPage({
       </Button>
 
       {error ? (
-        <ErrorState title="the organization" error={error} onRetry={refresh} />
+        <ErrorState
+          title={t('admin.organizationsDetailPage.theOrganization', 'the organization')}
+          error={error}
+          onRetry={refresh}
+        />
       ) : isLoading || !org ? (
         <div className="space-y-3">
           <Skeleton className="h-10 w-1/3" />
@@ -136,7 +150,15 @@ export default function AdminOrganizationPage({
         </div>
       ) : (
         <>
-          <PageHeader title={org.name} description={org.description || `Organization ${org.slug}`}>
+          <PageHeader
+            title={org.name}
+            description={
+              org.description ||
+              t('admin.organizationsDetailPage.organization', 'Organization {slug}', {
+                slug: org.slug,
+              })
+            }
+          >
             <OrganizationStatusBadge org={org} />
             {canSuspend && <OrganizationSuspensionAction org={org} onDone={refresh} />}
             {canPurge && (
@@ -185,8 +207,10 @@ export default function AdminOrganizationPage({
             <TabsContent value="sso" className="mt-4 space-y-5">
               {!canManageSSO && (
                 <p className="text-sm text-muted-foreground">
-                  You can view this organization&apos;s SSO setup. Changing it requires a super
-                  admin.
+                  {t(
+                    'admin.organizationsDetailPage.youCanViewThisOrganization',
+                    "You can view this organization's SSO setup. Changing it requires a super admin."
+                  )}
                 </p>
               )}
               <SSOEnforcementCard org={org} canManage={canManageSSO} onChanged={refresh} />
@@ -195,7 +219,10 @@ export default function AdminOrganizationPage({
               <section className="space-y-1">
                 <h2 className="text-base font-semibold">SAML 2.0</h2>
                 <p className="text-sm text-muted-foreground">
-                  Federate sign-in through a SAML identity provider (Okta, Entra ID, ADFS).
+                  {t(
+                    'admin.organizationsDetailPage.federateSignInThroughA',
+                    'Federate sign-in through a SAML identity provider (Okta, Entra ID, ADFS).'
+                  )}
                 </p>
                 <SamlConfigForm
                   tenantId={org.id}

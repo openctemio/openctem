@@ -19,8 +19,7 @@ describe('console navigation groups', () => {
     expect(scanning).toEqual(
       expect.arrayContaining([
         '/system/scan-approval',
-        '/system/platform-scanning',
-        '/system/shared-sensors',
+        '/scanning/platform',
         '/scanning/target-mappings',
       ])
     )

@@ -490,7 +490,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
      the same request (400 `NEW_ORGS_CHOICE_REQUIRED`). A deny always wins;
   3. the owner's opt-out, the organization setting `shared_sensors.opt_out`.
 
-  Console > System > Platform scanning (`/api/v1/admin/settings/shared-sensors`)
+  Console > Scanning > Platform scanning (`/api/v1/admin/settings/shared-sensors`)
   and `/api/v1/admin/tenants/{id}/shared-sensors`: any administrator reads,
   and a super admin changes either with a reason and a fresh authenticator
   code (critical admin audit row, other administrators emailed). The owner's
@@ -530,7 +530,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   one per region). No sensor id, name, host, address, version, node count,
   capacity or other organization's load. The card links administrators to
   the owner's opt-out.
-- **Console fleet.** Console > System > Shared sensors
+- **Console fleet.** Console > Scanning > Platform scanning (Fleet)
   (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
   `postgres/shared_fleet_repository.go`). Any administrator: the instance
   sensors, queued and running jobs per tool lane, per-organization counts
@@ -544,7 +544,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   critical audit row written before the status change (no row, no change) (`shared_sensor.paused|resumed|retired`); the status update is
   guarded by `scope = 'instance'` and a retired sensor cannot be resumed
   (409). Pause leaves held jobs to finish (drain); retire is a revoke.
-- **Egress addresses.** Console > System > Platform scanning, "Egress
+- **Egress addresses.** Console > Scanning > Platform scanning, "Egress
   addresses" (`GET/PUT /api/v1/admin/settings/shared-sensors/egress`,
   `platform_settings['shared_sensors_egress']`): IP addresses or CIDR ranges
   for every region and per region label (sensor region tokens, at most 32
