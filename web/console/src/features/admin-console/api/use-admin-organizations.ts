@@ -91,3 +91,14 @@ export function setOrganizationSuspended(id: string, suspended: boolean, reason:
     { method: 'POST', body: { reason } }
   )
 }
+
+/**
+ * Deletes an organization at once, whatever its status (super admin; a
+ * fresh authenticator code and a reason, kept in the admin audit log).
+ */
+export function purgeOrganization(id: string, reason: string, totpCode?: string) {
+  return adminFetch<{ status: string }>(`/tenants/${encodeURIComponent(id)}/purge`, {
+    method: 'POST',
+    body: { reason, totp_code: totpCode },
+  })
+}

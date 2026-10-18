@@ -127,6 +127,13 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			onboardingAccept := ChainFunc(h.LocalAuth.OnboardingAccept, crossSite, registerRL)
 			r.POST("/onboarding/accept", onboardingAccept.ServeHTTP)
 
+			// An owner cancels a scheduled organization deletion: the
+			// organization is closed to tenant tokens while it waits, so
+			// this is refresh-token authenticated too
+			// (docs/architecture/organization-deletion.md).
+			cancelDeletion := ChainFunc(h.LocalAuth.CancelOrganizationDeletion, crossSite, tokenExchangeRL)
+			r.POST("/organization-deletion/cancel", cancelDeletion.ServeHTTP)
+
 			// Sign-out: by the refresh token when the request carries one
 			// (it outlives the access token, so an idle user's sign-out still
 			// ends the server session), else by the access token.

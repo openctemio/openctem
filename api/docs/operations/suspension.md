@@ -52,6 +52,14 @@ Unsuspend restores every credential as it was; schedules that came due
 during the suspension run on their next tick. Unblock lets the account sign
 in again; its old sessions stay ended.
 
+## Deleting an organization
+
+An owner's deletion waits 14 days (the organization is closed meanwhile; any
+owner can cancel at sign-in). For abuse or a legal request, a super admin can
+use **Delete now** on the organization (fresh code, reason; cannot be undone):
+`POST /api/v1/admin/tenants/{tenantId}/purge`. Details:
+`docs/architecture/organization-deletion.md`.
+
 ## If Redis is down
 
 The access gate reads the database directly; a change still applies on the

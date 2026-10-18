@@ -188,7 +188,7 @@
   "confirm.notificationChannel.deleteDesc": "Notifications stop going to this channel at once, and rules that send to it lose this destination. This cannot be undone.",
   "confirm.notificationChannel.deleteTitle": "Delete the notification channel \"{name}\"?",
   "confirm.org.delete": "Delete organization",
-  "confirm.org.deleteDesc": "The organization and all of its data are deleted for every member: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone.",
+  "confirm.org.deleteDesc": "The organization is closed for every member now and deleted with all of its data after 14 days: assets, findings, scans, members, roles, settings and its audit log. An owner can cancel the deletion from the sign-in page until then. Member accounts are kept.",
   "confirm.org.deleteTitle": "Delete the organization {name}?",
   "confirm.orgTrust.end": "End trust",
   "confirm.orgTrust.endIncomingDesc": "Your people are disabled in {org} at once. Nothing is deleted.",

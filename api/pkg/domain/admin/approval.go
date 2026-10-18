@@ -45,6 +45,9 @@ const (
 	// ApprovalAuditChainRebaseline: an organization's audit chain is
 	// re-signed ("tenant:<id>").
 	ApprovalAuditChainRebaseline ApprovalAction = "audit_chain.rebaseline"
+	// ApprovalOrgPurge: an organization is deleted at once, before its grace
+	// period ends ("tenant:<id>").
+	ApprovalOrgPurge ApprovalAction = "organization.purge"
 )
 
 var (
@@ -70,7 +73,7 @@ func (a ApprovalAction) ValidTarget(target string) bool {
 		return target == "remove" || target == "disable" || target == "require_idp_off"
 	case ApprovalSignupOpen:
 		return approvalSignupTarget.MatchString(target)
-	case ApprovalAuditChainRebaseline:
+	case ApprovalAuditChainRebaseline, ApprovalOrgPurge:
 		return approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "tenant:")
 	}
 	return false
@@ -80,7 +83,7 @@ func (a ApprovalAction) ValidTarget(target string) bool {
 func (a ApprovalAction) IsValid() bool {
 	switch a {
 	case ApprovalGrantSuperAdmin, ApprovalRevokeSuperAdmin, ApprovalConsoleMFAOff,
-		ApprovalPlatformIdPRemove, ApprovalSignupOpen, ApprovalAuditChainRebaseline:
+		ApprovalPlatformIdPRemove, ApprovalSignupOpen, ApprovalAuditChainRebaseline, ApprovalOrgPurge:
 		return true
 	}
 	return false
