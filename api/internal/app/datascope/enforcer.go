@@ -34,6 +34,10 @@ import (
 // refuse (fail closed); nothing runs on behalf of a person who left.
 var ErrInactivePrincipal = fmt.Errorf("%w: the acting member is not active", shared.ErrForbidden)
 
+// ErrNotConfigured: a read that must follow the viewer's data scope reached an
+// enforcer that was never wired.
+var ErrNotConfigured = errors.New("data scope enforcer not configured")
+
 // Caller is the identity a request acts as.
 type Caller struct {
 	UserID  string
@@ -145,7 +149,13 @@ func (e *Enforcer) AggregateViewer(ctx context.Context) bool {
 // permission is counted over the organization (nil scope, orgWide true).
 // A nil scope with orgWide false is an unrestricted caller. A figure that
 // cannot be computed per scope refuses when scope.Restricted().
+//
+// It fails closed: an unwired enforcer is an error (ErrNotConfigured), never
+// an organization-wide count.
 func (e *Enforcer) ViewerScope(ctx context.Context, tenantID shared.ID) (scope *shared.DataScope, orgWide bool, err error) {
+	if e == nil || e.repo == nil {
+		return nil, false, ErrNotConfigured
+	}
 	scope, err = e.Resolve(ctx, tenantID)
 	if err != nil || !scope.Restricted() {
 		return scope, false, err

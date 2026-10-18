@@ -30,7 +30,7 @@ func (f *fakeCoverageReader) CoverageStats(_ context.Context, tenantID shared.ID
 }
 
 func newCoverageHandler(reader scancoverage.CoverageStatsReader) *ScanHandler {
-	return NewScanHandler(nil, nil, reader, nil, logger.NewNop())
+	return NewScanHandler(nil, nil, reader, nil, logger.NewNop()).SetDataScope(unrestrictedDataScope())
 }
 
 func reqWithTenant(target string, tenant shared.ID) *http.Request {
