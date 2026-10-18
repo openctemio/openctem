@@ -133,6 +133,7 @@
   "sensors.checks.version.unsupported": "{version}, cũ hơn phiên bản tối thiểu được hỗ trợ {min}. Hãy nâng cấp sensor.",
   "sensors.checks.version.available": "{version}; đã có {latest}.",
   "sensors.checks.version.latest": "{version}, bản phát hành mới nhất",
+  "sensors.checks.version.latestBuiltIn": "{version}, bản phát hành mới nhất mà nền tảng biết. Có thể đã có bản mới hơn: nền tảng chưa có thông tin phát hành hiện tại.",
   "sensors.checks.sdk.the": "SDK",
   "sensors.checks.sdk.outdated": "{sdk} đã cũ{latest}.",
   "sensors.checks.sdk.latest": "; đã có {version}",
