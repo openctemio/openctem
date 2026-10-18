@@ -38,6 +38,13 @@
 > `/admin` path in the tenant app; the API's internal sensor listener moves to
 > 9443 (see [Revision 21](#revision-21-the-consoles-own-service-and-port)).
 
+> **Revision 22** (2026-10-18): console sessions and the administrator
+> roster are hardened: background refreshes no longer keep a session alive,
+> a credential change on the account ends its console sessions, every
+> roster or sign-in-policy change is announced to the other administrators,
+> and more platform-wide writes take a step-up (see
+> [Revision 22](#revision-22-session-and-roster-hardening)).
+
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*: the system administrator is an account
 > with a system-level role and a different menu (Organizations, Users, Scanning,
@@ -954,6 +961,48 @@ with `/admin` removed from the tenant app (#2442); the release pipeline for
 `openctem-console` and the all-in-one image (#2443); `OPENCTEM_PLANE` in the
 API (#2444); the Helm chart and the Ansible kit (their repositories); the
 documentation.
+
+## Revision 22: session and roster hardening
+
+A review of the console as an operator uses it found four ways one console
+session could do more, or last longer, than intended. Each is closed here.
+
+- **Idle time counts only the administrator's own use.** Several console
+  pages refresh themselves every 30 to 60 seconds, and every request used to
+  refresh the session's last-use time, so an open tab never reached the
+  15-minute idle timeout. A read the console makes on its own now carries
+  `X-Admin-Background: 1`; the API authenticates it as usual but leaves the
+  last-use time alone. The console marks a read as background when its tab
+  is hidden or nobody pressed a key, clicked or touched the page for a
+  minute. The header only ever shortens a session: it is accepted on reads,
+  never on writes, and a client that omits it is treated as active, as
+  before.
+- **A credential change on the account ends its console sessions.** An
+  administrator is a user account. A password reset by emailed link, a
+  password change, a two-step reset or turning on two-step verification on
+  that account revokes the account's sessions; it now also ends the
+  administrator's console sessions (`console.sessions_ended_by_account`,
+  audited). Before, a stolen console session outlived the password it was
+  opened with.
+- **Roster changes are announced.** Adding an administrator, changing one's
+  role, state or break-glass marker, removing one, resetting one's console
+  sign-in, removing an identity-provider binding, saving or removing the
+  administrators' identity provider and switching the security-key policy
+  are each emailed to every other active administrator (platform e-mail)
+  and written as a WARN line with `alert=admin_roster_change` for log-based
+  alerting. One session can still make such a change after its step-up, but
+  not unnoticed. A second administrator's approval for the most dangerous of
+  these is left for later: on most installations there is one administrator.
+- **More platform-wide writes take a step-up:** publishing or ending an
+  announcement (a banner every user sees is a phishing channel in a hijacked
+  session), an organization's limits (a limit of 0 freezes it) and idle
+  policy, turning a threat-intelligence feed on or off, and blocking or
+  unblocking an AI application. `admin_step_up_inventory_test.go` lists them
+  as step-up routes and checks that each refuses a request without a code.
+- **Smaller fixes:** the console sends `Strict-Transport-Security` itself (in
+  host mode nothing else did), and its API proxy no longer returns the
+  network error text (addresses, resolver errors) to the browser when the API
+  cannot be reached.
 
 ## Later phases
 

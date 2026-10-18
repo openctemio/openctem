@@ -494,6 +494,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 	if err := s.guardBoundRolePrivilege(ctx, r, newPerms, hasFullDataAccess, editor); err != nil {
 		return nil, err
 	}
+	if err := s.guardDirectRolePrivilege(ctx, r, newPerms, hasFullDataAccess, editor); err != nil {
+		return nil, err
+	}
 	if input.Permissions != nil {
 		if err := rejectAdminOnlyPermissions(input.Permissions); err != nil {
 			return nil, err
@@ -816,6 +819,9 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
 		return err
 	}
+	if err := s.authorizePrivilegedGrant(ctx, actor, tid, uid, []*roledom.Role{r}); err != nil {
+		return err
+	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
 		return err
 	}
@@ -993,6 +999,9 @@ func (s *RoleService) setUserRoles(ctx context.Context, input SetUserRolesInput,
 	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, roleIDs); err != nil {
 		return err
 	}
+	if err := s.authorizePrivilegedGrant(ctx, actor, tid, uid, granted); err != nil {
+		return err
+	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, !exact); err != nil {
 		return err
 	}
@@ -1133,6 +1142,9 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 		if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
 			return nil, err
 		}
+		if err := s.authorizePrivilegedGrant(ctx, actor, tid, uid, []*roledom.Role{r}); err != nil {
+			return nil, err
+		}
 		if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
 			return nil, err
 		}
@@ -1223,6 +1235,27 @@ func (s *RoleService) ListModulesWithPermissions(ctx context.Context) ([]*roledo
 // ListPermissions returns all permissions.
 func (s *RoleService) ListPermissions(ctx context.Context) ([]*roledom.Permission, error) {
 	return s.permissionRepo.ListPermissions(ctx)
+}
+
+// guardDirectRolePrivilege: an edit that makes a role privileged raises the
+// access of every user who holds it directly, so a non-system editor needs a
+// recent sign-in when the role has at least one direct holder. Team-bound
+// roles are covered by guardBoundRolePrivilege.
+func (s *RoleService) guardDirectRolePrivilege(ctx context.Context, r *roledom.Role, newPerms []string, fullData bool, editor grantActor) error {
+	if s.stepUp == nil || r.TenantID() == nil || editor.system {
+		return nil
+	}
+	if permission.IsPrivilegedRole(r.Permissions(), r.HasFullDataAccess()) || !permission.IsPrivilegedRole(newPerms, fullData) {
+		return nil
+	}
+	holders, err := s.roleRepo.ListRoleMembers(ctx, *r.TenantID(), r.ID())
+	if err != nil {
+		return fmt.Errorf("load role holders: %w", err)
+	}
+	if len(holders) == 0 {
+		return nil
+	}
+	return s.stepUp.RequireRecentAuth(ctx, editor.id)
 }
 
 // guardBoundRolePrivilege: a role bound to a team that an edit makes
