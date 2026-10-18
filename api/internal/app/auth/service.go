@@ -22,6 +22,7 @@ import (
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/emaildomain"
@@ -98,6 +99,8 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// signups records sign-up events for the platform console (optional).
+	signups signupevent.Recorder
 	// selfServiceLimits gives a self-service organization the instance's
 	// self-service default limits (none unless an operator set some).
 	selfServiceLimits SelfServiceLimits
@@ -535,6 +538,11 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	}
 
 	s.logger.Info("user registered", "user_id", newUser.ID().String(), "email", email)
+	source := signupevent.SourcePassword
+	if invited {
+		source = signupevent.SourceInvitation
+	}
+	recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindAccountCreated, Source: source, Email: email, UserID: newUser.ID()})
 
 	// Log audit event
 	actx := auditapp.AuditContext{
@@ -2012,6 +2020,8 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to create team: %w", err)
 	}
 
+	recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindOrganizationCreated, Source: signupevent.SourceSelfService,
+		Email: u.Email(), TenantID: newTenant.ID(), UserID: u.ID()})
 	s.logger.Info("first team created",
 		"user_id", u.ID().String(),
 		"tenant_id", newTenant.ID().String(),

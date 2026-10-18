@@ -136,6 +136,8 @@ Besides the Go runtime and process metrics:
 | `openctem_panics_recovered_total` | where (`http` or the background task) | Panics caught by a recover(). |
 | `openctem_log_records_total` | level (warn, error), component | Log records written, before sampling. |
 | `openctem_auth_login_failures_total` | reason (invalid_credentials, locked, suspended, other) | Refused password sign-ins. |
+| `openctem_signup_events_total` | kind (account_created, organization_created, access_requested), source (the sign-up path) | Sign-up events recorded for the console's sign-up feed. |
+| `openctem_signup_burst_alerts_total` | dimension (ip_prefix, email_domain), kind | Sign-up burst alerts raised. The prefix or domain is in the console admin audit log, never a label. |
 | `openctem_automation_runs_total`, `openctem_automations_auto_paused_total` | status | Finished automation runs; automations paused after repeated failures. |
 | `openctem_suppression_rule_hits_total` | applied_by (ingest, approval, other) | Findings decided by an approved suppression rule: new findings a rule matched as they arrived, and open findings it closed when approved. Counted once per finding; no tenant or rule label (the per-rule breakdown is the `finding_suppressions` table). A sudden rise from `ingest` is a noisy rule. |
 | `openctem_web_client_errors_total` | kind | Errors reported by browsers (when the web reporter is enabled). |
@@ -455,6 +457,20 @@ policy allowed the change, the two disagree: check
 More than 50 failed password sign-ins in 5 minutes: password guessing or
 credential stuffing. Accounts lock after repeated failures; check the source
 addresses in the audit log (failed sign-ins) and block them at the edge.
+
+### SignupBurst
+
+The API counted more sign-ups of one kind (accounts, organizations, access
+requests) from one client network (/24 for IPv4, /48 for IPv6) or one email
+domain than the threshold within the window (Console > Requests > Sign-ups >
+Alert thresholds; defaults 10 per network and 20 per domain an hour). The
+platform administrators were also emailed and the console admin audit log has
+a `platform.signup_burst` row naming the prefix or the domain. Open the
+sign-up feed in the console: a bot farm shows many accounts from one prefix
+with throwaway domains; a company rollout shows one corporate domain (add it
+to the ignored domains). Tighten the sign-up policy, block the network at the
+edge, or suspend the organizations created. See
+`docs/architecture/signup-activity.md`.
 
 ### RateLimitSpike
 

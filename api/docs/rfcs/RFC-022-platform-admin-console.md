@@ -1100,3 +1100,17 @@ documentation.
   owner count without owner emails, and the account search
   (`/platform-users`) is ops_admin+. Every member-list view is audited
   (`organization.users_view`).
+
+## Revision 22: sign-up feed and burst alerts
+
+Requests > Sign-ups (`/requests/sign-ups`) lists accounts created,
+organizations created and access requests submitted, with today / 7-day /
+30-day counts per kind, kept 90 days. Each event shows the registrable email
+domain and the client network prefix (/24, /48) only, so every console role,
+the read-only one included, may read it: it names no person. When sign-ups of
+one kind from one prefix or one domain reach a threshold within a window
+(default 10 / 20 an hour), the API raises one alert per window: metric, WARN
+line `alert=signup_burst`, a high admin audit row `platform.signup_burst` and
+an email to every administrator. A super admin changes the thresholds and the
+ignored domains with a reason and a fresh authenticator code (audited
+critical). Details: `docs/architecture/signup-activity.md`.
