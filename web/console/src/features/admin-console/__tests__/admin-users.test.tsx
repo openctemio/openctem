@@ -35,6 +35,7 @@ function account(patch: Partial<PlatformUserDetail> = {}): PlatformUserDetail {
     mfa_enabled: false,
     is_platform_admin: false,
     erased: false,
+    blocked: false,
     membership_list: [],
     identities: [],
     sessions: [
@@ -57,7 +58,7 @@ describe('PlatformUserActions', () => {
 
   it('offers only the actions that apply to the account', () => {
     const { rerender } = render(<PlatformUserActions user={account()} onDone={vi.fn()} />)
-    expect(names()).toEqual(['Sign out everywhere', 'Send password reset'])
+    expect(names()).toEqual(['Sign out everywhere', 'Send password reset', 'Block account'])
 
     rerender(
       <PlatformUserActions
@@ -71,7 +72,24 @@ describe('PlatformUserActions', () => {
         onDone={vi.fn()}
       />
     )
-    expect(names()).toEqual(['Unlock', 'Resend verification'])
+    expect(names()).toEqual(['Unlock', 'Resend verification', 'Block account'])
+
+    // A blocked account is offered the unblock only (no sign-out: its
+    // sessions already ended), with the reason shown.
+    rerender(
+      <PlatformUserActions
+        user={account({
+          status: 'suspended',
+          blocked: true,
+          blocked_reason: 'Spam campaign',
+          sessions: [],
+          auth_provider: 'oidc',
+        })}
+        onDone={vi.fn()}
+      />
+    )
+    expect(names()).toEqual(['Unblock account'])
+    expect(screen.getByText('Blocked: Spam campaign')).toBeInTheDocument()
   })
 
   it('disables every action for a platform administrator account', () => {
@@ -116,7 +134,30 @@ describe('PlatformUserActions', () => {
   })
 })
 
+describe('PlatformUserActions block', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('blocks with a reason', async () => {
+    const user = userEvent.setup()
+    vi.mocked(runPlatformUserAction).mockResolvedValue({ status: 'blocked' })
+    render(<PlatformUserActions user={account()} onDone={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: 'Block account' }))
+    await user.type(screen.getByLabelText(/^reason$/i), 'Abuse report 77: phishing')
+    const buttons = screen.getAllByRole('button', { name: 'Block account' })
+    await user.click(buttons[buttons.length - 1])
+    await waitFor(() =>
+      expect(runPlatformUserAction).toHaveBeenCalledWith('u1', 'block', 'Abuse report 77: phishing')
+    )
+  })
+})
+
 describe('PlatformUserBadges', () => {
+  it('shows a blocked account as blocked, not by its raw status', () => {
+    render(<PlatformUserBadges user={account({ status: 'suspended', blocked: true })} />)
+    expect(screen.getByText('Blocked')).toBeInTheDocument()
+    expect(screen.queryByText('suspended')).toBeNull()
+  })
+
   it('shows the sign-in state', () => {
     render(
       <PlatformUserBadges
