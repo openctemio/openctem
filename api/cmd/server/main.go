@@ -23,7 +23,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -300,27 +299,12 @@ func run() int {
 	}
 	defer closeWithLog(jobClient, "job client", log)
 
-	// Outbound Jira status sync (RFC-006 Phase 3c): when a finding's status
-	// changes via the API, enqueue a background push to its linked Jira issue.
-	// The worker no-ops unless the tenant opted in (config.ticketing.sync_enabled).
+	// Outbound ticket status sync (RFC-006): a status change of a linked
+	// finding queues a durable job in the status write's transaction; the
+	// durable-jobs controller pushes it (workers no-op unless the tenant
+	// opted in, config.ticketing.sync_enabled).
 	if services.Vulnerability != nil {
-		services.Vulnerability.SetJiraStatusSyncHook(func(ctx context.Context, tenantID, findingID shared.ID) {
-			if err := jobClient.EnqueueJiraSyncFindingStatus(ctx, jobs.JiraSyncFindingStatusPayload{
-				TenantID:  tenantID.String(),
-				FindingID: findingID.String(),
-			}); err != nil {
-				log.Warn("failed to enqueue jira status sync", "error", err)
-			}
-			// The same status-change trigger drives outbound GitHub Issues sync;
-			// the worker no-ops when the finding isn't linked to a GitHub issue.
-			// A finding links to at most one provider, so only the matching push acts.
-			if err := jobClient.EnqueueGitHubSyncFindingStatus(ctx, jobs.GitHubSyncFindingStatusPayload{
-				TenantID:  tenantID.String(),
-				FindingID: findingID.String(),
-			}); err != nil {
-				log.Warn("failed to enqueue github status sync", "error", err)
-			}
-		})
+		services.Vulnerability.EnableTicketStatusSync()
 	}
 
 	// The tenant service is built once, in NewServices, with everything it can
@@ -328,7 +312,8 @@ func run() int {
 	// added here, on that same instance. It used to be rebuilt here instead,
 	// which silently dropped every setter NewServices had applied (session,
 	// membership cache, SSO checker, role service, data-scope store, ...).
-	services.Tenant.SetEmailEnqueuer(jobs.NewEmailEnqueuerAdapter(jobClient))
+	// Invitation e-mails are durable jobs queued with the invitation.
+	services.Tenant.SetEmailEnqueuer(jobs.NewInvitationEmailJobs(services.Encryptor))
 	// Suspend/reactivate emails need the email service, built above.
 	if services.Email != nil {
 		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
