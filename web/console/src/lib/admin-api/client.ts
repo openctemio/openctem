@@ -120,6 +120,36 @@ export function isBackgroundRead(now: number = Date.now()): boolean {
   return now - lastInteraction > INTERACTION_WINDOW_MS
 }
 
+/**
+ * A catastrophic action (a new super admin, security keys off, sign-up opened,
+ * an audit chain re-signed, ...) needs another super admin's approval first:
+ * the API answers 428 with this code and names the action and its exact target.
+ */
+export const SECOND_APPROVAL_REQUIRED = 'SECOND_APPROVAL_REQUIRED'
+
+/** What a SECOND_APPROVAL_REQUIRED refusal names. */
+export interface AdminApprovalNeeded {
+  action: string
+  target: string
+  target_label?: string
+  /** The caller's open request for the same action and target, if any. */
+  pending_approval_id?: string
+}
+
+let approvalPrompt: ((needed: AdminApprovalNeeded) => void) | null = null
+
+/** Registers the console's approval dialog (one per console shell). */
+export function setAdminApprovalPrompt(prompt: ((needed: AdminApprovalNeeded) => void) | null) {
+  approvalPrompt = prompt
+}
+
+function approvalNeeded(err: unknown): AdminApprovalNeeded | null {
+  if (!(err instanceof AdminApiError) || err.code !== SECOND_APPROVAL_REQUIRED) return null
+  const d = err.details as Partial<AdminApprovalNeeded> | undefined
+  if (!d || typeof d.action !== 'string' || typeof d.target !== 'string') return null
+  return d as AdminApprovalNeeded
+}
+
 export class AdminApiError extends Error {
   constructor(
     message: string,
@@ -212,6 +242,13 @@ export async function adminFetch<T>(path: string, init: AdminFetchInit = {}): Pr
     try {
       return await adminRequest<T>(path, request, code)
     } catch (err) {
+      // The action stays refused; the dialog lets the administrator ask
+      // another super admin, then repeat it.
+      const needed = approvalNeeded(err)
+      if (needed) {
+        approvalPrompt?.(needed)
+        throw err
+      }
       const prompt = stepUpPrompt
       const ask = canPrompt && attempt <= STEP_UP_ATTEMPTS ? stepUpRequest(err, !!code) : null
       if (!ask || !prompt) throw err

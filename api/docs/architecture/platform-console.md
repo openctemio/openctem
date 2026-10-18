@@ -126,8 +126,50 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   administrators' identity provider or the security-key policy is emailed to
   every other active administrator and logged with
   `alert=admin_roster_change`.
+- Four-eyes approvals (see the section below): the actions that hand over or
+  loosen control of the platform need a second super admin.
 - Network: private client networks by default at the gateway and the API;
   optional `OPENCTEM_ADMIN_BIND` to publish the console port on one interface.
+
+## Four-eyes approvals
+
+Shipped (design: [RFC-022 revision 24](../rfcs/RFC-022-platform-admin-console.md#revision-24-four-eyes-approvals)).
+
+| Protected action | When it needs a second super admin |
+|---|---|
+| Make a super admin | a new super admin, a promotion or reactivation to an active super admin, or the break-glass marker removed |
+| Remove a super admin | an active super admin demoted, deactivated, marked break-glass or removed |
+| Stop requiring security keys | the security-key policy goes from on to off |
+| Remove or relax the administrators' identity provider | removed, switched off, or no longer required |
+| Open sign-up | the stored sign-up policy opens wider than before |
+| Re-sign an organization's audit chain | always |
+
+How it works for the administrators:
+
+1. Super admin A tries the action. The console answers that another super
+   admin must approve and opens a dialog: A gives a reason and asks
+   (step-up). The other administrators are e-mailed.
+2. Super admin B opens Security > Approvals and approves with a fresh code or
+   security-key confirmation (or rejects). B can never be A, and a
+   break-glass account never approves.
+3. A repeats the action within 24 hours of asking. The approval is bound to
+   A, the action and its exact target (the e-mail address, administrator or
+   organization), and works once.
+
+With only one named super admin (break-glass accounts do not count), the
+actions run on the super admin's own step-up, each recorded as critical
+(`approval.single_admin`) and e-mailed to every administrator; the
+Approvals page explains how to add a second super admin. Once two exist,
+removing either needs the other's approval. If the other super admin is
+unavailable, end their console sessions and reset their console sign-in from
+the console, and change the roster with `bootstrap-admin` on the server.
+
+API: `GET /api/v1/admin/approvals`, `POST /api/v1/admin/approvals`
+(step-up), `POST /api/v1/admin/approvals/{id}/approve` (fresh step-up),
+`/reject` (step-up), `/cancel` (requester); all super admin only. A protected
+route refuses with `428 SECOND_APPROVAL_REQUIRED` and `details` naming the
+action, the target and the caller's open request. Table `admin_approvals`
+(migration `002914`), owned by the console's database role.
 
 ## Tests
 
