@@ -1070,10 +1070,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
-	// D6: a restricted viewer holding dashboard:aggregate is counted over the
+	// D6: a restricted viewer holding dashboards:org:view is counted over the
 	// organization by the dashboard figures (ViewerScope).
 	s.DataScope.SetAggregateCheck(func(ctx context.Context) bool {
-		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+		return middleware.HasPermission(ctx, permission.DashboardsOrgView.String())
 	})
 	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
@@ -1222,6 +1222,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
+	s.UserDashboard.SetAuditService(s.Audit)
+	s.UserDashboard.SetLimitReader(s.Entitlement)
+	s.UserDashboard.SetMembershipReader(repos.Tenant)
+	s.UserDashboard.SetSettingsStore(s.Tenant)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
@@ -1378,7 +1382,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize dashboard service
 	s.Dashboard = module.NewDashboardService(repos.Dashboard, log)
 	s.Dashboard.SetDataScope(s.DataScope)
-	// D6 (dashboard:aggregate) is decided once, by s.DataScope.ViewerScope.
+	// D6 (dashboards:org:view) is decided once, by s.DataScope.ViewerScope.
 
 	// Initialize SLA service
 	s.SLA = sla.NewService(repos.SLA, log)

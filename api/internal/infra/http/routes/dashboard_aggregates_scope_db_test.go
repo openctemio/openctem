@@ -12,13 +12,13 @@ import (
 // /dashboard/stats: weekly velocity, the executive summary totals and the data
 // quality scorecard count a restricted member's own scope; the figures kept
 // for the whole organization (risk trend history, program metrics) are not
-// shown to them without dashboard:aggregate. memberA is restricted to asset
+// shown to them without dashboards:org:view. memberA is restricted to asset
 // A1; the organization has two assets and two findings.
 func TestDashboardAggregates_FollowTheViewer_DB(t *testing.T) {
 	h := newDSHarness(t)
 	h.exec(`INSERT INTO risk_snapshots (tenant_id, snapshot_date, risk_score_avg, findings_open) VALUES ($1, CURRENT_DATE, 42, 2)`, h.tenant.String())
 	t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM risk_snapshots WHERE tenant_id = $1`, h.tenant.String()) })
-	aggPerms := append(append([]string{}, dsMemberPerms...), permission.DashboardAggregate.String())
+	aggPerms := append(append([]string{}, dsMemberPerms...), permission.DashboardsOrgView.String())
 
 	get := func(who string, path string) (int, string) {
 		switch who {
