@@ -65,6 +65,12 @@ import (
 //	/admin/settings/signup    any admin         super_admin + step-up + fresh code
 //	                                            in the body (critical audit,
 //	                                            admins emailed)
+//	/admin/signup-events      any admin         — (sign-up feed: email domain and
+//	                                            network prefix only)
+//	/admin/settings/signup-alerts
+//	                          any admin         read; update: super_admin + step-up
+//	                                            + fresh code in the body + reason
+//	                                            (critical audit, admins emailed)
 //	/admin/settings/legal     any admin         super_admin + step-up + fresh code
 //	                                            in the body (critical audit; read
 //	                                            publicly at GET /api/v1/legal)
@@ -330,6 +336,22 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper, stepUp("settings.signup"))
+		}, adminMiddlewares...)
+	}
+
+	// The sign-up feed (Console > Requests > Sign-ups) and its burst alert
+	// thresholds: any admin reads; a super admin changes the thresholds with
+	// a reason and a fresh authenticator code (critical audit, admins
+	// emailed). The feed holds email domains and network prefixes only.
+	if h.AdminSignupEvents != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/signup-events", func(r Router) {
+			r.GET("/", h.AdminSignupEvents.List)
+			r.GET("/daily", h.AdminSignupEvents.Daily)
+		}, adminMiddlewares...)
+		router.Group("/api/v1/admin/settings/signup-alerts", func(r Router) {
+			r.GET("/", h.AdminSignupEvents.GetThresholds)
+			r.PUT("/", h.AdminSignupEvents.UpdateThresholds, requireSuper, stepUp("settings.signup_alerts"))
 		}, adminMiddlewares...)
 	}
 

@@ -10,6 +10,8 @@ import (
 	"net"
 	"time"
 
+	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
+
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
@@ -894,6 +896,8 @@ type Services struct {
 	ScanGovernance *scangovapp.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
+	// SignupEvents is the console's sign-up feed and burst alerts.
+	SignupEvents *signupeventapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
