@@ -11,14 +11,16 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/platformuser"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// Platform user search needs at least this many characters (an id or part of
-// an email or name), so the directory is looked up, not browsed.
+// A search needs at least this many characters (an id or part of an email or
+// name); without one, the list browses by state.
 const platformUserSearchMin = 3
 
 // Support action reason length bounds (kept in the admin audit row).
@@ -29,7 +31,7 @@ const (
 
 // PlatformUserDirectoryReader reads the cross-organization user directory.
 type PlatformUserDirectoryReader interface {
-	Search(ctx context.Context, q string, limit, offset int) ([]postgres.PlatformUserSummary, int, error)
+	List(ctx context.Context, f postgres.PlatformUserFilter, limit, offset int) ([]postgres.PlatformUserSummary, int, map[string]int, error)
 	Get(ctx context.Context, id shared.ID) (*postgres.PlatformUserDetail, error)
 }
 
@@ -38,7 +40,15 @@ type PlatformUserDirectoryReader interface {
 type AdminPlatformUserHandler struct {
 	dir     PlatformUserDirectoryReader
 	actions *platformuser.Service
+	audit   admin.AuditLogRepository
 	logger  *logger.Logger
+}
+
+// WithAudit records every list view in the admin audit log (who browsed
+// which accounts).
+func (h *AdminPlatformUserHandler) WithAudit(a admin.AuditLogRepository) *AdminPlatformUserHandler {
+	h.audit = a
+	return h
 }
 
 // NewAdminPlatformUserHandler creates the handler.
@@ -70,13 +80,44 @@ type AdminPlatformUserResponse struct {
 	BlockedReason string     `json:"blocked_reason,omitempty"`
 }
 
-// AdminPlatformUserListResponse is a page of accounts.
+// AdminPlatformUserListItem is one account in the Users list: the least
+// personal data that tells accounts apart and says what state they are in.
+// The name, failed sign-ins, block reason, memberships and sessions are on
+// the account's own page, whose viewing is audited.
+type AdminPlatformUserListItem struct {
+	ID              string     `json:"id"`
+	Email           string     `json:"email"`
+	Status          string     `json:"status"`
+	AuthProvider    string     `json:"auth_provider"`
+	EmailVerified   bool       `json:"email_verified"`
+	Locked          bool       `json:"locked"`
+	Blocked         bool       `json:"blocked"`
+	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	Memberships     int        `json:"memberships"`
+	MFAEnabled      bool       `json:"mfa_enabled"`
+	IsPlatformAdmin bool       `json:"is_platform_admin"`
+	Erased          bool       `json:"erased"`
+}
+
+// AdminPlatformUserListResponse is a page of accounts, with the count of
+// each state under the search (the list's tabs).
 type AdminPlatformUserListResponse struct {
-	Data       []AdminPlatformUserResponse `json:"data"`
+	Data       []AdminPlatformUserListItem `json:"data"`
 	Total      int                         `json:"total"`
 	Page       int                         `json:"page"`
 	PerPage    int                         `json:"per_page"`
 	TotalPages int                         `json:"total_pages"`
+	Counts     map[string]int              `json:"counts"`
+}
+
+func toPlatformUserListItem(s postgres.PlatformUserSummary, now time.Time) AdminPlatformUserListItem {
+	return AdminPlatformUserListItem{
+		ID: s.ID, Email: s.Email, Status: s.Status, AuthProvider: s.AuthProvider, EmailVerified: s.EmailVerified,
+		Locked: s.LockedUntil != nil && s.LockedUntil.After(now), Blocked: s.Status == "suspended",
+		LastLoginAt: s.LastLoginAt, CreatedAt: s.CreatedAt, Memberships: s.Memberships, MFAEnabled: s.MFAEnabled,
+		IsPlatformAdmin: s.IsPlatformAdmin, Erased: s.Erased,
+	}
 }
 
 // AdminPlatformUserMembership is one organization the account belongs to.
@@ -136,43 +177,73 @@ func toPlatformUserResponse(s postgres.PlatformUserSummary, now time.Time) Admin
 	}
 }
 
-// Search handles GET /api/v1/admin/platform-users.
+// List handles GET /api/v1/admin/platform-users.
 //
-// @Summary      Find accounts across organizations (platform admin)
-// @Description  Accounts whose email or name contains q (at least 3 characters), or whose id is q. Any admin role. Account-level facts only.
+// @Summary      Browse and find accounts across organizations (platform admin)
+// @Description  Accounts newest first, filtered by state (all, active, unverified, locked, blocked, mfa_off, platform_admins) and optionally by q: part of an email or name (at least 3 characters) or a whole id. Returns the count of each state under the search. Account-level facts only (no name in the list, no organization data). ops_admin or super_admin; every view is audited.
 // @Tags         Admin
 // @Produce      json
-// @Param        q         query  string  true   "Email, name or id (3+ characters)"
+// @Param        q         query  string  false  "Email, name or id (3+ characters)"
+// @Param        state     query  string  false  "all (default), active, unverified, locked, blocked, mfa_off, platform_admins"
 // @Param        page      query  int     false  "Page"
 // @Param        per_page  query  int     false  "Page size (max 100)"
 // @Success      200  {object}  AdminPlatformUserListResponse
 // @Failure      400  {object}  apierror.Error
 // @Router       /admin/platform-users [get]
-func (h *AdminPlatformUserHandler) Search(w http.ResponseWriter, r *http.Request) {
+func (h *AdminPlatformUserHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if len([]rune(q)) < platformUserSearchMin || len(q) > 254 {
+	if q != "" && (len([]rune(q)) < platformUserSearchMin || len(q) > 254) {
 		apierror.BadRequest("Search with at least 3 characters of an email, a name or an id").WriteJSON(w)
+		return
+	}
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	if state == "" {
+		state = postgres.PlatformUserStateAll
+	}
+	if !postgres.ValidPlatformUserState(state) {
+		apierror.BadRequest("Unknown state: use all, active, unverified, locked, blocked, mfa_off or platform_admins").WriteJSON(w)
 		return
 	}
 	paging, ok := listPage(w, r, 25)
 	if !ok {
 		return
 	}
-	rows, total, err := h.dir.Search(r.Context(), q, paging.PerPage, (paging.Page-1)*paging.PerPage)
+	rows, total, counts, err := h.dir.List(r.Context(), postgres.PlatformUserFilter{Q: q, State: state},
+		paging.PerPage, (paging.Page-1)*paging.PerPage)
 	if err != nil {
-		h.logger.Error("search platform users", "error", err)
-		apierror.InternalServerError("could not search accounts").WriteJSON(w)
+		h.logger.Error("list platform users", "error", err)
+		apierror.InternalServerError("could not list accounts").WriteJSON(w)
 		return
 	}
+	h.auditList(r, state, q, paging.Page, len(rows))
 	now := time.Now()
 	resp := AdminPlatformUserListResponse{
-		Data: make([]AdminPlatformUserResponse, 0, len(rows)), Total: total,
+		Data: make([]AdminPlatformUserListItem, 0, len(rows)), Total: total, Counts: counts,
 		Page: paging.Page, PerPage: paging.PerPage, TotalPages: (total + paging.PerPage - 1) / paging.PerPage,
 	}
 	for _, s := range rows {
-		resp.Data = append(resp.Data, toPlatformUserResponse(s, now))
+		resp.Data = append(resp.Data, toPlatformUserListItem(s, now))
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// auditList records who looked at which slice of the directory.
+func (h *AdminPlatformUserHandler) auditList(r *http.Request, state, q string, page, shown int) {
+	actor := middleware.GetAdminUser(r.Context())
+	if h.audit == nil || actor == nil {
+		return
+	}
+	entry := admin.NewAuditLogBuilder(actor, "platform_user.list").
+		Resource("user", nil, "").
+		Context(middleware.ClientIP(r), r.UserAgent()).
+		Request(r.Method, r.URL.Path, map[string]any{"state": state, "q": q, "page": page, "shown": shown}).
+		Response(http.StatusOK).
+		Build()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
+	if err := h.audit.Create(ctx, entry); err != nil {
+		h.logger.Error("write admin audit for a user list view", "error", err)
+	}
 }
 
 func platformUserID(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
