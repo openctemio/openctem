@@ -58,6 +58,16 @@ type Service struct {
 	audit  AuditLogger
 	logger *logger.Logger
 	now    func() time.Time
+	// statusEffects runs the shared side effects of the status moves a
+	// statement made (workflow event, assignee notification, ticket sync);
+	// nil = none.
+	statusEffects func(ctx context.Context, tenantID shared.ID, actorID string, moves []vulnerability.StatusMove) int
+}
+
+// SetStatusEffects wires the shared side effects of a finding status change
+// (finding.VulnerabilityService.AfterStatusMoves).
+func (s *Service) SetStatusEffects(fn func(ctx context.Context, tenantID shared.ID, actorID string, moves []vulnerability.StatusMove) int) {
+	s.statusEffects = fn
 }
 
 // NewService creates the service. scope nil leaves reads and writes
@@ -510,11 +520,14 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 	for _, id := range moved {
 		movedSet[id] = true
 	}
+	statusMoves := make([]vulnerability.StatusMove, 0, len(moved))
 	for i := range effects {
 		e := &effects[i]
 		if !movedSet[e.FindingID] {
 			continue
 		}
+		statusMoves = append(statusMoves, vulnerability.StatusMove{FindingID: e.FindingID,
+			Old: vulnerability.FindingStatus(e.OldStatus), New: vulnerability.FindingStatus(e.NewStatus)})
 		if e.NewStatus == string(vulnerability.FindingStatusFalsePositive) || e.NewStatus == string(vulnerability.FindingStatusResolved) {
 			res.Closed++
 		} else {
@@ -523,6 +536,10 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 		if len(res.FindingIDs) < maxAuditedIDs {
 			res.FindingIDs = append(res.FindingIDs, e.FindingID.String())
 		}
+	}
+	// The statement is the actor of these moves, not a person.
+	if s.statusEffects != nil && len(statusMoves) > 0 {
+		s.statusEffects(ctx, tenantID, "", statusMoves)
 	}
 	return res, nil
 }
