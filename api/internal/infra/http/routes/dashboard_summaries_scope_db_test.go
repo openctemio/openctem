@@ -138,5 +138,12 @@ func TestDashboardSummaries_FollowTheViewer_DB(t *testing.T) {
 		if want := map[bool]int{false: http.StatusForbidden, true: http.StatusOK}[org]; status != want {
 			t.Errorf("ctem cycle metrics trend as %s = %d %.200s, want %d", who, status, body, want)
 		}
+		// The per-cycle metrics are the same organization-wide figures: the
+		// same refusal, before the cycle is even looked up (an unknown cycle
+		// is a 404 only for a caller who may read them).
+		status, body = get(who, "/api/v1/ctem-cycles/"+shared.NewID().String()+"/metrics")
+		if want := map[bool]int{false: http.StatusForbidden, true: http.StatusNotFound}[org]; status != want {
+			t.Errorf("ctem cycle metrics as %s = %d %.200s, want %d", who, status, body, want)
+		}
 	}
 }
