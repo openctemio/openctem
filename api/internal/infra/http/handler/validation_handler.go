@@ -492,7 +492,10 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to compute validation coverage").WriteJSON(w)
 		return
 	}
-	bands, err := h.coverage.CoverageBySeverity(r.Context(), tenantID, scope)
+	// The figures also follow the pentest member-visibility rule of the
+	// findings list.
+	ctx := h.dataScope.WithFindingViewer(r.Context())
+	bands, err := h.coverage.CoverageBySeverity(ctx, tenantID, scope)
 	if err != nil {
 		h.logger.Error("validation coverage query failed", "error", err)
 		apierror.InternalServerError("failed to compute validation coverage").WriteJSON(w)
@@ -520,7 +523,7 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 	// flips the Program-Health board's downgrade % from "not measured" to live.
 	// A DowngradeStats failure degrades to zeros rather than failing the whole
 	// coverage KPI — the by-severity view is the primary payload here.
-	downgraded, dgValidated, derr := h.coverage.DowngradeStats(r.Context(), tenantID, scope)
+	downgraded, dgValidated, derr := h.coverage.DowngradeStats(ctx, tenantID, scope)
 	if derr != nil {
 		h.logger.Error("validation downgrade stats query failed", "error", derr)
 		downgraded, dgValidated = 0, 0
@@ -532,7 +535,7 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 	// failure degrades to empty rather than failing the by-severity KPI.
 	byPriority := []priorityCoverageOut{}
 	p0p1Total, p0p1Validated := 0, 0
-	if pc, perr := h.coverage.CoverageByPriority(r.Context(), tenantID.String(), scope); perr != nil {
+	if pc, perr := h.coverage.CoverageByPriority(ctx, tenantID.String(), scope); perr != nil {
 		h.logger.Error("validation coverage by priority query failed", "error", perr)
 	} else {
 		byPriority = []priorityCoverageOut{

@@ -14,6 +14,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/lib/pq"
 
@@ -91,7 +92,7 @@ var mttdInternetFacingQuery = `
 				(SELECT MIN(e.first_seen_at) FROM exposure_events e
 					WHERE e.asset_id = f.id AND e.tenant_id = $1),
 				(SELECT MIN(fi.first_detected_at) FROM findings fi
-					WHERE fi.tenant_id = $1 AND fi.asset_id = f.id AND NOT fi.branch_only)
+					WHERE fi.tenant_id = $1 AND fi.asset_id = f.id AND NOT fi.branch_only /*FX:fi*/)
 			) AS detected_at
 		FROM fresh f
 	),
@@ -139,7 +140,7 @@ var mttrValidatedQuery = `
 	timed AS (
 		SELECT EXTRACT(EPOCH FROM (f.resolved_at - v.validated_at)) / 3600.0 AS hours
 		FROM validated v
-		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
+		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only /*FX:f*/ AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
 		WHERE ` + vulnerability.RemediatedSQL("f") + `
 			AND f.resolved_at IS NOT NULL
 			AND f.resolved_at >= NOW() - make_interval(days => $2::int)
@@ -157,7 +158,7 @@ func (r *DashboardRepository) mttrValidated(ctx context.Context, tenantID shared
 		mean, median sql.NullFloat64
 		out          module.DurationMetric
 	)
-	if err := r.db.QueryRowContext(ctx, mttrValidatedQuery, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
+	if err := r.db.QueryRowContext(ctx, publishedVisible(ctx, mttrValidatedQuery), tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
 		Scan(&mean, &median, &out.SampleSize); err != nil {
 		return out, fmt.Errorf("program metrics mttr validated: %w", err)
 	}
@@ -184,7 +185,7 @@ var ownerAcceptanceQuery = `
 			(fa.changes->>'assignee_id')::uuid AS assignee_id,
 			f.sla_deadline, f.resolved_at
 		FROM finding_activities fa
-		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
+		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only /*FX:f*/ AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
 		WHERE fa.tenant_id = $1
 			AND fa.activity_type = 'assigned'
 			AND fa.created_at >= NOW() - make_interval(days => $2::int)
@@ -232,7 +233,7 @@ var ownerAcceptanceQuery = `
 
 func (r *DashboardRepository) ownerAcceptance(ctx context.Context, tenantID shared.ID, days int) (module.OwnerAcceptanceMetric, error) {
 	var out module.OwnerAcceptanceMetric
-	if err := r.db.QueryRowContext(ctx, ownerAcceptanceQuery, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
+	if err := r.db.QueryRowContext(ctx, publishedVisible(ctx, ownerAcceptanceQuery), tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
 		Scan(&out.Accepted, &out.Missed, &out.Pending, &out.Excluded); err != nil {
 		return out, fmt.Errorf("program metrics owner acceptance: %w", err)
 	}
@@ -252,7 +253,7 @@ var mttvQuery = `
 	WITH prio AS (
 		SELECT f.id, f.first_detected_at
 		FROM findings f
-		WHERE f.tenant_id = $1 AND NOT f.branch_only
+		WHERE f.tenant_id = $1 AND NOT f.branch_only /*FX:f*/
 			AND f.priority_class IN ('P0', 'P1')
 			AND f.status NOT IN ('false_positive', 'duplicate')
 			AND f.first_detected_at >= NOW() - make_interval(days => $2::int)
@@ -329,7 +330,7 @@ func (r *DashboardRepository) durationMetric(ctx context.Context, query, name st
 		mean, median sql.NullFloat64
 		out          module.DurationMetric
 	)
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
+	if err := r.db.QueryRowContext(ctx, publishedVisible(ctx, query), tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
 		Scan(&mean, &median, &out.SampleSize, &out.Unmeasured); err != nil {
 		return out, fmt.Errorf("program metrics %s: %w", name, err)
 	}
@@ -471,4 +472,19 @@ func programViewerArg(ctx context.Context) any {
 		return nil
 	}
 	return v.UserID.String()
+}
+
+// publishedVisible fills the /*FX:alias*/ markers of a program-metrics query
+// with the rule every finding read by a person follows: only published
+// findings (not a pentest draft or one in review) and, for a viewer who is not
+// an administrator, only pentest findings of a campaign they belong to (the
+// one shared rule, vulnerability.FindingMemberVisibilitySQL). The tenant is $1.
+func publishedVisible(ctx context.Context, q string) string {
+	if !strings.Contains(q, "/*FX:") {
+		return q
+	}
+	return strings.NewReplacer(
+		"/*FX:f*/", publishedExcl("f")+pentestVisibilityExcl(ctx, "f"),
+		"/*FX:fi*/", publishedExcl("fi")+pentestVisibilityExcl(ctx, "fi"),
+	).Replace(q)
 }

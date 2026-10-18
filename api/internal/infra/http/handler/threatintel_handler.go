@@ -352,7 +352,9 @@ func (h *ThreatIntelHandler) GetThreatIntelStats(w http.ResponseWriter, r *http.
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	stats, err := h.service.GetThreatIntelStats(ctx, tenantID, scope)
+	// The counts also follow the pentest member-visibility rule of the
+	// findings list.
+	stats, err := h.service.GetThreatIntelStats(h.dataScope.WithFindingViewer(ctx), tenantID, scope)
 	if err != nil {
 		apierror.InternalError(err).WriteJSON(w)
 		return

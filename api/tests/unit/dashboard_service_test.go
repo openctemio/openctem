@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -128,9 +129,21 @@ func (m *mockDashboardRepo) GetProgramMetrics(_ context.Context, _ shared.ID, da
 // Helper functions
 // =============================================================================
 
+// neverAskedScopeRepo is a data-scope repository that is never asked: a
+// caller that is an owner, or has no user, resolves before any lookup.
+type neverAskedScopeRepo struct{ datascope.Repository }
+
+// wiredEnforcer is a wired enforcer for caller c. The dashboards fail closed
+// without one.
+func wiredEnforcer(c datascope.Caller) *datascope.Enforcer {
+	return datascope.New(neverAskedScopeRepo{}, func(context.Context) datascope.Caller { return c }, logger.NewNop())
+}
+
 func newTestDashboardService(repo *mockDashboardRepo) *module.DashboardService {
 	log := logger.NewNop()
-	return module.NewDashboardService(repo, log)
+	svc := module.NewDashboardService(repo, log)
+	svc.SetDataScope(wiredEnforcer(datascope.Caller{UserID: "00000000-0000-0000-0000-0000000000aa", IsOwner: true}))
+	return svc
 }
 
 func sampleAssetStats() module.AssetStatsData {
@@ -621,6 +634,7 @@ func TestDashboardService_NoCaller_FailsClosedViewer(t *testing.T) {
 	repo := newMockDashboardRepo()
 	repo.allStats = &module.DashboardAllStats{}
 	svc := module.NewDashboardService(repo, logger.NewNop())
+	svc.SetDataScope(wiredEnforcer(datascope.Caller{}))
 	if _, err := svc.GetStats(context.Background(), shared.NewID()); err != nil {
 		t.Fatalf("GetStats: %v", err)
 	}
@@ -629,5 +643,19 @@ func TestDashboardService_NoCaller_FailsClosedViewer(t *testing.T) {
 	}
 	if repo.lastViewer.Admin || !repo.lastViewer.UserID.IsZero() {
 		t.Fatalf("viewer = %+v, want a non-admin zero-id viewer", repo.lastViewer)
+	}
+}
+
+// An unwired enforcer never means "count the whole organization": the
+// dashboard refuses and does not reach the repository.
+func TestDashboardService_UnwiredEnforcer_FailsClosed(t *testing.T) {
+	repo := newMockDashboardRepo()
+	repo.allStats = &module.DashboardAllStats{}
+	svc := module.NewDashboardService(repo, logger.NewNop())
+	if _, err := svc.GetStats(context.Background(), shared.NewID()); !errors.Is(err, datascope.ErrNotConfigured) {
+		t.Fatalf("GetStats err = %v, want datascope.ErrNotConfigured", err)
+	}
+	if repo.lastViewerSet {
+		t.Fatal("repository reached without a wired data-scope enforcer")
 	}
 }
