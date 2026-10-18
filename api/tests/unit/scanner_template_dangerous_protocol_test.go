@@ -20,11 +20,11 @@ func TestScannerTemplateService_RejectsDangerousNucleiProtocols(t *testing.T) {
 	cases := map[string]struct {
 		body, want string
 	}{
-		"code":           {head + "code:\n  - engine: [sh]\n    source: id\n", `the "code" protocol runs code on the scanner`},
-		"code (json)":    {`{"id":"pwn","info":{"name":"x","author":"x","severity":"info"},"Code":[{"engine":["sh"],"source":"id"}]}`, `the "code" protocol`},
-		"javascript":     {head + "javascript:\n  - code: '1'\n", `the "javascript" protocol runs code on the scanner`},
-		"headless":       {head + "headless:\n  - steps:\n      - action: navigate\n", `the "headless" protocol drives a browser`},
-		"file":           {head + "file:\n  - extensions: [all]\n    matchers:\n      - type: word\n        words: [root]\n", `the "file" protocol reads files on the scanner`},
+		"code":           {head + "code:\n  - engine: [sh]\n    source: id\n", `the "code" block runs code on the scanner`},
+		"code (json)":    {`{"id":"pwn","info":{"name":"x","author":"x","severity":"info"},"Code":[{"engine":["sh"],"source":"id"}]}`, `the "code" block runs code`},
+		"javascript":     {head + "javascript:\n  - code: '1'\n", `the "javascript" block runs code on the scanner`},
+		"headless":       {head + "headless:\n  - steps:\n      - action: navigate\n", `the "headless" block drives a browser`},
+		"file":           {head + "file:\n  - extensions: [all]\n    matchers:\n      - type: word\n        words: [root]\n", `the "file" block reads files on the scanner`},
 		"self-contained": {head + "self-contained: true\nhttp:\n  - raw:\n      - GET / HTTP/1.1\n", "self-contained templates are not allowed"},
 	}
 	for name, c := range cases {
@@ -63,7 +63,7 @@ func TestScannerTemplateService_RejectsDangerousNucleiProtocols(t *testing.T) {
 		TenantID: tenant, TemplateID: tmpl.ID.String(),
 		Content: base64.StdEncoding.EncodeToString([]byte(cases["file"].body)),
 	})
-	if err == nil || !strings.Contains(err.Error(), `"file" protocol`) {
+	if err == nil || !strings.Contains(err.Error(), `"file" block`) {
 		t.Fatalf("update to a file-protocol template: %v", err)
 	}
 }

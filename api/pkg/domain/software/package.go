@@ -111,9 +111,9 @@ type PackageWriteResult struct {
 
 // PackageWriter stores package observations in the catalog.
 type PackageWriter interface {
-	// WritePackages resolves products and versions for the snapshot (the
-	// tenant's own rows first, then global rows, else new tenant-private
-	// rows), upserts the asset's links and replaces the edges of the
+	// WritePackages resolves products and versions for the snapshot (a
+	// global package alias first, then the tenant's own rows, then global
+	// rows, else new tenant-private rows), upserts the asset's links and replaces the edges of the
 	// reported locations.
 	WritePackages(ctx context.Context, tenantID shared.ID, snap PackageSnapshot) (PackageWriteResult, error)
 	// EnsurePackageVersion returns the version id the tenant sees for a
