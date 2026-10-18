@@ -142,11 +142,11 @@ match — the reverse of the inbound webhook. **Opt-in** per integration and
 reliable (off the request path):
 
 ```
-VulnerabilityService.UpdateFindingStatus(...)        (status actually changed
-        │                                             AND finding has a ticket link)
-        ▼  enqueue (best-effort)
-asynq task  jira:sync_finding_status
-        ▼  background worker
+VulnerabilityService.UpdateFindingStatus / BulkUpdateFindingsStatus
+        │                                    (status actually changed AND finding has a ticket link)
+        ▼  same transaction as the status write
+durable_jobs row  kind = jira_status_sync (and github_status_sync)
+        ▼  durable-jobs controller (FOR UPDATE SKIP LOCKED, retry with backoff)
 SyncService.SyncFindingStatus(tenantID, findingID)
    ├─ MappingResolver.ResolveMapping(tenantID)   → per-tenant status maps + sync_enabled
    │      (no Jira integration → no-op)
@@ -163,10 +163,12 @@ SyncService.SyncFindingStatus(tenantID, findingID)
 `UpdateFindingStatus` — so a Jira-driven change never re-triggers an outbound
 push. A `GetIssueStatus`-equals-target check is the secondary guard.
 
-**Why asynq, not the notification outbox:** the notification outbox fans events
-out to Slack/email by subscription; performing a Jira *transition* is an action,
-so it runs on the job queue (`internal/infra/jobs/jira_sync_tasks.go`) with
-retry/backoff. A Jira failure never fails the originating status change.
+**Why a durable job, not the notification outbox:** the notification outbox fans
+events out to Slack/email by subscription; performing a Jira *transition* is an
+action, so it is a durable job (`durable_jobs`, see
+[durable jobs](durable-jobs.md)) written in the status write's transaction and run
+with retry/backoff. A status change can no longer lose its push to a Redis outage,
+and a Jira failure never fails the originating status change.
 
 ## Safety properties (shipped)
 
@@ -299,7 +301,7 @@ An inbound change goes through the finding service, never a direct row write
 | 1 | `MappingConfig` type + defaults (zero behaviour change) | **Done** (mapping.go) |
 | 2 | Configurable mapping (`status_outbound`/`status_inbound`/`sync_enabled`) backend + UI editor | **Done** (#168 backend; UI in openctemio/ui#193) |
 | 2b | Wire mapping into **create** (project/issue-type/priority) + default project + project picker | **Done** (#207, openctemio/ui#184) |
-| 3 | Outbound status sync (asynq + echo-guard, opt-in) | **Done** (#167, #171) |
+| 3 | Outbound status sync (durable job + echo-guard, opt-in) | **Done** (#167, #171) |
 | 4a | Routing rules (severity/tag/asset scope/criticality → project_key) | **Done** (#209; UI in openctemio/ui#189; asset_group dimension deferred) |
 | 4b | 2nd provider (ServiceNow/GitHub) + typed `ticket_links` table | Planned (optional) |
 
@@ -334,8 +336,8 @@ internal/infra/jira/client.go                 Jira REST client (CreateIssue/GetI
                                               GetTransitions/DoTransition/AddComment/TransitionToStatus/ListProjects)
 internal/infra/jira/resolver.go               IntegrationClientResolver: ClientResolver + MappingResolver + adapter
 internal/infra/jira/asset_route_resolver.go   AssetRouteResolver: asset scope/criticality for routing rules
-internal/infra/jobs/jira_sync_tasks.go        asynq task + handler for outbound status sync
+internal/infra/jobs/durable_jobs.go           durable-job handlers (status sync, invitation e-mail)
 internal/infra/http/handler/jira_webhook_handler.go   create-ticket + inbound webhook
-internal/app/finding/vulnerability_service.go  UpdateFindingStatus → enqueue outbound sync (SetJiraStatusSyncHook)
+internal/app/finding/vulnerability_service.go  status writes queue the outbound sync (EnableTicketStatusSync)
 cmd/server/{services,workers,main}.go          wiring (resolvers, worker handler, enqueue hook)
 ```

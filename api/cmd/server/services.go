@@ -3392,11 +3392,11 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 //
 // Every argument except cfg and log is optional; a nil dependency only disables
 // its own handler. In particular a nil emailService must NOT stop the worker
-// from being built: the AI-triage, Jira sync and GitHub sync handlers live on
-// the same asynq server, their tasks are enqueued whether or not SMTP is on,
-// and SMTP_ENABLED defaults to false. Returning early here (as this used to)
+// from being built: the AI-triage handlers live on the same asynq server,
+// their tasks are enqueued whether or not SMTP is on, and SMTP_ENABLED
+// defaults to false. Returning early here (as this used to)
 // left those queues with no consumer in a default deployment.
-func NewJobWorker(cfg *config.Config, emailService *auth.EmailService, aiTriageService *aitriage.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
+func NewJobWorker(cfg *config.Config, emailService *auth.EmailService, aiTriageService *aitriage.AITriageService, log *logger.Logger) (*jobs.Worker, error) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	redisTLS, err := redis.TLSConfig(&cfg.Redis)
 	if err != nil {
@@ -3414,12 +3414,6 @@ func NewJobWorker(cfg *config.Config, emailService *auth.EmailService, aiTriageS
 	var opts []jobs.WorkerOption
 	if aiTriageService != nil {
 		opts = append(opts, jobs.WithAITriageProcessor(aiTriageService))
-	}
-	if jiraSyncer != nil {
-		opts = append(opts, jobs.WithJiraStatusSyncer(jiraSyncer))
-	}
-	if githubSyncer != nil {
-		opts = append(opts, jobs.WithGitHubStatusSyncer(githubSyncer))
 	}
 
 	worker, err := jobs.NewWorker(workerCfg, emailService, log, opts...)
