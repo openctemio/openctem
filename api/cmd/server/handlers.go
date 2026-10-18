@@ -704,7 +704,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			svc.Module,
 			svc.Tenant,
 			log,
-		),
+		).WithModulesETagKey(handler.DeriveModulesETagKey(cfg.Auth.JWTSecret)),
 
 		// Docs
 		Docs: handler.NewDocsHandler("api/openapi/swagger.yaml"),
