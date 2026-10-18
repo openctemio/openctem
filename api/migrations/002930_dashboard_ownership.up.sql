@@ -152,4 +152,7 @@ SELECT tm.tenant_id, 'user', tm.user_id, 'access_changed',
 DELETE FROM role_permissions WHERE permission_id = 'dashboard:aggregate';
 DELETE FROM permissions WHERE id = 'dashboard:aggregate';
 
+-- expand-contract-ok: the only DROP is dash_org_view_migrated, a session TEMP
+-- table created above; no release reads it. Old pods checking dashboard:aggregate
+-- during the rollout fail closed (organization totals hidden until they restart).
 DROP TABLE dash_org_view_migrated;
