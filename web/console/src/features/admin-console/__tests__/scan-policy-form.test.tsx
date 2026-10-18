@@ -23,7 +23,7 @@ describe('ScanPolicyForm', () => {
         onSave={vi.fn()}
       />
     )
-    expect(screen.getByText('Only a super admin can change it.')).toBeInTheDocument()
+    expect(screen.getByText('This needs the Super admin role.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
   })
 

@@ -9,7 +9,10 @@ import SessionsPage from '@console/app/(console)/security/sessions/page'
 
 const mocks = vi.hoisted(() => ({ admin: { current: null as AdminIdentity | null } }))
 
-vi.mock('../components/admin-console-shell', () => ({ useAdmin: () => mocks.admin.current }))
+vi.mock('../components/admin-console-shell', () => ({
+  useAdmin: () => mocks.admin.current,
+  useAdminOrNull: () => mocks.admin.current,
+}))
 vi.mock('../api/use-admin-sessions', () => ({
   useAdminSessions: vi.fn(),
   endAdminSession: vi.fn(),
@@ -72,7 +75,7 @@ describe('Sessions page', () => {
     } as unknown as ReturnType<typeof useAdminSessions>)
     await renderPage('ops_admin')
     expect(useAdminSessions).toHaveBeenCalledWith(false)
-    expect(screen.getByText(/only a super admin/i)).toBeInTheDocument()
+    expect(screen.getByText(/needs the Super admin role/i)).toBeInTheDocument()
   })
 
   it('cannot end the current session, and ends another with a reason and a code', async () => {
