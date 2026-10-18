@@ -1,8 +1,11 @@
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import type { AdminOrganization } from '../types'
 
 /** Compact SSO posture of an organization: what is configured and enforced. */
 export function SSOPostureBadges({ org }: { org: AdminOrganization }) {
+  const { t } = useTranslation()
+
   const parts = [
     org.saml_enabled && 'SAML',
     org.active_identity_providers > 0 &&
@@ -10,7 +13,11 @@ export function SSOPostureBadges({ org }: { org: AdminOrganization }) {
   ].filter(Boolean) as string[]
 
   if (parts.length === 0) {
-    return <span className="text-sm text-muted-foreground">Not configured</span>
+    return (
+      <span className="text-sm text-muted-foreground">
+        {t('admin.ssoPostureBadges.notConfigured', 'Not configured')}
+      </span>
+    )
   }
   return (
     <span className="flex flex-wrap gap-1">
@@ -19,7 +26,9 @@ export function SSOPostureBadges({ org }: { org: AdminOrganization }) {
           {p}
         </Badge>
       ))}
-      {org.sso_enforced && <Badge className="font-normal">Enforced</Badge>}
+      {org.sso_enforced && (
+        <Badge className="font-normal">{t('admin.ssoPostureBadges.enforced', 'Enforced')}</Badge>
+      )}
     </span>
   )
 }

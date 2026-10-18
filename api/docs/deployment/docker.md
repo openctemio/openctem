@@ -146,7 +146,7 @@ provider's redirect URI is `<console origin>/login/callback`.
 The all-in-one image runs the console too: publish `-p 8443:8443` (or set
 `OPENCTEM_ADMIN_SITE=host` and `OPENCTEM_ADMIN_HOST`).
 
-### System page and host operations
+### Health page and host operations
 
 The platform console has a read-only **System** page (platform administrators
 only): service health, free space of the data volumes and the database size,

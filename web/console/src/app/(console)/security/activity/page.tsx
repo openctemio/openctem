@@ -28,15 +28,35 @@ import { dayBound } from '@console/features/admin-console/lib/audit-range'
 import type { AdminAuditEntry } from '@console/features/admin-console/types'
 
 const ALL = 'all'
-const EXPORT_FIELDS: ExportFieldConfig<AdminAuditEntry>[] = [
-  { header: 'When', accessor: (e) => e.created_at },
-  { header: 'Administrator', accessor: (e) => e.admin_email },
-  { header: 'Action', accessor: (e) => e.action },
-  { header: 'Resource type', accessor: (e) => e.resource_type ?? '' },
-  { header: 'Resource ID', accessor: (e) => e.resource_id ?? '' },
-  { header: 'Result', accessor: (e) => (e.success ? 'succeeded' : 'failed') },
-  { header: 'HTTP status', accessor: (e) => e.response_status ?? '' },
-  { header: 'IP address', accessor: (e) => e.ip_address ?? '' },
+const exportFields = (
+  t: ReturnType<typeof useTranslation>['t']
+): ExportFieldConfig<AdminAuditEntry>[] => [
+  { header: t('admin.securityActivityPage.when', 'When'), accessor: (e) => e.created_at },
+  {
+    header: t('admin.securityActivityPage.administrator', 'Administrator'),
+    accessor: (e) => e.admin_email,
+  },
+  { header: t('admin.securityActivityPage.action', 'Action'), accessor: (e) => e.action },
+  {
+    header: t('admin.securityActivityPage.resourceType', 'Resource type'),
+    accessor: (e) => e.resource_type ?? '',
+  },
+  {
+    header: t('admin.securityActivityPage.resourceId', 'Resource ID'),
+    accessor: (e) => e.resource_id ?? '',
+  },
+  {
+    header: t('admin.securityActivityPage.result', 'Result'),
+    accessor: (e) => (e.success ? 'succeeded' : 'failed'),
+  },
+  {
+    header: t('admin.securityActivityPage.httpStatus', 'HTTP status'),
+    accessor: (e) => e.response_status ?? '',
+  },
+  {
+    header: t('admin.securityActivityPage.ipAddress', 'IP address'),
+    accessor: (e) => e.ip_address ?? '',
+  },
 ]
 
 export default function AdminActivityPage() {
@@ -65,7 +85,7 @@ export default function AdminActivityPage() {
   })
   const [openId, setOpenId] = useState<string | null>(null)
   const entries = useMemo(() => data?.data ?? [], [data])
-  const { handleExport } = useCsvExport(entries, EXPORT_FIELDS, 'admin-activity')
+  const { handleExport } = useCsvExport(entries, exportFields(t), 'admin-activity')
 
   return (
     <Main>
@@ -86,7 +106,11 @@ export default function AdminActivityPage() {
       </div>
       <div className="mt-5">
         {error ? (
-          <ErrorState title="admin activity" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.securityActivityPage.adminActivity', 'admin activity')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : (
           <AdminActivityTable
             entries={entries}

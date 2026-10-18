@@ -109,8 +109,8 @@ var consoleSettings = []consoleSetting{
 	{key: "email.smtp", group: GroupEmail, page: "/system/email"},
 	{key: "legal", group: GroupInstance, page: "/system/legal"},
 	{key: "scan_approval_policy", group: GroupScanning, page: "/system/scan-approval"},
-	{key: "platform_sensor_proof", group: GroupScanning, page: "/system/platform-scanning"},
-	{key: "shared_sensors", group: GroupScanning, page: "/system/shared-sensors"},
+	{key: "platform_sensor_proof", group: GroupScanning, page: "/scanning/platform"},
+	{key: "shared_sensors", group: GroupScanning, page: "/scanning/platform"},
 	{key: "console_mfa_policy", group: GroupConsole, page: "/system/admin-sign-in"},
 	{key: "version_check", group: GroupUpdates, page: "/system/software-updates", ceilingEnv: "VERSION_CHECK_ENABLED"},
 }

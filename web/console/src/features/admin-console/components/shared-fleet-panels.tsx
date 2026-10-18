@@ -1,19 +1,19 @@
 'use client'
 
 /**
- * System > Shared sensors (api docs/rfcs/RFC-100-shared-sensors.md §12): the
- * instance sensors with their state, queue aggregates per tool lane and per
- * organization, and job metadata. Any administrator reads. A job's targets
- * and logs need a reason (super or operations administrator; the API audits
- * the view); pause, resume and retire need a super admin, a reason and a
- * fresh authenticator code. Results and findings are never shown here.
+ * The shared sensor fleet, queue and job panels of the platform scanning page
+ * (api docs/rfcs/RFC-100-shared-sensors.md §12): the instance sensors with
+ * their state, queue aggregates per tool lane and per organization, and job
+ * metadata. Any administrator reads. A job's targets and logs need a reason
+ * (super or operations administrator; the API audits the view); pause, resume
+ * and retire need a super admin, a reason and a fresh authenticator code.
+ * Results and findings are never shown here.
  */
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Eye, Pause, Play, Power } from 'lucide-react'
 import { toast } from 'sonner'
-import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
-import { DataTable, ErrorState, PageHeader, RelativeTime, StackedCell } from '@/features/shared'
+import { DataTable, ErrorState, RelativeTime, StackedCell } from '@/features/shared'
 import {
   actOnSharedSensor,
   useSharedFleet,
@@ -61,22 +61,15 @@ const JOB_STATUSES = [
 ]
 const ALL = 'all'
 
-export default function SharedSensorsPage() {
+export function SharedFleetPanel() {
   const { t } = useTranslation()
   const me = useAdmin()
   const isSuper = adminCan(me.role, 'super_admin')
-  const canView = adminCan(me.role, 'ops_admin')
   const fleet = useSharedFleet()
-  const queue = useSharedQueue()
-  const list = useListParams({ pageSizes: [20], defaultPageSize: 20, filters: { status: '' } })
-  const status = list.filters.status
-  const jobs = useSharedJobs(list.page, status)
   const [acting, setActing] = useState<{
     sensor: SharedFleetSensor
     action: SharedSensorAction
   } | null>(null)
-  const [viewing, setViewing] = useState<SharedJob | null>(null)
-  const [detail, setDetail] = useState<SharedJobDetail | null>(null)
 
   const sensorColumns = useMemo<ColumnDef<SharedFleetSensor>[]>(
     () => [
@@ -192,6 +185,95 @@ export default function SharedSensorsPage() {
     [t, isSuper]
   )
 
+  const actionText: Record<
+    SharedSensorAction,
+    { title: string; desc: string; confirm: string; done: string }
+  > = {
+    pause: {
+      title: 'admin.sharedFleet.pauseTitle',
+      desc: 'admin.sharedFleet.pauseDesc',
+      confirm: 'admin.sharedFleet.pause',
+      done: 'admin.sharedFleet.paused',
+    },
+    resume: {
+      title: 'admin.sharedFleet.resumeTitle',
+      desc: 'admin.sharedFleet.resumeDesc',
+      confirm: 'admin.sharedFleet.resume',
+      done: 'admin.sharedFleet.resumed',
+    },
+    retire: {
+      title: 'admin.sharedFleet.retireTitle',
+      desc: 'admin.sharedFleet.retireDesc',
+      confirm: 'admin.sharedFleet.retire',
+      done: 'admin.sharedFleet.retired',
+    },
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('admin.sharedFleet.fleetTitle')}</CardTitle>
+          <CardDescription>{t('admin.sharedFleet.fleetDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {fleet.error ? (
+            <ErrorState
+              title={t('admin.sharedFleet.fleetTitle')}
+              error={fleet.error}
+              onRetry={() => void fleet.mutate()}
+            />
+          ) : (
+            <DataTable
+              columns={sensorColumns}
+              data={fleet.data?.sensors ?? []}
+              getRowId={(s) => s.id}
+              isLoading={fleet.isLoading}
+              showSearch={false}
+              showColumnToggle={false}
+              showSelectionCount={false}
+              showPagination={false}
+              mobileCards
+              emptyMessage={t('admin.sharedFleet.noSensors')}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {acting && (
+        <AdminConfirmDialog
+          open
+          onOpenChange={(open) => !open && setActing(null)}
+          title={t(actionText[acting.action].title, undefined, { name: acting.sensor.name })}
+          description={<p>{t(actionText[acting.action].desc)}</p>}
+          confirmLabel={t(actionText[acting.action].confirm)}
+          destructive={acting.action !== 'resume'}
+          requireCode
+          onConfirm={async (proof) => {
+            await actOnSharedSensor(acting.sensor.id, acting.action, proof)
+            toast.success(
+              t(actionText[acting.action].done, undefined, { name: acting.sensor.name })
+            )
+            setActing(null)
+            void fleet.mutate()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+export function SharedQueuePanel() {
+  const { t } = useTranslation()
+  const me = useAdmin()
+  const canView = adminCan(me.role, 'ops_admin')
+  const queue = useSharedQueue()
+  const list = useListParams({ pageSizes: [20], defaultPageSize: 20, filters: { status: '' } })
+  const status = list.filters.status
+  const jobs = useSharedJobs(list.page, status)
+  const [viewing, setViewing] = useState<SharedJob | null>(null)
+  const [detail, setDetail] = useState<SharedJobDetail | null>(null)
+
   const jobColumns = useMemo<ColumnDef<SharedJob>[]>(
     () => [
       {
@@ -240,63 +322,9 @@ export default function SharedSensorsPage() {
     [t, canView]
   )
 
-  const actionText: Record<
-    SharedSensorAction,
-    { title: string; desc: string; confirm: string; done: string }
-  > = {
-    pause: {
-      title: 'admin.sharedFleet.pauseTitle',
-      desc: 'admin.sharedFleet.pauseDesc',
-      confirm: 'admin.sharedFleet.pause',
-      done: 'admin.sharedFleet.paused',
-    },
-    resume: {
-      title: 'admin.sharedFleet.resumeTitle',
-      desc: 'admin.sharedFleet.resumeDesc',
-      confirm: 'admin.sharedFleet.resume',
-      done: 'admin.sharedFleet.resumed',
-    },
-    retire: {
-      title: 'admin.sharedFleet.retireTitle',
-      desc: 'admin.sharedFleet.retireDesc',
-      confirm: 'admin.sharedFleet.retire',
-      done: 'admin.sharedFleet.retired',
-    },
-  }
-
   return (
-    <Main>
-      <PageHeader title={t('admin.sharedFleet.title')} description={t('admin.sharedFleet.desc')} />
-      <div className="mt-5 space-y-5">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('admin.sharedFleet.fleetTitle')}</CardTitle>
-            <CardDescription>{t('admin.sharedFleet.fleetDesc')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {fleet.error ? (
-              <ErrorState
-                title={t('admin.sharedFleet.fleetTitle')}
-                error={fleet.error}
-                onRetry={() => void fleet.mutate()}
-              />
-            ) : (
-              <DataTable
-                columns={sensorColumns}
-                data={fleet.data?.sensors ?? []}
-                getRowId={(s) => s.id}
-                isLoading={fleet.isLoading}
-                showSearch={false}
-                showColumnToggle={false}
-                showSelectionCount={false}
-                showPagination={false}
-                mobileCards
-                emptyMessage={t('admin.sharedFleet.noSensors')}
-              />
-            )}
-          </CardContent>
-        </Card>
-
+    <>
+      <div className="space-y-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <Card>
             <CardHeader>
@@ -424,26 +452,6 @@ export default function SharedSensorsPage() {
         </Card>
       </div>
 
-      {acting && (
-        <AdminConfirmDialog
-          open
-          onOpenChange={(open) => !open && setActing(null)}
-          title={t(actionText[acting.action].title, undefined, { name: acting.sensor.name })}
-          description={<p>{t(actionText[acting.action].desc)}</p>}
-          confirmLabel={t(actionText[acting.action].confirm)}
-          destructive={acting.action !== 'resume'}
-          requireCode
-          onConfirm={async (proof) => {
-            await actOnSharedSensor(acting.sensor.id, acting.action, proof)
-            toast.success(
-              t(actionText[acting.action].done, undefined, { name: acting.sensor.name })
-            )
-            setActing(null)
-            void fleet.mutate()
-          }}
-        />
-      )}
-
       {viewing && (
         <AdminConfirmDialog
           open
@@ -504,6 +512,6 @@ export default function SharedSensorsPage() {
           </DialogBody>
         </DialogContent>
       </Dialog>
-    </Main>
+    </>
   )
 }

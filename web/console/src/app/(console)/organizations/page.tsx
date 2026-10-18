@@ -130,7 +130,11 @@ export default function AdminOrganizationsPage() {
       </PageHeader>
       <div className="mt-5">
         {error ? (
-          <ErrorState title="organizations" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.organizationsPage.organizations', 'organizations')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : (
           <DataTable
             columns={columns}
