@@ -50,10 +50,10 @@ describe('planGeneralSave', () => {
 
 describe('organization settings page', () => {
   const src = readFileSync(
-    join(process.cwd(), 'src/features/organization/components/organization-settings.tsx'),
+    join(process.cwd(), 'src/features/organization/components/general-settings.tsx'),
     'utf8'
   )
-  it('has no second logo-only Save that bypasses the header Save', () => {
+  it('has no second logo-only Save that bypasses the page Save', () => {
     expect(src).toMatch(/planGeneralSave\(/)
     expect(src).not.toMatch(/toast\.success\('Logo updated'\)/)
     expect(src).not.toMatch(/toast\.success\('Logo removed'\)/)
