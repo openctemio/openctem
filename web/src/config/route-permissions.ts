@@ -599,6 +599,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  // The organization's own sensor products (latest and minimum release);
+  // saving needs sensors:write (checked by the page and the API).
+  '/settings/scanning/sensor-products': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
   // The sensor scan-job part of the security settings: read like
   // Authentication (team:update), changed by the owner only (the API).
   '/settings/scanning/sensor-safety': {

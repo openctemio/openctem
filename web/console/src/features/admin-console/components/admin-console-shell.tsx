@@ -12,6 +12,7 @@ import { Search } from '@/components/search'
 import { SearchProvider } from '@/context/search-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { AdminApprovalPrompt } from './admin-approval-prompt'
 import { AdminStepUpPrompt } from './admin-step-up-prompt'
 import { AdminElevationBar } from './admin-elevation-bar'
 import { AdminConsoleSidebar } from './admin-console-sidebar'
@@ -184,6 +185,7 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
                 {children}
               </div>
               <AdminStepUpPrompt />
+              <AdminApprovalPrompt />
             </SidebarInset>
           </SidebarProvider>
         </SearchProvider>

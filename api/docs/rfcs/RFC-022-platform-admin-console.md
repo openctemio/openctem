@@ -50,6 +50,12 @@
 > and more platform-wide writes take a step-up (see
 > [Revision 22](#revision-22-session-and-roster-hardening)).
 
+> **Revision 24** (2026-10-18): four-eyes approvals: making or removing a
+> super admin, turning off the security-key requirement, removing or relaxing
+> the administrators' identity provider, opening sign-up and re-signing an
+> organization's audit chain need a second super admin (see
+> [Revision 24](#revision-24-four-eyes-approvals)).
+
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*: the system administrator is an account
 > with a system-level role and a different menu (Organizations, Users, Scanning,
@@ -1038,6 +1044,76 @@ session could do more, or last longer, than intended. Each is closed here.
 - The route table at the top of `routes/admin.go` now states, per route,
   whether it takes the route-level step-up, the fresh step-up and a fresh
   code in the body.
+
+## Revision 24: four-eyes approvals
+
+Owner decision D1 (2026-10-18). Revision 22 made a roster change visible; it
+did not stop one hijacked or rogue super admin session from making it. The
+actions that hand over or loosen control of the whole platform now need a
+second super admin.
+
+**Protected actions** and the exact target each approval is bound to:
+
+| Action | Target | Gated when |
+|---|---|---|
+| `admin.grant_super_admin` | `email:<address>` (new administrator) or `admin:<id>` | a super admin is created; an administrator becomes an active super admin (role, reactivation) or loses the break-glass marker |
+| `admin.revoke_super_admin` | `admin:<id>` | an active super admin is demoted, deactivated, marked break-glass or removed |
+| `console_mfa.disable` | `off` | "require security keys" goes from on to off |
+| `platform_idp.remove` | `remove`, `disable`, `require_idp_off` | the administrators' identity provider is removed, switched off, or no longer required |
+| `signup.open` | `mode=<mode>;accounts=<accounts>` | the stored sign-up policy opens wider (self-service organizations, or a wider account sign-up) |
+| `audit_chain.rebaseline` | `tenant:<id>` | an organization's audit chain is re-signed |
+
+Removing a super admin is on the list although it is not in D1: without it,
+one session could demote the other super admins and then act alone. Deleting
+an organization before its grace period ends joins the list when that action
+exists in the console.
+
+**Flow.** The protected route answers `428 SECOND_APPROVAL_REQUIRED` with the
+action, the target and the caller's open request, if any. The requester asks
+with a reason (`POST /api/v1/admin/approvals`, step-up). Every other
+administrator is e-mailed (the roster notice). Another super admin approves
+(`/approve`, a fresh step-up, never the session's window) or rejects
+(`/reject`, step-up); the requester may withdraw it (`/cancel`). The requester
+then repeats the action within 24 hours of the request; the action spends the
+approval. Security > Approvals lists open requests and the last 30 days.
+
+**Rules.**
+
+- Nobody approves or rejects their own request: refused by the service and by
+  the `admin_approvals_not_self` table constraint.
+- An approval is bound to its requester, action and exact target, works once
+  (a conditional update; concurrent uses cannot both win) and expires 24
+  hours after the request. When the action then fails (validation, a changed
+  chain), the approval is handed back so the requester can retry.
+- Break-glass accounts never approve and do not count as a second super
+  admin: their credentials are usually held by the same people as a named
+  account, so counting them would allow self-approval in practice. They may
+  ask and reject.
+- **One named super admin.** When no other administrator can approve, the
+  action runs on the requester's step-up alone, with a critical
+  `approval.single_admin` audit row and the roster e-mail to every
+  administrator, and the Approvals page explains how to add a second super
+  admin. Requiring an approval nobody can give would lock the installation
+  out of its own recovery; a second super admin can only be added through
+  this same fallback. Once a second named super admin exists, removing or
+  demoting either needs the other's approval, so a session cannot return to
+  the fallback on its own.
+- **When the other super admin is unavailable or compromised**, the
+  remaining one can still end that administrator's console sessions and reset
+  their console sign-in (both step-up, announced). Changing the roster beyond
+  that is done on the server with `bootstrap-admin`: shell access to the
+  server is already full trust.
+- Every step writes a critical admin audit row first (`approval.requested`,
+  `approved`, `rejected`, `canceled`, `used`, `single_admin`) and refuses
+  when the row cannot be written.
+- The table belongs to the console's database role (`DB_ADMIN_USER`): the
+  tenant plane's role cannot read or forge approvals.
+
+Key files: `api/internal/app/adminapproval/service.go`,
+`api/pkg/domain/admin/approval.go`,
+`api/internal/infra/http/handler/admin_approval_handler.go`, migration
+`002914_admin_approvals`, `web/console/src/app/(console)/security/approvals/page.tsx`,
+`web/console/src/features/admin-console/components/admin-approval-prompt.tsx`.
 
 ## Later phases
 

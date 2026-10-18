@@ -38,7 +38,8 @@ describe('removed console pages', () => {
   })
 
   it('are referenced by no href, url or page value', () => {
-    const quoted = new RegExp(`['"\`](${REMOVED.join('|')})(['"\`?#/])`.replace(/\//g, '\\/'), 'g')
+    const escape = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const quoted = new RegExp(`['"\`](${REMOVED.map(escape).join('|')})(['"\`?#/])`, 'g')
     const offenders: string[] = []
     // features/*/api/* hold API endpoint keys (GET /admin/operations), not pages.
     for (const f of files(ROOT).filter((f) => !f.includes(`${path.sep}api${path.sep}`))) {
