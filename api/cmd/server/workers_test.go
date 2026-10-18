@@ -29,7 +29,7 @@ func TestNewJobWorker_BuiltWithoutEmailService(t *testing.T) {
 	cfg.Redis.Host = "127.0.0.1"
 	cfg.Redis.Port = 6379
 
-	worker, err := NewJobWorker(cfg, nil /*email*/, nil /*aiTriage*/, nil /*jira*/, nil /*github*/, logger.NewNop())
+	worker, err := NewJobWorker(cfg, nil /*email*/, nil /*aiTriage*/, logger.NewNop())
 	if err != nil {
 		t.Fatalf("NewJobWorker returned error with nil email service: %v", err)
 	}
