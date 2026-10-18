@@ -386,5 +386,7 @@
   "settings.item.content": "Content catalog",
   "settings.desc.content": "Signed rules, templates and other packages: install, update and approve.",
   "settings.item.sensor-products": "Sensor products",
-  "settings.desc.sensor-products": "Latest and minimum release of the sensors your organization builds."
+  "settings.desc.sensor-products": "Latest and minimum release of the sensors your organization builds.",
+  "settings.item.security-overview": "Security overview",
+  "settings.desc.security-overview": "A score and checklist of what to fix first in your organization."
 }

@@ -293,3 +293,19 @@ func (f Filter) IsEmpty() bool {
 		f.SortBy == "" &&
 		!f.ExcludeSystem
 }
+
+// ExportCursor is the position after which the next export batch starts: the
+// newest-first order is (logged_at, id) descending.
+type ExportCursor struct {
+	LoggedAt time.Time
+	ID       string
+}
+
+// ExportRepository streams a tenant's audit log newest first, for the export.
+// The filter must carry a tenant.
+type ExportRepository interface {
+	// ExportBatch returns up to limit rows after the cursor (nil: the newest).
+	ExportBatch(ctx context.Context, filter Filter, after *ExportCursor, limit int) ([]*AuditLog, error)
+	// HasMoreThan reports whether more than n rows match the filter.
+	HasMoreThan(ctx context.Context, filter Filter, n int) (bool, error)
+}

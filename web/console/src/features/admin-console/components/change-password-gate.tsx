@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useTranslation } from '@/context/i18n-provider'
 import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
 import { PasswordPolicyHint } from '@/features/auth/components/password-policy-hint'
 import { passwordPolicyIssue } from '@/features/auth/lib/password-policy'
@@ -28,16 +29,22 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const passwordPolicy = usePasswordPolicy()
+  const { t } = useTranslation()
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
     if (next !== confirm) {
-      setError('The new passwords do not match.')
+      setError(t('admin.changePassword.mismatch', 'The new passwords do not match.'))
       return
     }
     if (next === current) {
-      setError('Choose a password different from the temporary one.')
+      setError(
+        t(
+          'admin.changePassword.sameAsTemporary',
+          'Choose a password different from the temporary one.'
+        )
+      )
       return
     }
     const issue = passwordPolicy && passwordPolicyIssue(next, passwordPolicy)
@@ -48,11 +55,18 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
     setBusy(true)
     try {
       await adminChangePassword(current, next)
-      toast.success('Password changed. Sign in again with your new password.')
+      toast.success(
+        t('admin.changePassword.done', 'Password changed. Sign in again with your new password.')
+      )
       // Every session of the account ended: sign in to the console again.
       window.location.replace('/login')
     } catch (err) {
-      setError(adminErrorMessage(err, 'The password could not be changed'))
+      setError(
+        adminErrorMessage(
+          err,
+          t('admin.changePassword.failed', 'The password could not be changed')
+        )
+      )
       setBusy(false)
     }
   }
@@ -63,11 +77,14 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">
             <KeyRound className="size-5 text-muted-foreground" />
-            Change your temporary password
+            {t('admin.changePassword.title', 'Change your temporary password')}
           </CardTitle>
           <CardDescription>
-            {admin.email} was given a temporary password. Choose your own before using the console.
-            You will sign in again afterwards.
+            {t(
+              'admin.changePassword.description',
+              '{email} was given a temporary password. Choose your own before using the console. You will sign in again afterwards.',
+              { email: admin.email }
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -78,7 +95,9 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
               </Alert>
             )}
             <div className="space-y-2">
-              <Label htmlFor="pw-current">Temporary password</Label>
+              <Label htmlFor="pw-current">
+                {t('admin.changePassword.current', 'Temporary password')}
+              </Label>
               <Input
                 id="pw-current"
                 type="password"
@@ -89,7 +108,7 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="pw-new">New password</Label>
+              <Label htmlFor="pw-new">{t('admin.changePassword.new', 'New password')}</Label>
               <Input
                 id="pw-new"
                 type="password"
@@ -102,7 +121,9 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
               <PasswordPolicyHint id="pw-new-policy" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="pw-confirm">Confirm new password</Label>
+              <Label htmlFor="pw-confirm">
+                {t('admin.changePassword.confirm', 'Confirm new password')}
+              </Label>
               <Input
                 id="pw-confirm"
                 type="password"
@@ -114,7 +135,7 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
             </div>
             <Button type="submit" className="w-full" disabled={busy}>
               {busy && <Loader2 className="me-2 size-4 animate-spin" />}
-              Change password
+              {t('admin.changePassword.submit', 'Change password')}
             </Button>
           </form>
         </CardContent>

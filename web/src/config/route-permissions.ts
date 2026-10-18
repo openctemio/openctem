@@ -631,6 +631,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     message: 'Only owners and admins can manage support access.',
   },
+  // Owners and admins read the security overview (api: RequireAdmin).
+  '/settings/security': {
+    permission: Permission.TeamUpdate,
+    message: 'Only owners and admins can see the security overview.',
+  },
   // Owners and admins read domain policies; changes are owner only (api RFC-104).
   '/settings/domains': {
     permission: Permission.TeamUpdate,
