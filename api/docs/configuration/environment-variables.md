@@ -227,15 +227,15 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 |---|---|---|---|---|---|
 | `SMTP_BASE_URL` | string | `APP_URL, else http://localhost:3000` |  |  | Base URL of links in e-mails. Set it only when the console is not at `APP_URL`. |
 
-### System page
+### Health page
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SYSTEM_STORAGE_PATHS` | string | empty |  |  | `name=path,name=path` directories whose free space the platform console System page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory. |
-| `SYSTEM_BACKUP_STATUS_FILE` | path | empty |  |  | The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The System page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported. |
-| `SYSTEM_TLS_CERT_FILES` | string | empty |  |  | `name=path,name=path` PEM certificate files whose expiry the System page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked. |
-| `SYSTEM_WEB_HEALTH_URL` | url | empty |  |  | Internal health URL of the web container for the System page (one GET, no redirects). Must be http or https. Unset: not checked. |
-| `SYSTEM_GATEWAY_HEALTH_URL` | url | empty |  |  | Internal health URL of the gateway for the System page (one GET, no redirects). Must be http or https. Unset: not checked. |
+| `SYSTEM_STORAGE_PATHS` | string | empty |  |  | `name=path,name=path` directories whose free space the platform console Health page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory. |
+| `SYSTEM_BACKUP_STATUS_FILE` | path | empty |  |  | The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The Health page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported. |
+| `SYSTEM_TLS_CERT_FILES` | string | empty |  |  | `name=path,name=path` PEM certificate files whose expiry the Health page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked. |
+| `SYSTEM_WEB_HEALTH_URL` | url | empty |  |  | Internal health URL of the web container for the Health page (one GET, no redirects). Must be http or https. Unset: not checked. |
+| `SYSTEM_GATEWAY_HEALTH_URL` | url | empty |  |  | Internal health URL of the gateway for the Health page (one GET, no redirects). Must be http or https. Unset: not checked. |
 | `SYSTEM_WATCH_INTERVAL` | duration | `5m` |  |  | How often the system watcher checks free space, backup age and certificate expiry, sets the metrics and emails the platform administrators on a worse level. Minimum 1m. |
 
 ### Attachment storage
@@ -625,7 +625,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AGENT_LB_MAX_DISK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS` |
 | `AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS` |
 | `SENSOR_TRANSPORT_V3_ENABLED` | rename it to `SENSOR_TRANSPORT_V3=auto\|off` |
-| `SCOPE_ACTIVE_PROOF` | remove it; a platform administrator sets "Require a verified domain before platform sensors scan a target" in Console > System > Platform scanning |
+| `SCOPE_ACTIVE_PROOF` | remove it; a platform administrator sets "Require a verified domain before platform sensors scan a target" in Console > Scanning > Platform scanning |
 | `APP_DEBUG` | unset it; it switched nothing on (use LOG_LEVEL=debug outside production) |
 | `GRPC_PORT` | unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR |
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |

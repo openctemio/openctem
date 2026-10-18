@@ -44,7 +44,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detail:
         'Migration {version} is marked dirty. Fix it and re-run the migrations before the next deploy.',
       vars: { version: p.schema_version },
-      href: '/operations',
+      href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -57,7 +57,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detailKey: 'admin.attention.schemaBehind.detail',
       detail: 'Applied {applied}, this release ships {shipped}. Run the migrations.',
       vars: { applied: p.schema_version, shipped: p.schema_shipped },
-      href: '/operations',
+      href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -70,7 +70,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detailKey: 'admin.attention.schemaAhead.detail',
       detail: 'Applied {applied}, this release ships {shipped}. Was the API rolled back?',
       vars: { applied: p.schema_version, shipped: p.schema_shipped },
-      href: '/operations',
+      href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -172,7 +172,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detailKey: 'admin.attention.sensorsOffline.detail',
       detail: '{offline} of {total} platform sensors are offline or stale.',
       vars: { offline: p.platform_sensors.offline, total: p.platform_sensors.total },
-      href: '/operations',
+      href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -188,7 +188,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detail:
         '{count} run(s) are more than 10 minutes past their deadline: the timeout controller may be stopped.',
       vars: { count: p.scan_runs_past_deadline },
-      href: '/operations',
+      href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -203,7 +203,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detailKey: 'admin.attention.outboxDead.detail',
       detail: '{count} notification(s) failed every retry and were not delivered.',
       vars: { count: p.outbox_dead },
-      href: '/operations',
+      href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -221,7 +221,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
         count: p.commands_pending,
         minutes: Math.floor(p.command_oldest_pending_seconds / 60),
       },
-      href: '/operations',
+      href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -254,7 +254,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
         detailKey: 'admin.attention.serviceDown.detail',
         detail: '{name} does not answer its health check.',
         vars: { name: svc.name },
-        href: '/system',
+        href: '/health',
         actionKey: 'admin.attention.inspect',
         action: 'Inspect',
       })
@@ -275,7 +275,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
           free: formatBytes(vol.free_bytes),
           percent: Math.round(vol.free_ratio * 100),
         },
-        href: '/system',
+        href: '/health',
         actionKey: 'admin.attention.inspect',
         action: 'Inspect',
       })
@@ -293,7 +293,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
             title: 'The last backup failed',
             detailKey: 'admin.attention.backupFailed.detail',
             detail: 'Check the backup job on the host before data is at risk.',
-            href: '/system',
+            href: '/health',
             actionKey: 'admin.attention.inspect',
             action: 'Inspect',
           }
@@ -305,7 +305,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
             detailKey: 'admin.attention.backupStale.detail',
             detail: 'The last successful backup finished {hours} hours ago.',
             vars: { hours: hours ?? '?' },
-            href: '/system',
+            href: '/health',
             actionKey: 'admin.attention.inspect',
             action: 'Inspect',
           }
@@ -318,7 +318,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
       title: 'Backups are not reported',
       detailKey: 'admin.attention.backupUnknown.detail',
       detail: 'The console cannot tell whether this installation is backed up.',
-      href: '/system',
+      href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -335,7 +335,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
         detailKey: 'admin.attention.certificate.detail',
         detail: '{name} expires in {days} days.',
         vars: { name: cert.name, days: days ?? '?' },
-        href: '/system',
+        href: '/health',
         actionKey: 'admin.attention.inspect',
         action: 'Inspect',
       })

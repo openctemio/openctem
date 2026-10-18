@@ -590,7 +590,7 @@ chat id, or a deleted Slack webhook.
 An alert rule fails to evaluate (Prometheus "Rules" page shows the error).
 Fix the rule and run `deploy/observability/test/check-config.sh`.
 
-## Built-in System page (no monitoring stack needed)
+## Built-in Health page (no monitoring stack needed)
 
 The platform console's **System** page (`/admin/system`, every platform
 administrator role, read-only) shows service health, free space of the

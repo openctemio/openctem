@@ -12,7 +12,7 @@ func TestLoad_ScopeActiveProofRetired(t *testing.T) {
 	for _, v := range []string{"platform_sensors", "off", ""} {
 		t.Setenv("SCOPE_ACTIVE_PROOF", v)
 		_, err := Load()
-		if err == nil || !strings.Contains(err.Error(), "SCOPE_ACTIVE_PROOF") || !strings.Contains(err.Error(), "Console > System") {
+		if err == nil || !strings.Contains(err.Error(), "SCOPE_ACTIVE_PROOF") || !strings.Contains(err.Error(), "Console > Scanning") {
 			t.Fatalf("SCOPE_ACTIVE_PROOF=%q: Load error = %v, want the retired-variable hint", v, err)
 		}
 	}

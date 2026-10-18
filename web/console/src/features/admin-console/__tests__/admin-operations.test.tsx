@@ -91,7 +91,7 @@ describe('schemaState', () => {
 })
 
 describe('attention links platform problems to Operations', () => {
-  it('sends schema and queue problems to /operations', () => {
+  it('sends schema and queue problems to /health', () => {
     const o: AdminOverview = {
       organizations: { total: 1, without_owner: 0, without_owner_sample: [] },
       security: {
@@ -114,7 +114,7 @@ describe('attention links platform problems to Operations', () => {
       generated_at: '2026-10-08T12:00:00Z',
     }
     const items = buildAttention(o, 'readonly')
-    expect(items.map((i) => i.href)).toEqual(['/operations', '/operations', '/operations'])
+    expect(items.map((i) => i.href)).toEqual(['/health', '/health', '/health'])
   })
 })
 
