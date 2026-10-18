@@ -188,7 +188,7 @@
   "confirm.notificationChannel.deleteDesc": "Thông báo ngừng gửi tới kênh này ngay lập tức và các quy tắc gửi tới nó mất đích này. Không thể hoàn tác.",
   "confirm.notificationChannel.deleteTitle": "Xóa kênh thông báo \"{name}\"?",
   "confirm.org.delete": "Xóa tổ chức",
-  "confirm.org.deleteDesc": "Tổ chức và toàn bộ dữ liệu của nó bị xóa với mọi thành viên: tài sản, phát hiện, bản quét, thành viên, vai trò, cài đặt và nhật ký kiểm toán. Tài khoản thành viên được giữ lại. Không thể hoàn tác.",
+  "confirm.org.deleteDesc": "Tổ chức bị đóng với mọi thành viên ngay bây giờ và bị xóa cùng toàn bộ dữ liệu sau 14 ngày: tài sản, phát hiện, bản quét, thành viên, vai trò, cài đặt và nhật ký kiểm toán. Chủ sở hữu có thể hủy việc xóa từ trang đăng nhập trước thời điểm đó. Tài khoản thành viên được giữ lại.",
   "confirm.org.deleteTitle": "Xóa tổ chức {name}?",
   "confirm.orgTrust.end": "Chấm dứt tin cậy",
   "confirm.orgTrust.endIncomingDesc": "Người của bạn bị vô hiệu hóa trong {org} ngay lập tức. Không có gì bị xóa.",

@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/onboarding"
+	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -29,6 +30,8 @@ import (
 // LocalAuthHandler handles local authentication requests.
 type LocalAuthHandler struct {
 	authService *auth.AuthService
+	// deletions: an owner cancels a scheduled organization deletion.
+	deletions *orgdeletion.Service
 	// onboarding serves the fork of an account without an organization.
 	onboarding     *onboarding.Service
 	sessionService *auth.SessionService
@@ -258,6 +261,9 @@ type TenantInfo struct {
 	// OrganizationSuspended (suspended_tenants only): the organization is
 	// suspended by a platform administrator, not the membership.
 	OrganizationSuspended bool `json:"organization_suspended,omitempty"`
+	// DeletionDueAt (suspended_tenants only): an owner scheduled the
+	// organization's deletion for this time; an owner can still cancel.
+	DeletionDueAt *time.Time `json:"deletion_due_at,omitempty"`
 }
 
 // LoginResponse is the response body for login.
@@ -382,6 +388,7 @@ func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Requ
 				Name:                  t.TenantName,
 				Role:                  t.Role,
 				OrganizationSuspended: t.OrganizationSuspended,
+				DeletionDueAt:         t.DeletionDueAt,
 			}
 		}
 	}
