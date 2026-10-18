@@ -72,6 +72,10 @@ type KEVRepository interface {
 	// CVE whose KEV due_date has passed (tenant-scoped, no LIMIT).
 	CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
 
+	// CountTenantOpenInKEV counts the tenant's OPEN findings referencing any
+	// CISA-KEV CVE, past due or not (tenant-scoped, no LIMIT).
+	CountTenantOpenInKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
+
 	// CountRecentlyAdded returns the true count of KEV entries added in the last
 	// N days (global, de-saturated COUNT).
 	CountRecentlyAdded(ctx context.Context, days int) (int64, error)

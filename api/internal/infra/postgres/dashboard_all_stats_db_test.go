@@ -95,10 +95,10 @@ func TestDashboardGetAllStats_OnePass(t *testing.T) {
 	if s.Assets.AverageRiskScore != 20 {
 		t.Errorf("avg risk: want 20, got %v", s.Assets.AverageRiskScore)
 	}
-	if s.Findings.Total != 3 {
-		t.Errorf("finding total: want 3 (draft excluded, tenant-scoped), got %d", s.Findings.Total)
+	if s.Findings.Total != 2 {
+		t.Errorf("finding total: want 2 (the open lens: resolved and draft excluded, tenant-scoped), got %d", s.Findings.Total)
 	}
-	if s.Findings.BySeverity["critical"] != 1 || s.Findings.BySeverity["high"] != 2 || s.Findings.BySeverity["low"] != 0 {
+	if s.Findings.BySeverity["critical"] != 1 || s.Findings.BySeverity["high"] != 1 || s.Findings.BySeverity["low"] != 0 {
 		t.Errorf("finding severity wrong: %+v", s.Findings.BySeverity)
 	}
 	if s.Findings.ByStatus["new"] != 1 || s.Findings.ByStatus["confirmed"] != 1 || s.Findings.ByStatus["resolved"] != 1 {
