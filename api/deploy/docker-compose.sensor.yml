@@ -86,7 +86,7 @@ services:
         max-file: "5"
 
   sensor:
-    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.23.0}
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.23.2}
     environment:
       # Inside the stack: the API directly (never the gateway).
       SENSOR_API_URL: http://api:8080
