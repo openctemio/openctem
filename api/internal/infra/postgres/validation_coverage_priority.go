@@ -56,7 +56,7 @@ func ValidationCoverageByPriority(
 		  ) AS with_ev
 		FROM findings f
 		WHERE f.tenant_id = $1 AND NOT f.branch_only
-		  AND ` + vulnerability.ClosedStatusSQL("f.status") + windowSQL + ` AND ` + inScope + `
+		  AND ` + vulnerability.ClosedStatusSQL("f.status") + publishedExcl("f") + pentestVisibilityExcl(ctx, "f") + windowSQL + ` AND ` + inScope + `
 		GROUP BY COALESCE(f.priority_class, '')
 	`
 	rows, err := db.QueryContext(ctx, q, args...)

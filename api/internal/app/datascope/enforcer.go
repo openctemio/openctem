@@ -153,10 +153,7 @@ func (e *Enforcer) AggregateViewer(ctx context.Context) bool {
 // It fails closed: an unwired enforcer is an error (ErrNotConfigured), never
 // an organization-wide count.
 func (e *Enforcer) ViewerScope(ctx context.Context, tenantID shared.ID) (scope *shared.DataScope, orgWide bool, err error) {
-	if e == nil || e.repo == nil {
-		return nil, false, ErrNotConfigured
-	}
-	scope, err = e.Resolve(ctx, tenantID)
+	scope, err = e.ResolveStrict(ctx, tenantID)
 	if err != nil || !scope.Restricted() {
 		return scope, false, err
 	}
@@ -164,6 +161,19 @@ func (e *Enforcer) ViewerScope(ctx context.Context, tenantID shared.ID) (scope *
 		return nil, true, nil
 	}
 	return scope, false, nil
+}
+
+// WithFindingViewer records, from the authenticated principal, who reads
+// finding rows through a metrics surface that builds its own SQL, so the
+// repository ANDs the findings list's pentest member-visibility rule for
+// everyone who is not an administrator. It fails closed: an API key without
+// a user, a context with no caller, or an unwired enforcer is a viewer with
+// no campaign membership (the zero id), never an unfiltered read.
+func (e *Enforcer) WithFindingViewer(ctx context.Context) context.Context {
+	c := e.CallerOf(ctx)
+	// An empty or unparseable user id is the zero id: a member of no campaign.
+	uid, _ := shared.IDFromString(c.UserID)
+	return shared.WithFindingViewer(ctx, shared.FindingViewer{UserID: uid, Admin: c.IsAdmin && !c.APIKey})
 }
 
 // CallerOf returns the caller of a request context (empty when unwired).
@@ -181,6 +191,16 @@ func (e *Enforcer) CallerUserID(ctx context.Context) string { return e.CallerOf(
 // when the caller is unrestricted.
 func (e *Enforcer) Resolve(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error) {
 	return e.ResolveFor(ctx, tenantID, e.CallerOf(ctx))
+}
+
+// ResolveStrict is Resolve for a read made on behalf of a caller that must
+// never fall back to "unrestricted" because the enforcer is not wired: an
+// unwired enforcer is an error (ErrNotConfigured).
+func (e *Enforcer) ResolveStrict(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error) {
+	if e == nil || e.repo == nil {
+		return nil, ErrNotConfigured
+	}
+	return e.Resolve(ctx, tenantID)
 }
 
 // ResolveFor is Resolve for an explicit caller.

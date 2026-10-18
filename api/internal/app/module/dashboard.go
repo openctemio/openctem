@@ -158,15 +158,6 @@ type DashboardService struct {
 	repo      DashboardStatsRepository
 	dataScope *datascope.Enforcer // Layer 2 narrowing of row data (nil = unrestricted)
 	logger    *logger.Logger
-	// aggregate reports whether the viewer holds dashboard:aggregate.
-	aggregate func(ctx context.Context) bool
-}
-
-// SetAggregateCheck wires the check for the dashboard:aggregate permission
-// (owner decision D6): a restricted viewer who holds it sees organization
-// totals, with small breakdowns left out. Without the check nobody does.
-func (s *DashboardService) SetAggregateCheck(fn func(ctx context.Context) bool) {
-	s.aggregate = fn
 }
 
 // dashboardKFloor: in organization totals shown to a restricted viewer, a
@@ -174,21 +165,13 @@ func (s *DashboardService) SetAggregateCheck(fn func(ctx context.Context) bool) 
 // total does not single out an asset the viewer cannot see.
 const dashboardKFloor = 5
 
-// countScope decides whose data the dashboard counts: nil (the whole
-// organization) for an unrestricted viewer or a restricted viewer holding
-// dashboard:aggregate, else the viewer's scope. aggregated is true in the
-// second case (apply the k-floor).
+// countScope decides whose data the dashboard counts through the
+// enforcer's ViewerScope: nil (the whole organization) for an unrestricted
+// viewer or a restricted viewer holding dashboard:aggregate, else the
+// viewer's scope. aggregated is true in the second case (apply the k-floor).
+// An unwired enforcer fails closed (datascope.ErrNotConfigured).
 func (s *DashboardService) countScope(ctx context.Context, tenantID shared.ID) (scope *shared.DataScope, aggregated bool, err error) {
-	scope, err = s.dataScope.Resolve(ctx, tenantID)
-	if err != nil || !scope.Restricted() {
-		// Unrestricted (nil, or every asset but the private program assets
-		// hidden from the viewer): the organization's totals, no k-floor.
-		return scope, false, err
-	}
-	if s.aggregate != nil && s.aggregate(ctx) {
-		return nil, true, nil
-	}
-	return scope, false, nil
+	return s.dataScope.ViewerScope(ctx, tenantID)
 }
 
 // kFloor drops breakdown buckets under dashboardKFloor.
@@ -202,18 +185,10 @@ func kFloor(m map[string]int) map[string]int {
 	return out
 }
 
-// withFindingViewer records, from the authenticated principal, who reads the
-// findings behind the dashboard numbers, so the repository ANDs the findings
-// list's pentest member-visibility rule for everyone who is not an
-// administrator. The dashboards are only ever read on behalf of a caller, so
-// it fails closed: an API key without a user, a context with no caller, or an
-// unwired enforcer is a viewer with no campaign membership (the zero id),
-// never an unfiltered read.
+// withFindingViewer records who reads the findings behind the dashboard
+// numbers (see datascope.Enforcer.WithFindingViewer; fail-closed).
 func (s *DashboardService) withFindingViewer(ctx context.Context) context.Context {
-	c := s.dataScope.CallerOf(ctx)
-	// An empty or unparseable user id is the zero id: a member of no campaign.
-	uid, _ := shared.IDFromString(c.UserID)
-	return shared.WithFindingViewer(ctx, shared.FindingViewer{UserID: uid, Admin: c.IsAdmin && !c.APIKey})
+	return s.dataScope.WithFindingViewer(ctx)
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer. Dashboards keep their
@@ -643,6 +618,7 @@ type OwnerAcceptanceMetric struct {
 // The figures (cycles, control coverage, time to detect) are kept for the
 // whole organization, so a restricted viewer needs dashboard:aggregate.
 func (s *DashboardService) GetProgramMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProgramMetrics, error) {
+	ctx = s.withFindingViewer(ctx)
 	if err := s.orgWideOnly(ctx, tenantID); err != nil {
 		return nil, err
 	}

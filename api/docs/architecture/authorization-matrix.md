@@ -1770,7 +1770,24 @@ predicate the findings list compiles (`vulnerability.FindingMemberVisibilitySQL`
 one rule for both), with the user taken from the authenticated principal.
 Recent activity, the monthly trend, velocity and the executive new-finding
 count also leave out unpublished pentest findings (draft, in review) for
-everyone, administrators included. MTTR (`GET /dashboard/mttr` and
+everyone, administrators included. The same rule covers the other figures
+the dashboard shows beside these: the threat-intel exposure counts (EPSS and
+KEV, `GET /threat-intel/stats`), the validation coverage and downgrade figures
+(`GET /validation/coverage`) and the program metrics (`GET
+/dashboard/program-metrics`), where a pentest draft or in-review finding
+counts for nobody. Program metrics and the risk trend are kept for the
+organization, so a restricted viewer needs `dashboard:aggregate` (or full data
+access) for them; the risk trend is a daily organization snapshot and cannot
+follow the pentest rule per viewer. A CTEM cycle's `charter_evaluation` is
+computed from the organization's metrics: `GET /ctem-cycles` and
+`/ctem-cycles/{id}` (and the close and scope-refinement responses) leave that
+one field out for a viewer who would be refused the cycle metrics, and the rest
+of the cycle stays readable. Every dashboard figure computed for the caller
+reads the data-scope enforcer's `ViewerScope` (one decision for the
+`dashboard:aggregate` check) and refuses when the enforcer is not wired; the
+attack-path and exposure-chain reads for a caller refuse likewise
+(`datascope.ErrNotConfigured`) instead of returning the organization's result.
+MTTR (`GET /dashboard/mttr` and
 `/dashboard/mttr-analytics`) follows the viewer the same way (research 24
 §5.1): a restricted member averages their own in-scope findings, with
 `dashboard:aggregate` the organization. The other dashboard metrics
