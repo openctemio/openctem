@@ -173,6 +173,12 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("account-erase", cfg.Worker.InvitationPurgeInterval,
 			svc.AccountDeletion.EraseDue, log.With("controller", "account-erase")))
 	}
+	if svc.OrgDeletion != nil {
+		// Organizations whose deletion grace period ended are deleted
+		// (docs/architecture/organization-deletion.md).
+		m.Register(controller.NewPurgeController("organization-delete", cfg.Worker.InvitationPurgeInterval,
+			svc.OrgDeletion.PurgeDue, log.With("controller", "organization-delete")))
+	}
 	if repos.AdminConsole != nil {
 		console := repos.AdminConsole
 		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,

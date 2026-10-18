@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { setOrganizationSuspended } from '../api/use-admin-organizations'
+import { purgeOrganization, setOrganizationSuspended } from '../api/use-admin-organizations'
 import {
+  OrganizationPurgeAction,
   OrganizationStatusBadge,
   OrganizationSuspendedNotice,
   OrganizationSuspensionAction,
@@ -13,6 +14,7 @@ import type { AdminOrganization } from '../types'
 vi.mock('../api/use-admin-organizations', async (orig) => ({
   ...(await orig<typeof import('../api/use-admin-organizations')>()),
   setOrganizationSuspended: vi.fn(),
+  purgeOrganization: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -91,6 +93,40 @@ describe('Organization suspension', () => {
         'Invoice paid, ticket 5521'
       )
     )
+  })
+
+  it('an organization waiting for deletion: badge, due date, no suspend button', () => {
+    const pending = org({ status: 'pending_deletion', deletion_due_at: '2026-11-01T09:00:00Z' })
+    render(
+      <>
+        <OrganizationStatusBadge org={pending} />
+        <OrganizationSuspendedNotice org={pending} />
+        <OrganizationSuspensionAction org={pending} onDone={vi.fn()} />
+      </>
+    )
+    expect(screen.getByTestId('org-pending-deletion')).toHaveTextContent('Deletion scheduled')
+    expect(screen.getByTestId('org-pending-deletion-notice')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /suspend/i })).toBeNull()
+  })
+
+  it('deletes now with a reason and a fresh code', async () => {
+    const user = userEvent.setup()
+    const onDone = vi.fn()
+    vi.mocked(purgeOrganization).mockResolvedValue({ status: 'deleted' })
+    render(<OrganizationPurgeAction org={org()} onDone={onDone} />)
+    await user.click(screen.getByRole('button', { name: 'Delete now' }))
+    await user.type(screen.getByLabelText(/^reason$/i), 'Legal request 2026-17 from counsel')
+    await user.type(screen.getByLabelText(/code from your authenticator/i), '123456')
+    const buttons = screen.getAllByRole('button', { name: 'Delete now' })
+    await user.click(buttons[buttons.length - 1])
+    await waitFor(() =>
+      expect(purgeOrganization).toHaveBeenCalledWith(
+        'o1',
+        'Legal request 2026-17 from counsel',
+        '123456'
+      )
+    )
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
   })
 
   it('shows nothing for an active organization', () => {

@@ -87,6 +87,13 @@ func (c *mapCache) Get(_ context.Context, key string) (*CachedStatus, error) {
 	return &v, nil
 }
 
+func (c *mapCache) Delete(_ context.Context, key string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.m, key)
+	return nil
+}
+
 func (c *mapCache) Set(_ context.Context, key string, v CachedStatus) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -19,6 +19,7 @@ import (
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 
+	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	"github.com/openctemio/openctem/api/internal/app/suspension"
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
@@ -922,6 +923,8 @@ type Services struct {
 	// Suspension suspends and restores organizations (console).
 	OrganizationGate *suspension.Gate
 	Suspension       *suspension.Service
+	// OrgDeletion schedules, cancels and carries out organization deletions.
+	OrgDeletion *orgdeletion.Service
 	// FindingLifecycle manages the organization's finding sub-statuses and
 	// lifecycle schemes (RFC-110).
 	FindingLifecycle *findinglifecycleapp.Service
@@ -1605,6 +1608,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Organization deletion erases the tenant's stored files (every backend)
 	// before its rows, and refuses when it cannot.
 	s.Tenant.SetBlobEraser(s.Attachment)
+	// An owner's deletion waits out a grace period (the organization is
+	// closed meanwhile); the purge worker and the console delete through
+	// DeleteTenant (docs/architecture/organization-deletion.md).
+	s.OrgDeletion = orgdeletion.NewService(repos.OrganizationStatus, s.Tenant, s.OrganizationGate, repos.AdminAuditLog, s.Audit, log)
 
 	// Initialize Compliance service
 	s.Simulation = compliance.NewSimulationService(repos.Simulation, repos.ControlTest, log)
@@ -2817,6 +2824,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A suspended organization's live sockets close at once.
 	if s.Suspension != nil {
 		s.Suspension.SetSocketCloser(s.WebSocketHub)
+	}
+	if s.OrgDeletion != nil {
+		s.OrgDeletion.SetSocketCloser(s.WebSocketHub)
 	}
 	log.Info("websocket hub initialized")
 

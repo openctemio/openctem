@@ -30,6 +30,9 @@ func TestApprovalTargets(t *testing.T) {
 		{ApprovalSignupOpen, "mode=self_service;accounts=all", false},
 		{ApprovalAuditChainRebaseline, "tenant:" + id, true},
 		{ApprovalAuditChainRebaseline, "tenant:" + id + "x", false},
+		{ApprovalOrgPurge, "tenant:" + id, true},
+		{ApprovalOrgPurge, "admin:" + id, false},
+		{ApprovalOrgPurge, "tenant:" + id + "x", false},
 		{"admin.other", "off", false},
 	}
 	for _, c := range cases {
