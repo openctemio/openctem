@@ -275,6 +275,8 @@
   "org.leave.confirmDesc": "Your access ends now and your API keys for this organization are revoked. An administrator can invite you again later.",
   "org.leave.done": "You left {name}",
   "org.leave.failed": "Could not leave the organization",
+  "org.leave.section": "Organization membership",
+  "org.leave.soleOwner": "Transfer ownership to another member first.",
   "org.region.new": "Data region: {region}. It is fixed for the organization once created.",
   "org.region.current": "Data region: {region} (fixed)",
   "org.roles.teamRoleNote": "This is a team role. It is the member’s role in the organization, so it changes on the Members page, and ownership moves with Transfer ownership.",
