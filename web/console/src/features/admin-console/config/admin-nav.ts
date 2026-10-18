@@ -39,6 +39,12 @@ export interface AdminNavItem {
   minRole?: AdminRole
   /** Extra words the command palette matches (synonyms). */
   keywords?: string[]
+  /**
+   * Reached from elsewhere in the shell (the personal security keys sit with
+   * the signed-in administrator in the sidebar footer): left out of the
+   * sidebar sections but kept in the command palette.
+   */
+  hideInSidebar?: boolean
 }
 
 export interface AdminNavSection {
@@ -49,8 +55,11 @@ export interface AdminNavSection {
 }
 
 /**
- * Console navigation (research/79 information architecture): Overview,
- * Organizations, Scanning, Security, System. Only pages that exist are
+ * Console navigation (RFC-022 revision 22): Overview, then six groups by
+ * what an operator is doing: Customers (organizations and people), Scanning
+ * (what the platform may scan and with what), Security (who administers the
+ * console and what they did), Settings (instance-wide behaviour), Monitoring
+ * (is the installation healthy and current). Only pages that exist are
  * listed: add an item together with its page, never ahead of it. The command
  * palette indexes the same list.
  */
@@ -87,20 +96,6 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['accounts', 'people', 'locked', 'sessions', 'support'],
       },
       {
-        title: 'Support access',
-        i18nKey: 'admin.nav.supportAccess',
-        url: '/support',
-        icon: LifeBuoy,
-        minRole: 'ops_admin',
-        keywords: ['support', 'grant', 'case', 'help', 'troubleshoot', 'read-only'],
-      },
-    ],
-  },
-  {
-    title: 'Requests',
-    i18nKey: 'admin.nav.group.requests',
-    items: [
-      {
         title: 'Access requests',
         i18nKey: 'admin.nav.access-requests',
         url: '/requests',
@@ -114,6 +109,14 @@ export const adminNav: AdminNavSection[] = [
         icon: UserPlus,
         keywords: ['sign-up', 'signups', 'registrations', 'burst', 'abuse', 'alerts'],
       },
+      {
+        title: 'Support access',
+        i18nKey: 'admin.nav.supportAccess',
+        url: '/support',
+        icon: LifeBuoy,
+        minRole: 'ops_admin',
+        keywords: ['support', 'grant', 'case', 'help', 'troubleshoot', 'read-only'],
+      },
     ],
   },
   {
@@ -121,11 +124,46 @@ export const adminNav: AdminNavSection[] = [
     i18nKey: 'admin.nav.group.scanning',
     items: [
       {
+        title: 'Scan approval',
+        i18nKey: 'admin.nav.scanApproval',
+        url: '/system/scan-approval',
+        icon: ShieldCheck,
+        keywords: ['scan', 'approval', 'governance', 'second approver', 'policy', 'scope'],
+      },
+      {
+        title: 'Platform scanning',
+        i18nKey: 'admin.nav.platformScanning',
+        url: '/system/platform-scanning',
+        icon: Cloud,
+        keywords: ['platform sensors', 'verified domain', 'proof', 'ownership', 'abuse', 'scope'],
+      },
+      {
+        title: 'Shared sensors',
+        i18nKey: 'admin.nav.sharedSensors',
+        url: '/system/shared-sensors',
+        icon: Server,
+        keywords: ['fleet', 'shared sensors', 'pause', 'retire', 'queue', 'jobs', 'regions'],
+      },
+      {
         title: 'Target mappings',
         i18nKey: 'admin.nav.targetMappings',
         url: '/scanning/target-mappings',
         icon: Waypoints,
         keywords: ['asset types', 'scanner'],
+      },
+      {
+        title: 'Content packs',
+        i18nKey: 'admin.nav.contentPacks',
+        url: '/system/content-packs',
+        icon: Package,
+        keywords: ['templates', 'nuclei', 'semgrep', 'wordlists', 'channels', 'signing'],
+      },
+      {
+        title: 'Threat intelligence',
+        i18nKey: 'admin.nav.threatIntel',
+        url: '/system/threat-intel',
+        icon: Radar,
+        keywords: ['epss', 'kev', 'feeds', 'sync'],
       },
     ],
   },
@@ -133,6 +171,30 @@ export const adminNav: AdminNavSection[] = [
     title: 'Security',
     i18nKey: 'admin.nav.group.security',
     items: [
+      {
+        title: 'Administrators',
+        i18nKey: 'admin.nav.administrators',
+        url: '/security/administrators',
+        icon: UserCog,
+        minRole: 'super_admin',
+        keywords: ['admins', 'break-glass', 'roster'],
+      },
+      {
+        title: 'Sessions',
+        i18nKey: 'admin.nav.sessions',
+        url: '/security/sessions',
+        icon: MonitorSmartphone,
+        minRole: 'super_admin',
+        keywords: ['signed in', 'console sessions', 'sign out', 'devices'],
+      },
+      {
+        title: 'Admin sign-in',
+        i18nKey: 'admin.nav.adminSignIn',
+        url: '/system/admin-sign-in',
+        icon: KeyRound,
+        minRole: 'super_admin',
+        keywords: ['identity provider', 'idp', 'sso', 'oidc'],
+      },
       {
         title: 'Admin activity',
         i18nKey: 'admin.nav.activity',
@@ -145,29 +207,14 @@ export const adminNav: AdminNavSection[] = [
         i18nKey: 'admin.nav.securityKeys',
         url: '/security/keys',
         icon: Fingerprint,
+        hideInSidebar: true,
         keywords: ['passkey', 'webauthn', 'fido2', 'two-factor', 'recovery codes', 'mfa'],
-      },
-      {
-        title: 'Sessions',
-        i18nKey: 'admin.nav.sessions',
-        url: '/security/sessions',
-        icon: MonitorSmartphone,
-        minRole: 'super_admin',
-        keywords: ['signed in', 'console sessions', 'sign out', 'devices'],
-      },
-      {
-        title: 'Administrators',
-        i18nKey: 'admin.nav.administrators',
-        url: '/security/administrators',
-        icon: UserCog,
-        minRole: 'super_admin',
-        keywords: ['admins', 'break-glass', 'roster'],
       },
     ],
   },
   {
-    title: 'System',
-    i18nKey: 'admin.nav.group.system',
+    title: 'Settings',
+    i18nKey: 'admin.nav.group.settings',
     items: [
       {
         title: 'Sign-up',
@@ -175,6 +222,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/system/sign-up',
         icon: UserPlus,
         keywords: ['registration', 'self-service', 'policy'],
+      },
+      {
+        title: 'Limits',
+        i18nKey: 'admin.nav.limits',
+        url: '/system/limits',
+        icon: Gauge,
+        keywords: ['limits', 'quotas', 'self-service', 'seats'],
       },
       {
         title: 'E-mail',
@@ -191,68 +245,11 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['terms', 'privacy', 'security.txt', 'contact', 'policy'],
       },
       {
-        title: 'Scan approval',
-        i18nKey: 'admin.nav.scanApproval',
-        url: '/system/scan-approval',
-        icon: ShieldCheck,
-        keywords: ['scan', 'approval', 'governance', 'second approver', 'policy', 'scope'],
-      },
-      {
-        title: 'Shared sensors',
-        i18nKey: 'admin.nav.sharedSensors',
-        url: '/system/shared-sensors',
-        icon: Server,
-        keywords: ['fleet', 'shared sensors', 'pause', 'retire', 'queue', 'jobs', 'regions'],
-      },
-      {
-        title: 'Platform scanning',
-        i18nKey: 'admin.nav.platformScanning',
-        url: '/system/platform-scanning',
-        icon: Cloud,
-        keywords: ['platform sensors', 'verified domain', 'proof', 'ownership', 'abuse', 'scope'],
-      },
-      {
-        title: 'Admin sign-in',
-        i18nKey: 'admin.nav.adminSignIn',
-        url: '/system/admin-sign-in',
-        icon: KeyRound,
-        minRole: 'super_admin',
-        keywords: ['identity provider', 'idp', 'sso', 'oidc'],
-      },
-      {
-        title: 'Limits',
-        i18nKey: 'admin.nav.limits',
-        url: '/system/limits',
-        icon: Gauge,
-        keywords: ['limits', 'quotas', 'self-service', 'seats'],
-      },
-      {
-        title: 'Content packs',
-        i18nKey: 'admin.nav.contentPacks',
-        url: '/system/content-packs',
-        icon: Package,
-        keywords: ['templates', 'nuclei', 'semgrep', 'wordlists', 'channels', 'signing'],
-      },
-      {
-        title: 'Threat intelligence',
-        i18nKey: 'admin.nav.threatIntel',
-        url: '/system/threat-intel',
-        icon: Radar,
-        keywords: ['epss', 'kev', 'feeds', 'sync'],
-      },
-      {
         title: 'Announcements',
         i18nKey: 'admin.nav.announcements',
         url: '/system/announcements',
         icon: Megaphone,
         keywords: ['maintenance', 'banner', 'notice', 'downtime'],
-      },
-      {
-        title: 'Software updates',
-        i18nKey: 'admin.nav.softwareUpdates',
-        url: '/system/software-updates',
-        icon: ArrowUpCircle,
-        keywords: ['version', 'upgrade', 'release', 'security advisory', 'update check'],
       },
       {
         title: 'AI applications',
@@ -264,8 +261,8 @@ export const adminNav: AdminNavSection[] = [
     ],
   },
   {
-    title: 'Operations',
-    i18nKey: 'admin.nav.group.operations',
+    title: 'Monitoring',
+    i18nKey: 'admin.nav.group.monitoring',
     items: [
       {
         title: 'Health',
@@ -280,6 +277,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/system',
         icon: HardDrive,
         keywords: ['disk', 'storage', 'backup', 'certificate', 'expiry', 'free space', 'version'],
+      },
+      {
+        title: 'Software updates',
+        i18nKey: 'admin.nav.softwareUpdates',
+        url: '/system/software-updates',
+        icon: ArrowUpCircle,
+        keywords: ['version', 'upgrade', 'release', 'security advisory', 'update check'],
       },
     ],
   },

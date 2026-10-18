@@ -275,6 +275,8 @@ API keys are refused on both prefixes; the tenant is the session's. Design: `mcp
 | `GET /api/v1/oauth/requests/{id}`, `POST /{id}/approve`, `/{id}/deny` | any member, on a consent request they claimed (404 otherwise); the grant never exceeds what they hold |
 | `POST /api/v1/oauth/requests/{id}/access-request` | any active member, on a consent request they claimed and only when the application is blocked because its publisher is not approved; at most 5 new requests per member per day, 50 waiting per organization (429); audited |
 | `POST /api/v1/oauth/requests/{id}/allow-publisher` | `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
+| `GET /api/v1/organization/security-overview` | owner or admin with `settings:read`; the organization comes from the credential; counts and statuses only, no personal data ([security-overview.md](security-overview.md)) |
+| `GET /api/v1/audit-logs/export` | `audit:read` and the list's full-data rule; filters as the list; at most 50,000 rows, one export at a time per person, heavy-read cap; audited `audit_log.exported` |
 | `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / `settings:write` + a recent sign-in; audited |
 | `GET /api/v1/mcp-access/requests` | `settings:read` (the organization's waiting requests; requester name, no e-mail or IP) |
 | `POST /api/v1/mcp-access/requests/{id}/approve` | `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
