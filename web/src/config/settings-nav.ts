@@ -568,6 +568,16 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['tool settings', 'rate limit', 'concurrency', 'timeout', 'retries', 'options'],
       },
       {
+        id: 'sensor-products',
+        title: 'Sensor products',
+        description: 'Latest and minimum release of the sensors your organization builds.',
+        url: '/settings/scanning/sensor-products',
+        icon: Package,
+        permission: Permission.SensorsRead,
+        module: 'sensors',
+        keywords: ['custom sensor', 'sdk-go', 'release', 'update available', 'unsupported'],
+      },
+      {
         id: 'scanner-content',
         title: 'Scanner content',
         description: 'How fresh vulnerability databases, templates and rules must be.',

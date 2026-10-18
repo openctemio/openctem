@@ -599,6 +599,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  // The organization's own sensor products (latest and minimum release);
+  // saving needs sensors:write (checked by the page and the API).
+  '/settings/scanning/sensor-products': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
 
   // ========================================
   // Settings - Organization (Core feature, no module required)
