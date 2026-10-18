@@ -616,6 +616,7 @@ export interface ConfigurationItem {
     | 'console'
     | 'audit'
     | 'updates'
+    | 'alerts'
   managed: 'console' | 'server'
   source: 'console' | 'environment' | 'default'
   value?: string
@@ -623,9 +624,66 @@ export interface ConfigurationItem {
   is_set?: boolean
   env_var?: string
   ceiling?: boolean
+  /** The environment variable that pins this console setting, when set. */
+  locked_by?: string
   restart_required: boolean
   page?: string
   planned?: boolean
   changed_at?: string
   changed_by?: string
+}
+
+/** Who changed a console setting and when (absent: never in the console). */
+export interface SettingChange {
+  changed_at?: string
+  changed_by?: string
+}
+
+/** Settings > CAPTCHA: the Turnstile keys; the secret is never returned. */
+export interface CaptchaSettings extends SettingChange {
+  site_key: string
+  secret_set: boolean
+  source: 'none' | 'console' | 'environment'
+  locked_by_environment: boolean
+  env_var: string
+  version: number
+}
+
+/** The deployment region, set once before the first organization. */
+export interface RegionSettings extends SettingChange {
+  region: string
+  source: 'none' | 'console' | 'environment'
+  locked_by_environment: boolean
+  env_var: string
+  settable: boolean
+}
+
+/** The default storage quota of organizations (0: no quota). */
+export interface StorageQuotaSettings extends SettingChange {
+  default_mb: number
+  source: 'console' | 'environment'
+  env_var: string
+  environment_mb: number
+  max_mb: number
+  version: number
+}
+
+/** Settings > Alerts: the alert webhook; address and secret never returned. */
+export interface AlertWebhookSettings extends SettingChange {
+  enabled: boolean
+  url_set: boolean
+  url_host?: string
+  secret_set: boolean
+  version: number
+}
+
+/** Settings > AI provider: the platform AI provider; the key is never returned. */
+export interface PlatformAISettings extends SettingChange {
+  enabled: boolean
+  provider: string
+  model: string
+  key_set: boolean
+  locked_by_environment: boolean
+  providers: string[]
+  version: number
 }
