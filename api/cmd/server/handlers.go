@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 
+	queryapp "github.com/openctemio/openctem/api/internal/app/query"
+
 	"context"
 	"database/sql"
 	"errors"
@@ -106,6 +108,16 @@ func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatMod
 		return nil
 	}
 	return handler.NewThreatModelHandler(svc.ThreatModel, log)
+}
+
+// newQueryHandler wires custom queries (docs/architecture/query-language.md):
+// nil without a database.
+func newQueryHandler(db *postgres.DB, svc *Services, log *logger.Logger) *handler.QueryHandler {
+	if db == nil {
+		return nil
+	}
+	exec := postgres.NewQueryExecutor(db, postgres.InteractiveQueryTimeout)
+	return handler.NewQueryHandler(queryapp.NewService(exec, svc.DataScope, log), log)
 }
 
 // HandlerDeps contains dependencies needed to create handlers.
@@ -516,6 +528,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
+		Query:                  newQueryHandler(deps.DB, svc, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetSoftware:          handler.NewAssetSoftwareHandler(svc.VulnMatch, repos.Asset, log).SetDataScope(svc.DataScope),
@@ -936,7 +949,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Instance scan zones (RFC-100 §6.1): console routes, the trigger's
 	// zone lookup and the zone in a shared job's signed statement.
 	handlers.AdminInstanceScanZone = wireInstanceScanZones(svc, repos, deps.DB, adminConsoleSvc, log)
-	// Console > System > Shared sensors (RFC-100 §12): the fleet, queue
+	// Console > Scanning > Platform scanning (RFC-100 §12): the fleet, queue
 	// aggregates, job metadata, the audited job view and remote actions.
 	handlers.AdminSharedFleet = handler.NewAdminSharedFleetHandler(sensor.NewSharedFleetService(
 		postgres.NewSharedFleetRepository(deps.DB), repos.CommandLog, repos.AdminAuditLog, log), log)

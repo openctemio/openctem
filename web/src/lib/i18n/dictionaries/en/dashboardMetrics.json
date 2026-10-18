@@ -25,5 +25,10 @@
   "dashboardMetrics.executive.sla": "Open within SLA",
   "dashboardMetrics.executive.mttrCritical": "Time to fix · critical (median)",
   "dashboardMetrics.executive.mttrHigh": "Time to fix · high (median)",
-  "dashboardMetrics.executive.mttrSub": "mean {mean} · p90 {p90} · {n} fixed"
+  "dashboardMetrics.executive.mttrSub": "mean {mean} · p90 {p90} · {n} fixed",
+  "dashboardMetrics.hero.activeExposure": "Active exposure",
+  "dashboardMetrics.hero.exploitableNow": "exploitable now",
+  "dashboardMetrics.hero.risk": "Risk",
+  "dashboardMetrics.hero.kevChains": "KEV chains",
+  "dashboardMetrics.coverage.validation": "Validation"
 }

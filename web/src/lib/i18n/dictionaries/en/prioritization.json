@@ -13,5 +13,6 @@
   "prioritization.exposureChains.rankedHint": "Each chain is the shortest path. Click a node to open its findings.",
   "prioritization.exposureChains.emptyTitle": "No exposure chains",
   "prioritization.exposureChains.emptyDescription": "No internet-facing entry point reaches an asset with KEV or critical findings.",
-  "prioritization.dryRun.previewNote": "A preview only. Saving the rule reclassifies the matching findings."
+  "prioritization.dryRun.previewNote": "A preview only. Saving the rule reclassifies the matching findings.",
+  "prioritization.attackPaths.crownOnPath": "Crown jewels on an attack path"
 }

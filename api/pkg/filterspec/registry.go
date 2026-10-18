@@ -409,6 +409,28 @@ func opFitsType(op Op, f *Field) error {
 	return nil
 }
 
+// Extend returns a new registry with r's settings and fields plus extra
+// ones; an extra field named like an existing one replaces it. Aliases are
+// not carried over: they are the flat params of one list endpoint. The
+// custom query language (pkg/querylang) extends the list registries with
+// its curated relation fields this way, without changing the list
+// endpoints' contracts.
+func (r *Registry) Extend(extra ...Field) (*Registry, error) {
+	cfg := Registry{Name: r.Name, TenantSQL: r.TenantSQL, ScopeAssetSQL: r.ScopeAssetSQL, Unscoped: r.Unscoped,
+		IDSQL: r.IDSQL, MemberVisibility: r.MemberVisibility, DefaultSort: r.DefaultSort, Search: r.Search}
+	replaced := make(map[string]bool, len(extra))
+	for _, f := range extra {
+		replaced[f.Name] = true
+	}
+	fields := make([]Field, 0, len(r.order)+len(extra))
+	for _, n := range r.order {
+		if !replaced[n] {
+			fields = append(fields, *r.fields[n])
+		}
+	}
+	return NewRegistry(cfg, append(fields, extra...)...)
+}
+
 // Rebase returns a copy of the registry whose SQL qualifies columns with
 // alias instead of table ("findings." becomes "f."), for queries that read
 // the same table under an alias. Only whole-word qualifiers are replaced.

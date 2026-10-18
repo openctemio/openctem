@@ -84,6 +84,7 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 | `lifecycle_schemes` | its finding lifecycle schemes that are not archived |
 | `storage_mb` | MiB of uploaded files (evidence, attachments) the organization holds; without it the platform's default storage quota applies (Console > Settings > Limits, else `STORAGE_TENANT_QUOTA_MB`; 0 means no quota) |
 | `orgs_per_user` | organizations one person owns, checked when they create one themselves; an instance setting (self-service defaults), never per organization |
+| `dashboard_refresh_floor_minutes` | a **floor**, not a cap: the shortest refresh cadence, in minutes, the organization's dashboards may use ([dashboards](dashboards.md)); nothing is counted against it; without it the installation's base floor of 5 minutes applies. A schedule shorter than the floor is refused when it is saved |
 
 `-1` means unlimited, the default of every key.
 
@@ -117,7 +118,7 @@ never hand out unlimited organizations by accident, so while sign-up is
 
 - the API refuses to start, and the console refuses to switch sign-up to
   self-service (409), unless starting limits are configured;
-- configured means one of: a saved console setting (System > Limits, even an
+- configured means one of: a saved console setting (Settings > Limits, even an
   empty one), `SELF_SERVICE_START_LIMITS` (a JSON object of limits, or
   `unlimited` for an explicit choice of none), or the internal entitlements
   API of a hosted service (its control plane sets them);

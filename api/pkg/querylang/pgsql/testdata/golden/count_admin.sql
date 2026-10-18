@@ -1,0 +1,6 @@
+-- findings
+Count of findings
+
+SELECT count(*) AS c0 FROM findings WHERE findings.tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM assets ph WHERE ph.id = findings.asset_id AND ph.tenant_id = $3 AND ph.program_only AND EXISTS (SELECT 1 FROM asset_program_links pl JOIN bounty_programs pp ON pp.tenant_id = pl.tenant_id AND pp.id = pl.program_id WHERE pl.tenant_id = ph.tenant_id AND pl.asset_id = ph.id AND pp.visibility = 'private') AND NOT EXISTS (SELECT 1 FROM asset_program_links pl JOIN bounty_programs pp ON pp.tenant_id = pl.tenant_id AND pp.id = pl.program_id WHERE pl.tenant_id = ph.tenant_id AND pl.asset_id = ph.id AND NOT (pp.visibility = 'private' AND NOT EXISTS ( SELECT 1 FROM groups pg JOIN group_members pgm ON pgm.group_id = pg.id WHERE pg.tenant_id = pp.tenant_id AND pg.id = pp.group_id AND pg.is_active AND pgm.user_id = $2)))) AND ((findings.status <> ALL($4::text[])) AND (findings.branch_only = $5::boolean) AND (NOT COALESCE((findings.asset_id IN (SELECT a.id FROM assets a WHERE a.tenant_id = $1 AND a.program_only)), FALSE)))
+
+args: [11111111-1111-1111-1111-111111111111 22222222-2222-2222-2222-222222222222 11111111-1111-1111-1111-111111111111 {"draft","in_review"} false]

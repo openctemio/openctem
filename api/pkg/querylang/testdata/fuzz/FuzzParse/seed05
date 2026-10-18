@@ -1,0 +1,2 @@
+go test fuzz v1
+string("findings where not (a = 1 or b != \"x\") and c between 1 and 2 and d is not empty")
