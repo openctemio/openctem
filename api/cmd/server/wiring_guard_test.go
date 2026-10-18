@@ -300,6 +300,7 @@ var optionalServiceSetters = map[string]string{
 	"VEX.SetClock":                    "test seam: replaces the clock; production uses time.Now",
 	"WebEvidence.SetClock":            "test seam: replaces the clock; production uses time.Now",
 	"OrgDeletion.SetClock":            "test seam: replaces the clock; production uses time.Now",
+	"SignupEvents.SetClock":           "test seam: replaces the clock; production uses time.Now",
 
 	// Business operations named Set*, not collaborator seams.
 	"ProgramFeedSettings.SetLocalBundle": "business operation (the admin console switch of the local program bundle), not a collaborator seam",

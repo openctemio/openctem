@@ -331,6 +331,18 @@ groups:
           description: Possible password guessing or credential stuffing.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#loginfailurespike
 
+      # The API raised a sign-up burst alert: many accounts, organizations
+      # or access requests from one network (/24, /48) or one email domain
+      # within the console's window. The prefix or domain is in the console
+      # admin audit log (platform.signup_burst), never in the alert.
+      - alert: SignupBurst
+        expr: sum by (dimension, kind) (increase(openctem_signup_burst_alerts_total[15m])) > 0
+        labels: {severity: warning, component: api, category: security}
+        annotations:
+          summary: 'Sign-up burst: {{ $labels.kind }} from one {{ $labels.dimension }}'
+          description: Many sign-ups from one network or email domain. Review Requests > Sign-ups in the platform console.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signupburst
+
       - alert: RateLimitSpike
         expr: sum(rate(http_requests_total{job="openctem-api",status="429"}[5m])) * 60 > 60
         for: 10m

@@ -41,6 +41,11 @@ import (
 //	                                            break-glass test, IdP unbind:
 //	                                            super_admin + step-up
 //	/admin/administrators     —                 super_admin + step-up (audited)
+//	/admin/approvals          super_admin       request: super_admin + step-up;
+//	                                            approve: another super_admin
+//	                                            (not break-glass) + fresh
+//	                                            step-up; reject: step-up;
+//	                                            cancel: requester (critical audit)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         sync: ops_admin+ (audited);
@@ -65,6 +70,12 @@ import (
 //	/admin/settings/signup    any admin         super_admin + step-up + fresh code
 //	                                            in the body (critical audit,
 //	                                            admins emailed)
+//	/admin/signup-events      any admin         — (sign-up feed: email domain and
+//	                                            network prefix only)
+//	/admin/settings/signup-alerts
+//	                          any admin         read; update: super_admin + step-up
+//	                                            + fresh code in the body + reason
+//	                                            (critical audit, admins emailed)
 //	/admin/settings/legal     any admin         super_admin + step-up + fresh code
 //	                                            in the body (critical audit; read
 //	                                            publicly at GET /api/v1/legal)
@@ -333,6 +344,22 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// The sign-up feed (Console > Requests > Sign-ups) and its burst alert
+	// thresholds: any admin reads; a super admin changes the thresholds with
+	// a reason and a fresh authenticator code (critical audit, admins
+	// emailed). The feed holds email domains and network prefixes only.
+	if h.AdminSignupEvents != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/signup-events", func(r Router) {
+			r.GET("/", h.AdminSignupEvents.List)
+			r.GET("/daily", h.AdminSignupEvents.Daily)
+		}, adminMiddlewares...)
+		router.Group("/api/v1/admin/settings/signup-alerts", func(r Router) {
+			r.GET("/", h.AdminSignupEvents.GetThresholds)
+			r.PUT("/", h.AdminSignupEvents.UpdateThresholds, requireSuper, stepUp("settings.signup_alerts"))
+		}, adminMiddlewares...)
+	}
+
 	// Console MFA policy ("require security keys", RFC-078): any admin reads;
 	// a super admin changes it with a step-up.
 	if h.AdminConsole != nil {
@@ -495,7 +522,14 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/version-check", func(r Router) {
 			r.GET("/", vc.Status)
 			r.POST("/import", vc.Import, requireSuper, stepUp("version_check.import"))
+			// Switching the daily check: an egress and privacy decision.
+			r.PUT("/enabled", vc.SetEnabled, requireSuper, stepUp("version_check.switch"))
 		}, adminMiddlewares...)
+	}
+
+	// Configuration overview: any admin reads where each setting comes from.
+	if h.AdminConfiguration != nil {
+		router.GET("/api/v1/admin/configuration", h.AdminConfiguration.List, adminMiddlewares...)
 	}
 
 	if h.AdminContentCatalog != nil {
@@ -545,6 +579,20 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminConsole.GetPlatformIdP)
 			r.PUT("/", h.AdminConsole.PutPlatformIdP, stepUp("platform_idp.update"))
 			r.DELETE("/", h.AdminConsole.DeletePlatformIdP, stepUp("platform_idp.delete"))
+		}, superAdminOnly...)
+	}
+
+	// Security > Approvals (four-eyes): a super admin asks with a reason and
+	// a step-up; another super admin approves with a fresh step-up (never
+	// their own request, never a break-glass account) or rejects; the
+	// requester may cancel. The service writes the critical audit rows.
+	if h.AdminApproval != nil {
+		router.Group("/api/v1/admin/approvals", func(r Router) {
+			r.GET("/", h.AdminApproval.List)
+			r.POST("/", h.AdminApproval.Create, stepUp("approval.request"))
+			r.POST("/{id}/approve", h.AdminApproval.Approve, freshStepUp("approval.approve"))
+			r.POST("/{id}/reject", h.AdminApproval.Reject, stepUp("approval.reject"))
+			r.POST("/{id}/cancel", h.AdminApproval.Cancel)
 		}, superAdminOnly...)
 	}
 

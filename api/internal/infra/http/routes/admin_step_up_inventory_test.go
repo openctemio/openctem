@@ -69,6 +69,10 @@ var adminWriteInventory = map[string]struct {
 
 	// Identity and privilege of administrators.
 	"POST /api/v1/admin/administrators/":                         {stepUpRoute, "creates an administrator"},
+	"POST /api/v1/admin/approvals/":                              {stepUpRoute, "asks another super admin to approve a protected action"},
+	"POST /api/v1/admin/approvals/{id}/approve":                  {stepUpRoute, "approves another super admin's protected action (fresh step-up)"},
+	"POST /api/v1/admin/approvals/{id}/reject":                   {stepUpRoute, "refuses another super admin's request"},
+	"POST /api/v1/admin/approvals/{id}/cancel":                   {routine, "withdraws the caller's own request; only lowers privilege, critical audit"},
 	"PATCH /api/v1/admin/users/{id}":                             {stepUpRoute, "changes an administrator's role or state"},
 	"DELETE /api/v1/admin/users/{id}":                            {stepUpRoute, "deletes an administrator"},
 	"POST /api/v1/admin/users/{id}/reset-credentials":            {stepUpRoute, "resets an administrator's sign-in"},
@@ -125,10 +129,12 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/shared-sensors/jobs/{job_id}/view":          {routine, "reads a job's targets and logs; changes nothing; reason required, ops_admin+, rate-limited, audited high before data is returned"},
 	"PUT /api/v1/admin/settings/shared-sensor-internal-zones/":      {stepUpRoute, "whether shared sensors may scan internal zones"},
 	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":             {stepUpRoute, "shared sensor anomaly alert thresholds"},
+	"PUT /api/v1/admin/settings/signup-alerts/":                     {stepUpRoute, "sign-up burst alert thresholds"},
 	"PUT /api/v1/admin/settings/shared-sensors/egress":              {stepUpRoute, "egress addresses every organization is told to allowlist"},
 	"PUT /api/v1/admin/program-feed/local-bundle":                   {stepUpRoute, "program feed source"},
 	"POST /api/v1/admin/shared-sensors/enrollment-tokens":           {stepUpRoute, "shared sensor enrollment token"},
 	"POST /api/v1/admin/version-check/import":                       {stepUpRoute, "release feed trust: what the console says about releases"},
+	"PUT /api/v1/admin/version-check/enabled":                       {stepUpRoute, "egress and privacy: the daily outbound check"},
 	"POST /api/v1/admin/content-packs/":                             {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/import":                       {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/{id}/revoke":                  {stepUpRoute, "platform content pack"},
@@ -235,6 +241,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		{"POST", "/api/v1/admin/auth/webauthn/credentials/options", "webauthn.register"},
 		{"POST", "/api/v1/admin/auth/recovery-codes", "recovery_codes.generate"},
 		{"PUT", "/api/v1/admin/settings/console-mfa/", "settings.console_mfa"},
+		{"POST", "/api/v1/admin/approvals/" + shared.NewID().String() + "/approve", "approval.approve"},
 		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/users", "organization.owner_create"},
 		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/purge", "organization.purge"},
 	} {
@@ -302,6 +309,7 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 			"{id}", shared.NewID().String(), "{tenantId}", shared.NewID().String(),
 			"{user_id}", shared.NewID().String(), "{console_session_id}", shared.NewID().String(),
 			"{announcement_id}", shared.NewID().String(), "{module_id}", "pentest",
+			"{id}", shared.NewID().String(),
 			"{key}", "seats", "{channel}", "stable", "{source}", "epss",
 			"{namespace}", "acme", "{name}", "words", "{version}", "1.0.0",
 		).Replace(path)

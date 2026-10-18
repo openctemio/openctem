@@ -28,10 +28,12 @@ import (
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
 	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
+	"github.com/openctemio/openctem/api/internal/app/configoverview"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
@@ -57,6 +59,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -205,6 +208,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			adminConsoleSvc.EnableWebAuthn(rp, repos.AdminFactor, repos.PlatformSetting)
 		}
 	}
+	// Four-eyes approvals of the console's catastrophic actions: every
+	// request and decision e-mails the administrators like a roster change.
+	adminApprovals := adminapproval.NewService(postgres.NewAdminApprovalRepository(adminDBOf(repos, deps.DB)), repos.Admin, repos.AdminAuditLog, log)
+	adminApprovals.SetNotifier(adminConsoleSvc)
+	adminApprovals.SetTenantNamer(adminapproval.TenantNamerFunc(func(ctx context.Context, id shared.ID) (string, error) {
+		o, err := repos.AdminOrg.GetOrganization(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return o.Name, nil
+	}))
 	if svc.Signup != nil {
 		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
@@ -593,6 +607,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
 		AdminVersionCheck: handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
+		AdminConfiguration: handler.NewAdminConfigurationHandler(
+			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
@@ -697,8 +713,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
-		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log),
-		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
+		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
+		AdminApproval:           handler.NewAdminApprovalHandler(adminApprovals, log),
+		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
 		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
@@ -715,7 +732,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminMappingRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.DefaultAdminMappingRateLimitConfig(), log),
 
 		// Admin Management (CRUD for admin users, audit logs, and target mappings)
-		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log).WithRosterNotifier(adminConsoleSvc),
+		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log).WithRosterNotifier(adminConsoleSvc).WithApprovals(adminApprovals),
 		AdminAudit:         handler.NewAdminAuditHandler(repos.AdminAuditLog, log),
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
@@ -879,6 +896,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.AccessRequest != nil {
 		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
 	}
+	if svc.SignupEvents != nil {
+		handlers.AdminSignupEvents = handler.NewAdminSignupEventHandler(svc.SignupEvents, adminConsoleSvc, log)
+	}
 	if svc.Entitlement != nil {
 		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
 		handlers.Limits.SetAccountPortalURL(cfg.AccountPortalURL)
@@ -909,6 +929,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.AdminSuspension = handler.NewAdminSuspensionHandler(svc.Suspension,
 		newPlatformUserService(repos, svc, cfg, deps.DB, log), log)
 	handlers.AdminSuspension.SetOrganizationDeletion(svc.OrgDeletion)
+	handlers.AdminSuspension.WithApprovals(adminApprovals)
 	// The platform policy for scan approval (RFC-073).
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
@@ -934,7 +955,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
-		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
+		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log).WithApprovals(adminApprovals)
 		if repos.PlatformSetting != nil {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}
@@ -1257,6 +1278,7 @@ func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 	return sensordom.HealthPolicy{
 		OnlineWindow:  sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
 		OfflineAfter:  offline,
+		SDKMinVersion: versions.SDKMin(),
 		SDKAdvisories: versions.SDKAdvisories(),
 	}.Normalized()
 }
@@ -1841,4 +1863,13 @@ func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, 
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}
 	return h
+}
+
+// platformSettings is the console settings store as an interface, nil when
+// it is not configured (a typed nil pointer would not compare equal to nil).
+func platformSettings(repos *Repositories) platformsetting.Repository {
+	if repos.PlatformSetting == nil {
+		return nil
+	}
+	return repos.PlatformSetting
 }

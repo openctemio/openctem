@@ -10,6 +10,8 @@ import (
 	"net"
 	"time"
 
+	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
+
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
@@ -895,6 +897,8 @@ type Services struct {
 	ScanGovernance *scangovapp.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
+	// SignupEvents is the console's sign-up feed and burst alerts.
+	SignupEvents *signupeventapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
@@ -1266,6 +1270,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 		OnFeed: learnComponentReleases,
 	}, log)
+	// System > Software updates switches the daily check without a restart;
+	// VERSION_CHECK_ENABLED=false stays a ceiling.
+	if repos.PlatformSetting != nil {
+		s.VersionCheck.SetSettings(repos.PlatformSetting)
+	}
 	// The first-party sensor and SDK releases the stored feed lists, before
 	// the first request (the controller reloads them every hour).
 	refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), 10*time.Second)
