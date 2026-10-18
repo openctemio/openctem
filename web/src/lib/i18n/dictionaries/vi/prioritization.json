@@ -13,5 +13,6 @@
   "prioritization.exposureChains.rankedHint": "Mỗi chuỗi là đường đi ngắn nhất. Bấm vào một nút để mở các phát hiện của nó.",
   "prioritization.exposureChains.emptyTitle": "Không có chuỗi phơi nhiễm",
   "prioritization.exposureChains.emptyDescription": "Không điểm vào hướng Internet nào chạm tới tài sản có phát hiện KEV hoặc nghiêm trọng.",
-  "prioritization.dryRun.previewNote": "Chỉ là xem trước. Lưu quy tắc sẽ phân loại lại các phát hiện khớp."
+  "prioritization.dryRun.previewNote": "Chỉ là xem trước. Lưu quy tắc sẽ phân loại lại các phát hiện khớp.",
+  "prioritization.attackPaths.crownOnPath": "Tài sản trọng yếu nằm trên đường tấn công"
 }
