@@ -147,7 +147,6 @@ type Handlers struct {
 	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
-	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
 	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	AdminConfiguration  *handler.AdminConfigurationHandler  // Configuration page: setting sources (RFC-022 rev. 22)
 	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)

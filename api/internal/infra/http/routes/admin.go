@@ -31,8 +31,8 @@ import (
 //	/admin/announcements      any admin         ops_admin+ + reason (audited)
 //	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
 //	                                            code (audited high)
-//	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
-//	                          audited)          audited; platform admins refused
+//	/admin/platform-users     ops_admin+ (list  ops_admin+, reason, rate-limited,
+//	                          and view audited) audited; platform admins refused
 //	/admin/users              super_admin       super_admin + step-up (audited)
 //	/admin/administrators     —                 super_admin + step-up (audited)
 //	/admin/audit-logs         any admin         —
@@ -86,8 +86,6 @@ import (
 //	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
 //	                                            code (audited with the reason)
 //	/admin/content-catalog    any admin         import, publish, revoke: super_admin +
-//	                                            reason + fresh TOTP code (audited)
-//	/admin/program-feed       any admin         local bundle switch: super_admin +
 //	                                            reason + fresh TOTP code (audited)
 //	/admin/version-check      any admin         import: super_admin + step-up
 //	                                            (audited high)
@@ -424,22 +422,6 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// Platform content packs (RFC-061): any admin reads; ingesting (upload or
-	// an upstream release by URL with a required digest), revoking and moving
-	// a channel need super_admin and are audited. A platform pack reaches the
-	// platform's sensors of every organization.
-	// Program feed sources (RFC-065 §16.6): any admin reads; switching the
-	// operator's local bundle needs super_admin, a reason and a fresh console
-	// authenticator code (checked in the handler, audited high).
-	if h.AdminProgramFeed != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
-		f := h.AdminProgramFeed
-		router.Group("/api/v1/admin/program-feed", func(r Router) {
-			r.GET("/", f.Status)
-			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper, stepUp("program_feed.local_bundle"))
-		}, adminMiddlewares...)
-	}
-
 	// Version check (RFC-105): any admin reads the status; importing the
 	// signed release feed file (air-gapped instances) needs super_admin and
 	// the step-up, audited high.
@@ -466,6 +448,8 @@ func registerAdminRoutes(
 		c := h.AdminContentCatalog
 		router.Group("/api/v1/admin/content-catalog", func(r Router) {
 			r.GET("/", c.Status)
+			r.GET("/packages", c.Packages)
+			r.GET("/packages/{package_id}/versions", c.PackageVersions)
 			r.POST("/import", c.Import, requireSuper, stepUp("content_catalog.change"))
 			r.POST("/packages", c.Publish, requireSuper, stepUp("content_catalog.change"))
 			r.POST("/packages/revoke", c.Revoke, requireSuper, stepUp("content_catalog.change"))
@@ -678,7 +662,7 @@ func registerAdminRoutes(
 		// administrator sees counts elsewhere, never accounts).
 		opsRead := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
-			r.GET("/", h.AdminPlatformUser.Search, opsRead...)
+			r.GET("/", h.AdminPlatformUser.List, opsRead...)
 			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(opsRead), audited("platform_user.view", nil)...)...)
 			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
 			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
