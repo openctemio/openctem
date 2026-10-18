@@ -195,9 +195,6 @@ func newDSHarness(t *testing.T) *dsHarness {
 
 	dashSvc := module.NewDashboardService(postgres.NewDashboardRepository(sqldb), log)
 	dashSvc.SetDataScope(enforcer)
-	dashSvc.SetAggregateCheck(func(ctx context.Context) bool {
-		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
-	})
 
 	notifSvc := integration.NewNotificationService(postgres.NewNotificationRepository(db), nil, log)
 	notifSvc.SetDataScope(enforcer)
