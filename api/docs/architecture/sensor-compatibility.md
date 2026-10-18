@@ -86,4 +86,4 @@ reads them; audited; at most 50 products). The rules:
   `api/internal/app/sensor/custom_products.go`,
   `api/internal/infra/postgres/tenant_sensor_products.go`,
   `api/internal/infra/http/handler/sensor_custom_products_handler.go`: an
-  organization's own products (migration `002908_tenant_sensor_products`)
+  organization's own products (migration `002913_tenant_sensor_products`)
