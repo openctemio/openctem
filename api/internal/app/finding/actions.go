@@ -42,14 +42,23 @@ type FindingActionsService struct {
 	dataScope       *datascope.Enforcer // optional; Layer 2 scope on by-id actions
 	db              *sql.DB
 	logger          *logger.Logger
-	lifecycles      LifecycleSchemes  // organization lifecycles (RFC-110); nil = the platform alone
-	statusEffects   StatusEffectsFunc // side effects of applied status moves; nil = proof-of-fix only
+	lifecycles      LifecycleSchemes // organization lifecycles (RFC-110); nil = the platform alone
+	statusEffects   StatusEffects    // side effects of applied status moves; nil = proof-of-fix only
 }
 
 // SetStatusEffects wires the shared side effects of a status change
 // (VulnerabilityService.AfterStatusMoves): every action that moves findings
 // runs them once per finding it moved.
-func (s *FindingActionsService) SetStatusEffects(fn StatusEffectsFunc) { s.statusEffects = fn }
+func (s *FindingActionsService) SetStatusEffects(e StatusEffects) { s.statusEffects = e }
+
+// ticketSyncCtx puts the ticket status pushes of the linked findings among
+// ids on ctx for the status write to queue with the moves.
+func (s *FindingActionsService) ticketSyncCtx(ctx context.Context, tid shared.ID, ids []shared.ID) context.Context {
+	if s.statusEffects == nil {
+		return ctx
+	}
+	return s.statusEffects.TicketSyncContext(ctx, tid, ids)
+}
 
 // afterMoves runs the side effects of the moves an action applied and returns
 // the proof-of-fix re-checks queued. Without the shared effects wired, a fix
@@ -59,7 +68,7 @@ func (s *FindingActionsService) afterMoves(ctx context.Context, tid shared.ID, a
 		return 0
 	}
 	if s.statusEffects != nil {
-		return s.statusEffects(ctx, tid, actorID, moves)
+		return s.statusEffects.AfterStatusMoves(ctx, tid, actorID, moves)
 	}
 	claims := make([]shared.ID, 0, len(moves))
 	for _, m := range moves {
@@ -489,7 +498,7 @@ func (s *FindingActionsService) BulkFixApplied(
 	// One status-guarded write (still in_progress), with the timeline entry
 	// in the same transaction. A finding that moved on since it was read is
 	// not claimed: counted as failed, so the caller can retry.
-	moved, err := moveStatusBatch(personActionCtx(ctx, "fix_applied", uid, input.Note), s.findingRepo, tid, claimIDs,
+	moved, err := moveStatusBatch(s.ticketSyncCtx(personActionCtx(ctx, "fix_applied", uid, input.Note), tid, claimIDs), s.findingRepo, tid, claimIDs,
 		[]vulnerability.FindingStatus{vulnerability.FindingStatusInProgress}, vulnerability.FindingStatusFixApplied, input.Note, &uid, vulnerability.Closure{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to mark findings fix applied: %w", err)
@@ -611,7 +620,7 @@ func (s *FindingActionsService) applyFixDecision(ctx context.Context, tid, uid s
 	if len(t.ids) == 0 {
 		return nil
 	}
-	moved, err := moveStatusBatch(personActionCtx(ctx, reason, uid, note), s.findingRepo, tid, t.ids,
+	moved, err := moveStatusBatch(s.ticketSyncCtx(personActionCtx(ctx, reason, uid, note), tid, t.ids), s.findingRepo, tid, t.ids,
 		[]vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied}, to, note, &uid, closure)
 	if err != nil {
 		return fmt.Errorf("failed to update findings: %w", err)
@@ -853,7 +862,7 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 func (s *FindingActionsService) moveFixApplied(ctx context.Context, tid shared.ID, ids []shared.ID,
 	to vulnerability.FindingStatus, resolution string, by *shared.ID, closure vulnerability.Closure,
 ) ([]shared.ID, error) {
-	return moveStatusBatch(ctx, s.findingRepo, tid, ids, []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied},
+	return moveStatusBatch(s.ticketSyncCtx(ctx, tid, ids), s.findingRepo, tid, ids, []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied},
 		to, resolution, by, closure)
 }
 

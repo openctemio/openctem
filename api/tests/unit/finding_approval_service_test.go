@@ -1522,7 +1522,7 @@ func TestFindingApprovalService_ApproveStatus_LifecycleDecidesForTheApprover(t *
 }
 
 // An approved status change runs the status change's side effects (the
-// workflow event, the ticket sync) once, like a direct status change; it
+// workflow event) once, like a direct status change; it
 // used to fire none of them.
 func TestFindingApprovalService_ApproveStatus_FiresStatusSideEffects(t *testing.T) {
 	tenantID := shared.NewID()
@@ -1535,11 +1535,10 @@ func TestFindingApprovalService_ApproveStatus_FiresStatusSideEffects(t *testing.
 	findingRepo.findings[findingID] = f
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
-	var workflow, jira []string
+	var workflow []string
 	svc.SetWorkflowStatusDispatch(func(_ context.Context, _ shared.ID, _ *vulnerability.Finding, oldStatus, newStatus string) {
 		workflow = append(workflow, oldStatus+"->"+newStatus)
 	})
-	svc.SetJiraStatusSyncHook(func(_ context.Context, _ shared.ID, id shared.ID) { jira = append(jira, id.String()) })
 
 	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "false_positive",
@@ -1553,5 +1552,4 @@ func TestFindingApprovalService_ApproveStatus_FiresStatusSideEffects(t *testing.
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{string(f.Status()) + "->false_positive"}, workflow)
-	assert.Len(t, jira, 1)
 }

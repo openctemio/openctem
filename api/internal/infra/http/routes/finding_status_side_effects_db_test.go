@@ -26,7 +26,6 @@ import (
 type effectsRecorder struct {
 	mu       sync.Mutex
 	workflow []string // finding:old->new
-	jira     []string
 }
 
 func (r *effectsRecorder) wire(vuln *finding.VulnerabilityService) {
@@ -35,17 +34,13 @@ func (r *effectsRecorder) wire(vuln *finding.VulnerabilityService) {
 		defer r.mu.Unlock()
 		r.workflow = append(r.workflow, f.ID().String()+":"+oldStatus+"->"+newStatus)
 	})
-	vuln.SetJiraStatusSyncHook(func(_ context.Context, _ shared.ID, id shared.ID) {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		r.jira = append(r.jira, id.String())
-	})
+	vuln.EnableTicketStatusSync()
 }
 
 func (r *effectsRecorder) reset() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.workflow, r.jira = nil, nil
+	r.workflow = nil
 }
 
 func newEffectsHarness(t *testing.T) (*gsHarness, *effectsRecorder) {
@@ -57,7 +52,7 @@ func newEffectsHarness(t *testing.T) (*gsHarness, *effectsRecorder) {
 	h.vuln.SetActivityService(activityapp.NewFindingActivityService(postgres.NewFindingActivityRepository(db), findingRepo, log))
 	h.vuln.SetUserNotificationService(integration.NewNotificationService(postgres.NewNotificationRepository(db), nil, log))
 	h.vuln.SetAssigneeChecker(postgres.NewAccessControlRepository(db))
-	h.actions.SetStatusEffects(h.vuln.AfterStatusMoves)
+	h.actions.SetStatusEffects(h.vuln)
 	rec := &effectsRecorder{}
 	rec.wire(h.vuln)
 	return h, rec
@@ -70,6 +65,17 @@ func (h *gsHarness) count(q string, args ...any) int {
 		h.t.Fatalf("%s: %v", q, err)
 	}
 	return n
+}
+
+// ticketPushes counts the queued outbound ticket status pushes of a finding
+// (one per provider kind; a pending push coalesces).
+func (h *gsHarness) ticketPushes(id shared.ID) int {
+	return h.count(`SELECT COUNT(*) FROM durable_jobs WHERE tenant_id = $1 AND subject_id = $2 AND kind = 'jira_status_sync'`,
+		h.tenant.String(), id.String())
+}
+
+func (h *gsHarness) clearTicketPushes() {
+	h.exec(`DELETE FROM durable_jobs WHERE tenant_id = $1`, h.tenant.String())
 }
 
 func (h *gsHarness) statusActivities(id, actor shared.ID) int {
@@ -93,12 +99,13 @@ func TestFindingActions_StatusSideEffects_DB(t *testing.T) {
 
 	t.Run("fix applied", func(t *testing.T) {
 		rec.reset()
+		h.clearTicketPushes()
 		// The fix claim reads the claimer's groups: an actions service with
 		// the group store, as wired in production.
 		db := &postgres.DB{DB: h.db}
 		actions := finding.NewFindingActionsService(postgres.NewFindingRepository(db), postgres.NewAccessControlRepository(db),
 			postgres.NewGroupRepository(db), postgres.NewAssetRepository(db), nil, h.db, logger.NewNop())
-		actions.SetStatusEffects(h.vuln.AfterStatusMoves)
+		actions.SetStatusEffects(h.vuln)
 		res, err := actions.BulkFixApplied(context.Background(), h.tenant.String(), h.memberA.String(), finding.BulkFixAppliedInput{
 			Filter: vulnerability.NewFindingFilter().WithTenantID(h.tenant).WithAssetID(h.assetA), Note: "patched",
 		})
@@ -108,8 +115,8 @@ func TestFindingActions_StatusSideEffects_DB(t *testing.T) {
 		if n := h.statusActivities(fa, h.memberA); n != 1 {
 			t.Fatalf("fix claim activities = %d, want 1", n)
 		}
-		if len(rec.workflow) != 1 || rec.workflow[0] != fa.String()+":in_progress->fix_applied" || len(rec.jira) != 1 {
-			t.Fatalf("fix claim side effects: workflow %v jira %v", rec.workflow, rec.jira)
+		if len(rec.workflow) != 1 || rec.workflow[0] != fa.String()+":in_progress->fix_applied" || h.ticketPushes(fa) != 1 {
+			t.Fatalf("fix claim side effects: workflow %v ticket pushes %d", rec.workflow, h.ticketPushes(fa))
 		}
 	})
 
@@ -118,6 +125,7 @@ func TestFindingActions_StatusSideEffects_DB(t *testing.T) {
 
 	t.Run("reject fix", func(t *testing.T) {
 		rec.reset()
+		h.clearTicketPushes()
 		code, body := h.doPerms(h.memberA, rgVerifierPerms(), http.MethodPost, "/api/v1/findings/actions/reject-fix",
 			map[string]any{"finding_ids": []string{fa.String()}, "reason": "still reachable"})
 		if code != http.StatusOK || h.statusOf(fa) != "in_progress" {
@@ -126,8 +134,8 @@ func TestFindingActions_StatusSideEffects_DB(t *testing.T) {
 		if n := h.statusActivities(fa, h.memberA); n != 2 {
 			t.Fatalf("activities after reject = %d, want 2", n)
 		}
-		if len(rec.workflow) != 1 || rec.workflow[0] != fa.String()+":fix_applied->in_progress" || len(rec.jira) != 1 {
-			t.Fatalf("reject side effects: workflow %v jira %v", rec.workflow, rec.jira)
+		if len(rec.workflow) != 1 || rec.workflow[0] != fa.String()+":fix_applied->in_progress" || h.ticketPushes(fa) != 1 {
+			t.Fatalf("reject side effects: workflow %v ticket pushes %d", rec.workflow, h.ticketPushes(fa))
 		}
 		if n := h.statusNotices(fa, h.owner); n != 1 {
 			t.Fatalf("assignee notices after reject = %d, want 1", n)
@@ -141,6 +149,7 @@ func TestFindingActions_StatusSideEffects_DB(t *testing.T) {
 			VALUES (gen_random_uuid(), $1, $2, true, true, true, true, true, $3, NOW())`, h.tenant.String(), fa.String(), h.memberA.String())
 		before := h.statusActivities(fa, h.memberA)
 		rec.reset()
+		h.clearTicketPushes()
 		code, body := h.doPerms(h.memberA, rgVerifierPerms(), http.MethodPost, "/api/v1/findings/actions/verify",
 			map[string]any{"finding_ids": []string{fa.String()}, "note": "verified"})
 		if code != http.StatusOK || h.statusOf(fa) != "resolved" {
@@ -149,18 +158,19 @@ func TestFindingActions_StatusSideEffects_DB(t *testing.T) {
 		if n := h.statusActivities(fa, h.memberA); n != before+1 {
 			t.Fatalf("verify activities = %d, want %d", n, before+1)
 		}
-		if len(rec.workflow) != 1 || rec.workflow[0] != fa.String()+":fix_applied->resolved" || len(rec.jira) != 1 {
-			t.Fatalf("verify side effects: workflow %v jira %v", rec.workflow, rec.jira)
+		if len(rec.workflow) != 1 || rec.workflow[0] != fa.String()+":fix_applied->resolved" || h.ticketPushes(fa) != 1 {
+			t.Fatalf("verify side effects: workflow %v ticket pushes %d", rec.workflow, h.ticketPushes(fa))
 		}
 		if n := h.statusNotices(fa, h.owner); n != 2 {
 			t.Fatalf("assignee notices after verify = %d, want 2", n)
 		}
 		// A second verify finds nothing to move and fires nothing.
 		rec.reset()
+		h.clearTicketPushes()
 		_, _ = h.doPerms(h.memberA, rgVerifierPerms(), http.MethodPost, "/api/v1/findings/actions/verify",
 			map[string]any{"finding_ids": []string{fa.String()}, "note": "again"})
-		if len(rec.workflow) != 0 || len(rec.jira) != 0 || h.statusActivities(fa, h.memberA) != before+1 {
-			t.Fatalf("a repeated verify fired side effects: workflow %v jira %v", rec.workflow, rec.jira)
+		if len(rec.workflow) != 0 || h.ticketPushes(fa) != 0 || h.statusActivities(fa, h.memberA) != before+1 {
+			t.Fatalf("a repeated verify fired side effects: workflow %v ticket pushes %d", rec.workflow, h.ticketPushes(fa))
 		}
 	})
 }
@@ -214,8 +224,8 @@ func TestBulkStatus_SideEffectsOnlyForMovedRows_DB(t *testing.T) {
 	if n := h.statusActivities(b, h.memberA); n != 0 {
 		t.Fatalf("activities for the finding left alone = %d, want 0", n)
 	}
-	if len(rec.jira) != 1 || rec.jira[0] != a.String() || len(rec.workflow) != 1 {
-		t.Fatalf("side effects: jira %v workflow %v, want only %s", rec.jira, rec.workflow, a)
+	if h.ticketPushes(a) != 1 || h.ticketPushes(b) != 0 || len(rec.workflow) != 1 {
+		t.Fatalf("side effects: ticket pushes a=%d b=%d, workflow %v; want only %s", h.ticketPushes(a), h.ticketPushes(b), rec.workflow, a)
 	}
 }
 
