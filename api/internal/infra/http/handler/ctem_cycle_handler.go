@@ -102,7 +102,7 @@ func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 			apierror.InternalServerError("internal error").WriteJSON(w)
 			return
 		}
-		items = append(items, c)
+		items = append(items, h.withVisibleEvaluation(r.Context(), tenantID, c))
 	}
 	if err := rows.Err(); err != nil {
 		h.logger.Error("ctem cycle rows", "error", err)
@@ -149,7 +149,7 @@ func (h *CTEMCycleHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, c)
+	writeJSON(w, http.StatusOK, h.withVisibleEvaluation(r.Context(), tenantID, c))
 }
 
 // Create creates a new CTEM cycle.
@@ -505,7 +505,7 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 		c.CharterEvaluation = ev
 	}
 
-	writeJSON(w, http.StatusOK, c)
+	writeJSON(w, http.StatusOK, h.withVisibleEvaluation(r.Context(), tenantID, c))
 }
 
 // UpdateScopeRefinement records the feedback-to-scope notes for a cycle — the
@@ -547,7 +547,7 @@ func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.
 		return
 	}
 
-	writeJSON(w, http.StatusOK, c)
+	writeJSON(w, http.StatusOK, h.withVisibleEvaluation(r.Context(), tenantID, c))
 }
 
 // computeValidationCoverage is the cycle window's validation coverage: the
