@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -487,6 +488,19 @@ func TestDashboardFactsMaintainerMigration_DB(t *testing.T) {
 	}
 	if n := funcs(); n != 4 {
 		t.Fatalf("after up: %d functions", n)
+	}
+	// The owner-rights partition upkeep: SECURITY DEFINER with a search_path
+	// no other role can plant objects in, and not executable by PUBLIC.
+	var secdef, publicExec bool
+	var cfg string
+	if err := db.QueryRow(`SELECT p.prosecdef, array_to_string(p.proconfig, ';'),
+		EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+		        WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+		FROM pg_proc p WHERE p.oid = 'public.dash_asset_day_maintain()'::regprocedure`).Scan(&secdef, &cfg, &publicExec); err != nil {
+		t.Fatal(err)
+	}
+	if !secdef || !strings.Contains(cfg, "search_path=pg_catalog, pg_temp") || publicExec {
+		t.Fatalf("dash_asset_day_maintain: secdef %v, config %q, PUBLIC execute %v", secdef, cfg, publicExec)
 	}
 	testdb.Migrate(t, db, dir, v, math.MaxInt32, true)
 	var cols int

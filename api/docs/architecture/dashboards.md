@@ -231,8 +231,12 @@ The same controller, once a day:
   window (retention); rows of a month that sat in the default partition are
   deleted and their assets marked, since F2 is derived and the queue writes
   them again into the new partition. The function is `SECURITY DEFINER` (the
-  API role has no DDL right), takes no input, pins its `search_path`, waits at
-  most 5 s for a lock, and is not executable by `PUBLIC`.
+  API role has no DDL right), takes no input, runs with `search_path`
+  `pg_catalog, pg_temp` and schema-qualified names, waits at most 5 s for a
+  lock, and is executable by neither `PUBLIC` nor the console role (see
+  [database roles](../deployment/database-roles.md)). It stays in the
+  controller rather than in migrations so installations that upgrade rarely
+  keep their partitions and retention without a release.
 
 ### Metrics and alerts
 
