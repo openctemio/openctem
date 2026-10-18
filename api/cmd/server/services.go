@@ -1263,6 +1263,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 		OnFeed: learnComponentReleases,
 	}, log)
+	// System > Software updates switches the daily check without a restart;
+	// VERSION_CHECK_ENABLED=false stays a ceiling.
+	if repos.PlatformSetting != nil {
+		s.VersionCheck.SetSettings(repos.PlatformSetting)
+	}
 	// The first-party sensor and SDK releases the stored feed lists, before
 	// the first request (the controller reloads them every hour).
 	refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), 10*time.Second)

@@ -14,9 +14,11 @@ vi.mock('sonner', () => ({ toast }))
 
 const state = vi.hoisted(() => ({ data: undefined as VersionCheckStatus | undefined }))
 const importReleaseFeed = vi.hoisted(() => vi.fn())
+const setVersionCheckEnabled = vi.hoisted(() => vi.fn())
 vi.mock('../api/use-version-check', () => ({
   useVersionCheck: () => ({ data: state.data }),
   importReleaseFeed,
+  setVersionCheckEnabled,
 }))
 
 const { VersionCheckBanner } = await import('../components/version-check-banner')
@@ -188,6 +190,36 @@ describe('SoftwareUpdatesPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Import' }))
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
     expect(importReleaseFeed).not.toHaveBeenCalled()
+  })
+})
+
+describe('daily online check switch', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('a super admin turns the check off without a restart', async () => {
+    setVersionCheckEnabled.mockResolvedValueOnce(status({ enabled: false }))
+    const changed = vi.fn()
+    render(<SoftwareUpdatesPanel status={status()} canImport onChanged={changed} />)
+    await userEvent.setup().click(screen.getByRole('switch', { name: 'Daily online check' }))
+    expect(setVersionCheckEnabled).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(changed).toHaveBeenCalled())
+  })
+
+  it('no switch when VERSION_CHECK_ENABLED=false locks it, and the reason is shown', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({ enabled: false, locked_by_environment: true })}
+        canImport
+        onChanged={vi.fn()}
+      />
+    )
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    expect(screen.getByText(/locked by the server configuration/)).toBeInTheDocument()
+  })
+
+  it('no switch for an administrator who cannot change it', () => {
+    render(<SoftwareUpdatesPanel status={status()} canImport={false} onChanged={vi.fn()} />)
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })
 
