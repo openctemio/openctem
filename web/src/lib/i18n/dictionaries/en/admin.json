@@ -1284,5 +1284,6 @@
   "admin.users.state.locked": "Locked",
   "admin.users.state.blocked": "Blocked",
   "admin.users.state.mfa_off": "No MFA",
-  "admin.users.state.platform_admins": "Platform admins"
+  "admin.users.state.platform_admins": "Platform admins",
+  "admin.users.badge.active": "Active"
 }
