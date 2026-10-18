@@ -237,6 +237,58 @@ func (r *AuditRepository) List(ctx context.Context, filter audit.Filter, page pa
 	return pagination.NewResult(logs, total, page), nil
 }
 
+var _ audit.ExportRepository = (*AuditRepository)(nil)
+
+// ExportBatch returns up to limit rows of the tenant's audit log, newest
+// first, after the cursor. The filter must carry a tenant: an export never
+// reads across tenants.
+func (r *AuditRepository) ExportBatch(ctx context.Context, filter audit.Filter, after *audit.ExportCursor, limit int) ([]*audit.AuditLog, error) {
+	if filter.TenantID == nil || filter.TenantID.IsZero() {
+		return nil, fmt.Errorf("%w: tenant required", shared.ErrValidation)
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+	whereClause, args := r.buildWhereClause(filter)
+	if after != nil {
+		whereClause += fmt.Sprintf(" AND (logged_at, id) < ($%d, $%d)", len(args)+1, len(args)+2)
+		args = append(args, after.LoggedAt, after.ID)
+	}
+	query := r.selectQuery() + " WHERE " + whereClause +
+		fmt.Sprintf(" ORDER BY logged_at DESC, id DESC LIMIT %d", limit)
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to export audit logs: %w", err)
+	}
+	defer rows.Close()
+	var logs []*audit.AuditLog
+	for rows.Next() {
+		l, err := r.scanAuditLogFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate audit logs: %w", err)
+	}
+	return logs, nil
+}
+
+// HasMoreThan reports whether more than n rows of the tenant match the filter.
+func (r *AuditRepository) HasMoreThan(ctx context.Context, filter audit.Filter, n int) (bool, error) {
+	if filter.TenantID == nil || filter.TenantID.IsZero() {
+		return false, fmt.Errorf("%w: tenant required", shared.ErrValidation)
+	}
+	whereClause, args := r.buildWhereClause(filter)
+	query := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM audit_logs WHERE %s OFFSET %d LIMIT 1)`, whereClause, n)
+	var more bool
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&more); err != nil {
+		return false, fmt.Errorf("failed to probe audit export size: %w", err)
+	}
+	return more, nil
+}
+
 // Count returns the count of audit logs matching the filter.
 func (r *AuditRepository) Count(ctx context.Context, filter audit.Filter) (int64, error) {
 	query := `SELECT COUNT(*) FROM audit_logs`

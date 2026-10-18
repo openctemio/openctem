@@ -3,7 +3,7 @@
  * the route guard, the i18n catalogs and the old Settings sidebar group.
  */
 import { describe, expect, it } from 'vitest'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -29,9 +29,10 @@ function findPageFile(url: string): string | null {
       return existsSync(page) ? page : null
     }
     const [head, ...tail] = rest
-    for (const entry of readdirSync(dir)) {
+    for (const dirent of readdirSync(dir, { withFileTypes: true })) {
+      const entry = dirent.name
       const full = join(dir, entry)
-      if (!statSync(full).isDirectory()) continue
+      if (!dirent.isDirectory()) continue
       if (entry.startsWith('(') && entry.endsWith(')')) {
         const hit = walk(full, rest)
         if (hit) return hit
@@ -49,9 +50,10 @@ function findPageFile(url: string): string | null {
 function staticPagesUnder(prefix: string): string[] {
   const out: string[] = []
   function walk(dir: string, segs: string[]) {
-    for (const entry of readdirSync(dir)) {
+    for (const dirent of readdirSync(dir, { withFileTypes: true })) {
+      const entry = dirent.name
       const full = join(dir, entry)
-      if (statSync(full).isDirectory()) {
+      if (dirent.isDirectory()) {
         if (entry.startsWith('[')) continue
         const grouped = entry.startsWith('(') && entry.endsWith(')')
         walk(full, grouped ? segs : [...segs, entry])
