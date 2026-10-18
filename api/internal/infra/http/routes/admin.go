@@ -118,6 +118,9 @@ import (
 //	/admin/instance-scan-zones
 //	                          any admin         super_admin + step-up + reason +
 //	                                            fresh code in the body
+//	/admin/tenants/{id}/dashboard-data
+//	                          any admin         rebuild: ops_admin+ (audited; once
+//	                                            per hour per organization)
 //	/admin/tenants/{id}/audit-chain
 //	                          any admin         rebaseline: super_admin + step-up +
 //	                                            fresh code in the body (audited,

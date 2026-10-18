@@ -377,6 +377,22 @@ log). Findings appear late meanwhile.
 Ingest jobs failed every retry; their results are not imported. The log line
 `ingest: job processing failed ... dead=true` has the error.
 
+### DashboardFactsLagging
+
+The oldest dashboard fact change mark has waited over 10 minutes: dashboards
+show older numbers. Check the API log for `controller=dashboard-facts`
+errors and `openctem_controller_reconcile_errors_total{controller="dashboard-facts"}`.
+A large import or bulk change drains by itself; a stopped controller (lease
+held by a dead replica) recovers when the lease expires.
+
+### DashboardFactsDrift
+
+A requested rebuild or the nightly reconciliation corrected dashboard facts
+that no write had marked (`dashboard facts: drift corrected` in the API log,
+with the tenant and kind). The numbers are already fixed. Drift is a bug, not
+noise: a write path that bypasses the change triggers, or a recompute error.
+Find which change preceded it and report it with the log line.
+
 ### OutboxLagging
 
 The oldest notification has waited over 15 minutes: the notification worker
