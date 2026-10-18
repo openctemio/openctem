@@ -2077,6 +2077,7 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	after := t.TypedSettings().Security
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_interactsh", before.AllowSensorInteractsh, after.AllowSensorInteractsh)
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_custom_templates", before.AllowSensorCustomTemplates, after.AllowSensorCustomTemplates)
+	s.notifySecurityLoosened(ctx, tenantID, actx, before, after)
 
 	result := t.TypedSettings()
 	return &result, nil

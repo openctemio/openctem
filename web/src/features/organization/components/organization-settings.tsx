@@ -44,7 +44,6 @@ import { InvitationPolicyCard } from './invitation-policy-card'
 import { PersonalAccountsCard } from './personal-accounts-card'
 import type { InviteesPolicy, PersonalAccountsPolicy, SSOException } from '../types/settings.types'
 import { DeleteOrganization } from './delete-organization'
-import { LeaveOrganization } from './leave-organization'
 import { OrganizationRegion } from '@/features/tenant/components/region-note'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
 import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
@@ -233,11 +232,11 @@ export type OrganizationSettingsView = 'general' | 'authentication'
 const VIEW_HEADER: Record<OrganizationSettingsView, { title: string; description: string }> = {
   general: {
     title: 'General',
-    description: "Your organization's name, branding, localization and file storage.",
+    description: "Your organization's name, branding and file storage.",
   },
   authentication: {
     title: 'Authentication',
-    description: 'How members sign in: two-factor, session length and sign-in restrictions.',
+    description: 'How members sign in: two-factor and sign-in restrictions.',
   },
 }
 const GENERAL_TABS = ['general', 'storage'] as const
@@ -297,9 +296,9 @@ function HeaderSaveButton({
 
 /**
  * Organization settings, two pages over one settings load:
- * - /settings/general: organization info, branding, localization and file
+ * - /settings/general: organization info, branding and file
  *   storage (tabs), and the owner-only danger zone;
- * - /settings/authentication: two-factor, session, e-mail verification,
+ * - /settings/authentication: two-factor, e-mail verification,
  *   access restrictions, plus where SSO is configured.
  * Was /settings/tenant with four tabs; its API & Webhooks tab is gone: those
  * fields were stored and read back but nothing in the API acted on them.
@@ -655,9 +654,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
             <Card>
               <CardHeader>
                 <CardTitle>Sign-in</CardTitle>
-                <CardDescription>
-                  Two-factor, session length and e-mail verification
-                </CardDescription>
+                <CardDescription>Two-factor and e-mail verification</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -1086,8 +1083,6 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                 </CardContent>
               </Card>
 
-              {/* Owner only; renders nothing for anyone else. */}
-              <LeaveOrganization />
               <DeleteOrganization />
             </TabsContent>
 
