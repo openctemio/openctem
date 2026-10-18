@@ -275,6 +275,8 @@
   "org.leave.confirmDesc": "Quyền truy cập của bạn kết thúc ngay và các khóa API của bạn cho tổ chức này bị thu hồi. Quản trị viên có thể mời lại bạn sau.",
   "org.leave.done": "Bạn đã rời {name}",
   "org.leave.failed": "Không rời được tổ chức",
+  "org.leave.section": "Tư cách thành viên tổ chức",
+  "org.leave.soleOwner": "Hãy chuyển quyền sở hữu cho thành viên khác trước khi rời đi.",
   "org.region.new": "Vùng dữ liệu: {region}. Vùng này cố định sau khi tổ chức được tạo.",
   "org.region.current": "Vùng dữ liệu: {region} (cố định)",
   "org.roles.teamRoleNote": "Đây là vai trò nhóm. Nó là vai trò của thành viên trong tổ chức nên được đổi ở trang Thành viên, còn quyền sở hữu chuyển bằng Chuyển quyền sở hữu.",

@@ -276,10 +276,10 @@ func registerIntegrationRoutes(
 		r.GET("/notifications", h.ListNotifications, middleware.Require(permission.IntegrationsRead))
 
 		// Create new integration
-		r.POST("/", h.Create, middleware.Require(permission.IntegrationsManage))
+		r.POST("/", h.Create, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Create notification integration
-		r.POST("/notifications", h.CreateNotification, middleware.Require(permission.IntegrationsManage))
+		r.POST("/notifications", h.CreateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Test credentials without creating (must be before /{id} routes)
 		r.POST("/test-credentials", h.TestCredentials, middleware.Require(permission.IntegrationsManage))
@@ -336,8 +336,8 @@ func registerIntegrationRoutes(
 
 		// Get, update, delete specific integration
 		r.GET("/{id}", h.Get, middleware.Require(permission.IntegrationsRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.IntegrationsManage))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.IntegrationsManage))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Integration actions
 		r.POST("/{id}/test", h.Test, middleware.Require(permission.IntegrationsManage))
@@ -353,7 +353,7 @@ func registerIntegrationRoutes(
 			r.POST("/{id}/scans/run", scanNow.ConnectorScanNow, mws...)
 		}
 		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage))
-		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage))
+		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Inbound Jira webhook of one integration: its URL and whether a
 		// secret is set (no secret in the response), and the secret's
@@ -365,7 +365,7 @@ func registerIntegrationRoutes(
 		r.PUT("/{id}/jira-webhook/secret", h.SetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Notification actions
-		r.PUT("/{id}/notification", h.UpdateNotification, middleware.Require(permission.IntegrationsManage))
+		r.PUT("/{id}/notification", h.UpdateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp())
 		r.POST("/{id}/test-notification", h.TestNotification, middleware.Require(permission.IntegrationsManage))
 		// NOTE: /send endpoint removed for security - notifications are triggered internally only
 		// Use BroadcastNotification from FindingService/ScanService instead
