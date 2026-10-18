@@ -751,6 +751,27 @@ func (r *KEVRepository) CountTenantOpenPastDue(ctx context.Context, tenantID sha
 	return count, nil
 }
 
+// CountTenantOpenInKEV returns the number of the tenant's OPEN findings that
+// reference a CISA-KEV CVE, past due or not: the tenant's exposure to known
+// exploited vulnerabilities, not the size of the global catalog. It follows
+// the viewer's data scope and the pentest member-visibility rule.
+func (r *KEVRepository) CountTenantOpenInKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error) {
+	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
+	query := `
+		SELECT COUNT(DISTINCT f.id)
+		FROM findings f
+		JOIN kev_catalog kc ON kc.cve_id = f.cve_id
+		WHERE f.tenant_id = $1
+			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
+			AND ` + inScope
+	var count int64
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count tenant open KEV findings: %w", err)
+	}
+	return count, nil
+}
+
 // CountRecentlyAdded returns the true number of KEV catalog entries added within
 // the last N days. Unlike GetRecentlyAdded (which is LIMIT-bounded and whose
 // len() saturates), this is a plain COUNT and reports the real figure. This is
