@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -32,6 +33,9 @@ import (
 //   - DELETE /api/v1/findings/{id}/link-ticket     — unlink a Jira ticket from a finding
 //   - POST /hooks/jira-integrations/{integration_id} — receive Jira status-change webhooks
 type JiraWebhookHandler struct {
+	// orgs refuses deliveries for a suspended organization
+	// (docs/architecture/organization-suspension.md); nil admits all.
+	orgs      tenantdom.AccessGate
 	service   *jira.SyncService
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -226,6 +230,9 @@ type WebhookDeliveryReleaser interface {
 // SetDeliveryGuard wires replay protection by delivery id and body.
 func (h *JiraWebhookHandler) SetDeliveryGuard(g WebhookDeliveryGuard) { h.deliveries = g }
 
+// SetOrganizationGate wires the organization access gate.
+func (h *JiraWebhookHandler) SetOrganizationGate(g tenantdom.AccessGate) { h.orgs = g }
+
 // IncomingJiraWebhook handles POST /hooks/jira-integrations/{integration_id}.
 // Public (no JWT): the integration id in the URL names one integration and so
 // one tenant, and the delivery must be signed with that integration's own
@@ -249,6 +256,14 @@ func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.
 		h.logger.Warn("jira webhook rejected", "integration_id", integrationID.String(), "remote_ip", middleware.ClientIPKey(r))
 		apierror.Unauthorized("invalid webhook signature").WriteJSON(w)
 		return
+	}
+	// A suspended organization takes no deliveries (checked after the
+	// signature, so only the secret holder learns the status).
+	if h.orgs != nil {
+		if gerr := h.orgs.CheckAccess(r.Context(), tenantID); gerr != nil {
+			middleware.WriteOrganizationGateError(w, gerr, h.logger)
+			return
+		}
 	}
 
 	var payload jira.WebhookPayload
