@@ -46,7 +46,7 @@ platform:
 # The scanning sensor (openctemio/sensor).
 sensor:
   product: openctemio-sensor
-  latest: v0.23.0
+  latest: v0.23.2
   min: v0.9.0
   image: ghcr.io/openctemio/sensor
   install: sensor
@@ -68,7 +68,7 @@ connector-tenable:
 # with a published security advisory, separated by spaces; a sensor built with
 # one is degraded with a warning. "" = none.
 sdk:
-  latest: v0.32.0
+  latest: v0.34.0
   advisories: ""
 
 # CI runner (openctemio/ci: the openctem-ci action, image and templates). Its
