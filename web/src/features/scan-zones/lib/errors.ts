@@ -25,7 +25,7 @@ const HINTS: Record<string, string> = {
   SENSOR_POLICY_REFUSED:
     'Every sensor that could run this scan reports a local policy that refuses it (see the layer and rule above). The network owner changes the policy on the sensor host; or pick sensors whose policy allows it.',
   SENSOR_OPT_IN_DISABLED:
-    'Your organization has turned this sensor feature off. An owner can turn it on in Settings, Authentication and security; or remove it from the scan.',
+    'Your organization has turned this sensor feature off. An owner can turn it on in Settings, Scanning, Sensor job safety; or remove it from the scan.',
 }
 
 export function scanZoneErrorCode(err: unknown): string | undefined {

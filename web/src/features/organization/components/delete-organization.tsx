@@ -27,6 +27,18 @@ import { useTranslation } from '@/context/i18n-provider'
  * or to onboarding when there is none.
  */
 export function DeleteOrganization() {
+  const { currentTenant } = useTenant()
+  const { isOwner } = usePermissions()
+  if (!currentTenant || !isOwner()) return null
+  return (
+    <DangerZone>
+      <DeleteOrganizationItem />
+    </DangerZone>
+  )
+}
+
+/** The delete row of a danger zone (owner only; nothing for anyone else). */
+export function DeleteOrganizationItem() {
   const { t } = useTranslation()
   const { currentTenant, tenants, switchTeam, loadTenants } = useTenant()
   const { isOwner } = usePermissions()
@@ -41,14 +53,16 @@ export function DeleteOrganization() {
     try {
       await del(`/api/v1/tenants/${currentTenant.slug}`)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete the organization'))
+      toast.error(
+        getErrorMessage(error, t('org.danger.deleteFailed', 'Could not delete the organization'))
+      )
       setBusy(false)
       return
     }
     // The delete succeeded. Anything that fails from here on is only the move
     // to another organization, so it must never be reported as a failed
     // delete (the organization is already gone).
-    toast.success(`Organization "${name}" deleted`)
+    toast.success(t('org.danger.deleted', 'Organization "{name}" deleted', { name: name ?? '' }))
     // A full reload (not router.push) so no cached data of the deleted
     // organization survives; replace() so Back does not return here.
     const next = tenants.find((t) => t.id !== currentTenant.id)
@@ -69,25 +83,26 @@ export function DeleteOrganization() {
 
   return (
     <>
-      <DangerZone>
-        <DangerZoneItem
-          title="Delete this organization"
-          description="Permanently deletes the organization and everything in it: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone."
-          action={
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                loadTenants()
-                setOpen(true)
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete organization
-            </Button>
-          }
-        />
-      </DangerZone>
+      <DangerZoneItem
+        title={t('org.danger.deleteTitle', 'Delete this organization')}
+        description={t(
+          'org.danger.deleteDesc',
+          'Permanently deletes the organization and everything in it: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone.'
+        )}
+        action={
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              loadTenants()
+              setOpen(true)
+            }}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+            {t('org.danger.deleteAction', 'Delete organization')}
+          </Button>
+        }
+      />
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}

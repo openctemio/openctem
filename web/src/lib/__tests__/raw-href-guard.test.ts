@@ -65,7 +65,10 @@ const REVIEWED = new Set([
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
   'features/remediation-hub/components/fix-plan.tsx|Link|href={r.href}',
   // Navigation config (src/config/*) and settings/category tables in code.
-  'app/(dashboard)/settings/page.tsx|LinkCard|href={item.url}',
+  // /settings lists the settings nav items and search results built from them
+  // (src/config/settings-nav.ts urls, plus '#<anchor id>' from the same file).
+  'app/(dashboard)/settings/page.tsx|Link|href={item.url}',
+  'app/(dashboard)/settings/page.tsx|Link|href={r.href}',
   // integrationManageHref returns one of the constant settings paths only.
   'app/(dashboard)/settings/integrations/page.tsx|Link|href={integrationManageHref(row.original)}',
   'app/(dashboard)/settings/integrations/page.tsx|LinkCard|href={category.href}',
