@@ -693,7 +693,7 @@ func registerAdminRoutes(
 			// shared with the organization's own request; audited, no step-up:
 			// no identity, privilege or trust changes).
 			if h.DashboardFacts != nil {
-				r.GET("/{tenantId}/dashboard-data", h.DashboardFacts.Status, read...)
+				r.GET("/{tenantId}/dashboard-data", h.DashboardFacts.ConsoleStatus, read...)
 				r.POST("/{tenantId}/dashboard-data/rebuild", h.DashboardFacts.ConsoleRequestRebuild,
 					with([]Middleware{opsWrite, scope}, audit("organization.dashboard_data_rebuild"))...)
 			}

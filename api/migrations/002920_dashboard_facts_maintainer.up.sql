@@ -274,6 +274,7 @@ BEGIN
           AND c.relname ~ '^dash_asset_day_[0-9]{4}_[0-9]{2}$'
           AND (to_date(substring(c.relname from '[0-9]{4}_[0-9]{2}$'), 'YYYY_MM') + interval '1 month')::date <= v_start
     LOOP
+        -- expand-contract-ok: retention drop of dash_asset_day month partitions (table first created by 002916, in no release tag; nothing shipped reads it); partitions are dropped by the maintainer function at runtime, not by this migration
         EXECUTE format('DROP TABLE public.%I', r.relname);
         dropped := dropped + 1;
     END LOOP;

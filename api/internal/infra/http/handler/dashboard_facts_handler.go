@@ -44,6 +44,17 @@ func (h *DashboardFactsHandler) tenant(w http.ResponseWriter, r *http.Request) (
 }
 
 // Status returns the fact status of the caller's organization.
+// @Summary     Dashboard data status
+// @Description Freshness and queue state of the organization's pre-computed dashboard data (owner or administrator).
+// @Tags        Dashboards
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} dashboardfact.Status
+// @Failure     400 {object} map[string]string
+// @Failure     401 {object} map[string]string
+// @Failure     403 {object} map[string]string
+// @Failure     500 {object} map[string]string
+// @Router      /dashboard-data [get]
 func (h *DashboardFactsHandler) Status(w http.ResponseWriter, r *http.Request) {
 	tid, ok := h.tenant(w, r)
 	if !ok {
@@ -60,12 +71,55 @@ func (h *DashboardFactsHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 // RequestRebuild asks for a rebuild of the caller's organization's
 // dashboard data (owner or administrator).
+// @Summary     Request a dashboard data rebuild
+// @Description Asks for a rebuild of derived dashboard data; accepted once per hour per organization.
+// @Tags        Dashboards
+// @Produce     json
+// @Security    BearerAuth
+// @Success     202 {object} dashboardfact.Status
+// @Failure     400 {object} map[string]string
+// @Failure     401 {object} map[string]string
+// @Failure     403 {object} map[string]string
+// @Failure     429 {object} map[string]string
+// @Failure     500 {object} map[string]string
+// @Router      /dashboard-data/rebuild [post]
 func (h *DashboardFactsHandler) RequestRebuild(w http.ResponseWriter, r *http.Request) {
 	h.requestRebuild(w, r, factsapp.OriginOrganization)
 }
 
+// ConsoleStatus is Status for a platform administrator, on the organization
+// named in the console path.
+// @Summary     Dashboard data status of an organization
+// @Description Platform admin console: freshness and queue state of the organization's pre-computed dashboard data.
+// @Tags        Admin Organization Dashboard Data
+// @Produce     json
+// @Param       tenantId path string true "Organization ID"
+// @Security    BearerAuth
+// @Success     200 {object} dashboardfact.Status
+// @Failure     400 {object} map[string]string
+// @Failure     401 {object} map[string]string
+// @Failure     403 {object} map[string]string
+// @Failure     500 {object} map[string]string
+// @Router      /admin/tenants/{tenantId}/dashboard-data [get]
+func (h *DashboardFactsHandler) ConsoleStatus(w http.ResponseWriter, r *http.Request) {
+	h.Status(w, r)
+}
+
 // ConsoleRequestRebuild is RequestRebuild for a platform administrator, on
 // the organization named in the console path.
+// @Summary     Request a dashboard data rebuild for an organization
+// @Description Platform admin console: asks for a rebuild of the organization's derived dashboard data; shares the once-per-hour limit with the organization's own request. Audited.
+// @Tags        Admin Organization Dashboard Data
+// @Produce     json
+// @Param       tenantId path string true "Organization ID"
+// @Security    BearerAuth
+// @Success     202 {object} dashboardfact.Status
+// @Failure     400 {object} map[string]string
+// @Failure     401 {object} map[string]string
+// @Failure     403 {object} map[string]string
+// @Failure     429 {object} map[string]string
+// @Failure     500 {object} map[string]string
+// @Router      /admin/tenants/{tenantId}/dashboard-data/rebuild [post]
 func (h *DashboardFactsHandler) ConsoleRequestRebuild(w http.ResponseWriter, r *http.Request) {
 	h.requestRebuild(w, r, factsapp.OriginConsole)
 }
