@@ -268,9 +268,7 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 	}
 
 	if data.ImageTag == "" {
-		if i := strings.LastIndex(data.Image, ":"); i > strings.LastIndex(data.Image, "/") {
-			data.ImageTag = data.Image[i+1:]
-		}
+		data.ImageTag = imageTag(data.Image)
 	}
 	set := data.Install
 	if data.Sensor.Type.IsCollector() {
@@ -379,18 +377,6 @@ func indent(n int, s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// imageTag returns the tag of an image reference ("" without one).
-func imageTag(image string) string {
-	ref := image
-	if i := strings.LastIndex(ref, "/"); i >= 0 {
-		ref = ref[i+1:]
-	}
-	if i := strings.LastIndex(ref, ":"); i >= 0 {
-		return ref[i+1:]
-	}
-	return ""
-}
-
 // templateFuncs are the functions exposed to templates.
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
@@ -425,4 +411,17 @@ func templateFuncs() template.FuncMap {
 		// to a one-shot CI run).
 		"isDaemon": func(s *sensordom.Sensor) bool { return s != nil && !s.IsOneShot() },
 	}
+}
+
+// imageTag is the tag of an image reference: "repo:tag" and
+// "repo:tag@sha256:<hex>" give "tag" (the digest's own colon is not a tag
+// separator); a reference without a tag gives "".
+func imageTag(image string) string {
+	if i := strings.Index(image, "@"); i >= 0 {
+		image = image[:i]
+	}
+	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+		return image[i+1:]
+	}
+	return ""
 }

@@ -496,6 +496,7 @@ export interface ReleaseFeedAdvisory {
 /** Error codes of the last online check or of a refused import. */
 export type VersionCheckErrorCode =
   | 'unreachable'
+  | 'not_published'
   | 'http_status'
   | 'too_large'
   | 'invalid'
@@ -505,6 +506,17 @@ export type VersionCheckErrorCode =
   | 'no_key'
 
 /** GET /admin/version-check/: what the release feed says about this instance. */
+/** The newest release of one first-party component (a sensor product, the SDK). */
+export interface ReleaseFeedComponent {
+  /** The versions.yaml section: "sensor", "connector-tenable", "sdk". */
+  component: string
+  version: string
+  published_at: string
+  notes_url?: string
+  /** Image manifest digest the install snippets pin ("sha256:..."). */
+  digest?: string
+}
+
 export interface VersionCheckStatus {
   enabled: boolean
   /** VERSION_CHECK_ENABLED=false keeps the online check off; the console cannot turn it on. */
@@ -523,6 +535,8 @@ export interface VersionCheckStatus {
   latest?: string
   update_available: boolean
   newer: ReleaseFeedRelease[]
+  /** Newest release of each first-party sensor product and the SDK, from the applied feed. */
+  components?: ReleaseFeedComponent[]
   advisories: ReleaseFeedAdvisory[]
   severity?: ReleaseFeedAdvisory['severity']
   fixed_in?: string
@@ -576,6 +590,8 @@ export interface AdminSystem {
       configured: boolean
       last_attempt_at?: string
       last_error?: string
+      /** Last time a verified release feed was applied (last success). */
+      applied_at?: string
       latest?: string
       update_available: boolean
       advisories: number
