@@ -55,7 +55,7 @@ func join(parts ...[]Permission) []Permission {
 var roleTemplates = []RoleTemplate{
 	{
 		ID:      "program-lead",
-		Version: 1,
+		Version: 2,
 		Name:    "CTEM program lead",
 		Description: "Runs the program: scopes cycles, sets priority rules and SLAs, approves risk acceptance " +
 			"and suppressions, approves scope changes and reports to leadership. Does not administer members, " +
@@ -63,7 +63,7 @@ var roleTemplates = []RoleTemplate{
 		Personas:          []string{"CISO or security leader", "CTEM program manager"},
 		HasFullDataAccess: true,
 		Permissions: join(readCore, []Permission{
-			DashboardAggregate,
+			DashboardsOrgView,
 			CTEMCyclesRead, CTEMCyclesWrite, AttackerProfilesRead, AttackerProfilesWrite,
 			BusinessServicesRead, BusinessServicesWrite, CompensatingControlsRead, CompensatingControlsWrite,
 			PriorityRulesRead, PriorityRulesWrite, VerificationChecklistsRead,

@@ -14,7 +14,7 @@ import "github.com/openctemio/openctem/api/pkg/domain/tenant"
 var RolePermissions = map[tenant.Role][]Permission{
 	tenant.RoleOwner: {
 		// Core
-		DashboardRead, DashboardAggregate,
+		DashboardRead, DashboardsOrgView, DashboardsOrgManage,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 		// Assets
@@ -95,7 +95,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 
 	tenant.RoleAdmin: {
 		// Core
-		DashboardRead, DashboardAggregate,
+		DashboardRead, DashboardsOrgView, DashboardsOrgManage,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 		// Assets

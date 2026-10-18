@@ -17,6 +17,30 @@ var privilegedPermissions = []Permission{
 	SettingsWrite,
 }
 
+// fullDataGrade are permissions treated like full data access: whoever holds
+// one sees organization-wide data outside their own scope. Organization
+// dashboards show organization-wide numbers and names, so their view
+// permission counts as full data for two-factor and for binding a role to a
+// team (docs/architecture/dashboards.md).
+var fullDataGrade = []Permission{DashboardsOrgView}
+
+// IsFullDataGrade reports whether a role with these permissions and full data
+// access flag sees organization-wide data: full data access, or a
+// permission that counts as such.
+func IsFullDataGrade(perms []string, fullData bool) bool {
+	if fullData {
+		return true
+	}
+	for _, p := range perms {
+		for _, q := range fullDataGrade {
+			if p == string(q) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // PrivilegedPermissions returns the privileged permissions (a fresh copy).
 func PrivilegedPermissions() []Permission {
 	return append([]Permission(nil), privilegedPermissions...)
@@ -25,7 +49,7 @@ func PrivilegedPermissions() []Permission {
 // IsPrivilegedRole reports whether a role with these permissions and full
 // data access flag is privileged.
 func IsPrivilegedRole(perms []string, fullData bool) bool {
-	if fullData {
+	if IsFullDataGrade(perms, fullData) {
 		return true
 	}
 	for _, p := range perms {
@@ -46,7 +70,7 @@ func IsPrivilegedRole(perms []string, fullData bool) bool {
 // an outside person invited as a member needs neither the inviter's step-up
 // nor two-factor beyond the organization's own policies.
 func IsAboveMember(perms []string, fullData bool) bool {
-	if fullData {
+	if IsFullDataGrade(perms, fullData) {
 		return true
 	}
 	member := map[Permission]bool{}

@@ -12,7 +12,7 @@ import (
 // The dashboard's threat intel, validation, scan coverage, CTEM cycle and
 // attack-path figures follow the viewer (owner decision D6) like the rest of
 // the dashboard: a restricted member counts their own scope, a viewer holding
-// dashboard:aggregate gets organization totals, an owner is unchanged, and
+// dashboards:org:view gets organization totals, an owner is unchanged, and
 // another tenant's rows are never counted.
 //
 // memberA is restricted to asset A1. The organization has two findings
@@ -50,7 +50,7 @@ func TestDashboardSummaries_FollowTheViewer_DB(t *testing.T) {
 		VALUES ($1::uuid, $2, $3, 'sast', 'ds-tool', 'other tenant', 'high', $1::text, 'confirmed', $4)`, otherFinding, other, otherAsset, cve)
 	h.exec(`INSERT INTO validation_evidence (tenant_id, finding_id, executor_kind, outcome) VALUES ($1, $2, 'manual', 'detected')`, other, otherFinding)
 
-	aggPerms := append(append([]string{}, dsMemberPerms...), permission.DashboardAggregate.String())
+	aggPerms := append(append([]string{}, dsMemberPerms...), permission.DashboardsOrgView.String())
 	get := func(who, path string) (int, string) {
 		switch who {
 		case "member":

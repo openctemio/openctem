@@ -89,6 +89,7 @@ control_tests
 credentials
 ct_monitor_state
 ctem_cycles
+dashboard_audience
 definition_identifiers
 definition_relations
 definition_taxonomy
