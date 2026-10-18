@@ -102,6 +102,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":          {stepUpRoute, "module entitlement"},
 	"POST /api/v1/admin/tenants/{tenantId}/suspend":                          {stepUpRoute, "cuts every credential of the organization; reason, critical audit"},
 	"POST /api/v1/admin/tenants/{tenantId}/unsuspend":                        {stepUpRoute, "restores every credential of the organization; reason, critical audit"},
+	"POST /api/v1/admin/tenants/{tenantId}/purge":                            {stepUpRoute, "deletes the organization now; fresh code, reason, critical audit"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":       {stepUpRoute, "module entitlement"},
 	"PUT /api/v1/admin/tenants/{tenantId}/limits/{key}":                      {stepUpRoute, "a limit of 0 freezes the organization"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}":                   {stepUpRoute, "removing a limit lifts an abuse control"},
@@ -255,6 +256,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		{"PUT", "/api/v1/admin/settings/ai/", "settings.ai"},
 		{"POST", "/api/v1/admin/approvals/" + shared.NewID().String() + "/approve", "approval.approve"},
 		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/users", "organization.owner_create"},
+		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/purge", "organization.purge"},
 	} {
 		req := httptest.NewRequest(c.method, c.path, strings.NewReader(`{}`))
 		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})

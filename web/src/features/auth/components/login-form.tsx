@@ -37,7 +37,14 @@ import { useTranslation } from '@/context/i18n-provider'
 
 // Import schema and server actions
 import { loginSchema, type LoginInput } from '../schemas/auth.schema'
-import { loginAction, type LoginResult, type MfaPurpose } from '../actions/local-auth-actions'
+import {
+  loginAction,
+  selectTenantAction,
+  type LoginResult,
+  type LoginTenant,
+  type MfaPurpose,
+} from '../actions/local-auth-actions'
+import { PendingDeletionDialog } from './pending-deletion-dialog'
 import { MfaStep } from './mfa-step'
 import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth-actions'
 
@@ -119,6 +126,12 @@ export function LoginForm({
   const [loadingSSOProvider, setLoadingSSOProvider] = useState<SSOProviderType | null>(null)
   // Set when the password was right but a second factor is needed.
   const [mfaPurpose, setMfaPurpose] = useState<MfaPurpose | null>(null)
+  // An owner of an organization scheduled for deletion is offered to cancel
+  // before the sign-in goes on.
+  const [pendingDeletion, setPendingDeletion] = useState<{
+    result: LoginResult
+    organizations: LoginTenant[]
+  } | null>(null)
   // After repeated failed sign-ins from this address the API asks for the
   // security check (CAPTCHA_REQUIRED); it is then shown and sent along.
   const [captchaRequired, setCaptchaRequired] = useState(false)
@@ -195,6 +208,10 @@ export function LoginForm({
    * Route a finished login (password only, or after the second factor).
    */
   function handleLoginResult(result: LoginResult) {
+    if (result.pendingDeletion && result.pendingDeletion.length > 0) {
+      setPendingDeletion({ result, organizations: result.pendingDeletion })
+      return
+    }
     if (result.success) {
       // Store user data in sessionStorage for sidebar display
       if (result.user) {
@@ -285,9 +302,31 @@ export function LoginForm({
 
   const isLoading = isPending || loadingProvider !== null || loadingSSOProvider !== null
 
+  const pendingDeletionDialog = pendingDeletion && (
+    <PendingDeletionDialog
+      organizations={pendingDeletion.organizations}
+      onCancelled={async (org) => {
+        // Reopened: open it now.
+        const res = await selectTenantAction(org.id)
+        if (res.success) {
+          hardNavigate(safeRedirectTo)
+          return
+        }
+        setPendingDeletion(null)
+        toast.info(t('auth.pendingDeletion.signInAgain', 'Sign in again to open it.'))
+      }}
+      onContinue={() => {
+        const { result } = pendingDeletion
+        setPendingDeletion(null)
+        handleLoginResult({ ...result, pendingDeletion: undefined })
+      }}
+    />
+  )
+
   if (mfaPurpose) {
     return (
       <div className={cn('grid gap-3', className)}>
+        {pendingDeletionDialog}
         <MfaStep
           purpose={mfaPurpose}
           onDone={handleLoginResult}
@@ -302,6 +341,7 @@ export function LoginForm({
 
   return (
     <Form {...form}>
+      {pendingDeletionDialog}
       <form
         method="post"
         onSubmit={form.handleSubmit(onSubmit)}

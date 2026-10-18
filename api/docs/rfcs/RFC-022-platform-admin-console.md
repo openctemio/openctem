@@ -1062,11 +1062,11 @@ second super admin.
 | `platform_idp.remove` | `remove`, `disable`, `require_idp_off` | the administrators' identity provider is removed, switched off, or no longer required |
 | `signup.open` | `mode=<mode>;accounts=<accounts>` | the stored sign-up policy opens wider (self-service organizations, or a wider account sign-up) |
 | `audit_chain.rebaseline` | `tenant:<id>` | an organization's audit chain is re-signed |
+| `organization.purge` | `tenant:<id>` | an organization is deleted at once, before its grace period ends |
 
 Removing a super admin is on the list although it is not in D1: without it,
 one session could demote the other super admins and then act alone. Deleting
-an organization before its grace period ends joins the list when that action
-exists in the console.
+an organization before its grace period ends is on the list too.
 
 **Flow.** The protected route answers `428 SECOND_APPROVAL_REQUIRED` with the
 action, the target and the caller's open request, if any. The requester asks
