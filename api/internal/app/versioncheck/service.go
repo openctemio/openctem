@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
@@ -107,6 +108,9 @@ type Service struct {
 	repo   Repository
 	cfg    Config
 	logger *logger.Logger
+	// settings holds the console switch (setting.go); nil: the environment
+	// alone decides.
+	settings platformsetting.Repository
 }
 
 // New creates the service.
@@ -157,7 +161,7 @@ func (s *Service) Configured() bool { return len(s.cfg.Keys) > 0 }
 // RunDue runs the online check when it is due. It never returns an upstream
 // failure: an offline or air-gapped instance only records it and backs off.
 func (s *Service) RunDue(ctx context.Context) error {
-	if !s.cfg.Enabled || !s.Configured() {
+	if !s.Configured() || !s.enabled(ctx) {
 		return nil
 	}
 	now := s.cfg.Now()
@@ -292,8 +296,12 @@ func (s *Service) Import(ctx context.Context, raw []byte) (*releasefeed.Verified
 
 // View is what the console shows.
 type View struct {
-	// Enabled: the daily online check is on.
+	// Enabled: the daily online check is on (the environment ceiling and the
+	// console switch together).
 	Enabled bool `json:"enabled"`
+	// LockedByEnvironment: VERSION_CHECK_ENABLED=false keeps it off; the
+	// console cannot turn it on.
+	LockedByEnvironment bool `json:"locked_by_environment"`
 	// Configured: this build pins a release feed root.
 	Configured bool   `json:"configured"`
 	FeedURL    string `json:"feed_url"`
@@ -317,10 +325,11 @@ func (s *Service) View(ctx context.Context) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	v := View{Enabled: s.cfg.Enabled, Configured: s.Configured(), FeedURL: s.cfg.URL, Source: st.Origin,
+	enabled := s.enabled(ctx)
+	v := View{Enabled: enabled, LockedByEnvironment: !s.cfg.Enabled, Configured: s.Configured(), FeedURL: s.cfg.URL, Source: st.Origin,
 		AppliedAt: st.AppliedAt, LastAttemptAt: st.LastAttemptAt, LastError: st.LastError,
 		Status: releasefeed.Evaluate(st.Feed, s.cfg.Running, s.cfg.Now())}
-	if s.cfg.Enabled && s.Configured() {
+	if enabled && s.Configured() {
 		v.NextCheckAt = st.NextCheckAt
 	}
 	if st.Feed != nil {

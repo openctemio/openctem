@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Cloud,
   Server,
+  SlidersHorizontal,
   UserCog,
   UserPlus,
   UserSearch,
@@ -209,6 +210,13 @@ export const adminNav: AdminNavSection[] = [
     title: 'Settings',
     i18nKey: 'admin.nav.group.settings',
     items: [
+      {
+        title: 'Configuration',
+        i18nKey: 'admin.nav.configuration',
+        url: '/system/configuration',
+        icon: SlidersHorizontal,
+        keywords: ['settings', 'environment', 'restart', 'secrets', 'source', 'env'],
+      },
       {
         title: 'Sign-up',
         i18nKey: 'admin.nav.signUp',
