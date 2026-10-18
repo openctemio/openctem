@@ -384,5 +384,7 @@
   "settings.accountDelete.soleOwner": "Bạn là chủ sở hữu duy nhất của: {orgs}. Hãy chuyển quyền sở hữu hoặc xóa tổ chức trước.",
   "settings.accountDelete.failed": "Không xóa được tài khoản",
   "settings.item.content": "Danh mục nội dung",
-  "settings.desc.content": "Quy tắc, mẫu và các gói đã ký khác: cài đặt, cập nhật và phê duyệt."
+  "settings.desc.content": "Quy tắc, mẫu và các gói đã ký khác: cài đặt, cập nhật và phê duyệt.",
+  "settings.item.security-overview": "Tổng quan bảo mật",
+  "settings.desc.security-overview": "Điểm số và danh sách việc cần xử lý trước trong tổ chức của bạn."
 }

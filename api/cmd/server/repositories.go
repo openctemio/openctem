@@ -243,8 +243,10 @@ type Repositories struct {
 	// read model a support session sees (RFC-063).
 	SupportAccess *postgres.SupportAccessRepository
 	SupportRead   *postgres.SupportReadRepository
-	AdminOrg      *postgres.AdminOrganizationRepository
-	AdminConsole  *postgres.AdminConsoleRepository
+	// SecurityOverview counts the rows behind the security overview.
+	SecurityOverview *postgres.SecurityOverviewRepository
+	AdminOrg         *postgres.AdminOrganizationRepository
+	AdminConsole     *postgres.AdminConsoleRepository
 	// AdminFactor stores console security keys and recovery codes (RFC-078).
 	AdminFactor *postgres.AdminFactorRepository
 	PlatformIdP *postgres.PlatformIdPRepository
@@ -557,6 +559,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AdminAuditLog:      postgres.NewAuditLogRepository(db),
 		SupportAccess:      postgres.NewSupportAccessRepository(db),
 		SupportRead:        postgres.NewSupportReadRepository(db),
+		SecurityOverview:   postgres.NewSecurityOverviewRepository(db),
 		AdminOrg:           postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:       postgres.NewAdminConsoleRepository(db),
 		AdminFactor:        postgres.NewAdminFactorRepository(db),
