@@ -239,3 +239,16 @@ describe('SoftwareUpdatesPanel components', () => {
     expect(screen.getByText(/the versions this release was built with apply/)).toBeInTheDocument()
   })
 })
+
+describe('SoftwareUpdatesPanel feed state', () => {
+  it('says the feed is not published (never a silent empty page)', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({ last_error: 'not_published', last_attempt_at: '2026-10-18T00:00:00Z' })}
+        canImport={false}
+        onChanged={() => {}}
+      />
+    )
+    expect(screen.getByText(/No release feed is published at this address yet/)).toBeInTheDocument()
+  })
+})

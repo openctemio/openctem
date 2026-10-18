@@ -487,6 +487,7 @@ export interface ReleaseFeedAdvisory {
 /** Error codes of the last online check or of a refused import. */
 export type VersionCheckErrorCode =
   | 'unreachable'
+  | 'not_published'
   | 'http_status'
   | 'too_large'
   | 'invalid'
@@ -578,6 +579,8 @@ export interface AdminSystem {
       configured: boolean
       last_attempt_at?: string
       last_error?: string
+      /** Last time a verified release feed was applied (last success). */
+      applied_at?: string
       latest?: string
       update_available: boolean
       advisories: number

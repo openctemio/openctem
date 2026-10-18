@@ -7,3 +7,8 @@
 - Fixed: the helm and signature-check snippets took the tag from an image reference with a digest wrongly.
 - `api/deploy/docker-compose.sensor.yml` now follows `versions.yaml` (it named v0.9.7 for the API image).
 - **Upgrade note:** nothing to do. Until a release feed key is pinned in a release, the built-in versions apply as before; an air-gapped instance imports the feed file in the console.
+
+### Changed: a missing release feed is visible
+
+- The version check logs a warning when its outcome changes (feed not published, signature invalid, unreachable, expired) and once at start-up when the build pins no feed key; a 404 is reported as `not_published`. Console > System shows the feed state and the last success time.
+- The `Release Feed` workflow fails with an error naming the one-time setup when `RELEASE_FEED_SIGNING_KEY` is missing, instead of skipping with a warning. Setup: `docs/architecture/version-check.md#setup-maintainers`.

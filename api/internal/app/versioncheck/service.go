@@ -30,12 +30,15 @@ const (
 const (
 	ErrCodeUnreachable = "unreachable"
 	ErrCodeHTTPStatus  = "http_status"
-	ErrCodeTooLarge    = "too_large"
-	ErrCodeInvalid     = "invalid"
-	ErrCodeRollback    = "rollback"
-	ErrCodeConflict    = "conflict"
-	ErrCodeExpired     = "expired"
-	ErrCodeNoKey       = "no_key"
+	// ErrCodeNotPublished: the feed URL answered 404 (the release has no
+	// feed asset: the publisher has no signing key yet, or a mirror lacks it).
+	ErrCodeNotPublished = "not_published"
+	ErrCodeTooLarge     = "too_large"
+	ErrCodeInvalid      = "invalid"
+	ErrCodeRollback     = "rollback"
+	ErrCodeConflict     = "conflict"
+	ErrCodeExpired      = "expired"
+	ErrCodeNoKey        = "no_key"
 )
 
 // Schedule.
@@ -137,7 +140,13 @@ func New(repo Repository, cfg Config, log *logger.Logger) *Service {
 			return time.Duration(n.Int64())
 		}
 	}
-	return &Service{repo: repo, cfg: cfg, logger: log.With("component", "version-check")}
+	s := &Service{repo: repo, cfg: cfg, logger: log.With("component", "version-check")}
+	if cfg.Enabled && !s.Configured() {
+		// Once per process: without a pinned key nothing is fetched, and the
+		// sensor and SDK versions stay the ones built into this release.
+		s.logger.Warn("version check: no release feed key is pinned in this build; no release information is fetched and the built-in sensor and SDK versions apply")
+	}
+	return s
 }
 
 // newClient is the SSRF-guarded client with a redirect cap; it never follows
@@ -195,8 +204,16 @@ func (s *Service) RunDue(ctx context.Context) error {
 		if rerr != nil {
 			return fmt.Errorf("version check: record failure: %w", rerr)
 		}
-		// One line per check; an air-gapped instance is not an error.
-		s.logger.Info("version check: no usable release feed", "reason", code, "failures", failures, "error", logger.SanitizeError(err))
+		// A warning when the outcome changes (never silent), then one quiet
+		// line per check: an air-gapped instance is not an error.
+		if code != st.LastError {
+			s.logger.Warn("version check: no usable release feed; the last applied release information (or the built-in versions) stays in use",
+				"reason", code, "failures", failures, "url", s.cfg.URL, "error", logger.SanitizeError(err))
+		} else {
+			s.logger.Info("version check: still no usable release feed", "reason", code, "failures", failures)
+		}
+	} else if st.LastError != "" {
+		s.logger.Info("version check: release feed applied again", "previous_reason", st.LastError)
 	}
 	return nil
 }
@@ -216,6 +233,9 @@ func (s *Service) fetch(ctx context.Context) ([]byte, string, error) {
 		return nil, ErrCodeUnreachable, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrCodeNotPublished, errors.New("status 404: no release feed is published at this address")
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, ErrCodeHTTPStatus, fmt.Errorf("status %d", resp.StatusCode)
 	}

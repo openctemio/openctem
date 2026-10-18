@@ -138,8 +138,9 @@ the run (the previous feed stays published). Its job runs only on `main` or a `v
 `release-feed` environment is restricted the same way). It uploads the file to
 the latest release, which is what the
 default URL `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
-serves. It skips with a warning while the
-`RELEASE_FEED_SIGNING_KEY` secret is missing, so a release never fails on it.
+serves. While the `RELEASE_FEED_SIGNING_KEY` secret is missing it fails with
+an error that links the setup below (it runs after the release job, so the
+release itself is complete): a missing feed must never go unnoticed.
 
 Advisories: add an entry to `.github/release-feed/advisories.json` when an
 advisory is published (with or after the fixing release, never before), then
@@ -147,15 +148,57 @@ run the workflow by hand.
 
 ### Setup (maintainers)
 
-1. Run `scripts/signing/init-keys.sh` on your own machine and follow what it
-   prints ([signing keys](signing-keys.md)).
-2. Add the printed release feed public key to `releasefeed.PinnedKeys` in a pull
-   request.
-3. Store the release feed key as the secret `RELEASE_FEED_SIGNING_KEY` of the
-   GitHub environment `release-feed`, restricted to `main` and `v*` tags (the
-   printed `gh secret set` command reads it from the file). The catalog online
-   key is a separate key with its own secret and environment.
-4. Rotation and compromise: see [signing keys](signing-keys.md).
+One time, by the owner, about 15 minutes. Until it is done the feed is not
+published: the `Release Feed` workflow fails with an error that links here,
+instances log one warning ("no release feed key is pinned in this build"),
+and Console > System shows "No release feed key in this build". Installs
+keep the sensor and SDK versions built into their release.
+
+1. **Create the keys on your own machine** (not CI, not a shared host), from a
+   checkout of this repository with Go installed:
+
+   ```bash
+   scripts/signing/init-keys.sh ~/openctem-signing-keys
+   ```
+
+   It writes `online.key` (the release feed key, secret), `online.pub` (its
+   public key, hex) and the separate content catalog keys, and prints only
+   public material plus the exact commands for the next steps. Back the
+   directory up offline; `catalog-root.key` never leaves it.
+2. **Create the GitHub environment** `release-feed` in `openctemio/openctem`
+   (Settings > Environments > New environment), with deployment branches and
+   tags limited to `main` and `v*`.
+3. **Store the secret** in that environment:
+
+   ```bash
+   gh secret set RELEASE_FEED_SIGNING_KEY --env release-feed -R openctemio/openctem \
+     < ~/openctem-signing-keys/online.key
+   ```
+4. **Pin the public key** in a pull request: add the content of
+   `online.pub` (64 hex characters) to `releasefeed.PinnedKeys` in
+   `api/pkg/releasefeed/releasefeed.go`. Instances trust the feed from the
+   first release that contains the pin.
+5. **Publish once by hand** (Actions > Release Feed > Run workflow, branch
+   `main`) and check the run summary says "ok: sequence …, N components".
+   `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
+   then answers 200.
+6. On an instance with that release: Console > System shows the version check
+   "OK" and a "Last release information" time; System > Software updates lists
+   the sensor and SDK releases.
+
+Rotation and compromise: see [signing keys](signing-keys.md). The catalog
+online key is a separate key with its own secret and environment.
+
+### What an instance shows when the feed is missing
+
+| State | Log (one warning when the state changes) | Console > System |
+|---|---|---|
+| No key pinned in the build | once at start-up | "No release feed key in this build" |
+| Feed URL answers 404 | `reason=not_published` | "Release feed not published" |
+| Signature or content refused | `reason=invalid` | "Release feed signature invalid" |
+| No network / DNS / TLS | `reason=unreachable` | "Release feed unreachable" |
+| Feed past its expiry | `reason=expired` | "Release feed expired" |
+| OK again | one info line | "OK" and the last success time |
 
 ## Key files
 
