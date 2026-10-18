@@ -6,9 +6,8 @@ import type { AdminApproval, AdminApprovalList } from '../types'
 
 /** Four-eyes approval requests and whether approvals are on (super admin). */
 export function useAdminApprovals(enabled: boolean) {
-  return useSWR<AdminApprovalList>(enabled ? '/approvals' : null, adminFetcher, {
-    refreshInterval: 30_000,
-  })
+  // Not polled: the page reloads on focus and after every decision.
+  return useSWR<AdminApprovalList>(enabled ? '/approvals' : null, adminFetcher)
 }
 
 /** Asks another super admin to approve an action on its exact target (step-up). */
