@@ -78,7 +78,7 @@ function attentionKindsOf(
         ? 'key'
         : r.code === 'version_unsupported'
           ? 'version'
-          : r.code === 'sdk_advisory'
+          : r.code === 'sdk_advisory' || r.code === 'sdk_unsupported'
             ? 'sdk'
             : r.code === 'heartbeat_late' || r.code === 'control_slow'
               ? 'heartbeat'

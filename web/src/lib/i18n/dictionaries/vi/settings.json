@@ -384,5 +384,7 @@
   "settings.accountDelete.soleOwner": "Bạn là chủ sở hữu duy nhất của: {orgs}. Hãy chuyển quyền sở hữu hoặc xóa tổ chức trước.",
   "settings.accountDelete.failed": "Không xóa được tài khoản",
   "settings.item.content": "Danh mục nội dung",
-  "settings.desc.content": "Quy tắc, mẫu và các gói đã ký khác: cài đặt, cập nhật và phê duyệt."
+  "settings.desc.content": "Quy tắc, mẫu và các gói đã ký khác: cài đặt, cập nhật và phê duyệt.",
+  "settings.item.sensor-products": "Sản phẩm sensor",
+  "settings.desc.sensor-products": "Bản mới nhất và tối thiểu của các sensor tổ chức bạn tự xây dựng."
 }
