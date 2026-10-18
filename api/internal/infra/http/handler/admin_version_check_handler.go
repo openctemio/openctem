@@ -9,6 +9,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
@@ -27,6 +29,75 @@ import (
 type VersionCheckService interface {
 	View(ctx context.Context) (versioncheck.View, error)
 	Import(ctx context.Context, raw []byte) (*releasefeed.Verified, error)
+	UpdateEnabled(ctx context.Context, enabled bool, by shared.ID) error
+}
+
+// VersionCheckSwitchRequest turns the daily online check on or off.
+type VersionCheckSwitchRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// CodeVersionCheckLockedByEnvironment: VERSION_CHECK_ENABLED=false keeps the
+// online check off; the console cannot turn it on.
+const CodeVersionCheckLockedByEnvironment apierror.Code = "VERSION_CHECK_LOCKED_BY_ENVIRONMENT"
+
+// SetEnabled handles PUT /api/v1/admin/version-check/enabled
+// @Summary      Turn the daily version check on or off
+// @Description  Switches the daily anonymous release-feed check without a restart. VERSION_CHECK_ENABLED=false is a ceiling: turning it on is then refused (409). super_admin and a step-up; audited high.
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Param        body  body  VersionCheckSwitchRequest  true  "Switch"
+// @Success      200  {object}  versioncheck.View
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     AdminAuth
+// @Router       /admin/version-check/enabled [put]
+func (h *AdminVersionCheckHandler) SetEnabled(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.GetAdminUser(r.Context())
+	if actor == nil {
+		apierror.Unauthorized("admin authentication required").WriteJSON(w)
+		return
+	}
+	var req VersionCheckSwitchRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil || req.Enabled == nil {
+		apierror.BadRequest("Send {\"enabled\": true|false}").WriteJSON(w)
+		return
+	}
+	err := h.svc.UpdateEnabled(r.Context(), *req.Enabled, actor.ID())
+	switch {
+	case errors.Is(err, versioncheck.ErrLockedByEnvironment):
+		h.auditSwitch(r, actor, *req.Enabled, http.StatusConflict, "locked by VERSION_CHECK_ENABLED")
+		apierror.New(http.StatusConflict, CodeVersionCheckLockedByEnvironment,
+			"The server configuration (VERSION_CHECK_ENABLED=false) keeps the version check off").WriteJSON(w)
+		return
+	case err != nil:
+		h.logger.Error("version check switch failed", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("The version check could not be switched").WriteJSON(w)
+		return
+	}
+	h.auditSwitch(r, actor, *req.Enabled, http.StatusOK, "")
+	h.Status(w, r)
+}
+
+func (h *AdminVersionCheckHandler) auditSwitch(r *http.Request, actor *admin.AdminUser, enabled bool, status int, failure string) {
+	if h.adminAudit == nil {
+		return
+	}
+	entry := admin.NewAuditLogBuilder(actor, "version_check.switched").
+		Resource("version_check", nil, "online_check").
+		Context(middleware.ClientIP(r), r.UserAgent()).
+		Request(r.Method, r.URL.Path, map[string]any{"enabled": enabled}).
+		Response(status).
+		High()
+	if failure != "" {
+		entry.Error(failure)
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
+	if err := h.adminAudit.Create(ctx, entry.Build()); err != nil {
+		h.logger.Error("write admin audit for the version check switch", "error", err)
+	}
 }
 
 // AdminVersionCheckHandler serves /api/v1/admin/version-check.

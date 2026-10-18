@@ -32,6 +32,7 @@ import (
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
+	"github.com/openctemio/openctem/api/internal/app/configoverview"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
@@ -57,6 +58,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -592,6 +594,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
 		AdminVersionCheck: handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
+		AdminConfiguration: handler.NewAdminConfigurationHandler(
+			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
@@ -1837,4 +1841,13 @@ func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, 
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}
 	return h
+}
+
+// platformSettings is the console settings store as an interface, nil when
+// it is not configured (a typed nil pointer would not compare equal to nil).
+func platformSettings(repos *Repositories) platformsetting.Repository {
+	if repos.PlatformSetting == nil {
+		return nil
+	}
+	return repos.PlatformSetting
 }

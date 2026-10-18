@@ -13,7 +13,8 @@ import { RelativeTime } from '@/features/shared'
 import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { importReleaseFeed } from '../api/use-version-check'
+import { importReleaseFeed, setVersionCheckEnabled } from '../api/use-version-check'
+import { Switch } from '@/components/ui/switch'
 import type { ReleaseFeedAdvisory, VersionCheckErrorCode, VersionCheckStatus } from '../types'
 
 /** The largest file the API accepts (releasefeed.MaxBundleBytes). */
@@ -111,6 +112,32 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
   const fileId = useId()
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const switchId = useId()
+
+  const toggleOnline = async (next: boolean) => {
+    setSwitching(true)
+    try {
+      await setVersionCheckEnabled(next)
+      toast.success(
+        next
+          ? t('admin.versionCheck.switch.onDone', 'The daily online check is on.')
+          : t('admin.versionCheck.switch.offDone', 'The daily online check is off.')
+      )
+      onChanged()
+    } catch (err) {
+      toast.error(
+        err instanceof AdminApiError && err.status === 409
+          ? t(
+              'admin.versionCheck.switch.locked',
+              'The server configuration (VERSION_CHECK_ENABLED=false) keeps the online check off.'
+            )
+          : t('admin.versionCheck.switch.failed', 'The online check could not be switched.')
+      )
+    } finally {
+      setSwitching(false)
+    }
+  }
 
   const errorText = (code: VersionCheckErrorCode) =>
     t(`admin.versionCheck.error.${code}`, ERROR_FALLBACK[code])
@@ -242,12 +269,33 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
               {dateOnly(status.feed_expires_at)}
             </Field>
             <Field label={t('admin.versionCheck.onlineCheck', 'Online check')}>
-              {status.enabled
-                ? t(
-                    'admin.versionCheck.online.on',
-                    'On (once a day, no data about this instance is sent)'
-                  )
-                : t('admin.versionCheck.online.off', 'Off (VERSION_CHECK_ENABLED=false)')}
+              <span className="flex flex-wrap items-center gap-3">
+                {canImport && !status.locked_by_environment && (
+                  <Switch
+                    id={switchId}
+                    checked={status.enabled}
+                    disabled={switching}
+                    onCheckedChange={(v) => void toggleOnline(v)}
+                    aria-label={t('admin.versionCheck.switch.label', 'Daily online check')}
+                  />
+                )}
+                <span>
+                  {status.enabled
+                    ? t(
+                        'admin.versionCheck.online.on',
+                        'On (once a day, no data about this instance is sent)'
+                      )
+                    : status.locked_by_environment
+                      ? t(
+                          'admin.versionCheck.online.lockedOff',
+                          'Off: locked by the server configuration (VERSION_CHECK_ENABLED=false)'
+                        )
+                      : t(
+                          'admin.versionCheck.online.consoleOff',
+                          'Off (turned off in the console)'
+                        )}
+                </span>
+              </span>
             </Field>
             {status.enabled && status.configured && (
               <>
