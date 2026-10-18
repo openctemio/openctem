@@ -121,6 +121,16 @@ export SERVER_PORT="${SERVER_PORT:-8080}"
 # APP_URL, unless set on its own.
 if [ -n "${APP_URL:-}" ]; then export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-$APP_URL}"; fi
 
+# The console's origin and allowed networks come from the gateway's variables
+# (console-plan.sh), so the API agrees with the gateway without a second copy.
+# An explicit ADMIN_PUBLIC_URL wins; the gateway's allow-list always applies.
+if [ -z "${ADMIN_PUBLIC_URL:-}" ]; then
+  url="$(console_public_url)"
+  [ -z "$url" ] || export ADMIN_PUBLIC_URL="$url"
+fi
+cidrs="$(console_allowed_cidrs)"
+[ -z "$cidrs" ] || export ADMIN_ALLOWED_CIDRS="$cidrs"
+
 declare -A PIDS=()
 start() { # start <tag> <dir> <cmd...>
   local tag="$1" dir="$2"; shift 2
