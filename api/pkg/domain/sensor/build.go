@@ -187,11 +187,18 @@ func parseBuildTime(s string, now time.Time) *time.Time {
 	return &t
 }
 
-// SDKStatus says how a sensor's SDK version compares with the SDK entries of
-// versions.yaml (sdk.latest, sdk.advisories). It is informational except for
-// an advisory: whether a sensor works with the platform is its protocol
-// version and the capabilities it advertises, not its SDK release.
+// SDKStatus says how a sensor's SDK version compares with the platform's SDK
+// policy: the platform-owned floor and advisories of versions.yaml (sdk.min,
+// sdk.advisories) and the latest SDK release (learned from the release feed).
+// "outdated" is informational; an advisory and a release below the floor
+// degrade the sensor. It applies to every sensor product, first-party or a
+// tenant's own, built with sdk-go (docs/rfcs/RFC-037 §13).
 type SDKStatus string
+
+// SDKGoName is the SDK name sdk-go reports. Only a sensor built with it (or
+// one that reports no SDK name: SDKs before names were reported) is compared
+// with sdk-go's releases.
+const SDKGoName = "openctem-sdk-go"
 
 const (
 	// SDKCurrent: at least the latest SDK (or no latest is set).
@@ -201,21 +208,38 @@ const (
 	// SDKAdvisory: a release listed in sdk.advisories (a published security
 	// advisory); the sensor is degraded with a warning.
 	SDKAdvisory SDKStatus = "advisory"
-	// SDKUnknown: the sensor reported no SDK version.
+	// SDKUnsupported: older than sdk.min, the oldest SDK the platform's
+	// protocol supports; the sensor is degraded until it is rebuilt.
+	SDKUnsupported SDKStatus = "unsupported"
+	// SDKUnknown: the sensor reported no SDK version, or was built with
+	// another SDK than sdk-go.
 	SDKUnknown SDKStatus = "unknown"
 )
 
 // AllSDKStatuses lists every SDK status (for stable breakdowns).
 func AllSDKStatuses() []SDKStatus {
-	return []SDKStatus{SDKCurrent, SDKOutdated, SDKAdvisory, SDKUnknown}
+	return []SDKStatus{SDKCurrent, SDKOutdated, SDKAdvisory, SDKUnsupported, SDKUnknown}
 }
 
-// ClassifySDK compares an SDK version with the latest SDK and the releases
-// with an advisory; latest may be empty (not configured).
-func ClassifySDK(version, latest string, advisories []string) SDKStatus {
+// SDKStatusFor classifies the sensor's SDK (BuildInfo) against the platform's
+// SDK policy; a sensor built with another SDK than sdk-go is unknown.
+func (b BuildInfo) SDKStatusFor(latest, minimum string, advisories []string) SDKStatus {
+	if b.SDKName != "" && b.SDKName != SDKGoName {
+		return SDKUnknown
+	}
+	return ClassifySDK(b.SDKVersion, latest, minimum, advisories)
+}
+
+// ClassifySDK compares an SDK version with the oldest supported SDK, the
+// releases with an advisory and the latest SDK; latest and minimum may be
+// empty (not set). Below the minimum wins over an advisory.
+func ClassifySDK(version, latest, minimum string, advisories []string) SDKStatus {
 	v := comparableVersion(version)
 	if v == "" {
 		return SDKUnknown
+	}
+	if m := comparableVersion(minimum); m != "" && semver.Compare(v, m) < 0 {
+		return SDKUnsupported
 	}
 	for _, a := range advisories {
 		// Exact release match: a git-describe build after an advised tag
