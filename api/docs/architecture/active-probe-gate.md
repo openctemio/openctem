@@ -102,7 +102,7 @@ Operator settings, never tenant settings:
   on every path (`platform_denied`).
 - **Platform sensors** (`scan/active_proof.go`): with the platform setting
   "Require a verified domain before platform sensors scan a target" on
-  (Console > System > Platform scanning, default off; RFC-054 §8.1), a job
+  (Console > Scanning > Platform scanning, default off; RFC-054 §8.1), a job
   goes to platform sensors only when every target is verified;
   an explicit platform preference with an unproven target is refused
   (`PROOF_REQUIRED`).
