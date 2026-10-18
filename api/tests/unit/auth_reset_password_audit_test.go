@@ -7,6 +7,7 @@ import (
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -95,5 +96,22 @@ func TestAuthService_ResetPassword_FirstPasswordNoNotice(t *testing.T) {
 	}
 	if n.passwordChanged != 0 {
 		t.Fatalf("no change notice for a first password, got %d", n.passwordChanged)
+	}
+}
+
+// A password reset revokes the account's sessions and then runs the
+// sessions-revoked hook, which the platform admin console uses to end the
+// console sessions of the administrator linked to the account.
+func TestAuthService_ResetPassword_RunsSessionsRevokedHook(t *testing.T) {
+	svc, deps, _, _ := newResetAuditHarness()
+	u := seedAuthUserWithResetToken(deps.userRepo, "admin@example.com", "$2a$04$dummy", "tok-3")
+	var got []string
+	svc.SetSessionsRevokedHook(func(_ context.Context, userID shared.ID) { got = append(got, userID.String()) })
+
+	if err := svc.ResetPassword(context.Background(), auth.ResetPasswordInput{Token: "tok-3", NewPassword: "NewStrongPassword123!"}); err != nil {
+		t.Fatalf("ResetPassword: %v", err)
+	}
+	if len(got) != 1 || got[0] != u.ID().String() {
+		t.Fatalf("hook must run once for the account, got %v", got)
 	}
 }

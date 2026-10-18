@@ -7,6 +7,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
@@ -66,6 +67,15 @@ func registerTenantRoutes(
 	tenantMiddlewares = append(tenantMiddlewares,
 		middleware.TenantContext(tenantRepo),
 		middleware.RequireMembership(membershipReader))
+	// A suspended organization in the URL is refused to its members (the
+	// membership check above runs first, so only members learn the status).
+	if organizationGate != nil {
+		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireActiveOrganizationParam(organizationGate,
+			func(r *http.Request) (shared.ID, bool) {
+				id := middleware.GetTeamID(r.Context())
+				return id, !id.IsZero()
+			}, nil))
+	}
 	// The organization's IP allowlist, for the organization in the URL.
 	if ipAllowlistMiddleware != nil {
 		tenantMiddlewares = append(tenantMiddlewares, ipAllowlistMiddleware)

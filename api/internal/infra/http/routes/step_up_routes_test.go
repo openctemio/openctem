@@ -96,6 +96,16 @@ var stepUpRoutes = []string{
 	// Ownership transfer: the owner asks, the member asked accepts.
 	"POST /api/v1/organization/ownership-transfer",
 	"POST /api/v1/organization/ownership-transfer/approve",
+	// Connecting, changing or removing an integration decides where data and
+	// credentials go.
+	"POST /api/v1/integrations",
+	"POST /api/v1/integrations/notifications",
+	"PUT /api/v1/integrations/{id}",
+	"DELETE /api/v1/integrations/{id}",
+	"POST /api/v1/integrations/{id}/disable",
+	"PUT /api/v1/integrations/{id}/notification",
+	// The group mapping decides which role a directory group's members get.
+	"PUT /api/v1/scim-tokens/group-mappings",
 	"POST /api/v1/integrations/{id}/jira-webhook/secret/rotate",
 	"PUT /api/v1/integrations/{id}/jira-webhook/secret",
 	"GET /api/v1/integrations/github/webhook-secret",
