@@ -128,6 +128,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/program-feed/local-bundle":                   {stepUpRoute, "program feed source"},
 	"POST /api/v1/admin/shared-sensors/enrollment-tokens":           {stepUpRoute, "shared sensor enrollment token"},
 	"POST /api/v1/admin/version-check/import":                       {stepUpRoute, "release feed trust: what the console says about releases"},
+	"PUT /api/v1/admin/version-check/enabled":                       {stepUpRoute, "egress and privacy: the daily outbound check"},
 	"POST /api/v1/admin/content-packs/":                             {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/import":                       {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/{id}/revoke":                  {stepUpRoute, "platform content pack"},

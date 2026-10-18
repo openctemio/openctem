@@ -19,6 +19,14 @@ export function useVersionCheck() {
 }
 
 /**
+ * Turns the daily online check on or off (super admin, step-up). The API
+ * refuses to turn it on while VERSION_CHECK_ENABLED=false (409).
+ */
+export function setVersionCheckEnabled(enabled: boolean) {
+  return adminFetch<VersionCheckStatus>(`${KEY}enabled`, { method: 'PUT', body: { enabled } })
+}
+
+/**
  * Imports the signed release feed file (super admin, step-up). The file is
  * sent as read; the API verifies its signatures, sequence and expiry.
  */
