@@ -72,14 +72,17 @@ type Handlers struct {
 	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
 	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
 	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
-	SavedView     *handler.SavedViewHandler     // nil if not initialized - saved list views (D15, RFC-048)
-	Audit         *handler.AuditHandler         // nil if not initialized (no database)
-	Branch        *handler.BranchHandler        // nil if not initialized (no database)
-	SLA           *handler.SLAHandler           // nil if not initialized (no database)
-	Integration   *handler.IntegrationHandler   // nil if not initialized (no database)
-	DefectDojo    *handler.DefectDojoHandler    // nil if not initialized / no DefectDojo sync
-	AssetGroup    *handler.AssetGroupHandler    // nil if not initialized (no database)
-	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
+	// DashboardFacts serves "Rebuild dashboard data" (organization and
+	// console); nil if not initialized.
+	DashboardFacts *handler.DashboardFactsHandler
+	SavedView      *handler.SavedViewHandler   // nil if not initialized - saved list views (D15, RFC-048)
+	Audit          *handler.AuditHandler       // nil if not initialized (no database)
+	Branch         *handler.BranchHandler      // nil if not initialized (no database)
+	SLA            *handler.SLAHandler         // nil if not initialized (no database)
+	Integration    *handler.IntegrationHandler // nil if not initialized (no database)
+	DefectDojo     *handler.DefectDojoHandler  // nil if not initialized / no DefectDojo sync
+	AssetGroup     *handler.AssetGroupHandler  // nil if not initialized (no database)
+	Scope          *handler.ScopeHandler       // nil if not initialized (no database)
 	// BountyProgram serves bug-bounty programs (RFC-065); nil without a database.
 	BountyProgram *handler.BountyProgramHandler
 	// ScopeLetter serves authorization letters (RFC-065 §13).
@@ -723,6 +726,9 @@ func Register(
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
 		registerDashboardRoutes(router, h.Dashboard, authMiddleware, userSync, log)
+		if h.DashboardFacts != nil {
+			registerDashboardDataRoutes(router, h.DashboardFacts, authMiddleware, userSync)
+		}
 	}
 
 	// Audit log routes (tenant from JWT token)
