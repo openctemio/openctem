@@ -1,0 +1,2 @@
+go test fuzz v1
+string("findings | stats count(), avg(cvss_score) as a, p90(epss_score) by severity | top 5 by a")
