@@ -126,6 +126,12 @@ set_value OPENCTEM_ADMIN_SITE "$admin_site"
 [[ -z "$admin_public" ]] || admin_cidrs="0.0.0.0/0 ::/0"
 # Spaces in the value: replace the whole line (checked above: no "|" or "&").
 [[ -z "$admin_cidrs" ]] || sed -i -E "s|^OPENCTEM_ADMIN_ALLOWED_CIDRS=.*$|OPENCTEM_ADMIN_ALLOWED_CIDRS=${admin_cidrs}|" "$tmp"
+# The console's public origin, the WebAuthn relying party of its security keys.
+if [[ "$admin_site" = host ]]; then
+  set_value OPENCTEM_ADMIN_PUBLIC_URL "https://$admin_host"
+elif [[ "$admin_site" = port ]]; then
+  set_value OPENCTEM_ADMIN_PUBLIC_URL "https://$host:${admin_port:-8443}"
+fi
 set_value DB_SUPERUSER_PASSWORD "$(secret 24)"
 set_value DB_MIGRATE_PASSWORD "$(secret 24)"
 set_value DB_ADMIN_PASSWORD "$(secret 24)"
@@ -178,6 +184,12 @@ $console_msg
 Next:
   docker compose up -d
   docker compose run --rm api -check-config   # optional preflight
+
+Then create the first platform administrator and organization (runs as the
+database schema owner from .env, which the running API never receives):
+  docker compose run --rm bootstrap-admin -email=admin@example.com \\
+    -backup-email=breakglass@example.com \\
+    -org-name="Example Corp" -org-owner-email=owner@example.com
 
 Optional bundled shared sensor (enrolls with SENSOR_INSTANCE_ENROLLMENT_TOKEN):
   docker compose -f docker-compose.yml -f docker-compose.sensor.yml up -d
