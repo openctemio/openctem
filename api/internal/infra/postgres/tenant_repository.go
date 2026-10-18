@@ -1446,7 +1446,8 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 		if err != nil {
 			return fmt.Errorf("failed to create invitation: %w", err)
 		}
-		return nil
+		// The invitation e-mail is queued with the invitation.
+		return enqueueContextJobsTx(ctx, tx, nil)
 	})
 }
 
@@ -1486,8 +1487,17 @@ func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Inv
 
 	// resend_count = the count as read: of two concurrent resends, one
 	// rotates the token and mails it; the other updates nothing.
-	result, err := r.db.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token(), inv.TenantID().String(),
-		inv.LastSentAt(), inv.ResendCount(), inv.LoadedResendCount())
+	// The e-mail of a rotated token (a resend) is queued with the rotation.
+	var result sql.Result
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		var execErr error
+		result, execErr = tx.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token(), inv.TenantID().String(),
+			inv.LastSentAt(), inv.ResendCount(), inv.LoadedResendCount())
+		if execErr != nil {
+			return execErr
+		}
+		return enqueueContextJobsTx(ctx, tx, result)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to update invitation: %w", err)
 	}
