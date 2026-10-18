@@ -1070,10 +1070,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
-	// D6: a restricted viewer holding dashboard:aggregate is counted over the
+	// D6: a restricted viewer holding dashboards:org:view is counted over the
 	// organization by the dashboard figures (ViewerScope).
 	s.DataScope.SetAggregateCheck(func(ctx context.Context) bool {
-		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+		return middleware.HasPermission(ctx, permission.DashboardsOrgView.String())
 	})
 	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
@@ -1222,6 +1222,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
+	s.UserDashboard.SetAuditService(s.Audit)
+	s.UserDashboard.SetLimitReader(s.Entitlement)
+	s.UserDashboard.SetMembershipReader(repos.Tenant)
+	s.UserDashboard.SetSettingsStore(s.Tenant)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
@@ -1292,7 +1296,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 		OnFeed: learnComponentReleases,
 	}, log)
-	// System > Software updates switches the daily check without a restart;
+	// Monitoring > Software updates switches the daily check without a restart;
 	// VERSION_CHECK_ENABLED=false stays a ceiling.
 	if repos.PlatformSetting != nil {
 		s.VersionCheck.SetSettings(repos.PlatformSetting)
@@ -1378,7 +1382,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize dashboard service
 	s.Dashboard = module.NewDashboardService(repos.Dashboard, log)
 	s.Dashboard.SetDataScope(s.DataScope)
-	// D6 (dashboard:aggregate) is decided once, by s.DataScope.ViewerScope.
+	// D6 (dashboards:org:view) is decided once, by s.DataScope.ViewerScope.
 
 	// Initialize SLA service
 	s.SLA = sla.NewService(repos.SLA, log)
@@ -2953,7 +2957,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
-	// The sign-up policy (Console > System > Sign-up), a runtime switch below
+	// The sign-up policy (Console > Settings > Sign-up), a runtime switch below
 	// the deployment ceiling SIGNUP_MODE. The ceiling seeds it on the first
 	// start only; afterwards the console value wins, clamped to the ceiling.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
@@ -3213,7 +3217,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 }
 
 // InitEmailServices builds the e-mail service on the platform e-mail
-// settings (admin console, System > E-mail). It always exists once those
+// settings (admin console, Settings > E-mail). It always exists once those
 // settings can be read; whether it can send is decided per message, so a
 // change in the console applies without a restart.
 func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) error {
@@ -3224,7 +3228,7 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.Brand.DisplayName(), log)
 	s.Email.SetBranding(email.Branding{FooterText: cfg.Brand.EmailFooter, PoweredBy: cfg.Brand.ShowPoweredBy()})
 	if !s.Email.IsConfigured() {
-		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
+		log.Info("platform e-mail not configured yet: set it in the admin console (Settings > E-mail)")
 	}
 	return s.guardPublicSignupMail(cfg, log)
 }
@@ -3240,7 +3244,7 @@ func (s *Services) guardPublicSignupMail(cfg *config.Config, log *logger.Logger)
 		return nil
 	}
 	if s.Email == nil || !s.Email.IsConfigured() {
-		return fmt.Errorf("SIGNUP_MODE=%s needs the platform e-mail to verify sign-ups: set it with bootstrap-admin (BOOTSTRAP_SMTP_*) or start with SIGNUP_MODE=disabled, set it in the admin console (System > E-mail) and restart", cfg.Auth.SignupMode)
+		return fmt.Errorf("SIGNUP_MODE=%s needs the platform e-mail to verify sign-ups: set it with bootstrap-admin (BOOTSTRAP_SMTP_*) or start with SIGNUP_MODE=disabled, set it in the admin console (Settings > E-mail) and restart", cfg.Auth.SignupMode)
 	}
 	if s.Signup != nil {
 		email := s.Email

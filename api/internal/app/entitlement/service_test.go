@@ -162,7 +162,7 @@ func TestNoLimitsByDefault(t *testing.T) {
 	svc := NewService(repo, nil, nil)
 	tid := shared.NewID()
 	for _, k := range limits.Keys {
-		if !k.PerOrganization() {
+		if !k.PerOrganization() || k.IsFloor() {
 			continue
 		}
 		if err := svc.Check(context.Background(), tid, k, 1); err != nil {
