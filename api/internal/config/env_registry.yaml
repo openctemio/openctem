@@ -905,32 +905,32 @@ vars:
     description: "Base URL of links in e-mails. Set it only when the console is not at `APP_URL`."
   - name: SYSTEM_STORAGE_PATHS
     component: api
-    group: "System page"
+    group: "Health page"
     type: string
-    description: "`name=path,name=path` directories whose free space the platform console System page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory."
+    description: "`name=path,name=path` directories whose free space the platform console Health page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory."
   - name: SYSTEM_BACKUP_STATUS_FILE
     component: api
-    group: "System page"
+    group: "Health page"
     type: path
-    description: "The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The System page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported."
+    description: "The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The Health page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported."
   - name: SYSTEM_TLS_CERT_FILES
     component: api
-    group: "System page"
+    group: "Health page"
     type: string
-    description: "`name=path,name=path` PEM certificate files whose expiry the System page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked."
+    description: "`name=path,name=path` PEM certificate files whose expiry the Health page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked."
   - name: SYSTEM_WEB_HEALTH_URL
     component: api
-    group: "System page"
+    group: "Health page"
     type: url
-    description: "Internal health URL of the web container for the System page (one GET, no redirects). Must be http or https. Unset: not checked."
+    description: "Internal health URL of the web container for the Health page (one GET, no redirects). Must be http or https. Unset: not checked."
   - name: SYSTEM_GATEWAY_HEALTH_URL
     component: api
-    group: "System page"
+    group: "Health page"
     type: url
-    description: "Internal health URL of the gateway for the System page (one GET, no redirects). Must be http or https. Unset: not checked."
+    description: "Internal health URL of the gateway for the Health page (one GET, no redirects). Must be http or https. Unset: not checked."
   - name: SYSTEM_WATCH_INTERVAL
     component: api
-    group: "System page"
+    group: "Health page"
     type: duration
     default: "5m"
     description: "How often the system watcher checks free space, backup age and certificate expiry, sets the metrics and emails the platform administrators on a worse level. Minimum 1m."

@@ -35,7 +35,10 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
-const roleLabel = (r: AdminRole) => ADMIN_ROLE_OPTIONS.find((o) => o.value === r)?.label ?? r
+const roleLabel = (t: ReturnType<typeof useTranslation>['t'], r: AdminRole) => {
+  const key = ADMIN_ROLE_OPTIONS.find((o) => o.value === r)?.labelKey
+  return key ? t(key) : r
+}
 
 type Pending =
   | { kind: 'reset'; admin: AdminUserRecord }
@@ -47,13 +50,29 @@ type Pending =
 
 /** Badges for how an administrator signs in. */
 function SignInBadges({ a }: { a: AdminUserRecord }) {
+  const { t } = useTranslation()
+
   return (
     <div className="flex flex-wrap gap-1">
-      {a.is_break_glass && <Badge variant="destructive">Break-glass</Badge>}
-      {a.idp_bound && <Badge variant="secondary">Identity provider</Badge>}
-      {a.password_change_required && <Badge variant="outline">Temporary password</Badge>}
+      {a.is_break_glass && (
+        <Badge variant="destructive">
+          {t('admin.securityAdministratorsPage.breakGlass', 'Break-glass')}
+        </Badge>
+      )}
+      {a.idp_bound && (
+        <Badge variant="secondary">
+          {t('admin.securityAdministratorsPage.identityProvider', 'Identity provider')}
+        </Badge>
+      )}
+      {a.password_change_required && (
+        <Badge variant="outline">
+          {t('admin.securityAdministratorsPage.temporaryCredential', 'Temporary password')}
+        </Badge>
+      )}
       {!a.is_break_glass && !a.idp_bound && !a.password_change_required && (
-        <span className="text-sm text-muted-foreground">Password</span>
+        <span className="text-sm text-muted-foreground">
+          {t('admin.securityAdministratorsPage.credential', 'Password')}
+        </span>
       )}
     </div>
   )
@@ -61,15 +80,23 @@ function SignInBadges({ a }: { a: AdminUserRecord }) {
 
 /** Last confirmed test of a break-glass account, flagged after 90 days. */
 function BreakGlassTested({ a }: { a: AdminUserRecord }) {
+  const { t } = useTranslation()
+
   if (!a.is_break_glass) return <span className="text-sm text-muted-foreground">-</span>
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {a.break_glass_tested_at ? (
         <RelativeTime date={a.break_glass_tested_at} className="text-sm" />
       ) : (
-        <span className="text-sm text-muted-foreground">Never</span>
+        <span className="text-sm text-muted-foreground">
+          {t('admin.securityAdministratorsPage.never', 'Never')}
+        </span>
       )}
-      {a.break_glass_test_overdue && <Badge variant="outline">Test overdue</Badge>}
+      {a.break_glass_test_overdue && (
+        <Badge variant="outline">
+          {t('admin.securityAdministratorsPage.testOverdue', 'Test overdue')}
+        </Badge>
+      )}
     </div>
   )
 }
@@ -89,34 +116,73 @@ export default function AdministratorsPage() {
       if (pending.kind === 'reset') {
         await resetAdminCredentials(pending.admin.id)
         toast.success(
-          `${pending.admin.email} will set up two-step verification again when they next open the console`
+          t(
+            'admin.securityAdministratorsPage.willSetUpTwoStep',
+            '{email} will set up two-step verification again when they next open the console',
+            { email: pending.admin.email }
+          )
         )
       } else if (pending.kind === 'toggle') {
         await updateAdminUser(pending.admin.id, { is_active: !pending.admin.is_active })
         toast.success(
-          pending.admin.is_active ? 'Administrator deactivated' : 'Administrator reactivated'
+          pending.admin.is_active
+            ? t(
+                'admin.securityAdministratorsPage.administratorDeactivated',
+                'Administrator deactivated'
+              )
+            : t(
+                'admin.securityAdministratorsPage.administratorReactivated',
+                'Administrator reactivated'
+              )
         )
       } else if (pending.kind === 'role') {
         await updateAdminUser(pending.admin.id, { role: pending.role })
-        toast.success(`${pending.admin.email} is now ${roleLabel(pending.role)}`)
+        toast.success(
+          t('admin.securityAdministratorsPage.isNowRole', '{email} is now {role}', {
+            email: pending.admin.email,
+            role: roleLabel(t, pending.role),
+          })
+        )
       } else if (pending.kind === 'breakglass') {
         await updateAdminUser(pending.admin.id, { is_break_glass: !pending.admin.is_break_glass })
         toast.success(
           pending.admin.is_break_glass
-            ? `${pending.admin.email} is no longer a break-glass account`
-            : `${pending.admin.email} is now a break-glass account`
+            ? t(
+                'admin.securityAdministratorsPage.isNoLongerABreak',
+                '{email} is no longer a break-glass account',
+                { email: pending.admin.email }
+              )
+            : t(
+                'admin.securityAdministratorsPage.isNowABreakGlass',
+                '{email} is now a break-glass account',
+                { email: pending.admin.email }
+              )
         )
       } else if (pending.kind === 'test') {
         await confirmBreakGlassTest(pending.admin.id)
-        toast.success(`Test of ${pending.admin.email} recorded`)
+        toast.success(
+          t('admin.securityAdministratorsPage.testOfRecorded', 'Test of {email} recorded', {
+            email: pending.admin.email,
+          })
+        )
       } else {
         await unbindAdminIdP(pending.admin.id)
-        toast.success(`${pending.admin.email} is bound again on their next IdP sign-in`)
+        toast.success(
+          t(
+            'admin.securityAdministratorsPage.isBoundAgainOnTheir',
+            '{email} is bound again on their next IdP sign-in',
+            { email: pending.admin.email }
+          )
+        )
       }
       void mutate()
       setPending(null)
     } catch (e) {
-      toast.error(e instanceof AdminApiError ? e.message : 'The change failed')
+      toast.error(
+        e instanceof AdminApiError
+          ? e.message
+          : t('admin.securityAdministratorsPage.theChangeFailed', 'The change failed')
+      )
     } finally {
       setBusy(false)
     }
@@ -126,46 +192,52 @@ export default function AdministratorsPage() {
     () => [
       {
         accessorKey: 'name',
-        header: 'Administrator',
+        header: t('admin.securityAdministratorsPage.administrator', 'Administrator'),
         cell: ({ row }) => (
           <StackedCell primary={row.original.name} secondary={row.original.email} />
         ),
       },
       {
         accessorKey: 'role',
-        header: 'Role',
-        cell: ({ row }) => <span className="text-sm">{roleLabel(row.original.role)}</span>,
+        header: t('admin.securityAdministratorsPage.role', 'Role'),
+        cell: ({ row }) => <span className="text-sm">{roleLabel(t, row.original.role)}</span>,
       },
       {
         id: 'sign_in',
-        header: 'Sign-in',
+        header: t('admin.securityAdministratorsPage.signIn', 'Sign-in'),
         enableSorting: false,
         cell: ({ row }) => <SignInBadges a={row.original} />,
       },
       {
         id: 'break_glass_tested',
-        header: 'Last tested',
+        header: t('admin.securityAdministratorsPage.lastTested', 'Last tested'),
         enableSorting: false,
         cell: ({ row }) => <BreakGlassTested a={row.original} />,
       },
       {
         accessorKey: 'is_active',
-        header: 'Status',
+        header: t('admin.securityAdministratorsPage.status', 'Status'),
         cell: ({ row }) =>
           row.original.is_active ? (
-            <Badge variant="secondary">Active</Badge>
+            <Badge variant="secondary">
+              {t('admin.securityAdministratorsPage.active', 'Active')}
+            </Badge>
           ) : (
-            <Badge variant="outline">Deactivated</Badge>
+            <Badge variant="outline">
+              {t('admin.securityAdministratorsPage.deactivated', 'Deactivated')}
+            </Badge>
           ),
       },
       {
         accessorKey: 'last_used_at',
-        header: 'Last active',
+        header: t('admin.securityAdministratorsPage.lastActive', 'Last active'),
         cell: ({ row }) =>
           row.original.last_used_at ? (
             <RelativeTime date={row.original.last_used_at} className="text-sm" />
           ) : (
-            <span className="text-sm text-muted-foreground">Never</span>
+            <span className="text-sm text-muted-foreground">
+              {t('admin.securityAdministratorsPage.never', 'Never')}
+            </span>
           ),
       },
       {
@@ -178,13 +250,18 @@ export default function AdministratorsPage() {
             <DataTableRowActions
               actions={[
                 ...ADMIN_ROLE_OPTIONS.filter((o) => o.value !== a.role).map((o) => ({
-                  label: `Make ${o.label.toLowerCase()}`,
+                  label: t('admin.securityAdministratorsPage.makeRole', 'Make {role}', {
+                    role: t(o.labelKey).toLowerCase(),
+                  }),
                   onClick: () => setPending({ kind: 'role', admin: a, role: o.value }),
                 })),
                 ...(a.is_break_glass && a.last_used_at
                   ? [
                       {
-                        label: 'Confirm last sign-in was a test',
+                        label: t(
+                          'admin.securityAdministratorsPage.confirmLastSignInWas',
+                          'Confirm last sign-in was a test'
+                        ),
                         onClick: () => setPending({ kind: 'test', admin: a }),
                         separatorBefore: true,
                       },
@@ -193,7 +270,15 @@ export default function AdministratorsPage() {
                 ...(a.role === 'super_admin' && !a.idp_bound
                   ? [
                       {
-                        label: a.is_break_glass ? 'Unmark break-glass' : 'Mark as break-glass',
+                        label: a.is_break_glass
+                          ? t(
+                              'admin.securityAdministratorsPage.unmarkBreakGlass',
+                              'Unmark break-glass'
+                            )
+                          : t(
+                              'admin.securityAdministratorsPage.markAsBreakGlass',
+                              'Mark as break-glass'
+                            ),
                         onClick: () => setPending({ kind: 'breakglass', admin: a }),
                       },
                     ]
@@ -201,18 +286,26 @@ export default function AdministratorsPage() {
                 ...(a.idp_bound
                   ? [
                       {
-                        label: 'Remove identity provider binding',
+                        label: t(
+                          'admin.securityAdministratorsPage.removeIdentityProviderBinding',
+                          'Remove identity provider binding'
+                        ),
                         onClick: () => setPending({ kind: 'unbind', admin: a }),
                       },
                     ]
                   : []),
                 {
-                  label: 'Reset two-step verification',
+                  label: t(
+                    'admin.securityAdministratorsPage.resetTwoStepVerification',
+                    'Reset two-step verification'
+                  ),
                   onClick: () => setPending({ kind: 'reset', admin: a }),
                   separatorBefore: true,
                 },
                 {
-                  label: a.is_active ? 'Deactivate' : 'Reactivate',
+                  label: a.is_active
+                    ? t('admin.securityAdministratorsPage.deactivate', 'Deactivate')
+                    : t('admin.securityAdministratorsPage.reactivate', 'Reactivate'),
                   onClick: () => setPending({ kind: 'toggle', admin: a }),
                   destructive: a.is_active,
                 },
@@ -222,7 +315,7 @@ export default function AdministratorsPage() {
         },
       },
     ],
-    [me.id]
+    [me.id, t]
   )
 
   if (!isSuper) {
@@ -270,7 +363,7 @@ export default function AdministratorsPage() {
         return {
           title: t('confirm.admin.roleTitle', 'Change the role of {email}?', { email }),
           desc: t('confirm.admin.roleDesc', 'They become {role}.', {
-            role: roleLabel(pending.role),
+            role: roleLabel(t, pending.role),
           }),
           confirm: t('confirm.admin.role', 'Change role'),
         }
@@ -326,14 +419,21 @@ export default function AdministratorsPage() {
   return (
     <Main>
       <PageHeader
-        title="Administrators"
-        description="People who administer this installation. Separate from organization accounts."
+        title={t('admin.securityAdministratorsPage.administrators', 'Administrators')}
+        description={t(
+          'admin.securityAdministratorsPage.peopleWhoAdministerThisInstallation',
+          'People who administer this installation. Separate from organization accounts.'
+        )}
       >
         <CreateAdminDialog onCreated={() => void mutate()} />
       </PageHeader>
       <div className="mt-5">
         {error ? (
-          <ErrorState title="administrators" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.securityAdministratorsPage.administrators2', 'administrators')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : (
           <DataTable
             columns={columns}

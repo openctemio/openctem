@@ -101,7 +101,11 @@ export default function AdminAnnouncementsPage() {
       </PageHeader>
       <div className="mt-5">
         {error ? (
-          <ErrorState title="announcements" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.systemAnnouncementsPage.announcements', 'announcements')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : (
           <DataTable
             columns={columns}

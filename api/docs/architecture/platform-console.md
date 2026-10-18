@@ -29,10 +29,10 @@ doing:
 |-------|-------|
 | (top) | Overview |
 | Customers | Organizations, Users, Access requests, Support access |
-| Scanning | Scan approval, Platform scanning, Shared sensors, Target mappings, Content packs, Content catalog, Threat intelligence |
+| Scanning | Scan approval, Platform scanning (policy, fleet, queue, zones, egress, anomalies), Target mappings, Content packs, Content catalog, Threat intelligence |
 | Security | Administrators, Sessions, Admin sign-in, Admin activity |
 | Settings | Sign-up, Limits, E-mail, Legal, Announcements, AI applications |
-| Monitoring | Health, System, Software updates |
+| Monitoring | Health (services, storage, backup, certificates, schema, version, queues, sensors, jobs), Software updates |
 
 The administrator's own security keys open from the sidebar footer, next to
 their name (the palette still finds them). Pages are listed by the
@@ -43,7 +43,7 @@ this page" with the elevate dialog one click away
 which role it takes. The API enforces the acting role either way.
 
 The Overview's "Needs attention" list includes the installation's own state
-from the System page: a service that does not answer, a volume below 20%
+from the Health page: a service that does not answer, a volume below 20%
 (warning) or 10% (critical) free, a failed, stale or unreported backup, a
 certificate close to expiry, and a newer release (a warning when it fixes
 security advisories).

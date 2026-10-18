@@ -2,7 +2,7 @@ package scan
 
 // Ownership proof for active probes (RFC-054 §8.1): the platform setting
 // "Require a verified domain before platform sensors scan a target"
-// (Console > System > Platform scanning, scanpolicy.ProofSettingKey)
+// (Console > Scanning > Platform scanning, scanpolicy.ProofSettingKey)
 // decides whether a target must sit at or under a verified domain of the
 // tenant. Default off: the tenant's scope entry is the authorization. On:
 // platform sensors send packets from the platform's own addresses, so a job

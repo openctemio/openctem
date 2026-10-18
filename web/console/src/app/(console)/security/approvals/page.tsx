@@ -211,7 +211,11 @@ export default function AdminApprovalsPage() {
             {t('admin.approvals.superOnly', 'Only a super admin can see approvals.')}
           </p>
         ) : error ? (
-          <ErrorState title="approvals" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.approvals.errorTitle', 'Approvals')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : (
           <>
             {data && !data.four_eyes.active && (

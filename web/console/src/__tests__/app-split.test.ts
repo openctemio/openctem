@@ -76,7 +76,7 @@ describe('the console app', () => {
     const allowed = [
       /^\/ (layout|page)$/,
       /^\/login(\/callback)? (layout|page)$/,
-      /^\/(organizations|users|security|operations|system|scanning|requests|support)(\/[^ ]+)? (layout|page)$/,
+      /^\/(organizations|users|security|health|system|scanning|requests|support)(\/[^ ]+)? (layout|page)$/,
       /^\/api\/health route$/,
       /^\/api\/v1\/admin\/\[\.\.\.path\] route$/,
     ]
