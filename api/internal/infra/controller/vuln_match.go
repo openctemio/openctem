@@ -42,7 +42,8 @@ func (c *VulnMatchController) Reconcile(ctx context.Context) (int, error) {
 	if st.VersionsEvaluated > 0 || st.Tenants > 0 {
 		c.logger.Info("vulnerability matching", "versions_reset", st.VersionsReset,
 			"versions_evaluated", st.VersionsEvaluated, "versions_changed", st.VersionsChanged,
-			"tenants", st.Tenants, "created", st.Created, "reopened", st.Reopened, "closed", st.Closed)
+			"tenants", st.Tenants, "created", st.Created, "reopened", st.Reopened, "closed", st.Closed,
+			"close_skipped", st.CloseSkipped)
 	}
 	if err != nil {
 		c.logger.Warn("vulnerability matching failed", "error", err)

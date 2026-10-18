@@ -2,6 +2,12 @@ package handler
 
 import (
 	"context"
+	"crypto/hkdf"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -35,7 +41,54 @@ type BootstrapHandler struct {
 	tenantSvc      *tenantapp.TenantService
 	session        BootstrapSession
 	logger         *logger.Logger
+	// etagKey keys the modules ETag MAC (WithModulesETagKey).
+	etagKey []byte
 }
+
+// WithModulesETagKey sets the server secret the modules ETag is a MAC under.
+// Without one a random per-process key is used: ETags are still bound to
+// the user, they only stop matching across restarts and replicas.
+func (h *BootstrapHandler) WithModulesETagKey(key []byte) *BootstrapHandler {
+	h.etagKey = key
+	return h
+}
+
+// modulesETag is base64url(HMAC-SHA256(key, tenant, user, admin, versions))
+// truncated to 128 bits, quoted.
+func (h *BootstrapHandler) modulesETag(tenantID, userID string, isAdmin bool, modVersion, permVersion int) string {
+	key := h.etagKey
+	if len(key) == 0 {
+		key = processETagKey()
+	}
+	mac := hmac.New(sha256.New, key)
+	// NUL-separated: ids and decimal numbers never contain NUL.
+	_, _ = fmt.Fprintf(mac, "modules\x00%s\x00%s\x00%t\x00%d\x00%d", tenantID, userID, isAdmin, modVersion, permVersion)
+	return `"` + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:16]) + `"`
+}
+
+// modulesETagInfo labels the modules ETag key so it is never the session
+// signing key it is derived from.
+const modulesETagInfo = "openctem modules etag v1"
+
+// DeriveModulesETagKey derives the modules ETag key from the session secret
+// (HKDF-SHA256). Empty secret: nil (the per-process fallback is used).
+func DeriveModulesETagKey(sessionSecret string) []byte {
+	if sessionSecret == "" {
+		return nil
+	}
+	k, err := hkdf.Key(sha256.New, []byte(sessionSecret), nil, modulesETagInfo, 32)
+	if err != nil {
+		return nil
+	}
+	return k
+}
+
+// processETagKey is the fallback ETag key, random per process.
+var processETagKey = sync.OnceValue(func() []byte {
+	k := make([]byte, 32)
+	_, _ = rand.Read(k) // crypto/rand.Read never fails on supported platforms
+	return k
+})
 
 // WithSession wires the session parts of the bootstrap (profile,
 // memberships, organization policy, badge counts).
@@ -559,24 +612,22 @@ func (h *BootstrapHandler) GetTenantModules(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// ETag based on (tenant module version + user permission version)
-	// — both must match for the cached payload to still be valid. The
-	// permission half catches role/permission changes that affect what
-	// modules this user can SEE, distinct from what the tenant has
-	// enabled. Hex-encode the tuple so it's a single opaque token.
+	// The ETag stands for this caller's payload: tenant module version,
+	// the user's permission version and admin flag, for this tenant and
+	// this user. It is a MAC under a server secret so it reveals none of
+	// them and cannot be matched by another user, even one in the same
+	// tenant with the same counters (a shared browser profile sends the
+	// previous user's ETag).
 	modVersion := h.moduleSvc.GetTenantModuleVersion(ctx, tenantID)
 	permVersion := 0
 	if h.permVersionSvc != nil && userID != "" {
 		permVersion = h.permVersionSvc.Get(ctx, tenantID, userID)
 	}
-	// Include tenant_id in etag so a CDN/proxy that incorrectly shares
-	// cache entries across tenants cannot serve tenant A's response to
-	// tenant B (defense-in-depth: HTTP semantics already require
-	// per-user caching with private cache-control, but belt-and-braces).
-	etag := fmt.Sprintf(`"t%s-m%d-p%d"`, tenantID[:8], modVersion, permVersion)
+	etag := h.modulesETag(tenantID, userID, isAdmin, modVersion, permVersion)
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "private, max-age=300")
-	if r.Header.Get("If-None-Match") == etag {
+	w.Header().Add("Vary", "Authorization, Cookie")
+	if inm := r.Header.Get("If-None-Match"); inm != "" && subtle.ConstantTimeCompare([]byte(inm), []byte(etag)) == 1 {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}

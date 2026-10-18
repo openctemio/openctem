@@ -16,7 +16,7 @@ import (
 
 const stepUpPurposeEmailSettings = "platform e-mail settings change"
 
-// AdminEmailHandler serves Console > System > E-mail: the platform's SMTP
+// AdminEmailHandler serves Console > Settings > E-mail: the platform's SMTP
 // server (RFC-079). The password is write-only.
 type AdminEmailHandler struct {
 	svc     *platformemail.Service

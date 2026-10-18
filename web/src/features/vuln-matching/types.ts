@@ -32,6 +32,8 @@ export const NVD_ATTRIBUTION =
 /** People-readable text for the matcher's reason codes. */
 const REASON_TEXT: Record<string, string> = {
   all_versions: 'The advisory names every version, not a range',
+  backport_possible:
+    'A distribution package matched by an upstream range: the distribution may have backported the fix',
   edition_unverified: 'The advisory is for one edition; the scan did not say which one runs',
   platform_condition_unverified:
     'The advisory applies only on a platform the asset was not seen running',
