@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -22,6 +23,9 @@ import (
 // =============================================================================
 
 type mockTenantRepo struct {
+	// queuedJobs records the durable jobs an invitation write was asked to queue.
+	queuedJobs []durablejob.Job
+
 	// Storage
 	tenants     map[string]*tenant.Tenant
 	memberships map[string]*tenant.Membership // key = membership ID
@@ -304,10 +308,11 @@ func (m *mockTenantRepo) GetMemberByEmail(_ context.Context, _ shared.ID, _ stri
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockTenantRepo) CreateInvitation(_ context.Context, inv *tenant.Invitation) error {
+func (m *mockTenantRepo) CreateInvitation(ctx context.Context, inv *tenant.Invitation) error {
 	if m.createInvitationErr != nil {
 		return m.createInvitationErr
 	}
+	m.queuedJobs = append(m.queuedJobs, durablejob.FromContext(ctx)...)
 	m.invitations[inv.ID().String()] = inv
 	return nil
 }
@@ -338,10 +343,11 @@ func (m *mockTenantRepo) GetInvitationByID(_ context.Context, tenantID, id share
 	return inv, nil
 }
 
-func (m *mockTenantRepo) UpdateInvitation(_ context.Context, inv *tenant.Invitation) error {
+func (m *mockTenantRepo) UpdateInvitation(ctx context.Context, inv *tenant.Invitation) error {
 	if m.updateInvitationErr != nil {
 		return m.updateInvitationErr
 	}
+	m.queuedJobs = append(m.queuedJobs, durablejob.FromContext(ctx)...)
 	m.invitations[inv.ID().String()] = inv
 	return nil
 }
@@ -409,10 +415,14 @@ type mockEmailEnqueuer struct {
 	lastPayload  tenantapp.TeamInvitationJobPayload
 }
 
-func (m *mockEmailEnqueuer) EnqueueTeamInvitation(_ context.Context, payload tenantapp.TeamInvitationJobPayload) error {
+func (m *mockEmailEnqueuer) TeamInvitationJob(payload tenantapp.TeamInvitationJobPayload) (durablejob.Job, error) {
 	m.enqueueCalls++
 	m.lastPayload = payload
-	return m.enqueueErr
+	if m.enqueueErr != nil {
+		return durablejob.Job{}, m.enqueueErr
+	}
+	return durablejob.Job{Kind: durablejob.KindInvitationEmail, TenantID: shared.MustIDFromString(payload.TenantID),
+		SubjectID: shared.MustIDFromString(payload.InvitationID), Payload: "sealed"}, nil
 }
 
 // =============================================================================
@@ -1716,6 +1726,11 @@ func TestTenantSvc_CreateInvitation_WithEmailEnqueuer(t *testing.T) {
 	}
 	if enqueuer.lastPayload.TeamName != "My Team" {
 		t.Errorf("expected team name 'My Team', got %q", enqueuer.lastPayload.TeamName)
+	}
+	// The e-mail is queued by the invitation write itself (same transaction).
+	if len(repo.queuedJobs) != 1 || repo.queuedJobs[0].Kind != durablejob.KindInvitationEmail ||
+		repo.queuedJobs[0].TenantID != existing.ID() {
+		t.Errorf("invitation write queued %+v, want one invitation e-mail job of the tenant", repo.queuedJobs)
 	}
 }
 

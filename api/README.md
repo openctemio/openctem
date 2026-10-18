@@ -321,7 +321,7 @@ docker compose up -d
 
 # 4. Create the first admin, its break-glass backup and the first organization
 #    (see Bootstrap Admin below)
-docker compose exec api /app/bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com \
+docker compose run --rm bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com \
   -org-name="Example Corp" -org-owner-email=owner@example.com
 ```
 
@@ -412,7 +412,9 @@ First install, end to end:
 
 **Docker Compose:**
 ```bash
-docker compose exec api /app/bootstrap-admin \
+# A one-off container with the schema owner's credentials from .env (the
+# running api container never has them)
+docker compose run --rm bootstrap-admin \
   -email=admin@example.com -backup-email=breakglass@example.com \
   -org-name="Example Corp" -org-owner-email=owner@example.com
 ```
