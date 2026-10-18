@@ -92,7 +92,7 @@ type Config struct {
 	// AdminAuditSink streams the administrators' audit log off the box.
 	AdminAuditSink AdminAuditSinkConfig
 
-	// System is the platform console's System page and its watcher (RFC-114).
+	// System is the platform console's Health page and its watcher (RFC-114).
 	System SystemConfig
 
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
@@ -112,7 +112,7 @@ type Config struct {
 	GitHubApp GitHubAppConfig
 }
 
-// SystemConfig configures the System page (RFC-114). Everything is optional
+// SystemConfig configures the Health page (RFC-114). Everything is optional
 // and comes from the operator's environment, never from a request.
 type SystemConfig struct {
 	// StoragePaths is SYSTEM_STORAGE_PATHS, "name=path,name=path". Empty:
@@ -2095,6 +2095,10 @@ func (c *Config) validateAdminPublicURL() error {
 // sink is built, which also stops the start-up.
 func (c *Config) validateAdminAuditSink() error {
 	k := c.AdminAuditSink
+	if k.URL == "" && c.App.ManagedService && c.IsProduction() {
+		return fmt.Errorf("MANAGED_SERVICE in production requires the off-box administrators' audit sink: " +
+			"set ADMIN_AUDIT_SINK (a https, syslog+tls or file URL); without it a hosted operator could rewrite the console's audit history")
+	}
 	if k.URL == "" {
 		if k.Secret != "" || k.SyslogCAFile != "" || k.SyslogClientCert != "" || k.SyslogClientKey != "" {
 			return fmt.Errorf("ADMIN_AUDIT_SINK_SECRET / ADMIN_AUDIT_SINK_SYSLOG_* are set but ADMIN_AUDIT_SINK is not")
@@ -2503,11 +2507,10 @@ func (c *Config) validateProductionAuth() error {
 			return fmt.Errorf("AUTH_REQUIRE_EMAIL_VERIFICATION must be true in production")
 		}
 		// Open sign-up on the internet needs a CAPTCHA, or an explicit
-		// acceptance of running without one.
-		if c.Auth.SignupMode == SignupModeOpen && strings.TrimSpace(c.Auth.CaptchaTurnstileSecret) == "" &&
-			c.Auth.SignupCaptcha != SignupCaptchaOffAccepted {
-			return fmt.Errorf("SIGNUP_MODE=open in production needs CAPTCHA_TURNSTILE_SECRET and CAPTCHA_TURNSTILE_SITE_KEY (or SIGNUP_CAPTCHA=%s to accept open sign-up without a CAPTCHA)", SignupCaptchaOffAccepted)
-		}
+		// acceptance of running without one (SIGNUP_CAPTCHA). The keys may
+		// be set in the console after start, so this is enforced at runtime:
+		// open sign-up stays closed while no CAPTCHA is configured
+		// (signup.Service.SetCaptchaReady).
 		// Validate SameSite policy
 		switch c.Auth.CookieSameSite {
 		case "strict", "lax":
@@ -2663,7 +2666,7 @@ var retiredEnv = []retiredName{
 	// Sensor protocol v3 picks its bindings itself; off is the only switch.
 	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off", ""},
 	// The proof requirement is a platform setting edited in the console.
-	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > System > Platform scanning"},
+	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > Scanning > Platform scanning"},
 }
 
 // retiredName is a retired variable: its replacement (New) or, when there is

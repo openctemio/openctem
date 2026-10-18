@@ -14,6 +14,7 @@ import {
 import {
   normalizeSensorVersion,
   releaseLineOf,
+  sensorProductId,
   sensorSdkStatus,
   sensorSdkVersion,
   sensorVersionStatus,
@@ -387,9 +388,16 @@ export function sensorHealthChecks(
                 key: 'version',
                 label: L.version,
                 status: 'ok',
-                text: msg(tr, 'sensors.checks.version.latest', '{version}, the latest release', {
-                  version: v,
-                }),
+                text: latestIsBuiltIn(sensor, channel)
+                  ? msg(
+                      tr,
+                      'sensors.checks.version.latestBuiltIn',
+                      '{version}, the newest release this platform knows. Newer releases may exist: the platform has no current release information.',
+                      { version: v }
+                    )
+                  : msg(tr, 'sensors.checks.version.latest', '{version}, the latest release', {
+                      version: v,
+                    }),
               }
             : { key: 'version', label: L.version, status: 'info', text: v }
   )
@@ -398,8 +406,22 @@ export function sensorHealthChecks(
   const sdk = sensorSdkVersion(sensor)
   const sdkStatus = sensorSdkStatus(sensor)
   const sdkReason = sensor.health_reasons?.find((r) => r.code === 'sdk_advisory')
+  const sdkUnsupported = sensor.health_reasons?.some((r) => r.code === 'sdk_unsupported')
   const sdkName = sdk ?? msg(tr, 'sensors.checks.sdk.the', 'The SDK')
-  if (sdkStatus === 'advisory' || sdkReason) {
+  if (sdkStatus === 'unsupported' || sdkUnsupported) {
+    checks.push({
+      key: 'sdk',
+      label: L.sdk,
+      status: 'critical',
+      text: msg(
+        tr,
+        'sensors.checks.sdk.unsupported',
+        '{sdk} is older than the oldest SDK this platform supports. Rebuild the sensor with a newer sdk-go.',
+        { sdk: sdkName }
+      ),
+      action: 'install',
+    })
+  } else if (sdkStatus === 'advisory' || sdkReason) {
     checks.push({
       key: 'sdk',
       label: L.sdk,
@@ -526,4 +548,13 @@ export function sensorHealthChecks(
   if (err) checks.push({ key: 'error', label: L.error, status: 'warning', text: err.message })
 
   return checks
+}
+
+/**
+ * True when the sensor's product line comes from the version built into the
+ * platform (no release feed applied), so "latest" may be out of date.
+ */
+function latestIsBuiltIn(sensor: Sensor, channel: ReleaseChannel): boolean {
+  const id = sensorProductId(sensor)
+  return channel.products?.find((p) => p.id === id)?.latest_source === 'built_in'
 }

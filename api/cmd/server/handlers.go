@@ -24,13 +24,15 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	"github.com/openctemio/openctem/api/internal/app/securityoverview"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
-	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
+	"github.com/openctemio/openctem/api/internal/app/configoverview"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
@@ -56,6 +58,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -189,6 +192,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	adminConsoleSvc.SetFactorChangeNotifier(adminFactorMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+	// A password reset or change, or a two-step reset, of the linked account
+	// also ends the administrator's console sessions.
+	svc.Auth.SetSessionsRevokedHook(adminConsoleSvc.EndSessionsForAccount)
+	adminConsoleSvc.SetRosterChangeNotifier(rosterChangeMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// Console security keys (RFC-078): the relying party is the console origin.
 	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
 		rp, err := adminconsole.NewConsoleWebAuthn(adminconsole.WebAuthnConfig{
@@ -200,6 +207,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			adminConsoleSvc.EnableWebAuthn(rp, repos.AdminFactor, repos.PlatformSetting)
 		}
 	}
+	// Four-eyes approvals of the console's catastrophic actions: every
+	// request and decision e-mails the administrators like a roster change.
+	adminApprovals := adminapproval.NewService(postgres.NewAdminApprovalRepository(adminDBOf(repos, deps.DB)), repos.Admin, repos.AdminAuditLog, log)
+	adminApprovals.SetNotifier(adminConsoleSvc)
+	adminApprovals.SetTenantNamer(adminapproval.TenantNamerFunc(func(ctx context.Context, id shared.ID) (string, error) {
+		o, err := repos.AdminOrg.GetOrganization(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return o.Name, nil
+	}))
 	if svc.Signup != nil {
 		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
@@ -272,6 +290,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// constructed. The handler returns 503 from the dry-run
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
+	tenantHandler.SetDeletionScheduler(svc.OrgDeletion)
 	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SignupOpen())
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
@@ -338,6 +357,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
+	jiraWebhookHandler.SetOrganizationGate(svc.OrganizationGate)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
 	jiraWebhookHandler.SetAuditService(svc.Audit)
 	var ticketMappingHandler *handler.TicketMappingHandler
@@ -352,6 +372,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
+	githubWebhookHandler.SetOrganizationGate(svc.OrganizationGate)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
 	// Replays of a verified delivery are ignored for 24 hours (all replicas).
@@ -367,6 +388,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Validation handler + coverage KPI reader.
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
 	validationHandler.SetCoverageReader(repos.ValidationEvidence)
+	validationHandler.SetDataScope(svc.DataScope)
 	// Direct evidence submissions change a finding only when they cite the
 	// validate command assigned to the submitting sensor; otherwise advisory.
 	validationHandler.SetCommandLookup(repos.Command)
@@ -525,7 +547,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TicketMapping:        ticketMappingHandler,
 		GitHubWebhook:        githubWebhookHandler,
 		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
+		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
 		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
@@ -582,15 +604,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
-		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
-			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
-		AdminVersionCheck: handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
+		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
+		AdminConfiguration: handler.NewAdminConfigurationHandler(
+			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
+		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
 		Capability:   handler.NewCapabilityHandler(svc.Capability, v, log),
-		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
+		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log).SetDataScope(svc.DataScope),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
 		SCMApps:      withSCMAppDeliveryGuard(newSCMAppHandler(cfg, repos, svc, deps.RedisClient, log), deps.RedisClient),
@@ -683,14 +706,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			repos.Admin, shippedSchemaVersion(log), log),
 		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
 			postgres.NewPlatformUserDirectory(deps.DB),
-			newPlatformUserService(repos, svc, cfg, deps.DB),
-			log),
+			newPlatformUserService(repos, svc, cfg, deps.DB, log),
+			log).WithAudit(repos.AdminAuditLog),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
-		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log),
-		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
+		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
+		AdminApproval:           handler.NewAdminApprovalHandler(adminApprovals, log),
+		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
 		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
@@ -707,7 +731,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminMappingRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.DefaultAdminMappingRateLimitConfig(), log),
 
 		// Admin Management (CRUD for admin users, audit logs, and target mappings)
-		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log),
+		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log).WithRosterNotifier(adminConsoleSvc).WithApprovals(adminApprovals),
 		AdminAudit:         handler.NewAdminAuditHandler(repos.AdminAuditLog, log),
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
@@ -871,15 +895,40 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.AccessRequest != nil {
 		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
 	}
+	if svc.SignupEvents != nil {
+		handlers.AdminSignupEvents = handler.NewAdminSignupEventHandler(svc.SignupEvents, adminConsoleSvc, log)
+	}
 	if svc.Entitlement != nil {
 		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
 		handlers.Limits.SetAccountPortalURL(cfg.AccountPortalURL)
+	}
+	// Security overview: posture checks for owners and administrators. A nil
+	// source omits the checks that need it.
+	{
+		var tenants securityoverview.TenantReader
+		if svc.Tenant != nil {
+			tenants = svc.Tenant
+		}
+		var counter securityoverview.Counter
+		if repos.SecurityOverview != nil {
+			counter = repos.SecurityOverview
+		}
+		handlers.SecurityOverview = handler.NewSecurityOverviewHandler(securityoverview.NewService(tenants, counter), log)
 	}
 	if svc.IdleWorkspaces != nil {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), baseURL: cfg.SMTP.BaseURL, log: log})
 	}
+	// Suspended organizations: one gate for every credential path, and the
+	// console's suspend / block actions.
+	if svc.OrganizationGate != nil {
+		handlers.OrganizationGate = svc.OrganizationGate
+	}
+	handlers.AdminSuspension = handler.NewAdminSuspensionHandler(svc.Suspension,
+		newPlatformUserService(repos, svc, cfg, deps.DB, log), log)
+	handlers.AdminSuspension.SetOrganizationDeletion(svc.OrgDeletion)
+	handlers.AdminSuspension.WithApprovals(adminApprovals)
 	// The platform policy for scan approval (RFC-073).
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
@@ -905,7 +954,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
-		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
+		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log).WithApprovals(adminApprovals)
 		if repos.PlatformSetting != nil {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}
@@ -1066,20 +1115,22 @@ func InitLocalAuthHandler(
 			svc.Auth,
 			svc.Session,
 			svc.Email,
-			platformAdminChecker{admins: repos.Admin},
 			cfg.Auth,
 			log,
 		)
 		log.Info("local auth handler initialized")
+		// An owner cancels a scheduled organization deletion from sign-in.
+		handlers.LocalAuth.SetOrganizationDeletion(svc.OrgDeletion)
 		if svc.Signup != nil {
 			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
 			if svc.Onboarding != nil {
 				handlers.LocalAuth.SetOnboarding(svc.Onboarding)
 			}
 		}
-		// The same CAPTCHA as the request-access form, on registration.
-		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
-			handlers.LocalAuth.SetCaptcha(t)
+		// The same CAPTCHA as the request-access form, on registration
+		// (asked only while keys are configured).
+		if svc.PlatformCaptcha != nil {
+			handlers.LocalAuth.SetCaptcha(svc.PlatformCaptcha)
 		}
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {
@@ -1158,7 +1209,8 @@ func newSensorHandlerWithTemplates(
 	}
 	h.SetPublicAPIURL(publicAPIURL)
 	h.SetHealthPolicy(sensorHealthPolicy(cfg))
-	h.SetProducts(sensorInstallProducts(cfg, log))
+	h.SetProductSource(sensorInstallProducts(cfg, log))
+	h.SetSDKLatestSource(versions.SDKLatest)
 	h.SetCollectorImage(collectorInstallImage(cfg, log))
 	h.SetCACertificateFile(cfg.SensorConfig.CACertFile)
 
@@ -1168,30 +1220,35 @@ func newSensorHandlerWithTemplates(
 // imageRepositoryRegexp is an image repository safe to put in a shell snippet.
 var imageRepositoryRegexp = regexp.MustCompile(`^[a-z0-9][a-z0-9._/:-]{0,254}$`)
 
-// sensorInstallProducts is the sensor product catalog built into the API
-// (versions.yaml), each product's install snippets pinned to its latest
-// release (never "latest"). SENSOR_IMAGE replaces the scanning sensor's image
-// repository (a mirror); an unusable value falls back to the published image.
-func sensorInstallProducts(cfg *config.Config, log *logger.Logger) []handler.SensorInstallProduct {
-	products := handler.CatalogInstallProducts()
+// sensorInstallProducts returns the source of the sensor product catalog:
+// the catalog built into the API (versions.yaml) with the releases learned
+// from the release feed, resolved on every call, each product's install
+// snippets pinned to its latest release (never "latest"; with the image
+// digest when the feed gave one). SENSOR_IMAGE replaces the scanning sensor's
+// image repository (a mirror), pinned by tag only: a mirrored image may have
+// another digest. An unusable value falls back to the published image.
+func sensorInstallProducts(cfg *config.Config, log *logger.Logger) func() []handler.SensorInstallProduct {
 	repo := strings.TrimSpace(cfg.SensorConfig.Image)
 	if repo == "" || repo == versions.SensorImage() {
-		return products
+		return handler.CatalogInstallProducts
 	}
 	if !imageRepositoryRegexp.MatchString(repo) || strings.Contains(repo, "@") {
 		log.Warn("ignoring SENSOR_IMAGE that is not an image repository", "value", repo)
-		return products
+		return handler.CatalogInstallProducts
 	}
 	// A tag in SENSOR_IMAGE is dropped: the tag is the product's release.
 	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
 		repo = repo[:i]
 	}
-	for i, p := range products {
-		if p.ID == versions.DefaultProductID {
-			products[i].Image = repo + ":" + p.Latest
+	return func() []handler.SensorInstallProduct {
+		products := handler.CatalogInstallProducts()
+		for i, p := range products {
+			if p.ID == versions.DefaultProductID {
+				products[i].Image = repo + ":" + p.Latest
+			}
 		}
+		return products
 	}
-	return products
 }
 
 // collectorInstallImage is the image a collector's install snippets run:
@@ -1208,25 +1265,21 @@ func collectorInstallImage(cfg *config.Config, log *logger.Logger) string {
 	return img
 }
 
-// sensorHealthPolicy maps the heartbeat settings, the sensor products'
-// release lines and the SDK entries of the version manifest onto the
-// fleet-health thresholds. Each sensor is judged against its own heartbeat
-// deadline (pkg/domain/sensor/liveness.go) and its own product's release
-// line; the policy adds the online window of the idle interval
-// (informational) and the WORKER_HEARTBEAT_TIMEOUT backstop.
+// sensorHealthPolicy maps the heartbeat settings and the SDK advisories of
+// the version manifest onto the fleet-health thresholds. Each sensor is
+// judged against its own heartbeat deadline (pkg/domain/sensor/liveness.go)
+// and its own product's release line, which the handler resolves per request
+// from the catalog (with the releases learned from the release feed), like
+// the latest SDK release; the policy adds the online window of the idle
+// interval (informational) and the WORKER_HEARTBEAT_TIMEOUT backstop.
 func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 	sc := cfg.SensorConfig
 	offline := cfg.Worker.HeartbeatTimeout
-	lines := map[string]sensordom.ReleaseLine{}
-	for _, p := range versions.Products() {
-		lines[p.ID] = sensordom.ReleaseLine{Latest: p.Latest, Min: p.Min}
-	}
 	return sensordom.HealthPolicy{
-		OnlineWindow:     sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
-		OfflineAfter:     offline,
-		Products:         lines,
-		SDKLatestVersion: versions.SDKLatest(),
-		SDKAdvisories:    versions.SDKAdvisories(),
+		OnlineWindow:  sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
+		OfflineAfter:  offline,
+		SDKMinVersion: versions.SDKMin(),
+		SDKAdvisories: versions.SDKAdvisories(),
 	}.Normalized()
 }
 
@@ -1545,6 +1598,8 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 		Audit:    audit,
 		Alerts:   ciAlerts,
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
+	// No CI run token is issued or accepted for a suspended organization.
+	ciSvc.SetOrganizationGate(svc.OrganizationGate)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
 		ds = svc.DataScope
@@ -1808,4 +1863,13 @@ func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, 
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}
 	return h
+}
+
+// platformSettings is the console settings store as an interface, nil when
+// it is not configured (a typed nil pointer would not compare equal to nil).
+func platformSettings(repos *Repositories) platformsetting.Repository {
+	if repos.PlatformSetting == nil {
+		return nil
+	}
+	return repos.PlatformSetting
 }

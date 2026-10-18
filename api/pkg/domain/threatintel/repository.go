@@ -29,7 +29,8 @@ type EPSSRepository interface {
 	// CountTenantOpenAboveScores counts the tenant's OPEN findings whose CVE
 	// has an EPSS score at or above each threshold (tenant-scoped, no LIMIT),
 	// in one pass. The result has one count per threshold, in input order.
-	CountTenantOpenAboveScores(ctx context.Context, tenantID shared.ID, thresholds []float64) ([]int64, error)
+	// A non-nil scope counts only findings on assets inside that data scope.
+	CountTenantOpenAboveScores(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, thresholds []float64) ([]int64, error)
 
 	// Count returns the total number of EPSS scores.
 	Count(ctx context.Context) (int64, error)
@@ -69,7 +70,11 @@ type KEVRepository interface {
 
 	// CountTenantOpenPastDue counts the tenant's OPEN findings referencing a KEV
 	// CVE whose KEV due_date has passed (tenant-scoped, no LIMIT).
-	CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID) (int64, error)
+	CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
+
+	// CountTenantOpenInKEV counts the tenant's OPEN findings referencing any
+	// CISA-KEV CVE, past due or not (tenant-scoped, no LIMIT).
+	CountTenantOpenInKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
 
 	// CountRecentlyAdded returns the true count of KEV entries added in the last
 	// N days (global, de-saturated COUNT).

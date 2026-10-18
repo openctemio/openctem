@@ -15,47 +15,50 @@ import type { AdminOrganizationUser } from '../types'
 import { CreateFirstOwnerDialog } from './create-first-owner-dialog'
 import { OwnerRecoveryDialog } from './owner-recovery-dialog'
 
-const columns: ColumnDef<AdminOrganizationUser>[] = [
-  {
-    accessorKey: 'name',
-    header: 'User',
-    cell: ({ row }) => (
-      <StackedCell
-        primary={row.original.name || row.original.email}
-        secondary={row.original.email}
-      />
-    ),
-  },
-  {
-    accessorKey: 'role',
-    header: 'Role',
-    cell: ({ row }) => (
-      <Badge variant="secondary" className="capitalize">
-        {row.original.role}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) =>
-      row.original.pending_setup && row.original.status !== 'suspended' ? (
-        <PendingSetupBadge />
-      ) : (
-        <Badge
-          variant={row.original.status === 'active' ? 'secondary' : 'outline'}
-          className="capitalize"
-        >
-          {row.original.status}
+function useUserColumns(): ColumnDef<AdminOrganizationUser>[] {
+  const { t } = useTranslation()
+  return [
+    {
+      accessorKey: 'name',
+      header: t('admin.organizationUsersSection.user', 'User'),
+      cell: ({ row }) => (
+        <StackedCell
+          primary={row.original.name || row.original.email}
+          secondary={row.original.email}
+        />
+      ),
+    },
+    {
+      accessorKey: 'role',
+      header: t('admin.organizationUsersSection.role', 'Role'),
+      cell: ({ row }) => (
+        <Badge variant="secondary" className="capitalize">
+          {row.original.role}
         </Badge>
       ),
-  },
-  {
-    accessorKey: 'joined_at',
-    header: 'Joined',
-    cell: ({ row }) => <RelativeTime date={row.original.joined_at} className="text-sm" />,
-  },
-]
+    },
+    {
+      accessorKey: 'status',
+      header: t('admin.organizationUsersSection.status', 'Status'),
+      cell: ({ row }) =>
+        row.original.pending_setup && row.original.status !== 'suspended' ? (
+          <PendingSetupBadge />
+        ) : (
+          <Badge
+            variant={row.original.status === 'active' ? 'secondary' : 'outline'}
+            className="capitalize"
+          >
+            {row.original.status}
+          </Badge>
+        ),
+    },
+    {
+      accessorKey: 'joined_at',
+      header: t('admin.organizationUsersSection.joined', 'Joined'),
+      cell: ({ row }) => <RelativeTime date={row.original.joined_at} className="text-sm" />,
+    },
+  ]
+}
 
 /**
  * People in one organization. The platform console only bootstraps an
@@ -80,6 +83,9 @@ export function OrganizationUsersSection({
   /** The organization's member count changed. */
   onChanged?: () => void
 }) {
+  const { t } = useTranslation()
+  const columns = useUserColumns()
+
   const { data, error, isLoading, mutate } = useOrganizationUsers(tenantId)
   const refresh = () => void mutate()
   const users = data?.data ?? []
@@ -93,13 +99,24 @@ export function OrganizationUsersSection({
     <section className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-base font-semibold">Users</h2>
+          <h2 className="text-base font-semibold">
+            {t('admin.organizationUsersSection.users', 'Users')}
+          </h2>
           <p className="text-sm text-muted-foreground">
             {ownersAllSuspended
-              ? 'Every owner of this organization is suspended. A suspended owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).'
+              ? t(
+                  'admin.organizationUsersSection.everyOwnerOfThisOrganization',
+                  'Every owner of this organization is suspended. A suspended owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).'
+                )
               : hasOwner
-                ? "People with an account in this organization. The organization's owner and administrators invite or create users; the platform console only creates an organization's first owner."
-                : 'This organization has no owner yet. Create its first owner; they add everyone else.'}
+                ? t(
+                    'admin.organizationUsersSection.peopleWithAnAccountIn',
+                    "People with an account in this organization. The organization's owner and administrators invite or create users; the platform console only creates an organization's first owner."
+                  )
+                : t(
+                    'admin.organizationUsersSection.thisOrganizationHasNoOwner',
+                    'This organization has no owner yet. Create its first owner; they add everyone else.'
+                  )}
           </p>
         </div>
         {canRecover && ownersAllSuspended && (
@@ -123,7 +140,11 @@ export function OrganizationUsersSection({
         )}
       </div>
       {error ? (
-        <ErrorState title="users" error={error} onRetry={refresh} />
+        <ErrorState
+          title={t('admin.organizationUsersSection.users2', 'users')}
+          error={error}
+          onRetry={refresh}
+        />
       ) : redacted ? (
         <RedactedMemberCounts byRole={data?.by_role ?? {}} total={data?.total ?? 0} />
       ) : (
@@ -136,7 +157,7 @@ export function OrganizationUsersSection({
           showColumnToggle={false}
           showSelectionCount={false}
           mobileCards
-          emptyMessage="No users yet"
+          emptyMessage={t('admin.organizationUsersSection.noUsersYet', 'No users yet')}
         />
       )}
     </section>

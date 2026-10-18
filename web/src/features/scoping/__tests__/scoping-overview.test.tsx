@@ -153,7 +153,7 @@ describe('dashboard Scoping tile', () => {
     )
     expect(tile()).toHaveAttribute('href', '/scoping')
     expect(within(tile()).getByText(/\/9 ready/)).toBeInTheDocument()
-    expect(within(tile()).getByText('9 crown jewels · 0 at risk')).toBeInTheDocument()
+    expect(within(tile()).getByText('9 crown jewels · 0 with open findings')).toBeInTheDocument()
     expect(within(tile()).queryByText(/designate/i)).toBeNull()
   })
 
@@ -174,7 +174,7 @@ describe('AttackPathsCard', () => {
 
   it('none at risk with crown jewels designated is not "none designated"', () => {
     render(<AttackPathsCard attackPaths={paths as never} chains={[]} crownJewelsTotal={9} />)
-    expect(screen.getByText('No crown jewels at risk')).toBeInTheDocument()
+    expect(screen.getByText('No crown jewels on an attack path')).toBeInTheDocument()
     expect(screen.getByText(/9 crown jewels are designated/)).toBeInTheDocument()
     expect(screen.queryByText(/No crown jewels designated/)).toBeNull()
   })

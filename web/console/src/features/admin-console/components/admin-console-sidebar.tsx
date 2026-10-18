@@ -1,7 +1,8 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { LogOut, ShieldCheck } from 'lucide-react'
+import { Fingerprint, LogOut, ShieldCheck } from 'lucide-react'
+import Link from '@/components/link'
 import {
   Sidebar,
   SidebarContent,
@@ -24,6 +25,7 @@ import { SidebarFooterLinks } from '@/components/layout/sidebar-footer-links'
 import { ADMIN_API_VERSION_PATH, setAdminApiVersionFetcher } from '@/hooks/use-build-versions'
 import { adminFetch } from '@console/lib/admin-api/client'
 import { useTranslation } from '@/context/i18n-provider'
+import { ConsoleLanguagePicker } from './console-language-picker'
 import { visibleAdminNav } from '../lib/admin-nav-visibility'
 import { ADMIN_ROLE_LABELS, type AdminIdentity } from '../types'
 
@@ -48,16 +50,23 @@ interface AdminConsoleSidebarProps {
 export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarProps) {
   const pathname = usePathname()
   const { t } = useTranslation()
-  const sections: GroupedNavSection[] = visibleAdminNav(admin.role).map((section, i) => ({
-    key: section.title ?? String(i),
-    label: section.i18nKey ? t(section.i18nKey, section.title) : section.title,
-    items: section.items.map((item) => ({
-      key: item.url,
-      title: t(item.i18nKey, item.title),
-      url: item.url,
-      icon: item.icon,
-    })),
-  }))
+  // By the administrator's own role, not the session's acting one: a super
+  // admin acting read-only still sees every page, and the page offers the
+  // elevation next to what it unlocks.
+  const sections: GroupedNavSection[] = visibleAdminNav(admin.max_role ?? admin.role).map(
+    (section, i) => ({
+      key: section.title ?? String(i),
+      label: section.i18nKey ? t(section.i18nKey, section.title) : section.title,
+      items: section.items
+        .filter((item) => !item.hideInSidebar)
+        .map((item) => ({
+          key: item.url,
+          title: t(item.i18nKey, item.title),
+          url: item.url,
+          icon: item.icon,
+        })),
+    })
+  )
   // The deepest entry that owns the current path is the one marked current.
   const activeUrl = sections
     .flatMap((s) => s.items.map((i) => i.url))
@@ -72,13 +81,15 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
           <SidebarMenuItem>
             <SidebarMenuButton
               className={cn(SIDEBAR_CONTEXT_ROW_CLASS, 'pointer-events-none h-10')}
-              tooltip="Platform admin"
+              tooltip={t('admin.shell.contextRow', 'Platform admin')}
             >
               <div className={SIDEBAR_CHIP_CLASS}>
                 <ShieldCheck className="size-4" />
               </div>
               <div className="grid flex-1 text-start text-sm leading-tight">
-                <span className="truncate font-semibold">Platform admin</span>
+                <span className="truncate font-semibold">
+                  {t('admin.shell.contextRow', 'Platform admin')}
+                </span>
                 <span className="truncate text-xs text-muted-foreground">
                   {t(`admin.role.${admin.role}`, ADMIN_ROLE_LABELS[admin.role])}
                 </span>
@@ -105,9 +116,29 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
           </div>
         </SidebarMenuItem>
         <SidebarMenuItem>
-          <SidebarMenuButton onClick={onSignOut} tooltip="Sign out" className={NAV_BUTTON_CLASS}>
+          <SidebarMenuButton
+            asChild
+            isActive={pathname === '/security/keys'}
+            tooltip={t('admin.nav.securityKeys', 'My security keys')}
+            className={NAV_BUTTON_CLASS}
+          >
+            <Link href="/security/keys">
+              <Fingerprint />
+              <span>{t('admin.nav.securityKeys', 'My security keys')}</span>
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <ConsoleLanguagePicker />
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            onClick={onSignOut}
+            tooltip={t('admin.shell.signOut', 'Sign out')}
+            className={NAV_BUTTON_CLASS}
+          >
             <LogOut />
-            <span>Sign out</span>
+            <span>{t('admin.shell.signOut', 'Sign out')}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarFooterLinks>

@@ -76,7 +76,7 @@ func TestCTEMCycleMetricsHandler_LazyAndTrend(t *testing.T) {
 	}
 
 	repo := postgres.NewCTEMCycleMetricsRepository(&postgres.DB{DB: raw})
-	h := NewCTEMCycleHandler(raw, repo, logger.NewNop())
+	h := NewCTEMCycleHandler(raw, repo, logger.NewNop()).WithDataScope(unrestrictedDataScope())
 
 	// --- lazy compute-on-read: no metrics stored yet ---
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/ctem-cycles/"+cycleID+"/metrics", nil)

@@ -108,6 +108,13 @@ export interface AdminOrganization {
   sso_enforced: boolean
   /** At least one limit or module deny is set for the organization. */
   limits_apply: boolean
+  /** Platform status: a suspended organization is refused to every credential. */
+  status: 'active' | 'suspended' | 'pending_deletion'
+  suspended_at?: string
+  /** For administrators only; members never see it. */
+  suspended_reason?: string
+  /** An owner scheduled the deletion for this time. */
+  deletion_due_at?: string
 }
 
 export interface AdminOrganizationList {
@@ -221,6 +228,40 @@ export interface Paged<T> {
   total_pages: number
 }
 
+/** The Users list's state tabs (the API's `state` values). */
+export const PLATFORM_USER_STATES = [
+  'all',
+  'active',
+  'unverified',
+  'locked',
+  'blocked',
+  'mfa_off',
+  'platform_admins',
+] as const
+export type PlatformUserState = (typeof PLATFORM_USER_STATES)[number]
+
+/** One account in the Users list: no name, no organization data. */
+export interface PlatformUserListItem {
+  id: string
+  email: string
+  status: string
+  auth_provider: string
+  email_verified: boolean
+  locked: boolean
+  blocked: boolean
+  last_login_at?: string
+  created_at: string
+  memberships: number
+  mfa_enabled: boolean
+  is_platform_admin: boolean
+  erased: boolean
+}
+
+/** A page of the Users list with the count of each state under the search. */
+export interface PlatformUserList extends Paged<PlatformUserListItem> {
+  counts: Partial<Record<PlatformUserState, number>>
+}
+
 export interface AdminAuditEntry {
   id: string
   admin_id?: string
@@ -327,6 +368,10 @@ export interface PlatformUser {
   mfa_enabled: boolean
   is_platform_admin: boolean
   erased: boolean
+  /** Blocked platform-wide: no sign-in, API key or MCP token anywhere. */
+  blocked: boolean
+  blocked_at?: string
+  blocked_reason?: string
 }
 
 export interface PlatformUserDetail extends PlatformUser {
@@ -357,7 +402,7 @@ export interface PlatformUserDetail extends PlatformUser {
 }
 
 export type PlatformUserAction =
-  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails'
+  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails' | 'block' | 'unblock'
 
 /** GET /admin/sessions: one open console session (super admin). */
 export interface AdminConsoleSession {
@@ -377,6 +422,52 @@ export interface AdminConsoleSession {
   expires_at: string
   /** The session making the request. */
   current: boolean
+}
+
+/** The protected actions of four-eyes approvals. */
+export type AdminApprovalAction =
+  | 'admin.grant_super_admin'
+  | 'admin.revoke_super_admin'
+  | 'console_mfa.disable'
+  | 'platform_idp.remove'
+  | 'signup.open'
+  | 'audit_chain.rebaseline'
+  | 'organization.purge'
+
+export type AdminApprovalStatus =
+  'pending' | 'approved' | 'rejected' | 'canceled' | 'expired' | 'used'
+
+/** GET /admin/approvals: one request for a second super admin's approval. */
+export interface AdminApproval {
+  id: string
+  action: AdminApprovalAction | string
+  target: string
+  target_label?: string
+  reason: string
+  status: AdminApprovalStatus
+  requested_by_id: string
+  requested_by_email?: string
+  requested_at: string
+  expires_at: string
+  decided_by_email?: string
+  decided_at?: string
+  decision_note?: string
+  used_at?: string
+  /** The caller asked: may cancel, never decide. */
+  mine: boolean
+}
+
+export interface AdminApprovalList {
+  four_eyes: {
+    /** Another super admin can approve the caller's requests. */
+    active: boolean
+    /** Active, named (not break-glass) super admins. */
+    approvers: number
+    /** The caller may approve others' requests (not break-glass). */
+    can_approve: boolean
+  }
+  ttl_hours: number
+  data: AdminApproval[]
 }
 
 interface AdminOpsComponent {
@@ -487,6 +578,7 @@ export interface ReleaseFeedAdvisory {
 /** Error codes of the last online check or of a refused import. */
 export type VersionCheckErrorCode =
   | 'unreachable'
+  | 'not_published'
   | 'http_status'
   | 'too_large'
   | 'invalid'
@@ -496,8 +588,21 @@ export type VersionCheckErrorCode =
   | 'no_key'
 
 /** GET /admin/version-check/: what the release feed says about this instance. */
+/** The newest release of one first-party component (a sensor product, the SDK). */
+export interface ReleaseFeedComponent {
+  /** The versions.yaml section: "sensor", "connector-tenable", "sdk". */
+  component: string
+  version: string
+  published_at: string
+  notes_url?: string
+  /** Image manifest digest the install snippets pin ("sha256:..."). */
+  digest?: string
+}
+
 export interface VersionCheckStatus {
   enabled: boolean
+  /** VERSION_CHECK_ENABLED=false keeps the online check off; the console cannot turn it on. */
+  locked_by_environment?: boolean
   configured: boolean
   feed_url: string
   source?: 'online' | 'import'
@@ -512,6 +617,8 @@ export interface VersionCheckStatus {
   latest?: string
   update_available: boolean
   newer: ReleaseFeedRelease[]
+  /** Newest release of each first-party sensor product and the SDK, from the applied feed. */
+  components?: ReleaseFeedComponent[]
   advisories: ReleaseFeedAdvisory[]
   severity?: ReleaseFeedAdvisory['severity']
   fixed_in?: string
@@ -565,6 +672,8 @@ export interface AdminSystem {
       configured: boolean
       last_attempt_at?: string
       last_error?: string
+      /** Last time a verified release feed was applied (last success). */
+      applied_at?: string
       latest?: string
       update_available: boolean
       advisories: number
@@ -574,4 +683,89 @@ export interface AdminSystem {
   }
   level: number
   checked_at: string
+}
+
+/** One row of GET /admin/configuration (RFC-022 revision 22). Secrets come back as is_set only. */
+export interface ConfigurationItem {
+  key: string
+  group:
+    | 'instance'
+    | 'sign_in'
+    | 'email'
+    | 'scanning'
+    | 'storage'
+    | 'ai'
+    | 'console'
+    | 'audit'
+    | 'updates'
+    | 'alerts'
+  managed: 'console' | 'server'
+  source: 'console' | 'environment' | 'default'
+  value?: string
+  secret?: boolean
+  is_set?: boolean
+  env_var?: string
+  ceiling?: boolean
+  /** The environment variable that pins this console setting, when set. */
+  locked_by?: string
+  restart_required: boolean
+  page?: string
+  planned?: boolean
+  changed_at?: string
+  changed_by?: string
+}
+
+/** Who changed a console setting and when (absent: never in the console). */
+export interface SettingChange {
+  changed_at?: string
+  changed_by?: string
+}
+
+/** Settings > CAPTCHA: the Turnstile keys; the secret is never returned. */
+export interface CaptchaSettings extends SettingChange {
+  site_key: string
+  secret_set: boolean
+  source: 'none' | 'console' | 'environment'
+  locked_by_environment: boolean
+  env_var: string
+  version: number
+}
+
+/** The deployment region, set once before the first organization. */
+export interface RegionSettings extends SettingChange {
+  region: string
+  source: 'none' | 'console' | 'environment'
+  locked_by_environment: boolean
+  env_var: string
+  settable: boolean
+}
+
+/** The default storage quota of organizations (0: no quota). */
+export interface StorageQuotaSettings extends SettingChange {
+  default_mb: number
+  source: 'console' | 'environment'
+  env_var: string
+  environment_mb: number
+  max_mb: number
+  version: number
+}
+
+/** Settings > Alerts: the alert webhook; address and secret never returned. */
+export interface AlertWebhookSettings extends SettingChange {
+  enabled: boolean
+  url_set: boolean
+  url_host?: string
+  secret_set: boolean
+  version: number
+}
+
+/** Settings > AI provider: the platform AI provider; the key is never returned. */
+export interface PlatformAISettings extends SettingChange {
+  enabled: boolean
+  provider: string
+  model: string
+  key_set: boolean
+  locked_by_environment: boolean
+  providers: string[]
+  version: number
 }

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
+
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -2971,5 +2973,44 @@ func TestTenantSvc_AcceptInvitation_InviterNoLongerAuthorized(t *testing.T) {
 				t.Fatal("a membership was stored")
 			}
 		})
+	}
+}
+
+type tenantSignupRecorder struct{ events []signupevent.Event }
+
+func (r *tenantSignupRecorder) Record(_ context.Context, e signupevent.Event) {
+	r.events = append(r.events, e)
+}
+
+// An organization reaches the sign-up feed once it exists: a person's own
+// creation as self_service with the actor's address, a platform path under
+// the source it names; a failed creation reports nothing.
+func TestTenantSvc_CreateTenant_ReportsToSignupFeed(t *testing.T) {
+	svc, repo := newTestTenantService()
+	rec := &tenantSignupRecorder{}
+	svc.SetSignupRecorder(rec)
+	creator := shared.NewID()
+
+	if _, err := svc.CreateTenant(context.Background(), tenantapp.CreateTenantInput{Name: "Self", Slug: "self-org"},
+		creator, audit.AuditContext{ActorEmail: "me@acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateTenant(context.Background(), tenantapp.CreateTenantInput{Name: "Console", Slug: "console-org",
+		SignupSource: signupevent.SourceConsole, CreatorEmail: "owner@client.example"}, creator,
+		audit.AuditContext{ActorEmail: "platform-admin:ops@op.example"}); err != nil {
+		t.Fatal(err)
+	}
+	repo.createErr = errors.New("db down")
+	_, _ = svc.CreateTenant(context.Background(), tenantapp.CreateTenantInput{Name: "Fail", Slug: "fail-org"}, creator, audit.AuditContext{})
+
+	if len(rec.events) != 2 {
+		t.Fatalf("events = %+v", rec.events)
+	}
+	if e := rec.events[0]; e.Source != signupevent.SourceSelfService || e.Email != "me@acme.example" || e.UserID != creator ||
+		e.Kind != signupevent.KindOrganizationCreated || e.TenantID.IsZero() {
+		t.Fatalf("self-service event = %+v", e)
+	}
+	if e := rec.events[1]; e.Source != signupevent.SourceConsole || e.Email != "owner@client.example" {
+		t.Fatalf("console event = %+v", e)
 	}
 }

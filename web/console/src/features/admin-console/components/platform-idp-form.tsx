@@ -122,7 +122,7 @@ export function PlatformIdPForm({
     setError(null)
     try {
       await savePlatformIdP(toInput(form))
-      toast.success('Admin sign-in saved')
+      toast.success(t('admin.platformIdpForm.adminSignInSaved', 'Admin sign-in saved'))
       onSaved()
     } catch (e) {
       setError(adminErrorMessage(e, 'Could not save the identity provider'))
@@ -145,7 +145,12 @@ export function PlatformIdPForm({
     setBusy(true)
     try {
       await deletePlatformIdP()
-      toast.success('Identity provider removed; administrators sign in with their password')
+      toast.success(
+        t(
+          'admin.platformIdpForm.identityProviderRemovedAdministratorsSign',
+          'Identity provider removed; administrators sign in with their password'
+        )
+      )
       onSaved()
     } catch (e) {
       toast.error(adminErrorMessage(e, 'Could not remove the identity provider'))
@@ -159,41 +164,59 @@ export function PlatformIdPForm({
     <form method="post" onSubmit={submit} className="space-y-5">
       <Card>
         <CardHeader>
-          <CardTitle>Identity provider (OIDC)</CardTitle>
+          <CardTitle>
+            {t('admin.platformIdpForm.identityProviderOidc', 'Identity provider (OIDC)')}
+          </CardTitle>
           <CardDescription>
-            Administrators can sign in to this console with your organization-wide identity
-            provider. Only existing administrators can: an identity is matched to the administrator
-            with the same verified email on first sign-in, then by its subject. No administrator is
-            ever created from the IdP. Organization identity providers are configured per
-            organization and never open this console.
+            {t(
+              'admin.platformIdpForm.administratorsCanSignInTo',
+              'Administrators can sign in to this console with your organization-wide identity provider. Only existing administrators can: an identity is matched to the administrator with the same verified email on first sign-in, then by its subject. No administrator is ever created from the IdP. Organization identity providers are configured per organization and never open this console.'
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between gap-4 rounded-md border p-3">
             <div className="text-sm">
-              <p className="font-medium">Offer on the console sign-in page</p>
-              <p className="text-muted-foreground">Off keeps the configuration but hides it.</p>
+              <p className="font-medium">
+                {t(
+                  'admin.platformIdpForm.offerOnTheConsoleSign',
+                  'Offer on the console sign-in page'
+                )}
+              </p>
+              <p className="text-muted-foreground">
+                {t(
+                  'admin.platformIdpForm.offKeepsTheConfigurationBut',
+                  'Off keeps the configuration but hides it.'
+                )}
+              </p>
             </div>
             <Switch
               checked={form.enabled}
               onCheckedChange={(v) => set('enabled', v)}
-              aria-label="Enable the identity provider"
+              aria-label={t(
+                'admin.platformIdpForm.enableTheIdentityProvider',
+                'Enable the identity provider'
+              )}
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="idp-name">Button label</Label>
+              <Label htmlFor="idp-name">
+                {t('admin.platformIdpForm.buttonLabel', 'Button label')}
+              </Label>
               <Input
                 id="idp-name"
                 required
                 maxLength={100}
-                placeholder="Contoso Entra ID"
+                placeholder={t('admin.platformIdpForm.contosoEntraId', 'Contoso Entra ID')}
                 value={form.displayName}
                 onChange={(e) => set('displayName', e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="idp-issuer">Issuer URL</Label>
+              <Label htmlFor="idp-issuer">
+                {t('admin.platformIdpForm.issuerUrl', 'Issuer URL')}
+              </Label>
               <Input
                 id="idp-issuer"
                 required
@@ -204,7 +227,9 @@ export function PlatformIdPForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="idp-client-id">Client ID</Label>
+              <Label htmlFor="idp-client-id">
+                {t('admin.platformIdpForm.clientId', 'Client ID')}
+              </Label>
               <Input
                 id="idp-client-id"
                 required
@@ -213,20 +238,31 @@ export function PlatformIdPForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="idp-client-secret">Client secret</Label>
+              <Label htmlFor="idp-client-secret">
+                {t('admin.platformIdpForm.clientSecret', 'Client secret')}
+              </Label>
               <Input
                 id="idp-client-secret"
                 type="password"
                 autoComplete="new-password"
                 required={!idp.has_client_secret}
-                placeholder={idp.has_client_secret ? 'Stored. Leave empty to keep it.' : ''}
+                placeholder={
+                  idp.has_client_secret
+                    ? t(
+                        'admin.platformIdpForm.storedLeaveEmptyToKeep',
+                        'Stored. Leave empty to keep it.'
+                      )
+                    : ''
+                }
                 value={form.clientSecret}
                 onChange={(e) => set('clientSecret', e.target.value)}
               />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="idp-redirect">Redirect URI</Label>
+            <Label htmlFor="idp-redirect">
+              {t('admin.platformIdpForm.redirectUri', 'Redirect URI')}
+            </Label>
             <Input
               id="idp-redirect"
               required
@@ -234,19 +270,24 @@ export function PlatformIdPForm({
               onChange={(e) => set('redirectURI', e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Register this exact URI with the identity provider. It is the console page that
-              finishes the sign-in.
+              {t(
+                'admin.platformIdpForm.registerThisExactUriWith',
+                'Register this exact URI with the identity provider. It is the console page that finishes the sign-in.'
+              )}
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="idp-scopes">Scopes</Label>
+            <Label htmlFor="idp-scopes">{t('admin.platformIdpForm.scopes', 'Scopes')}</Label>
             <Input
               id="idp-scopes"
               value={form.scopes}
               onChange={(e) => set('scopes', e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Must include openid. The email claim must be verified for the first sign-in.
+              {t(
+                'admin.platformIdpForm.mustIncludeOpenidTheEmail',
+                'Must include openid. The email claim must be verified for the first sign-in.'
+              )}
             </p>
           </div>
         </CardContent>
@@ -254,44 +295,56 @@ export function PlatformIdPForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Second factor</CardTitle>
+          <CardTitle>{t('admin.platformIdpForm.secondFactor', 'Second factor')}</CardTitle>
           <CardDescription>
-            By default the console still asks for its own 6-digit code after the identity provider:
-            the console cannot see how the IdP authenticated the person, and a weak IdP policy would
-            otherwise be enough to reach every organization. Trust the IdP&apos;s MFA only if it
-            enforces phishing-resistant MFA and reports it in the token.
+            {t(
+              'admin.platformIdpForm.byDefaultTheConsoleStill',
+              "By default the console still asks for its own 6-digit code after the identity provider: the console cannot see how the IdP authenticated the person, and a weak IdP policy would otherwise be enough to reach every organization. Trust the IdP's MFA only if it enforces phishing-resistant MFA and reports it in the token."
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="idp-acr">Trusted acr values</Label>
+            <Label htmlFor="idp-acr">
+              {t('admin.platformIdpForm.trustedAcrValues', 'Trusted acr values')}
+            </Label>
             <Input
               id="idp-acr"
-              placeholder="e.g. urn:example:mfa"
+              placeholder={t('admin.platformIdpForm.eGUrnExampleMfa', 'e.g. urn:example:mfa')}
               value={form.trustedACR}
               onChange={(e) => set('trustedACR', e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Requested from the IdP; a token with one of them skips the console code.
+              {t(
+                'admin.platformIdpForm.requestedFromTheIdpA',
+                'Requested from the IdP; a token with one of them skips the console code.'
+              )}
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="idp-amr">Trusted amr values</Label>
+            <Label htmlFor="idp-amr">
+              {t('admin.platformIdpForm.trustedAmrValues', 'Trusted amr values')}
+            </Label>
             <Input
               id="idp-amr"
-              placeholder="e.g. hwk, mfa"
+              placeholder={t('admin.platformIdpForm.eGHwkMfa', 'e.g. hwk, mfa')}
               value={form.trustedAMR}
               onChange={(e) => set('trustedAMR', e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              A token whose amr contains one of them skips the console code.
+              {t(
+                'admin.platformIdpForm.aTokenWhoseAmrContains',
+                'A token whose amr contains one of them skips the console code.'
+              )}
             </p>
           </div>
           {trustsIdPMFA && (
             <Alert className="sm:col-span-2">
               <AlertDescription>
-                The console code is skipped for tokens that carry a trusted value. Leave both empty
-                to always require it.
+                {t(
+                  'admin.platformIdpForm.theConsoleCodeIsSkipped',
+                  'The console code is skipped for tokens that carry a trusted value. Leave both empty to always require it.'
+                )}
               </AlertDescription>
             </Alert>
           )}
@@ -300,20 +353,30 @@ export function PlatformIdPForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Require the identity provider</CardTitle>
+          <CardTitle>
+            {t('admin.platformIdpForm.requireTheIdentityProvider', 'Require the identity provider')}
+          </CardTitle>
           <CardDescription>
-            Password sign-in to the console is refused for every administrator except break-glass
-            accounts, which stay local so the console is reachable when the IdP is down. Turning it
-            on signs out administrators who are in the console with a password.
+            {t(
+              'admin.platformIdpForm.passwordSignInToThe',
+              'Password sign-in to the console is refused for every administrator except break-glass accounts, which stay local so the console is reachable when the IdP is down. Turning it on signs out administrators who are in the console with a password.'
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between gap-4 rounded-md border p-3">
             <div className="text-sm">
-              <p className="font-medium">{form.requireIdP ? 'Required' : 'Not required'}</p>
+              <p className="font-medium">
+                {form.requireIdP
+                  ? t('admin.platformIdpForm.required', 'Required')
+                  : t('admin.platformIdpForm.notRequired', 'Not required')}
+              </p>
               {requireBlocked && (
                 <p className="text-muted-foreground">
-                  Add an active break-glass super admin first (Administrators).
+                  {t(
+                    'admin.platformIdpForm.addAnActiveBreakGlass',
+                    'Add an active break-glass super admin first (Administrators).'
+                  )}
                 </p>
               )}
             </div>
@@ -321,7 +384,10 @@ export function PlatformIdPForm({
               checked={form.requireIdP}
               disabled={requireBlocked && !form.requireIdP}
               onCheckedChange={(v) => set('requireIdP', v)}
-              aria-label="Require the identity provider"
+              aria-label={t(
+                'admin.platformIdpForm.requireTheIdentityProvider',
+                'Require the identity provider'
+              )}
             />
           </div>
         </CardContent>
@@ -330,20 +396,29 @@ export function PlatformIdPForm({
       {idp.configured && idp.token_endpoint && (
         <Card>
           <CardHeader>
-            <CardTitle>Discovered endpoints</CardTitle>
+            <CardTitle>
+              {t('admin.platformIdpForm.discoveredEndpoints', 'Discovered endpoints')}
+            </CardTitle>
             <CardDescription>
-              Read from the issuer&apos;s OpenID configuration when the settings were saved.
+              {t(
+                'admin.platformIdpForm.readFromTheIssuerS',
+                "Read from the issuer's OpenID configuration when the settings were saved."
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
-              <dt className="text-muted-foreground">Authorization</dt>
+              <dt className="text-muted-foreground">
+                {t('admin.platformIdpForm.authorization', 'Authorization')}
+              </dt>
               <dd className="min-w-0 break-all">{idp.authorization_endpoint}</dd>
-              <dt className="text-muted-foreground">Token</dt>
+              <dt className="text-muted-foreground">{t('admin.platformIdpForm.token', 'Token')}</dt>
               <dd className="min-w-0 break-all">
                 {idp.token_endpoint} ({idp.token_endpoint_auth_method})
               </dd>
-              <dt className="text-muted-foreground">Signing keys</dt>
+              <dt className="text-muted-foreground">
+                {t('admin.platformIdpForm.signingKeys', 'Signing keys')}
+              </dt>
               <dd className="min-w-0 break-all">{idp.jwks_uri}</dd>
             </dl>
           </CardContent>
@@ -363,12 +438,12 @@ export function PlatformIdPForm({
             disabled={busy}
             onClick={() => setConfirmDelete(true)}
           >
-            Remove
+            {t('admin.platformIdpForm.remove', 'Remove')}
           </Button>
         )}
         <Button type="submit" disabled={busy}>
           {busy && <Loader2 className="me-2 size-4 animate-spin" />}
-          Save
+          {t('common.save', 'Save')}
         </Button>
       </div>
 

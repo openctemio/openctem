@@ -5,13 +5,15 @@
  * returns in the body of the sign-in and validate responses and this module
  * keeps in memory only (no console secret is ever readable in a cookie: on a
  * second port of the tenant host the two sites share the host's cookies).
- * Before a session exists, the sign-in steps echo the page's csrf_token (as
+ * Before a session exists, the sign-in steps echo the page's console_csrf (as
  * the global fetch wrapper, src/lib/csrf-client.ts, would).
  */
 
+import { CONSOLE_CSRF_COOKIE } from '@console/lib/csrf-cookie'
+
 export const ADMIN_API = '/api/v1/admin'
 /** The page CSRF cookie, echoed only by the sign-in steps before a session exists. */
-const PAGE_CSRF_COOKIE = 'csrf_token'
+const PAGE_CSRF_COOKIE = CONSOLE_CSRF_COOKIE
 
 /** The console session's CSRF token, in memory only. */
 let sessionCsrf: string | null = null
@@ -85,6 +87,67 @@ let enrollmentListener: (() => void) | null = null
  */
 export function setAdminEnrollmentListener(listener: (() => void) | null) {
   enrollmentListener = listener
+}
+
+/**
+ * Reads the console makes on its own (the periodic refresh of an open page)
+ * carry this header, so the API does not count them as activity and an
+ * unattended tab still reaches the 15-minute idle timeout. A read counts as
+ * background when the page is hidden or nobody pressed a key, clicked or
+ * touched it for a minute. It never grants anything; writes never carry it.
+ */
+export const ADMIN_BACKGROUND_HEADER = 'X-Admin-Background'
+/** How long after the last key, click or touch a read still counts as the administrator's. */
+export const INTERACTION_WINDOW_MS = 60_000
+
+let lastInteraction = Date.now()
+
+/** Records that the administrator used the page now (tests call it directly). */
+export function noteAdminInteraction(at: number = Date.now()) {
+  lastInteraction = at
+}
+
+if (typeof window !== 'undefined') {
+  const note = () => noteAdminInteraction()
+  for (const type of ['pointerdown', 'keydown', 'touchstart'] as const) {
+    window.addEventListener(type, note, { capture: true, passive: true })
+  }
+}
+
+/** Whether a read now is the console's own, not the administrator's. */
+export function isBackgroundRead(now: number = Date.now()): boolean {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return true
+  return now - lastInteraction > INTERACTION_WINDOW_MS
+}
+
+/**
+ * A catastrophic action (a new super admin, security keys off, sign-up opened,
+ * an audit chain re-signed, ...) needs another super admin's approval first:
+ * the API answers 428 with this code and names the action and its exact target.
+ */
+export const SECOND_APPROVAL_REQUIRED = 'SECOND_APPROVAL_REQUIRED'
+
+/** What a SECOND_APPROVAL_REQUIRED refusal names. */
+export interface AdminApprovalNeeded {
+  action: string
+  target: string
+  target_label?: string
+  /** The caller's open request for the same action and target, if any. */
+  pending_approval_id?: string
+}
+
+let approvalPrompt: ((needed: AdminApprovalNeeded) => void) | null = null
+
+/** Registers the console's approval dialog (one per console shell). */
+export function setAdminApprovalPrompt(prompt: ((needed: AdminApprovalNeeded) => void) | null) {
+  approvalPrompt = prompt
+}
+
+function approvalNeeded(err: unknown): AdminApprovalNeeded | null {
+  if (!(err instanceof AdminApiError) || err.code !== SECOND_APPROVAL_REQUIRED) return null
+  const d = err.details as Partial<AdminApprovalNeeded> | undefined
+  if (!d || typeof d.action !== 'string' || typeof d.target !== 'string') return null
+  return d as AdminApprovalNeeded
 }
 
 export class AdminApiError extends Error {
@@ -179,6 +242,13 @@ export async function adminFetch<T>(path: string, init: AdminFetchInit = {}): Pr
     try {
       return await adminRequest<T>(path, request, code)
     } catch (err) {
+      // The action stays refused; the dialog lets the administrator ask
+      // another super admin, then repeat it.
+      const needed = approvalNeeded(err)
+      if (needed) {
+        approvalPrompt?.(needed)
+        throw err
+      }
       const prompt = stepUpPrompt
       const ask = canPrompt && attempt <= STEP_UP_ATTEMPTS ? stepUpRequest(err, !!code) : null
       if (!ask || !prompt) throw err
@@ -210,6 +280,9 @@ async function adminRequest<T>(
     const csrf = sessionCsrf ?? readCookie(PAGE_CSRF_COOKIE)
     if (csrf) headers['X-CSRF-Token'] = csrf
     if (stepUpCode) headers[ADMIN_STEP_UP_HEADER] = stepUpCode
+  }
+  if ((method === 'GET' || method === 'HEAD') && isBackgroundRead()) {
+    headers[ADMIN_BACKGROUND_HEADER] = '1'
   }
 
   const res = await fetch(`${ADMIN_API}${path}`, {

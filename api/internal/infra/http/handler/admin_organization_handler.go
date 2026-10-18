@@ -78,6 +78,13 @@ type AdminOrganizationResponse struct {
 	SSOEnforced             bool     `json:"sso_enforced"`
 	// LimitsApply: at least one limit or feature deny is set.
 	LimitsApply bool `json:"limits_apply"`
+	// Status is the platform status: active or suspended. The suspension
+	// reason is for administrators only.
+	Status          string     `json:"status"`
+	SuspendedAt     *time.Time `json:"suspended_at,omitempty"`
+	SuspendedReason string     `json:"suspended_reason,omitempty"`
+	// DeletionDueAt: an owner scheduled the deletion for this time.
+	DeletionDueAt *time.Time `json:"deletion_due_at,omitempty"`
 }
 
 // AdminOrganizationListResponse is a page of organizations.
@@ -195,6 +202,7 @@ func toAdminOrganizationResponse(o *admin.Organization, personalData bool) Admin
 		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners, OwnerCount: count,
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
 		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, LimitsApply: o.LimitsApply,
+		Status: o.Status, SuspendedAt: o.SuspendedAt, SuspendedReason: o.SuspendedReason, DeletionDueAt: o.DeletionDueAt,
 	}
 }
 
@@ -228,6 +236,7 @@ func orgIDParam(r *http.Request) (shared.ID, bool) {
 // @Produce json
 // @Param search query string false "Match name or slug"
 // @Param owner query string false "none: no active owner; present: has one" Enums(none, present)
+// @Param status query string false "Platform status" Enums(active, suspended, pending_deletion)
 // @Param include_system query bool false "Also list the internal platform system organization (left out by default)"
 // @Param page query int false "Page (default 1)"
 // @Param per_page query int false "Page size (default 50, max 100)"
@@ -250,6 +259,13 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 		f.Owner = owner
 	default:
 		apierror.BadRequest("owner must be none or present").WriteJSON(w)
+		return
+	}
+	switch status := q.Get("status"); tenant.OrganizationStatus(status) {
+	case "", tenant.OrganizationActive, tenant.OrganizationSuspended, tenant.OrganizationPendingDeletion:
+		f.Status = status
+	default:
+		apierror.BadRequest("status must be active, suspended or pending_deletion").WriteJSON(w)
 		return
 	}
 	switch q.Get("include_system") {

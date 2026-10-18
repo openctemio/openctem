@@ -2,12 +2,14 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 type scimCtxKey string
@@ -32,6 +34,10 @@ func SCIMAuth(authn SCIMTokenAuthenticator) func(http.Handler) http.Handler {
 				return
 			}
 			tok, err := authn.Authenticate(r.Context(), token)
+			if errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+				writeSCIMError(w, http.StatusForbidden, tenantdom.MessageOrganizationSuspended)
+				return
+			}
 			if err != nil {
 				writeSCIMError(w, http.StatusUnauthorized, "invalid or revoked token")
 				return

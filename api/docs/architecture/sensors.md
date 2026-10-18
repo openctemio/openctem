@@ -365,9 +365,20 @@ it with the product's own line: `latest`, `update_available`, `unsupported`
 custom sensor gets no version verdict; its compatibility is the protocol and
 the capabilities it advertises). A git-describe build (`v0.4.2-3-gabc1234`)
 counts as its tag. The stats response lists the catalog (`products`: `id`,
-`latest_version`, `min_version`, `image`). A release bump changes
-`versions.yaml` only; there is no setting for it (`SENSOR_LATEST_VERSION` and
-`SENSOR_MIN_VERSION` are refused at startup).
+`latest_version`, `min_version`, `image`, `latest_source`). The latest release
+is learned at runtime from the signed release feed (RFC-037 §12): a sensor
+release needs no platform change or release. `latest_source` says where it
+comes from: `feed`, `built_in` (the release this platform release was built
+with, used until a feed is applied: newer releases may exist, and the console
+says so) or `operator` (`SENSOR_PRODUCTS_FILE`). The feed can only raise the
+built-in latest, never lower it; `min` always comes from `versions.yaml`. With
+a feed digest the install snippets pin `image:tag@sha256:...`. There is no
+setting for either (`SENSOR_LATEST_VERSION` and `SENSOR_MIN_VERSION` are
+refused at startup); an air-gapped instance imports the feed file in the
+console. A product the catalog does not list can have a release line its
+organization records (`/api/v1/sensors/custom-products`, RFC-037 §13); without
+one it gets no version verdict. See
+[sensor compatibility](sensor-compatibility.md).
 
 **Other fields**: `key_expires_at`, `last_offline_at`, `last_error_at`,
 `started_at` and `uptime_seconds` (from the heartbeat's `uptime_seconds`, stored
@@ -479,7 +490,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
      the same request (400 `NEW_ORGS_CHOICE_REQUIRED`). A deny always wins;
   3. the owner's opt-out, the organization setting `shared_sensors.opt_out`.
 
-  Console > System > Platform scanning (`/api/v1/admin/settings/shared-sensors`)
+  Console > Scanning > Platform scanning (`/api/v1/admin/settings/shared-sensors`)
   and `/api/v1/admin/tenants/{id}/shared-sensors`: any administrator reads,
   and a super admin changes either with a reason and a fresh authenticator
   code (critical admin audit row, other administrators emailed). The owner's
@@ -519,7 +530,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   one per region). No sensor id, name, host, address, version, node count,
   capacity or other organization's load. The card links administrators to
   the owner's opt-out.
-- **Console fleet.** Console > System > Shared sensors
+- **Console fleet.** Console > Scanning > Platform scanning (Fleet)
   (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
   `postgres/shared_fleet_repository.go`). Any administrator: the instance
   sensors, queued and running jobs per tool lane, per-organization counts
@@ -533,7 +544,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   critical audit row written before the status change (no row, no change) (`shared_sensor.paused|resumed|retired`); the status update is
   guarded by `scope = 'instance'` and a retired sensor cannot be resumed
   (409). Pause leaves held jobs to finish (drain); retire is a revoke.
-- **Egress addresses.** Console > System > Platform scanning, "Egress
+- **Egress addresses.** Console > Scanning > Platform scanning, "Egress
   addresses" (`GET/PUT /api/v1/admin/settings/shared-sensors/egress`,
   `platform_settings['shared_sensors_egress']`): IP addresses or CIDR ranges
   for every region and per region label (sensor region tokens, at most 32
@@ -687,11 +698,16 @@ it is empty. Stored in `sensors.sdk_name`, `sdk_version`, `sensor_product`,
 `sensor_commit`, `sensor_build_time` (migration 000255); an empty part leaves
 the stored value.
 
-**SDK**: informational, from `versions.yaml` (`sdk.latest`, `sdk.advisories`).
+**SDK**: informational: the latest SDK is learned from the release feed
+(`sdk.latest` in `versions.yaml` is the built-in fallback), the advisories come
+from `versions.yaml` (`sdk.advisories`).
 `sdk_status` per sensor is `advisory` (an SDK release with a published
 security advisory: health reason `sdk_advisory`, so a heartbeating sensor is
 `degraded`), `outdated` (below the latest, no health effect), `current`, or
-`unknown` (no SDK version known). There is no SDK minimum. The sensor
+`unsupported` (older than `sdk.min`, the oldest SDK the platform supports:
+health reason `sdk_unsupported`, critical, any product), or `unknown` (no SDK
+version known, or a sensor built with another SDK than sdk-go). `sdk.min` is
+empty today. The sensor
 responses carry `sdk_name`, `sdk_version`, `sdk_status`, `sensor_product`,
 `sensor_commit`, `sensor_build_time`; the stats add `sdk_latest_version`,
 `sdk_advisories`, `by_sdk_version` (`unknown` for none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)

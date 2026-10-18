@@ -124,7 +124,8 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 		// limit and a panic (500) included. Operator alerts read these.
 		middleware.Metrics(),
 		middleware.ConcurrencyLimit(cfg.Server.MaxConcurrentRequests), // Limit concurrent requests
-		middleware.RequestID(), // Add request ID early
+		middleware.RequestID(),       // Add request ID early
+		middleware.ClientIPContext(), // Client IP (trusted proxies only) for services that record it
 		middleware.AdminNetworkGate(cfg.AdminPlane.AllowedPrefixes(), log), // Console only from ADMIN_ALLOWED_CIDRS
 		middleware.ContextLogger(log),                                      // Inject request-scoped logger into context
 		middleware.SecurityHeadersWithConfig(securityCfg),                  // Security headers with HSTS

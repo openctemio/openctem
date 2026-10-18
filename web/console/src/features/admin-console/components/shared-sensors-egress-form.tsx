@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { RoleRequiredNotice } from './role-required-notice'
 
 export interface SharedSensorsEgressFormProps {
   global: string[]
@@ -211,7 +212,7 @@ export function SharedSensorsEgressForm({
               </Button>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">{t('admin.scanPolicy.superOnly')}</p>
+            <RoleRequiredNotice needed="super_admin" />
           )}
         </CardContent>
       </Card>

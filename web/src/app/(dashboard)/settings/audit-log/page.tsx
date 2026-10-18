@@ -31,13 +31,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search as SearchIcon, RefreshCw, AlertCircle, ShieldX, Copy } from 'lucide-react'
+import { Search as SearchIcon, RefreshCw, AlertCircle, ShieldX, Copy, Download } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import {
   useAuditLogs,
   toAuditApiPage,
   useAuditStats,
+  useAuditExport,
   type AuditLog,
   type AuditLogFilters,
   type AuditResult,
@@ -174,6 +182,8 @@ export default function AuditLogPage() {
     error.statusCode === 403 &&
     !!error.details?.required
   const { stats, isLoading: statsLoading } = useAuditStats(!needsFullData)
+  // The export carries the filters the list shows; paging and sort do not apply.
+  const { run: runExport, isExporting } = useAuditExport(activeFilters)
 
   const columns = useMemo<ColumnDef<AuditLog>[]>(
     () => [
@@ -353,6 +363,30 @@ export default function AuditLogPage() {
           Hide system
         </Label>
       </div>
+      {hasAuditPermission && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9" disabled={isExporting}>
+              <Download className="me-2 h-4 w-4" aria-hidden="true" />
+              {t('auditLog.export.button', 'Export')}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel className="max-w-56 text-xs font-normal text-muted-foreground">
+              {t(
+                'auditLog.export.hint',
+                'Exports the events that match the current filters, newest first.'
+              )}
+            </DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => void runExport('csv')}>
+              {t('auditLog.export.csv', 'CSV')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void runExport('jsonl')}>
+              {t('auditLog.export.jsonl', 'JSON lines')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       <Button
         variant="outline"
         size="sm"

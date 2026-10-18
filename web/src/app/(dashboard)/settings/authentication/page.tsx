@@ -2,7 +2,7 @@
 
 import { OrganizationSettings } from '@/features/organization/components/organization-settings'
 
-/** Settings › Access › Authentication (was the Security tab of /settings/tenant). */
+/** Settings › Security › Authentication: how people sign in and who may join. */
 export default function OrganizationAuthenticationPage() {
   return <OrganizationSettings view="authentication" />
 }

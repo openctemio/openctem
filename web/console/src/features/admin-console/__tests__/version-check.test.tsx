@@ -14,9 +14,11 @@ vi.mock('sonner', () => ({ toast }))
 
 const state = vi.hoisted(() => ({ data: undefined as VersionCheckStatus | undefined }))
 const importReleaseFeed = vi.hoisted(() => vi.fn())
+const setVersionCheckEnabled = vi.hoisted(() => vi.fn())
 vi.mock('../api/use-version-check', () => ({
   useVersionCheck: () => ({ data: state.data }),
   importReleaseFeed,
+  setVersionCheckEnabled,
 }))
 
 const { VersionCheckBanner } = await import('../components/version-check-banner')
@@ -188,5 +190,97 @@ describe('SoftwareUpdatesPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Import' }))
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
     expect(importReleaseFeed).not.toHaveBeenCalled()
+  })
+})
+
+describe('daily online check switch', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('a super admin turns the check off without a restart', async () => {
+    setVersionCheckEnabled.mockResolvedValueOnce(status({ enabled: false }))
+    const changed = vi.fn()
+    render(<SoftwareUpdatesPanel status={status()} canImport onChanged={changed} />)
+    await userEvent.setup().click(screen.getByRole('switch', { name: 'Daily online check' }))
+    expect(setVersionCheckEnabled).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(changed).toHaveBeenCalled())
+  })
+
+  it('no switch when VERSION_CHECK_ENABLED=false locks it, and the reason is shown', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({ enabled: false, locked_by_environment: true })}
+        canImport
+        onChanged={vi.fn()}
+      />
+    )
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    expect(screen.getByText(/locked by the server configuration/)).toBeInTheDocument()
+  })
+
+  it('no switch for an administrator who cannot change it', () => {
+    render(<SoftwareUpdatesPanel status={status()} canImport={false} onChanged={vi.fn()} />)
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+  })
+})
+
+describe('SoftwareUpdatesPanel components', () => {
+  it('lists the sensor and SDK releases the feed teaches, linking only our pages', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({
+          components: [
+            {
+              component: 'sensor',
+              version: 'v0.23.2',
+              published_at: '2026-10-15T10:00:00Z',
+              notes_url: 'https://github.com/openctemio/sensor/releases/tag/v0.23.2',
+            },
+            {
+              component: 'sdk',
+              version: 'v0.34.0',
+              published_at: '2026-10-15T10:00:00Z',
+              notes_url: 'https://example.com/x',
+            },
+            { component: 'connector-new', version: 'v1.0.0', published_at: '2026-10-15T10:00:00Z' },
+          ],
+        })}
+        canImport={false}
+        onChanged={() => {}}
+      />
+    )
+    expect(screen.getByText('Scanning sensor')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'v0.23.2' })).toHaveAttribute(
+      'href',
+      'https://github.com/openctemio/sensor/releases/tag/v0.23.2'
+    )
+    // A link to another host is shown as plain text.
+    expect(screen.queryByRole('link', { name: 'v0.34.0' })).toBeNull()
+    expect(screen.getByText('v0.34.0')).toBeInTheDocument()
+    // A component the console does not know shows its id.
+    expect(screen.getByText('connector-new')).toBeInTheDocument()
+  })
+
+  it('says the built-in versions apply when the feed lists none', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({ components: [] })}
+        canImport={false}
+        onChanged={() => {}}
+      />
+    )
+    expect(screen.getByText(/the versions this release was built with apply/)).toBeInTheDocument()
+  })
+})
+
+describe('SoftwareUpdatesPanel feed state', () => {
+  it('says the feed is not published (never a silent empty page)', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({ last_error: 'not_published', last_attempt_at: '2026-10-18T00:00:00Z' })}
+        canImport={false}
+        onChanged={() => {}}
+      />
+    )
+    expect(screen.getByText(/No release feed is published at this address yet/)).toBeInTheDocument()
   })
 })

@@ -82,7 +82,10 @@ export default function ThreatIntelFeedsPage() {
       <div className="mt-5">
         {error ? (
           <ErrorState
-            title="threat intelligence feeds"
+            title={t(
+              'admin.systemThreatIntelPage.threatIntelligenceFeeds',
+              'threat intelligence feeds'
+            )}
             error={error}
             onRetry={() => void mutate()}
           />

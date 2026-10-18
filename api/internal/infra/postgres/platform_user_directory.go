@@ -33,6 +33,10 @@ type PlatformUserSummary struct {
 	MFAEnabled      bool
 	IsPlatformAdmin bool
 	Erased          bool
+	// Blocked platform-wide by an administrator (users.status 'suspended'),
+	// when and why (docs/architecture/organization-suspension.md).
+	BlockedAt     *time.Time
+	BlockedReason string
 }
 
 // PlatformUserMembership is one organization the account belongs to.
@@ -89,19 +93,25 @@ const platformUserSelect = `
 	       (SELECT count(*) FROM tenant_members m WHERE m.user_id = u.id),
 	       COALESCE((SELECT f.enabled FROM user_mfa f WHERE f.user_id = u.id), FALSE),
 	       EXISTS (SELECT 1 FROM admin_users a WHERE a.user_id = u.id),
-	       u.erased_at IS NOT NULL
+	       u.erased_at IS NOT NULL,
+	       u.blocked_at, COALESCE(u.blocked_reason, '')
 	FROM users u`
 
 func scanPlatformUser(sc interface{ Scan(...any) error }) (PlatformUserSummary, error) {
 	var (
 		s                 PlatformUserSummary
 		locked, lastLogin sql.NullTime
+		blockedAt         sql.NullTime
 		memberships       int64
 	)
 	if err := sc.Scan(&s.ID, &s.Email, &s.Name, &s.Status, &s.AuthProvider, &s.EmailVerified,
 		&locked, &s.FailedLogins, &lastLogin, &s.CreatedAt, &memberships, &s.MFAEnabled,
-		&s.IsPlatformAdmin, &s.Erased); err != nil {
+		&s.IsPlatformAdmin, &s.Erased, &blockedAt, &s.BlockedReason); err != nil {
 		return s, err
+	}
+	if blockedAt.Valid {
+		t := blockedAt.Time
+		s.BlockedAt = &t
 	}
 	if locked.Valid {
 		t := locked.Time
@@ -115,40 +125,112 @@ func scanPlatformUser(sc interface{ Scan(...any) error }) (PlatformUserSummary, 
 	return s, nil
 }
 
-// Search finds accounts whose email or name contains q (case-insensitive;
-// the email and name have trigram indexes), or whose id is q. Newest first.
-func (d *PlatformUserDirectory) Search(ctx context.Context, q string, limit, offset int) ([]PlatformUserSummary, int, error) {
-	q = strings.TrimSpace(q)
-	where := ` WHERE u.email ILIKE $1 OR u.name ILIKE $1`
-	args := []any{"%" + escapeLikePattern(q) + "%"}
-	if id, err := shared.IDFromString(q); err == nil {
-		where = ` WHERE u.id = $1`
-		args = []any{id.String()}
+// Account states the console's Users list filters on. Erased accounts are
+// in "all" only.
+const (
+	PlatformUserStateAll        = "all"
+	PlatformUserStateActive     = "active"
+	PlatformUserStateBlocked    = "blocked"
+	PlatformUserStateLocked     = "locked"
+	PlatformUserStateUnverified = "unverified"
+	PlatformUserStateMFAOff     = "mfa_off"
+	PlatformUserStateAdmins     = "platform_admins"
+)
+
+// platformUserStates maps each state to its condition on users u. Every
+// condition is a constant: the state never reaches the SQL text.
+var platformUserStates = map[string]string{
+	PlatformUserStateAll: `TRUE`,
+	PlatformUserStateActive: `(u.status = 'active' AND u.blocked_at IS NULL AND u.erased_at IS NULL
+		AND u.email_verified AND (u.locked_until IS NULL OR u.locked_until <= now()))`,
+	PlatformUserStateBlocked:    `(u.blocked_at IS NOT NULL AND u.erased_at IS NULL)`,
+	PlatformUserStateLocked:     `(u.locked_until > now() AND u.erased_at IS NULL)`,
+	PlatformUserStateUnverified: `(NOT u.email_verified AND u.erased_at IS NULL)`,
+	PlatformUserStateMFAOff: `(u.erased_at IS NULL AND u.auth_provider = 'local'
+		AND NOT COALESCE((SELECT f.enabled FROM user_mfa f WHERE f.user_id = u.id), FALSE))`,
+	PlatformUserStateAdmins: `EXISTS (SELECT 1 FROM admin_users a WHERE a.user_id = u.id)`,
+}
+
+// PlatformUserStates lists the states in tab order.
+var PlatformUserStates = []string{PlatformUserStateAll, PlatformUserStateActive, PlatformUserStateUnverified,
+	PlatformUserStateLocked, PlatformUserStateBlocked, PlatformUserStateMFAOff, PlatformUserStateAdmins}
+
+// ValidPlatformUserState reports whether s is a known state.
+func ValidPlatformUserState(s string) bool {
+	_, ok := platformUserStates[s]
+	return ok
+}
+
+// PlatformUserFilter narrows the Users list: Q is part of an email or name
+// (or a whole id); State is one of the states ("" = all).
+type PlatformUserFilter struct {
+	Q     string
+	State string
+}
+
+// List returns one page of accounts matching the filter, newest first, the
+// total for the filter, and the count of each state under the search (the
+// list's tabs). The email and name have trigram indexes.
+func (d *PlatformUserDirectory) List(ctx context.Context, f PlatformUserFilter, limit, offset int) ([]PlatformUserSummary, int, map[string]int, error) {
+	q := strings.TrimSpace(f.Q)
+	search := `TRUE`
+	var args []any
+	id, idErr := shared.IDFromString(q)
+	switch {
+	case q == "":
+	case idErr == nil:
+		search, args = `u.id = $1`, []any{id.String()}
+	default:
+		search, args = `(u.email ILIKE $1 OR u.name ILIKE $1)`, []any{"%" + escapeLikePattern(q) + "%"}
+	}
+	state := f.State
+	if state == "" {
+		state = PlatformUserStateAll
+	}
+	cond, ok := platformUserStates[state]
+	if !ok {
+		return nil, 0, nil, fmt.Errorf("%w: unknown account state", shared.ErrValidation)
 	}
 
-	var total int
-	if err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM users u`+where, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count users: %w", err)
+	counts := make(map[string]int, len(PlatformUserStates))
+	sel := make([]string, 0, len(PlatformUserStates))
+	for _, st := range PlatformUserStates {
+		sel = append(sel, `count(*) FILTER (WHERE `+platformUserStates[st]+`)`)
 	}
+	dest := make([]any, len(PlatformUserStates))
+	vals := make([]int, len(PlatformUserStates))
+	for i := range vals {
+		dest[i] = &vals[i]
+	}
+	//nolint:gosec // every fragment is a constant of this file; values are bound
+	countSQL := `SELECT ` + strings.Join(sel, ", ") + ` FROM users u WHERE ` + search
+	if err := d.db.QueryRowContext(ctx, countSQL, args...).Scan(dest...); err != nil {
+		return nil, 0, nil, fmt.Errorf("count users: %w", err)
+	}
+	for i, st := range PlatformUserStates {
+		counts[st] = vals[i]
+	}
+
 	if limit <= 0 || limit > 100 {
 		limit = 25
 	}
-	rows, err := d.db.QueryContext(ctx, platformUserSelect+where+
-		fmt.Sprintf(" ORDER BY u.created_at DESC, u.id LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2),
-		append(args, limit, max(offset, 0))...)
+	//nolint:gosec // as above
+	listSQL := platformUserSelect + ` WHERE ` + search + ` AND ` + cond +
+		fmt.Sprintf(" ORDER BY u.created_at DESC, u.id LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	rows, err := d.db.QueryContext(ctx, listSQL, append(args, limit, max(offset, 0))...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("search users: %w", err)
+		return nil, 0, nil, fmt.Errorf("list users: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]PlatformUserSummary, 0, 32)
+	out := []PlatformUserSummary{}
 	for rows.Next() {
 		s, err := scanPlatformUser(rows)
 		if err != nil {
-			return nil, 0, fmt.Errorf("scan user: %w", err)
+			return nil, 0, nil, fmt.Errorf("scan user: %w", err)
 		}
 		out = append(out, s)
 	}
-	return out, total, rows.Err()
+	return out, counts[state], counts, rows.Err()
 }
 
 // Get returns one account with its memberships, identities and active
@@ -273,4 +355,35 @@ func (d *PlatformUserDirectory) ClearLockout(ctx context.Context, id shared.ID) 
 		return fmt.Errorf("%w: user", shared.ErrNotFound)
 	}
 	return nil
+}
+
+// SetBlocked blocks an account platform-wide (users.status 'suspended', with
+// who and why) or lifts the block (status 'active', the blocked_* columns
+// cleared). Only an active account is blocked and only a blocked one is
+// unblocked: false when the account was not in that state. An erased
+// account never matches. The user repository's Update never lifts a block
+// (it keeps 'suspended'), so this is the one way back.
+func (d *PlatformUserDirectory) SetBlocked(ctx context.Context, id shared.ID, blocked bool, by *shared.ID, reason string) (bool, error) {
+	var (
+		res sql.Result
+		err error
+	)
+	if blocked {
+		var byArg any
+		if by != nil {
+			byArg = by.String()
+		}
+		res, err = d.db.ExecContext(ctx, `
+			UPDATE users SET status = 'suspended', blocked_at = now(), blocked_by = $2, blocked_reason = $3, updated_at = now()
+			WHERE id = $1 AND status = 'active' AND erased_at IS NULL`, id.String(), byArg, reason)
+	} else {
+		res, err = d.db.ExecContext(ctx, `
+			UPDATE users SET status = 'active', blocked_at = NULL, blocked_by = NULL, blocked_reason = NULL, updated_at = now()
+			WHERE id = $1 AND status = 'suspended' AND erased_at IS NULL`, id.String())
+	}
+	if err != nil {
+		return false, fmt.Errorf("set account block: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }

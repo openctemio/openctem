@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -22,15 +23,16 @@ import (
 // confirm-or-downgrade outcome counts. Implemented by
 // *postgres.ValidationEvidenceRepository.
 type CoverageReader interface {
-	CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error)
+	CoverageBySeverity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) ([]validation.SeverityCoverage, error)
 	// DowngradeStats returns (downgraded, validated) for the downgrade % metric.
-	DowngradeStats(ctx context.Context, tenantID shared.ID) (downgraded, validated int, err error)
+	DowngradeStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (downgraded, validated int, err error)
 	// CoverageByPriority is the CTEM-cycle definition of validation coverage
-	// (closed findings per priority class with validation evidence), tenant-wide.
-	CoverageByPriority(ctx context.Context, tenantID string) (validation.ValidationCoverage, error)
+	// (closed findings per priority class with validation evidence). A non-nil
+	// scope counts only findings on assets inside that data scope.
+	CoverageByPriority(ctx context.Context, tenantID string, scope *shared.DataScope) (validation.ValidationCoverage, error)
 }
 
-// priorityCoverageOut is one priority class of the tenant-wide coverage.
+// priorityCoverageOut is one priority class of the viewer's coverage.
 type priorityCoverageOut struct {
 	Priority  string `json:"priority"`
 	Total     int    `json:"total"`
@@ -51,7 +53,13 @@ type ValidationHandler struct {
 	commands ValidationCommandLookup
 	policy   EvidencePolicyReader
 	logger   *logger.Logger
+	// dataScope narrows the coverage KPI to the caller's data scope.
+	dataScope *datascope.Enforcer
 }
+
+// SetDataScope wires the enforcer that narrows the coverage KPI to the
+// caller's data scope.
+func (h *ValidationHandler) SetDataScope(e *datascope.Enforcer) { h.dataScope = e }
 
 // EvidencePolicyReader reads the tenant's policy for sensor results without a
 // command (RFC-040 §5.3), which says whether advisory evidence is accepted.
@@ -475,7 +483,19 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bands, err := h.coverage.CoverageBySeverity(r.Context(), tenantID)
+	// Every figure follows the viewer (D6): a restricted member counts the
+	// findings of their own scope, dashboard:aggregate and unrestricted
+	// callers the organization.
+	scope, _, err := h.dataScope.ViewerScope(r.Context(), tenantID)
+	if err != nil {
+		h.logger.Error("validation coverage scope failed", "error", err)
+		apierror.InternalServerError("failed to compute validation coverage").WriteJSON(w)
+		return
+	}
+	// The figures also follow the pentest member-visibility rule of the
+	// findings list.
+	ctx := h.dataScope.WithFindingViewer(r.Context())
+	bands, err := h.coverage.CoverageBySeverity(ctx, tenantID, scope)
 	if err != nil {
 		h.logger.Error("validation coverage query failed", "error", err)
 		apierror.InternalServerError("failed to compute validation coverage").WriteJSON(w)
@@ -503,7 +523,7 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 	// flips the Program-Health board's downgrade % from "not measured" to live.
 	// A DowngradeStats failure degrades to zeros rather than failing the whole
 	// coverage KPI — the by-severity view is the primary payload here.
-	downgraded, dgValidated, derr := h.coverage.DowngradeStats(r.Context(), tenantID)
+	downgraded, dgValidated, derr := h.coverage.DowngradeStats(ctx, tenantID, scope)
 	if derr != nil {
 		h.logger.Error("validation downgrade stats query failed", "error", derr)
 		downgraded, dgValidated = 0, 0
@@ -515,7 +535,7 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 	// failure degrades to empty rather than failing the by-severity KPI.
 	byPriority := []priorityCoverageOut{}
 	p0p1Total, p0p1Validated := 0, 0
-	if pc, perr := h.coverage.CoverageByPriority(r.Context(), tenantID.String()); perr != nil {
+	if pc, perr := h.coverage.CoverageByPriority(ctx, tenantID.String(), scope); perr != nil {
 		h.logger.Error("validation coverage by priority query failed", "error", perr)
 	} else {
 		byPriority = []priorityCoverageOut{

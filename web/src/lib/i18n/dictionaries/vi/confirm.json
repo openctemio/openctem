@@ -188,7 +188,7 @@
   "confirm.notificationChannel.deleteDesc": "Thông báo ngừng gửi tới kênh này ngay lập tức và các quy tắc gửi tới nó mất đích này. Không thể hoàn tác.",
   "confirm.notificationChannel.deleteTitle": "Xóa kênh thông báo \"{name}\"?",
   "confirm.org.delete": "Xóa tổ chức",
-  "confirm.org.deleteDesc": "Tổ chức và toàn bộ dữ liệu của nó bị xóa với mọi thành viên: tài sản, phát hiện, bản quét, thành viên, vai trò, cài đặt và nhật ký kiểm toán. Tài khoản thành viên được giữ lại. Không thể hoàn tác.",
+  "confirm.org.deleteDesc": "Tổ chức bị đóng với mọi thành viên ngay bây giờ và bị xóa cùng toàn bộ dữ liệu sau 14 ngày: tài sản, phát hiện, bản quét, thành viên, vai trò, cài đặt và nhật ký kiểm toán. Chủ sở hữu có thể hủy việc xóa từ trang đăng nhập trước thời điểm đó. Tài khoản thành viên được giữ lại.",
   "confirm.org.deleteTitle": "Xóa tổ chức {name}?",
   "confirm.orgTrust.end": "Chấm dứt tin cậy",
   "confirm.orgTrust.endIncomingDesc": "Người của bạn bị vô hiệu hóa trong {org} ngay lập tức. Không có gì bị xóa.",
@@ -375,5 +375,8 @@
   "confirm.verifiedDomain.removeTitle": "Gỡ tên miền {domain}?",
   "confirm.workflowStep.builderDeleteDesc": "Bước này rời khỏi quy trình bạn đang chỉnh sửa và các bước phụ thuộc vào nó mất phụ thuộc đó. Không có gì thay đổi cho tới khi bạn lưu.",
   "confirm.workflowStep.deleteDesc": "Bước này rời khỏi bản nháp và các bước phụ thuộc vào nó mất phụ thuộc đó. Quy trình đã xuất bản không thay đổi cho tới khi bạn xuất bản.",
-  "confirm.workflowStep.deleteTitle": "Xóa bước này?"
+  "confirm.workflowStep.deleteTitle": "Xóa bước này?",
+  "confirm.mcpClient.blockTitle": "Chặn {name} trên toàn hệ thống?",
+  "confirm.mcpClient.blockDesc": "Mọi tổ chức trên hệ thống này mất quyền dùng ứng dụng ngay lập tức: token của nó ngừng hoạt động và không thể được cấp quyền lại cho đến khi bạn bỏ chặn.",
+  "confirm.mcpClient.block": "Chặn"
 }

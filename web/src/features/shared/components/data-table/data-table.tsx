@@ -347,7 +347,7 @@ export function DataTable<TData, TValue>({
   pageSize = 10,
   pageSizeOptions = [10, 20, 30, 50, 100],
   emptyMessage = 'No results found',
-  emptyDescription = 'Try adjusting your search or filters',
+  emptyDescription,
   onRowClick,
   onSelectionChange,
   manualPagination = false,
@@ -403,6 +403,11 @@ export function DataTable<TData, TValue>({
   )
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState('')
+  // "Try adjusting your search" only makes sense while one is applied: an
+  // empty list with no search or filter says just what is empty.
+  const filterActive = Boolean(globalFilter) || columnFilters.length > 0
+  const emptyHint =
+    emptyDescription ?? (filterActive ? 'Try adjusting your search or filters' : undefined)
   const rowGroupsRef = React.useRef(rowGroups)
   rowGroupsRef.current = rowGroups
   const [sortedRowModel] = React.useState(() =>
@@ -794,7 +799,7 @@ export function DataTable<TData, TValue>({
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
               <Inbox className="h-10 w-10 text-muted-foreground/50" />
               <p className="text-sm font-medium">{emptyMessage}</p>
-              <p className="text-xs text-muted-foreground">{emptyDescription}</p>
+              {emptyHint && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
             </div>
           )}
         </div>
@@ -973,7 +978,7 @@ export function DataTable<TData, TValue>({
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Inbox className="h-10 w-10 text-muted-foreground/50" />
                       <p className="text-sm font-medium">{emptyMessage}</p>
-                      <p className="text-xs text-muted-foreground">{emptyDescription}</p>
+                      {emptyHint && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
                     </div>
                   </TableCell>
                 </TableRow>
