@@ -63,6 +63,13 @@ func (r *CVECorpusRepository) ApplyFeedChunk(ctx context.Context, c cvecorpus.Ch
 	if res.RangesWritten, err = upsertFeedRanges(ctx, tx, c.Ranges, seq); err != nil {
 		return res, err
 	}
+	ids := make([]string, 0, len(c.CVEs))
+	for _, cve := range c.CVEs {
+		ids = append(ids, cve.ID)
+	}
+	if _, err := fillCatalogStubsFromCorpus(ctx, tx, ids); err != nil {
+		return res, err
+	}
 	if err := tx.Commit(); err != nil {
 		return res, fmt.Errorf("commit: %w", err)
 	}
