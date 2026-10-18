@@ -1,0 +1,4 @@
+{
+  "notificationPresets.discord.description": "Gửi thông báo tới kênh Discord qua webhook",
+  "notificationPresets.mattermost.description": "Gửi thông báo tới kênh Mattermost qua incoming webhook"
+}

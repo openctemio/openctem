@@ -30,6 +30,12 @@ func (c *RiskSnapshotController) Name() string { return "risk-snapshot" }
 // Interval returns 6 hours (computes at most once per day per tenant via UPSERT).
 func (c *RiskSnapshotController) Interval() time.Duration { return 6 * time.Hour }
 
+// Exclusive: one replica computes the snapshots (controller lease). The
+// statement scans assets and findings of every tenant; the per-day unique
+// key (tenant_id, snapshot_date) already keeps a second run from adding
+// rows, so the lease only spares the database the repeated full scans.
+func (c *RiskSnapshotController) Exclusive() bool { return true }
+
 // Reconcile computes and persists risk snapshots for all tenants.
 // Uses pre-aggregated CTEs with GROUP BY tenant_id for O(1) queries regardless of tenant count.
 func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {

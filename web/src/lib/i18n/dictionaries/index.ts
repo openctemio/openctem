@@ -39,6 +39,7 @@ import en_licensePolicy from './en/licensePolicy.json'
 import en_notificationTypes from './en/notificationTypes.json'
 import en_notificationChannels from './en/notificationChannels.json'
 import en_scmIntegration from './en/scmIntegration.json'
+import en_notificationPresets from './en/notificationPresets.json'
 import en_lookalikes from './en/lookalikes.json'
 import en_mcp from './en/mcp.json'
 import en_nav from './en/nav.json'
@@ -105,6 +106,7 @@ import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_notificationTypes from './vi/notificationTypes.json'
 import vi_notificationChannels from './vi/notificationChannels.json'
 import vi_scmIntegration from './vi/scmIntegration.json'
+import vi_notificationPresets from './vi/notificationPresets.json'
 import vi_lookalikes from './vi/lookalikes.json'
 import vi_mcp from './vi/mcp.json'
 import vi_nav from './vi/nav.json'
@@ -176,6 +178,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   notificationTypes: en_notificationTypes,
   notificationChannels: en_notificationChannels,
   scmIntegration: en_scmIntegration,
+  notificationPresets: en_notificationPresets,
   lookalikes: en_lookalikes,
   mcp: en_mcp,
   nav: en_nav,
@@ -245,6 +248,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   notificationTypes: vi_notificationTypes,
   notificationChannels: vi_notificationChannels,
   scmIntegration: vi_scmIntegration,
+  notificationPresets: vi_notificationPresets,
   lookalikes: vi_lookalikes,
   mcp: vi_mcp,
   nav: vi_nav,
