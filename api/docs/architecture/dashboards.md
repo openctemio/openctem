@@ -44,7 +44,7 @@ scoped read never does (the same rule as the findings list).
 | Table | Grain | Columns |
 |---|---|---|
 | `dash_asset_state` (F1) | asset × dimension combination | `lens` (open, fixed, dispositioned), `severity`, `priority_class` (`none` = unclassified), `sla_state` (ok, warning, breached, none), `source`, `kev`, `reachable`, `age_band` (0-30, 31-60, 61-90, 90+ for open findings, `na` otherwise), `pentest_campaign_id` → `finding_count`, `epss_sum` |
-| `dash_asset_day` (F2) | asset × UTC day × severity × priority, monthly partitions on `day` | `opened`, `fixed`, `dispositioned`, `reopened`, `net_open_delta`, `fixed_within_sla`, `fix_hours_hist` (12 log2 buckets: under 1 h, 1-2 h, ... 1024 h and more) |
+| `dash_asset_day` (F2) | asset × UTC day × severity × priority × `pentest_campaign_id` (as in F1), monthly partitions on `day` | `opened`, `fixed`, `dispositioned`, `reopened`, `net_open_delta`, `fixed_within_sla`, `fix_hours_hist` (12 log2 buckets: under 1 h, 1-2 h, ... 1024 h and more) |
 | `dash_asset_rank` (F3) | asset × list kind × partition, top 10 | kinds `fix_next` (priority, severity, newest), `sla_due` (earliest SLA deadline), `oldest` (first detected); `finding_id`, `priority_class`, `severity`, `sort_at` |
 | `dash_dirty_assets` | one row per pending mark | `tenant_id`, `asset_id`, `reasons` (bits), `marked_at` |
 | `dash_fact_status` | tenant | `rebuilt_at` (last full rebuild, NULL = never built), `aged_marked_at` |
@@ -103,6 +103,13 @@ AFTER triggers append `(tenant_id, asset_id, reasons)` to
 | `asset_group_members` | insert, update, delete (statement-level) | 4 |
 | `asset_owners` | insert, update, delete (statement-level) | 8 |
 | (time) | `dash_mark_aged_assets` | 16 |
+
+A mark never fails the write that caused it. The only constraint a mark can
+break is the tenant foreign key, during the cascade of a tenant delete (the
+tenant row is already gone in that transaction), so a mark whose tenant no
+longer exists is skipped; the cascade removes every fact of the tenant. The
+trigger functions have no `EXCEPTION` block, which would open a
+subtransaction per statement on the busiest write path.
 
 Updates that change no fact input (a re-sighting moving `last_seen_at`)
 insert nothing. On `findings` all three triggers are statement-level, so a

@@ -262,19 +262,21 @@ func TestDashboardFacts_EqualDirectQueries_DB(t *testing.T) {
 
 	t.Run("F2 per-day events equal finding timestamps", func(t *testing.T) {
 		day := func(col string) string { return `(` + col + ` AT TIME ZONE 'UTC')::date` }
-		key := `COALESCE(asset_id, '00000000-0000-0000-0000-000000000000'::uuid), severity, COALESCE(priority_class, 'none')`
+		key := `COALESCE(asset_id, '00000000-0000-0000-0000-000000000000'::uuid), severity, COALESCE(priority_class, 'none'),
+			CASE WHEN source = 'pentest' THEN COALESCE(pentest_campaign_id, '00000000-0000-0000-0000-000000000000'::uuid)
+			     ELSE '00000000-0000-0000-0000-000000000000'::uuid END`
 		base := `FROM findings WHERE tenant_id = $1 AND NOT branch_only AND status NOT IN ('draft', 'in_review')`
 		checks := map[string][2]string{
-			"opened": {`SELECT asset_id, severity, priority_class, day, opened FROM dash_asset_day WHERE tenant_id = $1 AND opened <> 0`,
-				`SELECT ` + key + `, ` + day("COALESCE(first_detected_at, created_at)") + `, count(*)::int ` + base + ` GROUP BY 1, 2, 3, 4`},
-			"fixed": {`SELECT asset_id, severity, priority_class, day, fixed FROM dash_asset_day WHERE tenant_id = $1 AND fixed <> 0`,
-				`SELECT ` + key + `, ` + day("resolved_at") + `, count(*)::int ` + base + ` AND status = 'resolved' AND resolved_at IS NOT NULL GROUP BY 1, 2, 3, 4`},
-			"dispositioned": {`SELECT asset_id, severity, priority_class, day, dispositioned FROM dash_asset_day WHERE tenant_id = $1 AND dispositioned <> 0`,
-				`SELECT ` + key + `, ` + day("resolved_at") + `, count(*)::int ` + base + ` AND status IN ('false_positive', 'accepted', 'duplicate') AND resolved_at IS NOT NULL GROUP BY 1, 2, 3, 4`},
-			"reopened": {`SELECT asset_id, severity, priority_class, day, reopened FROM dash_asset_day WHERE tenant_id = $1 AND reopened <> 0`,
-				`SELECT ` + key + `, ` + day("last_reopened_at") + `, count(*)::int ` + base + ` AND last_reopened_at IS NOT NULL GROUP BY 1, 2, 3, 4`},
-			"fixed within SLA": {`SELECT asset_id, severity, priority_class, day, fixed_within_sla FROM dash_asset_day WHERE tenant_id = $1 AND fixed_within_sla <> 0`,
-				`SELECT ` + key + `, ` + day("resolved_at") + `, count(*)::int ` + base + ` AND status = 'resolved' AND resolved_at IS NOT NULL AND sla_deadline IS NOT NULL AND sla_status = 'on_track' GROUP BY 1, 2, 3, 4`},
+			"opened": {`SELECT asset_id, severity, priority_class, pentest_campaign_id, day, opened FROM dash_asset_day WHERE tenant_id = $1 AND opened <> 0`,
+				`SELECT ` + key + `, ` + day("COALESCE(first_detected_at, created_at)") + `, count(*)::int ` + base + ` GROUP BY 1, 2, 3, 4, 5`},
+			"fixed": {`SELECT asset_id, severity, priority_class, pentest_campaign_id, day, fixed FROM dash_asset_day WHERE tenant_id = $1 AND fixed <> 0`,
+				`SELECT ` + key + `, ` + day("resolved_at") + `, count(*)::int ` + base + ` AND status = 'resolved' AND resolved_at IS NOT NULL GROUP BY 1, 2, 3, 4, 5`},
+			"dispositioned": {`SELECT asset_id, severity, priority_class, pentest_campaign_id, day, dispositioned FROM dash_asset_day WHERE tenant_id = $1 AND dispositioned <> 0`,
+				`SELECT ` + key + `, ` + day("resolved_at") + `, count(*)::int ` + base + ` AND status IN ('false_positive', 'accepted', 'duplicate') AND resolved_at IS NOT NULL GROUP BY 1, 2, 3, 4, 5`},
+			"reopened": {`SELECT asset_id, severity, priority_class, pentest_campaign_id, day, reopened FROM dash_asset_day WHERE tenant_id = $1 AND reopened <> 0`,
+				`SELECT ` + key + `, ` + day("last_reopened_at") + `, count(*)::int ` + base + ` AND last_reopened_at IS NOT NULL GROUP BY 1, 2, 3, 4, 5`},
+			"fixed within SLA": {`SELECT asset_id, severity, priority_class, pentest_campaign_id, day, fixed_within_sla FROM dash_asset_day WHERE tenant_id = $1 AND fixed_within_sla <> 0`,
+				`SELECT ` + key + `, ` + day("resolved_at") + `, count(*)::int ` + base + ` AND status = 'resolved' AND resolved_at IS NOT NULL AND sla_deadline IS NOT NULL AND sla_status = 'on_track' GROUP BY 1, 2, 3, 4, 5`},
 		}
 		for name, q := range checks {
 			if d := symmetricDiff(ctx, t, db, q[0], q[1], tenant.String()); d != 0 {
@@ -283,12 +285,18 @@ func TestDashboardFacts_EqualDirectQueries_DB(t *testing.T) {
 		}
 		// Open count identity: every seeded date is inside the window, so the
 		// net changes summed over all days equal today's open count.
-		netByKey := `SELECT asset_id, severity, priority_class, sum(net_open_delta)::bigint FROM dash_asset_day
-			WHERE tenant_id = $1 GROUP BY 1, 2, 3 HAVING sum(net_open_delta) <> 0`
-		openByKey := `SELECT asset_id, severity, priority_class, sum(finding_count)::bigint FROM dash_asset_state
-			WHERE tenant_id = $1 AND lens = 'open' GROUP BY 1, 2, 3`
+		netByKey := `SELECT asset_id, severity, priority_class, pentest_campaign_id, sum(net_open_delta)::bigint FROM dash_asset_day
+			WHERE tenant_id = $1 GROUP BY 1, 2, 3, 4 HAVING sum(net_open_delta) <> 0`
+		openByKey := `SELECT asset_id, severity, priority_class, pentest_campaign_id, sum(finding_count)::bigint FROM dash_asset_state
+			WHERE tenant_id = $1 AND lens = 'open' GROUP BY 1, 2, 3, 4`
 		if d := symmetricDiff(ctx, t, db, netByKey, openByKey, tenant.String()); d != 0 {
 			t.Errorf("sum of net_open_delta differs from the open count in %d groups", d)
+		}
+		var campaignDays int
+		_ = db.QueryRowContext(ctx, `SELECT count(*) FROM dash_asset_day WHERE tenant_id = $1
+			AND pentest_campaign_id <> '00000000-0000-0000-0000-000000000000'`, tenant.String()).Scan(&campaignDays)
+		if campaignDays == 0 {
+			t.Error("F2 rows of pentest findings must carry their campaign id")
 		}
 		var histTotal, fixedTotal int
 		_ = db.QueryRowContext(ctx, `SELECT COALESCE(sum(h), 0) FROM dash_asset_day, unnest(fix_hours_hist) h WHERE tenant_id = $1`, tenant.String()).Scan(&histTotal)
@@ -488,6 +496,7 @@ func TestDashboardFacts_TriggersMarkDirty_DB(t *testing.T) {
 	other := seedTestTenant(ctx, t, db)
 	a1 := seedOwnedAsset(ctx, t, db, tenant, nil)
 	a2 := seedOwnedAsset(ctx, t, db, tenant, nil)
+	a3 := seedOwnedAsset(ctx, t, db, tenant, nil)
 	none := DashboardNoAssetID.String()
 
 	expect := func(t *testing.T, want map[dirtyRow]int) {
@@ -551,16 +560,16 @@ func TestDashboardFacts_TriggersMarkDirty_DB(t *testing.T) {
 		expect(t, map[dirtyRow]int{{none, 1}: 1})
 	})
 	t.Run("assets", func(t *testing.T) {
-		a3 := seedOwnedAsset(ctx, t, db, tenant, nil)
-		expect(t, map[dirtyRow]int{{a3.String(), 2}: 1})
-		exec(t, `UPDATE assets SET risk_score = 42, last_seen = now() WHERE tenant_id = $1 AND id = $2`, tenant.String(), a3.String())
+		a4 := seedOwnedAsset(ctx, t, db, tenant, nil)
+		expect(t, map[dirtyRow]int{{a4.String(), 2}: 1})
+		exec(t, `UPDATE assets SET risk_score = 42, last_seen = now() WHERE tenant_id = $1 AND id = $2`, tenant.String(), a4.String())
 		expect(t, map[dirtyRow]int{})
-		exec(t, `UPDATE assets SET criticality = 'critical' WHERE tenant_id = $1 AND id = $2`, tenant.String(), a3.String())
-		expect(t, map[dirtyRow]int{{a3.String(), 2}: 1})
-		exec(t, `UPDATE assets SET deleted_at = now() WHERE tenant_id = $1 AND id = $2`, tenant.String(), a3.String())
-		expect(t, map[dirtyRow]int{{a3.String(), 2}: 1})
-		exec(t, `DELETE FROM assets WHERE tenant_id = $1 AND id = $2`, tenant.String(), a3.String())
-		expect(t, map[dirtyRow]int{{a3.String(), 2}: 1})
+		exec(t, `UPDATE assets SET criticality = 'critical' WHERE tenant_id = $1 AND id = $2`, tenant.String(), a4.String())
+		expect(t, map[dirtyRow]int{{a4.String(), 2}: 1})
+		exec(t, `UPDATE assets SET deleted_at = now() WHERE tenant_id = $1 AND id = $2`, tenant.String(), a4.String())
+		expect(t, map[dirtyRow]int{{a4.String(), 2}: 1})
+		exec(t, `DELETE FROM assets WHERE tenant_id = $1 AND id = $2`, tenant.String(), a4.String())
+		expect(t, map[dirtyRow]int{{a4.String(), 2}: 1})
 	})
 	t.Run("asset group membership", func(t *testing.T) {
 		gid := shared.NewID()
@@ -597,14 +606,18 @@ func TestDashboardFacts_TriggersMarkDirty_DB(t *testing.T) {
 			slaStatus: "on_track", source: "sast", detectedAgo: "20 days"})
 		seedFactFinding(ctx, t, db, tenant, factFinding{asset: &a2, severity: "high", priority: "P1", status: "resolved",
 			slaStatus: "on_track", source: "sast", detectedAgo: "61 days 1 hour", resolvedAgo: "1 hour"})
+		// No first detection: ages from created_at, as the recompute does.
+		noDetect := seedFactFinding(ctx, t, db, tenant, factFinding{asset: &a3, severity: "high", priority: "P1", status: "new",
+			slaStatus: "on_track", source: "sast", detectedAgo: "1 day", createdAgo: "61 days 1 hour"})
+		exec(t, `UPDATE findings SET first_detected_at = NULL WHERE tenant_id = $1 AND id = $2`, tenant.String(), noDetect.String())
 		clearDirty(ctx, t, db, tenant)
 		repo := NewDashboardFactsRepository(&DB{DB: db})
 		now := time.Now()
 		n, err := repo.MarkAgedAssets(ctx, tenant, now.Add(-24*time.Hour), now)
-		if err != nil || n != 1 {
-			t.Fatalf("marked %d (%v), want 1", n, err)
+		if err != nil || n != 2 {
+			t.Fatalf("marked %d (%v), want 2", n, err)
 		}
-		expect(t, map[dirtyRow]int{{a1.String(), 16}: 1})
+		expect(t, map[dirtyRow]int{{a1.String(), 16}: 1, {a3.String(), 16}: 1})
 	})
 }
 
@@ -704,6 +717,57 @@ func TestDashboardDirtyQueue_ClaimRaces_DB(t *testing.T) {
 			t.Fatalf("queue after the writer committed: %v", got)
 		}
 	})
+}
+
+// Deleting a tenant cascades into findings, assets, group membership and
+// ownership while the tenant row is already gone; the marks of that cascade
+// must not fail the delete, and no dashboard row of the tenant may remain.
+func TestDashboardFacts_TenantDeleteCascades_DB(t *testing.T) {
+	ctx := context.Background()
+	db := openGroupsDB(t)
+	repo := NewDashboardFactsRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	keep := seedTestTenant(ctx, t, db)
+	asset := seedOwnedAsset(ctx, t, db, tenant, nil)
+	keepAsset := seedOwnedAsset(ctx, t, db, keep, nil)
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	gid := shared.NewID()
+	exec(`INSERT INTO asset_groups (id, tenant_id, name) VALUES ($1, $2, 'facts delete group')`, gid.String(), tenant.String())
+	exec(`INSERT INTO asset_group_members (asset_group_id, asset_id) VALUES ($1, $2)`, gid.String(), asset.String())
+	uid := seedGroupsUser(ctx, t, db, "facts-delete.example.com")
+	exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($1, $2, 'primary')`, asset.String(), uid.String())
+	for _, tn := range []struct {
+		tenant shared.ID
+		asset  shared.ID
+	}{{tenant, asset}, {keep, keepAsset}} {
+		a := tn.asset
+		seedFactFinding(ctx, t, db, tn.tenant, factFinding{asset: &a, severity: "high", priority: "P1", status: "new",
+			slaStatus: "on_track", source: "sast", detectedAgo: "1 day"})
+		seedFactFinding(ctx, t, db, tn.tenant, factFinding{severity: "low", priority: "P3", status: "new",
+			slaStatus: "on_track", source: "sast", detectedAgo: "1 day"})
+		if _, err := repo.RebuildTenant(ctx, tn.tenant, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	exec(`DELETE FROM tenants WHERE id = $1`, tenant.String())
+
+	for _, tbl := range []string{"dash_asset_state", "dash_asset_day", "dash_asset_rank", "dash_dirty_assets", "dash_fact_status"} {
+		var gone, kept int
+		_ = db.QueryRowContext(ctx, `SELECT count(*) FROM `+tbl+` WHERE tenant_id = $1`, tenant.String()).Scan(&gone)
+		_ = db.QueryRowContext(ctx, `SELECT count(*) FROM `+tbl+` WHERE tenant_id = $1`, keep.String()).Scan(&kept)
+		if gone != 0 {
+			t.Errorf("%s keeps %d rows of the deleted tenant", tbl, gone)
+		}
+		if kept == 0 && tbl != "dash_dirty_assets" {
+			t.Errorf("%s lost the other tenant's rows", tbl)
+		}
+	}
 }
 
 func TestDashboardFactTablesMigration_DB(t *testing.T) {
