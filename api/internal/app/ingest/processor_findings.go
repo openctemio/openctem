@@ -662,10 +662,13 @@ func (p *FindingProcessor) processBatch(
 			enriched, err := p.repo.EnrichBatchByFingerprints(ctx, tenantID, existingNewData, scanID)
 			if err != nil {
 				// Graceful fallback: if enrichment fails, fall back to scan-id-only update
-				p.logger.Warn("enrichment failed, falling back to scan-id-only update",
+				// Logged and reported on the ingest result: the new scanner
+				// data of these findings is not stored, only the sighting.
+				p.logger.Error("enrichment failed, falling back to scan-id-only update",
 					"error", err,
 					"count", len(existingNewData),
 				)
+				addError(output, fmt.Sprintf("enrich %d existing findings failed, only their sighting was recorded: %v", len(existingNewData), err))
 				// Collect fingerprints from failed enrichment for fallback
 				fallbackFPs := make([]string, 0, len(existingNewData))
 				for _, f := range existingNewData {
@@ -690,7 +693,8 @@ func (p *FindingProcessor) processBatch(
 			}
 			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID, sightingTool)
 			if err != nil {
-				p.logger.Warn("failed to update existing findings (fallback)", "error", err)
+				p.logger.Error("failed to update existing findings (fallback)", "error", err)
+				addError(output, fmt.Sprintf("record sighting of %d existing findings failed: %v", len(unenrichedFingerprints), err))
 			} else {
 				output.FindingsUpdated += int(updated)
 			}
