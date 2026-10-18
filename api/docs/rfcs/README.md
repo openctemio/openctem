@@ -94,7 +94,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-076](RFC-076-pentest-report-templates.md) | Pentest report templates | Proposed (2026-10-11); implemented: upload, check, preview with sample data, DOCX rendering of a campaign, evidence images, tag reference, full check with fixes, three starter templates |
 | [RFC-077](RFC-077-ci-enforced-gate-and-pr-feedback.md) | CI enforced gate, pull request feedback and diff-aware runs | Implemented in part (decisions G-1..G-10 adopted 2026-10-11; open items in section 8) |
 | [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Partially implemented: the platform console part (§7, 2026-10-16); the user-account phases P1 and P3 are Proposed |
-| [RFC-079](RFC-079-console-platform-settings.md) | Run-time settings in the console instead of environment variables | Proposed (2026-10-11) |
+| [RFC-079](RFC-079-console-platform-settings.md) | Run-time settings in the console instead of environment variables | Accepted, partly implemented (2026-10-18) |
 | [RFC-080](RFC-080-attack-surface-changes-and-digest.md) | Typed attack-surface changes and the weekly digest | Implemented (2026-10-11) |
 | [RFC-081](RFC-081-web-evidence-screenshots.md) | Web evidence and screenshots of web assets | Accepted (2026-10-11); platform side implemented, sensor `screenshot` tool in the sensor repository |
 | [RFC-082](RFC-082-network-seeds.md) | Network seeds (AS numbers, organizations, CIDR) | Implemented (2026-10-11) |

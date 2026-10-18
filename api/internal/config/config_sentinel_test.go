@@ -205,29 +205,15 @@ func TestLoad_SignupModeDefaultsToDisabled(t *testing.T) {
 	}
 }
 
-// SIGNUP_MODE=open in production needs a CAPTCHA, or an explicit acceptance.
-func TestValidateProduction_OpenSignupNeedsCaptcha(t *testing.T) {
+// SIGNUP_MODE=open in production starts without CAPTCHA keys in the
+// environment: the keys may be set in the console, and open sign-up stays
+// closed at runtime until they are (signup.Service.SetCaptchaReady).
+func TestValidateProduction_OpenSignupStartsWithoutEnvCaptcha(t *testing.T) {
 	cfg := minimalValidConfig()
 	cfg.Auth.CookieSameSite = "lax"
 	cfg.Auth.SignupMode = SignupModeOpen
-	if err := cfg.validateProductionAuth(); err == nil || !strings.Contains(err.Error(), "CAPTCHA_TURNSTILE_SECRET") {
-		t.Fatalf("open without a CAPTCHA in production must fail, got %v", err)
-	}
-	cfg.Auth.SignupCaptcha = SignupCaptchaOffAccepted
 	if err := cfg.validateProductionAuth(); err != nil {
-		t.Fatalf("the explicit acceptance must start: %v", err)
-	}
-	cfg.Auth.SignupCaptcha = ""
-	cfg.Auth.CaptchaTurnstileSecret, cfg.Auth.CaptchaTurnstileSiteKey = "secret", "site"
-	if err := cfg.validateProductionAuth(); err != nil {
-		t.Fatalf("open with a CAPTCHA must start: %v", err)
-	}
-	cfg.Auth.CaptchaTurnstileSecret, cfg.Auth.CaptchaTurnstileSiteKey = "", ""
-	for _, m := range []string{SignupModeDisabled, SignupModeDomain} {
-		cfg.Auth.SignupMode = m
-		if err := cfg.validateProductionAuth(); err != nil {
-			t.Fatalf("SIGNUP_MODE=%s needs no CAPTCHA: %v", m, err)
-		}
+		t.Fatalf("open without environment CAPTCHA keys must start (the console may set them): %v", err)
 	}
 }
 

@@ -23,7 +23,7 @@ func TestLimitKeysAreListed(t *testing.T) {
 	want := []string{
 		"seats", "assets", "sensors", "api_keys", "ci_trusts", "invites_per_day",
 		"platform_scans_per_day", "platform_scans_concurrent", "findings", "lifecycle_sub_statuses", "lifecycle_schemes",
-		"orgs_per_user",
+		"storage_mb", "orgs_per_user",
 	}
 	got := make([]string, 0, len(limits.Keys))
 	for _, k := range limits.Keys {

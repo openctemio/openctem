@@ -82,6 +82,7 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 | `findings` | the organization's findings (a new fingerprint; a re-sighting counts nothing) |
 | `lifecycle_sub_statuses` | the organization's finding sub-statuses that are not archived ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)) |
 | `lifecycle_schemes` | its finding lifecycle schemes that are not archived |
+| `storage_mb` | MiB of uploaded files (evidence, attachments) the organization holds; without it the platform's default storage quota applies (Console > Settings > Limits, else `STORAGE_TENANT_QUOTA_MB`; 0 means no quota) |
 | `orgs_per_user` | organizations one person owns, checked when they create one themselves; an instance setting (self-service defaults), never per organization |
 
 `-1` means unlimited, the default of every key.
@@ -140,6 +141,7 @@ so every path that adds a row passes it, whatever the caller:
 | `APIKeyRepository.Create` | `api_keys` | API key create |
 | `CIRunRepository.CreateTrustConfig` | `ci_trusts` | CI trust create |
 | `findinglifecycle.Service.CreateSubStatus`, `CreateScheme` | `lifecycle_sub_statuses`, `lifecycle_schemes` | finding lifecycle catalog |
+| `AttachmentService.Upload` (through `storagequota.Service.QuotaBytes`) | `storage_mb`, else the platform default storage quota | file and evidence uploads; an unreadable quota refuses the upload |
 | `FindingRepository.Create`, `CreateInTx` | `findings` | manual finding create, finding import, pentest findings |
 | `FindingRepository.CreateBatchWithResult` | `findings` (only the batch's fingerprints the organization does not have yet) | ingest: new findings are admitted in report order up to the headroom; **each one over it is refused on its own** (a per-item error: v1 `errors`, v2 `finding_not_stored` item error), while the report's assets, the other findings and every re-sighting of an existing finding are still stored. The report is not failed or retried. When the limit cannot be read, every new finding of the batch is refused the same way (fail-closed). |
 

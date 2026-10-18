@@ -71,10 +71,12 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
+	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
@@ -88,6 +90,9 @@ import (
 	onboardingapp "github.com/openctemio/openctem/api/internal/app/onboarding"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/platformai"
+	"github.com/openctemio/openctem/api/internal/app/platformalert"
+	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
@@ -99,6 +104,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
+	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
@@ -887,6 +893,16 @@ type Services struct {
 	// PlatformEmail is the platform's SMTP settings, set in the admin console
 	// (RFC-079); its Sender backs Email.
 	PlatformEmail *platformemail.Service
+	// Settings moved from the environment into the console (RFC-079): the
+	// CAPTCHA keys, the one-time deployment region, the default storage
+	// quota, the alert webhook and the platform AI provider. SettingRecorder
+	// writes their audit rows and notices.
+	SettingRecorder  *consolesetting.Recorder
+	PlatformCaptcha  *platformcaptcha.Service
+	DeploymentRegion *deploymentregion.Service
+	StorageQuota     *storagequota.Service
+	PlatformAlert    *platformalert.Service
+	PlatformAI       *platformai.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -996,6 +1012,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.PlatformSetting != nil {
 		s.PlatformEmail = platformemail.NewService(repos.PlatformSetting, s.Encryptor, repos.AdminAuditLog, log)
 	}
+	s.initConsoleSettings(cfg, repos, log)
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
@@ -1005,6 +1022,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// invitations are checked where the rows are inserted. No source beyond
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
+	if repos.PlatformSetting != nil {
+		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
+	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
 	// in front of a shared Redis cache so a change reaches every replica on
@@ -1547,6 +1567,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Attachment.SetMetrics(storage.Metrics{})
 	s.Attachment.SetDirectDownloads(cfg.Storage.DirectDownload)
 	s.Attachment.SetTenantQuota(cfg.Storage.TenantQuotaMB << 20)
+	if s.StorageQuota != nil {
+		s.Attachment.SetTenantQuotaSource(s.StorageQuota.QuotaBytes)
+	}
 	// Retention: evidence of deleted findings/campaigns and never-linked
 	// uploads are purged by the attachment-retention controller.
 	s.Attachment.SetRetention(repos.Attachment, integration.RetentionSettings{
@@ -1721,9 +1744,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Compliance.SetFindingRepository(repos.Finding)
 
-	// Initialize AI Triage service (if configured)
-	if cfg.AITriage.IsConfigured() {
+	// AI triage: always built, so an organization's own key works and the
+	// platform provider can be turned on in the console without a restart.
+	// Platform AI stays off until environment keys or the console set it.
+	{
 		llmFactory := llm.NewFactoryWithEncryption(cfg.AITriage, s.Encryptor)
+		if s.PlatformAI != nil {
+			llmFactory.SetPlatformSource(s.PlatformAI)
+			s.PlatformAI.SetTester(platformAITester(llmFactory))
+		}
 		s.AITriage = aitriage.NewAITriageService(
 			repos.AITriage,
 			repos.Finding,
@@ -1735,6 +1764,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		)
 		s.AITriage.SetAuditService(s.Audit)
 		s.AITriage.SetDataScope(s.DataScope)
+		if s.PlatformAI != nil {
+			s.AITriage.SetPlatformAISource(s.PlatformAI)
+		}
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// On triage completion, enqueue an asset-scoped reclassify so a
@@ -3217,6 +3249,17 @@ func (s *Services) guardPublicSignupMail(cfg *config.Config, log *logger.Logger)
 	if s.Signup != nil {
 		email := s.Email
 		s.Signup.SetMailReady(email.IsConfigured)
+		// Open sign-up in production needs a CAPTCHA (unless accepted
+		// without one); the keys may come from the console at any time.
+		if cfg.IsProduction() && cfg.Auth.SignupMode == config.SignupModeOpen &&
+			cfg.Auth.SignupCaptcha != config.SignupCaptchaOffAccepted && s.PlatformCaptcha != nil {
+			captcha := s.PlatformCaptcha
+			s.Signup.SetCaptchaReady(func() bool {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				return captcha.Active(ctx)
+			})
+		}
 	}
 	log.Warn("public sign-up is allowed by this deployment's configuration", "signup_mode", cfg.Auth.SignupMode)
 	return nil

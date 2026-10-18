@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -34,10 +35,11 @@ type AuthProvidersHandler struct {
 	// signupPolicy, when wired, replaces tenantCreationMode (the console
 	// sign-up setting).
 	signupPolicy signupdom.PolicySource
-	// deploymentRegion is DEPLOYMENT_REGION.
-	deploymentRegion string
-	// captchaSiteKey is the public Turnstile site key.
-	captchaSiteKey string
+	// deploymentRegion answers the deployment region (DEPLOYMENT_REGION or
+	// the console's one-time setting).
+	deploymentRegion func(ctx context.Context) string
+	// captchaSiteKey answers the public Turnstile site key in force.
+	captchaSiteKey func(ctx context.Context) string
 	// registrationEnabled is reported when no sign-up policy is wired (the
 	// self_service seed), so the UI can hide sign-up.
 	registrationEnabled bool
@@ -90,15 +92,16 @@ func (h *AuthProvidersHandler) WithSignupPolicy(p signupdom.PolicySource) *AuthP
 	return h
 }
 
-// WithDeploymentRegion sets the region reported to the UI.
-func (h *AuthProvidersHandler) WithDeploymentRegion(region string) *AuthProvidersHandler {
-	h.deploymentRegion = region
+// WithDeploymentRegion sets where the region reported to the UI comes from.
+func (h *AuthProvidersHandler) WithDeploymentRegion(f func(ctx context.Context) string) *AuthProvidersHandler {
+	h.deploymentRegion = f
 	return h
 }
 
-// WithCaptchaSiteKey sets the Turnstile site key reported to the UI.
-func (h *AuthProvidersHandler) WithCaptchaSiteKey(key string) *AuthProvidersHandler {
-	h.captchaSiteKey = key
+// WithCaptchaSiteKey sets where the Turnstile site key reported to the UI
+// comes from (the CAPTCHA in force, console or environment).
+func (h *AuthProvidersHandler) WithCaptchaSiteKey(f func(ctx context.Context) string) *AuthProvidersHandler {
+	h.captchaSiteKey = f
 	return h
 }
 
@@ -208,8 +211,12 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Reque
 			resp.SignupAccounts = string(signupdom.AccountsOpen)
 		}
 	}
-	resp.CaptchaSiteKey = h.captchaSiteKey
-	resp.DeploymentRegion = h.deploymentRegion
+	if h.captchaSiteKey != nil {
+		resp.CaptchaSiteKey = h.captchaSiteKey(r.Context())
+	}
+	if h.deploymentRegion != nil {
+		resp.DeploymentRegion = h.deploymentRegion(r.Context())
+	}
 	// Report what the server enforces: anything but an explicit self_service
 	// is admin-only.
 	if resp.TenantCreationMode != string(signupdom.ModeSelfService) {
