@@ -389,6 +389,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Validation handler + coverage KPI reader.
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
 	validationHandler.SetCoverageReader(repos.ValidationEvidence)
+	validationHandler.SetDataScope(svc.DataScope)
 	// Direct evidence submissions change a finding only when they cite the
 	// validate command assigned to the submitting sensor; otherwise advisory.
 	validationHandler.SetCommandLookup(repos.Command)
@@ -547,7 +548,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TicketMapping:        ticketMappingHandler,
 		GitHubWebhook:        githubWebhookHandler,
 		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
+		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
 		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
@@ -612,7 +613,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
 		Capability:   handler.NewCapabilityHandler(svc.Capability, v, log),
-		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
+		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log).SetDataScope(svc.DataScope),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
 		SCMApps:      withSCMAppDeliveryGuard(newSCMAppHandler(cfg, repos, svc, deps.RedisClient, log), deps.RedisClient),

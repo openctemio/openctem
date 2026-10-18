@@ -107,7 +107,7 @@ func (m *threatIntelMockEPSSRepo) GetTopPercentile(_ context.Context, _ float64,
 	return nil, nil
 }
 
-func (m *threatIntelMockEPSSRepo) CountTenantOpenAboveScores(_ context.Context, _ shared.ID, thresholds []float64) ([]int64, error) {
+func (m *threatIntelMockEPSSRepo) CountTenantOpenAboveScores(_ context.Context, _ shared.ID, _ *shared.DataScope, thresholds []float64) ([]int64, error) {
 	m.tenantAboveScoreCalls++
 	if m.tenantAboveScoreErr != nil {
 		return nil, m.tenantAboveScoreErr
@@ -252,7 +252,7 @@ func (m *threatIntelMockKEVRepo) GetRansomwareRelated(_ context.Context, _ int) 
 	return m.ransomEntries, nil
 }
 
-func (m *threatIntelMockKEVRepo) CountTenantOpenPastDue(_ context.Context, _ shared.ID) (int64, error) {
+func (m *threatIntelMockKEVRepo) CountTenantOpenPastDue(_ context.Context, _ shared.ID, _ *shared.DataScope) (int64, error) {
 	m.tenantPastDueCalls++
 	if m.tenantPastDueErr != nil {
 		return 0, m.tenantPastDueErr
@@ -1035,7 +1035,7 @@ func TestThreatIntelService_GetThreatIntelStats_Success(t *testing.T) {
 	threatIntelAddSyncStatus(repo, "epss", true)
 	threatIntelAddSyncStatus(repo, "kev", true)
 
-	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1072,7 +1072,7 @@ func TestThreatIntelService_GetThreatIntelStats_TenantScoped(t *testing.T) {
 	}
 
 	svc := newThreatIntelService(repo)
-	stats, err := svc.GetThreatIntelStats(context.Background(), shared.ID{})
+	stats, err := svc.GetThreatIntelStats(context.Background(), shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1113,7 +1113,7 @@ func TestThreatIntelService_GetThreatIntelStats_EPSSFailsGracefully(t *testing.T
 	threatIntelAddKEVEntry(repo, "CVE-2024-0001")
 	threatIntelAddSyncStatus(repo, "kev", true)
 
-	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("expected no error (graceful degradation), got %v", err)
 	}
@@ -1138,7 +1138,7 @@ func TestThreatIntelService_GetThreatIntelStats_KEVFailsGracefully(t *testing.T)
 	}
 	threatIntelAddSyncStatus(repo, "epss", true)
 
-	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("expected no error (graceful degradation), got %v", err)
 	}
@@ -1162,7 +1162,7 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusFailsGracefully(t *tes
 		return nil, nil
 	}
 
-	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("expected no error (graceful degradation), got %v", err)
 	}
@@ -1189,7 +1189,7 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusDTOFields(t *testing.T
 		return nil, nil
 	}
 
-	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1233,7 +1233,7 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusWithError(t *testing.T
 		return nil, nil
 	}
 
-	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1358,7 +1358,7 @@ func TestThreatIntelService_GetThreatIntelStats_CachesOnlyGlobalCatalogCounts(t 
 	tenantA := shared.NewID()
 	tenantB := shared.NewID()
 
-	first, err := svc.GetThreatIntelStats(ctx, tenantA)
+	first, err := svc.GetThreatIntelStats(ctx, tenantA, nil)
 	if err != nil {
 		t.Fatalf("first call: %v", err)
 	}
@@ -1371,7 +1371,7 @@ func TestThreatIntelService_GetThreatIntelStats_CachesOnlyGlobalCatalogCounts(t 
 	repo.kev.tenantPastDueVal = 3
 	repo.epss.tenantAboveScoreVals = map[float64]int64{0.1: 11, 0.5: 2}
 
-	second, err := svc.GetThreatIntelStats(ctx, tenantB)
+	second, err := svc.GetThreatIntelStats(ctx, tenantB, nil)
 	if err != nil {
 		t.Fatalf("second call: %v", err)
 	}
@@ -1404,7 +1404,7 @@ func TestThreatIntelService_GetThreatIntelStats_CatalogErrorNotCached(t *testing
 	svc := newThreatIntelService(repo)
 	ctx := context.Background()
 
-	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1413,7 +1413,7 @@ func TestThreatIntelService_GetThreatIntelStats_CatalogErrorNotCached(t *testing
 	}
 
 	repo.epss.countErr = nil
-	stats, err = svc.GetThreatIntelStats(ctx, shared.ID{})
+	stats, err = svc.GetThreatIntelStats(ctx, shared.ID{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
