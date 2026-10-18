@@ -63,6 +63,15 @@ type AdminAuditChainHandler struct {
 	adminAudit admin.AuditLogRepository
 	orgs       admin.OrganizationReader
 	logger     *logger.Logger
+	// approvals is the four-eyes gate: re-signing a chain needs a second
+	// super admin.
+	approvals approvalGate
+}
+
+// WithApprovals wires the four-eyes gate.
+func (h *AdminAuditChainHandler) WithApprovals(g approvalGate) *AdminAuditChainHandler {
+	h.approvals = g
+	return h
 }
 
 // NewAdminAuditChainHandler creates the handler.
@@ -212,7 +221,14 @@ func (h *AdminAuditChainHandler) Rebaseline(w http.ResponseWriter, r *http.Reque
 	// Step-up before anything touches the tenant: a wrong code must not leave
 	// a refused-rebaseline event on the organization's chain.
 	// The route's step-up (or a body code, checked the same way) confirms it.
+	// A second super admin approves the rebaseline of this organization;
+	// checked before the code is spent, handed back when nothing changed.
+	grant, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalAuditChainRebaseline, "tenant:"+id.String(), h.logger)
+	if !ok {
+		return
+	}
 	if !confirmAdminStepUp(w, r, h.stepUp, req.TOTPCode, stepUpPurposeRebaseline, h.logger) {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		return
 	}
 
@@ -223,6 +239,7 @@ func (h *AdminAuditChainHandler) Rebaseline(w http.ResponseWriter, r *http.Reque
 	}
 	res, rep, err := h.audit.RebaselineChainIfExplained(r.Context(), id, req.Fingerprint, actx, archiveActor)
 	if err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		var details any
 		if rep != nil {
 			details = toAuditChainStatus(id, rep)

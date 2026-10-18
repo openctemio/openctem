@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -38,6 +39,17 @@ type AdminConsoleHandler struct {
 	// console-only key).
 	captcha       Captcha
 	loginFailures LoginFailureCounter
+
+	// approvals is the four-eyes gate of the catastrophic actions this
+	// handler serves (a new super admin, security keys off, the
+	// administrators' identity provider removed or relaxed).
+	approvals approvalGate
+}
+
+// WithApprovals wires the four-eyes gate.
+func (h *AdminConsoleHandler) WithApprovals(g approvalGate) *AdminConsoleHandler {
+	h.approvals = g
+	return h
 }
 
 // SetLoginGuard wires the CAPTCHA and the failed-sign-in counter on the
@@ -222,10 +234,24 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("role must be super_admin, ops_admin or readonly").WriteJSON(w)
 		return
 	}
+	// A new super admin needs a second super admin's approval.
+	var grant *adminapproval.Grant
+	if role == admin.AdminRoleSuperAdmin {
+		target := "email:" + strings.ToLower(strings.TrimSpace(req.Email))
+		if !admin.ApprovalGrantSuperAdmin.ValidTarget(target) {
+			apierror.BadRequest("a valid email is required").WriteJSON(w)
+			return
+		}
+		var ok bool
+		if grant, ok = requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalGrantSuperAdmin, target, h.logger); !ok {
+			return
+		}
+	}
 	a, temp, err := h.svc.Provision(r.Context(), actor, adminconsole.ProvisionInput{
 		Email: req.Email, Name: req.Name, Role: role, BreakGlass: req.BreakGlass,
 	}, clientInfo(r))
 	if err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		switch {
 		case errors.Is(err, admin.ErrAdminAlreadyExists), errors.Is(err, admin.ErrUserAlreadyAdmin):
 			apierror.Conflict("This person is already a platform administrator").WriteJSON(w)
