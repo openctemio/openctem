@@ -382,7 +382,7 @@ func (s *Service) View(ctx context.Context) (View, error) {
 	v := View{Enabled: enabled, LockedByEnvironment: !s.cfg.Enabled, Configured: s.Configured(), FeedURL: s.cfg.URL, Source: st.Origin,
 		AppliedAt: st.AppliedAt, LastAttemptAt: st.LastAttemptAt, LastError: st.LastError,
 		Status: releasefeed.Evaluate(st.Feed, s.cfg.Running, s.cfg.Now()), Components: []releasefeed.Component{}}
-	if s.cfg.Enabled && s.Configured() {
+	if enabled && s.Configured() {
 		v.NextCheckAt = st.NextCheckAt
 	}
 	if st.Feed != nil {
