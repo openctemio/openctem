@@ -259,6 +259,7 @@ type Handlers struct {
 	AdminOverview     *handler.AdminOverviewHandler
 	AdminPlatformUser *handler.AdminPlatformUserHandler
 	AdminSession      *handler.AdminSessionHandler
+	AdminApproval     *handler.AdminApprovalHandler
 	AdminOperations   *handler.AdminOperationsHandler
 	AdminSystem       *handler.AdminSystemHandler
 	Announcement      *handler.AnnouncementHandler

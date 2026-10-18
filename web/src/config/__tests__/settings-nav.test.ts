@@ -109,10 +109,10 @@ describe('settings nav config', () => {
   })
 
   for (const group of settingsNav) {
-    // Scanning holds 9 (Tool defaults joined its 8); keep groups scannable.
-    it(`group "${group.title}" has 2 to 9 items`, () => {
+    // Scanning holds 10 (Sensor products joined its 9); keep groups scannable.
+    it(`group "${group.title}" has 2 to 10 items`, () => {
       expect(group.items.length).toBeGreaterThanOrEqual(2)
-      expect(group.items.length).toBeLessThanOrEqual(9)
+      expect(group.items.length).toBeLessThanOrEqual(10)
     })
   }
 
