@@ -271,6 +271,8 @@ type Handlers struct {
 	// self-service defaults, an organization's limits and denies, the
 	// organization's own usage).
 	Limits *handler.LimitsHandler
+	// SecurityOverview: the organization's posture checks and score.
+	SecurityOverview *handler.SecurityOverviewHandler
 	// IdleWorkspace: an organization's idle lifecycle in the console.
 	IdleWorkspace *handler.IdleWorkspaceHandler
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
@@ -562,6 +564,7 @@ func Register(
 	if h.Tenant != nil {
 		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
 		registerOrganizationLimitsRoutes(router, h.Limits, authMiddleware, userSync)
+		registerOrganizationSecurityOverviewRoutes(router, h.SecurityOverview, authMiddleware, userSync)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
