@@ -1,3 +1,4 @@
+import { safeInternalHref } from '@/lib/safe-href'
 /**
  * What the console knows about the security overview's checks. The server
  * sends ids, statuses, counts and links only; every title and explanation is
@@ -87,5 +88,5 @@ export function groupChecks(checks: OverviewCheck[]): Array<[string, OverviewChe
 
 /** Only in-app paths are links: a value from the API is never an off-site URL. */
 export function safeInternalLink(link: string): string | null {
-  return link.startsWith('/') && !link.startsWith('//') ? link : null
+  return safeInternalHref(link) ?? null
 }
