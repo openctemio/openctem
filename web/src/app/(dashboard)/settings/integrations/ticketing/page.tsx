@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Main } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -75,6 +75,8 @@ import { mutate } from 'swr'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
 
+type TranslateFn = ReturnType<typeof useTranslation>['t']
+
 /** The API's default Jira priority per severity (shown as the placeholder). */
 const DEFAULT_JIRA_PRIORITY: Record<SeverityLevel, string> = {
   critical: 'Highest',
@@ -102,10 +104,10 @@ const PROVIDER_LABELS: Record<string, string> = {
   jira: 'Jira Cloud',
   linear: 'Linear',
   asana: 'Asana',
-  custom: 'Custom',
 }
 
-function getProviderLabel(provider: string): string {
+function getProviderLabel(provider: string, t: TranslateFn): string {
+  if (provider === 'custom') return t('ticketingIntegration.provider.custom', 'Custom')
   return PROVIDER_LABELS[provider] ?? provider
 }
 
@@ -119,8 +121,6 @@ function isSupported(integration: Integration): boolean {
   return integration.supported ?? integration.provider === 'jira'
 }
 
-const UNSUPPORTED_NOTE = 'This provider has no client yet, so this connection does nothing.'
-
 function getProjectKey(integration: Integration): string {
   const ticketing = getTicketingConfig(integration)
   const key = ticketing.project_key as string | undefined
@@ -132,8 +132,13 @@ function getProjectKey(integration: Integration): string {
 // ─────────────────────────────────────────────────────────
 
 function StatusBadge({ integration }: { integration: Integration }) {
+  const { t } = useTranslation()
   if (!isSupported(integration)) {
-    return <Badge variant="outline">Not supported</Badge>
+    return (
+      <Badge variant="outline">
+        {t('ticketingIntegration.status.notSupported', 'Not supported')}
+      </Badge>
+    )
   }
   const status: IntegrationStatus = integration.status
   // Only a problem (error / expired) is coloured; other states stay neutral.
@@ -141,12 +146,21 @@ function StatusBadge({ integration }: { integration: Integration }) {
     IntegrationStatus,
     { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }
   > = {
-    connected: { variant: 'default', label: 'Connected' },
-    disconnected: { variant: 'secondary', label: 'Not connected' },
-    error: { variant: 'destructive', label: 'Error' },
-    pending: { variant: 'outline', label: 'Pending' },
-    expired: { variant: 'destructive', label: 'Expired' },
-    disabled: { variant: 'secondary', label: 'Disabled' },
+    connected: {
+      variant: 'default',
+      label: t('ticketingIntegration.status.connected', 'Connected'),
+    },
+    disconnected: {
+      variant: 'secondary',
+      label: t('ticketingIntegration.status.disconnected', 'Not connected'),
+    },
+    error: { variant: 'destructive', label: t('ticketingIntegration.status.error', 'Error') },
+    pending: { variant: 'outline', label: t('ticketingIntegration.status.pending', 'Pending') },
+    expired: { variant: 'destructive', label: t('ticketingIntegration.status.expired', 'Expired') },
+    disabled: {
+      variant: 'secondary',
+      label: t('ticketingIntegration.status.disabled', 'Disabled'),
+    },
   }
   const { variant, label } = config[status] ?? config.disconnected
   return <Badge variant={variant}>{label}</Badge>
@@ -250,7 +264,7 @@ function ConfigureTicketingDialog({
           },
         },
       })
-      toast.success('Ticketing settings saved')
+      toast.success(t('ticketingIntegration.configure.saved', 'Ticketing settings saved'))
       await mutate(
         (key) => typeof key === 'string' && key.startsWith('/api/v1/integrations'),
         undefined,
@@ -258,7 +272,12 @@ function ConfigureTicketingDialog({
       )
       onOpenChange(false)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to save settings'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('ticketingIntegration.configure.saveFailed', 'Failed to save settings')
+        )
+      )
     }
   }
 
@@ -266,7 +285,11 @@ function ConfigureTicketingDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Configure {integration.name}</DialogTitle>
+          <DialogTitle>
+            {t('ticketingIntegration.configure.title', 'Configure {name}', {
+              name: integration.name,
+            })}
+          </DialogTitle>
           <DialogDescription>
             {t(
               'settings.ticketing.configureDescription',
@@ -279,16 +302,23 @@ function ConfigureTicketingDialog({
             {/* Default destination project */}
             <div className="space-y-2 rounded-lg border p-3">
               <Label htmlFor="default-project" className="font-medium">
-                Default project
+                {t('ticketingIntegration.configure.defaultProject', 'Default project')}
               </Label>
               <p className="text-muted-foreground text-xs">
-                Where tickets land when a finding doesn&apos;t specify one and no routing rule
-                matches.
+                {t(
+                  'ticketingIntegration.configure.defaultProjectHint',
+                  "Where tickets land when a finding doesn't specify one and no routing rule matches."
+                )}
               </p>
               {projects.length > 0 && (
                 <Select value={projectKey || undefined} onValueChange={setProjectKey}>
                   <SelectTrigger id="default-project-picker">
-                    <SelectValue placeholder="Pick a Jira project" />
+                    <SelectValue
+                      placeholder={t(
+                        'ticketingIntegration.configure.pickProject',
+                        'Pick a Jira project'
+                      )}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {projects.map((p) => (
@@ -303,11 +333,18 @@ function ConfigureTicketingDialog({
                 id="default-project"
                 value={projectKey}
                 onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
-                placeholder={projectsLoading ? 'Loading projects…' : 'e.g. SEC'}
+                placeholder={
+                  projectsLoading
+                    ? t('ticketingIntegration.configure.loadingProjects', 'Loading projects…')
+                    : t('ticketingIntegration.configure.projectKeyExample', 'e.g. SEC')
+                }
               />
               {projects.length === 0 && !projectsLoading && (
                 <p className="text-muted-foreground text-xs">
-                  Couldn&apos;t list projects from Jira — enter the project key manually.
+                  {t(
+                    'ticketingIntegration.configure.projectsListFailed',
+                    "Couldn't list projects from Jira — enter the project key manually."
+                  )}
                 </p>
               )}
             </div>
@@ -316,7 +353,7 @@ function ConfigureTicketingDialog({
             <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
               <div className="space-y-1">
                 <Label htmlFor="sync-enabled" className="font-medium">
-                  Bidirectional status sync
+                  {t('ticketingIntegration.configure.bidirectional', 'Bidirectional status sync')}
                 </Label>
                 <p className="text-muted-foreground text-xs">
                   {t(
@@ -330,7 +367,9 @@ function ConfigureTicketingDialog({
 
             {/* Ticket defaults + severity→priority mapping */}
             <div className="space-y-3 rounded-lg border p-3">
-              <Label className="font-medium">Ticket defaults &amp; mapping</Label>
+              <Label className="font-medium">
+                {t('ticketingIntegration.configure.defaultsMapping', 'Ticket defaults & mapping')}
+              </Label>
               <p className="text-muted-foreground text-xs">
                 {t(
                   'settings.ticketing.defaultsDescription',
@@ -340,7 +379,7 @@ function ConfigureTicketingDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="issue-type" className="text-xs">
-                    Issue type
+                    {t('ticketingIntegration.configure.issueType', 'Issue type')}
                   </Label>
                   <Input
                     id="issue-type"
@@ -351,7 +390,7 @@ function ConfigureTicketingDialog({
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="default-priority" className="text-xs">
-                    Default priority
+                    {t('ticketingIntegration.configure.defaultPriority', 'Default priority')}
                   </Label>
                   <Input
                     id="default-priority"
@@ -361,7 +400,9 @@ function ConfigureTicketingDialog({
                   />
                 </div>
               </div>
-              <Label className="text-xs">Severity → Jira priority</Label>
+              <Label className="text-xs">
+                {t('ticketingIntegration.configure.severityToPriority', 'Severity → Jira priority')}
+              </Label>
               <div className="grid grid-cols-2 gap-3">
                 {SEVERITY_LEVELS.map((sev) => (
                   <div key={sev} className="space-y-1">
@@ -381,10 +422,14 @@ function ConfigureTicketingDialog({
 
             {/* Outbound status mapping (finding status → Jira status NAME) */}
             <div className="space-y-3 rounded-lg border p-3">
-              <Label className="font-medium">Outbound status names</Label>
+              <Label className="font-medium">
+                {t('ticketingIntegration.configure.outboundNames', 'Outbound status names')}
+              </Label>
               <p className="text-muted-foreground text-xs">
-                When bidirectional sync moves a Jira issue, use these status names (match your Jira
-                workflow). Blank = stock default.
+                {t(
+                  'ticketingIntegration.configure.outboundHint',
+                  'When bidirectional sync moves a Jira issue, use these status names (match your Jira workflow). Blank = stock default.'
+                )}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 {(
@@ -397,7 +442,7 @@ function ConfigureTicketingDialog({
                 ).map(([fs, ph]) => (
                   <div key={fs} className="space-y-1">
                     <Label htmlFor={`out-${fs}`} className="text-muted-foreground text-xs">
-                      {fs.replace('_', ' ')}
+                      {t(`ticketingIntegration.findingStatus.${fs}`, fs.replace('_', ' '))}
                     </Label>
                     <Input
                       id={`out-${fs}`}
@@ -412,7 +457,9 @@ function ConfigureTicketingDialog({
 
             {/* Inbound status mapping (Jira status NAME → finding status) */}
             <div className="space-y-3 rounded-lg border p-3">
-              <Label className="font-medium">Inbound status mapping</Label>
+              <Label className="font-medium">
+                {t('ticketingIntegration.configure.inboundMapping', 'Inbound status mapping')}
+              </Label>
               <p className="text-muted-foreground text-xs">
                 {t(
                   'settings.ticketing.inboundHint',
@@ -421,7 +468,10 @@ function ConfigureTicketingDialog({
               </p>
               {statusInbound.length === 0 && (
                 <p className="text-muted-foreground text-xs italic">
-                  No custom mappings — stock defaults apply.
+                  {t(
+                    'ticketingIntegration.configure.noCustomMappings',
+                    'No custom mappings — stock defaults apply.'
+                  )}
                 </p>
               )}
               {statusInbound.map((row, i) => (
@@ -433,7 +483,10 @@ function ConfigureTicketingDialog({
                         rows.map((r, j) => (j === i ? { ...r, jira: e.target.value } : r))
                       )
                     }
-                    placeholder="Jira status (e.g. Shipped)"
+                    placeholder={t(
+                      'ticketingIntegration.configure.jiraStatusPlaceholder',
+                      'Jira status (e.g. Shipped)'
+                    )}
                     className="flex-1"
                   />
                   <span className="text-muted-foreground text-xs">→</span>
@@ -446,19 +499,30 @@ function ConfigureTicketingDialog({
                     }
                   >
                     <SelectTrigger className="w-40">
-                      <SelectValue placeholder="Finding status" />
+                      <SelectValue
+                        placeholder={t(
+                          'ticketingIntegration.configure.findingStatusPlaceholder',
+                          'Finding status'
+                        )}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {INBOUND_FINDING_STATUSES.map((s) => (
                         <SelectItem key={s} value={s}>
-                          {s.replace('_', ' ')}
+                          {t(`ticketingIntegration.findingStatus.${s}`, s.replace('_', ' '))}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   {row.finding && !isInboundFindingStatus(row.finding) && (
                     <span className="text-destructive text-xs" role="alert">
-                      A ticket cannot set {row.finding.replace('_', ' ')}
+                      {t(
+                        'ticketingIntegration.configure.ticketCannotSet',
+                        'A ticket cannot set {status}',
+                        {
+                          status: row.finding.replace('_', ' '),
+                        }
+                      )}
                     </span>
                   )}
                   <Button
@@ -467,7 +531,7 @@ function ConfigureTicketingDialog({
                     size="icon"
                     className="h-8 w-8 shrink-0"
                     onClick={() => setStatusInbound((rows) => rows.filter((_, j) => j !== i))}
-                    aria-label="Remove mapping"
+                    aria-label={t('ticketingIntegration.configure.removeMapping', 'Remove mapping')}
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -482,17 +546,19 @@ function ConfigureTicketingDialog({
                 }
               >
                 <Plus className="me-2 h-4 w-4" />
-                Add mapping
+                {t('ticketingIntegration.configure.addMapping', 'Add mapping')}
               </Button>
             </div>
           </div>
         </DialogBody>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('ticketingIntegration.common.cancel', 'Cancel')}
           </Button>
           <Button type="button" onClick={handleSave} disabled={isMutating}>
-            {isMutating ? 'Saving...' : 'Save'}
+            {isMutating
+              ? t('ticketingIntegration.common.saving', 'Saving...')
+              : t('ticketingIntegration.common.save', 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -539,29 +605,50 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
     try {
       const result = await testNow()
       if (result?.status === 'connected') {
-        toast.success(`${integration.name} is connected`)
+        toast.success(
+          t('ticketingIntegration.actions.connected', '{name} is connected', {
+            name: integration.name,
+          })
+        )
       } else {
-        toast.error(result?.status_message || `${integration.name} could not connect`)
+        toast.error(
+          result?.status_message ||
+            t('ticketingIntegration.actions.couldNotConnect', '{name} could not connect', {
+              name: integration.name,
+            })
+        )
       }
       await revalidateIntegrations()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to test the connection'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('ticketingIntegration.actions.testFailed', 'Failed to test the connection')
+        )
+      )
     }
   }
 
   async function handleDelete() {
     try {
       await deleteNow()
-      toast.success(`${integration.name} deleted`)
+      toast.success(
+        t('ticketingIntegration.actions.deleted', '{name} deleted', { name: integration.name })
+      )
       setDeleteOpen(false)
       await revalidateIntegrations()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete the connection'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('ticketingIntegration.actions.deleteFailed', 'Failed to delete the connection')
+        )
+      )
     }
   }
 
   const deleteAction = {
-    label: 'Delete',
+    label: t('ticketingIntegration.actions.delete', 'Delete'),
     icon: Trash2,
     onClick: () => setDeleteOpen(true),
     destructive: true,
@@ -572,10 +659,16 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   async function handleSync() {
     try {
       await syncNow()
-      toast.success(`${integration.name} sync triggered`)
+      toast.success(
+        t('ticketingIntegration.actions.syncTriggered', '{name} sync triggered', {
+          name: integration.name,
+        })
+      )
       await revalidateIntegrations()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to trigger sync'))
+      toast.error(
+        getErrorMessage(err, t('ticketingIntegration.actions.syncFailed', 'Failed to trigger sync'))
+      )
     }
   }
 
@@ -618,7 +711,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
           ...(integration.status !== 'connected'
             ? [
                 {
-                  label: isTesting ? 'Testing…' : 'Test connection',
+                  label: isTesting
+                    ? t('ticketingIntegration.actions.testing', 'Testing…')
+                    : t('ticketingIntegration.actions.testConnection', 'Test connection'),
                   icon: PlugZap,
                   onClick: () => void handleTest(),
                   disabled: isTesting,
@@ -629,7 +724,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
           ...(integration.status === 'connected'
             ? [
                 {
-                  label: isSyncing ? 'Syncing…' : 'Sync now',
+                  label: isSyncing
+                    ? t('ticketingIntegration.actions.syncing', 'Syncing…')
+                    : t('ticketingIntegration.actions.syncNow', 'Sync now'),
                   icon: RefreshCw,
                   onClick: () => void handleSync(),
                   disabled: isSyncing,
@@ -638,14 +735,14 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
               ]
             : []),
           {
-            label: 'Routing rules',
+            label: t('ticketingIntegration.actions.routingRules', 'Routing rules'),
             icon: Route,
             onClick: () => setRoutingOpen(true),
             disabled: !jiraReady,
             route: 'PUT /api/v1/integrations/{id}' as const,
           },
           {
-            label: 'Configure',
+            label: t('ticketingIntegration.actions.configure', 'Configure'),
             icon: Settings,
             onClick: () => setConfigOpen(true),
             disabled: !jiraReady,
@@ -695,68 +792,77 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   )
 }
 
-const columns: ColumnDef<Integration>[] = [
-  {
-    accessorKey: 'name',
-    header: 'Name',
-    cell: ({ row }) => (
-      <StackedCell
-        primary={row.original.name}
-        secondary={
-          isSupported(row.original)
-            ? row.original.description || row.original.status_message
-            : UNSUPPORTED_NOTE
-        }
-        truncate
-      />
-    ),
-  },
-  {
-    id: 'provider',
-    header: 'Provider',
-    accessorFn: (i) => getProviderLabel(i.provider),
-    cell: ({ getValue }) => <Badge variant="outline">{getValue<string>()}</Badge>,
-  },
-  {
-    id: 'project',
-    header: 'Default project',
-    accessorFn: (i) => getProjectKey(i),
-    cell: ({ getValue }) => <span className="text-sm">{getValue<string>()}</span>,
-  },
-  {
-    id: 'host',
-    header: 'Host',
-    accessorFn: (i) => (i.base_url ? hostnameOf(i.base_url) : ''),
-    cell: ({ row }) =>
-      row.original.base_url ? (
-        <SafeExternalLink
-          href={row.original.base_url}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ExternalLink className="h-3 w-3" />
-          {hostnameOf(row.original.base_url)}
-        </SafeExternalLink>
-      ) : (
-        <span className="text-sm text-muted-foreground">—</span>
-      ),
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => <StatusBadge integration={row.original} />,
-  },
-  {
-    id: 'last_sync',
-    header: 'Last sync',
-    accessorFn: (i) => i.last_sync_at ?? '',
-    cell: ({ row }) => <RelativeTime date={row.original.last_sync_at} />,
-  },
-  {
-    id: 'actions',
-    enableSorting: false,
-    cell: ({ row }) => <TicketingRowActions integration={row.original} />,
-  },
-]
+function useColumns(): ColumnDef<Integration>[] {
+  const { t } = useTranslation()
+  return useMemo<ColumnDef<Integration>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: t('ticketingIntegration.columns.name', 'Name'),
+        cell: ({ row }) => (
+          <StackedCell
+            primary={row.original.name}
+            secondary={
+              isSupported(row.original)
+                ? row.original.description || row.original.status_message
+                : t(
+                    'ticketingIntegration.unsupportedNote',
+                    'This provider has no client yet, so this connection does nothing.'
+                  )
+            }
+            truncate
+          />
+        ),
+      },
+      {
+        id: 'provider',
+        header: t('ticketingIntegration.columns.provider', 'Provider'),
+        accessorFn: (i) => getProviderLabel(i.provider, t),
+        cell: ({ getValue }) => <Badge variant="outline">{getValue<string>()}</Badge>,
+      },
+      {
+        id: 'project',
+        header: t('ticketingIntegration.columns.defaultProject', 'Default project'),
+        accessorFn: (i) => getProjectKey(i),
+        cell: ({ getValue }) => <span className="text-sm">{getValue<string>()}</span>,
+      },
+      {
+        id: 'host',
+        header: t('ticketingIntegration.columns.host', 'Host'),
+        accessorFn: (i) => (i.base_url ? hostnameOf(i.base_url) : ''),
+        cell: ({ row }) =>
+          row.original.base_url ? (
+            <SafeExternalLink
+              href={row.original.base_url}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {hostnameOf(row.original.base_url)}
+            </SafeExternalLink>
+          ) : (
+            <span className="text-sm text-muted-foreground">—</span>
+          ),
+      },
+      {
+        accessorKey: 'status',
+        header: t('ticketingIntegration.columns.status', 'Status'),
+        cell: ({ row }) => <StatusBadge integration={row.original} />,
+      },
+      {
+        id: 'last_sync',
+        header: t('ticketingIntegration.columns.lastSync', 'Last sync'),
+        accessorFn: (i) => i.last_sync_at ?? '',
+        cell: ({ row }) => <RelativeTime date={row.original.last_sync_at} />,
+      },
+      {
+        id: 'actions',
+        enableSorting: false,
+        cell: ({ row }) => <TicketingRowActions integration={row.original} />,
+      },
+    ],
+    [t]
+  )
+}
 
 // ─────────────────────────────────────────────────────────
 // Connect Jira dialog
@@ -781,18 +887,22 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name || !apiToken) {
-      toast.error('Name and API token are required')
+      toast.error(
+        t('ticketingIntegration.connect.nameAndTokenRequired', 'Name and API token are required')
+      )
       return
     }
     // Jira Cloud REST auth is basic-auth with the account email + API token.
     // Without the email the backend cannot build a client and the integration
     // is silently skipped, so require it and ship both fields together.
     if (!baseUrl) {
-      toast.error('Jira base URL is required')
+      toast.error(t('ticketingIntegration.connect.baseUrlRequired', 'Jira base URL is required'))
       return
     }
     if (!email) {
-      toast.error('Atlassian account email is required')
+      toast.error(
+        t('ticketingIntegration.connect.emailRequired', 'Atlassian account email is required')
+      )
       return
     }
     try {
@@ -817,12 +927,20 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
       // The API tests the credentials on create; only a connected integration
       // is used for tickets, so report the real outcome.
       if (created?.status === 'connected') {
-        toast.success(`${name} connected`)
+        toast.success(t('ticketingIntegration.connect.connected', '{name} connected', { name }))
       } else {
         toast.error(
-          `${name} was saved but could not connect${
-            created?.status_message ? `: ${created.status_message}` : ''
-          }`
+          created?.status_message
+            ? t(
+                'ticketingIntegration.connect.savedNotConnectedWithReason',
+                '{name} was saved but could not connect: {reason}',
+                { name, reason: created.status_message }
+              )
+            : t(
+                'ticketingIntegration.connect.savedNotConnected',
+                '{name} was saved but could not connect',
+                { name }
+              )
         )
       }
       onSuccess()
@@ -834,7 +952,9 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
       setApiToken('')
       setProjectKey('')
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to connect Jira'))
+      toast.error(
+        getErrorMessage(err, t('ticketingIntegration.connect.failed', 'Failed to connect Jira'))
+      )
     }
   }
 
@@ -842,28 +962,37 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Connect Jira</DialogTitle>
+          <DialogTitle>{t('ticketingIntegration.connect.title', 'Connect Jira')}</DialogTitle>
           <DialogDescription>
-            Create and track remediation tickets in Jira Cloud. For GitHub Issues, use your GitHub
-            source control connection.
+            {t(
+              'ticketingIntegration.connect.description',
+              'Create and track remediation tickets in Jira Cloud. For GitHub Issues, use your GitHub source control connection.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <DialogForm onSubmit={handleSubmit}>
           <DialogBody className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="conn-name">Connection name</Label>
+              <Label htmlFor="conn-name">
+                {t('ticketingIntegration.connect.connectionName', 'Connection name')}
+              </Label>
               <Input
                 id="conn-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Security Remediation Board"
+                placeholder={t(
+                  'ticketingIntegration.connect.namePlaceholder',
+                  'e.g. Security Remediation Board'
+                )}
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="base-url">Jira base URL</Label>
+              <Label htmlFor="base-url">
+                {t('ticketingIntegration.connect.baseUrl', 'Jira base URL')}
+              </Label>
               <Input
                 id="base-url"
                 value={baseUrl}
@@ -875,7 +1004,9 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="jira-email">Atlassian account email</Label>
+              <Label htmlFor="jira-email">
+                {t('ticketingIntegration.connect.email', 'Atlassian account email')}
+              </Label>
               <Input
                 id="jira-email"
                 value={email}
@@ -893,41 +1024,58 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="project-key">Default project key (optional)</Label>
+              <Label htmlFor="project-key">
+                {t(
+                  'ticketingIntegration.connect.projectKeyOptional',
+                  'Default project key (optional)'
+                )}
+              </Label>
               <Input
                 id="project-key"
                 value={projectKey}
                 onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
-                placeholder="e.g. SEC"
+                placeholder={t('ticketingIntegration.configure.projectKeyExample', 'e.g. SEC')}
               />
               <p className="text-muted-foreground text-xs">
-                Where tickets land by default. After connecting you can pick it from your Jira
-                projects under Configure.
+                {t(
+                  'ticketingIntegration.connect.projectKeyHint',
+                  'Where tickets land by default. After connecting you can pick it from your Jira projects under Configure.'
+                )}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="api-token">API token</Label>
+              <Label htmlFor="api-token">
+                {t('ticketingIntegration.connect.apiToken', 'API token')}
+              </Label>
               <Input
                 id="api-token"
                 value={apiToken}
                 onChange={(e) => setApiToken(e.target.value)}
                 type="password"
-                placeholder="Paste your API token"
+                placeholder={t(
+                  'ticketingIntegration.connect.tokenPlaceholder',
+                  'Paste your API token'
+                )}
                 required
               />
               <p className="text-muted-foreground text-xs">
-                Generate from Atlassian account settings under Security.
+                {t(
+                  'ticketingIntegration.connect.tokenHint',
+                  'Generate from Atlassian account settings under Security.'
+                )}
               </p>
             </div>
           </DialogBody>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('ticketingIntegration.common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={isMutating}>
-              {isMutating ? 'Connecting...' : 'Connect'}
+              {isMutating
+                ? t('ticketingIntegration.connect.connecting', 'Connecting...')
+                : t('ticketingIntegration.connect.connect', 'Connect')}
             </Button>
           </DialogFooter>
         </DialogForm>
@@ -945,6 +1093,8 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
 // ─────────────────────────────────────────────────────────
 
 export default function TicketingIntegrationPage() {
+  const { t } = useTranslation()
+  const columns = useColumns()
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const {
@@ -969,22 +1119,38 @@ export default function TicketingIntegrationPage() {
   ).length
 
   const metrics: MetricStripItem[] = [
-    { key: 'total', label: 'Connections', value: connections.length },
-    { key: 'connected', label: 'Connected', value: connected },
-    { key: 'attention', label: 'Needs attention', value: needsAttention, tone: 'danger' },
-    { key: 'pending', label: 'Pending', value: pending },
+    {
+      key: 'total',
+      label: t('ticketingIntegration.metrics.connections', 'Connections'),
+      value: connections.length,
+    },
+    {
+      key: 'connected',
+      label: t('ticketingIntegration.status.connected', 'Connected'),
+      value: connected,
+    },
+    {
+      key: 'attention',
+      label: t('ticketingIntegration.metrics.needsAttention', 'Needs attention'),
+      value: needsAttention,
+      tone: 'danger',
+    },
+    { key: 'pending', label: t('ticketingIntegration.status.pending', 'Pending'), value: pending },
   ]
 
   return (
     <Main>
       <PageHeader
-        title="Ticketing"
-        description="Connect ticketing systems to create and track remediation tickets automatically."
+        title={t('ticketingIntegration.page.title', 'Ticketing')}
+        description={t(
+          'ticketingIntegration.page.description',
+          'Connect ticketing systems to create and track remediation tickets automatically.'
+        )}
       >
         <Can route="POST /api/v1/integrations">
           <Button size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="me-2 h-4 w-4" />
-            Connect Jira
+            {t('ticketingIntegration.connect.title', 'Connect Jira')}
           </Button>
         </Can>
       </PageHeader>
@@ -992,7 +1158,7 @@ export default function TicketingIntegrationPage() {
       {error ? (
         <div className="mt-5">
           <ErrorState
-            title="ticketing connections"
+            title={t('ticketingIntegration.page.errorTitle', 'ticketing connections')}
             error={error}
             onRetry={() => void reloadIntegrations()}
           />
@@ -1010,13 +1176,16 @@ export default function TicketingIntegrationPage() {
             ) : connections.length === 0 ? (
               <EmptyState
                 icon={Ticket}
-                title="No ticketing systems connected"
-                description="Connect a ticketing system to automatically create and track remediation tickets."
+                title={t('ticketingIntegration.page.emptyTitle', 'No ticketing systems connected')}
+                description={t(
+                  'ticketingIntegration.page.emptyDescription',
+                  'Connect a ticketing system to automatically create and track remediation tickets.'
+                )}
                 action={
                   <Can route="POST /api/v1/integrations">
                     <Button size="sm" onClick={() => setDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
-                      Connect Jira
+                      {t('ticketingIntegration.connect.title', 'Connect Jira')}
                     </Button>
                   </Can>
                 }
@@ -1026,7 +1195,10 @@ export default function TicketingIntegrationPage() {
                 columns={columns}
                 data={connections}
                 getRowId={(c) => c.id}
-                searchPlaceholder="Search connections..."
+                searchPlaceholder={t(
+                  'ticketingIntegration.page.searchPlaceholder',
+                  'Search connections...'
+                )}
                 showSelectionCount={false}
               />
             )}
