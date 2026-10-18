@@ -35,7 +35,7 @@ func TestMembershipChecker_ActiveHolderOnly(t *testing.T) {
 	} {
 		m := tenantdom.ReconstituteMembershipWithStatus(shared.NewID(), u.ID(), shared.NewID(), tenantdom.RoleMember,
 			nil, time.Now(), status, nil, nil)
-		got, err := NewMembershipChecker(fixedMembership{m}, fixedUser{u}).IsActiveMember(context.Background(), m.TenantID(), u.ID())
+		got, err := NewMembershipChecker(fixedMembership{m}, fixedUser{u}, nil).IsActiveMember(context.Background(), m.TenantID(), u.ID())
 		if err != nil || got != want {
 			t.Errorf("holder %s: active=%v err=%v, want %v", status, got, err, want)
 		}

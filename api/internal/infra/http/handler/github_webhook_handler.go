@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -54,8 +56,14 @@ type GitHubWebhookHandler struct {
 	// deliveries refuses replays of a verified delivery; nil (no Redis, tests)
 	// turns replay protection off.
 	deliveries WebhookDeliveryGuard
-	logger     *logger.Logger
+	// orgs refuses deliveries for a suspended organization
+	// (docs/architecture/organization-suspension.md); nil admits all.
+	orgs   tenantdom.AccessGate
+	logger *logger.Logger
 }
+
+// SetOrganizationGate wires the organization access gate.
+func (h *GitHubWebhookHandler) SetOrganizationGate(g tenantdom.AccessGate) { h.orgs = g }
 
 // NewGitHubWebhookHandler creates a new GitHubWebhookHandler.
 func NewGitHubWebhookHandler(svc *integration.IntegrationService, log *logger.Logger) *GitHubWebhookHandler {
@@ -114,6 +122,14 @@ func (h *GitHubWebhookHandler) IncomingGitHubWebhook(w http.ResponseWriter, r *h
 		h.logger.Warn("github webhook rejected: bad signature", "tenant_id", tenantIDStr, "remote_ip", r.RemoteAddr)
 		apierror.Unauthorized("invalid webhook signature").WriteJSON(w)
 		return
+	}
+	// A suspended organization takes no deliveries (checked after the
+	// signature, so only the secret holder learns the status).
+	if h.orgs != nil {
+		if gerr := h.orgs.CheckAccess(r.Context(), tenantID); gerr != nil {
+			middleware.WriteOrganizationGateError(w, gerr, h.logger)
+			return
+		}
 	}
 
 	// Replay protection: the signature covers the body only, so a captured

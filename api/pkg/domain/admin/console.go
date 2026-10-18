@@ -46,6 +46,22 @@ func FreshStepUpRequired(ctx context.Context) bool {
 	return v
 }
 
+type backgroundRequestKey struct{}
+
+// WithBackgroundRequest marks ctx as a read the console made on its own (a
+// periodic refresh while nobody touches the page). Such a request is
+// authenticated as usual but does not count as activity, so an unattended
+// tab still reaches SessionIdleTimeout.
+func WithBackgroundRequest(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundRequestKey{}, true)
+}
+
+// IsBackgroundRequest reports whether ctx was marked by WithBackgroundRequest.
+func IsBackgroundRequest(ctx context.Context) bool {
+	v, _ := ctx.Value(backgroundRequestKey{}).(bool)
+	return v
+}
+
 // Credentials are an admin's console second factor. Absent (nil) until the
 // admin first opens the console and is issued a secret to enroll.
 type Credentials struct {
