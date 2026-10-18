@@ -5,32 +5,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
-	"github.com/openctemio/openctem/api/internal/app/tenant"
 )
-
-// EmailEnqueuerAdapter wraps the job Client to implement tenant.EmailJobEnqueuer.
-type EmailEnqueuerAdapter struct {
-	client *Client
-}
-
-// NewEmailEnqueuerAdapter creates a new adapter.
-func NewEmailEnqueuerAdapter(client *Client) *EmailEnqueuerAdapter {
-	return &EmailEnqueuerAdapter{client: client}
-}
-
-// EnqueueTeamInvitation converts app payload to job payload and enqueues.
-func (a *EmailEnqueuerAdapter) EnqueueTeamInvitation(ctx context.Context, payload tenant.TeamInvitationJobPayload) error {
-	jobPayload := TeamInvitationPayload{
-		RecipientEmail: payload.RecipientEmail,
-		InviterName:    payload.InviterName,
-		TeamName:       payload.TeamName,
-		Token:          payload.Token,
-		ExpiresIn:      payload.ExpiresIn,
-		InvitationID:   payload.InvitationID,
-		TenantID:       payload.TenantID,
-	}
-	return a.client.EnqueueTeamInvitation(ctx, jobPayload)
-}
 
 // UserInfoAdapter provides user information from the user service.
 type UserInfoAdapter struct {
@@ -46,20 +21,6 @@ func NewUserInfoAdapter(getUserName func(ctx context.Context, userID string) (st
 func (a *UserInfoAdapter) GetUserNameByID(ctx context.Context, id interface{ String() string }) (string, error) {
 	return a.getUserName(ctx, id.String())
 }
-
-// NoOpEmailEnqueuer is a no-op implementation that just logs.
-type NoOpEmailEnqueuer struct{}
-
-// EnqueueTeamInvitation logs but doesn't actually enqueue.
-func (n *NoOpEmailEnqueuer) EnqueueTeamInvitation(_ context.Context, payload tenant.TeamInvitationJobPayload) error {
-	// No-op: email jobs are disabled
-	_ = payload
-	return nil
-}
-
-// Ensure adapters implement the interfaces
-var _ tenant.EmailJobEnqueuer = (*EmailEnqueuerAdapter)(nil)
-var _ tenant.EmailJobEnqueuer = (*NoOpEmailEnqueuer)(nil)
 
 // DefaultExpiresIn is the default expiration time for invitations.
 const DefaultExpiresIn = 7 * 24 * time.Hour
