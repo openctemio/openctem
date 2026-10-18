@@ -119,7 +119,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // MFA_ENROLLMENT_REQUIRED (403): the organization now requires two-factor
       // authentication and this user has not set it up. The session cannot be
       // refreshed any more; signing in again leads to the enrollment step.
-      if (response.status === 401 || errorData.code === 'MFA_ENROLLMENT_REQUIRED') {
+      // ORGANIZATION_SUSPENDED (403): the organization was suspended by the
+      // platform operator; signing in again lists it as suspended.
+      if (
+        response.status === 401 ||
+        errorData.code === 'MFA_ENROLLMENT_REQUIRED' ||
+        errorData.code === 'ORGANIZATION_SUSPENDED'
+      ) {
         devLog.log('[Refresh] Clearing ALL auth cookies due to invalid refresh token')
 
         // Clear access token cookie

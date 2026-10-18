@@ -35,3 +35,17 @@ func TestOwnershipTransferErrorCodes(t *testing.T) {
 		t.Fatalf("body = %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// No pending transfer answers 200 with JSON null, not 404.
+func TestWritePendingOwnershipTransfer_NoneIsNull(t *testing.T) {
+	rec := httptest.NewRecorder()
+	(&TenantHandler{}).writePendingOwnershipTransfer(rec, nil, fmt.Errorf("wrapped: %w", tenant.ErrOwnershipTransferNotFound))
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "null" {
+		t.Fatalf("got %d %q, want 200 null", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	(&TenantHandler{}).writePendingOwnershipTransfer(rec, nil, tenant.ErrOwnershipTransferNotOwner)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("other errors keep their status: got %d", rec.Code)
+	}
+}

@@ -333,6 +333,9 @@ func (h *Hub) RegisterClient(client *Client) {
 const (
 	RevocationSessionRevoked = "session_revoked"
 	RevocationAccessChanged  = "access_changed"
+	// RevocationOrganizationSuspended closes every connection of one
+	// organization (docs/architecture/organization-suspension.md).
+	RevocationOrganizationSuspended = "organization_suspended"
 )
 
 // Revocation names the connections that must be closed because the
@@ -375,6 +378,16 @@ func (h *Hub) RevokeAccess(ctx context.Context, tenantID, userID string) {
 	h.revoke(ctx, Revocation{Reason: RevocationAccessChanged, TenantID: tenantID, UserID: userID})
 }
 
+// RevokeOrganization closes every connection of tenantID, on every API
+// instance. Called when the organization is suspended; a reconnect is
+// refused at the upgrade.
+func (h *Hub) RevokeOrganization(ctx context.Context, tenantID string) {
+	if tenantID == "" {
+		return
+	}
+	h.revoke(ctx, Revocation{Reason: RevocationOrganizationSuspended, TenantID: tenantID})
+}
+
 func (h *Hub) revoke(ctx context.Context, r Revocation) {
 	if h.revocations != nil {
 		err := h.revocations.PublishRevocation(ctx, r)
@@ -400,22 +413,34 @@ func (h *Hub) ApplyRevocation(r Revocation) int {
 		text = "session revoked"
 	case RevocationAccessChanged:
 		text = "access changed"
+	case RevocationOrganizationSuspended:
+		text = "organization suspended"
 	default:
 		return 0
 	}
 	bySession := r.SessionID != ""
-	if !bySession && (r.TenantID == "" || r.UserID == "") {
+	byOrganization := r.Reason == RevocationOrganizationSuspended
+	switch {
+	case byOrganization && (bySession || r.TenantID == "" || r.UserID != ""):
+		// An organization revocation names the organization only.
+		return 0
+	case !byOrganization && !bySession && (r.TenantID == "" || r.UserID == ""):
 		return 0
 	}
 
 	h.mu.RLock()
 	var targets []*Client
 	for c := range h.clients {
-		if bySession {
+		switch {
+		case byOrganization:
+			if c.TenantID == r.TenantID {
+				targets = append(targets, c)
+			}
+		case bySession:
 			if c.SessionID == r.SessionID {
 				targets = append(targets, c)
 			}
-		} else if c.TenantID == r.TenantID && c.UserID == r.UserID {
+		case c.TenantID == r.TenantID && c.UserID == r.UserID:
 			targets = append(targets, c)
 		}
 	}

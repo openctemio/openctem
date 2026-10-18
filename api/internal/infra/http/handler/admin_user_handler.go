@@ -3,13 +3,17 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -23,6 +27,27 @@ import (
 type AdminUserHandler struct {
 	repo   *postgres.AdminRepository
 	logger *logger.Logger
+	// roster tells the other administrators about a role, state or removal
+	// change (nil: no notice).
+	roster adminRosterNotifier
+}
+
+// adminRosterNotifier is the console service's roster notice.
+type adminRosterNotifier interface {
+	NotifyRosterChange(ctx context.Context, actor *admin.AdminUser, kind, summary string, client adminconsole.ClientInfo)
+}
+
+// WithRosterNotifier wires the roster notice.
+func (h *AdminUserHandler) WithRosterNotifier(n adminRosterNotifier) *AdminUserHandler {
+	h.roster = n
+	return h
+}
+
+// notifyRoster sends the roster notice when one is wired.
+func (h *AdminUserHandler) notifyRoster(r *http.Request, actor *admin.AdminUser, kind, summary string) {
+	if h.roster != nil {
+		h.roster.NotifyRosterChange(r.Context(), actor, kind, summary, clientInfo(r))
+	}
 }
 
 // NewAdminUserHandler creates a new AdminUserHandler.
@@ -212,6 +237,7 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	before := adminRosterState{role: adminUser.Role(), active: adminUser.IsActive(), breakGlass: adminUser.IsBreakGlass()}
 
 	// Apply updates
 	if req.Name != nil {
@@ -254,6 +280,9 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("admin updated",
 		"admin_id", adminUser.ID().String(),
 		"updated_by", currentAdmin.Email())
+	if summary := before.changes(adminUser); summary != "" {
+		h.notifyRoster(r, currentAdmin, adminconsole.RosterAdminUpdated, summary)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toAdminResponse(adminUser))
@@ -279,10 +308,22 @@ func (h *AdminUserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	target, err := h.repo.GetByID(ctx, id)
+	if err != nil {
+		if admin.IsAdminNotFound(err) {
+			apierror.NotFound("Admin").WriteJSON(w)
+			return
+		}
+		h.logger.Error("failed to get admin", "error", err, "id", id.String())
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	if err := h.repo.GuardedDelete(ctx, id); err != nil {
 		writeAdminRosterError(w, h.logger, err, "delete")
 		return
 	}
+	h.notifyRoster(r, currentAdmin, adminconsole.RosterAdminRemoved,
+		fmt.Sprintf("removed the administrator %s (%s)", target.Email(), adminconsole.RoleLabel(target.Role())))
 
 	h.logger.Info("admin deleted",
 		"admin_id", logger.SanitizeValue(idStr),
@@ -343,4 +384,36 @@ func writeAdminRosterError(w http.ResponseWriter, log *logger.Logger, err error,
 		log.Error("admin roster change failed", "op", op, "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// adminRosterState is what a roster notice compares before and after an
+// administrator update (a name change alone sends no notice).
+type adminRosterState struct {
+	role       admin.AdminRole
+	active     bool
+	breakGlass bool
+}
+
+// changes describes what changed on a, or "" when nothing the notice covers did.
+func (b adminRosterState) changes(a *admin.AdminUser) string {
+	var parts []string
+	if a.Role() != b.role {
+		parts = append(parts, fmt.Sprintf("changed the role of %s from %s to %s",
+			a.Email(), adminconsole.RoleLabel(b.role), adminconsole.RoleLabel(a.Role())))
+	}
+	if a.IsActive() != b.active {
+		if a.IsActive() {
+			parts = append(parts, "reactivated "+a.Email())
+		} else {
+			parts = append(parts, "deactivated "+a.Email())
+		}
+	}
+	if a.IsBreakGlass() != b.breakGlass {
+		if a.IsBreakGlass() {
+			parts = append(parts, "marked "+a.Email()+" as break-glass")
+		} else {
+			parts = append(parts, "removed the break-glass marker of "+a.Email())
+		}
+	}
+	return strings.Join(parts, "; ")
 }
