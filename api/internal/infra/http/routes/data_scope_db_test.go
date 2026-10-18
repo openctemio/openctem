@@ -38,6 +38,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	threatapp "github.com/openctemio/openctem/api/internal/app/threat"
 	vulnmatchapp "github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -89,6 +90,7 @@ var dsMemberPerms = []string{ //nolint:gochecknoglobals // test fixture
 	permission.AssetGroupsRead.String(), permission.DashboardRead.String(),
 	permission.ExposuresRead.String(), permission.ExposuresWrite.String(), permission.ExposuresTriage.String(),
 	permission.ExposuresDelete.String(),
+	permission.VulnerabilitiesRead.String(), permission.ScansRead.String(), permission.CTEMCyclesRead.String(),
 }
 
 // dsAuth is a stand-in for UnifiedAuth: the test names the caller in headers.
@@ -157,6 +159,10 @@ func newDSHarness(t *testing.T) *dsHarness {
 		return m.IsOwner() || m.IsAdmin(), nil
 	})
 
+	enforcer.SetAggregateCheck(func(ctx context.Context) bool {
+		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+	})
+
 	assetRepo := postgres.NewAssetRepository(db)
 	findingRepo := postgres.NewFindingRepository(db)
 	accessRepo := postgres.NewAccessControlRepository(db)
@@ -216,6 +222,19 @@ func newDSHarness(t *testing.T) *dsHarness {
 	registerAttackSurfaceRoutes(router, handler.NewAttackSurfaceHandler(surfaceSvc, log), auth, nil, passthrough)
 	registerExposureRoutes(router, handler.NewExposureHandler(expSvc, nil, v, log), auth, nil, passthrough)
 	registerDashboardRoutes(router, handler.NewDashboardHandler(dashSvc, log), auth, nil, log)
+	// The dashboard's threat intel, validation, scan coverage and CTEM cycle
+	// figures.
+	tiHandler := handler.NewThreatIntelHandler(threatapp.NewIntelService(postgres.NewThreatIntelRepository(db), log), v, log)
+	tiHandler.SetDataScope(enforcer)
+	registerThreatIntelRoutes(router, tiHandler, auth, nil)
+	valHandler := handler.NewValidationHandler(nil, log)
+	valHandler.SetCoverageReader(postgres.NewValidationEvidenceRepository(db))
+	valHandler.SetDataScope(enforcer)
+	registerValidationRoutes(router, valHandler, nil, nil, auth, nil)
+	scanHandler := handler.NewScanHandler(nil, nil, postgres.NewScanCoverageRepository(db), v, log)
+	scanHandler.SetDataScope(enforcer)
+	registerScanRoutes(router, scanHandler, auth, nil, nil)
+	registerCTEMCycleRoutes(router, handler.NewCTEMCycleHandler(sqldb, postgres.NewCTEMCycleMetricsRepository(db), log).WithDataScope(enforcer), auth, nil, passthrough)
 	registerNotificationRoutes(router, handler.NewNotificationHandler(notifSvc, log), auth, nil)
 
 	// Asset sub-resources outside /assets/<uuid>: services, state history,

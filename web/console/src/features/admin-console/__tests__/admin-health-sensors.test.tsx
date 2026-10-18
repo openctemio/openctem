@@ -13,7 +13,11 @@ vi.mock('@console/features/admin-console/api/use-admin-operations', () => ({
   }),
 }))
 
-import AdminOperationsPage from '@console/app/(console)/operations/page'
+vi.mock('@console/features/admin-console/api/use-admin-system', () => ({
+  useAdminSystem: () => ({ data: undefined, error: undefined, isLoading: true, mutate: vi.fn() }),
+}))
+
+import AdminHealthPage from '@console/app/(console)/health/page'
 
 function ops(transport?: AdminOperations['sensor_transport']): AdminOperations {
   return {
@@ -48,13 +52,13 @@ function ops(transport?: AdminOperations['sensor_transport']): AdminOperations {
   }
 }
 
-describe('Operations: sensor connection', () => {
+describe('Health: sensor connection', () => {
   it('explains why sensors use HTTPS, links the docs and keeps the code secondary', () => {
     state.data = ops({
       mode: 'auto',
       grpc: { state: 'unavailable', reason: 'foreign_certificate' },
     })
-    render(<AdminOperationsPage />)
+    render(<AdminHealthPage />)
     expect(screen.getByText('Sensor connection')).toBeInTheDocument()
     const note = screen.getByTestId('sensor-transport-note')
     expect(note).toHaveTextContent('The gateway in front of the platform terminates TLS')
@@ -71,14 +75,14 @@ describe('Operations: sensor connection', () => {
       mode: 'auto',
       grpc: { state: 'advertised', endpoint: 'sensors.example.test:443' },
     })
-    render(<AdminOperationsPage />)
+    render(<AdminHealthPage />)
     expect(screen.getByText('gRPC and HTTPS')).toBeInTheDocument()
     expect(screen.queryByTestId('sensor-transport-note')).not.toBeInTheDocument()
   })
 
   it('leaves the row out when the API does not report the transport', () => {
     state.data = ops(undefined)
-    render(<AdminOperationsPage />)
+    render(<AdminHealthPage />)
     expect(screen.queryByText('Sensor connection')).not.toBeInTheDocument()
   })
 })

@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState, type FormEvent } from 'react'
 import { Loader2, UserPlus } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -36,6 +37,8 @@ export function CreateFirstOwnerDialog({
   tenantId: string
   onCreated: () => void
 }) {
+  const { t } = useTranslation()
+
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -75,17 +78,22 @@ export function CreateFirstOwnerDialog({
       <DialogTrigger asChild>
         <Button size="sm">
           <UserPlus className="me-2 size-4" />
-          Create first owner
+          {t('admin.createFirstOwnerDialog.createFirstOwner', 'Create first owner')}
         </Button>
       </DialogTrigger>
       <DialogContent size="sm">
         {created ? (
           <>
             <DialogHeader>
-              <DialogTitle>Owner created</DialogTitle>
+              <DialogTitle>
+                {t('admin.createFirstOwnerDialog.ownerCreated', 'Owner created')}
+              </DialogTitle>
               <DialogDescription>
-                {created.user?.name || created.user?.email} owns this organization once they set a
-                password. They add everyone else.
+                {t(
+                  'admin.createFirstOwnerDialog.ownsThisOrganization',
+                  '{owner} owns this organization once they set a password. They add everyone else.',
+                  { owner: created.user?.name || created.user?.email || '' }
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -94,23 +102,28 @@ export function CreateFirstOwnerDialog({
               </div>
             </DialogBody>
             <DialogFooter>
-              <Button onClick={close}>Done</Button>
+              <Button onClick={close}>{t('admin.createFirstOwnerDialog.done', 'Done')}</Button>
             </DialogFooter>
           </>
         ) : (
           <DialogForm onSubmit={submit}>
             <DialogHeader>
-              <DialogTitle>Create first owner</DialogTitle>
+              <DialogTitle>
+                {t('admin.createFirstOwnerDialog.createFirstOwner', 'Create first owner')}
+              </DialogTitle>
               <DialogDescription>
-                This organization has no owner. Create the owner&apos;s account; they get a link to
-                set their password, and then invite or create the organization&apos;s other users
-                themselves.
+                {t(
+                  'admin.createFirstOwnerDialog.thisOrganizationHasNoOwner',
+                  "This organization has no owner. Create the owner's account; they get a link to set their password, and then invite or create the organization's other users themselves."
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="org-owner-name">Name</Label>
+                  <Label htmlFor="org-owner-name">
+                    {t('admin.createFirstOwnerDialog.name', 'Name')}
+                  </Label>
                   <Input
                     id="org-owner-name"
                     required
@@ -120,7 +133,9 @@ export function CreateFirstOwnerDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="org-owner-email">Email</Label>
+                  <Label htmlFor="org-owner-email">
+                    {t('admin.createFirstOwnerDialog.email', 'Email')}
+                  </Label>
                   <Input
                     id="org-owner-email"
                     type="email"
@@ -138,11 +153,11 @@ export function CreateFirstOwnerDialog({
             </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={close}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="me-2 size-4 animate-spin" />}
-                Create owner
+                {t('admin.createFirstOwnerDialog.createOwner', 'Create owner')}
               </Button>
             </DialogFooter>
           </DialogForm>

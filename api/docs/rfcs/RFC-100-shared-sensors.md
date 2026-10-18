@@ -311,7 +311,7 @@ depth per lane, per-organization usage counts. A job's targets and logs only
 through an audited view that asks for a reason (the pattern of the
 platform-user view). Results and findings never.
 
-Console > System > Shared sensors (`/api/v1/admin/shared-sensors`): any
+Console > Scanning > Platform scanning (Fleet) (`/api/v1/admin/shared-sensors`): any
 administrator lists the fleet (name, region, status, health, version, tools,
 current jobs, last seen), the queue per tool lane, per-organization counts
 and job metadata (organization, type, tool, state, shared sensor, times;

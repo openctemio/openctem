@@ -55,7 +55,7 @@ describe('buildSystemAttention', () => {
     expect(item.id).toBe('storage-sensor-ca')
     expect(item.severity).toBe('critical')
     expect(item.vars?.percent).toBe(8)
-    expect(item.href).toBe('/system')
+    expect(item.href).toBe('/health')
   })
 
   it('reports a down service, a failed backup and an expiring certificate', () => {

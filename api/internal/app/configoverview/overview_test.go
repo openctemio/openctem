@@ -168,3 +168,33 @@ func TestConsoleSettings(t *testing.T) {
 		t.Fatal("a stored console value leaked into the overview")
 	}
 }
+
+// Health and Platform scanning each became one console page; a row must never
+// link to a page that no longer exists.
+func TestConsoleSettingPagesAreLive(t *testing.T) {
+	removed := map[string]bool{
+		"/operations":               true,
+		"/system":                   true,
+		"/system/platform-scanning": true,
+		"/system/shared-sensors":    true,
+	}
+	for _, s := range consoleSettings {
+		if removed[s.page] {
+			t.Errorf("setting %s links to the removed page %s", s.key, s.page)
+		}
+	}
+	for _, key := range []string{"platform_sensor_proof", "shared_sensors"} {
+		found := false
+		for _, s := range consoleSettings {
+			if s.key == key {
+				found = true
+				if s.page != "/scanning/platform" {
+					t.Errorf("%s page = %s, want /scanning/platform", key, s.page)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("setting %s missing", key)
+		}
+	}
+}

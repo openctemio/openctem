@@ -1,6 +1,6 @@
 package handler
 
-// Console > System > Shared sensors (docs/rfcs/RFC-100-shared-sensors.md §12):
+// Console > Scanning > Platform scanning (Fleet) (docs/rfcs/RFC-100-shared-sensors.md §12):
 // the instance sensors, queue aggregates, per-organization usage and job
 // metadata for any administrator; a job's targets and logs only through an
 // audited view with a reason (super or operations administrator); pause,
