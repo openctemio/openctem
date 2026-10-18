@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS dash_asset_day (
     asset_id         uuid        NOT NULL,
     severity         varchar(20) NOT NULL,
     priority_class   varchar(4)  NOT NULL,
+    pentest_campaign_id uuid     NOT NULL,
     opened           integer     NOT NULL DEFAULT 0,
     fixed            integer     NOT NULL DEFAULT 0,
     dispositioned    integer     NOT NULL DEFAULT 0,
@@ -139,13 +140,13 @@ CREATE TABLE IF NOT EXISTS dash_asset_day (
     net_open_delta   integer     NOT NULL DEFAULT 0,
     fixed_within_sla integer     NOT NULL DEFAULT 0,
     fix_hours_hist   integer[]   NOT NULL DEFAULT '{0,0,0,0,0,0,0,0,0,0,0,0}',
-    CONSTRAINT pk_dash_asset_day PRIMARY KEY (tenant_id, day, asset_id, severity, priority_class),
+    CONSTRAINT pk_dash_asset_day PRIMARY KEY (tenant_id, day, asset_id, severity, priority_class, pentest_campaign_id),
     CONSTRAINT fk_dash_asset_day_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE,
     CONSTRAINT chk_dash_asset_day_priority CHECK (priority_class IN ('P0', 'P1', 'P2', 'P3', 'none')),
     CONSTRAINT chk_dash_asset_day_hist CHECK (cardinality(fix_hours_hist) = 12)
 ) PARTITION BY RANGE (day);
 COMMENT ON TABLE dash_asset_day IS
-    'Dashboard fact F2: per asset and UTC day, findings opened (first detected), fixed, dispositioned (resolved_at), reopened (last_reopened_at), net change of the open count, fixed within SLA, and a log2 histogram of fix hours. Derived from finding timestamps with current dimensions; monthly partitions.';
+    'Dashboard fact F2: per asset and UTC day, findings opened (first detected), fixed, dispositioned (resolved_at), reopened (last_reopened_at), net change of the open count, fixed within SLA, and a log2 histogram of fix hours. pentest_campaign_id as in F1 (all-zero unless source is pentest), so a trend applies the same campaign rule as the current counts. Derived from finding timestamps with current dimensions; monthly partitions.';
 
 CREATE INDEX IF NOT EXISTS idx_dash_asset_day_asset ON dash_asset_day (tenant_id, asset_id, day);
 
@@ -255,6 +256,13 @@ COMMENT ON TABLE dash_fact_status IS
 -- ---------------------------------------------------------------------------
 -- Change marking. Each function appends the distinct (tenant, asset) pairs
 -- of the change, ordered for a stable lock order.
+--
+-- A mark must never fail the write that caused it. The only constraint a
+-- mark can violate is the tenant foreign key, when the write is the cascade
+-- of a tenant delete (the tenant row is already gone in that transaction),
+-- so a mark is skipped when its tenant no longer exists: the cascade removes
+-- every fact of that tenant anyway. No EXCEPTION block: it would open a
+-- subtransaction per statement on the hottest write path.
 -- ---------------------------------------------------------------------------
 
 -- Statement trigger over a findings transition table named changed_rows.
@@ -266,7 +274,8 @@ BEGIN
     FROM (SELECT DISTINCT r.tenant_id,
                  COALESCE(r.asset_id, '00000000-0000-0000-0000-000000000000'::uuid) AS asset_id
           FROM changed_rows r) c
-    WHERE NOT EXISTS (
+    WHERE EXISTS (SELECT 1 FROM tenants t WHERE t.id = c.tenant_id)
+      AND NOT EXISTS (
         SELECT 1 FROM dash_dirty_assets d
         WHERE d.tenant_id = c.tenant_id AND d.asset_id = c.asset_id AND d.reasons & 1 = 1
         LIMIT 1
@@ -284,7 +293,7 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_asset uuid := COALESCE(p_asset, '00000000-0000-0000-0000-000000000000'::uuid);
 BEGIN
-    IF p_tenant IS NULL THEN
+    IF p_tenant IS NULL OR NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = p_tenant) THEN
         RETURN;
     END IF;
     PERFORM 1 FROM dash_dirty_assets d
@@ -323,7 +332,8 @@ BEGIN
                n.is_reachable, n.first_detected_at, n.pentest_campaign_id, n.asset_id, n.branch_only,
                n.epss_score, n.resolved_at, n.last_reopened_at, n.tenant_id)
     ) c
-    WHERE NOT EXISTS (
+    WHERE EXISTS (SELECT 1 FROM tenants t WHERE t.id = c.tenant_id)
+      AND NOT EXISTS (
         SELECT 1 FROM dash_dirty_assets d
         WHERE d.tenant_id = c.tenant_id AND d.asset_id = c.asset_id AND d.reasons & 1 = 1
         LIMIT 1
@@ -342,7 +352,8 @@ BEGIN
     INSERT INTO dash_dirty_assets (tenant_id, asset_id, reasons)
     SELECT c.tenant_id, c.id, 2
     FROM (SELECT DISTINCT r.tenant_id, r.id FROM changed_rows r WHERE r.tenant_id IS NOT NULL) c
-    WHERE NOT EXISTS (
+    WHERE EXISTS (SELECT 1 FROM tenants t WHERE t.id = c.tenant_id)
+      AND NOT EXISTS (
         SELECT 1 FROM dash_dirty_assets d
         WHERE d.tenant_id = c.tenant_id AND d.asset_id = c.id AND d.reasons & 2 = 2
         LIMIT 1
@@ -378,7 +389,8 @@ BEGIN
           FROM changed_rows r
           JOIN assets a ON a.id = r.asset_id
           WHERE a.tenant_id IS NOT NULL) c
-    WHERE NOT EXISTS (
+    WHERE EXISTS (SELECT 1 FROM tenants t WHERE t.id = c.tenant_id)
+      AND NOT EXISTS (
         SELECT 1 FROM dash_dirty_assets d
         WHERE d.tenant_id = c.tenant_id AND d.asset_id = c.id AND d.reasons & v_reason = v_reason
         LIMIT 1
@@ -558,13 +570,13 @@ BEGIN
     ),
     -- F2: events per finding and UTC day, inside the history window.
     ev AS (
-        SELECT (first_detected AT TIME ZONE 'UTC')::date AS day, severity, priority_class,
+        SELECT (first_detected AT TIME ZONE 'UTC')::date AS day, severity, priority_class, campaign,
                1 AS opened, 0 AS fixed, 0 AS disp, 0 AS reopened, 1 AS net, 0 AS in_sla, NULL::integer AS bucket
         FROM src
         UNION ALL
         -- Leaving the open count: on the close date or, with no close date,
         -- on the day it was opened (so it never counts as open).
-        SELECT (COALESCE(resolved_at, first_detected) AT TIME ZONE 'UTC')::date, severity, priority_class,
+        SELECT (COALESCE(resolved_at, first_detected) AT TIME ZONE 'UTC')::date, severity, priority_class, campaign,
                0,
                CASE WHEN lens = 'fixed' AND resolved_at IS NOT NULL THEN 1 ELSE 0 END,
                CASE WHEN lens = 'dispositioned' AND resolved_at IS NOT NULL THEN 1 ELSE 0 END,
@@ -576,11 +588,11 @@ BEGIN
         FROM src
         WHERE lens <> 'open'
         UNION ALL
-        SELECT (last_reopened_at AT TIME ZONE 'UTC')::date, severity, priority_class, 0, 0, 0, 1, 0, 0, NULL
+        SELECT (last_reopened_at AT TIME ZONE 'UTC')::date, severity, priority_class, campaign, 0, 0, 0, 1, 0, 0, NULL
         FROM src
         WHERE last_reopened_at IS NOT NULL
     ), d_new AS (
-        SELECT day, severity, priority_class,
+        SELECT day, severity, priority_class, campaign,
                sum(opened)::integer AS opened, sum(fixed)::integer AS fixed, sum(disp)::integer AS disp,
                sum(reopened)::integer AS reopened, sum(net)::integer AS net, sum(in_sla)::integer AS in_sla,
                ARRAY[count(*) FILTER (WHERE bucket = 0), count(*) FILTER (WHERE bucket = 1),
@@ -591,18 +603,19 @@ BEGIN
                      count(*) FILTER (WHERE bucket = 10), count(*) FILTER (WHERE bucket = 11)]::integer[] AS hist
         FROM ev
         WHERE day >= v_since
-        GROUP BY day, severity, priority_class
+        GROUP BY day, severity, priority_class, campaign
         HAVING sum(opened) <> 0 OR sum(fixed) <> 0 OR sum(disp) <> 0 OR sum(reopened) <> 0 OR sum(net) <> 0
     ), d_del AS (
         DELETE FROM dash_asset_day s
         WHERE s.tenant_id = p_tenant AND s.asset_id = p_asset AND s.day >= v_since
           AND NOT EXISTS (SELECT 1 FROM d_new n
-                          WHERE n.day = s.day AND n.severity = s.severity AND n.priority_class = s.priority_class)
+                          WHERE n.day = s.day AND n.severity = s.severity AND n.priority_class = s.priority_class
+                            AND n.campaign = s.pentest_campaign_id)
         RETURNING 1
     ), d_ups AS (
-        INSERT INTO dash_asset_day AS s (tenant_id, day, asset_id, severity, priority_class, opened, fixed,
-            dispositioned, reopened, net_open_delta, fixed_within_sla, fix_hours_hist)
-        SELECT p_tenant, day, p_asset, severity, priority_class, opened, fixed, disp, reopened, net, in_sla, hist
+        INSERT INTO dash_asset_day AS s (tenant_id, day, asset_id, severity, priority_class, pentest_campaign_id,
+            opened, fixed, dispositioned, reopened, net_open_delta, fixed_within_sla, fix_hours_hist)
+        SELECT p_tenant, day, p_asset, severity, priority_class, campaign, opened, fixed, disp, reopened, net, in_sla, hist
         FROM d_new
         ON CONFLICT ON CONSTRAINT pk_dash_asset_day DO UPDATE
             SET opened = EXCLUDED.opened, fixed = EXCLUDED.fixed, dispositioned = EXCLUDED.dispositioned,
@@ -727,7 +740,8 @@ BEGIN
         FROM findings f
         CROSS JOIN (VALUES (interval '31 days'), (interval '61 days'), (interval '91 days')) b(age)
         WHERE f.tenant_id = p_tenant
-          AND f.first_detected_at > v_since - b.age AND f.first_detected_at <= p_until - b.age
+          AND COALESCE(f.first_detected_at, f.created_at) > v_since - b.age
+          AND COALESCE(f.first_detected_at, f.created_at) <= p_until - b.age
           AND is_open_finding_status(f.status) AND NOT f.branch_only
     ), ins AS (
         INSERT INTO dash_dirty_assets (tenant_id, asset_id, reasons)
