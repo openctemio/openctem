@@ -149,7 +149,10 @@ type Handlers struct {
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	AdminConfiguration  *handler.AdminConfigurationHandler  // Configuration page: setting sources (RFC-022 rev. 22)
-	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
+	// AdminPlatformSettings serves the settings moved from the environment
+	// into the console (CAPTCHA, region, storage quota, alerts, AI).
+	AdminPlatformSettings *handler.AdminPlatformSettingsHandler
+	SecretStore           *handler.SecretStoreHandler // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)

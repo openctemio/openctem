@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // PlatformSettingRepository stores console settings in platform_settings.
@@ -93,4 +94,49 @@ func (r *PlatformSettingRepository) Update(ctx context.Context, key string, valu
 	}
 	id := by
 	return platformsetting.State{Value: value, Version: version, Source: platformsetting.SourceConsole, UpdatedBy: &id, UpdatedAt: at}, nil
+}
+
+// CreateIfAbsentBeforeFirstTenant stores version 1 under key only while no
+// setting is stored there and no organization exists. It runs in one
+// transaction that holds a SHARE lock on tenants, so an organization created
+// at the same moment either commits first (and the setting is refused) or
+// waits until the setting is stored (and gets it). It reports whether it
+// stored the row and, when it did not, whether organizations exist. The
+// platform's system tenant is not an organization.
+func (r *PlatformSettingRepository) CreateIfAbsentBeforeFirstTenant(ctx context.Context, key string, s platformsetting.State) (created, tenantsExist bool, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, false, fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `LOCK TABLE tenants IN SHARE MODE`); err != nil {
+		return false, false, fmt.Errorf("lock tenants: %w", err)
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE id <> $1)`, tenant.SystemTenantID).Scan(&tenantsExist); err != nil {
+		return false, false, fmt.Errorf("count tenants: %w", err)
+	}
+	if tenantsExist {
+		return false, true, nil
+	}
+	var by any
+	if s.UpdatedBy != nil {
+		by = s.UpdatedBy.String()
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO platform_settings (key, value, version, source, updated_by, updated_at)
+		VALUES ($1, $2, 1, 'console', $3, $4)
+		ON CONFLICT (key) DO NOTHING`,
+		key, []byte(s.Value), by, s.UpdatedAt,
+	)
+	if err != nil {
+		return false, false, fmt.Errorf("create platform setting: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, false, fmt.Errorf("rows affected: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, false, fmt.Errorf("commit: %w", err)
+	}
+	return n == 1, false, nil
 }
