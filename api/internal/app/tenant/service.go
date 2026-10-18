@@ -1136,24 +1136,15 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	return nil
 }
 
-// invalidateUserPermissions clears permission cache and version for a user.
-// Called when user is removed from tenant to immediately revoke access.
+// invalidateUserPermissions clears the user's cached permissions and bumps
+// their permission version. Called when a user is removed, suspended or
+// demoted to revoke access at once. The version is bumped, never deleted:
+// cached permission sets are keyed by version, and dropping the key would
+// make the user read the "no version" entry again, which may still hold a
+// set cached before their first version. Bumping also closes their live
+// sockets (change listener).
 func (s *TenantService) invalidateUserPermissions(ctx context.Context, tenantID, userID string) {
-	// Invalidate permission cache
-	if s.permCacheSvc != nil {
-		s.permCacheSvc.Invalidate(ctx, tenantID, userID)
-	}
-
-	// Delete permission version (cleanup stale version data)
-	if s.permVersionSvc != nil {
-		if err := s.permVersionSvc.Delete(ctx, tenantID, userID); err != nil {
-			s.logger.Warn("failed to delete permission version",
-				"tenant_id", tenantID,
-				"user_id", userID,
-				"error", err,
-			)
-		}
-	}
+	s.bumpPermissionVersion(ctx, tenantID, userID)
 
 	s.logger.Debug("user permissions invalidated on member removal",
 		"tenant_id", tenantID,
