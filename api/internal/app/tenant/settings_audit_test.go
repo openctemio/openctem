@@ -149,3 +149,42 @@ func TestNotifySecurityLoosened(t *testing.T) {
 		t.Errorf("high change: %d notices, want 2", len(rec.got))
 	}
 }
+
+// A weakening of the sensor scan-job settings alone names and links the
+// Sensor job safety page; any sign-in weakening keeps the Authentication page.
+func TestNotifySecurityLoosenedSensorJobs(t *testing.T) {
+	rec := &recordingNotifier{}
+	svc := &TenantService{
+		lifecycle:         fixedAdmins{ids: []shared.ID{shared.NewID()}},
+		lifecycleNotifier: rec,
+		userInfoProvider:  fixedName{},
+		logger:            logger.NewNop(),
+	}
+	tid := shared.NewID().String()
+	actx := auditapp.AuditContext{ActorID: shared.NewID().String()}
+	ctx := context.Background()
+
+	svc.notifySecurityLoosened(ctx, tid, actx,
+		tenantdom.SecuritySettings{}, tenantdom.SecuritySettings{AllowSensorInteractsh: true})
+	if len(rec.got) != 1 {
+		t.Fatalf("sensor opt-in: %d notices, want 1", len(rec.got))
+	}
+	p := rec.got[0].params
+	if p.URL != "/settings/scanning/sensor-safety" || p.Title != "Sensor job safety was loosened" ||
+		!strings.Contains(p.Body, "sensor out-of-band interaction allowed") {
+		t.Errorf("unexpected sensor notice: %+v", p)
+	}
+
+	rec.got = nil
+	svc.notifySecurityLoosened(ctx, tid, actx,
+		tenantdom.SecuritySettings{MFARequired: true},
+		tenantdom.SecuritySettings{AllowSensorCustomTemplates: true})
+	if len(rec.got) != 1 || rec.got[0].params.URL != "/settings/authentication" {
+		t.Fatalf("mixed change: want one notice linking Authentication, got %+v", rec.got)
+	}
+	for _, want := range []string{"two-factor no longer required", "sensor custom templates allowed"} {
+		if !strings.Contains(rec.got[0].params.Body, want) {
+			t.Errorf("body %q lacks %q", rec.got[0].params.Body, want)
+		}
+	}
+}
