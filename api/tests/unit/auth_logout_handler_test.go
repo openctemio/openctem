@@ -17,7 +17,7 @@ import (
 func TestLogoutHandler_RefreshTokenInBodyEndsSession(t *testing.T) {
 	svc, deps := newTestAuthService()
 	rt, sid := loginPassword(t, svc, deps, "idle-handler@example.com")
-	h := handler.NewLocalAuthHandler(svc, nil, nil, nil, deps.cfg, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, nil, nil, deps.cfg, logger.NewNop())
 
 	fallbackCalled := false
 	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -55,7 +55,7 @@ func TestLogoutHandler_RefreshTokenInBodyEndsSession(t *testing.T) {
 func TestLogoutHandler_CookieTokenNeedsCSRF(t *testing.T) {
 	svc, deps := newTestAuthService()
 	rt, sid := loginPassword(t, svc, deps, "cookie@example.com")
-	h := handler.NewLocalAuthHandler(svc, nil, nil, nil, deps.cfg, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, nil, nil, deps.cfg, logger.NewNop())
 	logout := h.LogoutWithRefreshToken(http.NotFoundHandler())
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)

@@ -15,7 +15,7 @@ describe('adminFetch', () => {
     // The console session's token, kept in memory (from sign-in/validate).
     setAdminCsrfToken('csrf-123')
     // The page token: echoed only before a console session exists.
-    document.cookie = 'csrf_token=page-csrf; path=/'
+    document.cookie = 'console_csrf=page-csrf; path=/'
   })
   afterEach(() => {
     vi.unstubAllGlobals()

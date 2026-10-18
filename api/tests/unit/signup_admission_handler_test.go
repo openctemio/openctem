@@ -41,7 +41,7 @@ func signupHarness(t *testing.T, mode signupdom.Mode) (*handler.LocalAuthHandler
 	pol := &switchPolicy{p: signupdom.Policy{Mode: mode}}
 	svc.SetSignupPolicy(pol)
 	sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
-	h := handler.NewLocalAuthHandler(svc, sess, nil, nil, deps.cfg, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, sess, nil, deps.cfg, logger.NewNop())
 	h.SetSignupPolicy(pol)
 	return h, deps, pol
 }

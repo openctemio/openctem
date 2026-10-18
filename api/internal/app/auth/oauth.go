@@ -21,6 +21,7 @@ import (
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -72,6 +73,8 @@ func (p OAuthProvider) ToAuthProvider() userdom.AuthProvider {
 
 // OAuthService handles OAuth authentication.
 type OAuthService struct {
+	// signups records sign-up events for the platform console (optional).
+	signups signupevent.Recorder
 	// onSignIn runs after a sign-in created a session (signin_hook.go).
 	onSignIn SignInHook
 	// audit records each sign-in (auth.login), as the password sign-in does.
@@ -83,6 +86,7 @@ type OAuthService struct {
 	config           config.OAuthConfig
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
+	platformAdmins   PlatformAdminGate
 	httpClient       *http.Client
 	// oidcVerifier validates the signed id_token for providers that return one
 	// (Microsoft/Entra), so identity is taken from verified claims rather than
@@ -323,6 +327,12 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	u, err := s.findOrCreateUser(ctx, userInfo, input.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find or create user: %w", err)
+	}
+
+	// A platform administrator signs in on the admin console only; the answer
+	// is the generic provider failure.
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "oauth") {
+		return nil, ErrOAuthExchangeFailed
 	}
 
 	// Create session
@@ -903,6 +913,8 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
+	recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindAccountCreated, Source: signupevent.SourceOAuth,
+		Email: newUser.Email(), UserID: newUser.ID()})
 	if key.Valid() {
 		if err := acc.bind(ctx, newUser, key); err != nil {
 			return nil, fmt.Errorf("bind new account: %w", err)

@@ -4,5 +4,6 @@
  * (src/lib/csrf-client.ts in the web app).
  */
 import { installCsrfFetch } from '@/lib/csrf-client'
+import { CONSOLE_CSRF_COOKIE } from '@console/lib/csrf-cookie'
 
-installCsrfFetch()
+installCsrfFetch(window, CONSOLE_CSRF_COOKIE)

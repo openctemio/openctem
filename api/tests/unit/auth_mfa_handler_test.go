@@ -22,7 +22,7 @@ import (
 
 func newMFAHandler(h *mfaHarness) *handler.LocalAuthHandler {
 	sess := auth.NewSessionService(h.sessions, newMockAuthRefreshTokenRepo(), logger.NewNop())
-	return handler.NewLocalAuthHandler(h.svc, sess, nil, nil, defaultAuthTestConfig(), logger.NewNop())
+	return handler.NewLocalAuthHandler(h.svc, sess, nil, defaultAuthTestConfig(), logger.NewNop())
 }
 
 func postJSON(t *testing.T, fn http.HandlerFunc, body any) *httptest.ResponseRecorder {
