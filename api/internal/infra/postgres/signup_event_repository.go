@@ -64,7 +64,8 @@ func (r *SignupEventRepository) List(ctx context.Context, f signupevent.Filter) 
 		return nil, 0, fmt.Errorf("list sign-up events: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]signupevent.Record, 0, f.Limit)
+	// Fixed capacity: never size an allocation from a request value.
+	out := make([]signupevent.Record, 0, 64)
 	for rows.Next() {
 		var (
 			e              signupevent.Record

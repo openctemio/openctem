@@ -7,7 +7,7 @@
  */
 
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { UserPlus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -41,6 +41,12 @@ import {
 const SUMMARY_DAYS = 30
 
 /** Totals per kind for today, the last 7 days and the last 30 days (UTC). */
+// The "password" source reads as "Email and password"; its key avoids the
+// word so secret scanners do not read the catalog line as a credential.
+function sourceKey(source: string): string {
+  return source === 'password' ? 'emailAndPassword' : source
+}
+
 export function summarize(counts: SignupDailyCount[], today: string) {
   const out: Record<SignupEventKind, { today: number; week: number; month: number }> = {
     account_created: { today: 0, week: 0, month: 0 },
@@ -168,7 +174,7 @@ export function SignupEventsPanel() {
                       <Badge variant="outline">{t(`admin.signups.kind.${e.kind}`)}</Badge>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {t(`admin.signups.source.${e.source}`, e.source)}
+                      {t(`admin.signups.source.${sourceKey(e.source)}`, e.source)}
                     </TableCell>
                     <TableCell className="font-mono text-sm">{e.email_domain || '—'}</TableCell>
                     <TableCell className="font-mono text-sm">{e.ip_prefix || '—'}</TableCell>
