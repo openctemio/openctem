@@ -630,10 +630,8 @@ type Services struct {
 	// ProgramFeedLocal imports the operator's local bundle; nil unless
 	// PROGRAMFEED_LOCAL_BUNDLE_DIR is set (and it runs only while enabled).
 	ProgramFeedLocal *programfeedapp.Importer
-	// ProgramFeedSettings holds the local bundle switch (admin console).
-	ProgramFeedSettings *postgres.PublicProgramRepository
-	AttackSurface       *attack.SurfaceService
-	ThreatModel         *threatmodel.Service
+	AttackSurface    *attack.SurfaceService
+	ThreatModel      *threatmodel.Service
 	// ScopeLetters manages authorization letters (RFC-065 §13).
 	ScopeLetters *scope.LetterService
 
@@ -1156,7 +1154,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
 			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log).WithChunks(catalogRepo, feedTransfer)
 	}
-	s.ProgramFeedSettings = catalogRepo
 	if cfg.Scope.ProgramFeedLocalBundleDir != "" {
 		localTransfer := feedTransfer
 		localTransfer.URLs, localTransfer.Registerer = nil, nil
