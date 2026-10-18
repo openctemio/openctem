@@ -24,7 +24,7 @@ import { visibleAdminNav } from '../lib/admin-nav-visibility'
 import { useAdmin } from './admin-console-shell'
 import { adminCan } from '../types'
 import { PLATFORM_USER_SEARCH_MIN } from '../api/use-platform-users'
-import type { AdminOrganizationList, Paged, PlatformUser } from '../types'
+import type { AdminOrganizationList, PlatformUserList } from '../types'
 
 /** Searches shorter than this do not query organizations. */
 export const ORG_SEARCH_MIN = 2
@@ -55,7 +55,7 @@ export function AdminCommandMenu() {
     open && q.length >= PLATFORM_USER_SEARCH_MIN && admin && adminCan(admin.role, 'ops_admin')
       ? `/platform-users?${new URLSearchParams({ q, page: '1', per_page: String(ORG_SEARCH_LIMIT) })}`
       : null
-  const users = useSWR<Paged<PlatformUser>>(userPath, adminFetcher, { keepPreviousData: true })
+  const users = useSWR<PlatformUserList>(userPath, adminFetcher, { keepPreviousData: true })
 
   const run = React.useCallback(
     (fn: () => unknown) => {
@@ -114,13 +114,12 @@ export function AdminCommandMenu() {
               {userResults.map((u) => (
                 <CommandItem
                   key={u.id}
-                  value={`${u.email} ${u.name} ${u.id}`}
+                  value={`${u.email} ${u.id}`}
                   keywords={[q]}
                   onSelect={() => run(() => router.push(`/users/${u.id}`))}
                 >
                   <User className="text-muted-foreground" />
-                  <span className="truncate">{u.name || u.email}</span>
-                  <span className="ms-auto truncate text-xs text-muted-foreground">{u.email}</span>
+                  <span className="truncate">{u.email}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
