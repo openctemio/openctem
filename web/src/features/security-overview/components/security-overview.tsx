@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
+import { safeInternalHref } from '@/lib/safe-href'
 
 import { useSecurityOverview } from '../api/use-security-overview'
 import {
@@ -75,7 +76,9 @@ function CheckRow({ check }: { check: OverviewCheck }) {
       </div>
       {link && check.status !== 'pass' && (
         <Button asChild variant="outline" size="sm" className="shrink-0">
-          <Link href={link}>{t('securityOverview.review', 'Review')}</Link>
+          <Link href={safeInternalHref(link) ?? '/settings/security'}>
+            {t('securityOverview.review', 'Review')}
+          </Link>
         </Button>
       )}
     </li>
