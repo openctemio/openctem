@@ -38,12 +38,23 @@
 > `/admin` path in the tenant app; the API's internal sensor listener moves to
 > 9443 (see [Revision 21](#revision-21-the-consoles-own-service-and-port)).
 
+> **Revision 23** (2026-10-18): console hardening: at most three verified
+> sessions per administrator, a write-ahead audit row for super administrator
+> writes, administrator accounts refused on the main site, and the console's
+> own pre-session cookie (see [Revision 23](#revision-23-console-hardening)).
+
 > **Revision 22** (2026-10-18): console sessions and the administrator
 > roster are hardened: background refreshes no longer keep a session alive,
 > a credential change on the account ends its console sessions, every
 > roster or sign-in-policy change is announced to the other administrators,
 > and more platform-wide writes take a step-up (see
 > [Revision 22](#revision-22-session-and-roster-hardening)).
+
+> **Revision 24** (2026-10-18): four-eyes approvals: making or removing a
+> super admin, turning off the security-key requirement, removing or relaxing
+> the administrators' identity provider, opening sign-up and re-signing an
+> organization's audit chain need a second super admin (see
+> [Revision 24](#revision-24-four-eyes-approvals)).
 
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*: the system administrator is an account
@@ -1004,6 +1015,106 @@ session could do more, or last longer, than intended. Each is closed here.
   network error text (addresses, resolver errors) to the browser when the API
   cannot be reached.
 
+## Revision 23: console hardening
+
+- **Three sessions per administrator.** Opening a verified session ends the
+  administrator's oldest verified sessions beyond three
+  (`console.session_evicted`, audited), so a stolen token cannot sit beside
+  an unbounded number of live ones.
+- **Write-ahead audit for super administrator writes.** The outcome rows are
+  written after the response, in the background, and can be lost. A write
+  whose acting role is super_admin now first writes one `admin.write_started`
+  row (method, path, redacted body) in the request, with a five-second limit;
+  if it cannot be written the request is refused (503 `AUDIT_UNAVAILABLE`)
+  and the handler does not run. Other roles and reads are unaffected. With
+  `MANAGED_SERVICE=true` in production the API refuses to start without the
+  off-box audit sink (`ADMIN_AUDIT_SINK`). Redaction of request bodies now
+  matches keys by suffix (`secret`, `password`, `_key`, `_token`, any case)
+  and the keys `code`, `totp`, `recovery_code`, `recovery_codes`.
+- **Administrator accounts do not sign in on the main site.** The account
+  that is linked to an active administrator is refused on the tenant site
+  (password, second-factor completion, token exchange, social and SSO
+  sign-in) with the wrong-password answer, so the endpoint is no password
+  oracle and does not reveal which emails are administrators; the attempt is
+  logged (`alert=platform_admin_main_site_sign_in`). The sign-in page says
+  where administrators sign in; it no longer gets a `platform_admin` flag.
+- **Own pre-session cookie.** The console's sign-in steps echo `console_csrf`
+  instead of the tenant site's `csrf_token`, which a same-host tenant site on
+  another port shares.
+- The route table at the top of `routes/admin.go` now states, per route,
+  whether it takes the route-level step-up, the fresh step-up and a fresh
+  code in the body.
+
+## Revision 24: four-eyes approvals
+
+Owner decision D1 (2026-10-18). Revision 22 made a roster change visible; it
+did not stop one hijacked or rogue super admin session from making it. The
+actions that hand over or loosen control of the whole platform now need a
+second super admin.
+
+**Protected actions** and the exact target each approval is bound to:
+
+| Action | Target | Gated when |
+|---|---|---|
+| `admin.grant_super_admin` | `email:<address>` (new administrator) or `admin:<id>` | a super admin is created; an administrator becomes an active super admin (role, reactivation) or loses the break-glass marker |
+| `admin.revoke_super_admin` | `admin:<id>` | an active super admin is demoted, deactivated, marked break-glass or removed |
+| `console_mfa.disable` | `off` | "require security keys" goes from on to off |
+| `platform_idp.remove` | `remove`, `disable`, `require_idp_off` | the administrators' identity provider is removed, switched off, or no longer required |
+| `signup.open` | `mode=<mode>;accounts=<accounts>` | the stored sign-up policy opens wider (self-service organizations, or a wider account sign-up) |
+| `audit_chain.rebaseline` | `tenant:<id>` | an organization's audit chain is re-signed |
+
+Removing a super admin is on the list although it is not in D1: without it,
+one session could demote the other super admins and then act alone. Deleting
+an organization before its grace period ends joins the list when that action
+exists in the console.
+
+**Flow.** The protected route answers `428 SECOND_APPROVAL_REQUIRED` with the
+action, the target and the caller's open request, if any. The requester asks
+with a reason (`POST /api/v1/admin/approvals`, step-up). Every other
+administrator is e-mailed (the roster notice). Another super admin approves
+(`/approve`, a fresh step-up, never the session's window) or rejects
+(`/reject`, step-up); the requester may withdraw it (`/cancel`). The requester
+then repeats the action within 24 hours of the request; the action spends the
+approval. Security > Approvals lists open requests and the last 30 days.
+
+**Rules.**
+
+- Nobody approves or rejects their own request: refused by the service and by
+  the `admin_approvals_not_self` table constraint.
+- An approval is bound to its requester, action and exact target, works once
+  (a conditional update; concurrent uses cannot both win) and expires 24
+  hours after the request. When the action then fails (validation, a changed
+  chain), the approval is handed back so the requester can retry.
+- Break-glass accounts never approve and do not count as a second super
+  admin: their credentials are usually held by the same people as a named
+  account, so counting them would allow self-approval in practice. They may
+  ask and reject.
+- **One named super admin.** When no other administrator can approve, the
+  action runs on the requester's step-up alone, with a critical
+  `approval.single_admin` audit row and the roster e-mail to every
+  administrator, and the Approvals page explains how to add a second super
+  admin. Requiring an approval nobody can give would lock the installation
+  out of its own recovery; a second super admin can only be added through
+  this same fallback. Once a second named super admin exists, removing or
+  demoting either needs the other's approval, so a session cannot return to
+  the fallback on its own.
+- **When the other super admin is unavailable or compromised**, the
+  remaining one can still end that administrator's console sessions and reset
+  their console sign-in (both step-up, announced). Changing the roster beyond
+  that is done on the server with `bootstrap-admin`: shell access to the
+  server is already full trust.
+- Every step writes a critical admin audit row first (`approval.requested`,
+  `approved`, `rejected`, `canceled`, `used`, `single_admin`) and refuses
+  when the row cannot be written.
+- The table belongs to the console's database role (`DB_ADMIN_USER`): the
+  tenant plane's role cannot read or forge approvals.
+
+Key files: `api/internal/app/adminapproval/service.go`,
+`api/pkg/domain/admin/approval.go`,
+`api/internal/infra/http/handler/admin_approval_handler.go`, migration
+`002914_admin_approvals`, `web/console/src/app/(console)/security/approvals/page.tsx`,
+`web/console/src/features/admin-console/components/admin-approval-prompt.tsx`.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
@@ -1149,3 +1260,17 @@ session could do more, or last longer, than intended. Each is closed here.
   owner count without owner emails, and the account search
   (`/platform-users`) is ops_admin+. Every member-list view is audited
   (`organization.users_view`).
+
+## Revision 22: sign-up feed and burst alerts
+
+Requests > Sign-ups (`/requests/sign-ups`) lists accounts created,
+organizations created and access requests submitted, with today / 7-day /
+30-day counts per kind, kept 90 days. Each event shows the registrable email
+domain and the client network prefix (/24, /48) only, so every console role,
+the read-only one included, may read it: it names no person. When sign-ups of
+one kind from one prefix or one domain reach a threshold within a window
+(default 10 / 20 an hour), the API raises one alert per window: metric, WARN
+line `alert=signup_burst`, a high admin audit row `platform.signup_burst` and
+an email to every administrator. A super admin changes the thresholds and the
+ignored domains with a reason and a fresh authenticator code (audited
+critical). Details: `docs/architecture/signup-activity.md`.

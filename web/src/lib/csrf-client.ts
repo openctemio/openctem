@@ -20,9 +20,9 @@ export const CSRF_HEADER = 'X-CSRF-Token'
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 /** The `csrf_token` cookie, or '' outside a browser or when it is absent. */
-export function readCsrfCookie(): string {
+export function readCsrfCookie(name: string = CSRF_COOKIE): string {
   if (typeof document === 'undefined') return ''
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)
+  const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))
   if (!match) return ''
   try {
     return decodeURIComponent(match[1])
@@ -32,8 +32,8 @@ export function readCsrfCookie(): string {
 }
 
 /** `{ 'X-CSRF-Token': <cookie> }`, or `{}` when there is no cookie. */
-export function csrfHeaders(): Record<string, string> {
-  const token = readCsrfCookie()
+export function csrfHeaders(name: string = CSRF_COOKIE): Record<string, string> {
+  const token = readCsrfCookie(name)
   return token ? { [CSRF_HEADER]: token } : {}
 }
 
@@ -60,7 +60,8 @@ function isSameOrigin(input: RequestInfo | URL, origin: string): boolean {
 export function withCsrfHeader(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
-  origin: string
+  origin: string,
+  cookieName: string = CSRF_COOKIE
 ): RequestInit | undefined {
   const request = input instanceof Request ? input : undefined
   const method = (init?.method ?? request?.method ?? 'GET').toUpperCase()
@@ -68,7 +69,7 @@ export function withCsrfHeader(
 
   const headers = new Headers(init?.headers ?? request?.headers)
   if (headers.has(CSRF_HEADER)) return init
-  const token = readCsrfCookie()
+  const token = readCsrfCookie(cookieName)
   if (!token) return init
   headers.set(CSRF_HEADER, token)
   return { ...init, headers }
@@ -77,12 +78,18 @@ export function withCsrfHeader(
 const INSTALLED = Symbol.for('openctem.csrfFetch')
 
 /** Wraps `win.fetch` once so same-origin writes carry `X-CSRF-Token`. */
-export function installCsrfFetch(win: Window & typeof globalThis = window): void {
+export function installCsrfFetch(
+  win: Window & typeof globalThis = window,
+  cookieName: string = CSRF_COOKIE
+): void {
   const current = win.fetch as typeof fetch & { [INSTALLED]?: true }
   if (current[INSTALLED]) return
   const original = current.bind(win)
   const wrapped = ((input: RequestInfo | URL, init?: RequestInit) =>
-    original(input, withCsrfHeader(input, init, win.location.origin))) as typeof fetch & {
+    original(
+      input,
+      withCsrfHeader(input, init, win.location.origin, cookieName)
+    )) as typeof fetch & {
     [INSTALLED]?: true
   }
   wrapped[INSTALLED] = true

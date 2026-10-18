@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -30,6 +31,15 @@ type AdminUserHandler struct {
 	// roster tells the other administrators about a role, state or removal
 	// change (nil: no notice).
 	roster adminRosterNotifier
+	// approvals is the four-eyes gate: who is an active super admin changes
+	// only with a second super admin's approval.
+	approvals approvalGate
+}
+
+// WithApprovals wires the four-eyes gate.
+func (h *AdminUserHandler) WithApprovals(g approvalGate) *AdminUserHandler {
+	h.approvals = g
+	return h
 }
 
 // adminRosterNotifier is the console service's roster notice.
@@ -270,9 +280,20 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Who may approve is itself protected: making or unmaking an active
+	// super admin (role, active state or break-glass marker) needs a second
+	// super admin, or one session could remove the others and act alone.
+	var grant *adminapproval.Grant
+	if action, ok := before.superAdminChange(adminUser); ok {
+		if grant, ok = requireSecondApproval(w, r, h.approvals, currentAdmin, action, "admin:"+adminUser.ID().String(), h.logger); !ok {
+			return
+		}
+	}
+
 	// Save changes. The roster guard refuses a change that would leave no
 	// active local super admin (a break-glass one while the IdP is required).
 	if err := h.repo.GuardedUpdate(ctx, adminUser); err != nil {
+		releaseSecondApproval(r, h.approvals, currentAdmin, grant)
 		writeAdminRosterError(w, h.logger, err, "update")
 		return
 	}
@@ -318,7 +339,15 @@ func (h *AdminUserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	var grant *adminapproval.Grant
+	if target.IsActive() && target.Role() == admin.AdminRoleSuperAdmin {
+		var ok bool
+		if grant, ok = requireSecondApproval(w, r, h.approvals, currentAdmin, admin.ApprovalRevokeSuperAdmin, "admin:"+target.ID().String(), h.logger); !ok {
+			return
+		}
+	}
 	if err := h.repo.GuardedDelete(ctx, id); err != nil {
+		releaseSecondApproval(r, h.approvals, currentAdmin, grant)
 		writeAdminRosterError(w, h.logger, err, "delete")
 		return
 	}
@@ -392,6 +421,22 @@ type adminRosterState struct {
 	role       admin.AdminRole
 	active     bool
 	breakGlass bool
+}
+
+// superAdminChange says whether the change to a makes or unmakes an active
+// super admin, or an approver (an active super admin who is not break-glass).
+func (b adminRosterState) superAdminChange(a *admin.AdminUser) (admin.ApprovalAction, bool) {
+	wasSuper := b.active && b.role == admin.AdminRoleSuperAdmin
+	isSuper := a.IsActive() && a.Role() == admin.AdminRoleSuperAdmin
+	wasApprover := wasSuper && !b.breakGlass
+	isApprover := isSuper && !a.IsBreakGlass()
+	switch {
+	case (wasSuper && !isSuper) || (wasApprover && !isApprover):
+		return admin.ApprovalRevokeSuperAdmin, true
+	case (!wasSuper && isSuper) || (!wasApprover && isApprover):
+		return admin.ApprovalGrantSuperAdmin, true
+	}
+	return "", false
 }
 
 // changes describes what changed on a, or "" when nothing the notice covers did.

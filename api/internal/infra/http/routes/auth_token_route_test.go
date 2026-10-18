@@ -19,7 +19,7 @@ func authMux(t *testing.T, provider config.AuthProvider) http.Handler {
 	cfg := oauthTestConfig()
 	cfg.Auth.Provider = provider
 	h := Handlers{
-		LocalAuth: handler.NewLocalAuthHandler(nil, nil, nil, nil, cfg.Auth, logger.NewNop()),
+		LocalAuth: handler.NewLocalAuthHandler(nil, nil, nil, cfg.Auth, logger.NewNop()),
 		Auth:      handler.NewAuthHandler(&config.KeycloakConfig{BaseURL: "https://idp.example.test", Realm: "r"}, logger.NewNop()),
 	}
 	router := infrahttp.NewChiRouter()

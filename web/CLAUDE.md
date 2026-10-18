@@ -207,10 +207,15 @@ tabs by role), `src/features/sensors`, `src/lib/api/sensor-*`, API
 ## Settings navigation
 
 Every settings page is listed once, in `src/config/settings-nav.ts` (groups My
-account, Organization, Access, Findings, Policies, Scanning, Integrations). That config
-drives the settings rail (the left sidebar swaps to it on `/settings/*`,
-`/account/*` and each item's URL), the `/settings` overview and the Settings
-section of the command palette. The main sidebar's one "Settings" link is
+account, Organization, Security, Access, Findings & assets, Scanning, Scanner
+content, Integrations). That config drives the settings rail (the left sidebar
+swaps to it on `/settings/*`, `/account/*` and each item's URL), the `/settings`
+overview and the Settings section of the command palette. Search in all three
+(`src/config/settings-search.ts`) also finds the settings inside a page: an
+item's `anchors` name elements by id, and a result links to `<url>#<id>`, where
+the page scrolls to and outlines it. A settings form saves through
+`SettingsSaveBar` (`features/shared`): a sticky bar shown while there are
+unsaved changes, Ctrl/⌘+S, and a prompt before leaving with unsaved changes. The main sidebar's one "Settings" link is
 pinned in its footer with Help (`sidebar-footer-links.tsx`, shared with the
 admin console); Help's shortcut list is `src/config/keyboard-shortcuts.ts`,
 and an entry needs a real handler (`keyboard-shortcuts.test.ts`).

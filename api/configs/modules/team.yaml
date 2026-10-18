@@ -13,5 +13,6 @@
     - MemberAccessExpiryController
     - TeamMembershipExpiryController
     - AccessRequestRetentionController
+    - SignupEventRetentionController
     - RoleSyncController
     - IdleWorkspaceController

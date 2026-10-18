@@ -53,13 +53,14 @@ base.describe('Access denied view', () => {
 test.describe('Organization authentication settings', () => {
   test('each two-factor switch has its own accessible name', async ({ page }) => {
     await page.goto('/settings/authentication')
-    // Everyone, and owners and admins only (#1413): two switches, two names.
+    // Everyone, and owners and administrators only (#1413): two switches, two names
+    // (the card title above them says two-factor).
     await expect(
-      page.getByRole('switch', { name: 'Require two-factor authentication', exact: true })
+      page.getByRole('switch', { name: 'Require for everyone', exact: true })
     ).toBeVisible({ timeout: 30_000 })
     await expect(
       page.getByRole('switch', {
-        name: 'Require two-factor authentication for owners and admins',
+        name: 'Require for owners and administrators',
         exact: true,
       })
     ).toBeVisible()

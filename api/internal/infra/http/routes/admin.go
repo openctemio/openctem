@@ -28,78 +28,124 @@ import (
 //	/admin/overview           any admin         —
 //	/admin/operations         any admin         —
 //	/admin/system             any admin         —
-//	/admin/announcements      any admin         ops_admin+ + reason (audited)
-//	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
-//	                                            code (audited high)
+//	/admin/announcements      any admin         ops_admin+ + step-up + reason
+//	                                            (audited)
+//	/admin/console-sessions   super_admin       super_admin + step-up + reason +
+//	                                            fresh code in the body (audited
+//	                                            high)
 //	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
-//	                          audited)          audited; platform admins refused
-//	/admin/users              super_admin       super_admin + step-up (audited)
+//	                          audited)          audited; platform admins refused;
+//	                                            block/unblock: + step-up
+//	/admin/users              super_admin       update/delete: super_admin
+//	                                            (audited); reset credentials,
+//	                                            break-glass test, IdP unbind:
+//	                                            super_admin + step-up
 //	/admin/administrators     —                 super_admin + step-up (audited)
+//	/admin/approvals          super_admin       request: super_admin + step-up;
+//	                                            approve: another super_admin
+//	                                            (not break-glass) + fresh
+//	                                            step-up; reject: step-up;
+//	                                            cancel: requester (critical audit)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
-//	/admin/threat-intel       any admin         ops_admin+ (+ audited)
+//	/admin/threat-intel       any admin         sync: ops_admin+ (audited);
+//	                                            turn a feed on or off: ops_admin+ +
+//	                                            step-up (audited)
 //	/admin/platform-idp       super_admin       super_admin + step-up (audited)
 //	/admin/access-requests    any admin         ops_admin+ (approve: + step-up;
 //	                                            reject; audited)
-//	/admin/tenants            any admin         create, first owner: ops_admin+ +
-//	                                            step-up; SSO writes: super_admin +
-//	                                            step-up (audited)
-//	/admin/settings/limits    any admin         super_admin + fresh TOTP code
+//	/admin/tenants            any admin         create: ops_admin+ + step-up;
+//	                                            first owner: ops_admin+ + fresh
+//	                                            step-up (recovery: super_admin +
+//	                                            reason + fresh code in the body);
+//	                                            SSO writes: super_admin + step-up
+//	                                            (audited)
+//	/admin/settings/limits    any admin         super_admin + step-up + fresh code
+//	                                            in the body
 //	/admin/tenants/{id}/limits
-//	                          any admin         ops_admin+ (audited)
+//	                          any admin         ops_admin+ + step-up (audited)
 //	/admin/tenants/{id}/modules
-//	                          any admin         ops_admin+ + fresh TOTP code (deny; audited)
-//	/admin/settings/signup    any admin         super_admin + fresh TOTP code
+//	                          any admin         ops_admin+ + step-up + fresh code
+//	                                            in the body (deny; audited)
+//	/admin/settings/signup    any admin         super_admin + step-up + fresh code
+//	                                            in the body (critical audit,
+//	                                            admins emailed)
+//	/admin/signup-events      any admin         — (sign-up feed: email domain and
+//	                                            network prefix only)
+//	/admin/settings/signup-alerts
+//	                          any admin         read; update: super_admin + step-up
+//	                                            + fresh code in the body + reason
 //	                                            (critical audit, admins emailed)
-//	/admin/settings/legal     any admin         super_admin + fresh TOTP code
-//	                                            (critical audit; read publicly
-//	                                            at GET /api/v1/legal)
-//	/admin/settings/email     any admin         super_admin + fresh TOTP code
-//	                                            (critical audit, password never
-//	                                            returned); test: super_admin,
-//	                                            to the caller's address only
+//	/admin/settings/legal     any admin         super_admin + step-up + fresh code
+//	                                            in the body (critical audit; read
+//	                                            publicly at GET /api/v1/legal)
+//	/admin/settings/email     any admin         update: super_admin + step-up +
+//	                                            fresh code in the body (critical
+//	                                            audit, password never returned);
+//	                                            test: super_admin, to the
+//	                                            caller's address only (no step-up)
 //	/admin/settings/console-mfa
-//	                          any admin         super_admin + step-up
+//	                          any admin         super_admin + fresh step-up (a
+//	                                            fresh code or a single-use
+//	                                            security-key confirmation)
 //	/admin/auth/factors, webauthn/*, recovery-codes
-//	                          own account only  register, remove and new codes:
-//	                                            step-up
+//	                          own account only  register (options) and new codes:
+//	                                            fresh step-up; remove: step-up;
+//	                                            rename: session only
+//	/admin/auth/elevate       —                 start: step-up; end: session only
 //	/admin/support            own grants only   open a session: ops_admin+ named in
 //	                                            a live grant + step-up; reads only
 //	                                            through a live session (audited in
 //	                                            both logs)
 //	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
-//	                          any admin         super_admin + fresh TOTP code +
-//	                                            reason (critical audit, admins
-//	                                            emailed, tenant admins told)
+//	                          any admin         super_admin + step-up + fresh code
+//	                                            in the body + reason (critical
+//	                                            audit, admins emailed, tenant
+//	                                            admins told)
 //	/admin/shared-sensors     any admin (fleet,  pause/resume/retire: super_admin +
-//	                          queue, job         fresh TOTP code + reason (critical
-//	                          metadata)          audit); job view: super/ops_admin +
-//	                                            reason (audited high, rate-limited)
+//	                          queue, job         step-up + reason (critical audit);
+//	                          metadata)          instance enrollment token:
+//	                                            super_admin + step-up + fresh code
+//	                                            in the body; job view: super/ops
+//	                                            admin + reason (audited high,
+//	                                            rate-limited)
 //	/admin/settings/shared-sensors(/egress), /admin/tenants/{id}/shared-sensors
-//	                          any admin         super_admin + fresh TOTP code +
-//	                                            reason (critical audit, admins
-//	                                            emailed); switch-on refused until
-//	                                            shared sensors are ready
+//	                          any admin         super_admin + step-up + fresh code
+//	                                            in the body + reason (critical
+//	                                            audit, admins emailed); switch-on
+//	                                            refused until shared sensors are
+//	                                            ready
+//	/admin/instance-scan-zones
+//	                          any admin         super_admin + step-up + reason +
+//	                                            fresh code in the body
 //	/admin/tenants/{id}/audit-chain
-//	                          any admin         rebaseline: super_admin + fresh
-//	                                            TOTP code (audited, both logs)
-//	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
-//	                                            code (audited with the reason)
+//	                          any admin         rebaseline: super_admin + step-up +
+//	                                            fresh code in the body (audited,
+//	                                            both logs)
+//	/admin/content-packs      any admin         super_admin + step-up + reason +
+//	                                            fresh code in the body (audited
+//	                                            with the reason)
 //	/admin/content-catalog    any admin         import, publish, revoke: super_admin +
-//	                                            reason + fresh TOTP code (audited)
+//	                                            step-up + reason + fresh code in
+//	                                            the body (audited)
 //	/admin/program-feed       any admin         local bundle switch: super_admin +
-//	                                            reason + fresh TOTP code (audited)
+//	                                            step-up + reason + fresh code in
+//	                                            the body (audited)
 //	/admin/version-check      any admin         import: super_admin + step-up
 //	                                            (audited high)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // "step-up" is the route-level gate (middleware.RequireAdminStepUp): a fresh
 // authenticator code in X-Admin-Step-Up, or the five-minute step-up window of
-// the same console session. "fresh TOTP code" is the older check in the
-// handler (a code in the request body, every time).
+// the same console session. "fresh step-up" (RequireAdminFreshStepUp) never
+// uses the window. "fresh code in the body" is the older check in the handler
+// (confirmAdminStepUp: a code in the request body, every time), which many
+// routes keep on top of the route-level step-up.
 //
-// Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
-
+// A super administrator's write is also recorded before it runs (the
+// "admin.write_started" row of AuditMiddleware.WriteAhead); when that row
+// cannot be written the request is refused with 503 AUDIT_UNAVAILABLE.
+//
 // registerAdminRoutes registers all platform admin endpoints.
 // These are privileged operations for managing shared infrastructure.
 // Admin routes authenticate the console session, not the tenant session.
@@ -128,7 +174,15 @@ func registerAdminRoutes(
 	}
 
 	// Base chain: the network check, then a verified console session (any role).
-	adminMiddlewares := append(cloneMW(netGate), h.AdminAuthMiddleware.Authenticate)
+	// A super administrator's write is on record before it runs; when the
+	// audit log cannot be written the write is refused (authedWrite is the
+	// session check followed by that write-ahead row).
+	authedWrite := h.AdminAuthMiddleware.Authenticate
+	if h.AdminAuditMiddleware != nil {
+		authenticate, writeAhead := h.AdminAuthMiddleware.Authenticate, h.AdminAuditMiddleware.WriteAhead()
+		authedWrite = func(next http.Handler) http.Handler { return authenticate(writeAhead(next)) }
+	}
+	adminMiddlewares := append(cloneMW(netGate), authedWrite)
 
 	// Super-admin group guard, composed onto the base chain. Built here so the
 	// authorization guarantee lives at the route layer, not in handlers.
@@ -159,7 +213,10 @@ func registerAdminRoutes(
 	if h.AdminAuth != nil || h.AdminConsole != nil {
 		consoleRL := newAuthRateLimiter("console")
 		loginRL := consoleRL.LoginMiddleware()
-		authed := h.AdminAuthMiddleware.Authenticate
+		// The same chain as every other authenticated console route, so a
+		// super administrator's password, factor and elevation changes are
+		// written ahead too.
+		authed := authedWrite
 
 		router.Group("/api/v1/admin/auth", func(r Router) {
 			if h.AdminAuth != nil {
@@ -284,6 +341,22 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper, stepUp("settings.signup"))
+		}, adminMiddlewares...)
+	}
+
+	// The sign-up feed (Console > Requests > Sign-ups) and its burst alert
+	// thresholds: any admin reads; a super admin changes the thresholds with
+	// a reason and a fresh authenticator code (critical audit, admins
+	// emailed). The feed holds email domains and network prefixes only.
+	if h.AdminSignupEvents != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/signup-events", func(r Router) {
+			r.GET("/", h.AdminSignupEvents.List)
+			r.GET("/daily", h.AdminSignupEvents.Daily)
+		}, adminMiddlewares...)
+		router.Group("/api/v1/admin/settings/signup-alerts", func(r Router) {
+			r.GET("/", h.AdminSignupEvents.GetThresholds)
+			r.PUT("/", h.AdminSignupEvents.UpdateThresholds, requireSuper, stepUp("settings.signup_alerts"))
 		}, adminMiddlewares...)
 	}
 
@@ -509,6 +582,20 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminConsole.GetPlatformIdP)
 			r.PUT("/", h.AdminConsole.PutPlatformIdP, stepUp("platform_idp.update"))
 			r.DELETE("/", h.AdminConsole.DeletePlatformIdP, stepUp("platform_idp.delete"))
+		}, superAdminOnly...)
+	}
+
+	// Security > Approvals (four-eyes): a super admin asks with a reason and
+	// a step-up; another super admin approves with a fresh step-up (never
+	// their own request, never a break-glass account) or rejects; the
+	// requester may cancel. The service writes the critical audit rows.
+	if h.AdminApproval != nil {
+		router.Group("/api/v1/admin/approvals", func(r Router) {
+			r.GET("/", h.AdminApproval.List)
+			r.POST("/", h.AdminApproval.Create, stepUp("approval.request"))
+			r.POST("/{id}/approve", h.AdminApproval.Approve, freshStepUp("approval.approve"))
+			r.POST("/{id}/reject", h.AdminApproval.Reject, stepUp("approval.reject"))
+			r.POST("/{id}/cancel", h.AdminApproval.Cancel)
 		}, superAdminOnly...)
 	}
 

@@ -539,6 +539,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AccessRequest, log.With("controller", "access-request-retention")))
 	}
 
+	// Sign-up events are kept 90 days.
+	if svc.SignupEvents != nil {
+		w.ControllerManager.Register(controller.NewSignupEventRetentionController(
+			svc.SignupEvents, log.With("controller", "signup-event-retention")))
+	}
+
 	// Domain re-verify sweep (SSO P1): periodically re-checks verified domains;
 	// a domain whose TXT record vanished is downgraded to failed (fail-closed),
 	// so a lapsed/hijacked domain loses SSO JIT authority.
