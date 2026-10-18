@@ -1224,11 +1224,8 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// failure to record that refuses the exchange. Marking it after minting
 	// (and only logging a failure) could leave the old token usable next to
 	// the new one.
-	if err := storedToken.MarkUsed(); err != nil {
+	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
 		return nil, err
-	}
-	if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
-		return nil, fmt.Errorf("failed to update refresh token: %w", err)
 	}
 
 	// Determine if user is admin (owner or admin role)
@@ -1369,6 +1366,25 @@ func (s *AuthService) LogoutByRefreshToken(ctx context.Context, refreshToken str
 	return s.Logout(ctx, stored.SessionID().String())
 }
 
+// spendRefreshToken rotates a presented refresh token: one conditional
+// update marks it used only if it is still unused and not revoked. When that
+// update matches nothing, another request spent (or revoked) the token after
+// it was read, so this presentation is a reuse: the session ends exactly as
+// for a token presented after rotation. A failure to record the spend refuses
+// the request, so the old token can never stay usable next to a new one.
+func (s *AuthService) spendRefreshToken(ctx context.Context, stored *sessiondom.RefreshToken) error {
+	spent, err := s.refreshTokenRepo.MarkUsedIfUnused(ctx, stored.ID())
+	if err != nil {
+		return fmt.Errorf("failed to spend refresh token: %w", err)
+	}
+	if !spent {
+		s.onRefreshTokenReuse(ctx, stored)
+		return sessiondom.ErrRefreshTokenRevoked
+	}
+	_ = stored.MarkUsed()
+	return nil
+}
+
 // onRefreshTokenReuse handles a refresh token presented after it was already
 // rotated. Either the legitimate client or a thief holds a copy, and there is
 // no telling which, so the whole session ends: its token family, its other
@@ -1490,11 +1506,8 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	}
 
 	// Mark old token as used (token rotation)
-	if err := storedToken.MarkUsed(); err != nil {
+	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
 		return nil, err
-	}
-	if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
-		return nil, fmt.Errorf("failed to update refresh token: %w", err)
 	}
 
 	// Verify user has access to the requested tenant
@@ -2120,12 +2133,8 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 
 	// Mark old refresh token as used (token rotation)
-	if err := storedToken.MarkUsed(); err != nil {
-		s.logger.Error("failed to mark refresh token as used", "error", err)
-	} else {
-		if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
-			s.logger.Error("failed to update refresh token", "error", err)
-		}
+	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
+		return nil, err
 	}
 
 	// Generate new refresh token
@@ -2293,12 +2302,8 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	)
 
 	// Mark old refresh token as used (token rotation)
-	if err := storedToken.MarkUsed(); err != nil {
-		s.logger.Error("failed to mark refresh token as used", "error", err)
-	} else {
-		if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
-			s.logger.Error("failed to update refresh token", "error", err)
-		}
+	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
+		return nil, err
 	}
 
 	// Generate new refresh token
