@@ -392,7 +392,7 @@ JWT currently carries both `perm_version` AND the full permissions array (the "s
 ```go
 // Redis keys
 perm_ver:{tenant_id}:{user_id}    // Current version (TTL: 30 days)
-user_perms:{tenant_id}:{user_id}  // Cached permissions (TTL: 5 minutes)
+user_perms:{tenant_id}:{user_id}:v{perm_ver}  // Cached permissions (TTL: 5 minutes), keyed by version
 
 // Increment version when roles change
 permVersionService.Increment(ctx, tenantID, userID)
@@ -404,11 +404,11 @@ permVersionService.Increment(ctx, tenantID, userID)
 |-------|-------------|----------------|---------|
 | Role assigned/removed | Clear user cache | Increment version | `RoleService` |
 | Role permissions changed | Clear all users with role | Increment affected users | `RoleService` |
-| Member disabled / offboarded (RFC-050) | Clear user cache | Delete version (closes sockets) | `TenantService` |
+| Member disabled / offboarded / demoted (RFC-050) | Clear user cache | Increment version (closes sockets) | `TenantService` |
 | Session revoked | Clear all tenants cache | No change | `SessionService` |
 | User suspended | Clear via session revoke | No change | `UserService` |
 
-**Security guarantees:** All revocation operations (member removal, session revoke, user suspension) have **0-second window** — cache cleared immediately.
+**Security guarantees:** All revocation operations (member removal, session revoke, user suspension) have **0-second window** — cache cleared immediately. The cached set is keyed by `perm_ver`, read before the database, so a request that loaded the old set just before a revocation cannot write it back for later requests; never reset a version (delete) where a bump will do.
 
 See `docs/architecture/permission-realtime-sync.md` for complete guide.
 
