@@ -61,6 +61,12 @@ func (a Accounts) rank() int {
 // IsValid reports whether a is a known value.
 func (a Accounts) IsValid() bool { return a.rank() > 0 }
 
+// OpensBeyond reports whether p lets more people in than prev: self-service
+// organizations where prev had none, or a wider account sign-up.
+func (p Policy) OpensBeyond(prev Policy) bool {
+	return (p.Mode == ModeSelfService && prev.Mode != ModeSelfService) || p.Accounts.rank() > prev.Accounts.rank()
+}
+
 // Source records where the stored policy came from.
 type Source string
 

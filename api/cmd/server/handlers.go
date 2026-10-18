@@ -28,6 +28,7 @@ import (
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
 	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
@@ -207,6 +208,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			adminConsoleSvc.EnableWebAuthn(rp, repos.AdminFactor, repos.PlatformSetting)
 		}
 	}
+	// Four-eyes approvals of the console's catastrophic actions: every
+	// request and decision e-mails the administrators like a roster change.
+	adminApprovals := adminapproval.NewService(postgres.NewAdminApprovalRepository(adminDBOf(repos, deps.DB)), repos.Admin, repos.AdminAuditLog, log)
+	adminApprovals.SetNotifier(adminConsoleSvc)
+	adminApprovals.SetTenantNamer(adminapproval.TenantNamerFunc(func(ctx context.Context, id shared.ID) (string, error) {
+		o, err := repos.AdminOrg.GetOrganization(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return o.Name, nil
+	}))
 	if svc.Signup != nil {
 		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
@@ -700,8 +712,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
-		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log),
-		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
+		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
+		AdminApproval:           handler.NewAdminApprovalHandler(adminApprovals, log),
+		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
 		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
@@ -718,7 +731,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminMappingRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.DefaultAdminMappingRateLimitConfig(), log),
 
 		// Admin Management (CRUD for admin users, audit logs, and target mappings)
-		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log).WithRosterNotifier(adminConsoleSvc),
+		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log).WithRosterNotifier(adminConsoleSvc).WithApprovals(adminApprovals),
 		AdminAudit:         handler.NewAdminAuditHandler(repos.AdminAuditLog, log),
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
@@ -939,7 +952,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
-		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
+		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log).WithApprovals(adminApprovals)
 		if repos.PlatformSetting != nil {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}

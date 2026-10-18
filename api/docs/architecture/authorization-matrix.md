@@ -981,6 +981,10 @@ empty `owner_emails`. Every member-list view is audited
 | `POST /api/v1/admin/platform-users/{user_id}/block`, `/unblock` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator; **critical** admin audit `platform_user.blocked` / `platform_user.unblocked`; 409 for a platform administrator's or an erased account, or when already in that state. A blocked account (`users.status = 'suspended'`) is refused at sign-in and on every request (session token, API key, MCP token); its sessions end at once. See `organization-suspension.md` |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
+| `GET /api/v1/admin/approvals` | **super_admin** (four-eyes requests: open ones and the last 30 days; whether another super admin can approve) |
+| `POST /api/v1/admin/approvals` | **super_admin** + **step-up**, `reason` (1-1000); **critical** audit `approval.requested`; 409 when no other super admin can approve |
+| `POST /api/v1/admin/approvals/{id}/approve` | **super_admin** + a **fresh** step-up (never the session window); never the requester (403, also a table constraint), never a break-glass account; **critical** audit `approval.approved` |
+| `POST /api/v1/admin/approvals/{id}/reject` · `/cancel` | reject: **super_admin** + step-up, not the requester; cancel: the requester only; **critical** audit. A protected action without its approval answers `428 SECOND_APPROVAL_REQUIRED` (RFC-022 revision 24) |
 | `GET /api/v1/admin/operations` | any admin (build, schema, database, Redis, queues, sensor versions, controllers; no tenant content) |
 | `GET /api/v1/admin/system` | any admin, read-only, no step-up (service health, free space, backup age, certificate expiry, version; aggregates only, no paths or tenant content; RFC-114) |
 | `GET /api/v1/admin/announcements` | any admin |
