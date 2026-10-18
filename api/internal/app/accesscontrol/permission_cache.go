@@ -15,8 +15,13 @@ import (
 // Permissions are cached in Redis with a short TTL for performance.
 // On cache miss, permissions are fetched from the database.
 //
-// Key format: user_perms:{tenant_id}:{user_id} → JSON array of permission strings
-// Cache is invalidated when user's roles change.
+// Key format: user_perms:{tenant_id}:{user_id}:v{perm_ver} → JSON array of
+// permission strings. The key carries the user's permission version, read
+// before the database: a request that loaded the set just before a revocation
+// writes it under the old version, which no request reads once the
+// revocation has bumped the version. A cache delete alone could not stop that
+// write from landing after it. When the version cannot be read the cache is
+// bypassed.
 type PermissionCacheService struct {
 	cache      *redis.Cache[[]string]
 	roleRepo   roledom.Repository
@@ -49,9 +54,45 @@ func NewPermissionCacheService(
 	}, nil
 }
 
-// cacheKey generates the cache key for a user's permissions.
-func (s *PermissionCacheService) cacheKey(tenantID, userID string) string {
-	return fmt.Sprintf("%s:%s", tenantID, userID)
+// cacheKey generates the cache key for a user's permissions at a version.
+func (s *PermissionCacheService) cacheKey(tenantID, userID string, version int) string {
+	return fmt.Sprintf("%s:%s:v%d", tenantID, userID, version)
+}
+
+// versionedKey reads the user's permission version and returns the key the
+// set is cached under. ok is false when the version cannot be read: the
+// caller then reads the database and does not touch the cache.
+func (s *PermissionCacheService) versionedKey(ctx context.Context, tenantID, userID string) (string, bool) {
+	if s.versionSvc == nil {
+		return "", false
+	}
+	v, err := s.versionSvc.Current(ctx, tenantID, userID)
+	if err != nil {
+		s.logger.Warn("permission version unavailable, bypassing the permission cache",
+			"tenant_id", tenantID, "user_id", userID, "error", err)
+		return "", false
+	}
+	return s.cacheKey(tenantID, userID, v), true
+}
+
+// load reads the user's permissions from the database.
+func (s *PermissionCacheService) load(ctx context.Context, tenantID, userID string) ([]string, error) {
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tenant id: %w", err)
+	}
+	uid, err := roledom.ParseID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	permissions, err := s.roleRepo.GetUserPermissions(ctx, tid, uid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get permissions from db: %w", err)
+	}
+	if permissions == nil {
+		permissions = []string{}
+	}
+	return permissions, nil
 }
 
 // GetPermissions returns the permissions for a user.
@@ -61,52 +102,28 @@ func (s *PermissionCacheService) GetPermissions(ctx context.Context, tenantID, u
 		return []string{}, nil
 	}
 
-	key := s.cacheKey(tenantID, userID)
-
-	// Try cache first
-	cached, err := s.cache.Get(ctx, key)
-	if err == nil && cached != nil {
-		s.logger.Debug("permission cache hit",
-			"tenant_id", tenantID,
-			"user_id", userID,
-		)
-		return *cached, nil
+	// The version is read before the database (see the type comment).
+	key, cacheable := s.versionedKey(ctx, tenantID, userID)
+	if cacheable {
+		cached, err := s.cache.Get(ctx, key)
+		if err == nil && cached != nil {
+			return *cached, nil
+		}
 	}
 
-	// Cache miss - fetch from database
-	s.logger.Debug("permission cache miss, fetching from DB",
-		"tenant_id", tenantID,
-		"user_id", userID,
-	)
-
-	tid, err := roledom.ParseID(tenantID)
+	permissions, err := s.load(ctx, tenantID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid tenant id: %w", err)
+		return nil, err
 	}
-	uid, err := roledom.ParseID(userID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid user id: %w", err)
+	if cacheable {
+		if cacheErr := s.cache.Set(ctx, key, permissions); cacheErr != nil {
+			s.logger.Warn("failed to cache permissions",
+				"tenant_id", tenantID,
+				"user_id", userID,
+				"error", cacheErr,
+			)
+		}
 	}
-
-	permissions, err := s.roleRepo.GetUserPermissions(ctx, tid, uid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get permissions from db: %w", err)
-	}
-
-	// Ensure we have a non-nil slice
-	if permissions == nil {
-		permissions = []string{}
-	}
-
-	// Store in cache (ignore errors)
-	if cacheErr := s.cache.Set(ctx, key, permissions); cacheErr != nil {
-		s.logger.Warn("failed to cache permissions",
-			"tenant_id", tenantID,
-			"user_id", userID,
-			"error", cacheErr,
-		)
-	}
-
 	return permissions, nil
 }
 
@@ -117,37 +134,24 @@ func (s *PermissionCacheService) GetPermissionsWithFallback(ctx context.Context,
 		return []string{}, nil
 	}
 
-	key := s.cacheKey(tenantID, userID)
-
-	tid, err := roledom.ParseID(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid tenant id: %w", err)
+	// The version is read before the database (see the type comment).
+	key, cacheable := s.versionedKey(ctx, tenantID, userID)
+	if !cacheable {
+		return s.load(ctx, tenantID, userID)
 	}
-	uid, err := roledom.ParseID(userID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid user id: %w", err)
-	}
-
-	// Use GetOrSetFallback which falls back to loader on any cache error
 	permissions, err := s.cache.GetOrSetFallback(ctx, key, func(ctx context.Context) (*[]string, error) {
-		perms, err := s.roleRepo.GetUserPermissions(ctx, tid, uid)
+		perms, err := s.load(ctx, tenantID, userID)
 		if err != nil {
 			return nil, err
 		}
-		if perms == nil {
-			perms = []string{}
-		}
 		return &perms, nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get permissions: %w", err)
 	}
-
 	if permissions == nil {
 		return []string{}, nil
 	}
-
 	return *permissions, nil
 }
 
@@ -158,7 +162,13 @@ func (s *PermissionCacheService) Invalidate(ctx context.Context, tenantID, userI
 		return
 	}
 
-	key := s.cacheKey(tenantID, userID)
+	// Drops the entry of the current version. A revocation also bumps the
+	// version, which retires every older entry even if this delete fails or
+	// a racing loader writes after it.
+	key, ok := s.versionedKey(ctx, tenantID, userID)
+	if !ok {
+		return
+	}
 	if err := s.cache.Delete(ctx, key); err != nil {
 		s.logger.Warn("failed to invalidate permission cache",
 			"tenant_id", tenantID,
