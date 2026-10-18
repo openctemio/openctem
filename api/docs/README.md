@@ -44,7 +44,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Authorization matrix](architecture/authorization-matrix.md) (the canonical authorization model), [access control rules](architecture/access-control-rules.md), [generated authorization reference](architecture/authorization-reference.md)
 - [User onboarding](architecture/user-onboarding.md), [two-factor authentication](architecture/user-two-factor-authentication.md), [step-up re-authentication](architecture/step-up-reauth.md)
 - [SSO authentication](architecture/sso-authentication.md), [multi-tenant Entra ID model](architecture/multi-tenant-entraid-model.md), [SAML SSO](architecture/saml-sso.md), [SCIM provisioning](architecture/scim-provisioning.md)
-- [Platform console](architecture/platform-console.md) (its own service, site and plane), [Audit hash chain](architecture/audit-hash-chain.md)
+- [Platform console](architecture/platform-console.md) (its own service, site and plane), [Audit hash chain](architecture/audit-hash-chain.md), [Security overview and audit log export](architecture/security-overview.md)
 
 **Assets and scope**
 - [Asset inventory v2](architecture/asset-inventory-v2.md), [asset schema](architecture/asset-schema.md), [asset properties schema](asset-properties-schema.md)

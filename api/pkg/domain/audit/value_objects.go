@@ -147,8 +147,8 @@ const (
 	// member whose membership label is not owner (a co-owner planted before
 	// system roles were limited to the membership routes).
 	ActionOwnerRoleDriftRemoved Action = "owner_role_drift_removed"
-	ActionMemberSuspended   Action = "member.suspended"
-	ActionMemberReactivated Action = "member.reactivated"
+	ActionMemberSuspended       Action = "member.suspended"
+	ActionMemberReactivated     Action = "member.reactivated"
 	// ActionMemberOffboarded: access stripped, owned work reassigned, the
 	// membership kept as a tombstone (member lifecycle, RFC-050).
 	ActionMemberOffboarded Action = "member.offboarded"
@@ -691,6 +691,10 @@ const (
 	// tamper-evident audit hash-chain (POST /audit-logs/rebaseline). The
 	// overwritten hashes are archived in audit_chain_rebaseline_entries.
 	ActionAuditChainRebaselined Action = "audit.chain_rebaselined"
+
+	// ActionAuditLogExported records an administrator downloading the
+	// organization's audit log (CSV or JSON lines).
+	ActionAuditLogExported Action = "audit_log.exported"
 )
 
 // String returns the string representation of the action.
@@ -830,7 +834,7 @@ func (a Action) IsValid() bool {
 		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
 		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
-		ActionAuditChainRebaselined:
+		ActionAuditChainRebaselined, ActionAuditLogExported:
 		return true
 	}
 	return isConfigAction(a) || isRegisteredAction(a)
@@ -951,7 +955,7 @@ func (a Action) Category() string {
 		return "remediation_campaign"
 	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
-	case ActionAuditChainRebaselined:
+	case ActionAuditChainRebaselined, ActionAuditLogExported:
 		return "audit"
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
