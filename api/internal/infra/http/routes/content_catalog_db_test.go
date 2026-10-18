@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
+	catalogdom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -460,6 +461,31 @@ func TestContentCatalog_DB(t *testing.T) {
 		}
 		if n := h.count(`SELECT COUNT(*) FROM content_installs WHERE tenant_id = $1`, h.tenantA.String()); n != 3 {
 			t.Fatalf("A has %d installations", n)
+		}
+	})
+
+	t.Run("the console lists the instance catalog only", func(t *testing.T) {
+		// An organization's private package (copied from an imported row).
+		h.exec(`INSERT INTO content_packages (id, tenant_id, package_id, version, type, origin, title, manifest,
+			manifest_raw, manifest_digest, artifact_media_type, artifact_digest, artifact_size, statement, tier, service_use)
+			SELECT gen_random_uuid(), $1, 'acme/private', version, type, 'organization', title, manifest, manifest_raw,
+			manifest_digest, artifact_media_type, artifact_digest, artifact_size, statement, tier, service_use
+			FROM content_packages WHERE tenant_id IS NULL AND package_id = 'openctem/sensor' LIMIT 1`, h.tenantA.String())
+		want := h.count(`SELECT COUNT(DISTINCT package_id) FROM content_packages WHERE tenant_id IS NULL`)
+		items, total, err := h.svc.ListInstance(ctx, catalogdom.Filter{})
+		if err != nil || total != want || len(items) != want || want == 0 {
+			t.Fatalf("instance listing: %d %d %v", total, len(items), err)
+		}
+		for _, it := range items {
+			if it.Latest.PackageID == "acme/private" || it.Latest.TenantID != nil || it.Install != nil {
+				t.Fatalf("the console listing carries organization data: %+v", it.Latest.PackageID)
+			}
+		}
+		if _, err := h.svc.InstanceVersions(ctx, "acme/private"); !errors.Is(err, catalogdom.ErrNotFound) {
+			t.Fatalf("an organization's private package must not be visible to the console: %v", err)
+		}
+		if v, err := h.svc.InstanceVersions(ctx, "openctem/sensor"); err != nil || len(v) == 0 {
+			t.Fatalf("instance versions: %d %v", len(v), err)
 		}
 	})
 
