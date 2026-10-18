@@ -375,7 +375,7 @@ func (r *EPSSRepository) CountTenantOpenAboveScores(ctx context.Context, tenantI
 		JOIN epss_scores es ON es.cve_id = f.cve_id
 		WHERE f.tenant_id = $1
 			AND es.epss_score >= $` + strconv.Itoa(minIdx) + `
-			AND ` + openFindingStatusClause + `
+			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
 			AND ` + inScope
 
 	counts := make([]int64, len(thresholds))
@@ -742,7 +742,7 @@ func (r *KEVRepository) CountTenantOpenPastDue(ctx context.Context, tenantID sha
 		JOIN kev_catalog kc ON kc.cve_id = f.cve_id
 		WHERE f.tenant_id = $1
 			AND kc.due_date IS NOT NULL AND kc.due_date < NOW()
-			AND ` + openFindingStatusClause + `
+			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
 			AND ` + inScope
 	var count int64
 	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {

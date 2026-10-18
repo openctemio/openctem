@@ -34,13 +34,13 @@ func (s *SurfaceService) SetDataScope(e *datascope.Enforcer) {
 // AttackPathScoresForCaller is GetAttackPathScores narrowed to the request
 // caller's data scope.
 func (s *SurfaceService) AttackPathScoresForCaller(ctx context.Context, tenantID shared.ID) (*PathScoringResult, error) {
+	scope, err := s.dataScope.ResolveStrict(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
 	res, err := s.GetAttackPathScores(ctx, tenantID)
 	if err != nil || res == nil {
 		return res, err
-	}
-	scope, err := s.dataScope.Resolve(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
 	if scope == nil {
 		return res, nil
@@ -117,13 +117,13 @@ func summarizeKept(b *pathBasis, keep func(shared.ID) bool) PathSummary {
 // ExposureChainsForCaller is GetExposureChains narrowed to the request
 // caller's data scope (a chain is kept only when all its hops are in scope).
 func (s *SurfaceService) ExposureChainsForCaller(ctx context.Context, tenantID shared.ID) (*ExposureChainResult, error) {
+	scope, err := s.dataScope.ResolveStrict(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
 	res, err := s.GetExposureChains(ctx, tenantID)
 	if err != nil || res == nil {
 		return res, err
-	}
-	scope, err := s.dataScope.Resolve(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
 	if scope == nil {
 		return res, nil
