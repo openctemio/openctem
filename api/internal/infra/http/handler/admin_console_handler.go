@@ -460,13 +460,14 @@ func (h *AdminConsoleHandler) EndElevation(w http.ResponseWriter, r *http.Reques
 // (super admin): removes another administrator's second factor and ends their
 // console sessions, for a lost authenticator.
 // @Summary Reset another administrator's two-step verification
-// @Description Super admin only. Removes the target administrator's TOTP second factor and ends their console sessions (lost authenticator); they enroll again the next time they open the console.
+// @Description Super admin only, with another super admin's approval (428 SECOND_APPROVAL_REQUIRED). Removes the target administrator's TOTP second factor and ends their console sessions (lost authenticator); they enroll again the next time they open the console.
 // @Tags Admin Users
 // @Param id path string true "Admin user ID"
 // @Success 204 "No Content"
 // @Failure 400 {object} apierror.Error "Bad Request"
 // @Failure 403 {object} apierror.Error "Forbidden"
 // @Failure 404 {object} apierror.Error "Not Found"
+// @Failure 428 {object} apierror.Error "Another super admin must approve this change first"
 // @Security BearerAuth
 // @Router /admin/users/{id}/reset-credentials [post]
 func (h *AdminConsoleHandler) ResetCredentials(w http.ResponseWriter, r *http.Request) {
@@ -480,7 +481,15 @@ func (h *AdminConsoleHandler) ResetCredentials(w http.ResponseWriter, r *http.Re
 		apierror.BadRequest("use the password endpoint to change your own credentials").WriteJSON(w)
 		return
 	}
+	// Removing another administrator's second factor lets the next sign-in
+	// as them enroll a new one: a second super admin approves, so one
+	// session cannot take over another approver.
+	grant, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalResetCredentials, "admin:"+id.String(), h.logger)
+	if !ok {
+		return
+	}
 	if err := h.svc.ResetCredentials(r.Context(), actor, id, clientInfo(r)); err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		if admin.IsAdminNotFound(err) {
 			apierror.NotFound("admin user").WriteJSON(w)
 			return
