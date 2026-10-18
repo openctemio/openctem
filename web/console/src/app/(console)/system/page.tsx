@@ -205,18 +205,34 @@ function Body({ s }: { s: AdminSystem }) {
           {check && (
             <>
               <Row label={t('admin.system.versionCheck', 'Version check')}>
-                {!check.configured || !check.enabled ? (
-                  <TonePill tone="muted" label={t('admin.system.off', 'Off')} />
-                ) : check.last_error ? (
+                {!check.configured ? (
                   <TonePill
                     tone="warning"
-                    label={t('admin.system.checkFailed', 'Last check failed')}
+                    label={t('admin.system.feed.noKey', 'No release feed key in this build')}
                   />
+                ) : !check.enabled ? (
+                  <TonePill tone="muted" label={t('admin.system.off', 'Off')} />
+                ) : check.last_error ? (
+                  <TonePill tone="warning" label={feedErrorLabel(t, check.last_error)} />
                 ) : (
                   <TonePill tone="success" label={t('admin.system.ok', 'OK')} />
                 )}
                 {check.last_attempt_at && <RelativeTime date={check.last_attempt_at} />}
               </Row>
+              {check.configured && (
+                <Row label={t('admin.system.feed.lastSuccess', 'Last release information')}>
+                  {check.applied_at ? (
+                    <RelativeTime date={check.applied_at} />
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {t(
+                        'admin.system.feed.never',
+                        'Never: the versions built into this release apply'
+                      )}
+                    </span>
+                  )}
+                </Row>
+              )}
               {check.latest && (
                 <Row label={t('admin.system.latest', 'Latest release')}>
                   {check.latest}
@@ -274,4 +290,21 @@ export default function AdminSystemPage() {
       </div>
     </Main>
   )
+}
+
+/** What a failed version check means, by its code (the API never sends raw upstream text). */
+function feedErrorLabel(t: (key: string, fallback: string) => string, code: string): string {
+  switch (code) {
+    case 'not_published':
+      return t('admin.system.feed.notPublished', 'Release feed not published')
+    case 'invalid':
+    case 'no_key':
+      return t('admin.system.feed.invalid', 'Release feed signature invalid')
+    case 'unreachable':
+      return t('admin.system.feed.unreachable', 'Release feed unreachable')
+    case 'expired':
+      return t('admin.system.feed.expired', 'Release feed expired')
+    default:
+      return t('admin.system.checkFailed', 'Last check failed')
+  }
 }

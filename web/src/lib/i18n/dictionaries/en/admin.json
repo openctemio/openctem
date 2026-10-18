@@ -581,6 +581,7 @@
   "admin.versionCheck.error.rollback": "Older than the release information already applied.",
   "admin.versionCheck.error.too_large": "The file is larger than a release feed can be.",
   "admin.versionCheck.error.unreachable": "The release feed could not be reached (no internet access?).",
+  "admin.versionCheck.error.not_published": "No release feed is published at this address yet. Release information comes from the version built into this release; import a feed file to update it.",
   "admin.versionCheck.errorSubject": "the release information",
   "admin.versionCheck.import.done": "Release information imported.",
   "admin.versionCheck.import.file": "Release feed file (JSON, up to 256 KiB)",
@@ -1089,5 +1090,12 @@
   "admin.versionCheck.components.none": "No release information yet: the versions this release was built with apply, and they may be outdated.",
   "admin.versionCheck.components.name.sensor": "Scanning sensor",
   "admin.versionCheck.components.name.connector-tenable": "Tenable.sc connector",
-  "admin.versionCheck.components.name.sdk": "Sensor SDK (sdk-go)"
+  "admin.versionCheck.components.name.sdk": "Sensor SDK (sdk-go)",
+  "admin.system.feed.noKey": "No release feed key in this build",
+  "admin.system.feed.lastSuccess": "Last release information",
+  "admin.system.feed.never": "Never: the versions built into this release apply",
+  "admin.system.feed.notPublished": "Release feed not published",
+  "admin.system.feed.invalid": "Release feed signature invalid",
+  "admin.system.feed.unreachable": "Release feed unreachable",
+  "admin.system.feed.expired": "Release feed expired"
 }
