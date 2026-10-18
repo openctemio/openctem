@@ -1278,6 +1278,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// resolves) queues a proof-of-fix re-check per finding, like the
 	// dedicated fix-applied action.
 	s.Vulnerability.SetProofOfFixQueuer(s.FindingActions.QueueProofOfFix)
+	// One path for the side effects of a status change (finding actions, VEX).
+	s.FindingActions.SetStatusEffects(s.Vulnerability.AfterStatusMoves)
+	s.VEX.SetStatusEffects(s.Vulnerability.AfterStatusMoves)
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
