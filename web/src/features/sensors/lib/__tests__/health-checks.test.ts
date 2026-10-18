@@ -305,4 +305,23 @@ describe('sensorHealthChecks', () => {
       text: 'v0.7.0 has a published security advisory. Upgrade the sensor to a build with a fixed SDK.',
     })
   })
+
+  it('SDK: unsupported is a critical line, from the status or the reason', () => {
+    const text =
+      'v0.3.0 is older than the oldest SDK this platform supports. Rebuild the sensor with a newer sdk-go.'
+    const byStatus = byKey(
+      sensorHealthChecks(sensor({ sdk_version: 'v0.3.0', sdk_status: 'unsupported' }), ctx)
+    )
+    expect(byStatus.sdk).toMatchObject({ status: 'critical', text, action: 'install' })
+    const byReason = byKey(
+      sensorHealthChecks(
+        sensor({
+          sdk_version: 'v0.3.0',
+          health_reasons: [{ code: 'sdk_unsupported', severity: 'critical', message: 'm' }],
+        }),
+        ctx
+      )
+    )
+    expect(byReason.sdk).toMatchObject({ status: 'critical', text })
+  })
 })

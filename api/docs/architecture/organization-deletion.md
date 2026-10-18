@@ -52,7 +52,7 @@ gets the same 403 whether or not the organization exists.
 
 ## Data
 
-Migration `organization_deletion_grace`: `tenants.status` gains
+Migration `002915_organization_deletion_grace`: `tenants.status` gains
 `pending_deletion`; `deletion_requested_at`, `deletion_requested_by` (users,
 `ON DELETE SET NULL`) and `deletion_due_at`; a check keeps the due date and
 the status together; a partial index serves the worker. The down migration

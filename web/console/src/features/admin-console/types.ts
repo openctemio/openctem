@@ -390,6 +390,52 @@ export interface AdminConsoleSession {
   current: boolean
 }
 
+/** The protected actions of four-eyes approvals. */
+export type AdminApprovalAction =
+  | 'admin.grant_super_admin'
+  | 'admin.revoke_super_admin'
+  | 'console_mfa.disable'
+  | 'platform_idp.remove'
+  | 'signup.open'
+  | 'audit_chain.rebaseline'
+  | 'organization.purge'
+
+export type AdminApprovalStatus =
+  'pending' | 'approved' | 'rejected' | 'canceled' | 'expired' | 'used'
+
+/** GET /admin/approvals: one request for a second super admin's approval. */
+export interface AdminApproval {
+  id: string
+  action: AdminApprovalAction | string
+  target: string
+  target_label?: string
+  reason: string
+  status: AdminApprovalStatus
+  requested_by_id: string
+  requested_by_email?: string
+  requested_at: string
+  expires_at: string
+  decided_by_email?: string
+  decided_at?: string
+  decision_note?: string
+  used_at?: string
+  /** The caller asked: may cancel, never decide. */
+  mine: boolean
+}
+
+export interface AdminApprovalList {
+  four_eyes: {
+    /** Another super admin can approve the caller's requests. */
+    active: boolean
+    /** Active, named (not break-glass) super admins. */
+    approvers: number
+    /** The caller may approve others' requests (not break-glass). */
+    can_approve: boolean
+  }
+  ttl_hours: number
+  data: AdminApproval[]
+}
+
 interface AdminOpsComponent {
   ok: boolean
   latency_ms: number
@@ -521,6 +567,8 @@ export interface ReleaseFeedComponent {
 
 export interface VersionCheckStatus {
   enabled: boolean
+  /** VERSION_CHECK_ENABLED=false keeps the online check off; the console cannot turn it on. */
+  locked_by_environment?: boolean
   configured: boolean
   feed_url: string
   source?: 'online' | 'import'
@@ -601,4 +649,31 @@ export interface AdminSystem {
   }
   level: number
   checked_at: string
+}
+
+/** One row of GET /admin/configuration (RFC-022 revision 22). Secrets come back as is_set only. */
+export interface ConfigurationItem {
+  key: string
+  group:
+    | 'instance'
+    | 'sign_in'
+    | 'email'
+    | 'scanning'
+    | 'storage'
+    | 'ai'
+    | 'console'
+    | 'audit'
+    | 'updates'
+  managed: 'console' | 'server'
+  source: 'console' | 'environment' | 'default'
+  value?: string
+  secret?: boolean
+  is_set?: boolean
+  env_var?: string
+  ceiling?: boolean
+  restart_required: boolean
+  page?: string
+  planned?: boolean
+  changed_at?: string
+  changed_by?: string
 }

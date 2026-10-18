@@ -20,6 +20,8 @@ import {
   ShieldCheck,
   Cloud,
   Server,
+  SlidersHorizontal,
+  UserCheck,
   UserCog,
   UserPlus,
   UserSearch,
@@ -103,6 +105,13 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['requests', 'sign-up', 'approve', 'inbox', 'pending'],
       },
       {
+        title: 'Sign-ups',
+        i18nKey: 'admin.nav.signups',
+        url: '/requests/sign-ups',
+        icon: UserPlus,
+        keywords: ['sign-up', 'signups', 'registrations', 'burst', 'abuse', 'alerts'],
+      },
+      {
         title: 'Support access',
         i18nKey: 'admin.nav.supportAccess',
         url: '/support',
@@ -181,6 +190,14 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['signed in', 'console sessions', 'sign out', 'devices'],
       },
       {
+        title: 'Approvals',
+        i18nKey: 'admin.nav.approvals',
+        url: '/security/approvals',
+        icon: UserCheck,
+        minRole: 'super_admin',
+        keywords: ['four-eyes', 'second approval', 'approve', 'dual control'],
+      },
+      {
         title: 'Admin sign-in',
         i18nKey: 'admin.nav.adminSignIn',
         url: '/system/admin-sign-in',
@@ -209,6 +226,13 @@ export const adminNav: AdminNavSection[] = [
     title: 'Settings',
     i18nKey: 'admin.nav.group.settings',
     items: [
+      {
+        title: 'Configuration',
+        i18nKey: 'admin.nav.configuration',
+        url: '/system/configuration',
+        icon: SlidersHorizontal,
+        keywords: ['settings', 'environment', 'restart', 'secrets', 'source', 'env'],
+      },
       {
         title: 'Sign-up',
         i18nKey: 'admin.nav.signUp',

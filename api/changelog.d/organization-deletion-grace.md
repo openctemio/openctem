@@ -9,7 +9,8 @@
   authenticated); everything works again as before.
 - Console > Organizations: "Delete now" (super_admin, fresh authenticator code,
   reason, critical admin audit) deletes an organization at once, whatever its
-  status.
-- Migration `organization_deletion_grace` adds the `pending_deletion` status
+  status. It needs a second super admin's approval (four-eyes, action
+  `organization.purge`, target `tenant:<id>`) when approvals are on.
+- Migration `002915_organization_deletion_grace` adds the `pending_deletion` status
   and the `deletion_requested_at`, `deletion_requested_by` and
   `deletion_due_at` columns.

@@ -384,6 +384,8 @@
   "settings.accountDelete.failed": "Could not delete the account",
   "settings.item.content": "Content catalog",
   "settings.desc.content": "Signed rules, templates and other packages: install, update and approve.",
+  "settings.item.sensor-products": "Sensor products",
+  "settings.desc.sensor-products": "Latest and minimum release of the sensors your organization builds.",
   "settings.search.label": "Search settings",
   "settings.search.placeholder": "Search settings: two-factor, IP allowlist, Slack…",
   "settings.search.count": "{count} results",
