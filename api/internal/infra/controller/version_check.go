@@ -29,13 +29,18 @@ func (c *VersionCheckController) Name() string { return "version-check" }
 // Interval returns how often the controller looks whether a check is due.
 func (c *VersionCheckController) Interval() time.Duration { return time.Hour }
 
-// Reconcile runs a due check. A storage error is logged, never fatal.
+// Reconcile runs a due check, then reloads the applied feed so this replica
+// learns what another replica fetched or an administrator imported. A
+// storage error is logged, never fatal.
 func (c *VersionCheckController) Reconcile(ctx context.Context) (int, error) {
 	if c.service == nil {
 		return 0, nil
 	}
 	if err := c.service.RunDue(ctx); err != nil {
 		c.logger.Warn("version check failed", "error", err)
+	}
+	if err := c.service.Refresh(ctx); err != nil {
+		c.logger.Warn("version check: reload of the release feed failed", "error", err)
 	}
 	return 0, nil
 }

@@ -53,17 +53,21 @@ assert_rc "no embedded copy: --check fails" 1 bash "$SYNC" --check --root "$tmp/
 bash "$SYNC" --root "$tmp/noembed" >/dev/null 2>&1
 assert_rc "no embedded copy: sync writes it" 0 bash "$SYNC" --check --root "$tmp/noembed"
 
-# A sensor bump changes YAML only: versions.yaml and the API's embedded copy,
-# never a Go file. The sensor's release workflow does exactly this.
+# Moving the scanning sensor's built-in release (optional, at platform release
+# time; a sensor release itself needs no change here, the instances learn it
+# from the release feed) changes YAML only: versions.yaml, the API's embedded
+# copy and the bundled sensor's compose default, never a Go file.
 committed_fixture "$tmp/sensorbump"
 rel_yaml_set "$tmp/sensorbump/versions.yaml" sensor.latest v0.7.0
 bash "$SYNC" --root "$tmp/sensorbump" >/dev/null 2>&1
-assert_eq "sensor bump: only the manifest and its embedded copy change" \
-  "$(printf 'api/internal/versions/versions.yaml\nversions.yaml')" "$(changed_files "$tmp/sensorbump")"
+assert_eq "sensor bump: the manifest, its embedded copy and the bundled sensor default change" \
+  "$(printf 'api/deploy/docker-compose.sensor.yml\napi/internal/versions/versions.yaml\nversions.yaml')" "$(changed_files "$tmp/sensorbump")"
+assert_contains "sensor bump: bundled sensor default follows" "SENSOR_VERSION:-v0.7.0}" "$(cat "$tmp/sensorbump/api/deploy/docker-compose.sensor.yml")"
 assert_contains "sensor bump: embedded copy follows" "latest: v0.7.0" "$(cat "$tmp/sensorbump/api/internal/versions/versions.yaml")"
 assert_rc "sensor bump: in sync" 0 bash "$SYNC" --check --root "$tmp/sensorbump"
 
-# The same for any other product, and for the SDK (the sdk-go workflow).
+# The same for any other product, and for the SDK (compatibility changes:
+# a minimum, an advisory).
 committed_fixture "$tmp/otherbump"
 rel_yaml_set "$tmp/otherbump/versions.yaml" connector-tenable.latest v0.2.0
 rel_yaml_set "$tmp/otherbump/versions.yaml" connector-tenable.min v0.1.0
@@ -139,7 +143,7 @@ sed -i 's/OPENCTEM_VERSION:-v0.8.0/OPENCTEM_VERSION:-v0.9.0/' "$tmp/tags/api/dep
 out="$(bash "$SYNC" --check --root "$tmp/tags" 2>&1)"
 assert_contains "release newer than any tag" "platform.release v0.9.0 is newer than the newest tag v0.8.0" "$out"
 # ...except on the release branch of exactly that version.
-sed -i 's/OPENCTEM_VERSION:-v0.8.0/OPENCTEM_VERSION:-v0.9.0/' "$tmp/tags/api/deploy/docker-compose.job-signer.yml"
+sed -i 's/OPENCTEM_VERSION:-v0.8.0/OPENCTEM_VERSION:-v0.9.0/' "$tmp/tags/api/deploy/docker-compose.job-signer.yml" "$tmp/tags/api/deploy/docker-compose.sensor.yml"
 assert_rc "release branch of v0.9.0 may say v0.9.0" 0 bash "$SYNC" --check --root "$tmp/tags" --release v0.9.0
 out="$(bash "$SYNC" --check --root "$tmp/tags" --release v0.9.1 2>&1)"; rc=$?
 assert_eq "release branch of another version: exit 1" 1 "$rc"
