@@ -9,14 +9,7 @@
 // COMPONENTS
 // ============================================
 
-export {
-  ActivityItem,
-  Analytics,
-  AnalyticsChart,
-  Overview,
-  QuickStat,
-  RecentSales,
-} from './components'
+export { ActivityItem, QuickStat } from './components'
 
 // ============================================
 // HOOKS
