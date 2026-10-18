@@ -19,6 +19,9 @@ The sensor protocol's internal mTLS listener is `api:9443`; sensors reach it
 only through the gateway's port 443 (ALPN routing on that listener alone), so
 port 8443 means only the console.
 
+Suspending an organization and blocking an account (the console's kill
+switches): [organization-suspension.md](organization-suspension.md).
+
 ## Settings
 
 The same four settings in every installer (Compose and `setup.sh`, the Helm
@@ -41,6 +44,16 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
 - Sessions: server-side, 15 minutes idle, 8 hours at most; the console's own
   sign-in and second factor (TOTP or security keys), step-up on protected
   actions, time-boxed elevation, the append-only hash-chained audit log.
+  Reads the console makes on its own (page refreshes while nobody uses the
+  tab) carry `X-Admin-Background: 1` and do not count as activity, so an
+  unattended tab signs out after the idle timeout. A password reset or
+  change, or a two-step reset, of the administrator's account ends its
+  console sessions.
+- Roster notices: every change to the administrators (added, role or state
+  changed, removed, sign-in reset, identity-provider binding removed), the
+  administrators' identity provider or the security-key policy is emailed to
+  every other active administrator and logged with
+  `alert=admin_roster_change`.
 - Network: private client networks by default at the gateway and the API;
   optional `OPENCTEM_ADMIN_BIND` to publish the console port on one interface.
 

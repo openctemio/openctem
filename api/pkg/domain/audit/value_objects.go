@@ -40,6 +40,10 @@ const (
 	ActionTenantIdleDeletionDue   Action = "tenant.idle_deletion_due"
 	ActionTenantIdleReactivated   Action = "tenant.idle_reactivated"
 	ActionTenantIdlePolicyChanged Action = "tenant.idle_policy_changed"
+	// Organization suspension by a platform administrator
+	// (docs/architecture/organization-suspension.md).
+	ActionTenantSuspended   Action = "tenant.suspended"
+	ActionTenantUnsuspended Action = "tenant.unsuspended"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
@@ -714,6 +718,7 @@ func (a Action) IsValid() bool {
 		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
+		ActionTenantSuspended, ActionTenantUnsuspended,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
