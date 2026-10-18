@@ -40,14 +40,8 @@ type AssetServiceRepository interface {
 	// List retrieves services with filtering and pagination.
 	List(ctx context.Context, tenantID shared.ID, opts ListAssetServicesOptions) ([]*AssetService, int, error)
 
-	// ListPublic retrieves all public (internet-exposed) services for a tenant.
-	ListPublic(ctx context.Context, tenantID shared.ID, limit, offset int) ([]*AssetService, int, error)
-
 	// ListByServiceType retrieves services of a specific type.
 	ListByServiceType(ctx context.Context, tenantID shared.ID, serviceType ServiceType, limit, offset int) ([]*AssetService, int, error)
-
-	// ListHighRisk retrieves services with risk score above threshold.
-	ListHighRisk(ctx context.Context, tenantID shared.ID, minRiskScore int, limit, offset int) ([]*AssetService, int, error)
 
 	// ==========================================================================
 	// Batch Operations
