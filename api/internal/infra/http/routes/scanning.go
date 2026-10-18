@@ -94,6 +94,13 @@ func registerSensorManagementRoutes(
 		r.GET("/tool-defaults", h.ListToolDefaults, middleware.Require(permission.SensorsRead))
 		r.PUT("/tool-defaults/{tool}", h.UpdateToolDefaults, middleware.Require(permission.SensorsWrite))
 		r.DELETE("/tool-defaults/{tool}", h.ResetToolDefaults, middleware.Require(permission.SensorsWrite))
+		// The organization's own sensor products (RFC-037 §13): the release
+		// lines it records for sensors it builds itself. They change only
+		// its own verdicts; recording one is a fleet setting, so owners and
+		// administrators (sensors:write). Before /{id}.
+		r.GET("/custom-products", h.ListCustomProducts, middleware.Require(permission.SensorsRead))
+		r.PUT("/custom-products/{product}", h.SaveCustomProduct, middleware.Require(permission.SensorsWrite))
+		r.DELETE("/custom-products/{product}", h.DeleteCustomProduct, middleware.Require(permission.SensorsWrite))
 		// Scanner content (RFC-031): the tenant policy and refresh requests.
 		// Before /{id} for the same reason. Writes queue commands for the
 		// fleet, so they need sensors:write (owners and administrators).

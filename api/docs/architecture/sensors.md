@@ -375,7 +375,10 @@ built-in latest, never lower it; `min` always comes from `versions.yaml`. With
 a feed digest the install snippets pin `image:tag@sha256:...`. There is no
 setting for either (`SENSOR_LATEST_VERSION` and `SENSOR_MIN_VERSION` are
 refused at startup); an air-gapped instance imports the feed file in the
-console.
+console. A product the catalog does not list can have a release line its
+organization records (`/api/v1/sensors/custom-products`, RFC-037 §13); without
+one it gets no version verdict. See
+[sensor compatibility](sensor-compatibility.md).
 
 **Other fields**: `key_expires_at`, `last_offline_at`, `last_error_at`,
 `started_at` and `uptime_seconds` (from the heartbeat's `uptime_seconds`, stored
@@ -701,7 +704,10 @@ from `versions.yaml` (`sdk.advisories`).
 `sdk_status` per sensor is `advisory` (an SDK release with a published
 security advisory: health reason `sdk_advisory`, so a heartbeating sensor is
 `degraded`), `outdated` (below the latest, no health effect), `current`, or
-`unknown` (no SDK version known). There is no SDK minimum. The sensor
+`unsupported` (older than `sdk.min`, the oldest SDK the platform supports:
+health reason `sdk_unsupported`, critical, any product), or `unknown` (no SDK
+version known, or a sensor built with another SDK than sdk-go). `sdk.min` is
+empty today. The sensor
 responses carry `sdk_name`, `sdk_version`, `sdk_status`, `sensor_product`,
 `sensor_commit`, `sensor_build_time`; the stats add `sdk_latest_version`,
 `sdk_advisories`, `by_sdk_version` (`unknown` for none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)
