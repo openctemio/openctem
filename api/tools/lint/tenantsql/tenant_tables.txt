@@ -238,6 +238,7 @@ tenant_members
 tenant_module_grace
 tenant_modules
 tenant_ownership_transfers
+tenant_sensor_products
 tenant_tool_configs
 tenant_tool_settings
 threat_actors
