@@ -26,7 +26,8 @@ func (r *queueRunRepo) GetByID(_ context.Context, id shared.ID) (*automationdom.
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if run, ok := r.runs[id]; ok {
-		return run, nil
+		cp := *run // a copy, like a database read: the executor mutates its own
+		return &cp, nil
 	}
 	return nil, shared.ErrNotFound
 }
@@ -34,7 +35,8 @@ func (r *queueRunRepo) GetByID(_ context.Context, id shared.ID) (*automationdom.
 func (r *queueRunRepo) Update(_ context.Context, run *automationdom.Run) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.runs[run.ID] = run
+	cp := *run
+	r.runs[run.ID] = &cp
 	return nil
 }
 
