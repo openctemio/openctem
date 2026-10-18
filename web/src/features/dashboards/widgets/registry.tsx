@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useTenant } from '@/context/tenant-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import { useDashboardStats } from '@/features/dashboard'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import {
@@ -59,6 +60,9 @@ type WidgetSize = { w: number; h: number }
 export interface WidgetDef {
   title: string
   description: string
+  /** Message keys that replace title / description (the catalog shows them translated). */
+  titleKey?: string
+  descriptionKey?: string
   component: () => ReactNode
   defaultSize: WidgetSize
   requiredPermission?: string
@@ -88,9 +92,12 @@ function StatShell({
   loading,
   href,
   tone = 'default',
+  sub,
 }: {
   title: string
   value: number | string
+  /** A small line under the value. */
+  sub?: string
   loading?: boolean
   href?: string
   tone?: 'default' | 'danger'
@@ -113,6 +120,7 @@ function StatShell({
             {value}
           </p>
         )}
+        {sub && !loading && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
       </CardContent>
     </Card>
   )
@@ -122,6 +130,7 @@ function StatShell({
 // ── tenant-wide widgets (useDashboardStats) ──────────────────────────────────
 
 function SeverityBreakdownWidget() {
+  const { t } = useTranslation()
   const { stats, isLoading } = useStats()
   // Every severity, Informational included (none folds into it).
   const by = severityCounts(stats.findings.bySeverity)
@@ -132,7 +141,7 @@ function SeverityBreakdownWidget() {
   return (
     <Card className="h-full">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Findings by severity</CardTitle>
+        <CardTitle className="text-sm">{t('dashboardMetrics.widget.severity.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -153,10 +162,11 @@ function SeverityBreakdownWidget() {
 }
 
 function OpenFindingsWidget() {
+  const { t } = useTranslation()
   const { stats, isLoading } = useStats()
   return (
     <StatShell
-      title="Total findings"
+      title={t('dashboardMetrics.widget.openFindings.title')}
       value={stats.findings.total}
       loading={isLoading}
       href="/findings"
@@ -250,22 +260,37 @@ function RiskScoreWidget() {
 }
 
 function SlaComplianceWidget() {
+  const { t } = useTranslation()
   const { data, isLoading } = useSummary()
+  // Null: no open finding has an SLA, so the share is not measured.
+  const pct = data?.sla_compliance_pct
   return (
     <StatShell
-      title="SLA compliance"
-      value={`${Math.round(data?.sla_compliance_pct ?? 0)}%`}
+      title={t('dashboardMetrics.widget.sla.title')}
+      value={pct == null ? '—' : `${Math.round(pct)}%`}
       loading={isLoading}
     />
   )
 }
 
 function MttrWidget() {
+  const { t } = useTranslation()
   const { data, isLoading } = useSummary()
+  // Null: nothing critical was fixed in the period, so there is no time to report.
+  const median = data?.mttr_critical_median_hours
+  const p90 = data?.mttr_critical_p90_hours
   return (
     <StatShell
-      title="MTTR · critical"
-      value={`${Math.round(data?.mttr_critical_hours ?? 0)}h`}
+      title={t('dashboardMetrics.widget.mttr.title')}
+      value={median == null ? '—' : `${Math.round(median)}h`}
+      sub={
+        median == null
+          ? undefined
+          : t('dashboardMetrics.widget.mttr.sub', undefined, {
+              p90: p90 == null ? '—' : `${Math.round(p90)}h`,
+              n: data?.mttr_critical_sample ?? 0,
+            })
+      }
       loading={isLoading}
     />
   )
@@ -344,15 +369,19 @@ function ThreatIntelWidget() {
 
 export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   findings_by_severity: {
-    title: 'Findings by severity',
+    title: 'Open findings by severity',
     description: 'Open findings broken down by severity',
+    titleKey: 'dashboardMetrics.widget.severity.title',
+    descriptionKey: 'dashboardMetrics.widget.severity.description',
     component: SeverityBreakdownWidget,
     defaultSize: { w: 4, h: 2 },
     requiredPermission: Permission.DashboardRead,
   },
   open_findings: {
-    title: 'Total findings',
-    description: 'Total open findings across the tenant',
+    title: 'Open findings',
+    description: 'Findings that still need work, across the organization',
+    titleKey: 'dashboardMetrics.widget.openFindings.title',
+    descriptionKey: 'dashboardMetrics.widget.openFindings.description',
     component: OpenFindingsWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,
@@ -400,15 +429,19 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
     requiredPermission: Permission.DashboardRead,
   },
   sla_compliance: {
-    title: 'SLA compliance',
-    description: 'Share of findings still within SLA',
+    title: 'Open within SLA',
+    description: 'Share of open findings that have an SLA and are not past it',
+    titleKey: 'dashboardMetrics.widget.sla.title',
+    descriptionKey: 'dashboardMetrics.widget.sla.description',
     component: SlaComplianceWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,
   },
   mttr_critical: {
-    title: 'MTTR · critical',
-    description: 'Mean time to remediate critical findings',
+    title: 'Time to fix · critical (median)',
+    description: 'Median hours to remediate critical findings in the period',
+    titleKey: 'dashboardMetrics.widget.mttr.title',
+    descriptionKey: 'dashboardMetrics.widget.mttr.description',
     component: MttrWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { formatRiskScore } from '@/features/shared'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   scoringChangeDates,
   type ExecutiveSummary,
@@ -38,6 +39,7 @@ function Head({ title, desc }: { title: string; desc: string }) {
 }
 
 export function ExposureHero({ summary, trend, kevChainCount, isLoading }: ExposureHeroProps) {
+  const { t } = useTranslation()
   if (isLoading) {
     return (
       <Card className="gap-4">
@@ -53,7 +55,8 @@ export function ExposureHero({ summary, trend, kevChainCount, isLoading }: Expos
 
   const p0 = summary?.p0_open ?? 0
   const resolved = summary?.p0_resolved_period ?? 0
-  const slaPct = summary?.sla_compliance_pct ?? 0
+  // Null: no open finding has an SLA, so the share is not measured.
+  const slaPct = summary?.sla_compliance_pct ?? null
   const crownJewels = summary?.crown_jewels_at_risk ?? 0
 
   // Burn-down: P0 open across the window. Rising = losing ground.
@@ -104,7 +107,7 @@ export function ExposureHero({ summary, trend, kevChainCount, isLoading }: Expos
             KEV chains <span className="font-semibold text-foreground">{kevChainCount}</span>
           </span>
           <span>
-            Crown jewels{' '}
+            {t('dashboardMetrics.hero.crownJewels')}{' '}
             <span
               className={cn('font-semibold', crownJewels > 0 ? STATE_TEXT.crit : 'text-foreground')}
             >
@@ -112,11 +115,14 @@ export function ExposureHero({ summary, trend, kevChainCount, isLoading }: Expos
             </span>
           </span>
           <span>
-            SLA{' '}
+            {t('dashboardMetrics.hero.sla')}{' '}
             <span
-              className={cn('font-semibold', slaPct >= 90 ? STATE_TEXT.good : 'text-foreground')}
+              className={cn(
+                'font-semibold',
+                slaPct !== null && slaPct >= 90 ? STATE_TEXT.good : 'text-foreground'
+              )}
             >
-              {slaPct.toFixed(0)}%
+              {slaPct === null ? '—' : `${slaPct.toFixed(0)}%`}
             </span>
           </span>
         </div>
