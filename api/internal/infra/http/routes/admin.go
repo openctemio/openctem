@@ -590,9 +590,9 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/approvals", func(r Router) {
 			r.GET("/", h.AdminApproval.List)
 			r.POST("/", h.AdminApproval.Create, stepUp("approval.request"))
-			r.POST("/{approval_id}/approve", h.AdminApproval.Approve, freshStepUp("approval.approve"))
-			r.POST("/{approval_id}/reject", h.AdminApproval.Reject, stepUp("approval.reject"))
-			r.POST("/{approval_id}/cancel", h.AdminApproval.Cancel)
+			r.POST("/{id}/approve", h.AdminApproval.Approve, freshStepUp("approval.approve"))
+			r.POST("/{id}/reject", h.AdminApproval.Reject, stepUp("approval.reject"))
+			r.POST("/{id}/cancel", h.AdminApproval.Cancel)
 		}, superAdminOnly...)
 	}
 

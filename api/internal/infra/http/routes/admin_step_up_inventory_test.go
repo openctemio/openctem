@@ -70,9 +70,9 @@ var adminWriteInventory = map[string]struct {
 	// Identity and privilege of administrators.
 	"POST /api/v1/admin/administrators/":                         {stepUpRoute, "creates an administrator"},
 	"POST /api/v1/admin/approvals/":                              {stepUpRoute, "asks another super admin to approve a protected action"},
-	"POST /api/v1/admin/approvals/{approval_id}/approve":         {stepUpRoute, "approves another super admin's protected action (fresh step-up)"},
-	"POST /api/v1/admin/approvals/{approval_id}/reject":          {stepUpRoute, "refuses another super admin's request"},
-	"POST /api/v1/admin/approvals/{approval_id}/cancel":          {routine, "withdraws the caller's own request; only lowers privilege, critical audit"},
+	"POST /api/v1/admin/approvals/{id}/approve":                  {stepUpRoute, "approves another super admin's protected action (fresh step-up)"},
+	"POST /api/v1/admin/approvals/{id}/reject":                   {stepUpRoute, "refuses another super admin's request"},
+	"POST /api/v1/admin/approvals/{id}/cancel":                   {routine, "withdraws the caller's own request; only lowers privilege, critical audit"},
 	"PATCH /api/v1/admin/users/{id}":                             {stepUpRoute, "changes an administrator's role or state"},
 	"DELETE /api/v1/admin/users/{id}":                            {stepUpRoute, "deletes an administrator"},
 	"POST /api/v1/admin/users/{id}/reset-credentials":            {stepUpRoute, "resets an administrator's sign-in"},
@@ -307,7 +307,7 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 			"{id}", shared.NewID().String(), "{tenantId}", shared.NewID().String(),
 			"{user_id}", shared.NewID().String(), "{console_session_id}", shared.NewID().String(),
 			"{announcement_id}", shared.NewID().String(), "{module_id}", "pentest",
-			"{approval_id}", shared.NewID().String(),
+			"{id}", shared.NewID().String(),
 			"{key}", "seats", "{channel}", "stable", "{source}", "epss",
 			"{namespace}", "acme", "{name}", "words", "{version}", "1.0.0",
 		).Replace(path)
