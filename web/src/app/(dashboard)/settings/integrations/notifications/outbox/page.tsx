@@ -84,6 +84,7 @@ function QueueHealthStatus({
   isLoading: boolean
   onViewFailed: () => void
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
     return (
       <div className="rounded-lg border bg-muted/30 p-4">
@@ -102,9 +103,14 @@ function QueueHealthStatus({
         <div className="flex items-center gap-3">
           <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
           <div>
-            <p className="font-medium text-green-800 dark:text-green-200">Queue is healthy</p>
+            <p className="font-medium text-green-800 dark:text-green-200">
+              {t('notificationChannels.outbox.healthy', 'Queue is healthy')}
+            </p>
             <p className="text-sm text-green-600 dark:text-green-400">
-              All notifications are being delivered normally
+              {t(
+                'notificationChannels.outbox.healthyDesc',
+                'All notifications are being delivered normally'
+              )}
             </p>
           </div>
         </div>
@@ -114,10 +120,22 @@ function QueueHealthStatus({
 
   // Build status parts
   const parts: string[] = []
-  if (stats.pending > 0) parts.push(`${stats.pending} pending`)
-  if (stats.processing > 0) parts.push(`${stats.processing} processing`)
-  if (stats.failed > 0) parts.push(`${stats.failed} failed`)
-  if (stats.dead > 0) parts.push(`${stats.dead} dead`)
+  if (stats.pending > 0)
+    parts.push(
+      t('notificationChannels.outbox.count.pending', '{count} pending', { count: stats.pending })
+    )
+  if (stats.processing > 0)
+    parts.push(
+      t('notificationChannels.outbox.count.processing', '{count} processing', {
+        count: stats.processing,
+      })
+    )
+  if (stats.failed > 0)
+    parts.push(
+      t('notificationChannels.outbox.count.failed', '{count} failed', { count: stats.failed })
+    )
+  if (stats.dead > 0)
+    parts.push(t('notificationChannels.outbox.count.dead', '{count} dead', { count: stats.dead }))
 
   return (
     <div
@@ -155,14 +173,20 @@ function QueueHealthStatus({
               )}
             >
               {hasIssues
-                ? 'Some notifications need attention'
-                : 'Notifications are being processed'}
+                ? t(
+                    'notificationChannels.outbox.needAttention',
+                    'Some notifications need attention'
+                  )
+                : t(
+                    'notificationChannels.outbox.processingDesc',
+                    'Notifications are being processed'
+                  )}
             </p>
           </div>
         </div>
         {hasIssues && (
           <Button variant="outline" size="sm" onClick={onViewFailed}>
-            View Issues
+            {t('notificationChannels.outbox.viewIssues', 'View Issues')}
           </Button>
         )}
       </div>
@@ -171,7 +195,12 @@ function QueueHealthStatus({
 }
 
 export default function NotificationOutboxPage() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  const statusLabel = (s: string) =>
+    t(
+      `notificationChannels.outbox.status.${s}`,
+      OUTBOX_STATUS_CONFIG[s as OutboxStatus]?.label ?? s
+    )
   // State
   // The list lives in the URL (one list convention): page, per_page, status.
   const list = useListParams({ defaultPageSize: 10, filters: { status: 'all' } })
@@ -223,7 +252,7 @@ export default function NotificationOutboxPage() {
   // Handlers
   const handleRefresh = async () => {
     await Promise.all([mutateStats(), mutateEntries()])
-    toast.success('Data refreshed')
+    toast.success(t('notificationChannels.outbox.toast.refreshed', 'Data refreshed'))
   }
 
   const handleViewFailed = () => {
@@ -240,9 +269,14 @@ export default function NotificationOutboxPage() {
       await invalidateNotificationOutboxCache()
       await invalidateNotificationOutboxStatsCache()
       await Promise.all([mutateStats(), mutateEntries()])
-      toast.success('Entry scheduled for retry')
+      toast.success(t('notificationChannels.outbox.toast.retried', 'Entry scheduled for retry'))
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to retry entry'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('notificationChannels.outbox.toast.retryFailed', 'Failed to retry entry')
+        )
+      )
     } finally {
       setActionInProgress(null)
     }
@@ -262,9 +296,14 @@ export default function NotificationOutboxPage() {
       await invalidateNotificationOutboxCache()
       await invalidateNotificationOutboxStatsCache()
       await Promise.all([mutateStats(), mutateEntries()])
-      toast.success('Entry deleted')
+      toast.success(t('notificationChannels.outbox.toast.deleted', 'Entry deleted'))
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete entry'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('notificationChannels.outbox.toast.deleteFailed', 'Failed to delete entry')
+        )
+      )
     } finally {
       setActionInProgress(null)
       setSelectedEntry(null)
@@ -277,7 +316,7 @@ export default function NotificationOutboxPage() {
   const columns: ColumnDef<OutboxEntry>[] = [
     {
       accessorKey: 'title',
-      header: 'Title',
+      header: t('notificationChannels.outbox.col.title', 'Title'),
       cell: ({ row }) => {
         const entry = row.original
         return (
@@ -300,7 +339,7 @@ export default function NotificationOutboxPage() {
     },
     {
       accessorKey: 'event_type',
-      header: 'Event',
+      header: t('notificationChannels.outbox.col.event', 'Event'),
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span className="font-medium">{row.original.event_type}</span>
@@ -310,19 +349,19 @@ export default function NotificationOutboxPage() {
     },
     {
       accessorKey: 'severity',
-      header: 'Severity',
+      header: t('notificationChannels.outbox.col.severity', 'Severity'),
       cell: ({ row }) => {
         const severityConfig = OUTBOX_SEVERITY_CONFIG[row.original.severity]
         return (
           <Badge variant="outline" className={`${severityConfig.bgColor} ${severityConfig.color}`}>
-            {severityConfig.label}
+            {t(`notificationChannels.severity.${row.original.severity}`, severityConfig.label)}
           </Badge>
         )
       },
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: t('notificationChannels.outbox.col.status', 'Status'),
       cell: ({ row }) => {
         const entry = row.original
         const StatusIcon = STATUS_ICONS[entry.status]
@@ -341,7 +380,7 @@ export default function NotificationOutboxPage() {
                 variant="outline"
                 className={`${statusConfig.bgColor} ${statusConfig.textColor}`}
               >
-                {statusConfig.label}
+                {statusLabel(entry.status)}
               </Badge>
             </div>
             {entry.last_error && (
@@ -362,7 +401,7 @@ export default function NotificationOutboxPage() {
     },
     {
       id: 'retries',
-      header: 'Retries',
+      header: t('notificationChannels.outbox.col.retries', 'Retries'),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums">
           {row.original.retry_count} / {row.original.max_retries}
@@ -371,7 +410,7 @@ export default function NotificationOutboxPage() {
     },
     {
       accessorKey: 'scheduled_at',
-      header: 'Scheduled',
+      header: t('notificationChannels.outbox.col.scheduled', 'Scheduled'),
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {formatDistanceToNow(new Date(row.original.scheduled_at), { addSuffix: true })}
@@ -391,7 +430,9 @@ export default function NotificationOutboxPage() {
                 variant="ghost"
                 size="sm"
                 className="h-8 w-8 p-0"
-                aria-label={`Actions for ${entry.title}`}
+                aria-label={t('notificationChannels.outbox.actionsFor', 'Actions for {title}', {
+                  title: entry.title,
+                })}
                 disabled={actionInProgress === entry.id}
               >
                 {actionInProgress === entry.id ? (
@@ -406,7 +447,7 @@ export default function NotificationOutboxPage() {
                 <DropdownMenuItem asChild>
                   <SafeExternalLink href={entry.url}>
                     <ExternalLink className="me-2 h-4 w-4" />
-                    View source
+                    {t('notificationChannels.outbox.viewSource', 'View source')}
                   </SafeExternalLink>
                 </DropdownMenuItem>
               )}
@@ -414,7 +455,7 @@ export default function NotificationOutboxPage() {
                 {canRetry && (
                   <DropdownMenuItem onClick={() => handleRetry(entry)} disabled={isRetrying}>
                     <RotateCcw className="me-2 h-4 w-4" />
-                    Retry
+                    {t('notificationChannels.outbox.retry', 'Retry')}
                   </DropdownMenuItem>
                 )}
               </Can>
@@ -426,7 +467,7 @@ export default function NotificationOutboxPage() {
                   disabled={isDeleting}
                 >
                   <Trash2 className="me-2 h-4 w-4" />
-                  Delete
+                  {t('notificationChannels.outbox.delete', 'Delete')}
                 </DropdownMenuItem>
               </Can>
             </DropdownMenuContent>
@@ -443,7 +484,7 @@ export default function NotificationOutboxPage() {
     return (
       <Main>
         <ErrorState
-          title="notification queue"
+          title={t('notificationChannels.outbox.errorTitle', 'notification queue')}
           error={loadError}
           onRetry={() => {
             void mutateStats()
@@ -461,17 +502,20 @@ export default function NotificationOutboxPage() {
         <Button variant="ghost" size="sm" asChild className="-ms-2 mb-2">
           <Link href="/settings/integrations/notifications">
             <ArrowLeft className="me-2 h-4 w-4" />
-            Back to channels
+            {t('notificationChannels.outbox.back', 'Back to channels')}
           </Link>
         </Button>
         <PageHeader
-          title="Notification queue"
-          description="Notifications waiting to be delivered, retried or given up on."
+          title={t('notificationChannels.outbox.title', 'Notification queue')}
+          description={t(
+            'notificationChannels.outbox.description',
+            'Notifications waiting to be delivered, retried or given up on.'
+          )}
           className="mb-6"
         >
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="me-2 h-4 w-4" />
-            Refresh
+            {t('notificationChannels.outbox.refresh', 'Refresh')}
           </Button>
         </PageHeader>
 
@@ -496,15 +540,25 @@ export default function NotificationOutboxPage() {
                       setPage(1)
                     }}
                   >
-                    <SelectTrigger className="h-9 w-[160px]" aria-label="Filter by status">
-                      <SelectValue placeholder="All statuses" />
+                    <SelectTrigger
+                      className="h-9 w-[160px]"
+                      aria-label={t(
+                        'notificationChannels.outbox.filterByStatus',
+                        'Filter by status'
+                      )}
+                    >
+                      <SelectValue
+                        placeholder={t('notificationChannels.outbox.allStatuses', 'All statuses')}
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All statuses</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="processing">Processing</SelectItem>
-                      <SelectItem value="failed">Failed</SelectItem>
-                      <SelectItem value="dead">Dead</SelectItem>
+                      <SelectItem value="all">
+                        {t('notificationChannels.outbox.allStatuses', 'All statuses')}
+                      </SelectItem>
+                      <SelectItem value="pending">{statusLabel('pending')}</SelectItem>
+                      <SelectItem value="processing">{statusLabel('processing')}</SelectItem>
+                      <SelectItem value="failed">{statusLabel('failed')}</SelectItem>
+                      <SelectItem value="dead">{statusLabel('dead')}</SelectItem>
                     </SelectContent>
                   </Select>
                 }
@@ -513,11 +567,17 @@ export default function NotificationOutboxPage() {
                 pagination={pagination}
                 onPaginationChange={setPagination}
                 pageSize={pagination.pageSize}
-                emptyMessage="No entries found"
+                emptyMessage={t('notificationChannels.outbox.emptyMessage', 'No entries found')}
                 emptyDescription={
                   statusFilter !== 'all'
-                    ? `No ${statusFilter} entries in the queue`
-                    : 'The notification queue is empty'
+                    ? t(
+                        'notificationChannels.outbox.emptyFiltered',
+                        'No {status} entries in the queue',
+                        {
+                          status: statusLabel(statusFilter).toLocaleLowerCase(locale),
+                        }
+                      )
+                    : t('notificationChannels.outbox.emptyQueue', 'The notification queue is empty')
                 }
               />
             </div>
