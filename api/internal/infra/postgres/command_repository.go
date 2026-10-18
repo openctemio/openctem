@@ -187,7 +187,9 @@ func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities
 // sensorWhere is ready (a predicate over commands) for sensorID in
 // tenantID with the poll's sensor gates (pendingForSensorWhere).
 func sensorWhere(ready string, tenantID shared.ID, sensorID *shared.ID, capabilities []string) (string, []any) {
-	where := `commands.tenant_id = $1 AND ` + ready
+	// A suspended organization's commands are never handed out (its own
+	// sensors are refused at authentication already).
+	where := `commands.tenant_id = $1 AND ` + ready + ` AND ` + organizationActiveSQL("commands.tenant_id")
 	args := []any{tenantID.String()}
 	if sensorID != nil {
 		where += " AND (commands.sensor_id = $2 OR commands.sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +

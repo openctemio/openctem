@@ -46,6 +46,10 @@ const (
 	ActionCredentialsReset = "console.credentials_reset"
 	ActionStepUp           = "console.step_up"
 	ActionStepUpFailed     = "console.step_up_failed"
+	// ActionSessionsEndedByAccount: the linked account's credentials changed
+	// outside the console (password reset, two-step reset), which ended every
+	// console session of the administrator.
+	ActionSessionsEndedByAccount = "console.sessions_ended_by_account"
 )
 
 // StatusSignedIn is the IdP callback outcome when the IdP's MFA was trusted
@@ -116,6 +120,9 @@ type Service struct {
 	factorCache map[string]factorCacheEntry
 	// factorNotifier emails an administrator about their own factor changes.
 	factorNotifier FactorChangeNotifier
+	// rosterNotifier tells the other administrators when someone changes who
+	// may administer the platform, or how they sign in (roster_notice.go).
+	rosterNotifier RosterChangeNotifier
 }
 
 // SignedInUser is the account whose password the console just checked.
@@ -503,7 +510,9 @@ func (s *Service) AuthenticateSession(ctx context.Context, token string) (*admin
 		_ = s.console.DeleteSessionsForAdmin(ctx, a.ID())
 		return nil, nil, admin.ErrSessionNotFound
 	}
-	if now.Sub(sess.LastSeenAt) >= touchInterval {
+	// A background refresh authenticates but is not activity: only what the
+	// administrator does keeps the session from idling out.
+	if !admin.IsBackgroundRequest(ctx) && now.Sub(sess.LastSeenAt) >= touchInterval {
 		if err := s.console.TouchSession(ctx, sess.ID, now); err != nil {
 			s.log.Warn("touch admin session", "error", err)
 		}
@@ -550,6 +559,27 @@ func (s *Service) ChangePassword(ctx context.Context, a *admin.AdminUser, curren
 	}
 	s.record(ctx, a, ActionPasswordChanged, client, "")
 	return nil
+}
+
+// EndSessionsForAccount ends every console session of the administrator
+// linked to the account userID, if there is one. The account's own sign-in
+// calls it when the account's sessions are revoked for a credential change
+// (password reset or change, two-step reset), so a console session cannot
+// outlive the credentials it was opened with. Errors are logged: the
+// credential change itself has already happened.
+func (s *Service) EndSessionsForAccount(ctx context.Context, userID shared.ID) {
+	a, err := s.admins.GetByUserID(ctx, userID)
+	if err != nil {
+		if !admin.IsAdminNotFound(err) {
+			s.log.Warn("find administrator for revoked account sessions", "error", err)
+		}
+		return
+	}
+	if err := s.console.DeleteSessionsForAdmin(ctx, a.ID()); err != nil {
+		s.log.Warn("end console sessions after account sessions were revoked", "error", err)
+		return
+	}
+	s.recordNote(ctx, a, ActionSessionsEndedByAccount, ClientInfo{}, "the linked account's credentials changed")
 }
 
 // Logout ends the console session behind token. The console has its own
@@ -644,6 +674,11 @@ func (s *Service) Provision(ctx context.Context, actor *admin.AdminUser, in Prov
 			s.log.Warn("audit admin provisioning", "error", err)
 		}
 	}
+	summary := fmt.Sprintf("added %s as %s", a.Email(), roleLabel(a.Role()))
+	if a.IsBreakGlass() {
+		summary += " (break-glass)"
+	}
+	s.NotifyRosterChange(ctx, actor, RosterAdminAdded, summary, client)
 	return a, temp, nil
 }
 
@@ -677,6 +712,8 @@ func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, 
 			s.log.Warn("audit console credentials reset", "error", err)
 		}
 	}
+	s.NotifyRosterChange(ctx, actor, RosterCredentialsReset,
+		fmt.Sprintf("reset the console sign-in of %s (they enroll a new second factor)", target.Email()), client)
 	return nil
 }
 
