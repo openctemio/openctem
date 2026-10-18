@@ -26,7 +26,8 @@
 # `./backup.sh verify` regularly (monthly at least) to prove a restore works.
 #
 # Settings (environment): BACKUP_DIR (default ./backups), KEEP (number of
-# backups kept, default 14), METRICS_TEXTFILE_DIR (node-exporter textfile
+# backups kept, default 14), BACKUP_STATUS_DIR (status file the API's Health page
+# reads, default ./backup-status; compose mounts the same variable), METRICS_TEXTFILE_DIR (node-exporter textfile
 # directory; writes openctem_backup.prom for the BackupStale/BackupFailed alerts
 # of deploy/observability), COMPOSE_FILE / COMPOSE_PROJECT_NAME as for docker compose.
 set -euo pipefail
@@ -56,21 +57,30 @@ HELPER_IMAGE="${HELPER_IMAGE:-postgres:17}"
 log() { printf '%s backup: %s\n' "$(date -u +%FT%TZ)" "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 
+STATUS_DIR="${BACKUP_STATUS_DIR:-${here}/backup-status}"
+
 metrics() { # metrics <exit code>: the series deploy/observability alerts on
-	[ -n "${METRICS_TEXTFILE_DIR:-}" ] || return 0
-	local f="${METRICS_TEXTFILE_DIR}/openctem_backup.prom" last=""
-	last="$(awk '/^openctem_backup_last_success_timestamp_seconds /{print $2}' "$f" 2>/dev/null || true)"
-	[ "$1" = 0 ] && last="$(date +%s)"
-	{
-		echo "# HELP openctem_backup_last_exit_code Exit code of the last backup run (0 = success)."
-		echo "# TYPE openctem_backup_last_exit_code gauge"
-		echo "openctem_backup_last_exit_code $1"
-		if [ -n "$last" ]; then
-			echo "# HELP openctem_backup_last_success_timestamp_seconds Time of the last successful backup."
-			echo "# TYPE openctem_backup_last_success_timestamp_seconds gauge"
-			echo "openctem_backup_last_success_timestamp_seconds ${last}"
-		fi
-	} >"${f}.tmp" && chmod 0644 "${f}.tmp" && mv "${f}.tmp" "$f"
+	# Written to METRICS_TEXTFILE_DIR (node-exporter) when set, and always to
+	# the status directory the API container mounts read-only: its Health page
+	# reads the last success time from there (SYSTEM_BACKUP_STATUS_FILE).
+	local dir f last=""
+	mkdir -p "$STATUS_DIR" && chmod 0755 "$STATUS_DIR" || true
+	for dir in "${METRICS_TEXTFILE_DIR:-}" "$STATUS_DIR"; do
+		[ -n "$dir" ] || continue
+		f="${dir}/openctem_backup.prom"
+		last="$(awk '/^openctem_backup_last_success_timestamp_seconds /{print $2}' "$f" 2>/dev/null || true)"
+		[ "$1" = 0 ] && last="$(date +%s)"
+		{
+			echo "# HELP openctem_backup_last_exit_code Exit code of the last backup run (0 = success)."
+			echo "# TYPE openctem_backup_last_exit_code gauge"
+			echo "openctem_backup_last_exit_code $1"
+			if [ -n "$last" ]; then
+				echo "# HELP openctem_backup_last_success_timestamp_seconds Time of the last successful backup."
+				echo "# TYPE openctem_backup_last_success_timestamp_seconds gauge"
+				echo "openctem_backup_last_success_timestamp_seconds ${last}"
+			fi
+		} >"${f}.tmp" && chmod 0644 "${f}.tmp" && mv "${f}.tmp" "$f"
+	done
 }
 
 volume_tar() { # volume_tar <volume> <out.tar.gz>
