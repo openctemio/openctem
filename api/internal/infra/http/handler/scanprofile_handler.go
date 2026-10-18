@@ -50,12 +50,29 @@ func NewScanProfileHandler(service *scan.ScanProfileService, v *validator.Valida
 
 // ToolConfigRequest represents tool configuration in request.
 type ToolConfigRequest struct {
-	Enabled           bool           `json:"enabled"`
-	Severity          string         `json:"severity,omitempty"`
-	Timeout           int            `json:"timeout,omitempty"`
-	Options           map[string]any `json:"options,omitempty"`
-	TemplateMode      string         `json:"template_mode,omitempty"`       // "default", "custom", "both"
-	CustomTemplateIDs []string       `json:"custom_template_ids,omitempty"` // IDs of custom templates
+	Enabled  bool           `json:"enabled"`
+	Severity string         `json:"severity,omitempty"`
+	Timeout  int            `json:"timeout,omitempty"`
+	Options  map[string]any `json:"options,omitempty"`
+	// Removed fields, read only to refuse them: a profile never selected
+	// templates (dispatch takes custom templates from the scan), so a
+	// request that sets them is told so instead of being ignored.
+	RemovedTemplateMode      json.RawMessage `json:"template_mode,omitempty" swaggerignore:"true"`
+	RemovedCustomTemplateIDs json.RawMessage `json:"custom_template_ids,omitempty" swaggerignore:"true"`
+}
+
+// errProfileTemplateFields is the answer to a request that sets a removed
+// template field.
+const errProfileTemplateFields = "tools_config: template_mode and custom_template_ids are not supported: a scan profile does not select templates; choose custom templates on the scan (scanner_config.custom_template_ids)"
+
+// hasRemovedTemplateFields reports a tool config that sets a removed field.
+func hasRemovedTemplateFields(cfg map[string]ToolConfigRequest) bool {
+	for _, v := range cfg {
+		if len(v.RemovedTemplateMode) > 0 || len(v.RemovedCustomTemplateIDs) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // QualityGateRequest represents quality gate configuration in request.
@@ -183,12 +200,10 @@ type ScanProfileResponse struct {
 
 // ToolConfigResponse represents tool configuration in response.
 type ToolConfigResponse struct {
-	Enabled           bool           `json:"enabled"`
-	Severity          string         `json:"severity,omitempty"`
-	Timeout           int            `json:"timeout,omitempty"`
-	Options           map[string]any `json:"options,omitempty"`
-	TemplateMode      string         `json:"template_mode,omitempty"`       // "default", "custom", "both"
-	CustomTemplateIDs []string       `json:"custom_template_ids,omitempty"` // IDs of custom templates
+	Enabled  bool           `json:"enabled"`
+	Severity string         `json:"severity,omitempty"`
+	Timeout  int            `json:"timeout,omitempty"`
+	Options  map[string]any `json:"options,omitempty"`
 }
 
 // Create handles POST /api/v1/scan-profiles
@@ -208,6 +223,10 @@ func (h *ScanProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateScanProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if hasRemovedTemplateFields(req.ToolsConfig) {
+		apierror.BadRequest(errProfileTemplateFields).WriteJSON(w)
 		return
 	}
 
@@ -394,6 +413,10 @@ func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var req UpdateScanProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if hasRemovedTemplateFields(req.ToolsConfig) {
+		apierror.BadRequest(errProfileTemplateFields).WriteJSON(w)
 		return
 	}
 
@@ -711,12 +734,10 @@ func toToolsConfigResponse(config map[string]scanprofile.ToolConfig) map[string]
 	result := make(map[string]ToolConfigResponse, len(config))
 	for k, v := range config {
 		result[k] = ToolConfigResponse{
-			Enabled:           v.Enabled,
-			Severity:          v.Severity,
-			Timeout:           v.Timeout,
-			Options:           v.Options,
-			TemplateMode:      string(v.TemplateMode),
-			CustomTemplateIDs: v.CustomTemplateIDs,
+			Enabled:  v.Enabled,
+			Severity: v.Severity,
+			Timeout:  v.Timeout,
+			Options:  v.Options,
 		}
 	}
 	return result
@@ -731,12 +752,10 @@ func toToolsConfigDomain(config map[string]ToolConfigRequest) map[string]scanpro
 	result := make(map[string]scanprofile.ToolConfig, len(config))
 	for k, v := range config {
 		result[k] = scanprofile.ToolConfig{
-			Enabled:           v.Enabled,
-			Severity:          v.Severity,
-			Timeout:           v.Timeout,
-			Options:           v.Options,
-			TemplateMode:      scanprofile.TemplateMode(v.TemplateMode),
-			CustomTemplateIDs: v.CustomTemplateIDs,
+			Enabled:  v.Enabled,
+			Severity: v.Severity,
+			Timeout:  v.Timeout,
+			Options:  v.Options,
 		}
 	}
 	return result
