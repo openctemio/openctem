@@ -16,6 +16,7 @@ import {
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
 import { useTenant } from '@/context/tenant-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -67,10 +68,16 @@ interface ExecutiveSummary {
   p0_resolved_period: number
   p1_open: number
   p1_resolved_period: number
-  sla_compliance_pct: number
+  sla_compliance_pct: number | null
   sla_breached: number
-  mttr_critical_hours: number
-  mttr_high_hours: number
+  mttr_critical_hours: number | null
+  mttr_critical_median_hours?: number | null
+  mttr_critical_p90_hours?: number | null
+  mttr_critical_sample?: number
+  mttr_high_hours: number | null
+  mttr_high_median_hours?: number | null
+  mttr_high_p90_hours?: number | null
+  mttr_high_sample?: number
   crown_jewels_at_risk: number
   top_risks: TopRisk[]
 }
@@ -78,7 +85,7 @@ interface ExecutiveSummary {
 interface MTTRAnalytics {
   by_severity: Record<string, number>
   by_priority_class: Record<string, number>
-  overall_hours: number
+  overall_hours: number | null
   sample_size: number
 }
 
@@ -112,7 +119,7 @@ function PriorityChip({ value }: { value: string }) {
 }
 
 function formatHours(hours: number | undefined | null): string {
-  if (hours === undefined || hours === null || Number.isNaN(hours)) return 'N/A'
+  if (hours === undefined || hours === null || Number.isNaN(hours)) return '—'
   if (hours < 1) return `${(hours * 60).toFixed(0)}m`
   if (hours < 24) return `${hours.toFixed(1)}h`
   const days = hours / 24
@@ -120,7 +127,7 @@ function formatHours(hours: number | undefined | null): string {
 }
 
 function formatPercent(pct: number | undefined | null): string {
-  if (pct === undefined || pct === null || Number.isNaN(pct)) return 'N/A'
+  if (pct === undefined || pct === null || Number.isNaN(pct)) return '—'
   return `${pct.toFixed(1)}%`
 }
 
@@ -207,6 +214,7 @@ const TOP_RISK_COLUMNS: ColumnDef<TopRisk>[] = [
 // ============================================
 
 export default function ExecutiveSummaryPage() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const [period, setPeriod] = useState<Period>('30')
 
@@ -285,7 +293,7 @@ export default function ExecutiveSummaryPage() {
               icon={CheckCircle2}
             />
             <StatsCard
-              title="SLA compliance"
+              title={t('dashboardMetrics.executive.sla')}
               value={formatPercent(summary?.sla_compliance_pct)}
               description={summary ? `${summary.sla_breached} breached` : undefined}
               icon={ShieldCheck}
@@ -308,22 +316,30 @@ export default function ExecutiveSummaryPage() {
                   icon={AlertTriangle}
                 />
                 <StatsCard
-                  title="Crown jewels at risk"
+                  title={t('dashboardMetrics.hero.crownJewels')}
                   value={summary.crown_jewels_at_risk}
                   valueClassName={summary.crown_jewels_at_risk > 0 ? 'text-destructive' : undefined}
                   description="High-value assets exposed"
                   icon={Target}
                 />
                 <StatsCard
-                  title="MTTR critical"
-                  value={formatHours(summary.mttr_critical_hours)}
-                  description="Mean time to remediate"
+                  title={t('dashboardMetrics.executive.mttrCritical')}
+                  value={formatHours(summary.mttr_critical_median_hours)}
+                  description={t('dashboardMetrics.executive.mttrSub', undefined, {
+                    mean: formatHours(summary.mttr_critical_hours),
+                    p90: formatHours(summary.mttr_critical_p90_hours),
+                    n: summary.mttr_critical_sample ?? 0,
+                  })}
                   icon={Timer}
                 />
                 <StatsCard
-                  title="MTTR high"
-                  value={formatHours(summary.mttr_high_hours)}
-                  description="Mean time to remediate"
+                  title={t('dashboardMetrics.executive.mttrHigh')}
+                  value={formatHours(summary.mttr_high_median_hours)}
+                  description={t('dashboardMetrics.executive.mttrSub', undefined, {
+                    mean: formatHours(summary.mttr_high_hours),
+                    p90: formatHours(summary.mttr_high_p90_hours),
+                    n: summary.mttr_high_sample ?? 0,
+                  })}
                   icon={Clock}
                 />
               </>
