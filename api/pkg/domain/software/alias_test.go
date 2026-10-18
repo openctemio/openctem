@@ -14,8 +14,9 @@ func TestFeedAliasValidate(t *testing.T) {
 		ok   bool
 	}{
 		{"cpe", FeedAlias{Kind: AliasKindCPE, Value: "a:google_inc:chrome", Target: target}, true},
-		{"purl", FeedAlias{Kind: AliasKindPURL, Value: "pkg:maven/org.apache.logging.log4j/log4j-core", Target: "a:apache:log4j"}, true},
-		{"purl without namespace", FeedAlias{Kind: AliasKindPURL, Value: "pkg:npm/lodash", Target: "a:lodash:lodash"}, true},
+		{"purl", FeedAlias{Kind: AliasKindPURL, Value: "pkg:maven/org.apache.logging.log4j/log4j-core", Target: "a:apache:log4j", Basis: BasisCurated}, true},
+		{"purl without namespace", FeedAlias{Kind: AliasKindPURL, Value: "pkg:npm/lodash", Target: "a:lodash:lodash", Basis: BasisCurated}, true},
+		{"purl learned", FeedAlias{Kind: AliasKindPURL, Value: "pkg:npm/lodash", Target: "a:lodash:lodash", Basis: "learned"}, false},
 		{"name kind", FeedAlias{Kind: "name", Value: "chrome", Target: target}, false},
 		{"unknown kind", FeedAlias{Kind: "swid", Value: "x", Target: target}, false},
 		{"upper case", FeedAlias{Kind: AliasKindCPE, Value: "a:Google:chrome", Target: target}, false},
@@ -28,9 +29,9 @@ func TestFeedAliasValidate(t *testing.T) {
 		{"bad part", FeedAlias{Kind: AliasKindCPE, Value: "q:x:y", Target: target}, false},
 		{"bad target", FeedAlias{Kind: AliasKindCPE, Value: "a:x:y", Target: "google chrome"}, false},
 		{"empty", FeedAlias{Kind: AliasKindCPE, Value: "", Target: target}, false},
-		{"purl version", FeedAlias{Kind: AliasKindPURL, Value: "pkg:npm/lodash@4.17.21", Target: target}, false},
-		{"purl qualifiers", FeedAlias{Kind: AliasKindPURL, Value: "pkg:deb/debian/curl?arch=amd64", Target: target}, false},
-		{"not a purl", FeedAlias{Kind: AliasKindPURL, Value: "npm/lodash", Target: target}, false},
+		{"purl version", FeedAlias{Kind: AliasKindPURL, Value: "pkg:npm/lodash@4.17.21", Target: target, Basis: BasisCurated}, false},
+		{"purl qualifiers", FeedAlias{Kind: AliasKindPURL, Value: "pkg:deb/debian/curl?arch=amd64", Target: target, Basis: BasisCurated}, false},
+		{"not a purl", FeedAlias{Kind: AliasKindPURL, Value: "npm/lodash", Target: target, Basis: BasisCurated}, false},
 	}
 	for _, c := range cases {
 		err := c.a.Validate()
