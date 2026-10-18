@@ -140,6 +140,10 @@ type AssetStatsData struct {
 
 // FindingStatsData holds raw finding statistics from repository.
 type FindingStatsData struct {
+	// Total and BySeverity count the open findings (the open lens); ByStatus
+	// counts every published finding by its status. Overdue is the open
+	// findings past their SLA, the same population as the executive summary's
+	// sla_breached.
 	Total       int
 	BySeverity  map[string]int
 	ByStatus    map[string]int
@@ -372,24 +376,39 @@ type ScoringChangeMarker struct {
 
 // ExecutiveSummary holds executive-level metrics for a time period.
 type ExecutiveSummary struct {
-	Period            string    `json:"period"`
-	RiskScoreCurrent  float64   `json:"risk_score_current"`
-	RiskScoreChange   float64   `json:"risk_score_change"`
-	FindingsTotal     int       `json:"findings_total"`
-	FindingsResolved  int       `json:"findings_resolved_period"`
-	FindingsNew       int       `json:"findings_new_period"`
-	P0Open            int       `json:"p0_open"`
-	P0Resolved        int       `json:"p0_resolved_period"`
-	P1Open            int       `json:"p1_open"`
-	P1Resolved        int       `json:"p1_resolved_period"`
-	SLACompliancePct  float64   `json:"sla_compliance_pct"`
-	SLABreached       int       `json:"sla_breached"`
-	MTTRCriticalHrs   float64   `json:"mttr_critical_hours"`
-	MTTRHighHrs       float64   `json:"mttr_high_hours"`
-	CrownJewelsAtRisk int       `json:"crown_jewels_at_risk"`
-	RegressionCount   int       `json:"regression_count"`
-	RegressionRatePct float64   `json:"regression_rate_pct"`
-	TopRisks          []TopRisk `json:"top_risks"`
+	Period           string  `json:"period"`
+	RiskScoreCurrent float64 `json:"risk_score_current"`
+	RiskScoreChange  float64 `json:"risk_score_change"`
+	// FindingsTotal is the open findings (the open lens), the same population
+	// as the other figures of the summary.
+	FindingsTotal    int `json:"findings_total"`
+	FindingsResolved int `json:"findings_resolved_period"`
+	FindingsNew      int `json:"findings_new_period"`
+	P0Open           int `json:"p0_open"`
+	P0Resolved       int `json:"p0_resolved_period"`
+	P1Open           int `json:"p1_open"`
+	P1Resolved       int `json:"p1_resolved_period"`
+	// SLACompliancePct is the share of the open findings that carry an SLA and
+	// are not past it ("open within SLA"). Nil when no open finding carries
+	// an SLA: there is nothing to be compliant with, so the figure is "not
+	// measured", never 100.
+	SLACompliancePct *float64 `json:"sla_compliance_pct"`
+	SLABreached      int      `json:"sla_breached"`
+	// MTTR of the findings remediated in the period, by severity: the mean,
+	// the median and the 90th percentile in hours, and the sample size. All
+	// three are nil when nothing was remediated (never 0 h).
+	MTTRCriticalHrs       *float64  `json:"mttr_critical_hours"`
+	MTTRCriticalMedianHrs *float64  `json:"mttr_critical_median_hours"`
+	MTTRCriticalP90Hrs    *float64  `json:"mttr_critical_p90_hours"`
+	MTTRCriticalSample    int       `json:"mttr_critical_sample"`
+	MTTRHighHrs           *float64  `json:"mttr_high_hours"`
+	MTTRHighMedianHrs     *float64  `json:"mttr_high_median_hours"`
+	MTTRHighP90Hrs        *float64  `json:"mttr_high_p90_hours"`
+	MTTRHighSample        int       `json:"mttr_high_sample"`
+	CrownJewelsAtRisk     int       `json:"crown_jewels_at_risk"`
+	RegressionCount       int       `json:"regression_count"`
+	RegressionRatePct     float64   `json:"regression_rate_pct"`
+	TopRisks              []TopRisk `json:"top_risks"`
 }
 
 // TopRisk represents a high-priority open finding for executive view.
@@ -406,10 +425,16 @@ type TopRisk struct {
 
 // MTTRAnalytics holds MTTR breakdown by severity and priority class.
 type MTTRAnalytics struct {
+	// BySeverity and ByPriorityClass are mean hours; a bucket with no
+	// remediated finding in the period is left out (never 0 h).
 	BySeverity      map[string]float64 `json:"by_severity"`
 	ByPriorityClass map[string]float64 `json:"by_priority_class"`
-	Overall         float64            `json:"overall_hours"`
-	SampleSize      int                `json:"sample_size"`
+	// Overall, OverallMedian and OverallP90 are nil when nothing was
+	// remediated in the period.
+	Overall       *float64 `json:"overall_hours"`
+	OverallMedian *float64 `json:"overall_median_hours"`
+	OverallP90    *float64 `json:"overall_p90_hours"`
+	SampleSize    int      `json:"sample_size"`
 }
 
 // ProcessMetrics holds process efficiency metrics.
