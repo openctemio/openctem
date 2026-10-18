@@ -37,6 +37,7 @@ func callCoverage(t *testing.T, reader CoverageReader) map[string]any {
 	t.Helper()
 	h := NewValidationHandler(nil, logger.NewNop())
 	h.SetCoverageReader(reader)
+	h.SetDataScope(unrestrictedDataScope())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/validation/coverage", nil)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, "019d9095-a3fb-75dd-bc23-a244713dcc51"))
 	rec := httptest.NewRecorder()
