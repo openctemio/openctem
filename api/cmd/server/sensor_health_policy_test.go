@@ -1,10 +1,12 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -21,14 +23,13 @@ func TestSensorHealthPolicy_FromConfig(t *testing.T) {
 	if p.OnlineWindow != 72*time.Second {
 		t.Errorf("online window = %s, want the 1m interval plus its 12s grace", p.OnlineWindow)
 	}
-	// Every catalog product has its own release line, from versions.yaml.
-	for _, prod := range versions.Products() {
-		if l, ok := p.ReleaseLineFor(prod.ID); !ok || l.Latest != prod.Latest || l.Min != prod.Min {
-			t.Errorf("%s: line = %+v (known %v), want %s / %q", prod.ID, l, ok, prod.Latest, prod.Min)
-		}
+	// Release lines and the latest SDK are resolved per request by the
+	// handler (they follow the release feed), never fixed here.
+	if len(p.Products) != 0 || p.SDKLatestVersion != "" {
+		t.Errorf("start-up policy fixes release lines: %+v / %q", p.Products, p.SDKLatestVersion)
 	}
-	if p.SDKLatestVersion != versions.SDKLatest() {
-		t.Errorf("sdk latest = %q", p.SDKLatestVersion)
+	if len(p.SDKAdvisories) != len(versions.SDKAdvisories()) {
+		t.Errorf("sdk advisories = %v", p.SDKAdvisories)
 	}
 }
 
@@ -39,7 +40,7 @@ func TestSensorInstallProducts(t *testing.T) {
 		cfg := &config.Config{}
 		cfg.SensorConfig.Image = image
 		others = map[string]string{}
-		for _, p := range sensorInstallProducts(cfg, logger.NewNop()) {
+		for _, p := range sensorInstallProducts(cfg, logger.NewNop())() {
 			if p.ID == versions.DefaultProductID {
 				scanner = map[string]string{"image": p.Image}
 			} else {
@@ -106,5 +107,33 @@ func TestCIRunnerVersionPolicy_FromConfig(t *testing.T) {
 	cfg.SensorConfig.CIRunnerLatestVersion, cfg.SensorConfig.CIRunnerMinVersion = "", ""
 	if p := ciRunnerVersionPolicy(cfg, logger.NewNop()); p.LatestVersion != "" || p.MinVersion != "" {
 		t.Fatalf("CI runner settings off, policy = %+v: the sensor settings leaked in", p)
+	}
+}
+
+// A release learned from the release feed reaches the mirror's snippets too,
+// by tag only (a mirrored image may have another digest); the published
+// repository gets tag and digest.
+func TestSensorInstallProducts_LearnedRelease(t *testing.T) {
+	t.Cleanup(func() { versions.SetLearned(nil) })
+	digest := "sha256:" + strings.Repeat("ef", 32)
+	mirror := &config.Config{}
+	mirror.SensorConfig.Image = "registry.local:5000/sec/sensor"
+	mirrorSrc := sensorInstallProducts(mirror, logger.NewNop())
+	publishedSrc := sensorInstallProducts(&config.Config{}, logger.NewNop())
+
+	versions.SetLearned(map[string]versions.Learned{"sensor": {Version: "v99.3.0", Digest: digest}})
+	image := func(ps []handler.SensorInstallProduct) string {
+		for _, p := range ps {
+			if p.ID == versions.DefaultProductID {
+				return p.Image
+			}
+		}
+		return ""
+	}
+	if got := image(mirrorSrc()); got != "registry.local:5000/sec/sensor:v99.3.0" {
+		t.Errorf("mirror image = %q", got)
+	}
+	if got := image(publishedSrc()); got != versions.SensorImage()+":v99.3.0@"+digest {
+		t.Errorf("published image = %q", got)
 	}
 }

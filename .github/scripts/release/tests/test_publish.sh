@@ -13,7 +13,7 @@ w="$tmp/work"
 
 # develop carries versions.yaml and its consumers (platform.release v0.2.0).
 version_fixture "$w"
-sed -i 's/v0.8.0/v0.2.0/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml"
+sed -i 's/v0.8.0/v0.2.0/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml" "$w/api/deploy/docker-compose.sensor.yml"
 git -C "$w" add -A
 git -C "$w" commit -q -m "chore: versions.yaml"
 git -C "$w" push -q origin develop
@@ -60,7 +60,7 @@ assert_contains "post: versions.yaml bumped" "release: v0.3.0" "$(git -C "$w" sh
 assert_contains "post: chart bumped" "version: 0.5.0" "$(git -C "$w" show "$ph:versions.yaml")"
 assert_contains "post: consumers synced" "OPENCTEM_VERSION=v0.3.0" "$(git -C "$w" show "$ph:api/deploy/.env.example")"
 assert_eq "post: only versions files differ from develop" \
-  "$(printf 'api/deploy/.env.example\napi/deploy/docker-compose.job-signer.yml\napi/deploy/docker-compose.yml\napi/internal/versions/versions.yaml\nversions.yaml')" \
+  "$(printf 'api/deploy/.env.example\napi/deploy/docker-compose.job-signer.yml\napi/deploy/docker-compose.sensor.yml\napi/deploy/docker-compose.yml\napi/internal/versions/versions.yaml\nversions.yaml')" \
   "$(git -C "$w" diff --name-only origin/develop "$ph")"
 assert_contains "post: pushed" "refs/heads/chore/post-release-v0.3.0" "$(git -C "$w" ls-remote --heads origin)"
 assert_rc "post: branch exists -> refused" 1 bash "$POST" --repo "$w" --version v0.3.0
@@ -78,7 +78,7 @@ git -C "$w" branch -q -D chore/post-release-v0.3.0
 # A train whose main carries more than the version commit is refused.
 git -C "$w" switch -q main
 commit "$w" "fix: made on main only" onlymain.txt
-sed -i 's/v0.3.0/v0.3.1/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml"
+sed -i 's/v0.3.0/v0.3.1/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml" "$w/api/deploy/docker-compose.sensor.yml"
 git -C "$w" commit -qam "chore: v0.3.1"
 git -C "$w" tag -a v0.3.1 -m v0.3.1
 git -C "$w" push -q origin main --tags
