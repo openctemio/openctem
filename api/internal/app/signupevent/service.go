@@ -321,8 +321,10 @@ func (s *Service) UpdateThresholds(ctx context.Context, t dom.BurstThresholds, e
 	s.mu.Unlock()
 
 	from, to := thresholdsText(prev), thresholdsText(t)
+	// The values (ignored domains are operator text) stay in the audit row,
+	// not the log line.
 	s.log.Warn("sign-up burst thresholds changed", "alert", "signup_burst_thresholds_changed",
-		"admin_id", c.Actor.ID().String(), "from", from, "to", to)
+		"admin_id", c.Actor.ID().String())
 	if s.audit != nil {
 		entry := admin.NewAuditLogBuilder(c.Actor, ActionThresholdsChanged).
 			Resource("platform_setting", nil, dom.ThresholdsSettingKey).
