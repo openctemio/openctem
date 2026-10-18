@@ -148,7 +148,7 @@ The all-in-one image runs the console too: publish `-p 8443:8443` (or set
 
 ### Health page and host operations
 
-The platform console has a read-only **System** page (platform administrators
+The platform console has a read-only **Monitoring > Health** page (platform administrators
 only): service health, free space of the data volumes and the database size,
 the age of the last backup, certificate expiry, and the running version with
 the version-check result. When free space drops below 20% (warning) or 10%
@@ -173,7 +173,7 @@ cookies); GitHub sees the server's IP address, as for any download.
   is made at all.
 - Air-gapped or no internet access: leave it on or off; without access it fails
   silently and retries weekly. Download `openctem-releases.json` from the latest
-  release on a connected machine and import it in the console (System > Software
+  release on a connected machine and import it in the console (Monitoring > Software
   updates, super administrator). It is verified exactly like the online check.
 - Internal mirror: `VERSION_CHECK_URL=https://...` (https only). The signature,
   not the host, is trusted; a mirror on a private address also needs the private

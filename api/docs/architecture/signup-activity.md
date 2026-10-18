@@ -3,7 +3,7 @@
 Operators of a deployment with open sign-up need to see who is signing up and
 to hear about a burst (a bot farm, a scripted abuse wave) without collecting
 more personal data than that needs. The platform console has a sign-up feed
-(Requests > Sign-ups) and raises an alert when sign-ups from one network or
+(Customers > Sign-ups) and raises an alert when sign-ups from one network or
 one email domain pile up.
 
 ## What is recorded
@@ -50,7 +50,7 @@ windows). The first time a count reaches its threshold in a window the API:
 3. writes a **high** row `platform.signup_burst` to the console admin audit
    log naming the prefix or the domain, the count and the threshold;
 4. emails the active platform administrators through the system email sender
-   (same path as the System page watcher), naming the prefix or domain and
+   (same path as the Health page's system watcher), naming the prefix or domain and
    the count, never a person.
 
 Defaults: 10 events of a kind from one prefix, or 20 from one email domain,

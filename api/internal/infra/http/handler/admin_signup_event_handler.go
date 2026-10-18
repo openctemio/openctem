@@ -19,7 +19,7 @@ import (
 
 const stepUpPurposeSignupAlerts = "sign-up burst thresholds change"
 
-// AdminSignupEventHandler serves Console > Requests > Sign-ups: the sign-up
+// AdminSignupEventHandler serves Console > Customers > Sign-ups: the sign-up
 // feed (accounts, organizations and access requests, as email domain and
 // network prefix only), its daily counts and the burst alert thresholds
 // (docs/architecture/signup-activity.md).
