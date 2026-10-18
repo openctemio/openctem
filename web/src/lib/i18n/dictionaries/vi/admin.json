@@ -581,6 +581,7 @@
   "admin.versionCheck.error.rollback": "Cũ hơn thông tin phát hành đã áp dụng.",
   "admin.versionCheck.error.too_large": "Tệp lớn hơn giới hạn của nguồn phát hành.",
   "admin.versionCheck.error.unreachable": "Không kết nối được đến nguồn phát hành (không có internet?).",
+  "admin.versionCheck.error.not_published": "Chưa có nguồn phát hành nào tại địa chỉ này. Thông tin phát hành lấy từ phiên bản đi kèm bản phát hành này; hãy nhập tệp nguồn phát hành để cập nhật.",
   "admin.versionCheck.errorSubject": "thông tin phát hành",
   "admin.versionCheck.import.done": "Đã nhập thông tin phát hành.",
   "admin.versionCheck.import.file": "Tệp nguồn phát hành (JSON, tối đa 256 KiB)",
@@ -1089,5 +1090,12 @@
   "admin.versionCheck.components.none": "Chưa có thông tin phát hành: áp dụng các phiên bản đi kèm bản phát hành này, và chúng có thể đã cũ.",
   "admin.versionCheck.components.name.sensor": "Sensor quét",
   "admin.versionCheck.components.name.connector-tenable": "Connector Tenable.sc",
-  "admin.versionCheck.components.name.sdk": "SDK sensor (sdk-go)"
+  "admin.versionCheck.components.name.sdk": "SDK sensor (sdk-go)",
+  "admin.system.feed.noKey": "Bản dựng này chưa có khóa nguồn phát hành",
+  "admin.system.feed.lastSuccess": "Thông tin phát hành gần nhất",
+  "admin.system.feed.never": "Chưa có: áp dụng các phiên bản đi kèm bản phát hành này",
+  "admin.system.feed.notPublished": "Nguồn phát hành chưa được công bố",
+  "admin.system.feed.invalid": "Chữ ký nguồn phát hành không hợp lệ",
+  "admin.system.feed.unreachable": "Không kết nối được nguồn phát hành",
+  "admin.system.feed.expired": "Nguồn phát hành đã hết hạn"
 }

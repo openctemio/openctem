@@ -54,6 +54,8 @@ const SEVERITY_TONE: Record<ReleaseFeedAdvisory['severity'], PillTone> = {
 
 const ERROR_FALLBACK: Record<VersionCheckErrorCode, string> = {
   unreachable: 'The release feed could not be reached (no internet access?).',
+  not_published:
+    'No release feed is published at this address yet. Release information comes from the version built into this release; import a feed file to update it.',
   http_status: 'The release feed host answered with an error.',
   too_large: 'The file is larger than a release feed can be.',
   invalid: 'Not a valid signed release feed.',
