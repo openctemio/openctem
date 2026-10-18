@@ -55,7 +55,7 @@ func registerSCIMRoutes(
 			r.POST("/", tokenHandler.Create, middleware.RequireOwner(), requireStepUp())
 			// Group → role mappings (register before /{id} so the literal wins).
 			r.GET("/group-mappings", tokenHandler.GetGroupMappings, middleware.RequireAdmin())
-			r.PUT("/group-mappings", tokenHandler.SetGroupMappings, middleware.RequireAdmin())
+			r.PUT("/group-mappings", tokenHandler.SetGroupMappings, middleware.RequireAdmin(), requireStepUp())
 			r.DELETE("/{id}", tokenHandler.Revoke, middleware.RequireOwner())
 		}, tenantMiddlewares...)
 	}
