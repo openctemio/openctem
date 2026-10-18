@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -790,7 +791,8 @@ func TestDashboardFactTablesMigration_DB(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO findings (tenant_id, source, tool_name, message, severity, fingerprint) VALUES ($1, 'sast', 't', 'm', 'low', 'fp')`, tenant.String()); err != nil {
 		t.Fatal(err)
 	}
-	testdb.Migrate(t, db, dir, v, v, true)
+	// Down from the head to this migration: a later one may build on it.
+	testdb.Migrate(t, db, dir, v, math.MaxInt32, true)
 	if tb, fn, tr := count(); tb != 0 || fn != 0 || tr != 0 {
 		t.Fatalf("after down: %d relations, %d functions, %d triggers left", tb, fn, tr)
 	}
@@ -798,7 +800,7 @@ func TestDashboardFactTablesMigration_DB(t *testing.T) {
 	if _, err := db.Exec(`UPDATE findings SET status = 'confirmed' WHERE tenant_id = $1`, tenant.String()); err != nil {
 		t.Fatalf("write after down: %v", err)
 	}
-	testdb.Migrate(t, db, dir, v, v, false)
+	testdb.Migrate(t, db, dir, v, math.MaxInt32, false)
 	if _, tr := func() (int, int) { _, _, tr := count(); return 0, tr }(); tr != 14 {
 		t.Fatalf("after up again: %d triggers", tr)
 	}
