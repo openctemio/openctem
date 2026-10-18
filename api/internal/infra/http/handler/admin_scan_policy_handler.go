@@ -1,6 +1,6 @@
 package handler
 
-// Console > System > Scan approval and Organization > Security: the
+// Console > Scanning > Scan approval and Organization > Security: the
 // platform policy for scan approval (RFC-073 §5): let the organization
 // choose, or force off, on (at least) or strict. Reads: any
 // platform administrator. Changes: super_admin (route) with a fresh

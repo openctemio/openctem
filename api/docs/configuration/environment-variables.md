@@ -25,7 +25,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
-| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
+| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
 | `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Set: pins the region (the console cannot change it). Unset: a super admin may set it once in the console (Settings > Configuration) before the first organization exists. |
 
 ### Brand
@@ -164,8 +164,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SCOPE_PUBLIC_CODE_HOSTS_EXTRA` | list | empty |  |  | Comma-separated code hosts shared by many organizations, in addition to the built-in list (github.com, gitlab.com, bitbucket.org and others). A repository scope entry on such a host must name a namespace (host/namespace/*), never the whole host. |
 | `SCOPE_MAX_PUBLIC_CIDR_V4` | int | `16` |  |  | Largest public IPv4 range (prefix length) one scope entry may cover. Private ranges are not capped. |
 | `SCOPE_MAX_PUBLIC_CIDR_V6` | int | `32` |  |  | Largest public IPv6 range one scope entry may cover. |
-| `SIGNUP_MODE` | string | `disabled` |  |  | The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`. |
-| `SIGNUP_CAPTCHA` | string | empty |  |  | Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`. |
+| `SIGNUP_MODE` | string | `disabled` |  |  | The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (Console > Settings > E-mail) at start and verify every self-registered address; `open` in production also needs a CAPTCHA: until one is configured (Console > Settings > CAPTCHA, or the `CAPTCHA_TURNSTILE_*` keys), open sign-up stays closed at runtime. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`. |
+| `SIGNUP_CAPTCHA` | string | empty |  |  | Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: the API starts, but open sign-up in production stays closed until a CAPTCHA is configured (Console > Settings > CAPTCHA, or `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`). |
 | `CAPTCHA_TURNSTILE_SECRET` | string | empty |  | yes | Cloudflare Turnstile secret for registration, request access and sign-in after repeated failures. Set: pins the CAPTCHA keys (the console shows them locked). Unset: the keys are set in the console (Settings > CAPTCHA), or there is no CAPTCHA (the rate limits still apply). Set together with `CAPTCHA_TURNSTILE_SITE_KEY`. |
 | `CAPTCHA_TURNSTILE_SITE_KEY` | string | empty |  |  | Cloudflare Turnstile site key (public) shown on the sign-up, request-access and sign-in forms. Set together with `CAPTCHA_TURNSTILE_SECRET`; both pin the console setting. |
 
@@ -387,7 +387,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SELF_SERVICE_START_LIMITS` | string | empty |  |  | Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{"seats":5,"assets":500,"orgs_per_user":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API. |
+| `SELF_SERVICE_START_LIMITS` | string | empty |  |  | Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > Settings > Limits: a JSON object of limit keys, for example `{"seats":5,"assets":500,"orgs_per_user":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`SIGNUP_MODE=open`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API. |
 
 ### Metrics
 
@@ -433,7 +433,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `ADMIN_PUBLIC_URL` | string | `the origin of APP_URL` |  |  | Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8444` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off. |
+| `ADMIN_PUBLIC_URL` | string | `the origin of APP_URL` |  |  | Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8443` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off. |
 
 ### Audit log retention
 
@@ -475,7 +475,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `BOOTSTRAP_SMTP_HOST` | string | empty |  |  | `bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (System > E-mail). |
+| `BOOTSTRAP_SMTP_HOST` | string | empty |  |  | `bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (Console > Settings > E-mail). |
 | `BOOTSTRAP_SMTP_PORT` | string | empty |  |  | `bootstrap-admin`: SMTP port (default 587). |
 | `BOOTSTRAP_SMTP_USER` | string | empty |  |  | `bootstrap-admin`: SMTP user name. |
 | `BOOTSTRAP_SMTP_PASSWORD` | string | empty |  | yes | `bootstrap-admin`: SMTP password, stored encrypted with `APP_ENCRYPTION_KEY`. |
@@ -630,18 +630,18 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `GRPC_PORT` | unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR |
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
 | `AI_MAX_CONCURRENT_JOBS` | unset it; it limited nothing, AI triage jobs run on the background job queue |
-| `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > System > Sign-up) |
+| `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > Settings > Sign-up) |
 | `TENANT_CREATION_MODE` | unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open |
-| `SMTP_ENABLED` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_HOST` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_PORT` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_USER` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_PASSWORD` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_FROM` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_FROM_NAME` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_TLS` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_SKIP_VERIFY` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_TIMEOUT` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_ENABLED` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_HOST` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_PORT` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_USER` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_PASSWORD` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_FROM` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_FROM_NAME` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_TLS` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_SKIP_VERIFY` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_TIMEOUT` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `APP_ALLOW_PLAINTEXT_CREDENTIALS` | unset it; credentials are always encrypted (development uses the key in api/.env.example) |
 | `CTEM_ENFORCE_COVERAGE_SLO` | unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles) |
 | `AUTH_ACCESS_TOKEN_COOKIE_NAME` | unset it; the session cookie is always auth_token |

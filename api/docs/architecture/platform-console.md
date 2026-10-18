@@ -8,7 +8,7 @@ deployed today.
 
 | Part | Where | What it does |
 |------|-------|--------------|
-| Console app | `web/console/` (Next.js), image `ghcr.io/openctemio/openctem-console` | The console's pages at the root of its site (`/`, `/login`, `/organizations`, `/users`, `/security/…`, `/operations`, `/system/…`, `/scanning/…`, `/requests`), its API proxy `/api/v1/admin/*` and `/api/health`. Shares `web/`'s packages and imports shared code from `web/src`; contains no tenant route. |
+| Console app | `web/console/` (Next.js), image `ghcr.io/openctemio/openctem-console` | The console's pages at the root of its site (`/`, `/login`, `/organizations`, `/users`, `/requests`, `/support`, `/scanning/…`, `/security/…`, `/system/…` for the settings pages, `/health`), its API proxy `/api/v1/admin/*` and `/api/health`. Shares `web/`'s packages and imports shared code from `web/src`; contains no tenant route. |
 | Tenant web app | `web/src/` (Next.js), image `openctem-web` | No console route, page or client; refuses to proxy `/api/v1/admin` however the path is spelled. |
 | Gateway console site | `api/deploy/gateway/admin/on.site` | `https://<host>:<OPENCTEM_ADMIN_PORT>` (port mode, default 8443) or `https://<OPENCTEM_ADMIN_HOST>` (host mode); admits only `OPENCTEM_ADMIN_ALLOWED_CIDRS`; proxies to `OPENCTEM_CONSOLE_UPSTREAM`. The main site answers 404 for `/api/v1/admin` (`admin/on.tenant`). |
 | Console API listener | `ADMIN_LISTEN_ADDR` (Compose: `<api>:8081`) | Serves only `/api/v1/admin` and `/health`; the main listener answers 404 for the console API. |
@@ -28,9 +28,9 @@ doing:
 | Group | Pages |
 |-------|-------|
 | (top) | Overview |
-| Customers | Organizations, Users, Access requests, Support access |
+| Customers | Organizations, Users, Access requests, Sign-ups, Support access |
 | Scanning | Scan approval, Platform scanning (policy, fleet, queue, zones, egress, anomalies), Target mappings, Content packs, Content catalog, Threat intelligence |
-| Security | Administrators, Sessions, Admin sign-in, Admin activity |
+| Security | Administrators, Sessions, Approvals, Admin sign-in, Admin activity |
 | Settings | Configuration, Sign-up, Limits, CAPTCHA, E-mail, Legal, Announcements, Alerts, AI provider, AI applications |
 | Monitoring | Health (services, storage, backup, certificates, schema, version, queues, sensors, jobs), Software updates |
 
