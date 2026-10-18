@@ -1105,7 +1105,7 @@
   "admin.signups.col.network": "Network",
   "admin.signups.col.organization": "Organization",
   "admin.signups.openOrganization": "Open",
-  "admin.signups.source.password": "Email and password",
+  "admin.signups.source.emailAndPassword": "Email and password",
   "admin.signups.source.invitation": "Invitation",
   "admin.signups.source.oauth": "Social sign-in",
   "admin.signups.source.sso": "Organization single sign-on",

@@ -1105,7 +1105,7 @@
   "admin.signups.col.network": "Mạng",
   "admin.signups.col.organization": "Tổ chức",
   "admin.signups.openOrganization": "Mở",
-  "admin.signups.source.password": "Email và mật khẩu",
+  "admin.signups.source.emailAndPassword": "Email và mật khẩu",
   "admin.signups.source.invitation": "Lời mời",
   "admin.signups.source.oauth": "Đăng nhập mạng xã hội",
   "admin.signups.source.sso": "Đăng nhập một lần của tổ chức",
