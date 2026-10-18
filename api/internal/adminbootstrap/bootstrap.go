@@ -42,6 +42,9 @@ type Options struct {
 	OrgSetupMailer tenantapp.AccountSetupMailer
 	// UIBaseURL is the web UI origin used to print the set-password link.
 	UIBaseURL string
+	// AdminPublicURL is the platform console's own origin (ADMIN_PUBLIC_URL);
+	// when empty the closing text names the default address pattern.
+	AdminPublicURL string
 	// Logger receives service warnings (nil: discarded).
 	Logger *logger.Logger
 }
@@ -129,8 +132,8 @@ func Run(ctx context.Context, db *sql.DB, o Options, out io.Writer) error {
 		fmt.Fprintln(out, "administrators, one of them a local break-glass account (re-run with -backup-email).")
 	}
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Admin console (browser): sign in at <ui-url>/login with the email and temporary")
-	fmt.Fprintln(out, "password, then open the console: change the password and enroll an authenticator app.")
+	fmt.Fprintln(out, "Admin console (browser): open "+consoleAddress(o.AdminPublicURL)+" and sign in with the email and")
+	fmt.Fprintln(out, "temporary password, then change the password and enroll an authenticator app.")
 	if !o.NoBackup {
 		fmt.Fprintln(out, "Store the break-glass credentials offline (e.g. a sealed envelope or a vault).")
 		fmt.Fprintln(out, "Every break-glass sign-in is audited with high severity and alerted to the other administrators.")
@@ -140,6 +143,16 @@ func Run(ctx context.Context, db *sql.DB, o Options, out io.Writer) error {
 		fmt.Fprintln(out, "or by re-running this command with -org-name and -org-owner-email.")
 	}
 	return nil
+}
+
+// consoleAddress names where administrators open the console: the configured
+// origin, or the description of the default one (the console has its own site,
+// not the organization sign-in page).
+func consoleAddress(adminPublicURL string) string {
+	if u := strings.TrimRight(strings.TrimSpace(adminPublicURL), "/"); u != "" {
+		return u
+	}
+	return "the platform console's own site (https://<host>:8443 by default, or your OPENCTEM_ADMIN_HOST)"
 }
 
 // CheckSchema refuses to run against a database missing the migrations this
