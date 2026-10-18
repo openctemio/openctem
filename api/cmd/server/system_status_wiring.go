@@ -68,7 +68,8 @@ func newSystemCollector(cfg *config.Config, db *sql.DB, pingRedis func(ctx conte
 			}
 			return systemstatus.VersionCheck{
 				Enabled: v.Enabled, Configured: v.Configured, LastAttemptAt: v.LastAttemptAt, LastError: v.LastError,
-				Latest: v.Latest, UpdateAvailable: v.UpdateAvailable, Advisories: len(v.Advisories),
+				AppliedAt: v.AppliedAt,
+				Latest:    v.Latest, UpdateAvailable: v.UpdateAvailable, Advisories: len(v.Advisories),
 				Severity: v.Severity, Stale: v.Stale,
 			}, nil
 		}

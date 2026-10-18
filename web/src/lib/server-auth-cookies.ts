@@ -111,17 +111,20 @@ function forbidden(message: string): NextResponse {
  * or null when the request may proceed. Safe methods always pass.
  *
  * `extraCookies` names further double-submit cookies the header may match
- * (the admin console's `admin_csrf`); `csrf_token` is always accepted.
+ * (the admin console's `admin_csrf`). `pageCookie` is the pre-session cookie
+ * (the tenant site's `csrf_token`; the console passes its own, so a cookie of
+ * the tenant site on the same host never satisfies a console write).
  */
 export function csrfRejection(
   request: NextRequest,
-  extraCookies: readonly string[] = []
+  extraCookies: readonly string[] = [],
+  pageCookie: string = CSRF_COOKIE
 ): NextResponse | null {
   if (!isStateChangingMethod(request.method)) return null
   if (!isSameOrigin(request)) return forbidden('Cross-origin request refused')
 
   const header = request.headers.get(CSRF_HEADER) ?? ''
-  const values = [CSRF_COOKIE, ...extraCookies]
+  const values = [pageCookie, ...extraCookies]
     .map((name) => request.cookies.get(name)?.value)
     .filter((v): v is string => !!v)
   if (!header || values.length === 0) return forbidden('Missing or invalid CSRF token')
@@ -135,9 +138,13 @@ export function csrfRejection(
  * Sets a fresh CSRF cookie on a page response when the request carried none,
  * so the pre-session forms on that page have a token to echo.
  */
-export function ensureCsrfCookie(request: NextRequest, response: NextResponse): void {
-  if (!request.cookies.get(CSRF_COOKIE)?.value) {
-    response.cookies.set(CSRF_COOKIE, newCsrfToken(), csrfCookieOptions())
+export function ensureCsrfCookie(
+  request: NextRequest,
+  response: NextResponse,
+  name: string = CSRF_COOKIE
+): void {
+  if (!request.cookies.get(name)?.value) {
+    response.cookies.set(name, newCsrfToken(), csrfCookieOptions())
   }
 }
 

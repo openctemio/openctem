@@ -5,13 +5,15 @@
  * returns in the body of the sign-in and validate responses and this module
  * keeps in memory only (no console secret is ever readable in a cookie: on a
  * second port of the tenant host the two sites share the host's cookies).
- * Before a session exists, the sign-in steps echo the page's csrf_token (as
+ * Before a session exists, the sign-in steps echo the page's console_csrf (as
  * the global fetch wrapper, src/lib/csrf-client.ts, would).
  */
 
+import { CONSOLE_CSRF_COOKIE } from '@console/lib/csrf-cookie'
+
 export const ADMIN_API = '/api/v1/admin'
 /** The page CSRF cookie, echoed only by the sign-in steps before a session exists. */
-const PAGE_CSRF_COOKIE = 'csrf_token'
+const PAGE_CSRF_COOKIE = CONSOLE_CSRF_COOKIE
 
 /** The console session's CSRF token, in memory only. */
 let sessionCsrf: string | null = null
@@ -85,6 +87,37 @@ let enrollmentListener: (() => void) | null = null
  */
 export function setAdminEnrollmentListener(listener: (() => void) | null) {
   enrollmentListener = listener
+}
+
+/**
+ * Reads the console makes on its own (the periodic refresh of an open page)
+ * carry this header, so the API does not count them as activity and an
+ * unattended tab still reaches the 15-minute idle timeout. A read counts as
+ * background when the page is hidden or nobody pressed a key, clicked or
+ * touched it for a minute. It never grants anything; writes never carry it.
+ */
+export const ADMIN_BACKGROUND_HEADER = 'X-Admin-Background'
+/** How long after the last key, click or touch a read still counts as the administrator's. */
+export const INTERACTION_WINDOW_MS = 60_000
+
+let lastInteraction = Date.now()
+
+/** Records that the administrator used the page now (tests call it directly). */
+export function noteAdminInteraction(at: number = Date.now()) {
+  lastInteraction = at
+}
+
+if (typeof window !== 'undefined') {
+  const note = () => noteAdminInteraction()
+  for (const type of ['pointerdown', 'keydown', 'touchstart'] as const) {
+    window.addEventListener(type, note, { capture: true, passive: true })
+  }
+}
+
+/** Whether a read now is the console's own, not the administrator's. */
+export function isBackgroundRead(now: number = Date.now()): boolean {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return true
+  return now - lastInteraction > INTERACTION_WINDOW_MS
 }
 
 export class AdminApiError extends Error {
@@ -210,6 +243,9 @@ async function adminRequest<T>(
     const csrf = sessionCsrf ?? readCookie(PAGE_CSRF_COOKIE)
     if (csrf) headers['X-CSRF-Token'] = csrf
     if (stepUpCode) headers[ADMIN_STEP_UP_HEADER] = stepUpCode
+  }
+  if ((method === 'GET' || method === 'HEAD') && isBackgroundRead()) {
+    headers[ADMIN_BACKGROUND_HEADER] = '1'
   }
 
   const res = await fetch(`${ADMIN_API}${path}`, {

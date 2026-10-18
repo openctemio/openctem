@@ -22,16 +22,24 @@ import {
   usePlatformUsers,
 } from '@console/features/admin-console/api/use-platform-users'
 import { PlatformUserBadges } from '@console/features/admin-console/components/platform-user-badges'
-import type { PlatformUser } from '@console/features/admin-console/types'
+import { adminCan, type PlatformUser } from '@console/features/admin-console/types'
+import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
+import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
 export default function AdminUsersPage() {
   const router = useRouter()
   const { t } = useTranslation()
+  const me = useAdmin()
+  const allowed = adminCan(me.role, 'ops_admin')
   // The search lives in the URL, so a support ticket can link to it.
   const list = useListParams({ defaultPageSize: 25 })
   const q = useDebounce(list.q, 300).trim()
-  const searching = q.length >= PLATFORM_USER_SEARCH_MIN
-  const { data, error, isLoading, mutate } = usePlatformUsers(q, list.page, list.perPage)
+  const searching = allowed && q.length >= PLATFORM_USER_SEARCH_MIN
+  const { data, error, isLoading, mutate } = usePlatformUsers(
+    searching ? q : '',
+    list.page,
+    list.perPage
+  )
 
   const columns = useMemo<ColumnDef<PlatformUser>[]>(
     () => [
@@ -83,50 +91,58 @@ export default function AdminUsersPage() {
           'Find an account in any organization by email, name or id, and help it sign in again. Only account details are shown, never what an organization holds.'
         )}
       />
-      <div className="mt-5 space-y-4">
-        <div className="relative w-full sm:max-w-md">
-          <Search className="absolute start-2.5 top-2.5 size-4 text-muted-foreground" />
-          <Input
-            autoFocus
-            placeholder={t('admin.users.search', 'Email, name or user id...')}
-            value={list.q}
-            onChange={(e) => list.setSearch(e.target.value)}
-            className="ps-8"
-            aria-label={t('admin.users.searchLabel', 'Search accounts')}
-          />
+      {!allowed ? (
+        <RoleRequiredNotice needed="ops_admin" variant="page" />
+      ) : (
+        <div className="mt-5 space-y-4">
+          <div className="relative w-full sm:max-w-md">
+            <Search className="absolute start-2.5 top-2.5 size-4 text-muted-foreground" />
+            <Input
+              autoFocus
+              placeholder={t('admin.users.search', 'Email, name or user id...')}
+              value={list.q}
+              onChange={(e) => list.setSearch(e.target.value)}
+              className="ps-8"
+              aria-label={t('admin.users.searchLabel', 'Search accounts')}
+            />
+          </div>
+          {!searching ? (
+            <EmptyState
+              icon={UserSearch}
+              card
+              title={t('admin.users.startTitle', 'Search for an account')}
+              description={t(
+                'admin.users.startHint',
+                'Type at least 3 characters of an email, a name or a user id. Accounts are looked up, not listed.'
+              )}
+            />
+          ) : error ? (
+            <ErrorState
+              title={t('admin.users.errorTitle', 'accounts')}
+              error={error}
+              onRetry={() => void mutate()}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={data?.data ?? []}
+              getRowId={(u) => u.id}
+              isLoading={isLoading}
+              showSearch={false}
+              showColumnToggle={false}
+              showSelectionCount={false}
+              mobileCards
+              onRowClick={(u) => router.push(`/users/${u.id}`)}
+              emptyMessage={t('admin.users.noMatch', 'No account matches this search')}
+              manualPagination
+              pageCount={data?.total_pages ?? 1}
+              rowCount={data?.total ?? 0}
+              pagination={list.pagination}
+              onPaginationChange={list.setPagination}
+            />
+          )}
         </div>
-        {!searching ? (
-          <EmptyState
-            icon={UserSearch}
-            card
-            title={t('admin.users.startTitle', 'Search for an account')}
-            description={t(
-              'admin.users.startHint',
-              'Type at least 3 characters of an email, a name or a user id. Accounts are looked up, not listed.'
-            )}
-          />
-        ) : error ? (
-          <ErrorState title="accounts" error={error} onRetry={() => void mutate()} />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={data?.data ?? []}
-            getRowId={(u) => u.id}
-            isLoading={isLoading}
-            showSearch={false}
-            showColumnToggle={false}
-            showSelectionCount={false}
-            mobileCards
-            onRowClick={(u) => router.push(`/users/${u.id}`)}
-            emptyMessage={t('admin.users.noMatch', 'No account matches this search')}
-            manualPagination
-            pageCount={data?.total_pages ?? 1}
-            rowCount={data?.total ?? 0}
-            pagination={list.pagination}
-            onPaginationChange={list.setPagination}
-          />
-        )}
-      </div>
+      )}
     </Main>
   )
 }

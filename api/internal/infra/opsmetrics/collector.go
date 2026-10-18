@@ -32,8 +32,11 @@ type Config struct {
 	// (0 when unknown): compared with the applied version.
 	ShippedSchemaVersion int64
 	// SDKLatest and SDKAdvisories are the sensor SDK entries of
-	// versions.yaml (sdk.latest, sdk.advisories).
+	// versions.yaml (sdk.latest, sdk.advisories). SDKLatestFunc, when set,
+	// is read on every scrape instead of SDKLatest (the latest SDK release
+	// follows the release feed at runtime).
 	SDKLatest     string
+	SDKLatestFunc func() string
 	SDKAdvisories []string
 	// MaxAge is how long a snapshot is reused before the next scrape reads
 	// a new one (default 30s), and Timeout bounds one read (default 5s).
@@ -162,6 +165,10 @@ func (c *Collector) collectSensors(ch chan<- prometheus.Metric, rows []postgres.
 	health := map[key]int64{}
 	config := map[key]int64{}
 	sdk := map[key]int64{}
+	sdkLatest := c.cfg.SDKLatest
+	if c.cfg.SDKLatestFunc != nil {
+		sdkLatest = c.cfg.SDKLatestFunc()
+	}
 	for _, kind := range []string{"platform", "tenant"} {
 		for _, h := range sensorHealths {
 			health[key{kind, h}] = 0
@@ -183,7 +190,7 @@ func (c *Collector) collectSensors(ch chan<- prometheus.Metric, rows []postgres.
 		if r.ConfigHealth != "" {
 			config[key{kind, configHealthLabel(r.ConfigHealth)}] += r.Count
 		}
-		sdk[key{kind, string(sensor.ClassifySDK(r.SDKVersion, c.cfg.SDKLatest, c.cfg.SDKAdvisories))}] += r.Count
+		sdk[key{kind, string(sensor.ClassifySDK(r.SDKVersion, sdkLatest, c.cfg.SDKAdvisories))}] += r.Count
 	}
 	for k, n := range health {
 		ch <- prometheus.MustNewConstMetric(descSensors, prometheus.GaugeValue, float64(n), k.kind, k.value)

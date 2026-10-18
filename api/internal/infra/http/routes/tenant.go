@@ -261,6 +261,19 @@ func registerOrganizationLimitsRoutes(router Router, h *handler.LimitsHandler, a
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerOrganizationSecurityOverviewRoutes serves the organization's
+// security overview under the token singleton /api/v1/organization: owners
+// and administrators with settings:read. The tenant comes from the
+// credential.
+func registerOrganizationSecurityOverviewRoutes(router Router, h *handler.SecurityOverviewHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/security-overview", func(r Router) {
+		r.GET("/", h.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerOrganizationMemberRoutes wires member administration under the
 // token singleton /api/v1/organization: the tenant comes from the credential,
 // never from the path (docs/architecture/api-conventions.md §2).
