@@ -107,12 +107,33 @@ func (h *SensorHandler) SetContentPolicySource(src ContentPolicySource) {
 
 // policyFor is the health policy for one tenant: the handler's thresholds
 // and release channel, plus the tenant's content policy.
+// The organization's own products' release lines are added for products the
+// catalog does not list (a catalog product's line is never replaced).
 func (h *SensorHandler) policyFor(ctx context.Context, tenantID string) sensor.HealthPolicy {
 	p := h.currentPolicy()
-	if h.contentPolicies == nil {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
 		return p
 	}
-	if tid, err := shared.IDFromString(tenantID); err == nil {
+	if h.service != nil {
+		lines, err := h.service.CustomProductLines(ctx, tid)
+		if err != nil {
+			// Display only: the sensors keep the compatibility verdicts.
+			h.logger.Warn("organization sensor products not read", "error", logger.SanitizeError(err))
+		}
+		if len(lines) > 0 {
+			merged := make(map[string]sensor.ReleaseLine, len(p.Products)+len(lines))
+			for id, l := range lines {
+				merged[id] = l
+			}
+			for id, l := range p.Products {
+				merged[id] = l
+			}
+			p.Products = merged
+			p = p.Normalized()
+		}
+	}
+	if h.contentPolicies != nil {
 		cp := h.contentPolicies.EffectivePolicy(ctx, tid)
 		p.Content = &cp
 	}
@@ -305,7 +326,7 @@ type SensorResponse struct {
 	// SDKStatus compares sdk_version with the SDK entries of versions.yaml:
 	// outdated (older than the latest, informational) or advisory (a release
 	// with a published security advisory).
-	SDKStatus       string  `json:"sdk_status" enums:"current,outdated,advisory,unknown"`
+	SDKStatus       string  `json:"sdk_status" enums:"current,outdated,advisory,unsupported,unknown"`
 	SensorProduct   string  `json:"sensor_product"`
 	SensorCommit    string  `json:"sensor_commit"`
 	SensorBuildTime *string `json:"sensor_build_time"`

@@ -150,6 +150,7 @@ type Manifest struct {
 	PlatformRelease string
 	Products        []Product
 	SDKLatest       string
+	SDKMin          string
 	SDKAdvisories   []string
 	CIRunnerLatest  string
 	CIRunnerMin     string
@@ -326,6 +327,10 @@ func SDKLatest() string {
 	return v
 }
 
+// SDKMin is sdk.min: the oldest SDK release the platform supports ("" =
+// none). Platform-owned: it moves only when the protocol requires it.
+func SDKMin() string { return embedded.SDKMin }
+
 // SDKAdvisories lists the SDK releases with a published security advisory.
 // The slice is a copy.
 func SDKAdvisories() []string { return append([]string(nil), embedded.SDKAdvisories...) }
@@ -363,7 +368,7 @@ var (
 // sections other than products, with their keys and whether each may be "".
 var fixedSections = map[string]map[string]bool{
 	"platform": {"release": false},
-	"sdk":      {"latest": false, "advisories": true},
+	"sdk":      {"latest": false, "min": true, "advisories": true},
 	"ci":       {"latest": false, "min": true},
 	"chart":    {"version": false},
 }
@@ -467,9 +472,17 @@ func (m *Manifest) setFixed(name string, v map[string]string) error {
 		m.PlatformRelease = v["release"]
 		return checkVersion("platform.release", m.PlatformRelease)
 	case "sdk":
-		m.SDKLatest = v["latest"]
+		m.SDKLatest, m.SDKMin = v["latest"], v["min"]
 		if err := checkVersion("sdk.latest", m.SDKLatest); err != nil {
 			return err
+		}
+		if m.SDKMin != "" {
+			if err := checkVersion("sdk.min", m.SDKMin); err != nil {
+				return err
+			}
+			if semver.Compare(m.SDKMin, m.SDKLatest) > 0 {
+				return fmt.Errorf("sdk.min %s is newer than sdk.latest %s", m.SDKMin, m.SDKLatest)
+			}
 		}
 		for _, a := range strings.Fields(v["advisories"]) {
 			if err := checkVersion("sdk.advisories", a); err != nil {

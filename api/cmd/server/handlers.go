@@ -1260,6 +1260,7 @@ func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 	return sensordom.HealthPolicy{
 		OnlineWindow:  sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
 		OfflineAfter:  offline,
+		SDKMinVersion: versions.SDKMin(),
 		SDKAdvisories: versions.SDKAdvisories(),
 	}.Normalized()
 }

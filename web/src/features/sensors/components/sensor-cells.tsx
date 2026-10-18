@@ -222,7 +222,7 @@ const VERSION_TAG: Record<
 // advisory is a warning.
 const SDK_TAG: Record<
   SensorSdkStatus,
-  { key: string; label: string; tone: 'info' | 'warning' } | null
+  { key: string; label: string; tone: 'info' | 'warning' | 'destructive' } | null
 > = {
   current: null,
   unknown: null,
@@ -231,6 +231,11 @@ const SDK_TAG: Record<
     key: 'sensors.version.sdkAdvisory',
     label: 'SDK advisory',
     tone: 'warning',
+  },
+  unsupported: {
+    key: 'sensors.version.sdkUnsupported',
+    label: 'SDK unsupported',
+    tone: 'destructive',
   },
 }
 
@@ -323,13 +328,18 @@ export function SensorVersionCell({
   const sdkTitle =
     sdkStatus === 'advisory'
       ? t('sensors.version.sdkAdvisoryHint', 'This SDK release has a published security advisory')
-      : sdkStatus === 'outdated'
-        ? sdkLatest
-          ? t('sensors.version.sdkOutdatedLatest', 'SDK {latest} is available', {
-              latest: sdkLatest,
-            })
-          : t('sensors.version.sdkOutdatedHint', 'A newer SDK is available')
-        : undefined
+      : sdkStatus === 'unsupported'
+        ? t(
+            'sensors.version.sdkUnsupportedHint',
+            'This SDK release is older than the oldest this platform supports'
+          )
+        : sdkStatus === 'outdated'
+          ? sdkLatest
+            ? t('sensors.version.sdkOutdatedLatest', 'SDK {latest} is available', {
+                latest: sdkLatest,
+              })
+            : t('sensors.version.sdkOutdatedHint', 'A newer SDK is available')
+          : undefined
   const build = sensorBuildTooltip(sensor, t, locale)
   // Two short lines instead of one long one: the sensor release with its
   // channel tag, then the SDK (smaller, muted) with its warning.
