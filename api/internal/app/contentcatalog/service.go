@@ -22,6 +22,7 @@ import (
 	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -187,6 +188,42 @@ func (s *Service) Trust(ctx context.Context) (*TrustStatus, error) {
 func (s *Service) List(ctx context.Context, tenantID shared.ID, f dom.Filter) ([]dom.Listing, int, error) {
 	return s.repo.ListPackages(ctx, tenantID, f)
 }
+
+// ListInstance returns the instance catalog (imported and instance
+// packages) as the platform console sees it: no organization's private
+// packages and no installation.
+func (s *Service) ListInstance(ctx context.Context, f dom.Filter) ([]dom.Listing, int, error) {
+	f.Installed = nil
+	items, total, err := s.repo.ListPackages(ctx, instanceViewer, f)
+	for i := range items {
+		items[i].Install = nil
+	}
+	return items, total, err
+}
+
+// InstanceVersions returns every version of an instance catalog package
+// (revoked ones included), or ErrNotFound.
+func (s *Service) InstanceVersions(ctx context.Context, packageID string) ([]*dom.Package, error) {
+	all, err := s.repo.ListVersions(ctx, instanceViewer, packageID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*dom.Package, 0, len(all))
+	for _, p := range all {
+		if p.TenantID == nil {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil, dom.ErrNotFound
+	}
+	return out, nil
+}
+
+// instanceViewer is the platform's system tenant: it owns no private
+// package, so the repository's "the instance catalog and this
+// organization's packages" is the instance catalog alone.
+var instanceViewer = shared.MustIDFromString(tenantdom.SystemTenantID)
 
 // PackageView is one package: its versions, installation and pending
 // request.
