@@ -1,4 +1,5 @@
-import { adminCan, type AdminOverview, type AdminRole } from '../types'
+import { adminCan, type AdminOverview, type AdminRole, type AdminSystem } from '../types'
+import { daysLeft, formatBytes, hoursAgo } from './system'
 
 export type AttentionSeverity = 'critical' | 'warning' | 'info'
 
@@ -227,4 +228,147 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
   }
 
   return items.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
+}
+
+/** Volume, backup and certificate levels: 1 warning, 2 critical. */
+function levelSeverity(level: number): AttentionSeverity {
+  return level >= 2 ? 'critical' : 'warning'
+}
+
+/**
+ * The installation's own state (RFC-114 System page): services that are down,
+ * volumes running out of space, a stale or failed backup, certificates close
+ * to expiry, and a newer release. Without these the overview could look calm
+ * while a volume was at 8% free. Everything links to the page that explains it.
+ */
+export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
+  const items: AttentionItem[] = []
+
+  for (const svc of sys.services) {
+    if (svc.configured && !svc.ok) {
+      items.push({
+        id: `service-down-${svc.name}`,
+        severity: 'critical',
+        titleKey: 'admin.attention.serviceDown.title',
+        title: 'A service is not answering',
+        detailKey: 'admin.attention.serviceDown.detail',
+        detail: '{name} does not answer its health check.',
+        vars: { name: svc.name },
+        href: '/system',
+        actionKey: 'admin.attention.inspect',
+        action: 'Inspect',
+      })
+    }
+  }
+
+  for (const vol of sys.storage.volumes) {
+    if (vol.ok && vol.level >= 1) {
+      items.push({
+        id: `storage-${vol.name}`,
+        severity: levelSeverity(vol.level),
+        titleKey: 'admin.attention.storage.title',
+        title: 'Disk space is running out',
+        detailKey: 'admin.attention.storage.detail',
+        detail: '{name}: {free} free ({percent}%). A full disk stops the database.',
+        vars: {
+          name: vol.name,
+          free: formatBytes(vol.free_bytes),
+          percent: Math.round(vol.free_ratio * 100),
+        },
+        href: '/system',
+        actionKey: 'admin.attention.inspect',
+        action: 'Inspect',
+      })
+    }
+  }
+
+  if (sys.backup.reported && sys.backup.level >= 1) {
+    const hours = hoursAgo(sys.backup.age_seconds)
+    items.push(
+      sys.backup.last_failed
+        ? {
+            id: 'backup-failed',
+            severity: 'critical',
+            titleKey: 'admin.attention.backupFailed.title',
+            title: 'The last backup failed',
+            detailKey: 'admin.attention.backupFailed.detail',
+            detail: 'Check the backup job on the host before data is at risk.',
+            href: '/system',
+            actionKey: 'admin.attention.inspect',
+            action: 'Inspect',
+          }
+        : {
+            id: 'backup-stale',
+            severity: levelSeverity(sys.backup.level),
+            titleKey: 'admin.attention.backupStale.title',
+            title: 'The backup is out of date',
+            detailKey: 'admin.attention.backupStale.detail',
+            detail: 'The last successful backup finished {hours} hours ago.',
+            vars: { hours: hours ?? '?' },
+            href: '/system',
+            actionKey: 'admin.attention.inspect',
+            action: 'Inspect',
+          }
+    )
+  } else if (!sys.backup.reported) {
+    items.push({
+      id: 'backup-unknown',
+      severity: 'info',
+      titleKey: 'admin.attention.backupUnknown.title',
+      title: 'Backups are not reported',
+      detailKey: 'admin.attention.backupUnknown.detail',
+      detail: 'The console cannot tell whether this installation is backed up.',
+      href: '/system',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
+    })
+  }
+
+  for (const cert of sys.certificates) {
+    if (cert.level >= 1) {
+      const days = daysLeft(cert.expires_in_seconds)
+      items.push({
+        id: `certificate-${cert.name}`,
+        severity: levelSeverity(cert.level),
+        titleKey: 'admin.attention.certificate.title',
+        title: 'A certificate expires soon',
+        detailKey: 'admin.attention.certificate.detail',
+        detail: '{name} expires in {days} days.',
+        vars: { name: cert.name, days: days ?? '?' },
+        href: '/system',
+        actionKey: 'admin.attention.inspect',
+        action: 'Inspect',
+      })
+    }
+  }
+
+  const check = sys.version.check
+  if (check?.update_available && check.latest) {
+    const security = check.advisories > 0
+    items.push({
+      id: 'update-available',
+      severity: security ? 'warning' : 'info',
+      titleKey: security
+        ? 'admin.attention.securityUpdate.title'
+        : 'admin.attention.updateAvailable.title',
+      title: security ? 'A security update is available' : 'A newer release is available',
+      detailKey: security
+        ? 'admin.attention.securityUpdate.detail'
+        : 'admin.attention.updateAvailable.detail',
+      detail: security
+        ? 'Running {running}; {latest} fixes {count} advisory(ies).'
+        : 'Running {running}; {latest} is out.',
+      vars: { running: sys.version.running, latest: check.latest, count: check.advisories },
+      href: '/system/software-updates',
+      actionKey: 'admin.attention.review',
+      action: 'Review',
+    })
+  }
+
+  return items
+}
+
+/** Overview and system items together, most severe first. */
+export function mergeAttention(...lists: AttentionItem[][]): AttentionItem[] {
+  return lists.flat().sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
 }
