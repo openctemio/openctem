@@ -7,12 +7,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -24,6 +26,9 @@ const tokenPlaintextPrefix = "oct_scim_"
 // exactly like API keys — a DB leak without APP_ENCRYPTION_KEY cannot be
 // brute-forced offline.
 type TokenService struct {
+	// orgs refuses the tokens of a suspended organization
+	// (docs/architecture/organization-suspension.md); nil admits all.
+	orgs   tenantdom.AccessGate
 	repo   scimtoken.Repository
 	pepper string
 	legacy []string // earlier peppers that still verify (key rotation)
@@ -108,6 +113,9 @@ func (s *TokenService) Revoke(ctx context.Context, tenantID, id shared.ID) error
 	return s.repo.Update(ctx, tok)
 }
 
+// SetOrganizationGate wires the organization access gate.
+func (s *TokenService) SetOrganizationGate(g tenantdom.AccessGate) { s.orgs = g }
+
 // Authenticate validates a presented bearer token and returns it when active.
 // Any invalid/revoked/unknown token returns scimtoken.ErrNotFound without
 // distinction, so the caller cannot enumerate tokens.
@@ -127,6 +135,16 @@ func (s *TokenService) Authenticate(ctx context.Context, plaintext string) (*sci
 	}
 	if err != nil || !tok.IsActive() {
 		return nil, scimtoken.ErrNotFound
+	}
+	// A suspended organization takes no provisioning. Checked after the
+	// token matched, so only its holder learns the status.
+	if s.orgs != nil {
+		if gerr := s.orgs.CheckAccess(ctx, tok.TenantID()); gerr != nil {
+			if errors.Is(gerr, tenantdom.ErrOrganizationSuspended) {
+				return nil, gerr
+			}
+			return nil, scimtoken.ErrNotFound
+		}
 	}
 	// A token that matched under an earlier pepper is re-hashed with the
 	// current one, so it stops depending on APP_ENCRYPTION_KEY_PREVIOUS.

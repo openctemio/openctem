@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-11) |
+| Status | Accepted, partly implemented (2026-10-18) |
 | Scope | api (`internal/app/platformsettings`, admin console routes, the e-mail sender, the auth policy, the OAuth providers, the AI provider, discovery and retention jobs), web (admin console > System pages, en + vi), `internal/config` (variables removed and refused) |
 | Related | RFC-022 (admin console), RFC-025 (sign-up policy, the first setting moved this way), RFC-074 (adaptive sensor control), the environment variable registry (`api/internal/config/env_registry.yaml`) |
 
@@ -108,3 +108,34 @@ One PR for the mechanism (store, typed definitions, getter, audit, secret
 handling, tests), then one PR per group (API + console page + variables
 removed + docs regenerated), each with authorization and secret-handling tests
 and en + vi text.
+
+## 7. Revision 2026-10-18: lock and default instead of removal
+
+Operating experience changed one rule of §2.4: a variable that an installer
+kit or a secret file already sets keeps working. For each moved setting the
+environment is one of:
+
+- a **lock**: when set, it pins the setting and the console shows "locked by
+  the server configuration (NAME)" (CAPTCHA keys, deployment region, platform
+  AI keys);
+- a **default**: used until the console stores a value (storage quota);
+- a **ceiling**: the console may only tighten it (`SIGNUP_MODE`,
+  `VERSION_CHECK_ENABLED=false`).
+
+Shipped (one shared mechanism, `internal/app/consolesetting`: typed value,
+15-second cache, compare-and-swap, audit with the reason and a notice to
+every administrator):
+
+| Setting | Key | Guard | Test button |
+|---|---|---|---|
+| CAPTCHA (Turnstile) | `captcha.turnstile` | super admin, fresh confirmation, reason, critical audit, notice | check the secret with Turnstile |
+| Deployment region (once, before the first organization) | `deployment.region` | same; immutable once set | — |
+| Default storage quota (+ limit key `storage_mb` per organization) | `storage.tenant_quota_mb` | super admin, step-up, audit | — |
+| Alert webhook | `alerts.webhook` | guarded; SSRF-guarded HTTPS; address and secret write-only | send a test alert |
+| Platform AI provider | `ai.platform` | guarded; off by default | one-token request |
+
+Still planned from §3: sign-in policy (tighten-only), social sign-in
+providers, discovery jobs, retention (shown read-only), sensor public URL,
+log level. Design and order: the console configuration plan of the platform
+console (`docs/architecture/platform-console.md`, "Settings moved from the
+environment").

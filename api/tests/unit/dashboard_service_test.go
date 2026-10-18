@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -38,6 +39,9 @@ type mockDashboardRepo struct {
 	lastTenantID shared.ID
 	lastLimit    int
 	lastMonths   int
+
+	lastViewer    shared.FindingViewer
+	lastViewerSet bool
 }
 
 func newMockDashboardRepo() *mockDashboardRepo {
@@ -79,8 +83,9 @@ func (m *mockDashboardRepo) GetFindingTrend(_ context.Context, tenantID shared.I
 	return m.findingTrend, nil
 }
 
-func (m *mockDashboardRepo) GetAllStats(_ context.Context, tenantID shared.ID, _ *shared.DataScope) (*module.DashboardAllStats, error) {
+func (m *mockDashboardRepo) GetAllStats(ctx context.Context, tenantID shared.ID, _ *shared.DataScope) (*module.DashboardAllStats, error) {
 	m.getAllStatsCalls++
+	m.lastViewer, m.lastViewerSet = shared.FindingViewerOf(ctx)
 	m.lastTenantID = tenantID
 	if m.getAllStatsErr != nil {
 		return nil, m.getAllStatsErr
@@ -104,7 +109,7 @@ func (m *mockDashboardRepo) GetRiskTrend(_ context.Context, _ shared.ID, _ int) 
 	return nil, nil
 }
 
-func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) (*module.ExecutiveSummary, error) {
+func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ *shared.DataScope, _ *shared.DataScope, _ int) (*module.ExecutiveSummary, error) {
 	return &module.ExecutiveSummary{}, nil
 }
 
@@ -124,9 +129,21 @@ func (m *mockDashboardRepo) GetProgramMetrics(_ context.Context, _ shared.ID, da
 // Helper functions
 // =============================================================================
 
+// neverAskedScopeRepo is a data-scope repository that is never asked: a
+// caller that is an owner, or has no user, resolves before any lookup.
+type neverAskedScopeRepo struct{ datascope.Repository }
+
+// wiredEnforcer is a wired enforcer for caller c. The dashboards fail closed
+// without one.
+func wiredEnforcer(c datascope.Caller) *datascope.Enforcer {
+	return datascope.New(neverAskedScopeRepo{}, func(context.Context) datascope.Caller { return c }, logger.NewNop())
+}
+
 func newTestDashboardService(repo *mockDashboardRepo) *module.DashboardService {
 	log := logger.NewNop()
-	return module.NewDashboardService(repo, log)
+	svc := module.NewDashboardService(repo, log)
+	svc.SetDataScope(wiredEnforcer(datascope.Caller{UserID: "00000000-0000-0000-0000-0000000000aa", IsOwner: true}))
+	return svc
 }
 
 func sampleAssetStats() module.AssetStatsData {
@@ -607,5 +624,38 @@ func TestDashboardService_GetStats_LargeDataSet(t *testing.T) {
 	}
 	if len(stats.FindingTrend) != 12 {
 		t.Errorf("FindingTrend has %d entries, want 12", len(stats.FindingTrend))
+	}
+}
+
+// The dashboards are only read on behalf of a caller: a context with no
+// caller (or an unwired enforcer) still reaches the repository with a
+// viewer that is a member of no campaign, never as an unfiltered read.
+func TestDashboardService_NoCaller_FailsClosedViewer(t *testing.T) {
+	repo := newMockDashboardRepo()
+	repo.allStats = &module.DashboardAllStats{}
+	svc := module.NewDashboardService(repo, logger.NewNop())
+	svc.SetDataScope(wiredEnforcer(datascope.Caller{}))
+	if _, err := svc.GetStats(context.Background(), shared.NewID()); err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if !repo.lastViewerSet {
+		t.Fatal("no finding viewer on the repository context: the pentest visibility rule would be skipped")
+	}
+	if repo.lastViewer.Admin || !repo.lastViewer.UserID.IsZero() {
+		t.Fatalf("viewer = %+v, want a non-admin zero-id viewer", repo.lastViewer)
+	}
+}
+
+// An unwired enforcer never means "count the whole organization": the
+// dashboard refuses and does not reach the repository.
+func TestDashboardService_UnwiredEnforcer_FailsClosed(t *testing.T) {
+	repo := newMockDashboardRepo()
+	repo.allStats = &module.DashboardAllStats{}
+	svc := module.NewDashboardService(repo, logger.NewNop())
+	if _, err := svc.GetStats(context.Background(), shared.NewID()); !errors.Is(err, datascope.ErrNotConfigured) {
+		t.Fatalf("GetStats err = %v, want datascope.ErrNotConfigured", err)
+	}
+	if repo.lastViewerSet {
+		t.Fatal("repository reached without a wired data-scope enforcer")
 	}
 }

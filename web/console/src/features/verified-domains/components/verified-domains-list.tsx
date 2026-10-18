@@ -49,24 +49,41 @@ function DomainActions({
       const updated = await verify(domain.id)
       onChanged()
       if (updated.status === 'verified') {
-        toast.success(`${domain.domain} verified`)
+        toast.success(
+          t('admin.verifiedDomainsList.verified', '{domain} verified', { domain: domain.domain })
+        )
       } else {
-        toast.info(`Still pending — the TXT record for ${domain.domain} was not found yet.`)
+        toast.info(
+          t(
+            'admin.verifiedDomainsList.stillPendingTheTxtRecord',
+            'Still pending — the TXT record for {domain} was not found yet.',
+            { domain: domain.domain }
+          )
+        )
         if (domain.instructions) setDnsOpen(true)
       }
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Verification failed'))
+      toast.error(
+        getErrorMessage(e, t('admin.verifiedDomainsList.verificationFailed', 'Verification failed'))
+      )
     }
   }
 
   const handleDelete = async () => {
     try {
       await remove(domain.id)
-      toast.success(`${domain.domain} removed`)
+      toast.success(
+        t('admin.verifiedDomainsList.removed', '{domain} removed', { domain: domain.domain })
+      )
       setConfirmOpen(false)
       onChanged()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to remove domain'))
+      toast.error(
+        getErrorMessage(
+          e,
+          t('admin.verifiedDomainsList.failedToRemoveDomain', 'Failed to remove domain')
+        )
+      )
     }
   }
 
@@ -75,12 +92,20 @@ function DomainActions({
       <DataTableRowActions
         actions={[
           ...(hasInstructions
-            ? [{ label: 'Show DNS record', icon: FileText, onClick: () => setDnsOpen(true) }]
+            ? [
+                {
+                  label: t('admin.verifiedDomainsList.showDnsRecord', 'Show DNS record'),
+                  icon: FileText,
+                  onClick: () => setDnsOpen(true),
+                },
+              ]
             : []),
           ...(domain.status !== 'verified'
             ? [
                 {
-                  label: isVerifying ? 'Checking…' : 'Verify now',
+                  label: isVerifying
+                    ? t('admin.verifiedDomainsList.checking', 'Checking…')
+                    : t('admin.verifiedDomainsList.verifyNow', 'Verify now'),
                   icon: RefreshCw,
                   onClick: () => void handleVerify(),
                   disabled: isVerifying,
@@ -88,10 +113,16 @@ function DomainActions({
               ]
             : []),
           ...(domain.status === 'verified'
-            ? [{ label: 'New people…', icon: UserPlus, onClick: () => setJitOpen(true) }]
+            ? [
+                {
+                  label: t('admin.verifiedDomainsList.newPeople', 'New people…'),
+                  icon: UserPlus,
+                  onClick: () => setJitOpen(true),
+                },
+              ]
             : []),
           {
-            label: 'Remove',
+            label: t('admin.verifiedDomainsList.remove', 'Remove'),
             icon: Trash2,
             onClick: () => setConfirmOpen(true),
             destructive: true,
@@ -104,9 +135,16 @@ function DomainActions({
         <Dialog open={dnsOpen} onOpenChange={setDnsOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>DNS record for {domain.domain}</DialogTitle>
+              <DialogTitle>
+                {t('admin.verifiedDomainsList.dnsRecordFor', 'DNS record for {domain}', {
+                  domain: domain.domain,
+                })}
+              </DialogTitle>
               <DialogDescription>
-                Publish this TXT record, then choose Verify now.
+                {t(
+                  'admin.verifiedDomainsList.publishThisTxtRecordThen',
+                  'Publish this TXT record, then choose Verify now.'
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -142,12 +180,19 @@ function DomainActions({
   )
 }
 
-function lastActivity(domain: VerifiedDomain): { label: string; date: string } {
+function lastActivity(
+  domain: VerifiedDomain,
+  t: ReturnType<typeof useTranslation>['t']
+): { label: string; date: string } {
   if (domain.status === 'verified' && domain.verified_at) {
-    return { label: 'Verified', date: domain.verified_at }
+    return { label: t('admin.verifiedDomainsList.verified', 'Verified'), date: domain.verified_at }
   }
-  if (domain.last_checked_at) return { label: 'Last checked', date: domain.last_checked_at }
-  return { label: 'Added', date: domain.created_at }
+  if (domain.last_checked_at)
+    return {
+      label: t('admin.verifiedDomainsList.lastChecked', 'Last checked'),
+      date: domain.last_checked_at,
+    }
+  return { label: t('admin.verifiedDomainsList.added', 'Added'), date: domain.created_at }
 }
 
 export function VerifiedDomainsList({
@@ -163,20 +208,25 @@ export function VerifiedDomainsList({
   /** False for a read-only administrator: actions are hidden. */
   canManage?: boolean
 }) {
+  const { t } = useTranslation()
+
   const columns: ColumnDef<VerifiedDomain>[] = [
     {
       accessorKey: 'domain',
-      header: 'Domain',
+      header: t('admin.verifiedDomainsList.domain', 'Domain'),
       cell: ({ row }) => (
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{row.original.domain}</span>
           {row.original.claim_conflict && (
             <Badge
               variant="destructive"
-              title="Another organization also verified this domain for SSO before domain claims became exclusive. Both keep working until you remove one of the claims."
+              title={t(
+                'admin.verifiedDomainsList.anotherOrganizationAlsoVerifiedThis',
+                'Another organization also verified this domain for SSO before domain claims became exclusive. Both keep working until you remove one of the claims.'
+              )}
             >
               <AlertTriangle />
-              Claim conflict
+              {t('admin.verifiedDomainsList.claimConflict', 'Claim conflict')}
             </Badge>
           )}
         </span>
@@ -184,25 +234,27 @@ export function VerifiedDomainsList({
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: t('admin.verifiedDomainsList.status', 'Status'),
       cell: ({ row }) => <VerifiedDomainStatusBadge status={row.original.status} />,
     },
     {
       id: 'jit',
-      header: 'New people',
+      header: t('admin.verifiedDomainsList.newPeople2', 'New people'),
       enableSorting: false,
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground" data-testid="domain-jit">
-          {row.original.status === 'verified' ? jitLabel(row.original) : 'Not until verified'}
+          {row.original.status === 'verified'
+            ? jitLabel(row.original)
+            : t('admin.verifiedDomainsList.notUntilVerified', 'Not until verified')}
         </span>
       ),
     },
     {
       id: 'activity',
-      header: 'Last activity',
-      accessorFn: (d) => lastActivity(d).date,
+      header: t('admin.verifiedDomainsList.lastActivity', 'Last activity'),
+      accessorFn: (d) => lastActivity(d, t).date,
       cell: ({ row }) => {
-        const { label, date } = lastActivity(row.original)
+        const { label, date } = lastActivity(row.original, t)
         return (
           <span className="text-sm text-muted-foreground">
             {label} <RelativeTime date={date} />

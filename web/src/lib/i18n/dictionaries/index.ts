@@ -23,6 +23,7 @@ import en_easmReview from './en/easmReview.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
 import en_common from './en/common.json'
+import en_dashboardMetrics from './en/dashboardMetrics.json'
 import en_components from './en/components.json'
 import en_confirm from './en/confirm.json'
 import en_contentCatalog from './en/contentCatalog.json'
@@ -56,6 +57,7 @@ import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
 import en_sensors from './en/sensors.json'
 import en_settings from './en/settings.json'
+import en_securityOverview from './en/securityOverview.json'
 import en_supportAccess from './en/supportAccess.json'
 import en_riskScore from './en/riskScore.json'
 import en_severity from './en/severity.json'
@@ -82,6 +84,7 @@ import vi_easmReview from './vi/easmReview.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
+import vi_dashboardMetrics from './vi/dashboardMetrics.json'
 import vi_components from './vi/components.json'
 import vi_confirm from './vi/confirm.json'
 import vi_contentCatalog from './vi/contentCatalog.json'
@@ -115,6 +118,7 @@ import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
 import vi_sensors from './vi/sensors.json'
 import vi_settings from './vi/settings.json'
+import vi_securityOverview from './vi/securityOverview.json'
 import vi_supportAccess from './vi/supportAccess.json'
 import vi_riskScore from './vi/riskScore.json'
 import vi_severity from './vi/severity.json'
@@ -146,6 +150,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   auth: en_auth,
   automations: en_automations,
   common: en_common,
+  dashboardMetrics: en_dashboardMetrics,
   components: en_components,
   confirm: en_confirm,
   contentCatalog: en_contentCatalog,
@@ -180,6 +185,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   scope: en_scope,
   sensors: en_sensors,
   settings: en_settings,
+  securityOverview: en_securityOverview,
   supportAccess: en_supportAccess,
   severity: en_severity,
   userMenu: en_userMenu,
@@ -208,6 +214,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   auth: vi_auth,
   automations: vi_automations,
   common: vi_common,
+  dashboardMetrics: vi_dashboardMetrics,
   components: vi_components,
   confirm: vi_confirm,
   contentCatalog: vi_contentCatalog,
@@ -242,6 +249,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   scope: vi_scope,
   sensors: vi_sensors,
   settings: vi_settings,
+  securityOverview: vi_securityOverview,
   supportAccess: vi_supportAccess,
   severity: vi_severity,
   userMenu: vi_userMenu,

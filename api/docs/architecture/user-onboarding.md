@@ -608,6 +608,7 @@ UPDATE tenants
 | IP allowlist middleware | `internal/infra/http/middleware/ip_allowlist.go` (wired in `routes/routes.go`, `routes/tenant.go`) |
 | Registration gate | `AuthService.Register` / `pendingInvitationFor` (`internal/app/auth/service.go`) |
 | Request access | `internal/app/accessrequest`, `pkg/domain/accessrequest`, `handler/access_request_handler.go`, `controller/access_request_retention.go` (migration 001380) |
+| Sign-up feed and burst alerts | `internal/app/signupevent`, `pkg/domain/signupevent`, `internal/infra/postgres/signup_event_repository.go`, `handler/admin_signup_event_handler.go` (`docs/architecture/signup-activity.md`) |
 | Sign-up policy | `internal/app/signup`, `pkg/domain/signup`, `internal/infra/postgres/signup_policy_repository.go`, `handler/admin_signup_handler.go` |
 | SSO admission | `SSOService.jitProvisioningAllowed` (`internal/app/auth/sso.go`) |
 | Set-password email | `EmailService.SendAccountSetupEmail`, template `account_setup` |

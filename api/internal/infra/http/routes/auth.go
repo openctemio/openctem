@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"context"
+
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -42,8 +44,16 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	if h.SignupPolicy != nil {
 		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
 	}
-	authProvidersHandler.WithCaptchaSiteKey(cfg.Auth.CaptchaTurnstileSiteKey)
-	authProvidersHandler.WithDeploymentRegion(cfg.App.Region)
+	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.Captcha != nil {
+		authProvidersHandler.WithCaptchaSiteKey(h.AdminPlatformSettings.Captcha.SiteKey)
+	} else if key := cfg.Auth.CaptchaTurnstileSiteKey; key != "" && cfg.Auth.CaptchaTurnstileSecret != "" {
+		authProvidersHandler.WithCaptchaSiteKey(func(context.Context) string { return key })
+	}
+	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.Region != nil {
+		authProvidersHandler.WithDeploymentRegion(h.AdminPlatformSettings.Region.Region)
+	} else if region := cfg.App.Region; region != "" {
+		authProvidersHandler.WithDeploymentRegion(func(context.Context) string { return region })
+	}
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
@@ -126,6 +136,13 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			r.POST("/onboarding/options", onboardingOptions.ServeHTTP)
 			onboardingAccept := ChainFunc(h.LocalAuth.OnboardingAccept, crossSite, registerRL)
 			r.POST("/onboarding/accept", onboardingAccept.ServeHTTP)
+
+			// An owner cancels a scheduled organization deletion: the
+			// organization is closed to tenant tokens while it waits, so
+			// this is refresh-token authenticated too
+			// (docs/architecture/organization-deletion.md).
+			cancelDeletion := ChainFunc(h.LocalAuth.CancelOrganizationDeletion, crossSite, tokenExchangeRL)
+			r.POST("/organization-deletion/cancel", cancelDeletion.ServeHTTP)
 
 			// Sign-out: by the refresh token when the request carries one
 			// (it outlives the access token, so an idle user's sign-out still

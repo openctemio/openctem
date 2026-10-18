@@ -79,3 +79,26 @@ export function setSSOEnforcement(id: string, enforced: boolean) {
     body: { enforced },
   })
 }
+
+/**
+ * Suspends an organization or lifts the suspension (ops admin and up; the
+ * API asks for a fresh authenticator code and keeps the reason in the admin
+ * audit log).
+ */
+export function setOrganizationSuspended(id: string, suspended: boolean, reason: string) {
+  return adminFetch<{ status: string }>(
+    `/tenants/${encodeURIComponent(id)}/${suspended ? 'suspend' : 'unsuspend'}`,
+    { method: 'POST', body: { reason } }
+  )
+}
+
+/**
+ * Deletes an organization at once, whatever its status (super admin; a
+ * fresh authenticator code and a reason, kept in the admin audit log).
+ */
+export function purgeOrganization(id: string, reason: string, totpCode?: string) {
+  return adminFetch<{ status: string }>(`/tenants/${encodeURIComponent(id)}/purge`, {
+    method: 'POST',
+    body: { reason, totp_code: totpCode },
+  })
+}

@@ -10,6 +10,8 @@ import (
 	"net"
 	"time"
 
+	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
+
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
@@ -17,7 +19,9 @@ import (
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 
+	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	"github.com/openctemio/openctem/api/internal/app/suspension"
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
@@ -67,10 +71,12 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
+	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
@@ -84,6 +90,9 @@ import (
 	onboardingapp "github.com/openctemio/openctem/api/internal/app/onboarding"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/platformai"
+	"github.com/openctemio/openctem/api/internal/app/platformalert"
+	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
@@ -95,6 +104,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
+	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
@@ -115,6 +125,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -619,10 +630,8 @@ type Services struct {
 	// ProgramFeedLocal imports the operator's local bundle; nil unless
 	// PROGRAMFEED_LOCAL_BUNDLE_DIR is set (and it runs only while enabled).
 	ProgramFeedLocal *programfeedapp.Importer
-	// ProgramFeedSettings holds the local bundle switch (admin console).
-	ProgramFeedSettings *postgres.PublicProgramRepository
-	AttackSurface       *attack.SurfaceService
-	ThreatModel         *threatmodel.Service
+	AttackSurface    *attack.SurfaceService
+	ThreatModel      *threatmodel.Service
 	// ScopeLetters manages authorization letters (RFC-065 §13).
 	ScopeLetters *scope.LetterService
 
@@ -884,6 +893,16 @@ type Services struct {
 	// PlatformEmail is the platform's SMTP settings, set in the admin console
 	// (RFC-079); its Sender backs Email.
 	PlatformEmail *platformemail.Service
+	// Settings moved from the environment into the console (RFC-079): the
+	// CAPTCHA keys, the one-time deployment region, the default storage
+	// quota, the alert webhook and the platform AI provider. SettingRecorder
+	// writes their audit rows and notices.
+	SettingRecorder  *consolesetting.Recorder
+	PlatformCaptcha  *platformcaptcha.Service
+	DeploymentRegion *deploymentregion.Service
+	StorageQuota     *storagequota.Service
+	PlatformAlert    *platformalert.Service
+	PlatformAI       *platformai.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -892,10 +911,18 @@ type Services struct {
 	ScanGovernance *scangovapp.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
+	// SignupEvents is the console's sign-up feed and burst alerts.
+	SignupEvents *signupeventapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
+	// OrganizationGate refuses every credential of a suspended organization;
+	// Suspension suspends and restores organizations (console).
+	OrganizationGate *suspension.Gate
+	Suspension       *suspension.Service
+	// OrgDeletion schedules, cancels and carries out organization deletions.
+	OrgDeletion *orgdeletion.Service
 	// FindingLifecycle manages the organization's finding sub-statuses and
 	// lifecycle schemes (RFC-110).
 	FindingLifecycle *findinglifecycleapp.Service
@@ -985,6 +1012,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.PlatformSetting != nil {
 		s.PlatformEmail = platformemail.NewService(repos.PlatformSetting, s.Encryptor, repos.AdminAuditLog, log)
 	}
+	s.initConsoleSettings(cfg, repos, log)
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
@@ -994,7 +1022,24 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// invitations are checked where the rows are inserted. No source beyond
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
+	if repos.PlatformSetting != nil {
+		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
+	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
+	// Suspended organizations: one access gate every credential path asks,
+	// in front of a shared Redis cache so a change reaches every replica on
+	// its next request (docs/architecture/organization-suspension.md).
+	var orgStatusCache suspension.StatusCache
+	if deps.RedisClient != nil {
+		c, cerr := redis.NewCache[suspension.CachedStatus](deps.RedisClient, suspension.CachePrefix, suspension.CacheTTL)
+		if cerr != nil {
+			log.Warn("organization status cache off; every check reads the database", "error", cerr)
+		} else {
+			orgStatusCache = c
+		}
+	}
+	s.OrganizationGate = suspension.NewGate(repos.OrganizationStatus, orgStatusCache, log)
+	s.Suspension = suspension.NewService(repos.OrganizationStatus, s.OrganizationGate, repos.AdminAuditLog, s.Audit, log)
 	for _, r := range []interface{ SetLimits(limits.Checker) }{
 		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing, repos.Finding,
 	} {
@@ -1025,6 +1070,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
+	// D6: a restricted viewer holding dashboard:aggregate is counted over the
+	// organization by the dashboard figures (ViewerScope).
+	s.DataScope.SetAggregateCheck(func(ctx context.Context) bool {
+		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+	})
 	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
 	s.Asset.SetScoringConfigProvider(asset.NewTenantScoringConfigProvider(repos.Tenant))
@@ -1109,7 +1159,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
 			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log).WithChunks(catalogRepo, feedTransfer)
 	}
-	s.ProgramFeedSettings = catalogRepo
 	if cfg.Scope.ProgramFeedLocalBundleDir != "" {
 		localTransfer := feedTransfer
 		localTransfer.URLs, localTransfer.Registerer = nil, nil
@@ -1241,7 +1290,20 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
+		OnFeed: learnComponentReleases,
 	}, log)
+	// System > Software updates switches the daily check without a restart;
+	// VERSION_CHECK_ENABLED=false stays a ceiling.
+	if repos.PlatformSetting != nil {
+		s.VersionCheck.SetSettings(repos.PlatformSetting)
+	}
+	// The first-party sensor and SDK releases the stored feed lists, before
+	// the first request (the controller reloads them every hour).
+	refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := s.VersionCheck.Refresh(refreshCtx); err != nil {
+		log.Warn("release feed not loaded at start-up; built-in sensor and SDK versions apply until the next reload", "error", err)
+	}
+	cancelRefresh()
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
 	// transaction (research/22 P0-7, decision E4).
@@ -1316,11 +1378,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize dashboard service
 	s.Dashboard = module.NewDashboardService(repos.Dashboard, log)
 	s.Dashboard.SetDataScope(s.DataScope)
-	// D6: a restricted viewer holding dashboard:aggregate sees organization
-	// totals (k-floor on breakdowns); others see their own scope.
-	s.Dashboard.SetAggregateCheck(func(ctx context.Context) bool {
-		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
-	})
+	// D6 (dashboard:aggregate) is decided once, by s.DataScope.ViewerScope.
 
 	// Initialize SLA service
 	s.SLA = sla.NewService(repos.SLA, log)
@@ -1505,6 +1563,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Attachment.SetMetrics(storage.Metrics{})
 	s.Attachment.SetDirectDownloads(cfg.Storage.DirectDownload)
 	s.Attachment.SetTenantQuota(cfg.Storage.TenantQuotaMB << 20)
+	if s.StorageQuota != nil {
+		s.Attachment.SetTenantQuotaSource(s.StorageQuota.QuotaBytes)
+	}
 	// Retention: evidence of deleted findings/campaigns and never-linked
 	// uploads are purged by the attachment-retention controller.
 	s.Attachment.SetRetention(repos.Attachment, integration.RetentionSettings{
@@ -1545,6 +1606,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Organization deletion erases the tenant's stored files (every backend)
 	// before its rows, and refuses when it cannot.
 	s.Tenant.SetBlobEraser(s.Attachment)
+	// An owner's deletion waits out a grace period (the organization is
+	// closed meanwhile); the purge worker and the console delete through
+	// DeleteTenant (docs/architecture/organization-deletion.md).
+	s.OrgDeletion = orgdeletion.NewService(repos.OrganizationStatus, s.Tenant, s.OrganizationGate, repos.AdminAuditLog, s.Audit, log)
 
 	// Initialize Compliance service
 	s.Simulation = compliance.NewSimulationService(repos.Simulation, repos.ControlTest, log)
@@ -1675,9 +1740,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Compliance.SetFindingRepository(repos.Finding)
 
-	// Initialize AI Triage service (if configured)
-	if cfg.AITriage.IsConfigured() {
+	// AI triage: always built, so an organization's own key works and the
+	// platform provider can be turned on in the console without a restart.
+	// Platform AI stays off until environment keys or the console set it.
+	{
 		llmFactory := llm.NewFactoryWithEncryption(cfg.AITriage, s.Encryptor)
+		if s.PlatformAI != nil {
+			llmFactory.SetPlatformSource(s.PlatformAI)
+			s.PlatformAI.SetTester(platformAITester(llmFactory))
+		}
 		s.AITriage = aitriage.NewAITriageService(
 			repos.AITriage,
 			repos.Finding,
@@ -1689,6 +1760,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		)
 		s.AITriage.SetAuditService(s.Audit)
 		s.AITriage.SetDataScope(s.DataScope)
+		if s.PlatformAI != nil {
+			s.AITriage.SetPlatformAISource(s.PlatformAI)
+		}
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// On triage completion, enqueue an asset-scoped reclassify so a
@@ -1731,7 +1805,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Gate user-scoped keys on active membership so member offboarding revokes
 	// them immediately (the key's own status can't reflect member lifecycle).
 	// The account must be active too. Fails closed on a lookup error.
-	s.APIKey.SetMembershipChecker(apikey.NewMembershipChecker(repos.Tenant, repos.User))
+	s.APIKey.SetMembershipChecker(apikey.NewMembershipChecker(repos.Tenant, repos.User, s.OrganizationGate))
 	// Audit oct_ key create / revoke / delete.
 	s.APIKey.SetAuditService(s.Audit)
 	// During an encryption-key rotation, keys hashed under the old key
@@ -1741,6 +1815,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
 	repos.ScimToken.SetKeyPepperID(crypto.PepperID(cfg.Encryption.Key))
 	s.SCIMToken = scim.NewTokenService(repos.ScimToken, cfg.Encryption.Key, log)
+	// A suspended organization takes no provisioning.
+	s.SCIMToken.SetOrganizationGate(s.OrganizationGate)
 	s.SCIMToken.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
 	s.SCIMProvisioning = scim.NewProvisioningService(
 		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
@@ -1862,6 +1938,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize sensor & command services
 	s.Sensor = sensorapp.NewSensorService(repos.Sensor, s.Audit, log)
+	// A sensor of a suspended organization is refused on every key path.
+	s.Sensor.SetOrganizationGate(s.OrganizationGate)
 	// A tool a sensor declares in its manifest joins its organization's
 	// tool catalog (RFC-092).
 	s.Sensor.SetDeclaredTools(repos.Tool)
@@ -2741,6 +2819,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			hub.RevokeAccess(ctx, tenantID, userID)
 		})
 	}
+	// A suspended organization's live sockets close at once.
+	if s.Suspension != nil {
+		s.Suspension.SetSocketCloser(s.WebSocketHub)
+	}
+	if s.OrgDeletion != nil {
+		s.OrgDeletion.SetSocketCloser(s.WebSocketHub)
+	}
 	log.Info("websocket hub initialized")
 
 	// Wire WebSocket broadcasters - must be done AFTER WebSocketHub is initialized
@@ -2880,6 +2965,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// No tenant token for a suspended organization.
+	s.Auth.SetOrganizationGate(s.OrganizationGate)
 	if s.Entitlement != nil {
 		s.Auth.SetSelfServiceLimits(s.Entitlement)
 	}
@@ -2888,6 +2975,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
 		s.Audit, tenantapp.ErasedUserLabel, log)
 	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+	// Platform administrators sign in on the admin console only.
+	s.Auth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2948,6 +3037,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
+	s.SSO.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 	if s.AccountDeletion != nil {
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
@@ -3052,6 +3142,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
 		if redisClient != nil {
@@ -3154,6 +3245,17 @@ func (s *Services) guardPublicSignupMail(cfg *config.Config, log *logger.Logger)
 	if s.Signup != nil {
 		email := s.Email
 		s.Signup.SetMailReady(email.IsConfigured)
+		// Open sign-up in production needs a CAPTCHA (unless accepted
+		// without one); the keys may come from the console at any time.
+		if cfg.IsProduction() && cfg.Auth.SignupMode == config.SignupModeOpen &&
+			cfg.Auth.SignupCaptcha != config.SignupCaptchaOffAccepted && s.PlatformCaptcha != nil {
+			captcha := s.PlatformCaptcha
+			s.Signup.SetCaptchaReady(func() bool {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				return captcha.Active(ctx)
+			})
+		}
 	}
 	log.Warn("public sign-up is allowed by this deployment's configuration", "signup_mode", cfg.Auth.SignupMode)
 	return nil
@@ -3465,4 +3567,18 @@ func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.Platfor
 		return nil, err
 	}
 	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
+}
+
+// learnComponentReleases makes the first-party component releases of the
+// verified release feed the effective latest versions (internal/versions):
+// install snippets, "update available" and the SDK status follow a sensor or
+// SDK release without an API release (docs/rfcs/RFC-037 §12). A nil feed
+// forgets them (the built-in versions apply).
+func learnComponentReleases(f *releasefeed.Feed) {
+	cs := f.ComponentVersions()
+	learned := make(map[string]versions.Learned, len(cs))
+	for k, c := range cs {
+		learned[k] = versions.Learned{Version: c.Version, Digest: c.Digest}
+	}
+	versions.SetLearned(learned)
 }

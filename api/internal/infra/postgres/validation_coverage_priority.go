@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -22,9 +23,11 @@ type Querier interface {
 // It is the one definition of "validation coverage": the CTEM cycle's
 // close-time gate (window = the cycle's dates) and the tenant-wide
 // Validation overview (no window, everything to date) both call it. An empty
-// startDate / endDate leaves that side of the window open.
+// startDate / endDate leaves that side of the window open. A non-nil scope
+// counts only findings on assets inside that data scope (the cycle gate passes
+// nil: a cycle closes over the whole organization).
 func ValidationCoverageByPriority(
-	ctx context.Context, db Querier, tenantID, startDate, endDate string,
+	ctx context.Context, db Querier, tenantID, startDate, endDate string, scope *shared.DataScope,
 ) (validation.ValidationCoverage, error) {
 	var c validation.ValidationCoverage
 	windowSQL := ""
@@ -39,6 +42,8 @@ func ValidationCoverageByPriority(
 		windowSQL += " AND COALESCE(f.resolved_at, f.updated_at) < ($" + strconv.Itoa(argN) + "::date + INTERVAL '1 day')"
 		args = append(args, endDate)
 	}
+	inScope, args := dataScopeCond("f.asset_id", scope, args)
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
 	q := `
 		SELECT
 		  COALESCE(f.priority_class, '') AS pc,
@@ -51,7 +56,7 @@ func ValidationCoverageByPriority(
 		  ) AS with_ev
 		FROM findings f
 		WHERE f.tenant_id = $1 AND NOT f.branch_only
-		  AND ` + vulnerability.ClosedStatusSQL("f.status") + windowSQL + `
+		  AND ` + vulnerability.ClosedStatusSQL("f.status") + publishedExcl("f") + pentestVisibilityExcl(ctx, "f") + windowSQL + ` AND ` + inScope + `
 		GROUP BY COALESCE(f.priority_class, '')
 	`
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -81,6 +86,6 @@ func ValidationCoverageByPriority(
 
 // CoverageByPriority is ValidationCoverageByPriority for the whole tenant
 // history (the Validation overview).
-func (r *ValidationEvidenceRepository) CoverageByPriority(ctx context.Context, tenantID string) (validation.ValidationCoverage, error) {
-	return ValidationCoverageByPriority(ctx, r.db, tenantID, "", "")
+func (r *ValidationEvidenceRepository) CoverageByPriority(ctx context.Context, tenantID string, scope *shared.DataScope) (validation.ValidationCoverage, error) {
+	return ValidationCoverageByPriority(ctx, r.db, tenantID, "", "", scope)
 }

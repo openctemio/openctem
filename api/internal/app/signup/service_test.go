@@ -181,6 +181,23 @@ func TestEffective_NoMailClosesPublicSignup(t *testing.T) {
 	}
 }
 
+// In production without an accepted waiver, open sign-up is closed while no
+// CAPTCHA is configured, and opens as soon as the console sets the keys.
+func TestEffective_NoCaptchaClosesOpenSignup(t *testing.T) {
+	ctx := context.Background()
+	svc := openService(&memRepo{}, nil, nil, nil)
+	_ = svc.Seed(ctx)
+	captcha := false
+	svc.SetCaptchaReady(func() bool { return captcha })
+	if svc.Current(ctx).AllowsPublicSignup() {
+		t.Fatal("no CAPTCHA: open sign-up must be closed")
+	}
+	captcha = true
+	if !svc.Current(ctx).AllowsSelfService() {
+		t.Fatal("with a CAPTCHA the stored policy is in force")
+	}
+}
+
 func TestCurrent_FailsClosed(t *testing.T) {
 	repo := &memRepo{getErr: errors.New("db down")}
 	svc := NewService(repo, nil, nil, nil, nil)

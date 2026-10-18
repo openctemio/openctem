@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -247,12 +248,35 @@ func (h *AdminConsoleHandler) PutPlatformIdP(w http.ResponseWriter, r *http.Requ
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
+	// Switching the identity provider off, or no longer requiring it, opens
+	// the password path again: a second super admin approves.
+	var grant *adminapproval.Grant
+	if cur, err := h.svc.GetPlatformIdP(r.Context()); err == nil && cur != nil {
+		target := ""
+		switch {
+		case cur.Enabled && !req.Enabled:
+			target = "disable"
+		case cur.RequireIdP && !req.RequireIdP:
+			target = "require_idp_off"
+		}
+		if target != "" {
+			var ok bool
+			if grant, ok = requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalPlatformIdPRemove, target, h.logger); !ok {
+				return
+			}
+		}
+	} else if err != nil && !errors.Is(err, admin.ErrPlatformIdPNotConfigured) {
+		h.logger.Error("read platform idp", "error", sanitizeLogField(err.Error()))
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	p, err := h.svc.SavePlatformIdP(r.Context(), actor, adminconsole.PlatformIdPInput{
 		Enabled: req.Enabled, DisplayName: req.DisplayName, Issuer: req.Issuer, ClientID: req.ClientID,
 		ClientSecret: req.ClientSecret, RedirectURI: req.RedirectURI, Scopes: req.Scopes,
 		RequireIdP: req.RequireIdP, TrustedACRValues: req.TrustedACRValues, TrustedAMRValues: req.TrustedAMRValues,
 	}, clientInfo(r))
 	if err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		switch {
 		case shared.IsValidation(err):
 			apierror.BadRequest(sanitizeLogField(validationMessage(err))).WriteJSON(w)
@@ -276,7 +300,17 @@ func (h *AdminConsoleHandler) PutPlatformIdP(w http.ResponseWriter, r *http.Requ
 // @Security BearerAuth
 // @Router /admin/platform-idp [delete]
 func (h *AdminConsoleHandler) DeletePlatformIdP(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeletePlatformIdP(r.Context(), middleware.MustGetAdminUser(r.Context()), clientInfo(r)); err != nil {
+	actor := middleware.MustGetAdminUser(r.Context())
+	if _, err := h.svc.GetPlatformIdP(r.Context()); errors.Is(err, admin.ErrPlatformIdPNotConfigured) {
+		apierror.NotFound("identity provider").WriteJSON(w)
+		return
+	}
+	grant, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalPlatformIdPRemove, "remove", h.logger)
+	if !ok {
+		return
+	}
+	if err := h.svc.DeletePlatformIdP(r.Context(), actor, clientInfo(r)); err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		if errors.Is(err, admin.ErrPlatformIdPNotConfigured) {
 			apierror.NotFound("identity provider").WriteJSON(w)
 			return

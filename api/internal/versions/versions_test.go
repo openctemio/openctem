@@ -61,6 +61,7 @@ func TestGettersEqualManifest(t *testing.T) {
 		"SensorMin":       {SensorMin(), get("sensor", "min")},
 		"SensorImage":     {SensorImage(), get("sensor", "image")},
 		"SDKLatest":       {SDKLatest(), get("sdk", "latest")},
+		"SDKMin":          {SDKMin(), get("sdk", "min")},
 		"SDKAdvisories":   {strings.Join(SDKAdvisories(), " "), strings.Join(strings.Fields(get("sdk", "advisories")), " ")},
 		"CIRunnerLatest":  {CIRunnerLatest(), get("ci", "latest")},
 		"CIRunnerMin":     {CIRunnerMin(), get("ci", "min")},
@@ -96,6 +97,7 @@ other:
   release_identity: https://github.com/openctemio/other/.github/workflows/images.yml
 sdk:
   latest: v0.3.0
+  min: v0.1.0
   advisories: "v0.1.0 v0.2.1"
 ci:
   latest: v0.3.0
@@ -143,6 +145,8 @@ func TestParseRejects(t *testing.T) {
 		"bad install":          {"install: other", "install: ../x", "other.install"},
 		"duplicate key":        {"  min: v0.1.0\n", "  min: v0.1.0\n  min: v0.1.0\n", "other.min"},
 		"min above latest":     {"min: v0.1.0", "min: v0.2.0", "other.min v0.2.0 is newer"},
+		"sdk min not version":  {"  min: v0.1.0\n  advisories", "  min: soon\n  advisories", "sdk.min"},
+		"sdk min above latest": {"  min: v0.1.0\n  advisories", "  min: v0.4.0\n  advisories", "sdk.min v0.4.0 is newer"},
 		"ci min above latest":  {"ci:\n  latest: v0.3.0\n  min: \"\"", "ci:\n  latest: v0.3.0\n  min: v0.4.0", "ci.min v0.4.0 is newer"},
 		"bad chart":            {"version: 0.1.0", "version: v0.1.0", "chart.version"},
 		"duplicate section":    {"chart:\n", "ci:\n  latest: v0.3.0\n  min: \"\"\nchart:\n", "ci"},
@@ -221,7 +225,7 @@ func TestParseExtraProducts_Refusals(t *testing.T) {
 	cases := map[string]string{
 		"built-in product id":   strings.Replace(ok, "acme-x\n  latest", DefaultProductID+"\n  latest", 1),
 		"built-in section":      strings.Replace(ok, "acme:", "sensor:", 1),
-		"fixed section":         "sdk:\n  latest: v9.9.9\n  advisories: \"\"\n",
+		"fixed section":         "sdk:\n  latest: v9.9.9\n  min: \"\"\n  advisories: \"\"\n",
 		"tag in the image":      strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x:latest", 1),
 		"shell in the image":    strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x;curl", 1),
 		"install path":          strings.Replace(ok, "install: acme-x", "install: ../etc", 1),
@@ -240,5 +244,68 @@ func TestParseExtraProducts_Refusals(t *testing.T) {
 	}
 	if err := LoadExtraProducts(filepath.Join("testdata", "missing.yaml")); err == nil {
 		t.Error("a missing file must stop the start")
+	}
+}
+
+// A release learned from the feed raises the effective latest of a built-in
+// product and the SDK, with its digest; it never lowers one, never touches an
+// operator's product, and a malformed value is dropped.
+func TestSetLearned_Overlay(t *testing.T) {
+	t.Cleanup(func() { SetLearned(nil); _ = LoadExtraProducts("") })
+	builtIn, _ := Embedded().Product(DefaultProductID)
+	digest := "sha256:" + strings.Repeat("ab", 32)
+
+	if p, _ := LookupProduct(DefaultProductID); p.LatestSource != SourceBuiltIn || p.Digest != "" || p.Latest != builtIn.Latest {
+		t.Fatalf("without a feed: %+v", p)
+	}
+
+	SetLearned(map[string]Learned{
+		"sensor": {Version: "v99.0.0", Digest: digest},
+		SDKKey:   {Version: "v98.0.0"},
+	})
+	p, _ := LookupProduct(DefaultProductID)
+	if p.Latest != "v99.0.0" || p.LatestSource != SourceFeed || p.Digest != digest ||
+		p.ImageRef() != builtIn.Image+":v99.0.0@"+digest {
+		t.Fatalf("learned sensor: %+v (%s)", p, p.ImageRef())
+	}
+	if SensorLatest() != "v99.0.0" || SDKLatest() != "v98.0.0" {
+		t.Fatalf("getters: sensor %s sdk %s", SensorLatest(), SDKLatest())
+	}
+	if ps := Products(); ps[0].Latest != "v99.0.0" {
+		t.Fatalf("Products: %+v", ps[0])
+	}
+	// Min is never taken from the feed.
+	if p.Min != builtIn.Min {
+		t.Fatalf("min changed: %s", p.Min)
+	}
+
+	// SECURITY: an older release (a stale or replayed feed) never lowers
+	// the built-in one, and its digest is not used.
+	SetLearned(map[string]Learned{"sensor": {Version: "v0.0.1", Digest: digest}, SDKKey: {Version: "v0.0.1"}})
+	if p, _ := LookupProduct(DefaultProductID); p.Latest != builtIn.Latest || p.Digest != "" || p.LatestSource != SourceBuiltIn {
+		t.Fatalf("older learned release lowered the built-in one: %+v", p)
+	}
+	if SDKLatest() != Embedded().SDKLatest {
+		t.Fatalf("older learned SDK lowered the built-in one: %s", SDKLatest())
+	}
+
+	// Malformed values are dropped.
+	SetLearned(map[string]Learned{"sensor": {Version: "latest"}, SDKKey: {Version: "v99.0.0", Digest: "sha256:nothex"}})
+	if p, _ := LookupProduct(DefaultProductID); p.Latest != builtIn.Latest {
+		t.Fatalf("malformed version used: %+v", p)
+	}
+	if SDKLatest() != "v99.0.0" {
+		t.Fatalf("valid version with a bad digest: %s", SDKLatest())
+	}
+
+	// An operator's product is never overlaid, even under a learned key
+	// that matches its section name.
+	if err := LoadExtraProducts(filepath.Join("testdata", "toy-products.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	toy, _ := LookupProduct("acme-toy-sensor")
+	SetLearned(map[string]Learned{toy.Key: {Version: "v99.0.0"}})
+	if p, _ := LookupProduct("acme-toy-sensor"); p.Latest != "v1.2.3" || p.LatestSource != SourceOperator {
+		t.Fatalf("operator product overlaid: %+v", p)
 	}
 }

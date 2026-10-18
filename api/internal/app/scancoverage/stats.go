@@ -36,7 +36,8 @@ type CoverageStats struct {
 // CoverageStatsReader reads coverage observability stats for a tenant.
 // *postgres.ScanCoverageRepository implements it.
 type CoverageStatsReader interface {
-	CoverageStats(ctx context.Context, tenantID shared.ID, windowDays int) (*CoverageStats, error)
+	// A non-nil scope counts only the assets inside that data scope.
+	CoverageStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, windowDays int) (*CoverageStats, error)
 }
 
 // DefaultCoverageWindowDays is the freshness window used when a caller does not

@@ -62,9 +62,10 @@ export type SensorVersionStatus = 'latest' | 'update_available' | 'unsupported' 
 /**
  * The SDK a sensor is built with: "outdated" is informational (older than
  * GET /sensors/stats sdk_latest_version), "advisory" a release with a
- * published security advisory (sdk_advisories).
+ * published security advisory (sdk_advisories), "unsupported" one older than
+ * the oldest SDK this platform supports.
  */
-export type SensorSdkStatus = 'current' | 'outdated' | 'advisory' | 'unknown'
+export type SensorSdkStatus = 'current' | 'outdated' | 'advisory' | 'unsupported' | 'unknown'
 
 /** One sensor product the platform knows (GET /sensors/stats products). */
 export interface SensorProduct {
@@ -73,8 +74,14 @@ export interface SensorProduct {
   latest_version: string
   /** "" = no minimum. */
   min_version: string
-  /** The image, with its pinned tag, its install snippets run. */
+  /** The image, with its pinned tag (and digest when known), its install snippets run. */
   image: string
+  /**
+   * Where latest_version comes from: "feed" (the signed release feed),
+   * "built_in" (the release this platform was built with: newer releases may
+   * exist) or "operator" (the operator's product file).
+   */
+  latest_source?: 'feed' | 'built_in' | 'operator'
 }
 
 /** One problem found on a sensor (stable `code`; `message` is a fallback). */
@@ -92,6 +99,7 @@ export interface SensorHealthReason {
     | 'content_stale'
     | 'content_refresh_failed'
     | 'sdk_advisory'
+    | 'sdk_unsupported'
     | 'heartbeat_late'
     | 'control_slow'
     | 'config_check_failed'

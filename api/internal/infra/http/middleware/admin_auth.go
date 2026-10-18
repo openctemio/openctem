@@ -112,17 +112,34 @@ func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.Admin
 		}
 	}
 	if d, ok := m.sessions.(adminSessionDetailer); ok {
-		a, sess, err := d.AuthenticateSession(r.Context(), c.Value)
+		a, sess, err := d.AuthenticateSession(sessionContext(r), c.Value)
 		if err != nil {
 			return nil, nil, false
 		}
 		return a, sess, true
 	}
-	a, err := m.sessions.Authenticate(r.Context(), c.Value)
+	a, err := m.sessions.Authenticate(sessionContext(r), c.Value)
 	if err != nil {
 		return nil, nil, false
 	}
 	return a, nil, true
+}
+
+// AdminBackgroundHeader marks a console read made without the administrator
+// (a periodic refresh of an open page). It never grants anything: it only
+// stops the request from counting as activity for the idle timeout.
+const AdminBackgroundHeader = "X-Admin-Background"
+
+// sessionContext is the request context, marked as background for a read
+// that carries AdminBackgroundHeader. A write always counts as activity.
+func sessionContext(r *http.Request) context.Context {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		if r.Header.Get(AdminBackgroundHeader) == "1" {
+			return admin.WithBackgroundRequest(r.Context())
+		}
+	}
+	return r.Context()
 }
 
 // NewAdminAuthMiddleware creates the admin authentication middleware over the

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
+
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
@@ -56,7 +58,9 @@ type TeamInvitationJobPayload struct {
 // TenantService handles tenant-related business operations.
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
-	repo tenantdom.Repository
+	// signups reports organizations created to the sign-up feed (optional).
+	signups signupevent.Recorder
+	repo    tenantdom.Repository
 	// scoringVersions stamps the scoring version a risk scoring settings
 	// change created on its audit entry (SetScoringVersions; optional).
 	scoringVersions scoring.VersionRepository
@@ -396,7 +400,18 @@ type CreateTenantInput struct {
 	// Provisioned, when set, replaces InitialLimits: what the control plane
 	// provisions with the organization (its limits, denies and idle policy).
 	Provisioned *ProvisionedEntitlements `json:"-"`
+	// SignupSource is the path reported to the console's sign-up feed:
+	// empty for an organization a signed-in person creates (self_service);
+	// the platform paths name themselves (console, access_request,
+	// control_plane).
+	SignupSource signupevent.Source `json:"-"`
+	// CreatorEmail is the creator's address; only its registrable domain
+	// reaches the sign-up feed. Empty: the audit context's actor email.
+	CreatorEmail string `json:"-"`
 }
+
+// SetSignupRecorder wires the sign-up feed (docs/architecture/signup-activity.md).
+func (s *TenantService) SetSignupRecorder(r signupevent.Recorder) { s.signups = r }
 
 // CreateTenant creates a new tenant and adds the creator as owner.
 // creatorUserID is the local user ID (from users table).
@@ -451,6 +466,18 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 		WithResourceName(t.Name()).
 		WithMessage(fmt.Sprintf("Team '%s' created", t.Name()))
 	s.logAudit(ctx, actx, event)
+
+	if s.signups != nil {
+		source, email := input.SignupSource, input.CreatorEmail
+		if source == "" {
+			source = signupevent.SourceSelfService
+		}
+		if email == "" {
+			email = actx.ActorEmail
+		}
+		s.signups.Record(ctx, signupevent.Event{Kind: signupevent.KindOrganizationCreated, Source: source,
+			Email: email, TenantID: t.ID(), UserID: creatorUserID})
+	}
 
 	return t, nil
 }
@@ -2077,6 +2104,7 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	after := t.TypedSettings().Security
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_interactsh", before.AllowSensorInteractsh, after.AllowSensorInteractsh)
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_custom_templates", before.AllowSensorCustomTemplates, after.AllowSensorCustomTemplates)
+	s.notifySecurityLoosened(ctx, tenantID, actx, before, after)
 
 	result := t.TypedSettings()
 	return &result, nil

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/module"
@@ -39,7 +40,7 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 	query := `
 		WITH base AS (
 			SELECT id, severity, status, vulnerability_id, cvss_score FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only` + findingExcl(ctx, "asset_id") + `
 		),
 		total AS (SELECT COUNT(*) AS cnt FROM base),
 		by_sev AS (SELECT severity, COUNT(*) AS cnt FROM base GROUP BY severity),
@@ -105,7 +106,7 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 	// Get count of repositories with findings
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+`
 		 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository'`,
 		tenantID.String(),
 	).Scan(&stats.WithFindings)
@@ -131,7 +132,7 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 		        f.message as description,
 		        f.created_at
 		 FROM findings f
-		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+` AND `+scopeCond+`
+		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+publishedExcl("f")+` AND `+scopeCond+`
 		 ORDER BY f.created_at DESC
 		 LIMIT $`+itoa(len(args)),
 		args...,
@@ -191,9 +192,11 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 	rows, err := r.db.QueryContext(ctx, `
 		WITH finding_agg AS (
 			SELECT GROUPING(severity) AS g_sev, GROUPING(status) AS g_status,
-				severity, status, COUNT(*) AS cnt
+				severity, status, COUNT(*) AS cnt,
+				COUNT(*) FILTER (WHERE `+vulnerability.OpenStatusSQL("status")+`) AS open_cnt,
+				COUNT(*) FILTER (WHERE `+vulnerability.OpenStatusSQL("status")+` AND sla_status IN ('exceeded','overdue')) AS overdue_cnt
 			FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only`+programFindingExcl(ctx, "asset_id")+` AND `+findingIn+`
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only`+findingExcl(ctx, "asset_id")+` AND `+findingIn+`
 			GROUP BY GROUPING SETS ((severity), (status), ())
 		),
 		asset_agg AS (
@@ -210,20 +213,21 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		avg_cvss AS (
 			SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) AS val
 			FROM findings f JOIN vulnerabilities v ON f.vulnerability_id = v.id
-			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review') AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+` AND `+fIn+`
+			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review') AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+` AND `+fIn+`
 		),
 		repo_with_findings AS (
 			SELECT COUNT(*) AS cnt
 			FROM assets a
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository' AND `+aIn+`
-				AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`)
+				AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+`)
 		)
 		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'atype', asset_type, cnt, 0 FROM asset_agg WHERE g_type = 0
 		UNION ALL SELECT 'astatus', status, cnt, 0 FROM asset_agg WHERE g_status = 0
 		UNION ALL SELECT 'asubtype', sub_type, cnt, 0 FROM asset_agg WHERE g_sub = 0 AND sub_type IS NOT NULL
-		UNION ALL SELECT 'finding_total', '', cnt, 0 FROM finding_agg WHERE g_sev = 1 AND g_status = 1
-		UNION ALL SELECT 'fsev', severity, cnt, 0 FROM finding_agg WHERE g_sev = 0
+		UNION ALL SELECT 'finding_total', '', open_cnt, 0 FROM finding_agg WHERE g_sev = 1 AND g_status = 1
+		UNION ALL SELECT 'finding_overdue', '', overdue_cnt, 0 FROM finding_agg WHERE g_sev = 1 AND g_status = 1
+		UNION ALL SELECT 'fsev', severity, open_cnt, 0 FROM finding_agg WHERE g_sev = 0
 		UNION ALL SELECT 'fstatus', status, cnt, 0 FROM finding_agg WHERE g_status = 0
 		UNION ALL SELECT 'avg_cvss', '', 0, val FROM avg_cvss
 		UNION ALL SELECT 'avg_risk', '', 0, avg_risk FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
@@ -257,6 +261,8 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			result.Assets.ByStatus[key] = cnt
 		case "finding_total":
 			result.Findings.Total = cnt
+		case "finding_overdue":
+			result.Findings.Overdue = cnt
 		case "fsev":
 			result.Findings.BySeverity[vulnerability.SeverityBucket(key)] += cnt
 		case "fstatus":
@@ -285,7 +291,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		        f.message as description,
 		        f.created_at
 		 FROM findings f
-		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
+		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+publishedExcl("f")+`
 		 ORDER BY f.created_at DESC
 		 LIMIT 10`,
 		tid,
@@ -344,7 +350,7 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 				AND f.created_at >= date_trunc('month', NOW()) - ($2::int - 1) * interval '1 month'
 				AND f.created_at < date_trunc('month', NOW()) + interval '1 month'
 				AND f.status NOT IN ('draft', 'in_review')
-				AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
+				AND NOT f.branch_only`+findingExcl(ctx, "f.asset_id")+`
 				AND `+inScope+`
 			GROUP BY 1
 		)
@@ -398,7 +404,7 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 		COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) as avg_hours
 		FROM findings
 		WHERE tenant_id = $1
-		AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+		AND NOT branch_only` + findingExcl(ctx, "asset_id") + `
 		AND ` + vulnerability.RemediatedSQL("") + `
 		AND resolved_at IS NOT NULL AND first_detected_at IS NOT NULL
 		AND resolved_at >= first_detected_at
@@ -451,21 +457,39 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 	}
 	// A non-nil scope counts only findings on the viewer's in-scope assets.
 	inScope, scopeArgs := dashboardScope(scope, 3)
+	// Two range scans over the window (created_at, resolved_at), each bucketed
+	// by week, then joined to the week series; this replaces a join of every
+	// week with every finding of the tenant. Both scans read the same rows the
+	// per-week join did: published findings, not branch-only, in scope.
+	rowFilter := `f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + publishedExcl("f") + ` AND ` + inScope("f.asset_id")
 	query := `WITH weeks AS (
 		SELECT generate_series(
 			date_trunc('week', NOW() - ($2::int || ' weeks')::interval),
 			date_trunc('week', NOW()),
 			'1 week'::interval
 		) AS week_start
+	),
+	bounds AS (
+		SELECT date_trunc('week', NOW() - ($2::int || ' weeks')::interval) AS lo,
+			date_trunc('week', NOW()) + '1 week'::interval AS hi
+	),
+	created AS (
+		SELECT date_trunc('week', f.created_at) AS wk, COUNT(*) AS n
+		FROM findings f, bounds b
+		WHERE ` + rowFilter + ` AND f.created_at >= b.lo AND f.created_at < b.hi
+		GROUP BY 1
+	),
+	resolved AS (
+		SELECT date_trunc('week', f.resolved_at) AS wk, COUNT(*) AS n
+		FROM findings f, bounds b
+		WHERE ` + rowFilter + ` AND f.resolved_at >= b.lo AND f.resolved_at < b.hi
+			AND ` + vulnerability.RemediatedSQL("f") + `
+		GROUP BY 1
 	)
-	SELECT
-		w.week_start,
-		COALESCE(SUM(CASE WHEN f.created_at >= w.week_start AND f.created_at < w.week_start + '1 week'::interval THEN 1 ELSE 0 END), 0) as new_count,
-		COALESCE(SUM(CASE WHEN f.resolved_at >= w.week_start AND f.resolved_at < w.week_start + '1 week'::interval
-			AND ` + vulnerability.RemediatedSQL("f") + ` THEN 1 ELSE 0 END), 0) as resolved_count
+	SELECT w.week_start, COALESCE(c.n, 0), COALESCE(r.n, 0)
 	FROM weeks w
-	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
-	GROUP BY w.week_start
+	LEFT JOIN created c ON c.wk = w.week_start
+	LEFT JOIN resolved r ON r.wk = w.week_start
 	ORDER BY w.week_start`
 
 	rows, err := r.db.QueryContext(ctx, query, append([]any{tenantID.String(), weeks}, scopeArgs...)...)
@@ -660,7 +684,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 			SELECT
 				COUNT(*) AS total,
 				COUNT(*) FILTER(WHERE metadata IS NOT NULL AND metadata != '{}'::jsonb) AS with_evidence
-			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
+			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 		),
 		dedup_stats AS (
 			` + dedupSQL + `
@@ -699,7 +723,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 }
 
 // GetExecutiveSummary returns executive-level metrics for a time period using CTEs.
-func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*module.ExecutiveSummary, error) {
+func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, scope, rowScope *shared.DataScope, days int) (*module.ExecutiveSummary, error) {
 	if days <= 0 || days > 365 {
 		days = 30
 	}
@@ -722,29 +746,30 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				COUNT(*) AS total,
 				COUNT(*) FILTER (WHERE priority_class = 'P0') AS p0,
 				COUNT(*) FILTER (WHERE priority_class = 'P1') AS p1,
-				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached
+				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached,
+				COUNT(*) FILTER (WHERE sla_status IS NOT NULL AND sla_status <> 'not_applicable') AS sla_tracked
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + `
 		),
 		resolved_in_period AS (
 			SELECT severity, priority_class, resolved_at, first_detected_at
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 				AND ` + vulnerability.RemediatedSQL("") + `
 				AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		),
 		total_resolved AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.RemediatedSQL("") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.RemediatedSQL("") + `
 		),
 		regressions AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND is_regression = true
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND is_regression = true
 			  AND last_reopened_at >= NOW() - ($2::int || ' days')::interval
 		),
 		new_in_period AS (
 			SELECT id FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND created_at >= NOW() - ($2::int || ' days')::interval
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + publishedExcl("findings") + ` AND ` + inScope("asset_id") + ` AND created_at >= NOW() - ($2::int || ' days')::interval
 		),
 		risk_score AS (
 			-- Average over SCORED assets only (risk_score > 0), matching the
@@ -766,17 +791,24 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		crown_jewels AS (
 			SELECT COUNT(DISTINCT a.id) AS cnt
 			FROM assets a
-			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
+			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
 				AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
+		mttr_hours AS (
+			SELECT severity, EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600 AS hrs
+			FROM resolved_in_period
+			WHERE severity IN ('critical', 'high') AND first_detected_at IS NOT NULL AND resolved_at >= first_detected_at
+		),
 		mttr_critical AS (
-			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
-			FROM resolved_in_period WHERE severity = 'critical' AND first_detected_at IS NOT NULL AND resolved_at >= first_detected_at
+			SELECT AVG(hrs) AS mean, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hrs) AS med,
+				PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY hrs) AS p90, COUNT(*) AS n
+			FROM mttr_hours WHERE severity = 'critical'
 		),
 		mttr_high AS (
-			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
-			FROM resolved_in_period WHERE severity = 'high' AND first_detected_at IS NOT NULL AND resolved_at >= first_detected_at
+			SELECT AVG(hrs) AS mean, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hrs) AS med,
+				PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY hrs) AS p90, COUNT(*) AS n
+			FROM mttr_hours WHERE severity = 'high'
 		)
 		SELECT
 			rs.current_score,
@@ -788,12 +820,12 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P0'),
 			oa.p1,
 			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P1'),
-			CASE WHEN oa.total > 0
-				THEN (oa.total - oa.sla_breached) * 100.0 / oa.total
-				ELSE 100.0 END,
+			CASE WHEN oa.sla_tracked > 0
+				THEN (oa.sla_tracked - oa.sla_breached) * 100.0 / oa.sla_tracked
+				END,
 			oa.sla_breached,
-			mc.hrs,
-			mh.hrs,
+			mc.mean, mc.med, mc.p90, mc.n,
+			mh.mean, mh.med, mh.p90, mh.n,
 			cj.cnt,
 			reg.cnt,
 			tr.cnt
@@ -807,6 +839,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	}
 
 	var totalResolved int
+	var sla, mcMean, mcMed, mcP90, mhMean, mhMed, mhP90 sql.NullFloat64
 	err := r.db.QueryRowContext(ctx, query, append([]any{tenantID.String(), days}, scopeArgs...)...).Scan(
 		&summary.RiskScoreCurrent,
 		&summary.RiskScoreChange,
@@ -817,10 +850,10 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		&summary.P0Resolved,
 		&summary.P1Open,
 		&summary.P1Resolved,
-		&summary.SLACompliancePct,
+		&sla,
 		&summary.SLABreached,
-		&summary.MTTRCriticalHrs,
-		&summary.MTTRHighHrs,
+		&mcMean, &mcMed, &mcP90, &summary.MTTRCriticalSample,
+		&mhMean, &mhMed, &mhP90, &summary.MTTRHighSample,
 		&summary.CrownJewelsAtRisk,
 		&summary.RegressionCount,
 		&totalResolved,
@@ -828,6 +861,10 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("executive summary: %w", err)
 	}
+
+	summary.SLACompliancePct = nullFloatPtr(sla)
+	summary.MTTRCriticalHrs, summary.MTTRCriticalMedianHrs, summary.MTTRCriticalP90Hrs = nullFloatPtr(mcMean), nullFloatPtr(mcMed), nullFloatPtr(mcP90)
+	summary.MTTRHighHrs, summary.MTTRHighMedianHrs, summary.MTTRHighP90Hrs = nullFloatPtr(mhMean), nullFloatPtr(mhMed), nullFloatPtr(mhP90)
 
 	// Regression rate: regressions / total_resolved (% of resolved findings that were reopened).
 	if totalResolved > 0 {
@@ -837,14 +874,16 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	// Top 5 risks: open findings ordered by priority class, EPSS score.
 	// title is nullable (most scanner findings only carry a message); scanning
 	// a NULL into a string failed the whole summary with a 500.
-	topIn, topArgs := dashboardScope(scope, 2)
+	// Top risks are row data: they follow the viewer's own row scope, never
+	// the scope the totals are counted over (nil for an aggregate viewer).
+	topIn, topArgs := dashboardScope(rowScope, 2)
 	topQuery := `
 		SELECT f.id::text, COALESCE(f.title, '') AS title, f.severity, COALESCE(f.priority_class, 'P3') AS priority_class,
 			COALESCE(f.asset_id::text, '') AS asset_id,
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
-		WHERE f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + topIn("f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		WHERE f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + ` AND ` + topIn("f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
 		LIMIT 5
 	`
@@ -881,74 +920,74 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 	args := []any{tenantID.String(), days}
 	inScope, args := dataScopeCond("asset_id", scope, args)
 
+	// A bucket with no remediated finding is NULL (not 0 h) and is left out of
+	// the result; the overall figure also reports the median and the 90th
+	// percentile, since remediation times are right-skewed.
 	query := `
+		WITH r AS (
+			SELECT severity, priority_class, EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600 AS hrs
+			FROM findings
+			WHERE tenant_id = $1
+				AND NOT branch_only` + findingExcl(ctx, "asset_id") + `
+				AND ` + vulnerability.RemediatedSQL("") + `
+				AND resolved_at >= NOW() - ($2::int || ' days')::interval
+				AND resolved_at IS NOT NULL
+				AND first_detected_at IS NOT NULL
+				AND resolved_at >= first_detected_at
+				AND ` + inScope + `
+		)
 		SELECT
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE severity = 'critical' AND first_detected_at IS NOT NULL), 0) AS mttr_critical,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE severity = 'high' AND first_detected_at IS NOT NULL), 0) AS mttr_high,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE severity = 'medium' AND first_detected_at IS NOT NULL), 0) AS mttr_medium,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE severity = 'low' AND first_detected_at IS NOT NULL), 0) AS mttr_low,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE severity IN ('info', 'none') AND first_detected_at IS NOT NULL), 0) AS mttr_info,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE priority_class = 'P0' AND first_detected_at IS NOT NULL), 0) AS mttr_p0,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE priority_class = 'P1' AND first_detected_at IS NOT NULL), 0) AS mttr_p1,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE priority_class = 'P2' AND first_detected_at IS NOT NULL), 0) AS mttr_p2,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE priority_class = 'P3' AND first_detected_at IS NOT NULL), 0) AS mttr_p3,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
-				FILTER(WHERE first_detected_at IS NOT NULL), 0) AS mttr_overall,
-			COUNT(*) AS sample_size
-		FROM findings
-		WHERE tenant_id = $1
-			AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
-			AND ` + vulnerability.RemediatedSQL("") + `
-			AND resolved_at >= NOW() - ($2::int || ' days')::interval
-			AND resolved_at IS NOT NULL
-			AND first_detected_at IS NOT NULL
-			AND resolved_at >= first_detected_at
-			AND ` + inScope + `
+			AVG(hrs) FILTER(WHERE severity = 'critical'),
+			AVG(hrs) FILTER(WHERE severity = 'high'),
+			AVG(hrs) FILTER(WHERE severity = 'medium'),
+			AVG(hrs) FILTER(WHERE severity = 'low'),
+			AVG(hrs) FILTER(WHERE severity IN ('info', 'none')),
+			AVG(hrs) FILTER(WHERE priority_class = 'P0'),
+			AVG(hrs) FILTER(WHERE priority_class = 'P1'),
+			AVG(hrs) FILTER(WHERE priority_class = 'P2'),
+			AVG(hrs) FILTER(WHERE priority_class = 'P3'),
+			AVG(hrs),
+			PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hrs),
+			PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY hrs),
+			COUNT(*)
+		FROM r
 	`
 
 	var (
-		mttrCritical, mttrHigh, mttrMedium, mttrLow, mttrInfo float64
-		mttrP0, mttrP1, mttrP2, mttrP3                        float64
-		mttrOverall                                           float64
-		sampleSize                                            int
+		sev        [5]sql.NullFloat64
+		prio       [4]sql.NullFloat64
+		overall    sql.NullFloat64
+		med, p90   sql.NullFloat64
+		sampleSize int
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
-		&mttrCritical, &mttrHigh, &mttrMedium, &mttrLow, &mttrInfo,
-		&mttrP0, &mttrP1, &mttrP2, &mttrP3,
-		&mttrOverall, &sampleSize,
+		&sev[0], &sev[1], &sev[2], &sev[3], &sev[4],
+		&prio[0], &prio[1], &prio[2], &prio[3],
+		&overall, &med, &p90, &sampleSize,
 	)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("mttr analytics: %w", err)
 	}
 
 	result := &module.MTTRAnalytics{
-		BySeverity: map[string]float64{
-			"critical": mttrCritical,
-			"high":     mttrHigh,
-			"medium":   mttrMedium,
-			"low":      mttrLow,
-			"info":     mttrInfo,
-		},
-		ByPriorityClass: map[string]float64{
-			"P0": mttrP0,
-			"P1": mttrP1,
-			"P2": mttrP2,
-			"P3": mttrP3,
-		},
-		Overall:    mttrOverall,
-		SampleSize: sampleSize,
+		BySeverity:      map[string]float64{},
+		ByPriorityClass: map[string]float64{},
+		Overall:         nullFloatPtr(overall),
+		OverallMedian:   nullFloatPtr(med),
+		OverallP90:      nullFloatPtr(p90),
+		SampleSize:      sampleSize,
 	}
-
+	for i, k := range []string{"critical", "high", "medium", "low", "info"} {
+		if sev[i].Valid {
+			result.BySeverity[k] = sev[i].Float64
+		}
+	}
+	for i, k := range []string{"P0", "P1", "P2", "P3"} {
+		if prio[i].Valid {
+			result.ByPriorityClass[k] = prio[i].Float64
+		}
+	}
 	return result, nil
 }
 
@@ -979,7 +1018,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 			SELECT
 				COUNT(*) FILTER(WHERE assigned_to IS NULL AND ` + vulnerability.OpenStatusSQL("status") + `) AS unassigned,
 				COALESCE(AVG(EXTRACT(epoch FROM assigned_at - created_at) / 3600) FILTER(WHERE assigned_at IS NOT NULL), 0) AS avg_assign_hours
-			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
+			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 			AND created_at >= NOW() - ($2 || ' days')::interval
 		)
 		SELECT
@@ -1013,6 +1052,41 @@ func newSeverityCounts() map[string]int {
 		m[s] = 0
 	}
 	return m
+}
+
+// findingExcl is the predicate every dashboard query over findings ANDs: the
+// program-asset rule, then the pentest member-visibility rule of the findings
+// list for a viewer who is not an administrator (a pentest finding only for
+// members of its campaign, never a draft or in-review one for the client
+// role), through the one shared rule (vulnerability.FindingMemberVisibilitySQL).
+// col is the finding's asset column, alias-qualified when the findings table
+// is aliased; the tenant is $1. A context with no viewer is an internal
+// call that is not on behalf of a user.
+func findingExcl(ctx context.Context, col string) string {
+	return programFindingExcl(ctx, col) + pentestVisibilityExcl(ctx, findingAlias(col))
+}
+
+// findingAlias is the findings alias of an asset column ("f.asset_id" is "f";
+// an unqualified column reads the bare table).
+func findingAlias(col string) string {
+	if i := strings.LastIndex(col, "."); i > 0 {
+		return col[:i]
+	}
+	return "findings"
+}
+
+func pentestVisibilityExcl(ctx context.Context, alias string) string {
+	v, ok := shared.FindingViewerOf(ctx)
+	if !ok || v.Admin {
+		return ""
+	}
+	return " AND " + vulnerability.FindingMemberVisibilitySQL(alias, "$1", "'"+v.UserID.String()+"'::uuid")
+}
+
+// publishedExcl leaves out the findings still in pentest review (draft,
+// in review): they are not part of activity, new-finding counts or velocity.
+func publishedExcl(alias string) string {
+	return " AND " + alias + ".status NOT IN ('draft', 'in_review')"
 }
 
 // programFindingExcl leaves out the findings of program-only assets

@@ -244,7 +244,7 @@ describe('AdminCommandMenu', () => {
       )
     fetchMock.mockImplementation(async (url: string) =>
       String(url).includes('/platform-users')
-        ? page([{ id: 'user-3', email: 'wile@acme.test', name: 'Wile E.' }])
+        ? page([{ id: 'user-3', email: 'wile@acme.test' }])
         : page([{ id: 'org-9', name: 'Acme Corp', slug: 'acme' }])
     )
   })
@@ -278,7 +278,7 @@ describe('AdminCommandMenu', () => {
     const user = userEvent.setup()
     await renderMenu('ops_admin')
     await user.type(screen.getByRole('combobox'), 'wile')
-    const option = await screen.findByRole('option', { name: /Wile E\./ })
+    const option = await screen.findByRole('option', { name: /wile@acme.test/ })
     expect(
       fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/v1/admin/platform-users?q=wile'))
     ).toBe(true)

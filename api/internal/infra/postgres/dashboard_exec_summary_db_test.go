@@ -45,7 +45,7 @@ func TestExecutiveSummary_OpenAggregates(t *testing.T) {
 	seedExecFinding(ctx, t, db, tenantA, assetA, "false_positive", "P1", "overdue") // closed
 	seedExecFinding(ctx, t, db, tenantB, assetB, "new", "P0", "overdue")            // other tenant
 
-	s, err := repo.GetExecutiveSummary(ctx, tenantA, nil, 30)
+	s, err := repo.GetExecutiveSummary(ctx, tenantA, nil, nil, 30)
 	if err != nil {
 		t.Fatalf("GetExecutiveSummary: %v", err)
 	}
@@ -53,16 +53,16 @@ func TestExecutiveSummary_OpenAggregates(t *testing.T) {
 		t.Fatalf("open aggregates wrong: total=%d p0=%d p1=%d breached=%d",
 			s.FindingsTotal, s.P0Open, s.P1Open, s.SLABreached)
 	}
-	if s.SLACompliancePct != 50 {
+	if s.SLACompliancePct == nil || *s.SLACompliancePct != 50 {
 		t.Fatalf("SLA compliance: want 50, got %v", s.SLACompliancePct)
 	}
 
 	empty := seedTestTenant(ctx, t, db)
-	e, err := repo.GetExecutiveSummary(ctx, empty, nil, 30)
+	e, err := repo.GetExecutiveSummary(ctx, empty, nil, nil, 30)
 	if err != nil {
 		t.Fatalf("empty tenant: %v", err)
 	}
-	if e.FindingsTotal != 0 || e.SLACompliancePct != 100 {
-		t.Fatalf("empty tenant: want total 0 / compliance 100, got %d / %v", e.FindingsTotal, e.SLACompliancePct)
+	if e.FindingsTotal != 0 || e.SLACompliancePct != nil {
+		t.Fatalf("empty tenant: want total 0 / compliance not measured (nil), got %d / %v", e.FindingsTotal, e.SLACompliancePct)
 	}
 }

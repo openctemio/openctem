@@ -34,9 +34,13 @@ type SensorHandler struct {
 	service         *sensorapp.SensorService
 	templateService *sensorapp.SensorConfigTemplateService
 	publicAPIURL    string // Public URL sensors will connect to (defaults to SENSOR_API_URL env var)
-	// products is the sensor product catalog (versions.yaml): each
-	// product's install snippets and image, with its pinned tag.
-	products []SensorInstallProduct
+	// productSource returns the sensor product catalog (versions.yaml, with
+	// the releases learned from the release feed): each product's install
+	// snippets and image, with its pinned tag. Called per request.
+	productSource func() []SensorInstallProduct
+	// sdkLatestSource returns the latest SDK release; nil keeps the
+	// health policy's value.
+	sdkLatestSource func() string
 	// collectorImage is the image a collector's install snippets run.
 	collectorImage string
 	// caCertFile is the platform CA the snippets install (SENSOR_CA_CERT_FILE);
@@ -79,18 +83,15 @@ func NewSensorHandler(service *sensorapp.SensorService, v *validator.Validator, 
 		validator:    v,
 		logger:       log.With("handler", "sensor"),
 	}
-	h.SetProducts(CatalogInstallProducts())
+	h.SetProductSource(CatalogInstallProducts)
 	return h
 }
 
 // SetHealthPolicy sets the heartbeat windows and the SDK entries used for the
 // computed state, health reasons and version status. Unset values take the
-// defaults; a policy without product release lines keeps the catalog's
-// (SetProducts).
+// defaults. The product release lines always come from the catalog
+// (SetProducts, SetProductSource), resolved per request.
 func (h *SensorHandler) SetHealthPolicy(p sensor.HealthPolicy) {
-	if p.Products == nil {
-		p.Products = h.healthPolicy.Products
-	}
 	h.healthPolicy = p.Normalized()
 }
 
@@ -106,12 +107,33 @@ func (h *SensorHandler) SetContentPolicySource(src ContentPolicySource) {
 
 // policyFor is the health policy for one tenant: the handler's thresholds
 // and release channel, plus the tenant's content policy.
+// The organization's own products' release lines are added for products the
+// catalog does not list (a catalog product's line is never replaced).
 func (h *SensorHandler) policyFor(ctx context.Context, tenantID string) sensor.HealthPolicy {
-	p := h.healthPolicy
-	if h.contentPolicies == nil {
+	p := h.currentPolicy()
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
 		return p
 	}
-	if tid, err := shared.IDFromString(tenantID); err == nil {
+	if h.service != nil {
+		lines, err := h.service.CustomProductLines(ctx, tid)
+		if err != nil {
+			// Display only: the sensors keep the compatibility verdicts.
+			h.logger.Warn("organization sensor products not read", "error", logger.SanitizeError(err))
+		}
+		if len(lines) > 0 {
+			merged := make(map[string]sensor.ReleaseLine, len(p.Products)+len(lines))
+			for id, l := range lines {
+				merged[id] = l
+			}
+			for id, l := range p.Products {
+				merged[id] = l
+			}
+			p.Products = merged
+			p = p.Normalized()
+		}
+	}
+	if h.contentPolicies != nil {
 		cp := h.contentPolicies.EffectivePolicy(ctx, tid)
 		p.Content = &cp
 	}
@@ -304,7 +326,7 @@ type SensorResponse struct {
 	// SDKStatus compares sdk_version with the SDK entries of versions.yaml:
 	// outdated (older than the latest, informational) or advisory (a release
 	// with a published security advisory).
-	SDKStatus       string  `json:"sdk_status" enums:"current,outdated,advisory,unknown"`
+	SDKStatus       string  `json:"sdk_status" enums:"current,outdated,advisory,unsupported,unknown"`
 	SensorProduct   string  `json:"sensor_product"`
 	SensorCommit    string  `json:"sensor_commit"`
 	SensorBuildTime *string `json:"sensor_build_time"`

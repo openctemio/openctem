@@ -99,7 +99,7 @@ func TestCTEMCycleHandler_CloseEvaluatesCharter(t *testing.T) {
 	}
 
 	repo := postgres.NewCTEMCycleMetricsRepository(&postgres.DB{DB: raw})
-	h := NewCTEMCycleHandler(raw, repo, logger.NewNop())
+	h := NewCTEMCycleHandler(raw, repo, logger.NewNop()).WithDataScope(unrestrictedDataScope())
 
 	// --- another tenant cannot close it ---
 	w := httptest.NewRecorder()
@@ -221,7 +221,7 @@ func TestCTEMCycleHandler_LazyEvaluation(t *testing.T) {
 	}
 
 	repo := postgres.NewCTEMCycleMetricsRepository(&postgres.DB{DB: raw})
-	h := NewCTEMCycleHandler(raw, repo, logger.NewNop())
+	h := NewCTEMCycleHandler(raw, repo, logger.NewNop()).WithDataScope(unrestrictedDataScope())
 
 	w := httptest.NewRecorder()
 	h.GetMetrics(w, cycleRequest(http.MethodGet, "/api/v1/ctem-cycles/"+cycleID+"/metrics", tenantID, cycleID))

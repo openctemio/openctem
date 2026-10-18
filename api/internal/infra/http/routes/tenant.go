@@ -7,6 +7,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
@@ -66,6 +67,15 @@ func registerTenantRoutes(
 	tenantMiddlewares = append(tenantMiddlewares,
 		middleware.TenantContext(tenantRepo),
 		middleware.RequireMembership(membershipReader))
+	// A suspended organization in the URL is refused to its members (the
+	// membership check above runs first, so only members learn the status).
+	if organizationGate != nil {
+		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireActiveOrganizationParam(organizationGate,
+			func(r *http.Request) (shared.ID, bool) {
+				id := middleware.GetTeamID(r.Context())
+				return id, !id.IsZero()
+			}, nil))
+	}
 	// The organization's IP allowlist, for the organization in the URL.
 	if ipAllowlistMiddleware != nil {
 		tenantMiddlewares = append(tenantMiddlewares, ipAllowlistMiddleware)
@@ -248,6 +258,19 @@ func registerOrganizationLimitsRoutes(router Router, h *handler.LimitsHandler, a
 	}
 	router.Group("/api/v1/organization/limits", func(r Router) {
 		r.GET("/", h.GetOwnLimits, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+// registerOrganizationSecurityOverviewRoutes serves the organization's
+// security overview under the token singleton /api/v1/organization: owners
+// and administrators with settings:read. The tenant comes from the
+// credential.
+func registerOrganizationSecurityOverviewRoutes(router Router, h *handler.SecurityOverviewHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/security-overview", func(r Router) {
+		r.GET("/", h.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 

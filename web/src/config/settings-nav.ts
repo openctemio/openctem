@@ -7,17 +7,24 @@
  * deep (group, then item), with a way back to the app. The main sidebar keeps a
  * single "Settings" link.
  *
+ * Groups (research 178, 2026-10-18): My account, Organization (what the
+ * organization is), Security (how it is protected and audited), Access (who and
+ * what may sign in: people, teams, roles, tokens), Findings & assets (policies
+ * on findings, risk and the inventory), Scanning (what scans may do and with
+ * which tools), Scanner content (rules, templates and their sources),
+ * Integrations. URLs never move with the grouping.
+ *
  * Rules (src/config/__tests__/settings-nav.test.ts):
  * - every url has a page; no page is a scaffold;
  * - `permission` / `module` equal what the route guard enforces for the url,
  *   and personal items (/account) carry neither;
  * - a "Soon" badge if and only if the page is a ComingSoonPage;
- * - 2 to 8 items per group; titles in sentence case;
- * - every title, group and description has en and vi strings.
+ * - 2 to 9 items per group; titles in sentence case;
+ * - every title, group, description and anchor has en and vi strings.
  *
- * Design: openctemio/ui Settings IA research (2026-10-01). The groups follow
- * the target tree; some items still point at their old URLs until their pages
- * move (each move ships with a 308 in src/config/legacy-routes.ts).
+ * Search (rail filter, /settings and ⌘K) matches titles, descriptions,
+ * keywords and `anchors`: the settings inside a page, which link to
+ * `<url>#<anchor id>` (src/config/settings-search.ts).
  */
 import {
   GitMerge,
@@ -57,7 +64,9 @@ import {
   Settings2,
   Shield,
   SlidersHorizontal,
+  ShieldAlert,
   ShieldCheck,
+  ShieldHalf,
   Timer,
   User,
   UserCog,
@@ -67,6 +76,21 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Permission } from '@/lib/permissions'
+import { matchesAllWords } from './settings-search'
+
+/**
+ * One setting inside a page, so search finds the setting and not only its page.
+ * The page renders an element with this `id`; the search result links to
+ * `<url>#<id>`, and the settings shell scrolls to it and highlights it.
+ * i18n key: `settings.anchor.<item id>.<anchor id>`.
+ */
+export interface SettingsNavAnchor {
+  id: string
+  /** English title, sentence case. */
+  title: string
+  /** Extra words search matches on. */
+  keywords?: string[]
+}
 
 export interface SettingsNavItem {
   /** Stable id. i18n keys: `settings.item.<id>` (title), `settings.desc.<id>`. */
@@ -92,6 +116,8 @@ export interface SettingsNavItem {
    * (GET /organization/limits says applies). Nothing applies by default.
    */
   onlyWhenLimitsApply?: boolean
+  /** Settings on the page that search can find and link to directly. */
+  anchors?: SettingsNavAnchor[]
 }
 
 export interface SettingsNavGroup {
@@ -163,7 +189,7 @@ export const settingsNav: SettingsNavGroup[] = [
       {
         id: 'org-general',
         title: 'General',
-        description: 'Organization name, branding, localization and file storage.',
+        description: 'Organization name, logo, file storage, ownership and deletion.',
         url: '/settings/general',
         icon: Building,
         permission: Permission.TeamUpdate,
@@ -175,6 +201,19 @@ export const settingsNav: SettingsNavGroup[] = [
           'storage',
           's3',
           'delete organization',
+          'transfer ownership',
+        ],
+        anchors: [
+          {
+            id: 'org-profile',
+            title: 'Organization name and URL',
+            keywords: ['name', 'slug', 'logo', 'website'],
+          },
+          {
+            id: 'danger-zone',
+            title: 'Transfer ownership or delete the organization',
+            keywords: ['delete', 'owner', 'transfer'],
+          },
         ],
       },
       {
@@ -195,6 +234,62 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.TeamUpdate,
         keywords: ['limits', 'quota', 'seats', 'usage'],
         onlyWhenLimitsApply: true,
+      },
+    ],
+  },
+  {
+    id: 'security',
+    title: 'Security',
+    items: [
+      {
+        // The organization's posture checks and score (api: GET
+        // /organization/security-overview, owners and admins): the Security
+        // group's landing page.
+        id: 'security-overview',
+        title: 'Security overview',
+        description: 'A score and checklist of what to fix first in your organization.',
+        url: '/settings/security',
+        icon: ShieldAlert,
+        permission: Permission.TeamUpdate,
+        keywords: ['security', 'health', 'score', 'checklist', 'posture', '2fa', 'mfa'],
+      },
+      {
+        id: 'authentication',
+        title: 'Authentication',
+        description: 'Two-factor, who may join, the IP allowlist and email verification.',
+        url: '/settings/authentication',
+        icon: LockKeyhole,
+        permission: Permission.TeamUpdate,
+        keywords: ['2fa', 'mfa', 'ip allowlist', 'domains', 'sso', 'saml', 'sign-in'],
+        anchors: [
+          {
+            id: 'two-factor',
+            title: 'Require two-factor authentication',
+            keywords: ['2fa', 'mfa', 'totp'],
+          },
+          { id: 'sso-member-approval', title: 'Approve new SSO members', keywords: ['jit', 'sso'] },
+          { id: 'email-verification', title: 'Email verification', keywords: ['verify email'] },
+          {
+            id: 'allowed-domains',
+            title: 'Allowed email domains',
+            keywords: ['domain', 'restrict'],
+          },
+          {
+            id: 'ip-allowlist',
+            title: 'IP allowlist',
+            keywords: ['ip', 'network', 'cidr', 'whitelist'],
+          },
+          {
+            id: 'invitations',
+            title: 'Who may be invited',
+            keywords: ['invite', 'external', 'guest'],
+          },
+          {
+            id: 'personal-accounts',
+            title: 'Personal accounts and SSO exceptions',
+            keywords: ['gmail', 'personal email', 'break-glass'],
+          },
+        ],
       },
       {
         // What the verified SSO domains do to accounts on them (api RFC-104):
@@ -219,6 +314,28 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['trust', 'partner', 'sister company', 'external', 'home realm', 'sso'],
       },
       {
+        // Owners approve or reject SSO changes the platform administrator
+        // proposed (RFC-022 revision 8); the page tells admins it is owner only.
+        id: 'sso-approvals',
+        title: 'SSO approvals',
+        description: 'Approve or reject sign-in changes proposed by the platform administrator.',
+        url: '/settings/sso-approvals',
+        icon: ShieldCheck,
+        permission: Permission.TeamUpdate,
+        keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
+      },
+      {
+        // Time-boxed, read-only, audited access for platform support (api
+        // RFC-063): owners grant, owners and admins revoke and see history.
+        id: 'support-access',
+        title: 'Support access',
+        description: 'Let platform support read your data for a limited time.',
+        url: '/settings/support-access',
+        icon: LifeBuoy,
+        permission: Permission.TeamUpdate,
+        keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
+      },
+      {
         id: 'audit-log',
         title: 'Audit log',
         description: 'Who did what, and when, across the organization.',
@@ -226,26 +343,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: History,
         permission: Permission.AuditRead,
         keywords: ['audit trail', 'events', 'compliance'],
-      },
-      {
-        id: 'license-policy',
-        title: 'License policy',
-        description: 'Which open-source licenses your packages may use, and which open findings.',
-        url: '/settings/license-policy',
-        icon: FileBadge,
-        permission: Permission.SettingsRead,
-        keywords: ['license', 'spdx', 'copyleft', 'gpl', 'sbom', 'compliance'],
-      },
-      {
-        // Signed content packages from the catalog (api RFC-099): read with
-        // content:read; installs and approvals need content:install.
-        id: 'content',
-        title: 'Content catalog',
-        description: 'Signed rules, templates and other packages: install, update and approve.',
-        url: '/settings/content',
-        icon: Package,
-        permission: Permission.ContentRead,
-        keywords: ['content', 'packages', 'catalog', 'install', 'rules', 'templates', 'signed'],
       },
     ],
   },
@@ -289,15 +386,6 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['rbac', 'permissions'],
       },
       {
-        id: 'authentication',
-        title: 'Authentication',
-        description: 'Two-factor, session length and sign-in restrictions.',
-        url: '/settings/authentication',
-        icon: LockKeyhole,
-        permission: Permission.TeamUpdate,
-        keywords: ['2fa', 'mfa', 'session timeout', 'ip allowlist', 'domains', 'sso', 'saml'],
-      },
-      {
         id: 'scim',
         title: 'Directory sync (SCIM)',
         description: 'Provision members from your identity provider.',
@@ -307,28 +395,6 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
       },
       {
-        // Owners approve or reject SSO changes the platform administrator
-        // proposed (RFC-022 revision 8); the page tells admins it is owner only.
-        id: 'sso-approvals',
-        title: 'SSO approvals',
-        description: 'Approve or reject sign-in changes proposed by the platform administrator.',
-        url: '/settings/sso-approvals',
-        icon: ShieldCheck,
-        permission: Permission.TeamUpdate,
-        keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
-      },
-      {
-        // Time-boxed, read-only, audited access for platform support (api
-        // RFC-063): owners grant, owners and admins revoke and see history.
-        id: 'support-access',
-        title: 'Support access',
-        description: 'Let platform support read your data for a limited time.',
-        url: '/settings/support-access',
-        icon: LifeBuoy,
-        permission: Permission.TeamUpdate,
-        keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
-      },
-      {
         id: 'api-keys',
         title: 'API keys',
         description: 'Keys for scripts and tools that call the API.',
@@ -336,6 +402,25 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: KeyRound,
         permission: Permission.ApiKeysRead,
         keywords: ['token', 'programmatic', 'automation'],
+      },
+      {
+        // An organization-owned identity for an integration, with its own
+        // roles, teams and API keys. Not module gated: the API gates none of
+        // its routes on the integrations module.
+        id: 'service-accounts',
+        title: 'Service accounts',
+        description: 'Identities for integrations, with their own roles and API keys.',
+        url: '/settings/service-accounts',
+        icon: ServerCog,
+        permission: Permission.MembersRead,
+        keywords: [
+          'service account',
+          'machine',
+          'bot',
+          'integration identity',
+          'api key',
+          'non-human',
+        ],
       },
       {
         id: 'mcp',
@@ -350,7 +435,7 @@ export const settingsNav: SettingsNavGroup[] = [
   },
   {
     id: 'findings',
-    title: 'Findings',
+    title: 'Findings & assets',
     items: [
       {
         id: 'finding-lifecycle',
@@ -372,21 +457,6 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['approval', 'four-eyes', 'false positive', 'accepted risk', 'backup contact'],
       },
       {
-        id: 'vulnerability-matching',
-        title: 'Vulnerability matching',
-        description: 'Which CVEs affecting your software versions become findings.',
-        url: '/settings/vulnerability-matching',
-        icon: Bug,
-        permission: Permission.TeamUpdate,
-        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
-      },
-    ],
-  },
-  {
-    id: 'policies',
-    title: 'Policies',
-    items: [
-      {
         id: 'risk-scoring',
         title: 'Risk scoring',
         description: 'How asset risk scores are weighted.',
@@ -407,13 +477,22 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['sla', 'deadline', 'due date'],
       },
       {
-        id: 'asset-lifecycle',
-        title: 'Asset lifecycle',
-        description: 'When stale assets are retired automatically.',
-        url: '/settings/asset-lifecycle',
-        icon: Clock,
+        id: 'vulnerability-matching',
+        title: 'Vulnerability matching',
+        description: 'Which CVEs affecting your software versions become findings.',
+        url: '/settings/vulnerability-matching',
+        icon: Bug,
         permission: Permission.TeamUpdate,
-        keywords: ['stale', 'retire', 'archive'],
+        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
+      },
+      {
+        id: 'license-policy',
+        title: 'License policy',
+        description: 'Which open-source licenses your packages may use, and which open findings.',
+        url: '/settings/license-policy',
+        icon: FileBadge,
+        permission: Permission.SettingsRead,
+        keywords: ['license', 'spdx', 'copyleft', 'gpl', 'sbom', 'compliance'],
       },
       {
         id: 'asset-sources',
@@ -425,32 +504,13 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['source', 'precedence', 'integration', 'import', 'scan', 'lock', 'conflict'],
       },
       {
-        id: 'scope-policy',
-        title: 'Scope policy',
-        description: 'Who widens scope, how many approve, one-off entries and discovered names.',
-        url: '/settings/scope',
-        icon: Crosshair,
-        permission: Permission.ScopeRead,
-        module: 'scope_config',
-        keywords: ['scope', 'approvals', 'one-off', 'exception', 'tier', 'auto-join', 'proof'],
-      },
-      {
-        id: 'scan-windows',
-        title: 'Scan windows',
-        description: 'When scans may touch which targets: testing windows and blackouts.',
-        url: '/settings/scanning/scan-windows',
-        icon: CalendarClock,
-        permission: Permission.ScansRead,
-        module: 'scans',
-        keywords: [
-          'business hours',
-          'maintenance window',
-          'change freeze',
-          'blackout',
-          'testing window',
-          'freeze window',
-          'schedule',
-        ],
+        id: 'asset-lifecycle',
+        title: 'Asset lifecycle',
+        description: 'When stale assets are retired automatically.',
+        url: '/settings/asset-lifecycle',
+        icon: Clock,
+        permission: Permission.TeamUpdate,
+        keywords: ['stale', 'retire', 'archive'],
       },
       {
         id: 'pentest-methodology',
@@ -481,6 +541,16 @@ export const settingsNav: SettingsNavGroup[] = [
     title: 'Scanning',
     items: [
       {
+        id: 'scope-policy',
+        title: 'Scope policy',
+        description: 'Who widens scope, how many approve, one-off entries and discovered names.',
+        url: '/settings/scope',
+        icon: Crosshair,
+        permission: Permission.ScopeRead,
+        module: 'scope_config',
+        keywords: ['scope', 'approvals', 'one-off', 'exception', 'tier', 'auto-join', 'proof'],
+      },
+      {
         id: 'scan-approval',
         title: 'Scan approval',
         description: 'Which scans need a person’s approval before they run: off by default.',
@@ -498,6 +568,75 @@ export const settingsNav: SettingsNavGroup[] = [
         ],
       },
       {
+        id: 'scan-windows',
+        title: 'Scan windows',
+        description: 'When scans may touch which targets: testing windows and blackouts.',
+        url: '/settings/scanning/scan-windows',
+        icon: CalendarClock,
+        permission: Permission.ScansRead,
+        module: 'scans',
+        keywords: [
+          'business hours',
+          'maintenance window',
+          'change freeze',
+          'blackout',
+          'testing window',
+          'freeze window',
+          'schedule',
+        ],
+      },
+      {
+        // The sensor scan-job controls of the security settings section (the
+        // same API section as Authentication, owner only to change): what
+        // jobs may do on the organization's sensors.
+        id: 'sensor-safety',
+        title: 'Sensor job safety',
+        description:
+          'What scan jobs may do on your sensors: private targets, callbacks, custom templates, TLS.',
+        url: '/settings/scanning/sensor-safety',
+        icon: ShieldHalf,
+        permission: Permission.TeamUpdate,
+        module: 'sensors',
+        keywords: [
+          'interactsh',
+          'out-of-band',
+          'custom templates',
+          'user-agent',
+          'tls',
+          'private targets',
+          'local policy',
+          'shared sensors',
+          'key binding',
+        ],
+        anchors: [
+          {
+            id: 'private-targets',
+            title: 'Private targets need a sensor-local policy',
+            keywords: ['rfc 1918', 'internal'],
+          },
+          {
+            id: 'opt-ins',
+            title: 'Out-of-band callbacks and custom templates',
+            keywords: ['interactsh', 'oob', 'templates'],
+          },
+          {
+            id: 'tool-http',
+            title: 'User-Agent and TLS of scan tools',
+            keywords: ['user agent', 'certificate', 'insecure'],
+          },
+          {
+            id: 'sensor-policies',
+            title: 'Sensor identity and key binding',
+            keywords: ['identity', 'key binding'],
+          },
+          {
+            id: 'shared-sensors',
+            title: 'Shared sensors',
+            keywords: ['platform sensors', 'opt out'],
+          },
+        ],
+      },
+      {
         id: 'scan-profiles',
         title: 'Scan profiles',
         description: 'Reusable scan configurations: tools, intensity and duration.',
@@ -506,6 +645,63 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.ScanProfilesRead,
         module: 'scans',
         keywords: ['profiles', 'scan config'],
+      },
+      {
+        id: 'tools',
+        title: 'Tools',
+        description: 'The tools your sensors have, and whether a scan can run with each.',
+        url: '/settings/scanning/tools',
+        icon: Wrench,
+        permission: Permission.ToolsRead,
+        module: 'scans',
+        keywords: ['scanners', 'tool registry', 'tool availability'],
+      },
+      {
+        id: 'tool-defaults',
+        title: 'Tool defaults',
+        description: 'Default options for each tool on every sensor; a sensor can override them.',
+        url: '/settings/scanning/tool-defaults',
+        icon: SlidersHorizontal,
+        permission: Permission.SensorsRead,
+        module: 'sensors',
+        keywords: ['tool settings', 'rate limit', 'concurrency', 'timeout', 'retries', 'options'],
+      },
+      {
+        id: 'sensor-products',
+        title: 'Sensor products',
+        description: 'Latest and minimum release of the sensors your organization builds.',
+        url: '/settings/scanning/sensor-products',
+        icon: Package,
+        permission: Permission.SensorsRead,
+        module: 'sensors',
+        keywords: ['custom sensor', 'sdk-go', 'release', 'update available', 'unsupported'],
+      },
+      {
+        id: 'capabilities',
+        title: 'Capabilities',
+        description: 'The capability taxonomy that tools are matched on.',
+        url: '/settings/scanning/capabilities',
+        icon: Zap,
+        permission: Permission.ToolsRead,
+        module: 'scans',
+        keywords: ['taxonomy'],
+      },
+    ],
+  },
+  {
+    id: 'content',
+    title: 'Scanner content',
+    items: [
+      {
+        // Signed content packages from the catalog (api RFC-099): read with
+        // content:read; installs and approvals need content:install.
+        id: 'content',
+        title: 'Content catalog',
+        description: 'Signed rules, templates and other packages: install, update and approve.',
+        url: '/settings/content',
+        icon: Package,
+        permission: Permission.ContentRead,
+        keywords: ['content', 'packages', 'catalog', 'install', 'rules', 'templates', 'signed'],
       },
       {
         id: 'scanner-templates',
@@ -538,38 +734,8 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['secret store', 'secrets', 'tokens', 'git token'],
       },
       {
-        id: 'tools',
-        title: 'Tools',
-        description: 'The tools your sensors have, and whether a scan can run with each.',
-        url: '/settings/scanning/tools',
-        icon: Wrench,
-        permission: Permission.ToolsRead,
-        module: 'scans',
-        keywords: ['scanners', 'tool registry', 'tool availability'],
-      },
-      {
-        id: 'capabilities',
-        title: 'Capabilities',
-        description: 'The capability taxonomy that tools are matched on.',
-        url: '/settings/scanning/capabilities',
-        icon: Zap,
-        permission: Permission.ToolsRead,
-        module: 'scans',
-        keywords: ['taxonomy'],
-      },
-      {
-        id: 'tool-defaults',
-        title: 'Tool defaults',
-        description: 'Default options for each tool on every sensor; a sensor can override them.',
-        url: '/settings/scanning/tool-defaults',
-        icon: SlidersHorizontal,
-        permission: Permission.SensorsRead,
-        module: 'sensors',
-        keywords: ['tool settings', 'rate limit', 'concurrency', 'timeout', 'retries', 'options'],
-      },
-      {
         id: 'scanner-content',
-        title: 'Scanner content',
+        title: 'Content freshness',
         description: 'How fresh vulnerability databases, templates and rules must be.',
         url: '/settings/scanning/content',
         icon: DatabaseZap,
@@ -659,25 +825,6 @@ export const settingsNav: SettingsNavGroup[] = [
         subModuleKey: 'siem',
         keywords: ['splunk', 'hec', 'events'],
       },
-      {
-        // An organization-owned identity for an integration, with its own
-        // roles, teams and API keys. Not module gated: the API gates none of
-        // its routes on the integrations module.
-        id: 'service-accounts',
-        title: 'Service accounts',
-        description: 'Identities for integrations, with their own roles and API keys.',
-        url: '/settings/service-accounts',
-        icon: ServerCog,
-        permission: Permission.MembersRead,
-        keywords: [
-          'service account',
-          'machine',
-          'bot',
-          'integration identity',
-          'api key',
-          'non-human',
-        ],
-      },
     ],
   },
 ]
@@ -718,11 +865,11 @@ export function matchesSettingsQuery(
   query: string,
   labels: { title: string; description: string; group: string }
 ): boolean {
-  const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-  const q = fold(query.trim())
-  if (!q) return true
-  const hay = fold(
-    [labels.title, labels.description, labels.group, item.title, ...(item.keywords ?? [])].join(' ')
-  )
-  return q.split(/\s+/).every((word) => hay.includes(word))
+  return matchesAllWords(query, [
+    labels.title,
+    labels.description,
+    labels.group,
+    item.title,
+    ...(item.keywords ?? []),
+  ])
 }

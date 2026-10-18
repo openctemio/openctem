@@ -3,6 +3,7 @@ package adminconsole
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -225,6 +226,24 @@ func (f *fakeConsole) DeleteSessionsForAdmin(_ context.Context, id shared.ID) er
 		}
 	}
 	return nil
+}
+
+func (f *fakeConsole) EndOldestVerifiedSessions(_ context.Context, id shared.ID, keep int) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var mine []*admin.Session
+	for _, s := range f.sessions {
+		if s.AdminID == id && s.MFAVerified {
+			mine = append(mine, s)
+		}
+	}
+	sort.Slice(mine, func(i, j int) bool { return mine[i].CreatedAt.After(mine[j].CreatedAt) })
+	var n int64
+	for i := keep; i < len(mine); i++ {
+		delete(f.sessions, mine[i].TokenHash)
+		n++
+	}
+	return n, nil
 }
 
 func (f *fakeConsole) DeleteExpiredSessions(_ context.Context, now time.Time) (int64, error) {
@@ -571,6 +590,37 @@ func TestWrongCodeCountsTowardLockout(t *testing.T) {
 	}
 }
 
+func TestFourthVerifiedSessionEndsTheOldest(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	secret, first := h.enroll(t)
+	tokens := []string{first}
+	for i := 0; i < 3; i++ {
+		h.clock = h.clock.Add(time.Minute)
+		res, err := h.svc.Start(ctx, refresh, password, client)
+		if err != nil {
+			t.Fatalf("start %d: %v", i, err)
+		}
+		code, _ := totp.Code(secret, h.clock)
+		tok, _, err := h.svc.VerifyMFA(ctx, res.PendingToken, code, client)
+		if err != nil {
+			t.Fatalf("verify %d: %v", i, err)
+		}
+		tokens = append(tokens, tok)
+	}
+	if _, err := h.svc.Authenticate(ctx, tokens[0]); err == nil {
+		t.Fatal("the oldest session must have been ended by the fourth")
+	}
+	for _, tok := range tokens[1:] {
+		if _, err := h.svc.Authenticate(ctx, tok); err != nil {
+			t.Fatalf("a newer session must stay: %v", err)
+		}
+	}
+	if !h.audit.has(ActionSessionEvicted) {
+		t.Fatalf("eviction must be audited, got %v", h.audit.actions)
+	}
+}
+
 func TestIdleSessionExpires(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -588,6 +638,80 @@ func TestIdleSessionExpires(t *testing.T) {
 	h.clock = h.clock.Add(admin.SessionIdleTimeout + time.Second)
 	if _, err := h.svc.Authenticate(ctx, token); err == nil {
 		t.Fatal("idle session must expire")
+	}
+}
+
+// An open console tab refreshes its pages on a timer. Those background reads
+// authenticate but must not keep the session alive: an unattended tab still
+// signs out after the idle timeout.
+func TestBackgroundReadsDoNotPreventIdleTimeout(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	bg := admin.WithBackgroundRequest(ctx)
+	_, token := h.enroll(t)
+
+	for elapsed := time.Duration(0); elapsed < admin.SessionIdleTimeout-time.Minute; elapsed += 30 * time.Second {
+		h.clock = h.clock.Add(30 * time.Second)
+		if _, err := h.svc.Authenticate(bg, token); err != nil {
+			t.Fatalf("background read within the idle window must authenticate: %v", err)
+		}
+	}
+	h.clock = h.clock.Add(2 * time.Minute)
+	if _, err := h.svc.Authenticate(bg, token); err == nil {
+		t.Fatal("a session used only by background reads must idle out")
+	}
+}
+
+func TestInteractiveReadKeepsSessionAliveBetweenBackgroundReads(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	bg := admin.WithBackgroundRequest(ctx)
+	_, token := h.enroll(t)
+
+	h.clock = h.clock.Add(admin.SessionIdleTimeout - time.Minute)
+	if _, err := h.svc.Authenticate(ctx, token); err != nil {
+		t.Fatalf("interactive use: %v", err)
+	}
+	h.clock = h.clock.Add(admin.SessionIdleTimeout - time.Minute)
+	if _, err := h.svc.Authenticate(bg, token); err != nil {
+		t.Fatalf("background read after recent activity: %v", err)
+	}
+}
+
+// A password reset or change on the account's own sign-in (forgot password,
+// change password, two-step reset) ends the linked administrator's console
+// sessions: a stolen console session must not outlive the password.
+func TestEndSessionsForAccountEndsConsoleSessions(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	_, token := h.enroll(t)
+	if _, err := h.svc.Authenticate(ctx, token); err != nil {
+		t.Fatalf("session before the change: %v", err)
+	}
+
+	h.svc.EndSessionsForAccount(ctx, *h.admin.UserID())
+
+	if _, err := h.svc.Authenticate(ctx, token); err == nil {
+		t.Fatal("console session must end when the linked account's sessions are revoked")
+	}
+	if !h.audit.has(ActionSessionsEndedByAccount) {
+		t.Fatal("ending the sessions must be audited")
+	}
+}
+
+// An account that is not an administrator is ignored (most password resets).
+func TestEndSessionsForAccountIgnoresNonAdmins(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	_, token := h.enroll(t)
+
+	h.svc.EndSessionsForAccount(ctx, shared.NewID())
+
+	if _, err := h.svc.Authenticate(ctx, token); err != nil {
+		t.Fatalf("another account's change must not end this session: %v", err)
+	}
+	if h.audit.has(ActionSessionsEndedByAccount) {
+		t.Fatal("nothing to audit for an account without an administrator")
 	}
 }
 

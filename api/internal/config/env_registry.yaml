@@ -48,12 +48,12 @@ vars:
     group: "Application"
     type: bool
     default: "false"
-    description: "Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
+    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
   - name: DEPLOYMENT_REGION
     component: api
     group: "Application"
     type: string
-    description: "Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Unset: not named."
+    description: "Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Set: pins the region (the console cannot change it). Unset: a super admin may set it once in the console (Settings > Configuration) before the first organization exists."
   - name: BRAND_FILE
     component: api
     group: "Brand"
@@ -641,12 +641,12 @@ vars:
     group: "Organizations and scope guardrails"
     type: string
     secret: true
-    description: "Cloudflare Turnstile secret for the public request-access form. Unset: no CAPTCHA (the rate limits still apply). Set together with `CAPTCHA_TURNSTILE_SITE_KEY`."
+    description: "Cloudflare Turnstile secret for registration, request access and sign-in after repeated failures. Set: pins the CAPTCHA keys (the console shows them locked). Unset: the keys are set in the console (Settings > CAPTCHA), or there is no CAPTCHA (the rate limits still apply). Set together with `CAPTCHA_TURNSTILE_SITE_KEY`."
   - name: CAPTCHA_TURNSTILE_SITE_KEY
     component: api
     group: "Organizations and scope guardrails"
     type: string
-    description: "Cloudflare Turnstile site key (public) shown on the request-access form. Set together with `CAPTCHA_TURNSTILE_SECRET`."
+    description: "Cloudflare Turnstile site key (public) shown on the sign-up, request-access and sign-in forms. Set together with `CAPTCHA_TURNSTILE_SECRET`; both pin the console setting."
   - name: KEYCLOAK_BASE_URL
     component: api
     group: "Single sign-on and social login"
@@ -905,32 +905,32 @@ vars:
     description: "Base URL of links in e-mails. Set it only when the console is not at `APP_URL`."
   - name: SYSTEM_STORAGE_PATHS
     component: api
-    group: "System page"
+    group: "Health page"
     type: string
-    description: "`name=path,name=path` directories whose free space the platform console System page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory."
+    description: "`name=path,name=path` directories whose free space the platform console Health page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory."
   - name: SYSTEM_BACKUP_STATUS_FILE
     component: api
-    group: "System page"
+    group: "Health page"
     type: path
-    description: "The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The System page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported."
+    description: "The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The Health page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported."
   - name: SYSTEM_TLS_CERT_FILES
     component: api
-    group: "System page"
+    group: "Health page"
     type: string
-    description: "`name=path,name=path` PEM certificate files whose expiry the System page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked."
+    description: "`name=path,name=path` PEM certificate files whose expiry the Health page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked."
   - name: SYSTEM_WEB_HEALTH_URL
     component: api
-    group: "System page"
+    group: "Health page"
     type: url
-    description: "Internal health URL of the web container for the System page (one GET, no redirects). Must be http or https. Unset: not checked."
+    description: "Internal health URL of the web container for the Health page (one GET, no redirects). Must be http or https. Unset: not checked."
   - name: SYSTEM_GATEWAY_HEALTH_URL
     component: api
-    group: "System page"
+    group: "Health page"
     type: url
-    description: "Internal health URL of the gateway for the System page (one GET, no redirects). Must be http or https. Unset: not checked."
+    description: "Internal health URL of the gateway for the Health page (one GET, no redirects). Must be http or https. Unset: not checked."
   - name: SYSTEM_WATCH_INTERVAL
     component: api
-    group: "System page"
+    group: "Health page"
     type: duration
     default: "5m"
     description: "How often the system watcher checks free space, backup age and certificate expiry, sets the metrics and emails the platform administrators on a worse level. Minimum 1m."
@@ -982,7 +982,7 @@ vars:
     group: "Attachment storage"
     type: int
     default: "20480"
-    description: "Most attachment bytes one organization may hold, in MiB (20480 = 20 GiB). An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota."
+    description: "Default of the most attachment bytes one organization may hold, in MiB (20480 = 20 GiB), until a super admin sets the default in the console (Settings > Limits); an organization's own `storage_mb` limit wins over both. An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota."
   - name: STORAGE_ORPHAN_GRACE_DAYS
     component: api
     group: "Attachment storage"
@@ -1646,7 +1646,7 @@ vars:
     component: api
     group: "Audit log retention"
     type: string
-    description: "Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off."
+    description: "Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off, except that with `MANAGED_SERVICE=true` in production the start-up is refused unless it is set."
   - name: ADMIN_AUDIT_SINK_SECRET
     component: api
     group: "Audit log retention"
@@ -1847,7 +1847,7 @@ vars:
     group: "AI triage"
     type: string
     secret: true
-    description: "Platform key for the `claude` provider. AI triage is available when at least one provider key is set and the AI triage module is enabled for the organization."
+    description: "Platform key for the `claude` provider. Any platform key pins the platform AI provider to the environment (the console shows it locked); without one, a super admin sets the provider and key in the console (Settings > AI provider), off by default."
   - name: GEMINI_API_KEY
     component: api
     group: "AI triage"

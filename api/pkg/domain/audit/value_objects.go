@@ -40,6 +40,14 @@ const (
 	ActionTenantIdleDeletionDue   Action = "tenant.idle_deletion_due"
 	ActionTenantIdleReactivated   Action = "tenant.idle_reactivated"
 	ActionTenantIdlePolicyChanged Action = "tenant.idle_policy_changed"
+	// Organization suspension by a platform administrator
+	// (docs/architecture/organization-suspension.md).
+	ActionTenantSuspended   Action = "tenant.suspended"
+	ActionTenantUnsuspended Action = "tenant.unsuspended"
+	// Organization deletion with a grace period
+	// (docs/architecture/organization-deletion.md).
+	ActionTenantDeletionScheduled Action = "tenant.deletion_scheduled"
+	ActionTenantDeletionCancelled Action = "tenant.deletion_canceled"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
@@ -147,8 +155,8 @@ const (
 	// member whose membership label is not owner (a co-owner planted before
 	// system roles were limited to the membership routes).
 	ActionOwnerRoleDriftRemoved Action = "owner_role_drift_removed"
-	ActionMemberSuspended   Action = "member.suspended"
-	ActionMemberReactivated Action = "member.reactivated"
+	ActionMemberSuspended       Action = "member.suspended"
+	ActionMemberReactivated     Action = "member.reactivated"
 	// ActionMemberOffboarded: access stripped, owned work reassigned, the
 	// membership kept as a tombstone (member lifecycle, RFC-050).
 	ActionMemberOffboarded Action = "member.offboarded"
@@ -691,6 +699,10 @@ const (
 	// tamper-evident audit hash-chain (POST /audit-logs/rebaseline). The
 	// overwritten hashes are archived in audit_chain_rebaseline_entries.
 	ActionAuditChainRebaselined Action = "audit.chain_rebaselined"
+
+	// ActionAuditLogExported records an administrator downloading the
+	// organization's audit log (CSV or JSON lines).
+	ActionAuditLogExported Action = "audit_log.exported"
 )
 
 // String returns the string representation of the action.
@@ -710,6 +722,8 @@ func (a Action) IsValid() bool {
 		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
+		ActionTenantSuspended, ActionTenantUnsuspended,
+		ActionTenantDeletionScheduled, ActionTenantDeletionCancelled,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
@@ -830,7 +844,7 @@ func (a Action) IsValid() bool {
 		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
 		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
-		ActionAuditChainRebaselined:
+		ActionAuditChainRebaselined, ActionAuditLogExported:
 		return true
 	}
 	return isConfigAction(a) || isRegisteredAction(a)
@@ -951,7 +965,7 @@ func (a Action) Category() string {
 		return "remediation_campaign"
 	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
-	case ActionAuditChainRebaselined:
+	case ActionAuditChainRebaselined, ActionAuditLogExported:
 		return "audit"
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,

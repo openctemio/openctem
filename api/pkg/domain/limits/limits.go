@@ -45,6 +45,10 @@ const (
 	LifecycleSubStatuses Key = "lifecycle_sub_statuses"
 	// LifecycleSchemes caps its finding lifecycle schemes (live ones).
 	LifecycleSchemes Key = "lifecycle_schemes"
+	// StorageMB caps the MiB an organization's uploaded files (evidence,
+	// attachments) may hold. Without it the platform's default storage
+	// quota applies (Settings > Limits, or STORAGE_TENANT_QUOTA_MB).
+	StorageMB Key = "storage_mb"
 	// OrgsPerUser caps how many organizations one person may own when they
 	// create one themselves (self-service). It is an instance setting (the
 	// self-service defaults), never a per-organization limit.
@@ -52,7 +56,7 @@ const (
 )
 
 // Keys lists every limit key in display order.
-var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, OrgsPerUser}
+var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, StorageMB, OrgsPerUser}
 
 // IsValid reports whether k is a known key.
 func (k Key) IsValid() bool {

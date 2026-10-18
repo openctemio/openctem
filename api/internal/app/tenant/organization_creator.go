@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -42,6 +44,8 @@ type CreateOrganizationInput struct {
 	// (ErrOwnerAccountExists): someone else's request must never make an
 	// existing person the owner of an organization without their consent.
 	NewOwnerOnly bool
+	// SignupSource names the path in the sign-up feed (default console).
+	SignupSource signupevent.Source
 }
 
 // ErrOwnerAccountExists is returned when NewOwnerOnly is set and the owner
@@ -115,8 +119,13 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 		ownerCreated = true
 	}
 
+	source := in.SignupSource
+	if source == "" {
+		source = signupevent.SourceConsole
+	}
 	t, err := c.tenants.CreateTenant(ctx, CreateTenantInput{
 		Name: in.Name, Slug: in.Slug, Description: in.Description, Provisioned: in.Provisioned,
+		SignupSource: source, CreatorEmail: ownerEmail,
 	}, owner.ID(), actx)
 	if err != nil {
 		// tenantdom.ErrPlatformAdminMembership (the owner is a platform

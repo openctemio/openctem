@@ -22,6 +22,7 @@ import { useOrganizations } from '@console/features/admin-console/api/use-admin-
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { CreateOrganizationDialog } from '@console/features/admin-console/components/create-organization-dialog'
 import { SSOPostureBadges } from '@console/features/admin-console/components/sso-posture-badges'
+import { OrganizationStatusBadge } from '@console/features/admin-console/components/organization-suspension'
 import { adminCan, type AdminOrganization } from '@console/features/admin-console/types'
 
 const ANY = 'any'
@@ -50,7 +51,10 @@ export default function AdminOrganizationsPage() {
         accessorKey: 'name',
         header: t('admin.org.col.organization', 'Organization'),
         cell: ({ row }) => (
-          <StackedCell primary={row.original.name} secondary={row.original.slug} />
+          <div className="flex items-center gap-2">
+            <StackedCell primary={row.original.name} secondary={row.original.slug} />
+            <OrganizationStatusBadge org={row.original} />
+          </div>
         ),
       },
       {
@@ -126,7 +130,11 @@ export default function AdminOrganizationsPage() {
       </PageHeader>
       <div className="mt-5">
         {error ? (
-          <ErrorState title="organizations" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.organizationsPage.organizations', 'organizations')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : (
           <DataTable
             columns={columns}

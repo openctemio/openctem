@@ -41,7 +41,11 @@ function apiPage(page: number): number {
 // URL BUILDER
 // ============================================
 
-function buildAuditLogsUrl(filters?: AuditLogFilters): string {
+/**
+ * The filter part of the query: what the list and the export both accept.
+ * Paging and sort belong to the list only.
+ */
+export function buildAuditFilterParams(filters?: AuditLogFilters): URLSearchParams {
   const params = new URLSearchParams()
 
   if (filters?.actor_id) params.append('actor_id', filters.actor_id)
@@ -49,10 +53,6 @@ function buildAuditLogsUrl(filters?: AuditLogFilters): string {
   if (filters?.since) params.append('since', filters.since)
   if (filters?.until) params.append('until', filters.until)
   if (filters?.search) params.append('search', filters.search)
-  if (filters?.page !== undefined) params.append('page', apiPage(filters.page).toString())
-  if (filters?.per_page) params.append('per_page', filters.per_page.toString())
-  if (filters?.sort_by) params.append('sort_by', filters.sort_by)
-  if (filters?.sort_order) params.append('sort_order', filters.sort_order)
   if (filters?.exclude_system) params.append('exclude_system', 'true')
 
   // Array params
@@ -68,6 +68,16 @@ function buildAuditLogsUrl(filters?: AuditLogFilters): string {
   if (filters?.severity?.length) {
     filters.severity.forEach((s) => params.append('severity', s))
   }
+  return params
+}
+
+function buildAuditLogsUrl(filters?: AuditLogFilters): string {
+  const params = buildAuditFilterParams(filters)
+
+  if (filters?.page !== undefined) params.append('page', apiPage(filters.page).toString())
+  if (filters?.per_page) params.append('per_page', filters.per_page.toString())
+  if (filters?.sort_by) params.append('sort_by', filters.sort_by)
+  if (filters?.sort_order) params.append('sort_order', filters.sort_order)
 
   const queryString = params.toString()
   return `/api/v1/audit-logs${queryString ? `?${queryString}` : ''}`

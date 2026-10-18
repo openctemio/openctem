@@ -48,6 +48,10 @@ export interface LoginTenant {
   slug: string
   name: string
   role: string
+  /** The organization itself is suspended by the platform operator. */
+  organization_suspended?: boolean
+  /** An owner scheduled the organization's deletion for this time. */
+  deletion_due_at?: string
 }
 
 export interface RegisterInput {
@@ -94,15 +98,7 @@ export interface LoginBackendResponse {
   // their access has been paused. They are NOT selectable; the field
   // exists so the UI can tell the user "your access to X is suspended"
   // instead of bouncing them into create-team onboarding.
-  suspended_tenants?: Array<{
-    id: string
-    slug: string
-    name: string
-    role: string
-  }>
-  // True for a platform administrator (RFC-022). The account belongs to no
-  // organization; it goes to the admin console, not onboarding.
-  platform_admin?: boolean
+  suspended_tenants?: LoginTenant[]
   // Present only on the response that completes a forced 2FA enrollment.
   recovery_codes?: string[]
 }
@@ -143,8 +139,9 @@ export interface LoginResult {
   // The login form surfaces this so the user knows why they have no
   // accessible team, instead of being routed to create-team onboarding.
   suspendedTenants?: LoginTenant[]
-  // A platform administrator: the client opens the admin console.
-  platformAdmin?: boolean
+  // Organizations this user owns that are scheduled for deletion: the form
+  // offers to cancel before going on.
+  pendingDeletion?: LoginTenant[]
   // The password was right but a second factor is needed. No session exists
   // yet: the form shows the code step (verify) or the setup step (enroll).
   mfaRequired?: boolean
@@ -361,6 +358,19 @@ async function completeLogin(
   loginData: LoginBackendResponse,
   loginRefreshFromCookie: string | undefined
 ): Promise<LoginResult> {
+  const result = await completeLoginTenants(loginData, loginRefreshFromCookie)
+  // An owner of an organization waiting for deletion is offered to cancel
+  // it whatever else happens next.
+  const pendingDeletion = (loginData.suspended_tenants ?? []).filter(
+    (t) => t.deletion_due_at && t.role === 'owner'
+  )
+  return pendingDeletion.length > 0 ? { ...result, pendingDeletion } : result
+}
+
+async function completeLoginTenants(
+  loginData: LoginBackendResponse,
+  loginRefreshFromCookie: string | undefined
+): Promise<LoginResult> {
   const refreshToken = loginRefreshFromCookie || loginData.refresh_token
   if (!refreshToken) {
     throw new Error('Login response did not include a refresh token')
@@ -385,12 +395,6 @@ async function completeLogin(
     authProvider: 'local',
   }
 
-  // A platform administrator belongs to no organization: the sign-in page
-  // points them to the platform console (its own site) instead of onboarding.
-  if (loginData.platform_admin) {
-    return { success: true, user, platformAdmin: true, tenants: [] }
-  }
-
   // Case 1: No tenants - user needs to create or join a team.
   if (!loginData.tenants || loginData.tenants.length === 0) {
     // Sub-case 1a: user has only suspended memberships. Don't bounce
@@ -398,6 +402,17 @@ async function completeLogin(
     // form renders the message and stays on /login.
     if (loginData.suspended_tenants && loginData.suspended_tenants.length > 0) {
       devLog.log('[Login] User has only suspended memberships:', loginData.suspended_tenants.length)
+      // Every one of them is an organization the platform operator
+      // suspended: the form shows that message (translated) from the code.
+      if (loginData.suspended_tenants.every((t) => t.organization_suspended)) {
+        return {
+          success: false,
+          user,
+          code: 'ORGANIZATION_SUSPENDED',
+          error: 'This organization is suspended — contact support',
+          suspendedTenants: loginData.suspended_tenants,
+        }
+      }
       const tenantNames = loginData.suspended_tenants.map((t) => t.name).join(', ')
       return {
         success: false,
@@ -649,7 +664,6 @@ export async function confirmMfaEnrollmentAction(code: string): Promise<LoginRes
         user: data.user,
         tenants: data.tenants,
         suspended_tenants: data.suspended_tenants,
-        platform_admin: data.platform_admin,
       },
     }
     const encoded = Buffer.from(JSON.stringify(pending)).toString('base64url')
@@ -1272,5 +1286,36 @@ export async function onboardingAcceptAction(ref: string): Promise<OnboardingAcc
   } catch (error) {
     const code = (error as Error & { code?: string }).code
     return { success: false, code, error: error instanceof Error ? error.message : 'error' }
+  }
+}
+
+/**
+ * An owner cancels the scheduled deletion of an organization (it is closed
+ * to tenant tokens while it waits, so this uses the session's refresh token,
+ * like create-first-team). On success the organization is active again.
+ */
+export async function cancelOrganizationDeletionAction(
+  tenantId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cookieStore = await cookies()
+    const refreshToken = cookieStore.get(env.auth.refreshCookieName)?.value
+    if (!refreshToken) {
+      return { success: false, error: 'Session expired. Please login again.' }
+    }
+    const response = await fetch(`${env.api.url}${authEndpoints.cancelOrganizationDeletion()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // Server-to-server: the refresh token goes in the body (a cookie would
+      // need the CSRF pair).
+      body: JSON.stringify({ tenant_id: tenantId, refresh_token: refreshToken }),
+    })
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: response.statusText }))
+      return { success: false, error: errorData.message || `HTTP ${response.status}` }
+    }
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Request failed' }
   }
 }
