@@ -57,7 +57,7 @@ func TestMTTR_ExcludesObsoleteClosures_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(s.MTTRCriticalHrs-20) > 0.1 {
-		t.Fatalf("executive MTTR critical = %.2fh, want 20h", s.MTTRCriticalHrs)
+	if s.MTTRCriticalHrs == nil || math.Abs(*s.MTTRCriticalHrs-20) > 0.1 {
+		t.Fatalf("executive MTTR critical = %v, want 20h", s.MTTRCriticalHrs)
 	}
 }

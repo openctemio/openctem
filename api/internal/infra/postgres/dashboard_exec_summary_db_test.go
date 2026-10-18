@@ -53,7 +53,7 @@ func TestExecutiveSummary_OpenAggregates(t *testing.T) {
 		t.Fatalf("open aggregates wrong: total=%d p0=%d p1=%d breached=%d",
 			s.FindingsTotal, s.P0Open, s.P1Open, s.SLABreached)
 	}
-	if s.SLACompliancePct != 50 {
+	if s.SLACompliancePct == nil || *s.SLACompliancePct != 50 {
 		t.Fatalf("SLA compliance: want 50, got %v", s.SLACompliancePct)
 	}
 
@@ -62,7 +62,7 @@ func TestExecutiveSummary_OpenAggregates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("empty tenant: %v", err)
 	}
-	if e.FindingsTotal != 0 || e.SLACompliancePct != 100 {
-		t.Fatalf("empty tenant: want total 0 / compliance 100, got %d / %v", e.FindingsTotal, e.SLACompliancePct)
+	if e.FindingsTotal != 0 || e.SLACompliancePct != nil {
+		t.Fatalf("empty tenant: want total 0 / compliance not measured (nil), got %d / %v", e.FindingsTotal, e.SLACompliancePct)
 	}
 }
