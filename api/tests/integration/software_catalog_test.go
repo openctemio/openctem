@@ -110,7 +110,7 @@ func TestSoftwareCatalog_GlobalBeforePrivate(t *testing.T) {
 	tenant := createTestTenant(t, pdb.DB, "sw-shadow")
 	_, err := pdb.ExecContext(ctx, `
 		WITH p AS (INSERT INTO software_products (tenant_id, part, name, source) VALUES ($1, 'a', 'nginx-shadow', 'observed') RETURNING id)
-		INSERT INTO software_product_aliases (product_id, tenant_id, kind, value) SELECT id, $1, 'name', 'nginx' FROM p`, tenant.String())
+		INSERT INTO software_product_aliases (product_id, tenant_id, kind, value, source) SELECT id, $1, 'name', 'nginx', 'observed' FROM p`, tenant.String())
 	require.NoError(t, err)
 	refs, err := repo.Resolve(ctx, tenant, []software.Identity{{Part: "a", Name: "nginx"}})
 	require.NoError(t, err)

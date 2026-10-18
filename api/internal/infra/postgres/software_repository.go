@@ -54,11 +54,39 @@ func (r *SoftwareRepository) EnsureCurated(ctx context.Context, products []softw
 			aliases = append(aliases, [2]string{"cpe", p.Part + ":" + c})
 		}
 		for _, a := range aliases {
+			// A curated alias wins over a feed alias of the same value.
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO software_product_aliases (product_id, tenant_id, kind, value)
-				VALUES ($1, NULL, $2, $3)
-				ON CONFLICT (kind, value) WHERE tenant_id IS NULL DO NOTHING`, id, a[0], a[1]); err != nil {
+				INSERT INTO software_product_aliases (product_id, tenant_id, kind, value, source)
+				VALUES ($1, NULL, $2, $3, 'curated')
+				ON CONFLICT (kind, value) WHERE tenant_id IS NULL
+				DO UPDATE SET product_id = EXCLUDED.product_id, source = 'curated'
+				WHERE software_product_aliases.source = 'feed'`, id, a[0], a[1]); err != nil {
 				return fmt.Errorf("curated alias %s: %w", a[1], err)
+			}
+		}
+		// A product the feed created under an alternate CPE folds into
+		// the curated one.
+		for _, alt := range p.AltCPE {
+			k, ok := software.SplitCPEAlias(p.Part + ":" + alt)
+			if !ok {
+				continue
+			}
+			var from string
+			err := tx.QueryRowContext(ctx, `SELECT id FROM software_products
+				WHERE tenant_id IS NULL AND source = 'nvd' AND part = $1 AND cpe_vendor = $2 AND cpe_product = $3 AND id <> $4`,
+				k.Part, k.Vendor, k.Product, id).Scan(&from)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("curated alternate %s: %w", k, err)
+			}
+			cves, err := mergeGlobalProduct(ctx, tx, from, id)
+			if err != nil {
+				return err
+			}
+			if err := requeueCVEs(ctx, tx, setOf(cves)); err != nil {
+				return err
 			}
 		}
 	}
@@ -169,8 +197,8 @@ func (r *SoftwareRepository) createPrivate(ctx context.Context, tenantID shared.
 		return software.ProductRef{}, fmt.Errorf("create private product: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO software_product_aliases (product_id, tenant_id, kind, value)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO software_product_aliases (product_id, tenant_id, kind, value, source)
+		VALUES ($1, $2, $3, $4, 'observed')
 		ON CONFLICT (tenant_id, kind, value) WHERE tenant_id IS NOT NULL DO NOTHING`,
 		pid, tenantID.String(), kind, value); err != nil {
 		return software.ProductRef{}, fmt.Errorf("private alias: %w", err)
