@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import type { PlatformUser } from '../types'
 
-/** Sign-in state of one account: locked, unverified, MFA, platform admin, erased. */
+/** Sign-in state of one account: blocked, locked, unverified, MFA, platform admin, erased. */
 export function PlatformUserBadges({ user }: { user: PlatformUser }) {
   const { t } = useTranslation()
   return (
@@ -16,7 +16,10 @@ export function PlatformUserBadges({ user }: { user: PlatformUser }) {
       {user.locked && (
         <Badge variant="destructive">{t('admin.users.badge.locked', 'Locked')}</Badge>
       )}
-      {user.status !== 'active' && !user.erased && (
+      {user.blocked && !user.erased && (
+        <Badge variant="destructive">{t('admin.users.badge.blocked', 'Blocked')}</Badge>
+      )}
+      {user.status !== 'active' && !user.erased && !user.blocked && (
         <Badge variant="outline" className="capitalize">
           {user.status}
         </Badge>

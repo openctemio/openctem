@@ -62,8 +62,15 @@ describe('route gates from the API route table', () => {
       key: 'PATCH /api/v1/tools/settings',
       perms: ['scans:tenant_tools:write'],
       role: 'member',
+      allowed: false,
+      why: 'switching tools on or off is organization-wide: owner/admin only',
+    },
+    {
+      key: 'PATCH /api/v1/tools/settings',
+      perms: ['scans:tenant_tools:write'],
+      role: 'admin',
       allowed: true,
-      why: 'switching tools on or off needs tenant_tools:write',
+      why: 'an admin with tenant_tools:write switches tools on or off',
     },
     {
       key: 'POST /api/v1/integrations/{id}/test',

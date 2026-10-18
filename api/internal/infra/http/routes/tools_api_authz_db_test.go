@@ -87,13 +87,13 @@ func TestToolsAPI_Authorization_DB(t *testing.T) {
 
 	h.expect(admin, http.MethodPut, "/api/v1/tools/"+ours, update, http.StatusOK)
 
-	// --- Settings: scans:tenant_tools:write (members yes, viewers no) ----
+	// --- Settings: the organization's tool switches are owner/admin only
+	// (they turn a tool off for everyone); members and viewers are refused.
 	h.expect(viewer, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings", `{"is_enabled":false}`, http.StatusForbidden)
 	h.expect(viewer, http.MethodPatch, "/api/v1/tools/settings", `{"tool_ids":["`+nucleiID+`"],"is_enabled":false}`, http.StatusForbidden)
-	// Config overrides change what the sensors run: scans:tools:write, not
-	// the member's scans:tenant_tools:write; the switch alone is fine.
 	h.expect(member, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings", `{"config":{"rate_limit":5}}`, http.StatusForbidden)
-	h.expect(member, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings", `{"is_enabled":false}`, http.StatusOK)
+	h.expect(member, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings", `{"is_enabled":false}`, http.StatusForbidden)
+	h.expect(member, http.MethodPatch, "/api/v1/tools/settings", `{"tool_ids":["`+nucleiID+`"],"is_enabled":false}`, http.StatusForbidden)
 	var patched handler.ToolViewResponse
 	mustJSON(t, h.expect(admin, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings",
 		`{"is_enabled":false,"config":{"rate_limit":5}}`, http.StatusOK), &patched)
@@ -101,11 +101,11 @@ func TestToolsAPI_Authorization_DB(t *testing.T) {
 		t.Fatalf("settings after PATCH: %+v source %s", patched.Settings, patched.Source)
 	}
 	// An omitted field is left as it is.
-	mustJSON(t, h.expect(member, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings", `{"is_enabled":true}`, http.StatusOK), &patched)
+	mustJSON(t, h.expect(admin, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings", `{"is_enabled":true}`, http.StatusOK), &patched)
 	if !patched.Settings.IsEnabled || patched.Settings.Config["rate_limit"] != float64(5) {
 		t.Fatalf("is_enabled only: %+v", patched.Settings)
 	}
-	h.expect(member, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings", `{}`, http.StatusBadRequest)
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+nucleiID+"/settings", `{}`, http.StatusBadRequest)
 	// Our settings are ours: the other tenant still sees nuclei with no overrides.
 	otherView := listToolNames(t, h.expect(otherAdmin, http.MethodGet, "/api/v1/tools?include=settings&per_page=100", "", http.StatusOK))
 	if s := otherView["nuclei"].Settings; s == nil || len(s.Config) != 0 || !s.IsEnabled {
@@ -167,7 +167,7 @@ func TestToolsAPI_Authorization_DB(t *testing.T) {
 	if _, ok := platform["zz-authz-tool"]; ok || len(platform) == 0 {
 		t.Fatalf("source=platform lists %d tools, ours included: %v", len(platform), ok)
 	}
-	h.expect(member, http.MethodPatch, "/api/v1/tools/"+ours+"/settings", `{"is_enabled":false}`, http.StatusOK)
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+ours+"/settings", `{"is_enabled":false}`, http.StatusOK)
 	off := listToolNames(t, h.expect(admin, http.MethodGet, "/api/v1/tools?enabled=false&per_page=100", "", http.StatusOK))
 	if _, ok := off["zz-authz-tool"]; !ok || len(off) == 0 {
 		t.Fatalf("enabled=false does not list the tool switched off: %v", off)

@@ -28,6 +28,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -216,6 +217,10 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 				"The CI provider's signing keys cannot be fetched right now (the provider is unreachable or has just rotated its keys); retry in 30 seconds").WriteJSON(w)
 			return
 		}
+		if errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+			middleware.WriteOrganizationSuspended(w)
+			return
+		}
 		if errors.Is(err, cirunapp.ErrRunnerOutdated) {
 			apierror.New(http.StatusForbidden, "RUNNER_OUTDATED", runnerOutdatedMessage(err)).WriteJSON(w)
 			return
@@ -252,6 +257,10 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 			return
 		}
 		run, err := h.svc.Authenticate(r.Context(), token)
+		if errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+			middleware.WriteOrganizationSuspended(w)
+			return
+		}
 		if err != nil {
 			if !errors.Is(err, shared.ErrNotFound) {
 				h.logger.Error("ci run token lookup failed", "error", logger.SanitizeError(err))
