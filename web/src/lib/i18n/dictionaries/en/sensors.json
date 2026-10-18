@@ -133,6 +133,7 @@
   "sensors.checks.version.unsupported": "{version}, older than the minimum supported {min}. Upgrade the sensor.",
   "sensors.checks.version.available": "{version}; {latest} is available.",
   "sensors.checks.version.latest": "{version}, the latest release",
+  "sensors.checks.version.latestBuiltIn": "{version}, the newest release this platform knows. Newer releases may exist: the platform has no current release information.",
   "sensors.checks.sdk.the": "The SDK",
   "sensors.checks.sdk.outdated": "{sdk} is outdated{latest}.",
   "sensors.checks.sdk.latest": "; {version} is available",
