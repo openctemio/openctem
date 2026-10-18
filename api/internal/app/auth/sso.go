@@ -24,6 +24,7 @@ import (
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
@@ -74,6 +75,8 @@ const ssoMaxRedirectURILength = 2000
 
 // SSOService handles per-tenant SSO authentication.
 type SSOService struct {
+	// signups records sign-up events for the platform console (optional).
+	signups signupevent.Recorder
 	// onSignIn runs after a sign-in created a session (signin_hook.go).
 	onSignIn SignInHook
 	// audit records each sign-in (auth.login), as the password sign-in does.
@@ -1446,6 +1449,8 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
+	recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindAccountCreated, Source: signupevent.SourceSSO,
+		Email: newUser.Email(), TenantID: t.ID(), UserID: newUser.ID()})
 	if key.Valid() {
 		if err := s.accounts().bind(ctx, newUser, key); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrSSODomainNotAllowed, err)
@@ -1884,9 +1889,13 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 			} else {
 				return nil, fmt.Errorf("create user: %w", cerr)
 			}
-		} else if key.Valid() {
-			if berr := s.accounts().bind(ctx, newU, key); berr != nil {
-				return nil, berr
+		} else {
+			recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindAccountCreated, Source: signupevent.SourceSSO,
+				Email: newU.Email(), TenantID: t.ID(), UserID: newU.ID()})
+			if key.Valid() {
+				if berr := s.accounts().bind(ctx, newU, key); berr != nil {
+					return nil, berr
+				}
 			}
 		}
 		u = newU
