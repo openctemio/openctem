@@ -103,6 +103,7 @@ var stepUpRoutes = []string{
 	"PUT /api/v1/integrations/{id}",
 	"DELETE /api/v1/integrations/{id}",
 	"POST /api/v1/integrations/{id}/disable",
+	"POST /api/v1/integrations/{id}/enable",
 	"PUT /api/v1/integrations/{id}/notification",
 	// The group mapping decides which role a directory group's members get.
 	"PUT /api/v1/scim-tokens/group-mappings",
