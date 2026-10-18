@@ -18,10 +18,14 @@ import (
 	"github.com/openctemio/openctem/api/pkg/querylang"
 )
 
-// Concurrency caps for interactive runs and explains.
+// Concurrency caps for interactive runs and explains. MaxPerProcess
+// bounds all tenants together, so custom queries can hold only part of the
+// API's database connection pool (25 by default) and many tenants at their
+// own cap cannot starve every other request.
 const (
-	MaxPerUser   = 2
-	MaxPerTenant = 4
+	MaxPerUser    = 2
+	MaxPerTenant  = 4
+	MaxPerProcess = 8
 )
 
 // ErrBusy is returned when the caller or the tenant already runs the
@@ -49,7 +53,7 @@ type Service struct {
 
 // NewService returns a query service.
 func NewService(exec querylang.Executor, dataScope *datascope.Enforcer, log *logger.Logger) *Service {
-	return &Service{exec: exec, dataScope: dataScope, limiter: newLimiter(MaxPerUser, MaxPerTenant), logger: log, now: time.Now}
+	return &Service{exec: exec, dataScope: dataScope, limiter: newLimiter(MaxPerUser, MaxPerTenant, MaxPerProcess), logger: log, now: time.Now}
 }
 
 // Explanation is what Explain returns.
@@ -234,27 +238,30 @@ func scopeOf(p *querylang.Plan) Scope {
 	return sc
 }
 
-// limiter bounds concurrent queries per user and per tenant (one API
-// process; each replica has its own).
+// limiter bounds concurrent queries per user, per tenant and in total (one
+// API process; each replica has its own).
 type limiter struct {
 	mu        sync.Mutex
 	perUser   int
 	perTenant int
+	total     int
+	running   int
 	users     map[string]int
 	tenants   map[string]int
 }
 
-func newLimiter(perUser, perTenant int) *limiter {
-	return &limiter{perUser: perUser, perTenant: perTenant, users: map[string]int{}, tenants: map[string]int{}}
+func newLimiter(perUser, perTenant, total int) *limiter {
+	return &limiter{perUser: perUser, perTenant: perTenant, total: total, users: map[string]int{}, tenants: map[string]int{}}
 }
 
 func (l *limiter) acquire(tenantID, userID string) (func(), error) {
 	uk := tenantID + "/" + userID
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.users[uk] >= l.perUser || l.tenants[tenantID] >= l.perTenant {
+	if l.users[uk] >= l.perUser || l.tenants[tenantID] >= l.perTenant || l.running >= l.total {
 		return nil, ErrBusy
 	}
+	l.running++
 	l.users[uk]++
 	l.tenants[tenantID]++
 	var once sync.Once
@@ -262,6 +269,7 @@ func (l *limiter) acquire(tenantID, userID string) (func(), error) {
 		once.Do(func() {
 			l.mu.Lock()
 			defer l.mu.Unlock()
+			l.running--
 			if l.users[uk]--; l.users[uk] <= 0 {
 				delete(l.users, uk)
 			}
