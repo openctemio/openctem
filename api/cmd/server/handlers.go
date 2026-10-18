@@ -604,9 +604,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
-		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
-			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
-		AdminVersionCheck: handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
+		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
 
@@ -708,7 +706,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
 			postgres.NewPlatformUserDirectory(deps.DB),
 			newPlatformUserService(repos, svc, cfg, deps.DB, log),
-			log),
+			log).WithAudit(repos.AdminAuditLog),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
