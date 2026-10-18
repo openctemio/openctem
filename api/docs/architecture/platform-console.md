@@ -19,6 +19,35 @@ The sensor protocol's internal mTLS listener is `api:9443`; sensors reach it
 only through the gateway's port 443 (ALPN routing on that listener alone), so
 port 8443 means only the console.
 
+## Navigation
+
+The sidebar (`web/console/src/features/admin-console/config/admin-nav.ts`,
+also the command palette's index) groups the pages by what an operator is
+doing:
+
+| Group | Pages |
+|-------|-------|
+| (top) | Overview |
+| Customers | Organizations, Users, Access requests, Support access |
+| Scanning | Scan approval, Platform scanning, Shared sensors, Target mappings, Content packs, Threat intelligence |
+| Security | Administrators, Sessions, Admin sign-in, Admin activity |
+| Settings | Sign-up, Limits, E-mail, Legal, Announcements, AI applications |
+| Monitoring | Health, System, Software updates |
+
+The administrator's own security keys open from the sidebar footer, next to
+their name (the palette still finds them). Pages are listed by the
+administrator's own role, not the session's acting one: a super admin acting
+read-only sees every page, and a page that needs more shows "Elevate to see
+this page" with the elevate dialog one click away
+(`RoleRequiredNotice`). An administrator whose own role is too low is told
+which role it takes. The API enforces the acting role either way.
+
+The Overview's "Needs attention" list includes the installation's own state
+from the System page: a service that does not answer, a volume below 20%
+(warning) or 10% (critical) free, a failed, stale or unreported backup, a
+certificate close to expiry, and a newer release (a warning when it fixes
+security advisories).
+
 ## Settings
 
 The same four settings in every installer (Compose and `setup.sh`, the Helm
