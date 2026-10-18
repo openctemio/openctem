@@ -103,7 +103,7 @@ function QueueHealthStatus({
         <div className="flex items-center gap-3">
           <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
           <div>
-            <p className="font-medium text-green-800 dark:text-green-200">
+            <p className="font-medium text-success">
               {t('notificationChannels.outbox.healthy', 'Queue is healthy')}
             </p>
             <p className="text-sm text-green-600 dark:text-green-400">
