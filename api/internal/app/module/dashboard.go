@@ -100,7 +100,7 @@ type DashboardStatsRepository interface {
 	GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]RiskTrendPoint, error)
 
 	// Executive Summary (Phase 2)
-	GetExecutiveSummary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*ExecutiveSummary, error)
+	GetExecutiveSummary(ctx context.Context, tenantID shared.ID, scope, rowScope *shared.DataScope, days int) (*ExecutiveSummary, error)
 	// MTTR Analytics (Phase 2)
 	// A non-nil scope averages only findings on in-scope assets.
 	GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*MTTRAnalytics, error)
@@ -202,6 +202,22 @@ func kFloor(m map[string]int) map[string]int {
 	return out
 }
 
+// withFindingViewer records, from the authenticated principal, who reads the
+// findings behind the dashboard numbers, so the repository ANDs the findings
+// list's pentest member-visibility rule for everyone who is not an
+// administrator. An API key without a user is a viewer with no campaign
+// membership. A context with neither a user nor an API key is an internal
+// call and carries no viewer.
+func (s *DashboardService) withFindingViewer(ctx context.Context) context.Context {
+	c := s.dataScope.CallerOf(ctx)
+	if c.UserID == "" && !c.APIKey {
+		return ctx
+	}
+	// An unparseable user id is the zero id: a member of no campaign.
+	uid, _ := shared.IDFromString(c.UserID)
+	return shared.WithFindingViewer(ctx, shared.FindingViewer{UserID: uid, Admin: c.IsAdmin && !c.APIKey})
+}
+
 // SetDataScope wires the Layer 2 data-scope enforcer. Dashboards keep their
 // counts tenant-wide; only row data (recent activity, executive top risks)
 // is narrowed for a restricted member.
@@ -220,6 +236,7 @@ func NewDashboardService(repo DashboardStatsRepository, log *logger.Logger) *Das
 // GetStats returns dashboard statistics for a tenant.
 // Uses optimized batched query (2 queries instead of 10+).
 func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*DashboardStats, error) {
+	ctx = s.withFindingViewer(ctx)
 	// Owner decision D6: the counts follow the viewer. A restricted viewer
 	// counts their own scope, unless they hold dashboard:aggregate (then
 	// organization totals with the k-floor on breakdowns).
@@ -291,6 +308,7 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 // It follows the viewer like the other dashboard numbers (countScope): a
 // restricted member averages their own findings only (research 24 §5.1).
 func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error) {
+	ctx = s.withFindingViewer(ctx)
 	scope, _, err := s.countScope(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
@@ -301,6 +319,7 @@ func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.I
 // GetRiskVelocity returns weekly new vs resolved finding counts.
 // It follows the viewer like the other dashboard numbers (countScope).
 func (s *DashboardService) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error) {
+	ctx = s.withFindingViewer(ctx)
 	scope, _, err := s.countScope(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
@@ -328,6 +347,7 @@ func (s *DashboardService) orgWideOnly(ctx context.Context, tenantID shared.ID) 
 // GetDataQualityScorecard returns data quality metrics (RFC-005 Gap 5).
 // It follows the viewer like the other dashboard numbers (countScope).
 func (s *DashboardService) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error) {
+	ctx = s.withFindingViewer(ctx)
 	scope, _, err := s.countScope(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
@@ -634,6 +654,7 @@ func (s *DashboardService) GetProgramMetrics(ctx context.Context, tenantID share
 // GetProcessMetrics returns process efficiency metrics.
 // It follows the viewer like the other dashboard numbers (countScope).
 func (s *DashboardService) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProcessMetrics, error) {
+	ctx = s.withFindingViewer(ctx)
 	scope, _, err := s.countScope(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
@@ -647,44 +668,26 @@ func (s *DashboardService) GetProcessMetrics(ctx context.Context, tenantID share
 // asset names) is row data and keeps only in-scope assets whatever the
 // aggregate permission.
 func (s *DashboardService) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error) {
+	ctx = s.withFindingViewer(ctx)
 	countScope, _, err := s.countScope(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
-	sum, err := s.repo.GetExecutiveSummary(ctx, tenantID, countScope, days)
-	if err != nil || sum == nil {
-		return sum, err
-	}
-	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	// Top risks are row data (finding titles, asset names): they are queried
+	// with the viewer's own row scope, whatever the aggregate permission, so a
+	// restricted aggregate viewer gets their own top five instead of the
+	// organization's top five cut down to nothing. The totals keep countScope.
+	rowScope, err := s.dataScope.Resolve(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
-	if scope == nil || len(sum.TopRisks) == 0 {
-		return sum, nil
-	}
-	ids := make([]shared.ID, 0, len(sum.TopRisks))
-	for _, r := range sum.TopRisks {
-		if id, perr := shared.IDFromString(r.AssetID); perr == nil {
-			ids = append(ids, id)
-		}
-	}
-	keep, err := s.dataScope.Filter(ctx, scope, ids)
-	if err != nil {
-		return nil, err
-	}
-	top := make([]TopRisk, 0, len(sum.TopRisks))
-	for _, r := range sum.TopRisks {
-		if id, perr := shared.IDFromString(r.AssetID); perr == nil && keep(id) {
-			top = append(top, r)
-		}
-	}
-	sum.TopRisks = top
-	return sum, nil
+	return s.repo.GetExecutiveSummary(ctx, tenantID, countScope, rowScope, days)
 }
 
 // GetMTTRAnalytics returns MTTR breakdown by severity and priority class.
 // It follows the viewer like GetMTTRMetrics.
 func (s *DashboardService) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error) {
+	ctx = s.withFindingViewer(ctx)
 	scope, _, err := s.countScope(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)

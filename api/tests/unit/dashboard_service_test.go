@@ -104,7 +104,7 @@ func (m *mockDashboardRepo) GetRiskTrend(_ context.Context, _ shared.ID, _ int) 
 	return nil, nil
 }
 
-func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) (*module.ExecutiveSummary, error) {
+func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ *shared.DataScope, _ *shared.DataScope, _ int) (*module.ExecutiveSummary, error) {
 	return &module.ExecutiveSummary{}, nil
 }
 
