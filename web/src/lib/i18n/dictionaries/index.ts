@@ -23,6 +23,7 @@ import en_easmReview from './en/easmReview.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
 import en_common from './en/common.json'
+import en_dashboardMetrics from './en/dashboardMetrics.json'
 import en_components from './en/components.json'
 import en_confirm from './en/confirm.json'
 import en_contentCatalog from './en/contentCatalog.json'
@@ -83,6 +84,7 @@ import vi_easmReview from './vi/easmReview.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
+import vi_dashboardMetrics from './vi/dashboardMetrics.json'
 import vi_components from './vi/components.json'
 import vi_confirm from './vi/confirm.json'
 import vi_contentCatalog from './vi/contentCatalog.json'
@@ -148,6 +150,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   auth: en_auth,
   automations: en_automations,
   common: en_common,
+  dashboardMetrics: en_dashboardMetrics,
   components: en_components,
   confirm: en_confirm,
   contentCatalog: en_contentCatalog,
@@ -211,6 +214,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   auth: vi_auth,
   automations: vi_automations,
   common: vi_common,
+  dashboardMetrics: vi_dashboardMetrics,
   components: vi_components,
   confirm: vi_confirm,
   contentCatalog: vi_contentCatalog,

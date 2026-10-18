@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"html/template"
 	"io"
 
@@ -29,6 +30,10 @@ var execSummaryFuncs = template.FuncMap{
 	"product": brand.Name,
 	"add":     func(a, b int) int { return a + b },
 	"lower":   lowerASCII,
+	// optPct / optHours render a figure that is not measured (nil) as a dash,
+	// never as 0.
+	"optPct":   func(p *float64) string { return optFloat(p, "%.1f%%") },
+	"optHours": func(p *float64) string { return optFloat(p, "%.1fh") },
 	"deref": func(p *float64) float64 {
 		if p == nil {
 			return 0
@@ -108,8 +113,8 @@ var executiveSummaryTemplate = template.Must(
       <div class="delta">{{.Summary.FindingsNew}} new &middot; {{.Summary.FindingsResolved}} resolved in period</div>
     </div>
     <div class="card">
-      <div class="label">SLA Compliance</div>
-      <div class="value">{{printf "%.1f%%" .Summary.SLACompliancePct}}</div>
+      <div class="label">Open within SLA</div>
+      <div class="value">{{optPct .Summary.SLACompliancePct}}</div>
       <div class="delta">{{.Summary.SLABreached}} breached in period</div>
     </div>
     <div class="card">
@@ -129,13 +134,13 @@ var executiveSummaryTemplate = template.Must(
     </div>
     <div class="card">
       <div class="label">MTTR Critical</div>
-      <div class="value">{{printf "%.1fh" .Summary.MTTRCriticalHrs}}</div>
-      <div class="delta">mean time to remediate</div>
+      <div class="value">{{optHours .Summary.MTTRCriticalHrs}}</div>
+      <div class="delta">mean &middot; median {{optHours .Summary.MTTRCriticalMedianHrs}} &middot; p90 {{optHours .Summary.MTTRCriticalP90Hrs}} &middot; n={{.Summary.MTTRCriticalSample}}</div>
     </div>
     <div class="card">
       <div class="label">MTTR High</div>
-      <div class="value">{{printf "%.1fh" .Summary.MTTRHighHrs}}</div>
-      <div class="delta">mean time to remediate</div>
+      <div class="value">{{optHours .Summary.MTTRHighHrs}}</div>
+      <div class="delta">mean &middot; median {{optHours .Summary.MTTRHighMedianHrs}} &middot; p90 {{optHours .Summary.MTTRHighP90Hrs}} &middot; n={{.Summary.MTTRHighSample}}</div>
     </div>
     <div class="card">
       <div class="label">Regression Rate</div>
@@ -210,4 +215,12 @@ func lowerASCII(s string) string {
 		out[i] = c
 	}
 	return string(out)
+}
+
+// optFloat formats *p with format, or a dash when it is nil.
+func optFloat(p *float64, format string) string {
+	if p == nil {
+		return "\u2014"
+	}
+	return fmt.Sprintf(format, *p)
 }

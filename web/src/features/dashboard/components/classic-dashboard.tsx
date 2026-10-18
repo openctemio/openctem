@@ -40,6 +40,7 @@ import {
 import { cn } from '@/lib/utils'
 import { actionableTotal, severityCounts } from '@/lib/severity'
 import { useTenant } from '@/context/tenant-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import { INFORMATIONAL_LABEL, SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
 import {
   FINDINGS_FIXED_STATUSES,
@@ -142,6 +143,7 @@ function BottomSectionsSkeleton() {
  * (single-source); everything else is the pre-redesign layout unchanged.
  */
 export function ClassicDashboard() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const { stats, isLoading, error } = useDashboardStats(currentTenant?.id || null)
 
@@ -176,7 +178,8 @@ export function ClassicDashboard() {
   const resolvedStatuses: readonly string[] = FINDINGS_FIXED_STATUSES
   const triagedStatuses = ['confirmed', 'accepted', 'in_progress', 'fix_applied']
   const hasAssets = stats.assets.total > 0
-  const hasFindings = stats.findings.total > 0
+  // Any finding at all (the total counts the open ones only).
+  const hasFindings = Object.values(findingsByStatus).some((n) => n > 0)
   const hasTriagedFindings = Object.entries(findingsByStatus).some(
     ([status, count]) => triagedStatuses.includes(status) && count > 0
   )
@@ -514,12 +517,12 @@ export function ClassicDashboard() {
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                     {/* Informational findings are counted beside the total, not in it. */}
                     <QuickStat
-                      label="Findings"
+                      label={t('dashboardMetrics.classic.openFindings')}
                       value={actionableTotal(severityCounts(stats.findings.bySeverity))}
                       subtext={`+${severityCounts(stats.findings.bySeverity).info} informational · Avg CVSS: ${stats.findings.averageCvss.toFixed(1)}`}
                     />
                     <QuickStat
-                      label="Critical Findings"
+                      label={t('dashboardMetrics.classic.openCritical')}
                       value={stats.findings.bySeverity.critical || 0}
                       subtext={`${stats.findings.bySeverity.high || 0} high severity`}
                     />
