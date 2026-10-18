@@ -101,8 +101,7 @@ describe('LoginForm social-button gating', () => {
   })
 })
 
-describe('LoginForm platform administrator', () => {
-  const originalLocation = window.location
+describe('LoginForm administrator hint', () => {
   beforeEach(() => {
     mockUseTenantSSOProviders.mockReturnValue({
       data: undefined,
@@ -110,34 +109,17 @@ describe('LoginForm platform administrator', () => {
     setAuthProviders({ google: false, github: false, microsoft: false })
   })
 
-  it('points a platform administrator to the console site instead of onboarding', async () => {
-    const href = vi.fn()
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: {
-        ...originalLocation,
-        set href(v: string) {
-          href(v)
-        },
-      },
-    })
-    loginAction.mockResolvedValueOnce({
-      success: true,
-      platformAdmin: true,
-      tenants: [],
-      user: { id: 'u1', name: 'Ops', email: 'ops@acme.io' },
-    })
+  it('shows the administrator hint after a failed sign-in, and not before', async () => {
+    loginAction.mockResolvedValueOnce({ success: false, error: 'Invalid email or password' })
     const user = userEvent.setup()
     render(<LoginForm />)
+    expect(screen.queryByText(/platform administrators sign in on the admin console/i)).toBeNull()
     await user.type(screen.getByLabelText('Email'), 'ops@acme.io')
     await user.type(screen.getByLabelText('Password'), 'Correct-Horse-9')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
-    // The console is a separate site: no navigation from this app, only a hint.
-    await vi.waitFor(() =>
-      expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/platform console/i))
-    )
-    expect(href).not.toHaveBeenCalled()
-    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    expect(
+      await screen.findByText(/platform administrators sign in on the admin console/i)
+    ).toBeTruthy()
   })
 })
 

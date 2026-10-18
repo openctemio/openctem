@@ -5,13 +5,15 @@
  * returns in the body of the sign-in and validate responses and this module
  * keeps in memory only (no console secret is ever readable in a cookie: on a
  * second port of the tenant host the two sites share the host's cookies).
- * Before a session exists, the sign-in steps echo the page's csrf_token (as
+ * Before a session exists, the sign-in steps echo the page's console_csrf (as
  * the global fetch wrapper, src/lib/csrf-client.ts, would).
  */
 
+import { CONSOLE_CSRF_COOKIE } from '@console/lib/csrf-cookie'
+
 export const ADMIN_API = '/api/v1/admin'
 /** The page CSRF cookie, echoed only by the sign-in steps before a session exists. */
-const PAGE_CSRF_COOKIE = 'csrf_token'
+const PAGE_CSRF_COOKIE = CONSOLE_CSRF_COOKIE
 
 /** The console session's CSRF token, in memory only. */
 let sessionCsrf: string | null = null
