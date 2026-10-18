@@ -608,17 +608,21 @@ func TestIdPSignInBindsThenMatchesBySubject(t *testing.T) {
 	if res.Status != StatusMFAEnrollment || res.Second == nil || res.SessionToken != "" {
 		t.Fatalf("expected the TOTP step, got %+v", res)
 	}
-	a, _ := b.admins.GetByID(ctx, b.admin.ID())
-	if st := a.SignInState(); st.IdPSubject != "sub-ops" || st.IdPIssuer != b.idp.issuer {
-		t.Fatalf("expected binding to (issuer, sub-ops), got %+v", st)
-	}
-	if !b.audit.has(ActionIdPBound) {
-		t.Fatal("binding is audited")
+	// Nothing is bound before the administrator's own second factor.
+	if a, _ := b.admins.GetByID(ctx, b.admin.ID()); a.IdPBound() || b.audit.has(ActionIdPBound) {
+		t.Fatal("an IdP identity must not be bound by email alone")
 	}
 	code, _ := totp.Code(res.Second.Secret, b.clock)
 	token, _, err := b.svc.VerifyMFA(ctx, res.Second.PendingToken, code, client)
 	if err != nil {
 		t.Fatalf("totp after IdP: %v", err)
+	}
+	a, _ := b.admins.GetByID(ctx, b.admin.ID())
+	if st := a.SignInState(); st.IdPSubject != "sub-ops" || st.IdPIssuer != b.idp.issuer {
+		t.Fatalf("expected binding to (issuer, sub-ops) after the second factor, got %+v", st)
+	}
+	if !b.audit.has(ActionIdPBound) {
+		t.Fatal("binding is audited")
 	}
 	_, sess, err := b.svc.AuthenticateSession(ctx, token)
 	if err != nil || sess.AuthMethod != admin.AuthMethodIdP {
@@ -712,12 +716,17 @@ func TestTrustedACRSkipsConsoleTOTP(t *testing.T) {
 		t.Fatalf("trusted acr must be requested: %s", st.AuthorizationURL)
 	}
 
-	// Without the acr: TOTP still required.
+	// Without the acr: TOTP still required (and the first sign-in binds
+	// only once it is given).
 	res, err := b.idpSignIn(t, verifiedClaims("sub-ops", "ops@acme.io"))
 	if err != nil || res.Status == StatusSignedIn {
 		t.Fatalf("without trusted acr TOTP is required: %v %+v", err, res)
 	}
-	// With it: a verified IdP session directly.
+	code, _ := totp.Code(res.Second.Secret, b.clock)
+	if _, _, err := b.svc.VerifyMFA(ctx, res.Second.PendingToken, code, client); err != nil {
+		t.Fatalf("totp: %v", err)
+	}
+	// With it, for the bound identity: a verified IdP session directly.
 	claims := verifiedClaims("sub-ops", "ops@acme.io")
 	claims["acr"] = "urn:corp:mfa"
 	res, err = b.idpSignIn(t, claims)
@@ -732,8 +741,16 @@ func TestTrustedACRSkipsConsoleTOTP(t *testing.T) {
 func TestIssuerChangeClearsBindings(t *testing.T) {
 	b := newBGHarness(t)
 	b.configureIdP(t, nil)
-	if _, err := b.idpSignIn(t, verifiedClaims("sub-ops", "ops@acme.io")); err != nil {
+	res, err := b.idpSignIn(t, verifiedClaims("sub-ops", "ops@acme.io"))
+	if err != nil {
 		t.Fatal(err)
+	}
+	code, _ := totp.Code(res.Second.Secret, b.clock)
+	if _, _, err := b.svc.VerifyMFA(context.Background(), res.Second.PendingToken, code, client); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := b.admins.GetByID(context.Background(), b.admin.ID()); !a.IdPBound() {
+		t.Fatal("precondition: bound")
 	}
 	other := newMockIdP(t)
 	b.configureIdP(t, func(i *PlatformIdPInput) { i.Issuer = other.issuer })
