@@ -46,7 +46,7 @@ logo_dark_file: logo-dark.svg
 favicon_file: favicon.png
 ```
 
-The legal settings in the admin console (System > Legal) win over
+The legal settings in the admin console (Settings > Legal) win over
 `BRAND_TERMS_URL` and `BRAND_PRIVACY_URL` when they are set there.
 
 `APP_NAME` is no longer a product name: it names the service in logs only.

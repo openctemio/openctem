@@ -83,3 +83,13 @@ func TestSetupLinkURL(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleAddress(t *testing.T) {
+	if got := consoleAddress("https://console.example.com/"); got != "https://console.example.com" {
+		t.Errorf("configured origin: got %q", got)
+	}
+	got := consoleAddress("  ")
+	if !strings.Contains(got, "8443") || strings.Contains(got, "/login") {
+		t.Errorf("default text must name the console's own site, got %q", got)
+	}
+}

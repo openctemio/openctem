@@ -279,7 +279,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	}
 	if out.TierExceeded > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
-			"%d target(s) were skipped: %s runs %s probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Targets)",
+			"%d target(s) were skipped: %s runs %s probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Scope)",
 			out.TierExceeded, sc.ScannerName, tier))
 	}
 	if len(out.Targets) > maxResolvedTargets {
