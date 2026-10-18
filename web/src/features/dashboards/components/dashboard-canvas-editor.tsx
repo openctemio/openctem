@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   DndContext,
   KeyboardSensor,
@@ -77,6 +78,7 @@ export function DashboardCanvasEditor({
   dashboard: Dashboard
   onExit: () => void
 }) {
+  const { t } = useTranslation()
   const revalidate = useRevalidateDashboards()
   const { can } = usePermissions()
   const { moduleIds } = useTenantModules()
@@ -176,8 +178,14 @@ export function DashboardCanvasEditor({
                     onClick={() => addWidget(wt)}
                     className="flex flex-col items-start gap-0.5"
                   >
-                    <span className="text-sm font-medium">{def.title}</span>
-                    <span className="text-xs text-muted-foreground">{def.description}</span>
+                    <span className="text-sm font-medium">
+                      {def.titleKey ? t(def.titleKey, def.title) : def.title}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {def.descriptionKey
+                        ? t(def.descriptionKey, def.description)
+                        : def.description}
+                    </span>
                   </DropdownMenuItem>
                 ))
               )}

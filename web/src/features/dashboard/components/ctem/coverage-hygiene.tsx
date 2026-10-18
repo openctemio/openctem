@@ -3,35 +3,43 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { coverageState, STATE_BAR, STATE_TEXT } from '../../lib/ctem-colors'
 import type { ScanCoverage, ValidationCoverage } from '../../hooks/use-ctem-dashboard'
 
 interface CoverageHygieneProps {
   scan?: ScanCoverage
   validation?: ValidationCoverage
-  slaPct?: number
+  /** Null: no open finding has an SLA (not measured). */
+  slaPct?: number | null
   isLoading?: boolean
 }
 
-function Row({ label, pct }: { label: string; pct: number }) {
-  const state = coverageState(pct)
+function Row({ label, pct }: { label: string; pct: number | null }) {
+  const state = coverageState(pct ?? 0)
   return (
     <div className="flex items-center gap-2.5 text-xs">
-      <span className="w-20 text-muted-foreground">{label}</span>
+      <span className="w-36 shrink-0 text-muted-foreground">{label}</span>
       <div className="h-1.5 flex-1 overflow-hidden rounded bg-muted">
         <div
           className={cn('h-full rounded', STATE_BAR[state])}
-          style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+          style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
         />
       </div>
-      <span className={cn('w-9 text-right tabular-nums', STATE_TEXT[state])}>
-        {pct.toFixed(0)}%
+      <span
+        className={cn(
+          'w-9 text-right tabular-nums',
+          pct === null ? 'text-muted-foreground' : STATE_TEXT[state]
+        )}
+      >
+        {pct === null ? '—' : `${pct.toFixed(0)}%`}
       </span>
     </div>
   )
 }
 
 export function CoverageHygiene({ scan, validation, slaPct, isLoading }: CoverageHygieneProps) {
+  const { t } = useTranslation()
   return (
     <Card className="gap-4">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -47,9 +55,9 @@ export function CoverageHygiene({ scan, validation, slaPct, isLoading }: Coverag
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <Row label="Scan" pct={scan?.coverage_percent ?? 0} />
+            <Row label={t('dashboardMetrics.coverage.scan')} pct={scan?.coverage_percent ?? 0} />
             <Row label="Validation" pct={validation?.overall_pct ?? 0} />
-            <Row label="SLA met" pct={slaPct ?? 0} />
+            <Row label={t('dashboardMetrics.coverage.sla')} pct={slaPct ?? null} />
           </div>
         )}
       </CardContent>
