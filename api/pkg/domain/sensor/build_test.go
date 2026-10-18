@@ -67,12 +67,46 @@ func TestClassifySDK(t *testing.T) {
 		{"v0.1.0", "", SDKCurrent},
 	}
 	for _, c := range cases {
-		if got := ClassifySDK(c.v, c.latest, adv); got != c.want {
+		if got := ClassifySDK(c.v, c.latest, "", adv); got != c.want {
 			t.Errorf("ClassifySDK(%q, %q) = %s, want %s", c.v, c.latest, got, c.want)
 		}
 	}
-	if got := ClassifySDK("v0.7.4", "v0.9.0", nil); got != SDKOutdated {
+	if got := ClassifySDK("v0.7.4", "v0.9.0", "", nil); got != SDKOutdated {
 		t.Errorf("no advisories: %s", got)
+	}
+}
+
+// The platform-owned SDK floor applies to any product built with sdk-go,
+// first-party or a tenant's own; it wins over an advisory; a sensor built
+// with another SDK is never judged against sdk-go's releases.
+func TestClassifySDK_Minimum(t *testing.T) {
+	adv := []string{"v0.7.4"}
+	for _, c := range []struct {
+		v, min string
+		want   SDKStatus
+	}{
+		{"v0.7.4", "v0.8.0", SDKUnsupported}, // below the floor wins over the advisory
+		{"v0.7.9", "v0.8.0", SDKUnsupported},
+		{"v0.8.0", "v0.8.0", SDKOutdated}, // at the floor: supported, older than latest
+		{"v0.9.0", "v0.8.0", SDKCurrent},
+		{"v0.7.4", "", SDKAdvisory},
+		{"dev", "v0.8.0", SDKUnknown},
+	} {
+		if got := ClassifySDK(c.v, "v0.9.0", c.min, adv); got != c.want {
+			t.Errorf("ClassifySDK(%q, min %q) = %s, want %s", c.v, c.min, got, c.want)
+		}
+	}
+	for _, c := range []struct {
+		b    BuildInfo
+		want SDKStatus
+	}{
+		{BuildInfo{SDKName: SDKGoName, SDKVersion: "v0.1.0", Product: "acme-scanner"}, SDKUnsupported},
+		{BuildInfo{SDKVersion: "v0.1.0"}, SDKUnsupported}, // an SDK before names were reported
+		{BuildInfo{SDKName: "openctem-sdk-python", SDKVersion: "v0.1.0"}, SDKUnknown},
+	} {
+		if got := c.b.SDKStatusFor("v0.9.0", "v0.8.0", nil); got != c.want {
+			t.Errorf("%+v: %s, want %s", c.b, got, c.want)
+		}
 	}
 }
 

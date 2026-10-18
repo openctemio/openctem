@@ -119,6 +119,7 @@ connector-tenable:
   release_identity: https://github.com/openctemio/connector-tenable/.github/workflows/images.yml
 sdk:
   latest: v0.14.0
+  min: ""
   advisories: ""
 ci:
   latest: v0.2.0

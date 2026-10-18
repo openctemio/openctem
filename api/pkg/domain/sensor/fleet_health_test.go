@@ -273,6 +273,22 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 		}
 	})
 
+	t.Run("an SDK below the platform floor degrades any product, a custom one too", func(t *testing.T) {
+		ap := p
+		ap.SDKLatestVersion, ap.SDKMinVersion = "v0.9.0", "v0.8.0"
+		s := daemon(ago(5 * time.Second))
+		s.Build.Product, s.Build.SDKName, s.Build.SDKVersion = "acme-custom-sensor", "openctem-sdk-go", "v0.7.0"
+		a := s.AssessHealth(testNow, ap)
+		if a.SDKStatus != SDKUnsupported || !hasCode(a.Reasons, ReasonSDKUnsupported) || a.State != StateDegraded || a.KnownProduct {
+			t.Errorf("sdk=%q state=%q known=%v reasons=%v", a.SDKStatus, a.State, a.KnownProduct, codes(a.Reasons))
+		}
+		// Built with another SDK: never judged against sdk-go's floor.
+		s.Build.SDKName = "openctem-sdk-python"
+		if a := s.AssessHealth(testNow, ap); a.SDKStatus != SDKUnknown || hasCode(a.Reasons, ReasonSDKUnsupported) {
+			t.Errorf("other SDK: sdk=%q reasons=%v", a.SDKStatus, codes(a.Reasons))
+		}
+	})
+
 	t.Run("an SDK release with an advisory degrades with a warning", func(t *testing.T) {
 		ap := p
 		ap.SDKLatestVersion, ap.SDKAdvisories = "v0.9.0", []string{"v0.8.1"}

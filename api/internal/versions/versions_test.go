@@ -61,6 +61,7 @@ func TestGettersEqualManifest(t *testing.T) {
 		"SensorMin":       {SensorMin(), get("sensor", "min")},
 		"SensorImage":     {SensorImage(), get("sensor", "image")},
 		"SDKLatest":       {SDKLatest(), get("sdk", "latest")},
+		"SDKMin":          {SDKMin(), get("sdk", "min")},
 		"SDKAdvisories":   {strings.Join(SDKAdvisories(), " "), strings.Join(strings.Fields(get("sdk", "advisories")), " ")},
 		"CIRunnerLatest":  {CIRunnerLatest(), get("ci", "latest")},
 		"CIRunnerMin":     {CIRunnerMin(), get("ci", "min")},
@@ -96,6 +97,7 @@ other:
   release_identity: https://github.com/openctemio/other/.github/workflows/images.yml
 sdk:
   latest: v0.3.0
+  min: v0.1.0
   advisories: "v0.1.0 v0.2.1"
 ci:
   latest: v0.3.0
@@ -143,6 +145,8 @@ func TestParseRejects(t *testing.T) {
 		"bad install":          {"install: other", "install: ../x", "other.install"},
 		"duplicate key":        {"  min: v0.1.0\n", "  min: v0.1.0\n  min: v0.1.0\n", "other.min"},
 		"min above latest":     {"min: v0.1.0", "min: v0.2.0", "other.min v0.2.0 is newer"},
+		"sdk min not version":  {"  min: v0.1.0\n  advisories", "  min: soon\n  advisories", "sdk.min"},
+		"sdk min above latest": {"  min: v0.1.0\n  advisories", "  min: v0.4.0\n  advisories", "sdk.min v0.4.0 is newer"},
 		"ci min above latest":  {"ci:\n  latest: v0.3.0\n  min: \"\"", "ci:\n  latest: v0.3.0\n  min: v0.4.0", "ci.min v0.4.0 is newer"},
 		"bad chart":            {"version: 0.1.0", "version: v0.1.0", "chart.version"},
 		"duplicate section":    {"chart:\n", "ci:\n  latest: v0.3.0\n  min: \"\"\nchart:\n", "ci"},
@@ -221,7 +225,7 @@ func TestParseExtraProducts_Refusals(t *testing.T) {
 	cases := map[string]string{
 		"built-in product id":   strings.Replace(ok, "acme-x\n  latest", DefaultProductID+"\n  latest", 1),
 		"built-in section":      strings.Replace(ok, "acme:", "sensor:", 1),
-		"fixed section":         "sdk:\n  latest: v9.9.9\n  advisories: \"\"\n",
+		"fixed section":         "sdk:\n  latest: v9.9.9\n  min: \"\"\n  advisories: \"\"\n",
 		"tag in the image":      strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x:latest", 1),
 		"shell in the image":    strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x;curl", 1),
 		"install path":          strings.Replace(ok, "install: acme-x", "install: ../etc", 1),

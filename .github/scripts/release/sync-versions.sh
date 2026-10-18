@@ -84,7 +84,7 @@ mapfile -t PRODUCTS < <(awk '/^[^[:space:]#][^:]*:[[:space:]]*(#.*)?$/ { s = $0;
 
 # key | kind: version, version? (may be ""), versions (space-separated, may be
 # ""), chart (X.Y.Z), text (set), text? (may be "").
-CHECKS=(platform.release:version sdk.latest:version sdk.advisories:versions ci.latest:version ci.min:version? chart.version:chart)
+CHECKS=(platform.release:version sdk.latest:version sdk.min:version? sdk.advisories:versions ci.latest:version ci.min:version? chart.version:chart)
 for prod in "${PRODUCTS[@]}"; do
   CHECKS+=("$prod.product:text" "$prod.latest:version" "$prod.min:version?" "$prod.image:text" "$prod.install:text" "$prod.release_identity:text")
 done
