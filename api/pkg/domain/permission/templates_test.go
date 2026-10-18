@@ -242,7 +242,7 @@ var templateVersions = map[string]struct {
 	version int
 	digest  string
 }{
-	"program-lead":          {1, "04049ff1fdc99496"},
+	"program-lead":          {2, "32b7a341272a6334"},
 	"security-analyst":      {1, "8d919973833731a8"},
 	"vulnerability-manager": {1, "20cadb3f924a1193"},
 	"remediation-owner":     {1, "e7a6827cedd735f8"},

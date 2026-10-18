@@ -3,8 +3,8 @@
 //
 // A platform administrator (RFC-022) is a normal sign-in account (users table)
 // that belongs to no organization, linked to an admin_users row that holds the
-// role and the authenticator. The administrator signs in on the normal /login
-// page and opens the admin console with a TOTP code. Administrators have no API
+// role and the authenticator. The administrator signs in on the console's own
+// site (ADMIN_PUBLIC_URL) with a TOTP code. Administrators have no API
 // keys. This tool creates both: a new admin row and a new sign-in account with
 // a temporary password, printed once. An email that already has an account is
 // refused (see createAccount).
@@ -134,7 +134,9 @@ func Main() {
 		// The printed link uses the UI origin the server would put in the
 		// email; without one it prints a <ui-url> placeholder.
 		UIBaseURL: firstNonEmpty(os.Getenv("SMTP_BASE_URL"), os.Getenv("APP_URL")),
-		Logger:    log,
+		// The console has its own site; its origin is printed when known.
+		AdminPublicURL: os.Getenv("ADMIN_PUBLIC_URL"),
+		Logger:         log,
 	}
 	if err := opts.Normalize(); err != nil {
 		fatal("%v", err)
@@ -164,7 +166,7 @@ func Main() {
 }
 
 // setupMailer emails the first organization owner's set-password link through
-// the platform e-mail settings (admin console, System > E-mail). For a
+// the platform e-mail settings (admin console, Settings > E-mail). For a
 // headless install, BOOTSTRAP_SMTP_HOST (with _PORT, _USER, _PASSWORD, _FROM,
 // _FROM_NAME, _STARTTLS) stores those settings first, when none are stored,
 // encrypted with APP_ENCRYPTION_KEY. Without e-mail it returns nil (an untyped
@@ -197,7 +199,7 @@ func setupMailer(ctx context.Context, db *sql.DB, log *logger.Logger) tenantapp.
 			fatal("BOOTSTRAP_SMTP_*: %v", err)
 		}
 		if created {
-			fmt.Println("Platform e-mail settings stored from BOOTSTRAP_SMTP_* (change them in the admin console, System > E-mail).")
+			fmt.Println("Platform e-mail settings stored from BOOTSTRAP_SMTP_* (change them in the admin console, Settings > E-mail).")
 		} else {
 			fmt.Println("Platform e-mail settings already stored; BOOTSTRAP_SMTP_* ignored.")
 		}

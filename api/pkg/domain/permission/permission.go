@@ -35,11 +35,15 @@ func (p Permission) String() string {
 const (
 	// Dashboard permissions
 	DashboardRead Permission = "dashboard:read"
-	// DashboardAggregate shows organization-wide dashboard totals to a viewer
-	// whose data scope is restricted (owner decision D6, research doc 15):
-	// without it, a restricted viewer's dashboard counts only their own
-	// assets and findings. Breakdowns under 5 are left out (k-floor).
-	DashboardAggregate Permission = "dashboard:aggregate"
+	// DashboardsOrgView shows organization dashboards: organization-wide
+	// numbers and the names in their lists, whatever the viewer's own data
+	// scope (docs/architecture/dashboards.md). It replaced
+	// dashboard:aggregate (migration dashboard_ownership) and is treated as
+	// full-data grade: a role holding it is privileged (privileged.go).
+	DashboardsOrgView Permission = "dashboards:org:view"
+	// DashboardsOrgManage creates, edits, orders and deletes organization
+	// dashboards and sets their default, audience and refresh schedule.
+	DashboardsOrgManage Permission = "dashboards:org:manage"
 
 	// Audit log permissions
 	AuditRead Permission = "audit:read"
@@ -455,7 +459,7 @@ const (
 func AllPermissions() []Permission {
 	return []Permission{
 		// Core
-		DashboardRead, DashboardAggregate,
+		DashboardRead, DashboardsOrgView, DashboardsOrgManage,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 

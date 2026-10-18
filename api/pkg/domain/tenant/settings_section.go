@@ -67,6 +67,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionCycles:              &s.Cycles,
 		SectionSharedSensors:       &s.SharedSensors,
 		SectionFindingApprovals:    &s.FindingApprovals,
+		SectionDashboards:          &s.Dashboards,
 	}
 }
 

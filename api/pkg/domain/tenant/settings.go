@@ -55,6 +55,8 @@ type Settings struct {
 	// FindingApprovals governs finding false-positive and accepted-risk
 	// decisions.
 	FindingApprovals FindingApprovalSettings `json:"finding_approvals,omitempty"`
+	// Dashboards are the dashboard defaults (docs/architecture/dashboards.md).
+	Dashboards DashboardSettings `json:"dashboards,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of
