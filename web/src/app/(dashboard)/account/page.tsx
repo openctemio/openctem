@@ -15,6 +15,7 @@ import { useProfile, useUpdateProfile } from '@/features/account'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeAvatarSrc } from '@/lib/safe-href'
 import { identityProviderLabel } from '@/lib/identity-provider-label'
+import { LeaveOrganization } from '@/features/organization/components/leave-organization'
 
 export default function ProfilePage() {
   const { profile, isLoading, isError, error, mutate } = useProfile()
@@ -217,6 +218,9 @@ export default function ProfilePage() {
           </dl>
         </CardContent>
       </Card>
+
+      {/* Every member can leave; the only owner sees why they cannot. */}
+      <LeaveOrganization />
     </div>
   )
 }

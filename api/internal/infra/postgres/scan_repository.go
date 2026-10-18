@@ -400,6 +400,7 @@ func (r *ScanRepository) ListDueForExecution(ctx context.Context, now time.Time)
 		AND schedule_type != 'manual'
 		AND next_run_at IS NOT NULL
 		AND next_run_at <= $1
+		AND ` + organizationActiveSQL("scans.tenant_id") + `
 		ORDER BY next_run_at ASC
 	`
 	rows, err := r.db.QueryContext(ctx, query, now)
