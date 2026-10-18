@@ -28,7 +28,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 ## API
 
 - [REST API overview](api/README.md) and [reference notes](api/endpoints.md) (the spec is served at `/openapi.yaml`; see the reference notes for who can read it in production)
-- [API conventions](architecture/api-conventions.md), [dashboard metrics](architecture/dashboard-metrics.md), [list query contract](architecture/list-query-contract.md)
+- [API conventions](architecture/api-conventions.md), [dashboard metrics](architecture/dashboard-metrics.md), [list query contract](architecture/list-query-contract.md), [custom query language](architecture/query-language.md)
 - [Tenant API keys](architecture/api-keys.md), [MCP server](architecture/mcp-server.md)
 - [Credential import](api/credential-import.md), [suppressions](api/suppressions.md)
 
@@ -71,7 +71,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 **Mobilization, automation and reporting**
 - [Remediation tasks](architecture/remediation-tasks.md), [remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
 - [Automations](architecture/automations.md), [notification system](architecture/notification-system.md), [SIEM ingest](architecture/siem-ingest.md)
-- [CTEM program metrics](architecture/program-metrics.md), [CTEM definition of done](architecture/ctem-dod-checklist.md), [report PDF export](architecture/report-pdf-export.md), [pentest report templates](architecture/pentest-report-templates.md), [pentest remediation and retest](architecture/pentest-remediation.md), [pentest campaign phases, delivery and sign-off](architecture/pentest-campaign-completion.md), [pentest campaign profile](architecture/pentest-campaign-profile.md), [pentest methodology checklists](architecture/pentest-checklists.md)
+- [Dashboards: fact layer](architecture/dashboards.md), [CTEM program metrics](architecture/program-metrics.md), [CTEM definition of done](architecture/ctem-dod-checklist.md), [report PDF export](architecture/report-pdf-export.md), [pentest report templates](architecture/pentest-report-templates.md), [pentest remediation and retest](architecture/pentest-remediation.md), [pentest campaign phases, delivery and sign-off](architecture/pentest-campaign-completion.md), [pentest campaign profile](architecture/pentest-campaign-profile.md), [pentest methodology checklists](architecture/pentest-checklists.md)
 - [API ↔ CTIS decoupling](architecture/api-ctis-decoupling.md)
 
 ## How-to (integrations and features)

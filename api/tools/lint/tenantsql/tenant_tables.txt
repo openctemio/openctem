@@ -89,6 +89,11 @@ control_tests
 credentials
 ct_monitor_state
 ctem_cycles
+dash_asset_day
+dash_asset_rank
+dash_asset_state
+dash_dirty_assets
+dash_fact_status
 dashboard_audience
 definition_identifiers
 definition_relations
