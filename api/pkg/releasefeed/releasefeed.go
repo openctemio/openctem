@@ -1,6 +1,9 @@
 // Package releasefeed reads and writes the signed release feed: the list of
 // OpenCTEM releases and security advisories an instance compares with its own
-// version (docs/rfcs/RFC-105-version-check-and-usage-telemetry.md).
+// version (docs/rfcs/RFC-105-version-check-and-usage-telemetry.md), and the
+// newest release of each first-party component (sensor products, sdk-go),
+// which an instance uses instead of the version built into it
+// (docs/rfcs/RFC-037-versioning-and-release-train.md §12).
 //
 // The feed is one DSSE envelope (the shared signed-feed envelope, pkg/feedsign)
 // signed directly by one online Ed25519 key whose public key is pinned in this
@@ -51,6 +54,7 @@ const (
 	MaxPinnedKeys   = 2
 	MaxReleases     = 200
 	MaxAdvisories   = 200
+	MaxComponents   = 32
 	MaxTitle        = 200
 	MaxURL          = 512
 )
@@ -91,14 +95,41 @@ type Advisory struct {
 	URL         string    `json:"url,omitempty"`
 }
 
+// Component is the newest stable release of one first-party component: a
+// sensor product or the SDK, named by its section in versions.yaml
+// ("sensor", "connector-tenable", "sdk"). Digest is the image manifest digest
+// of that release ("sha256:<hex>") for a component that ships an image. The
+// image repository is never taken from the feed: it comes from the catalog
+// built into the instance.
+type Component struct {
+	Component   string    `json:"component"`
+	Version     string    `json:"version"`
+	PublishedAt time.Time `json:"published_at"`
+	NotesURL    string    `json:"notes_url,omitempty"`
+	Digest      string    `json:"digest,omitempty"`
+}
+
 // Feed is the signed release feed.
 type Feed struct {
-	Kind       string     `json:"kind"`
-	Sequence   uint64     `json:"sequence"`
-	IssuedAt   time.Time  `json:"issued_at"`
-	ExpiresAt  time.Time  `json:"expires_at"`
-	Releases   []Release  `json:"releases"`
-	Advisories []Advisory `json:"advisories"`
+	Kind       string      `json:"kind"`
+	Sequence   uint64      `json:"sequence"`
+	IssuedAt   time.Time   `json:"issued_at"`
+	ExpiresAt  time.Time   `json:"expires_at"`
+	Releases   []Release   `json:"releases"`
+	Advisories []Advisory  `json:"advisories"`
+	Components []Component `json:"components,omitempty"`
+}
+
+// ComponentVersions maps each component the feed lists to its release.
+func (f *Feed) ComponentVersions() map[string]Component {
+	if f == nil || len(f.Components) == 0 {
+		return nil
+	}
+	out := make(map[string]Component, len(f.Components))
+	for _, c := range f.Components {
+		out[c.Component] = c
+	}
+	return out
 }
 
 // Bundle is the published file: the signed feed envelope.
@@ -197,6 +228,8 @@ func Verify(raw []byte, t Trust, now time.Time) (*Verified, error) {
 var (
 	releaseVersion = regexp.MustCompile(`^v\d{1,4}\.\d{1,4}\.\d{1,6}$`)
 	advisoryID     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
+	componentName  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+	imageDigest    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
 // Validate checks the feed's structure and bounds (not the clock).
@@ -212,6 +245,8 @@ func (f *Feed) Validate() error {
 		return fmt.Errorf("release feed: over %d releases", MaxReleases)
 	case len(f.Advisories) > MaxAdvisories:
 		return fmt.Errorf("release feed: over %d advisories", MaxAdvisories)
+	case len(f.Components) > MaxComponents:
+		return fmt.Errorf("release feed: over %d components", MaxComponents)
 	}
 	seen := map[string]bool{}
 	for _, r := range f.Releases {
@@ -243,6 +278,27 @@ func (f *Feed) Validate() error {
 			return fmt.Errorf("release feed: advisory %s: %w", a.ID, err)
 		}
 		ids[a.ID] = true
+	}
+	return validateComponents(f.Components)
+}
+
+func validateComponents(cs []Component) error {
+	names := map[string]bool{}
+	for _, c := range cs {
+		switch {
+		case !componentName.MatchString(c.Component) || names[c.Component]:
+			return fmt.Errorf("release feed: component %q", c.Component)
+		case !releaseVersion.MatchString(c.Version):
+			return fmt.Errorf("release feed: component %s: version %q", c.Component, c.Version)
+		case c.PublishedAt.IsZero():
+			return fmt.Errorf("release feed: component %s: published_at", c.Component)
+		case c.Digest != "" && !imageDigest.MatchString(c.Digest):
+			return fmt.Errorf("release feed: component %s: digest", c.Component)
+		}
+		if err := checkURL(c.NotesURL); err != nil {
+			return fmt.Errorf("release feed: component %s: %w", c.Component, err)
+		}
+		names[c.Component] = true
 	}
 	return nil
 }
