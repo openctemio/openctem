@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react'
 import { Main } from '@/components/layout'
-import { MetricStrip, PageHeader } from '@/features/shared'
+import { MetricStrip, PageHeader, SettingsSaveBar } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -31,7 +31,6 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   AlertTriangle,
-  Loader2,
   AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -529,35 +528,26 @@ export default function ModuleManagementPage() {
         )}
       </div>
 
-      {/* Deliberate deviation from the settings-form model (Save in the page
-          header): this page is a long list of toggles, and a header button
-          scrolls out of view while the admin works far down the list — a toggle
-          that looks applied but was never saved is the failure to avoid. So the
-          Save sits in a bar pinned to the bottom of the content column, shown
-          only while there are unsaved changes. */}
-      {isDirty && (
-        <Can route="PATCH /api/v1/tenants/{tenant}/settings/modules">
-          <div className="sticky bottom-4 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-lg">
-            <div className="text-sm tabular-nums text-muted-foreground">
-              {[
-                pendingEnabled > 0 && `${pendingEnabled} to enable`,
-                pendingDisabled > 0 && `${pendingDisabled} to disable`,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleDiscard}>
-                Discard
-              </Button>
-              <Button size="sm" onClick={handleSave} disabled={isUpdating}>
-                {isUpdating && <Loader2 className="h-4 w-4 animate-spin" />}
-                Save changes
-              </Button>
-            </div>
-          </div>
-        </Can>
-      )}
+      {/* A long list of toggles: Save sits in the shared sticky bar, shown only
+          while there are unsaved changes, and leaving asks first. */}
+      <Can route="PATCH /api/v1/tenants/{tenant}/settings/modules">
+        <SettingsSaveBar
+          dirty={isDirty}
+          saving={isUpdating}
+          onSave={() => void handleSave()}
+          onDiscard={handleDiscard}
+          summary={
+            [
+              pendingEnabled > 0 &&
+                t('settings.modules.toEnable', '{count} to enable', { count: pendingEnabled }),
+              pendingDisabled > 0 &&
+                t('settings.modules.toDisable', '{count} to disable', { count: pendingDisabled }),
+            ]
+              .filter(Boolean)
+              .join(' · ') || undefined
+          }
+        />
+      </Can>
 
       {/* Dependency-violation Dialog — shown when the backend rejects
           a save because of the module graph. Lists the concrete modules

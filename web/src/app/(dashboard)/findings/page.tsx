@@ -9,7 +9,6 @@ import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
 import Link from '@/components/link'
-import { useRouter } from 'next/navigation'
 import {
   DEFAULT_FINDING_LENS,
   FINDING_LENSES,
@@ -439,7 +438,6 @@ export default function FindingsPage() {
 
 function FindingsContent() {
   const searchParams = useUrlParams()
-  const router = useRouter()
   // False for the one render a client-side navigation makes before the address
   // bar holds this page's URL: every URL param read then is the previous
   // page's. No request is sent until it is true (see useUrlSettled).
@@ -521,9 +519,8 @@ function FindingsContent() {
       SORTABLE_COLUMNS
     )
     if (!migrated) return
-    const qs = migrated.toString()
-    router.replace(`${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`)
-  }, [router])
+    replaceUrlSearch(migrated)
+  }, [])
   const kevActive = kevFilter === 'true'
   const reachableActive = reachableFilter === 'true'
   const branchOnlyActive = branchOnlyFilter === 'true'
@@ -568,18 +565,15 @@ function FindingsContent() {
   const savedId = savedViewId(viewParam)
   // Opening a saved view replaces the URL's filters with the view (and its
   // grouping); clearing it goes back to the plain list.
-  const openSavedView = useCallback(
-    (view: SavedView | null) => {
-      if (!view) {
-        router.replace('/findings')
-        return
-      }
-      const q = new URLSearchParams({ view: view.id })
-      if (view.group_by) q.set('group', view.group_by)
-      router.replace(`/findings?${q.toString()}`)
-    },
-    [router]
-  )
+  const openSavedView = useCallback((view: SavedView | null) => {
+    if (!view) {
+      replaceUrlSearch(new URLSearchParams())
+      return
+    }
+    const q = new URLSearchParams({ view: view.id })
+    if (view.group_by) q.set('group', view.group_by)
+    replaceUrlSearch(q)
+  }, [])
   // The view is "modified" when filters in the URL sit on top of it.
   const savedViewModified =
     !!savedId &&
@@ -2061,7 +2055,7 @@ function FindingsContent() {
       steps={[
         {
           label: 'Findings',
-          onSelect: () => router.push('/findings'),
+          onSelect: () => pushUrlSearch(new URLSearchParams()),
         },
         {
           label: `By ${GROUP_BY_LABELS[drillDim].toLowerCase()}`,

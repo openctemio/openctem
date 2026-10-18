@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -73,6 +74,8 @@ export function TargetMappingDialog({
   defaultTargetType,
   onSaved,
 }: Props) {
+  const { t } = useTranslation()
+
   const editing = !!mapping
   const [targetType, setTargetType] = useState(mapping?.target_type ?? defaultTargetType ?? '')
   const [assetType, setAssetType] = useState(mapping?.asset_type ?? '')
@@ -133,10 +136,16 @@ export function TargetMappingDialog({
       <DialogContent>
         <DialogForm onSubmit={submit} noValidate>
           <DialogHeader>
-            <DialogTitle>{editing ? 'Edit target mapping' : 'New target mapping'}</DialogTitle>
+            <DialogTitle>
+              {editing
+                ? t('admin.targetMappingDialog.editTargetMapping', 'Edit target mapping')
+                : t('admin.targetMappingDialog.newTargetMapping', 'New target mapping')}
+            </DialogTitle>
             <DialogDescription>
-              A scanner that declares this target type can scan assets of this type. Scans skip
-              assets no active mapping covers.
+              {t(
+                'admin.targetMappingDialog.aScannerThatDeclaresThis',
+                'A scanner that declares this target type can scan assets of this type. Scans skip assets no active mapping covers.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -144,21 +153,30 @@ export function TargetMappingDialog({
               {editing ? (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">Target type</p>
+                    <p className="text-sm font-medium">
+                      {t('admin.targetMappingDialog.targetType', 'Target type')}
+                    </p>
                     <p className="text-sm">{targetTypeLabel(mapping.target_type)}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">Asset type</p>
+                    <p className="text-sm font-medium">
+                      {t('admin.targetMappingDialog.assetType', 'Asset type')}
+                    </p>
                     <p className="text-sm">{getAssetTypeLabel(mapping.asset_type)}</p>
                   </div>
                   <p className="col-span-2 text-xs text-muted-foreground">
-                    The pair cannot change. To map a different pair, create a new mapping.
+                    {t(
+                      'admin.targetMappingDialog.thePairCannotChangeTo',
+                      'The pair cannot change. To map a different pair, create a new mapping.'
+                    )}
                   </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="tm-target">Target type</Label>
+                    <Label htmlFor="tm-target">
+                      {t('admin.targetMappingDialog.targetType', 'Target type')}
+                    </Label>
                     <Select value={targetType} onValueChange={setTargetType}>
                       <SelectTrigger id="tm-target" className="w-full">
                         <SelectValue placeholder="Choose..." />
@@ -172,11 +190,17 @@ export function TargetMappingDialog({
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      {targetTypeHint(targetType) ?? "From a scanner's supported targets."}
+                      {targetTypeHint(targetType) ??
+                        t(
+                          'admin.targetMappingDialog.fromAScannerSSupported',
+                          "From a scanner's supported targets."
+                        )}
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="tm-asset">Asset type</Label>
+                    <Label htmlFor="tm-asset">
+                      {t('admin.targetMappingDialog.assetType', 'Asset type')}
+                    </Label>
                     <Select value={assetType} onValueChange={setAssetType}>
                       <SelectTrigger id="tm-asset" className="w-full">
                         <SelectValue placeholder="Choose..." />
@@ -190,18 +214,30 @@ export function TargetMappingDialog({
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      Assets of this type can be scanned.
+                      {t(
+                        'admin.targetMappingDialog.assetsOfThisTypeCan',
+                        'Assets of this type can be scanned.'
+                      )}
                     </p>
                   </div>
                   {touched && pairMissing && (
                     <p className="text-sm text-destructive sm:col-span-2">
-                      Choose a target type and an asset type.
+                      {t(
+                        'admin.targetMappingDialog.chooseATargetTypeAnd',
+                        'Choose a target type and an asset type.'
+                      )}
                     </p>
                   )}
                   {existing && (
                     <p className="text-sm text-destructive sm:col-span-2" role="alert">
-                      {targetTypeLabel(existing.target_type)} is already mapped to{' '}
-                      {getAssetTypeLabel(existing.asset_type)}. Edit that mapping instead.
+                      {t(
+                        'admin.targetMappingDialog.alreadyMapped',
+                        '{target} is already mapped to {asset}. Edit that mapping instead.',
+                        {
+                          target: targetTypeLabel(existing.target_type),
+                          asset: getAssetTypeLabel(existing.asset_type),
+                        }
+                      )}
                     </p>
                   )}
                 </div>
@@ -209,10 +245,15 @@ export function TargetMappingDialog({
 
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
-                  <Label htmlFor="tm-primary">Primary mapping</Label>
+                  <Label htmlFor="tm-primary">
+                    {t('admin.targetMappingDialog.primaryMapping', 'Primary mapping')}
+                  </Label>
                   <p className="text-xs text-muted-foreground">
-                    The main asset type for this target type. Sets the priority to{' '}
-                    {PRIMARY_PRIORITY}.
+                    {t(
+                      'admin.targetMappingDialog.theMainAssetTypeFor',
+                      'The main asset type for this target type. Sets the priority to {priority}.',
+                      { priority: PRIMARY_PRIORITY }
+                    )}
                   </p>
                 </div>
                 <Switch
@@ -225,7 +266,9 @@ export function TargetMappingDialog({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="tm-priority">Priority</Label>
+                <Label htmlFor="tm-priority">
+                  {t('admin.targetMappingDialog.priority', 'Priority')}
+                </Label>
                 <Input
                   id="tm-priority"
                   type="number"
@@ -244,22 +287,38 @@ export function TargetMappingDialog({
                   }
                 >
                   {errors.priority ??
-                    `${MIN_PRIORITY}–${MAX_PRIORITY}. Lower comes first; ${PRIMARY_PRIORITY} is primary, ${DEFAULT_PRIORITY} is the default.`}
+                    t(
+                      'admin.targetMappingDialog.lowerComesFirstIsPrimary',
+                      '{min}–{max}. Lower comes first; {primary} is primary, {fallback} is the default.',
+                      {
+                        min: MIN_PRIORITY,
+                        max: MAX_PRIORITY,
+                        primary: PRIMARY_PRIORITY,
+                        fallback: DEFAULT_PRIORITY,
+                      }
+                    )}
                 </p>
               </div>
 
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
-                  <Label htmlFor="tm-active">Active</Label>
+                  <Label htmlFor="tm-active">
+                    {t('admin.targetMappingDialog.active', 'Active')}
+                  </Label>
                   <p className="text-xs text-muted-foreground">
-                    Inactive mappings are kept but ignored when scans are filtered.
+                    {t(
+                      'admin.targetMappingDialog.inactiveMappingsAreKeptBut',
+                      'Inactive mappings are kept but ignored when scans are filtered.'
+                    )}
                   </p>
                 </div>
                 <Switch id="tm-active" checked={active} onCheckedChange={setActive} />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="tm-description">Description (optional)</Label>
+                <Label htmlFor="tm-description">
+                  {t('admin.targetMappingDialog.descriptionOptional', 'Description (optional)')}
+                </Label>
                 <Textarea
                   id="tm-description"
                   rows={2}
@@ -282,11 +341,13 @@ export function TargetMappingDialog({
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={busy || (touched && invalid) || !!existing}>
               {busy && <Loader2 className="me-2 size-4 animate-spin" />}
-              {editing ? 'Save changes' : 'Create mapping'}
+              {editing
+                ? t('admin.targetMappingDialog.saveChanges', 'Save changes')
+                : t('admin.targetMappingDialog.createMapping', 'Create mapping')}
             </Button>
           </DialogFooter>
         </DialogForm>

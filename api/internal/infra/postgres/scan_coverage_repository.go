@@ -117,11 +117,16 @@ func (r *ScanCoverageRepository) ActiveIPs(_ context.Context, _ shared.ID) (int,
 // (RFC-007 Phase 4 observability), computed with conditional aggregation over
 // the scannable estate LEFT JOIN the rotation cursor. windowDays defines the
 // freshness window. Tenant-scoped.
-func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID shared.ID, windowDays int) (*scancoverage.CoverageStats, error) {
+func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, windowDays int) (*scancoverage.CoverageStats, error) {
 	if windowDays <= 0 {
 		windowDays = scancoverage.DefaultCoverageWindowDays
 	}
-	const query = `
+	inScope, scopeArgs := sqlTrue, []any(nil)
+	if scope != nil {
+		inScope, scopeArgs = dataScopeCondAt("a.id", scope, 4)
+	}
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
+	query := `
 		WITH scannable AS (
 			SELECT a.criticality, c.last_attempt_at AS last_dispatched_at
 			FROM assets a
@@ -131,6 +136,7 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 			  AND a.status = 'active'
 			  AND a.asset_type = ANY($2)
+			  AND ` + inScope + `
 		)
 		SELECT
 			count(*),
@@ -147,7 +153,7 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 
 	stats := &scancoverage.CoverageStats{WindowDays: windowDays}
 	var oldest sql.NullTime
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), pq.Array(coverageAssetTypes), windowDays).Scan(
+	if err := r.db.QueryRowContext(ctx, query, append([]any{tenantID.String(), pq.Array(coverageAssetTypes), windowDays}, scopeArgs...)...).Scan(
 		&stats.TotalScannable,
 		&stats.NeverScanned,
 		&stats.CoveredInWindow,

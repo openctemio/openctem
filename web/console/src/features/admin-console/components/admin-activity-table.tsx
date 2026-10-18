@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { DataTable, RelativeTime, StackedCell } from '@/features/shared'
@@ -12,44 +13,54 @@ export function humanizeAction(action: string): string {
   return humanizeIdentifier(verb ?? area)
 }
 
-const columns: ColumnDef<AdminAuditEntry>[] = [
-  {
-    accessorKey: 'action',
-    header: 'Action',
-    cell: ({ row }) => (
-      <StackedCell primary={humanizeAction(row.original.action)} secondary={row.original.action} />
-    ),
-  },
-  {
-    accessorKey: 'admin_email',
-    header: 'Administrator',
-    cell: ({ row }) => <span className="text-sm">{row.original.admin_email}</span>,
-  },
-  {
-    accessorKey: 'success',
-    header: 'Result',
-    cell: ({ row }) =>
-      row.original.success ? (
-        <Badge variant="secondary">Succeeded</Badge>
-      ) : (
-        <Badge variant="destructive">
-          {row.original.response_status ? `Failed (${row.original.response_status})` : 'Failed'}
-        </Badge>
+function useColumns(): ColumnDef<AdminAuditEntry>[] {
+  const { t } = useTranslation()
+  return [
+    {
+      accessorKey: 'action',
+      header: t('admin.adminActivityTable.action', 'Action'),
+      cell: ({ row }) => (
+        <StackedCell
+          primary={humanizeAction(row.original.action)}
+          secondary={row.original.action}
+        />
       ),
-  },
-  {
-    accessorKey: 'ip_address',
-    header: 'IP address',
-    cell: ({ row }) => (
-      <span className="text-sm tabular-nums">{row.original.ip_address || '—'}</span>
-    ),
-  },
-  {
-    accessorKey: 'created_at',
-    header: 'When',
-    cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
-  },
-]
+    },
+    {
+      accessorKey: 'admin_email',
+      header: t('admin.adminActivityTable.administrator', 'Administrator'),
+      cell: ({ row }) => <span className="text-sm">{row.original.admin_email}</span>,
+    },
+    {
+      accessorKey: 'success',
+      header: t('admin.adminActivityTable.result', 'Result'),
+      cell: ({ row }) =>
+        row.original.success ? (
+          <Badge variant="secondary">{t('admin.adminActivityTable.succeeded', 'Succeeded')}</Badge>
+        ) : (
+          <Badge variant="destructive">
+            {row.original.response_status
+              ? t('admin.adminActivityTable.failed', 'Failed ({response_status})', {
+                  response_status: row.original.response_status,
+                })
+              : t('admin.adminActivityTable.failedPlain', 'Failed')}
+          </Badge>
+        ),
+    },
+    {
+      accessorKey: 'ip_address',
+      header: t('admin.adminActivityTable.ipAddress', 'IP address'),
+      cell: ({ row }) => (
+        <span className="text-sm tabular-nums">{row.original.ip_address || '—'}</span>
+      ),
+    },
+    {
+      accessorKey: 'created_at',
+      header: t('admin.adminActivityTable.when', 'When'),
+      cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
+    },
+  ]
+}
 
 interface AdminActivityTableProps {
   entries: AdminAuditEntry[]
@@ -74,6 +85,9 @@ export function AdminActivityTable({
   toolbarStart,
   onRowClick,
 }: AdminActivityTableProps) {
+  const { t } = useTranslation()
+  const columns = useColumns()
+
   return (
     <DataTable
       columns={columns}
@@ -85,7 +99,10 @@ export function AdminActivityTable({
       showSelectionCount={false}
       showPagination={!!paging}
       toolbarStart={toolbarStart}
-      emptyMessage="No administrator activity yet"
+      emptyMessage={t(
+        'admin.adminActivityTable.noAdministratorActivityYet',
+        'No administrator activity yet'
+      )}
       mobileCards
       onRowClick={onRowClick}
       {...(paging && {

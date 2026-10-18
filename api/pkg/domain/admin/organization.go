@@ -26,6 +26,14 @@ type Organization struct {
 	// LimitsApply: at least one limit or feature deny is set for the
 	// organization (by the operator or a source).
 	LimitsApply bool
+	// Status is the platform status (tenants.status: active or suspended),
+	// with when and why it was suspended (docs/architecture/organization-suspension.md).
+	Status          string
+	SuspendedAt     *time.Time
+	SuspendedReason string
+	// DeletionDueAt: an owner scheduled the deletion; the purge worker
+	// deletes the organization at this time unless an owner cancels.
+	DeletionDueAt *time.Time
 }
 
 // Owner filter values for OrganizationFilter.Owner.
@@ -44,8 +52,10 @@ type OrganizationFilter struct {
 	// IncludeSystem lists the platform system tenant too. It is internal
 	// (seeded data, no members): left out of the list unless asked for.
 	IncludeSystem bool
-	Limit         int
-	Offset        int
+	// Status, when set, keeps organizations in that platform status.
+	Status string
+	Limit  int
+	Offset int
 }
 
 // OrganizationReader is a platform-level (cross-tenant) read model. It exists

@@ -18,7 +18,7 @@ func TestTenantRegionIsSetOnceAtCreation(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
 	repo := postgres.NewTenantRepository(&postgres.DB{DB: db})
-	repo.SetDefaultRegion("eu-central")
+	repo.SetRegionSource(func(context.Context) string { return "eu-central" })
 
 	creator := createTestUser(t, db, "region-"+uuid.NewString()[:8]+"@example.com", "Creator")
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM users WHERE id = $1`, creator.String()) })
@@ -36,7 +36,7 @@ func TestTenantRegionIsSetOnceAtCreation(t *testing.T) {
 	}
 
 	// A later deployment region never moves an existing organization.
-	repo.SetDefaultRegion("us-east")
+	repo.SetRegionSource(func(context.Context) string { return "us-east" })
 	_ = got.UpdateName("Renamed")
 	if err := repo.UpdateProfile(ctx, got); err != nil {
 		t.Fatal(err)

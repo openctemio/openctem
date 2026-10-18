@@ -173,6 +173,12 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("account-erase", cfg.Worker.InvitationPurgeInterval,
 			svc.AccountDeletion.EraseDue, log.With("controller", "account-erase")))
 	}
+	if svc.OrgDeletion != nil {
+		// Organizations whose deletion grace period ended are deleted
+		// (docs/architecture/organization-deletion.md).
+		m.Register(controller.NewPurgeController("organization-delete", cfg.Worker.InvitationPurgeInterval,
+			svc.OrgDeletion.PurgeDue, log.With("controller", "organization-delete")))
+	}
 	if repos.AdminConsole != nil {
 		console := repos.AdminConsole
 		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,
@@ -539,6 +545,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AccessRequest, log.With("controller", "access-request-retention")))
 	}
 
+	// Sign-up events are kept 90 days.
+	if svc.SignupEvents != nil {
+		w.ControllerManager.Register(controller.NewSignupEventRetentionController(
+			svc.SignupEvents, log.With("controller", "signup-event-retention")))
+	}
+
 	// Domain re-verify sweep (SSO P1): periodically re-checks verified domains;
 	// a domain whose TXT record vanished is downgraded to failed (fail-closed),
 	// so a lapsed/hijacked domain loses SSO JIT authority.
@@ -707,11 +719,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// set metrics and email the platform administrators. Read-only.
 	if deps.DB != nil {
 		sys := newSystemCollector(cfg, deps.DB, nil, svc.VersionCheck)
-		var mailer systemstatus.Notifier
-		if repos.Admin != nil && svc.Email != nil {
-			mailer = systemMailer{admins: repos.Admin, email: svc.Email, appName: cfg.Brand.DisplayName(), log: log}
-		}
-		w.ControllerManager.Register(systemstatus.NewWatcher(sys, mailer, cfg.System.WatchInterval, log))
+		w.ControllerManager.Register(systemstatus.NewWatcher(sys, newAdminNotifier(cfg, repos, svc, log), cfg.System.WatchInterval, log))
 	}
 
 	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data

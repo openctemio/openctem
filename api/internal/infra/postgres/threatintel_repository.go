@@ -350,7 +350,7 @@ func (r *EPSSRepository) GetTopPercentile(ctx context.Context, percentile float6
 //
 // COUNT(*) equals the former COUNT(DISTINCT f.id): epss_scores.cve_id is the
 // primary key, so each finding joins at most one EPSS row.
-func (r *EPSSRepository) CountTenantOpenAboveScores(ctx context.Context, tenantID shared.ID, thresholds []float64) ([]int64, error) {
+func (r *EPSSRepository) CountTenantOpenAboveScores(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, thresholds []float64) ([]int64, error) {
 	if len(thresholds) == 0 {
 		return []int64{}, nil
 	}
@@ -366,13 +366,17 @@ func (r *EPSSRepository) CountTenantOpenAboveScores(ctx context.Context, tenantI
 		}
 	}
 	args = append(args, minThreshold)
+	minIdx := len(args)
+	inScope, args := dataScopeCond("f.asset_id", scope, args)
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT ` + strings.Join(cols, ", ") + `
 		FROM findings f
 		JOIN epss_scores es ON es.cve_id = f.cve_id
 		WHERE f.tenant_id = $1
-			AND es.epss_score >= $` + strconv.Itoa(len(args)) + `
-			AND ` + openFindingStatusClause
+			AND es.epss_score >= $` + strconv.Itoa(minIdx) + `
+			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
+			AND ` + inScope
 
 	counts := make([]int64, len(thresholds))
 	dest := make([]any, len(counts))
@@ -729,17 +733,41 @@ func (r *KEVRepository) GetRansomwareRelated(ctx context.Context, limit int) ([]
 // findings to the KEV catalog on the CVE id and uses the authoritative KEV
 // due_date, so it reflects the tenant's actual overdue KEV exposure rather than
 // the global count of past-due catalog entries.
-func (r *KEVRepository) CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID) (int64, error) {
+func (r *KEVRepository) CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error) {
+	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT COUNT(DISTINCT f.id)
 		FROM findings f
 		JOIN kev_catalog kc ON kc.cve_id = f.cve_id
 		WHERE f.tenant_id = $1
 			AND kc.due_date IS NOT NULL AND kc.due_date < NOW()
-			AND ` + openFindingStatusClause
+			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
+			AND ` + inScope
 	var count int64
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to count tenant open past-due KEV findings: %w", err)
+	}
+	return count, nil
+}
+
+// CountTenantOpenInKEV returns the number of the tenant's OPEN findings that
+// reference a CISA-KEV CVE, past due or not: the tenant's exposure to known
+// exploited vulnerabilities, not the size of the global catalog. It follows
+// the viewer's data scope and the pentest member-visibility rule.
+func (r *KEVRepository) CountTenantOpenInKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error) {
+	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
+	query := `
+		SELECT COUNT(DISTINCT f.id)
+		FROM findings f
+		JOIN kev_catalog kc ON kc.cve_id = f.cve_id
+		WHERE f.tenant_id = $1
+			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
+			AND ` + inScope
+	var count int64
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count tenant open KEV findings: %w", err)
 	}
 	return count, nil
 }

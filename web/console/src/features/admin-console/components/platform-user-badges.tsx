@@ -4,11 +4,32 @@ import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import type { PlatformUser } from '../types'
 
-/** Sign-in state of one account: locked, unverified, MFA, platform admin, erased. */
-export function PlatformUserBadges({ user }: { user: PlatformUser }) {
+/** Sign-in state of one account: blocked, locked, unverified, MFA, platform admin, erased. */
+export function PlatformUserBadges({
+  user,
+}: {
+  user: Pick<
+    PlatformUser,
+    | 'erased'
+    | 'is_platform_admin'
+    | 'locked'
+    | 'blocked'
+    | 'status'
+    | 'email_verified'
+    | 'mfa_enabled'
+  >
+}) {
   const { t } = useTranslation()
+  const plain =
+    !user.erased &&
+    !user.is_platform_admin &&
+    !user.locked &&
+    !user.blocked &&
+    user.status === 'active' &&
+    user.email_verified
   return (
     <div className="flex flex-wrap gap-1">
+      {plain && <Badge variant="outline">{t('admin.users.badge.active', 'Active')}</Badge>}
       {user.erased && <Badge variant="outline">{t('admin.users.badge.erased', 'Erased')}</Badge>}
       {user.is_platform_admin && (
         <Badge variant="secondary">{t('admin.users.badge.admin', 'Platform admin')}</Badge>
@@ -16,7 +37,10 @@ export function PlatformUserBadges({ user }: { user: PlatformUser }) {
       {user.locked && (
         <Badge variant="destructive">{t('admin.users.badge.locked', 'Locked')}</Badge>
       )}
-      {user.status !== 'active' && !user.erased && (
+      {user.blocked && !user.erased && (
+        <Badge variant="destructive">{t('admin.users.badge.blocked', 'Blocked')}</Badge>
+      )}
+      {user.status !== 'active' && !user.erased && !user.blocked && (
         <Badge variant="outline" className="capitalize">
           {user.status}
         </Badge>

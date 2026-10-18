@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { csrfFetch } from '@/lib/api/client'
+import { csrfFetch, del } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
 import { Main } from '@/components/layout'
 import {
@@ -161,10 +161,8 @@ export default function SCMConnectionsPage() {
     if (!selectedConnection) return
     setActionInProgress(selectedConnection.id)
     try {
-      const response = await csrfFetch(`/api/v1/integrations/${selectedConnection.id}`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) throw new Error('Delete failed')
+      // apiClient path: a STEP_UP_REQUIRED answer opens the re-authentication dialog and retries.
+      await del(`/api/v1/integrations/${selectedConnection.id}`)
       toast.success(`Connection "${selectedConnection.name}" deleted`)
       await invalidateSCMConnectionsCache()
       await mutate()

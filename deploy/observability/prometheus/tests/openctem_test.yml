@@ -223,3 +223,22 @@ tests:
               summary: '2 sensor(s) are unhardened: pin_none'
               description: Sensors run without a local policy (policy_none), without a pinned platform CA (pin_none), with tools outside network confinement (network_unenforced) or with a bearer key instead of a key-bound identity (bearer_key). They keep working; the Sensors page flags them.
               runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsunhardened
+
+  # A sign-up burst alert raised by the API pages once, labeled by dimension
+  # and kind only.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_signup_burst_alerts_total{dimension="ip_prefix",kind="account_created",job="openctem-api",instance="api:8080"}'
+        values: '0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SignupBurst
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SignupBurst
+        exp_alerts:
+          - exp_labels: {severity: warning, component: api, category: security, dimension: ip_prefix, kind: account_created}
+            exp_annotations:
+              summary: 'Sign-up burst: account_created from one ip_prefix'
+              description: Many sign-ups from one network or email domain. Review Requests > Sign-ups in the platform console.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signupburst

@@ -12,8 +12,16 @@
 # .env examples, the console's CI pin) are listed in sync-versions.sh.
 # platform.release is set on the release branch (one commit by
 # cut-release.sh), so a tag's checkout defaults to its own version; develop
-# gets it when main is merged back after the tag. The sensor and sdk-go
-# release workflows open a PR that bumps their entries.
+# gets it when main is merged back after the tag.
+#
+# Compatibility versus availability (api/docs/rfcs/RFC-037 §12): the "min"
+# values and sdk.advisories are this platform's compatibility floor and change
+# only when the platform's contract does. The "latest" of a sensor product and
+# of the SDK is only the release this platform release was built with: a
+# running instance learns newer sensor and SDK releases from the signed
+# release feed, so a sensor or SDK release needs no change here and no
+# platform release. Move a "latest" forward when cutting a platform release
+# (the fallback of an instance without the feed), never per sensor release.
 #
 # Format: two levels, "key: value" with values unquoted or double-quoted. ""
 # means "not set". Keep it that simple: the release scripts read it without a
@@ -22,7 +30,7 @@
 # The newest released vX.Y.Z tag of this repository (API + web share it); on
 # release/vX.Y.Z, that vX.Y.Z.
 platform:
-  release: v0.10.1
+  release: v0.11.0
 
 # Sensor products: every top-level section other than platform, sdk, ci and
 # chart is one sensor product (api/docs/rfcs/RFC-037 §11). A sensor reports its
@@ -32,8 +40,10 @@ platform:
 # that product's own release line; a custom product (built on sdk-go, not
 # listed) gets no version verdict.
 #   product           the product token the sensor reports
-#   latest            the newest release: the install snippets pin it, and
-#                     older sensors of this product show "update available"
+#   latest            the release this platform release was built with: the
+#                     install snippets pin it and older sensors show "update
+#                     available" until the release feed names a newer one
+#                     (the feed can only raise it)
 #   min               a sensor of this product below it is degraded ("version
 #                     unsupported"); "" = no minimum
 #   image             the published image repository, without a tag
@@ -46,7 +56,7 @@ platform:
 # The scanning sensor (openctemio/sensor).
 sensor:
   product: openctemio-sensor
-  latest: v0.23.0
+  latest: v0.23.2
   min: v0.9.0
   image: ghcr.io/openctemio/sensor
   install: sensor
@@ -63,12 +73,19 @@ connector-tenable:
 
 # SDK (openctemio/sdk-go) a sensor is built with. Informational only: whether
 # a sensor works with this platform is its protocol version and the
-# capabilities it advertises, not its SDK release. latest: a sensor built with
-# an older SDK shows "outdated" (no health effect). advisories: SDK releases
-# with a published security advisory, separated by spaces; a sensor built with
-# one is degraded with a warning. "" = none.
+# capabilities it advertises, not its SDK release. latest: the SDK release
+# this platform release was built with (the release feed raises it); a sensor
+# built with an older SDK shows "outdated" (no health effect). min: the oldest
+# SDK release this platform supports: a sensor of any product (first-party or
+# an organization's own) built with an older sdk-go is degraded
+# ("sdk_unsupported"); "" = no minimum. It is the platform's compatibility
+# floor: raise it only when a protocol change requires it, and announce it in
+# sdk-go's changelog. advisories: SDK releases with a published security
+# advisory, separated by spaces; a sensor built with one is degraded with a
+# warning. "" = none.
 sdk:
-  latest: v0.32.0
+  latest: v0.34.0
+  min: ""
   advisories: ""
 
 # CI runner (openctemio/ci: the openctem-ci action, image and templates). Its

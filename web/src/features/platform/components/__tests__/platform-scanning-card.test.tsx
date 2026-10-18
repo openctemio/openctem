@@ -92,7 +92,7 @@ describe('PlatformScanningCard', () => {
     render(<PlatformScanningCard />)
     expect(screen.getByRole('link', { name: /Opt out/ })).toHaveAttribute(
       'href',
-      '/settings/authentication#tenant-shared-sensors-opt-out'
+      '/settings/scanning/sensor-safety#shared-sensors'
     )
   })
 })

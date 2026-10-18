@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -20,7 +21,20 @@ type Factory struct {
 	// shared process-wide, so the cap holds across concurrent triage jobs
 	// rather than per-call. See ratelimit.go.
 	limiters *limiterRegistry
+
+	// platformSource is the console's platform AI provider, used when no
+	// environment key is set (platformai.Service).
+	platformSource PlatformSource
 }
+
+// PlatformSource answers the console's platform AI configuration.
+type PlatformSource interface {
+	// PlatformAI returns the provider, model and key when platform AI is on.
+	PlatformAI(ctx context.Context) (provider, model, apiKey string, ok bool)
+}
+
+// SetPlatformSource wires the console's platform AI configuration.
+func (f *Factory) SetPlatformSource(src PlatformSource) { f.platformSource = src }
 
 // NewFactory creates a new LLM provider factory.
 func NewFactory(cfg config.AITriageConfig) *Factory {
@@ -128,51 +142,54 @@ func (f *Factory) CreateProviderForTenant(tenantID string, aiSettings tenant.AIS
 	}
 }
 
-// createPlatformProvider creates a provider using platform configuration.
+// createPlatformProvider creates a provider using platform configuration:
+// the environment keys when set (AI_TRIAGE_ENABLED must be on), otherwise
+// the console's platform AI setting when it is on.
 func (f *Factory) createPlatformProvider(scope string) (Provider, error) {
+	if !f.platformConfig.IsConfigured() && f.platformSource != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		provider, model, key, ok := f.platformSource.PlatformAI(ctx)
+		if !ok {
+			return nil, fmt.Errorf("%w: platform AI is not turned on", ErrProviderNotConfigured)
+		}
+		p, err := f.BuildPlatformProvider(provider, model, key)
+		return f.rateLimited(p, err, scope)
+	}
 	if !f.platformConfig.Enabled {
 		return nil, fmt.Errorf("%w: platform AI is not enabled", ErrProviderNotConfigured)
 	}
-
+	var key, envName string
 	switch f.platformConfig.PlatformProvider {
 	case "claude", "":
-		if f.platformConfig.AnthropicAPIKey == "" {
-			return nil, fmt.Errorf("%w: ANTHROPIC_API_KEY not configured", ErrProviderNotConfigured)
-		}
-		p, err := NewClaudeProvider(ClaudeConfig{
-			APIKey:     f.platformConfig.AnthropicAPIKey,
-			Model:      f.platformConfig.PlatformModel,
-			Timeout:    time.Duration(f.platformConfig.TimeoutSeconds) * time.Second,
-			MaxRetries: 3,
-		})
-		return f.rateLimited(p, err, scope)
-
+		key, envName = f.platformConfig.AnthropicAPIKey, "ANTHROPIC_API_KEY"
 	case "openai":
-		if f.platformConfig.OpenAIAPIKey == "" {
-			return nil, fmt.Errorf("%w: OPENAI_API_KEY not configured", ErrProviderNotConfigured)
-		}
-		p, err := NewOpenAIProvider(OpenAIConfig{
-			APIKey:     f.platformConfig.OpenAIAPIKey,
-			Model:      f.platformConfig.PlatformModel,
-			Timeout:    time.Duration(f.platformConfig.TimeoutSeconds) * time.Second,
-			MaxRetries: 3,
-		})
-		return f.rateLimited(p, err, scope)
-
+		key, envName = f.platformConfig.OpenAIAPIKey, "OPENAI_API_KEY"
 	case "gemini":
-		if f.platformConfig.GeminiAPIKey == "" {
-			return nil, fmt.Errorf("%w: GEMINI_API_KEY not configured", ErrProviderNotConfigured)
-		}
-		p, err := NewGeminiProvider(GeminiConfig{
-			APIKey:     f.platformConfig.GeminiAPIKey,
-			Model:      f.platformConfig.PlatformModel,
-			Timeout:    time.Duration(f.platformConfig.TimeoutSeconds) * time.Second,
-			MaxRetries: 3,
-		})
-		return f.rateLimited(p, err, scope)
-
+		key, envName = f.platformConfig.GeminiAPIKey, "GEMINI_API_KEY"
 	default:
 		return nil, fmt.Errorf("%w: unknown platform provider: %s", ErrInvalidProvider, f.platformConfig.PlatformProvider)
+	}
+	if key == "" {
+		return nil, fmt.Errorf("%w: %s not configured", ErrProviderNotConfigured, envName)
+	}
+	p, err := f.BuildPlatformProvider(f.platformConfig.PlatformProvider, f.platformConfig.PlatformModel, key)
+	return f.rateLimited(p, err, scope)
+}
+
+// BuildPlatformProvider builds a provider from a platform configuration
+// (also the console's key test), without the rate limit.
+func (f *Factory) BuildPlatformProvider(provider, model, key string) (Provider, error) {
+	timeout := time.Duration(f.platformConfig.TimeoutSeconds) * time.Second
+	switch provider {
+	case "claude", "":
+		return NewClaudeProvider(ClaudeConfig{APIKey: key, Model: model, Timeout: timeout, MaxRetries: 3})
+	case "openai":
+		return NewOpenAIProvider(OpenAIConfig{APIKey: key, Model: model, Timeout: timeout, MaxRetries: 3})
+	case "gemini":
+		return NewGeminiProvider(GeminiConfig{APIKey: key, Model: model, Timeout: timeout, MaxRetries: 3})
+	default:
+		return nil, fmt.Errorf("%w: unknown platform provider: %s", ErrInvalidProvider, provider)
 	}
 }
 

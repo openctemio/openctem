@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/onboarding"
+	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -29,11 +30,12 @@ import (
 // LocalAuthHandler handles local authentication requests.
 type LocalAuthHandler struct {
 	authService *auth.AuthService
+	// deletions: an owner cancels a scheduled organization deletion.
+	deletions *orgdeletion.Service
 	// onboarding serves the fork of an account without an organization.
 	onboarding     *onboarding.Service
 	sessionService *auth.SessionService
 	emailService   *auth.EmailService
-	platformAdmin  PlatformAdminChecker
 	authConfig     config.AuthConfig
 	cookieConfig   CookieConfig
 	csrfConfig     middleware.CSRFConfig
@@ -100,7 +102,6 @@ func NewLocalAuthHandler(
 	authService *auth.AuthService,
 	sessionService *auth.SessionService,
 	emailService *auth.EmailService,
-	platformAdmin PlatformAdminChecker,
 	authConfig config.AuthConfig,
 	log *logger.Logger,
 ) *LocalAuthHandler {
@@ -108,7 +109,6 @@ func NewLocalAuthHandler(
 		authService:    authService,
 		sessionService: sessionService,
 		emailService:   emailService,
-		platformAdmin:  platformAdmin,
 		authConfig:     authConfig,
 		cookieConfig:   NewCookieConfig(authConfig),
 		csrfConfig:     middleware.NewCSRFConfig(authConfig, log),
@@ -167,7 +167,7 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// The CAPTCHA is checked before the account lookup and the same way for
 	// every address, so it says nothing about the email. A verifier error
 	// (Turnstile unreachable) refuses: sign-up is not worth an open door.
-	if h.captcha != nil {
+	if captchaOn(r.Context(), h.captcha) {
 		ok, cerr := h.captcha.Verify(r.Context(), req.CaptchaToken, getClientIP(r))
 		if cerr != nil || !ok {
 			if cerr != nil {
@@ -258,6 +258,12 @@ type TenantInfo struct {
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 	Role string `json:"role"`
+	// OrganizationSuspended (suspended_tenants only): the organization is
+	// suspended by a platform administrator, not the membership.
+	OrganizationSuspended bool `json:"organization_suspended,omitempty"`
+	// DeletionDueAt (suspended_tenants only): an owner scheduled the
+	// organization's deletion for this time; an owner can still cancel.
+	DeletionDueAt *time.Time `json:"deletion_due_at,omitempty"`
 }
 
 // LoginResponse is the response body for login.
@@ -276,10 +282,6 @@ type LoginResponse struct {
 	// user to /onboarding/create-team. Suspended tenants are NOT
 	// accessible — the user cannot pick one and exchange a token.
 	SuspendedTenants []TenantInfo `json:"suspended_tenants,omitempty"`
-	// PlatformAdmin is true when the account is a platform administrator
-	// (RFC-022). Such an account belongs to no organization; the client sends
-	// it to the admin console rather than organization onboarding.
-	PlatformAdmin bool `json:"platform_admin,omitempty"`
 	// RecoveryCodes is present only on the response that completes a forced
 	// 2FA enrollment (POST /auth/mfa/enroll/confirm). Shown once.
 	RecoveryCodes []string `json:"recovery_codes,omitempty"`
@@ -381,10 +383,12 @@ func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Requ
 		suspendedTenants = make([]TenantInfo, len(result.SuspendedTenants))
 		for i, t := range result.SuspendedTenants {
 			suspendedTenants[i] = TenantInfo{
-				ID:   t.TenantID,
-				Slug: t.TenantSlug,
-				Name: t.TenantName,
-				Role: t.Role,
+				ID:                    t.TenantID,
+				Slug:                  t.TenantSlug,
+				Name:                  t.TenantName,
+				Role:                  t.Role,
+				OrganizationSuspended: t.OrganizationSuspended,
+				DeletionDueAt:         t.DeletionDueAt,
 			}
 		}
 	}
@@ -420,9 +424,6 @@ func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Requ
 		Tenants:          tenants,
 		SuspendedTenants: suspendedTenants,
 		RecoveryCodes:    recoveryCodes,
-	}
-	if h.platformAdmin != nil {
-		resp.PlatformAdmin = h.platformAdmin.IsPlatformAdmin(r.Context(), result.User.ID())
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1313,6 +1314,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.BadRequest("Current password is incorrect").WriteJSON(w)
 	case errors.Is(err, auth.ErrSessionLimitReached):
 		apierror.Forbidden("Maximum number of active sessions reached").WriteJSON(w)
+	case errors.Is(err, tenantdom.ErrOrganizationSuspended):
+		middleware.WriteOrganizationSuspended(w)
 	case errors.Is(err, auth.ErrTenantAccessDenied):
 		apierror.Forbidden("User does not have access to this tenant").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSORequired):

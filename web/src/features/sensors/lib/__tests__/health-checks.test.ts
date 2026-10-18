@@ -73,6 +73,32 @@ describe('sensorHealthChecks', () => {
     expect(c.protocol).toBeUndefined() // the API does not report it yet
   })
 
+  it('says "latest" may be out of date when the platform only has its built-in release line', () => {
+    const builtIn = {
+      ...ctx,
+      channel: {
+        products: [
+          {
+            id: 'openctemio-sensor',
+            latest_version: 'v0.4.2',
+            min_version: 'v0.4.0',
+            image: '',
+            latest_source: 'built_in' as const,
+          },
+        ],
+      },
+    }
+    const c = byKey(sensorHealthChecks(sensor(), builtIn))
+    expect(c.version.status).toBe('ok')
+    expect(c.version.text).toContain('the newest release this platform knows')
+    // From the release feed: a plain "latest".
+    const fed = {
+      ...builtIn,
+      channel: { products: [{ ...builtIn.channel.products[0], latest_source: 'feed' as const }] },
+    }
+    expect(byKey(sensorHealthChecks(sensor(), fed)).version.text).toBe('v0.4.2, the latest release')
+  })
+
   it('says what is wrong and offers the fix', () => {
     const c = byKey(
       sensorHealthChecks(
@@ -278,5 +304,24 @@ describe('sensorHealthChecks', () => {
       status: 'warning',
       text: 'v0.7.0 has a published security advisory. Upgrade the sensor to a build with a fixed SDK.',
     })
+  })
+
+  it('SDK: unsupported is a critical line, from the status or the reason', () => {
+    const text =
+      'v0.3.0 is older than the oldest SDK this platform supports. Rebuild the sensor with a newer sdk-go.'
+    const byStatus = byKey(
+      sensorHealthChecks(sensor({ sdk_version: 'v0.3.0', sdk_status: 'unsupported' }), ctx)
+    )
+    expect(byStatus.sdk).toMatchObject({ status: 'critical', text, action: 'install' })
+    const byReason = byKey(
+      sensorHealthChecks(
+        sensor({
+          sdk_version: 'v0.3.0',
+          health_reasons: [{ code: 'sdk_unsupported', severity: 'critical', message: 'm' }],
+        }),
+        ctx
+      )
+    )
+    expect(byReason.sdk).toMatchObject({ status: 'critical', text })
   })
 })

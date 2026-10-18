@@ -108,6 +108,7 @@ export const authEndpoints = {
    * Create first team for new user (uses refresh token)
    */
   createFirstTeam: () => `${API_BASE.AUTH}/create-first-team`,
+  cancelOrganizationDeletion: () => `${API_BASE.AUTH}/organization-deletion/cancel`,
 
   /**
    * Onboarding of an account without an organization (api RFC-104): the

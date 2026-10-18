@@ -6,19 +6,26 @@ name: Release Feed
 # https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json
 #
 #   release.yml calls it after every release;
-#   the weekly run re-signs it so it never expires between releases (a feed
-#   is valid 30 days; instances refuse one older than 45);
+#   the run every 6 hours picks up new releases of the first-party components
+#   (the sensor products of versions.yaml and sdk-go: .github/scripts/release/feed-components.sh
+#   reads their public release lists), so a sensor or SDK release reaches the
+#   instances without an OpenCTEM change or release
+#   (api/docs/rfcs/RFC-037-versioning-and-release-train.md §12), and re-signs
+#   the feed so it never expires (a feed is valid 30 days; instances refuse one
+#   older than 45);
 #   run it by hand after adding an advisory to .github/release-feed/advisories.json.
 #
 # Input: the online key seed (secret RELEASE_FEED_SIGNING_KEY of the
 # release-feed environment). The feed is signed directly by that key; its
 # public key is pinned in the binary (releasefeed.PinnedKeys). While the secret
-# is missing the job skips with a warning, so a release never fails on it.
+# is missing the job FAILS with an error naming the setup steps: instances
+# then have no release feed (the version check answers 404), so this must be
+# visible. It runs after the release job, so the release itself is complete.
 
 on:
   workflow_call:
   schedule:
-    - cron: '17 3 * * 1' # Monday 03:17 UTC; schedules run from the default branch (main)
+    - cron: '17 */6 * * *' # every 6 hours at :17 UTC; schedules run from the default branch (main)
   workflow_dispatch:
 
 permissions:
@@ -51,23 +58,19 @@ jobs:
           RELEASE_FEED_SIGNING_KEY: ${{ secrets.RELEASE_FEED_SIGNING_KEY }}
         run: |
           if [ -z "$RELEASE_FEED_SIGNING_KEY" ]; then
-            msg="Release feed not published: the release-feed environment has no RELEASE_FEED_SIGNING_KEY secret (api/docs/architecture/signing-keys.md)."
-            echo "::warning::$msg"
+            msg="Release feed NOT published: the release-feed environment has no RELEASE_FEED_SIGNING_KEY secret. Instances get 404 from their version check and keep their built-in sensor and SDK versions. One-time setup: api/docs/architecture/version-check.md#setup-maintainers."
+            echo "::error::$msg"
             echo "$msg" >> "$GITHUB_STEP_SUMMARY"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        if: steps.pre.outputs.skip != 'true'
         with:
           go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 
       - name: Build and verify
-        if: steps.pre.outputs.skip != 'true'
         working-directory: api
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,14 +78,18 @@ jobs:
         run: |
           bash ../.github/scripts/release/gh-retry.sh release list -R "$GITHUB_REPOSITORY" \
             --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > "$RUNNER_TEMP/releases.json"
+          # The newest release of each first-party component (public release
+          # lists, image digests read anonymously from the registry).
+          go run ./cmd/release-feed components > "$RUNNER_TEMP/components.txt"
+          bash ../.github/scripts/release/feed-components.sh "$RUNNER_TEMP/components.txt" > "$RUNNER_TEMP/components.json"
           go run ./cmd/release-feed build \
             -key-env RELEASE_FEED_SIGNING_KEY -releases "$RUNNER_TEMP/releases.json" \
-            -advisories ../.github/release-feed/advisories.json -out "$RUNNER_TEMP/openctem-releases.json"
+            -advisories ../.github/release-feed/advisories.json -components "$RUNNER_TEMP/components.json" \
+            -out "$RUNNER_TEMP/openctem-releases.json"
           # Verified against the keys pinned in this checkout, as an instance would.
           go run ./cmd/release-feed verify "$RUNNER_TEMP/openctem-releases.json" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload to the latest release
-        if: steps.pre.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

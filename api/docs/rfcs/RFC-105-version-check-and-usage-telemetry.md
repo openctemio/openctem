@@ -23,7 +23,12 @@ Decision:
    console shows "update available" and, when an advisory affects the running
    version, "security release: upgrade". Offline it fails silently and backs
    off; air-gapped installs import the same signed file in the console;
-   `VERSION_CHECK_ENABLED=false` turns it off.
+   `VERSION_CHECK_ENABLED=false` turns it off. A super admin also switches it
+   in the console (System > Software updates, `PUT
+   /api/v1/admin/version-check/enabled`, step-up, audited
+   `version_check.switched`) without a restart; `VERSION_CHECK_ENABLED=false`
+   stays a ceiling the console cannot raise (409
+   `VERSION_CHECK_LOCKED_BY_ENVIRONMENT`).
 2. **Usage ping: not built.** If it is ever built it is off by default, enabled
    only by a console administrator after seeing the exact JSON it would send,
    aggregate counts only (§8).
@@ -142,7 +147,13 @@ warning while the signing key secret is not set, so releases never fail on it.
 - Notifications by email or to organization users: the console banner only;
   can be added later on the same status.
 - Sensor and SDK update notices: sensors already report their versions to the
-  platform (RFC-037), which compares them with its manifest.
+  platform (RFC-037), which compares them with its manifest. The feed also
+  carries the newest release of each first-party sensor product and of the
+  SDK (`components`, RFC-037 §12), so those notices and the install snippets
+  follow a sensor or SDK release without a platform release. A component
+  carries only a version, a date, a link and an image digest; the image
+  repository comes from the built-in catalog, and a learned version can only
+  raise the built-in one.
 
 ## 8. Usage ping (deferred design)
 

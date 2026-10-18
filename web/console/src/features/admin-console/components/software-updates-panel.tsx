@@ -13,7 +13,8 @@ import { RelativeTime } from '@/features/shared'
 import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { importReleaseFeed } from '../api/use-version-check'
+import { importReleaseFeed, setVersionCheckEnabled } from '../api/use-version-check'
+import { Switch } from '@/components/ui/switch'
 import type { ReleaseFeedAdvisory, VersionCheckErrorCode, VersionCheckStatus } from '../types'
 
 /** The largest file the API accepts (releasefeed.MaxBundleBytes). */
@@ -52,16 +53,18 @@ const SEVERITY_TONE: Record<ReleaseFeedAdvisory['severity'], PillTone> = {
   low: 'info',
 }
 
-const ERROR_FALLBACK: Record<VersionCheckErrorCode, string> = {
-  unreachable: 'The release feed could not be reached (no internet access?).',
-  http_status: 'The release feed host answered with an error.',
-  too_large: 'The file is larger than a release feed can be.',
-  invalid: 'Not a valid signed release feed.',
-  rollback: 'Older than the release information already applied.',
-  conflict: 'Another release feed with the same sequence is already applied.',
-  expired: 'The release feed has expired; get a current copy.',
-  no_key: 'This build pins no release feed key.',
-}
+// Codes the release-feed check can report; each has a text under admin.versionCheck.error.<code>.
+const ERROR_CODES: ReadonlySet<string> = new Set<VersionCheckErrorCode>([
+  'unreachable',
+  'not_published',
+  'http_status',
+  'too_large',
+  'invalid',
+  'rollback',
+  'conflict',
+  'expired',
+  'no_key',
+])
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -83,6 +86,10 @@ function readText(file: File): Promise<string> {
   })
 }
 
+// Components the console has a name for, under
+// admin.versionCheck.components.name.<id>.
+const NAMED_COMPONENTS: ReadonlySet<string> = new Set(['sensor', 'connector-tenable', 'sdk'])
+
 function dateOnly(iso: string | undefined) {
   return iso ? new Date(iso).toLocaleDateString() : '-'
 }
@@ -103,9 +110,39 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
   const fileId = useId()
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const switchId = useId()
 
-  const errorText = (code: VersionCheckErrorCode) =>
-    t(`admin.versionCheck.error.${code}`, ERROR_FALLBACK[code])
+  const toggleOnline = async (next: boolean) => {
+    setSwitching(true)
+    try {
+      await setVersionCheckEnabled(next)
+      toast.success(
+        next
+          ? t('admin.versionCheck.switch.onDone', 'The daily online check is on.')
+          : t('admin.versionCheck.switch.offDone', 'The daily online check is off.')
+      )
+      onChanged()
+    } catch (err) {
+      toast.error(
+        err instanceof AdminApiError && err.status === 409
+          ? t(
+              'admin.versionCheck.switch.locked',
+              'The server configuration (VERSION_CHECK_ENABLED=false) keeps the online check off.'
+            )
+          : t('admin.versionCheck.switch.failed', 'The online check could not be switched.')
+      )
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  const errorText = (code: VersionCheckErrorCode) => t(`admin.versionCheck.error.${code}`)
+
+  // A component the console has no name for (a product added later) shows
+  // its id.
+  const componentName = (id: string) =>
+    NAMED_COMPONENTS.has(id) ? t(`admin.versionCheck.components.name.${id}`) : id
 
   const doImport = async () => {
     if (!file) return
@@ -132,7 +169,7 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
           ? err.code?.replace(/^RELEASE_FEED_/, '').toLowerCase()
           : undefined
       toast.error(
-        code && code in ERROR_FALLBACK
+        code && ERROR_CODES.has(code)
           ? errorText(code as VersionCheckErrorCode)
           : err instanceof AdminApiError
             ? err.message
@@ -227,12 +264,33 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
               {dateOnly(status.feed_expires_at)}
             </Field>
             <Field label={t('admin.versionCheck.onlineCheck', 'Online check')}>
-              {status.enabled
-                ? t(
-                    'admin.versionCheck.online.on',
-                    'On (once a day, no data about this instance is sent)'
-                  )
-                : t('admin.versionCheck.online.off', 'Off (VERSION_CHECK_ENABLED=false)')}
+              <span className="flex flex-wrap items-center gap-3">
+                {canImport && !status.locked_by_environment && (
+                  <Switch
+                    id={switchId}
+                    checked={status.enabled}
+                    disabled={switching}
+                    onCheckedChange={(v) => void toggleOnline(v)}
+                    aria-label={t('admin.versionCheck.switch.label', 'Daily online check')}
+                  />
+                )}
+                <span>
+                  {status.enabled
+                    ? t(
+                        'admin.versionCheck.online.on',
+                        'On (once a day, no data about this instance is sent)'
+                      )
+                    : status.locked_by_environment
+                      ? t(
+                          'admin.versionCheck.online.lockedOff',
+                          'Off: locked by the server configuration (VERSION_CHECK_ENABLED=false)'
+                        )
+                      : t(
+                          'admin.versionCheck.online.consoleOff',
+                          'Off (turned off in the console)'
+                        )}
+                </span>
+              </span>
             </Field>
             {status.enabled && status.configured && (
               <>
@@ -343,6 +401,56 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            {t('admin.versionCheck.components.title', 'Sensors and SDK')}
+          </CardTitle>
+          <CardDescription>
+            {t(
+              'admin.versionCheck.components.hint',
+              'The newest sensor and SDK releases. Organizations see them as "update available" and the install commands use them, without an upgrade of this instance.'
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {(status.components ?? []).length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              {t(
+                'admin.versionCheck.components.none',
+                'No release information yet: the versions this release was built with apply, and they may be outdated.'
+              )}
+            </p>
+          ) : (
+            <ul className="divide-y text-sm">
+              {(status.components ?? []).map((c) => {
+                const link = releaseLink(c.notes_url)
+                return (
+                  <li
+                    key={c.component}
+                    className="flex flex-wrap items-center justify-between gap-3 py-2"
+                  >
+                    <span>{componentName(c.component)}</span>
+                    <span className="flex items-center gap-3">
+                      <span className="font-mono">
+                        {link ? (
+                          <SafeExternalLink href={link} className="underline underline-offset-4">
+                            {c.version}
+                          </SafeExternalLink>
+                        ) : (
+                          c.version
+                        )}
+                      </span>
+                      <span className="text-muted-foreground">{dateOnly(c.published_at)}</span>
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {canImport && (
         <Card>

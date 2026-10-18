@@ -47,6 +47,11 @@ func sampleFeed(seq uint64) Feed {
 			ID: "OCTEM-2026-0001", Severity: "high", Title: "Session fixation in the console", Introduced: "v0.9.0",
 			FixedIn: "v0.9.8", PublishedAt: testNow.Add(-24 * time.Hour), URL: "https://openctem.io/security/OCTEM-2026-0001",
 		}},
+		Components: []Component{
+			{Component: "sensor", Version: "v0.23.2", PublishedAt: testNow.Add(-48 * time.Hour),
+				NotesURL: "https://github.com/openctemio/sensor/releases/tag/v0.23.2", Digest: "sha256:" + strings.Repeat("ab", 32)},
+			{Component: "sdk", Version: "v0.34.0", PublishedAt: testNow.Add(-48 * time.Hour)},
+		},
 	}
 }
 
@@ -246,6 +251,15 @@ func TestFeedValidate(t *testing.T) {
 		"too many advisories":     func(f *Feed) { f.Advisories = make([]Advisory, MaxAdvisories+1) },
 		"blank title":             func(f *Feed) { f.Advisories[0].Title = "  " },
 		"link with explicit port": func(f *Feed) { f.Advisories[0].URL = "https://openctem.io:8443/x" },
+		"component name":          func(f *Feed) { f.Components[0].Component = "Sensor/../x" },
+		"duplicate component":     func(f *Feed) { f.Components[1].Component = f.Components[0].Component },
+		"component version":       func(f *Feed) { f.Components[0].Version = "latest" },
+		"component pre-release":   func(f *Feed) { f.Components[0].Version = "v0.24.0-rc.1" },
+		"component time":          func(f *Feed) { f.Components[0].PublishedAt = time.Time{} },
+		"component digest":        func(f *Feed) { f.Components[0].Digest = "sha256:XYZ" },
+		"component digest algo":   func(f *Feed) { f.Components[0].Digest = "md5:" + strings.Repeat("a", 32) },
+		"component foreign link":  func(f *Feed) { f.Components[0].NotesURL = "https://example.com/sensor" },
+		"too many components":     func(f *Feed) { f.Components = make([]Component, MaxComponents+1) },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -309,5 +323,34 @@ func TestEvaluate_SeverityOrder(t *testing.T) {
 	st := Evaluate(&feed, "v0.9.7", testNow)
 	if st.Severity != "critical" || st.FixedIn != "v0.9.9" || st.Advisories[0].ID != "B" || st.Advisories[2].ID != "C" {
 		t.Fatalf("%+v", st)
+	}
+}
+
+// The components survive signing and verification, and the map view keys
+// them by name.
+func TestVerify_Components(t *testing.T) {
+	f := newFixture(t)
+	v, err := Verify(f.build(t, sampleFeed(7)), f.trust, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cv := v.Feed.ComponentVersions()
+	if cv["sensor"].Version != "v0.23.2" || cv["sensor"].Digest == "" || cv["sdk"].Version != "v0.34.0" || len(cv) != 2 {
+		t.Fatalf("components = %+v", cv)
+	}
+	var nilFeed *Feed
+	if nilFeed.ComponentVersions() != nil || (&Feed{}).ComponentVersions() != nil {
+		t.Fatal("no components must map to nil")
+	}
+}
+
+// A feed without components (the format before them) still verifies.
+func TestVerify_NoComponents(t *testing.T) {
+	f := newFixture(t)
+	feed := sampleFeed(8)
+	feed.Components = nil
+	v, err := Verify(f.build(t, feed), f.trust, testNow)
+	if err != nil || len(v.Feed.Components) != 0 {
+		t.Fatalf("v = %+v, err = %v", v, err)
 	}
 }

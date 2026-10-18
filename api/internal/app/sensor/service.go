@@ -18,6 +18,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -32,6 +33,9 @@ const sensorAuditSystemActor = "system"
 
 // SensorService handles sensor-related business operations.
 type SensorService struct {
+	// orgGate refuses an organization sensor of a suspended organization
+	// (docs/architecture/organization-suspension.md); nil admits all.
+	orgGate tenantdom.AccessGate
 	// keyUse debounces the key-use writes of recordKeyUseAsync.
 	keyUse       keyUseDebouncer
 	repo         sensordom.Repository
@@ -1697,6 +1701,9 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 	if err != nil {
 		return SensorIdentity{}, err
 	}
+	if err := s.organizationOpen(ctx, a); err != nil {
+		return SensorIdentity{}, err
+	}
 
 	// Reject an expired key (RFC-014 Phase 1b). NULL expiry (the default and
 	// every legacy row) never expires, so this is a no-op until an operator
@@ -1753,6 +1760,30 @@ func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, 
 	}()
 }
 
+// SetOrganizationGate wires the organization access gate: a sensor of a
+// suspended organization is refused on every authentication path.
+func (s *SensorService) SetOrganizationGate(g tenantdom.AccessGate) { s.orgGate = g }
+
+// organizationOpen refuses an organization sensor whose organization is
+// suspended (or whose status cannot be read: the gate fails closed). A
+// shared sensor has no organization; the jobs it may claim leave out
+// suspended organizations instead.
+func (s *SensorService) organizationOpen(ctx context.Context, a *sensordom.Sensor) error {
+	if s.orgGate == nil || a == nil || a.TenantID == nil {
+		return nil
+	}
+	if err := s.orgGate.CheckAccess(ctx, *a.TenantID); err != nil {
+		if errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+			return shared.NewDomainError(tenantdom.CodeOrganizationSuspended, tenantdom.MessageOrganizationSuspended, shared.ErrForbidden)
+		}
+		if errors.Is(err, shared.ErrNotFound) {
+			return shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
+		}
+		return fmt.Errorf("organization status: %w", err)
+	}
+	return nil
+}
+
 // checkSensorStatus applies the admin-controlled status: active passes,
 // revoked never does, and disabled passes as paused only when allowPaused.
 func checkSensorStatus(a *sensordom.Sensor, allowPaused bool) (paused bool, err error) {
@@ -1804,6 +1835,9 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 	}
 	paused, err := checkSensorStatus(a, allowPaused)
 	if err != nil {
+		return SensorIdentity{}, err
+	}
+	if err := s.organizationOpen(ctx, a); err != nil {
 		return SensorIdentity{}, err
 	}
 	if matched != hashes[0] {

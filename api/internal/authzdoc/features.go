@@ -180,7 +180,7 @@ var Features = []Feature{
 		ID: "organization", Title: "Organization settings and audit",
 		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), its limits, support access grants and the audit log.",
 		Registers: []string{
-			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSupportAccessRoutes",
+			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSecurityOverviewRoutes", "registerOrganizationSupportAccessRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
 			"registerSharedSensorsSettingsRoutes",
@@ -205,7 +205,7 @@ var Features = []Feature{
 	{
 		ID: "admin-console", Title: "Platform admin console",
 		Description: "The platform operator's console. Its administrators are a separate realm and never members of an organization.",
-		Registers:   []string{"registerAdminRoutes"},
+		Registers:   []string{"registerAdminRoutes", "registerAdminPlatformSettingsRoutes"},
 	},
 	{
 		ID: "system", Title: "System endpoints",

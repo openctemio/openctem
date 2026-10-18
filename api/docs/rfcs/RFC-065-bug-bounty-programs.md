@@ -704,11 +704,13 @@ covers the target.
   manifest marked `collector.local_only`) from a directory the server
   configuration names (`PROGRAMFEED_LOCAL_BUNDLE_DIR`, mounted read-only;
   never set from the UI or by a tenant). It is off until a platform
-  administrator enables it (`PUT /api/v1/admin/program-feed/local-bundle`,
-  super_admin, a reason and a fresh console authenticator code, admin audit
-  high; `GET /api/v1/admin/program-feed` shows the state and the notice that
-  the records come from the hosting platforms and stay subject to their
-  terms). The same strict parser, caps, sequence monotonicity (its own
+  administrator enables it. The console switch and its two admin routes
+  (`/api/v1/admin/program-feed`) had no console page and were removed on
+  2026-10-18 until one uses them; the stored switch stays (off by default),
+  so the local bundle is not imported. A future switch keeps the same guard:
+  super_admin, a reason, a fresh console confirmation, admin audit high, and
+  the notice that the records come from the hosting platforms and stay
+  subject to their terms. The same strict parser, caps, sequence monotonicity (its own
   stream: `program_feed_state` row 2), delta-on-applied-base and 7-day
   validity apply; a local-only manifest is accepted only on this path and
   refused on the signed one. Local programs are marked local-only in the

@@ -25,8 +25,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
-| `MANAGED_SERVICE` | bool | `false` |  |  | Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
-| `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Unset: not named. |
+| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
+| `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Set: pins the region (the console cannot change it). Unset: a super admin may set it once in the console (Settings > Configuration) before the first organization exists. |
 
 ### Brand
 
@@ -166,8 +166,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SCOPE_MAX_PUBLIC_CIDR_V6` | int | `32` |  |  | Largest public IPv6 range one scope entry may cover. |
 | `SIGNUP_MODE` | string | `disabled` |  |  | The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`. |
 | `SIGNUP_CAPTCHA` | string | empty |  |  | Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`. |
-| `CAPTCHA_TURNSTILE_SECRET` | string | empty |  | yes | Cloudflare Turnstile secret for the public request-access form. Unset: no CAPTCHA (the rate limits still apply). Set together with `CAPTCHA_TURNSTILE_SITE_KEY`. |
-| `CAPTCHA_TURNSTILE_SITE_KEY` | string | empty |  |  | Cloudflare Turnstile site key (public) shown on the request-access form. Set together with `CAPTCHA_TURNSTILE_SECRET`. |
+| `CAPTCHA_TURNSTILE_SECRET` | string | empty |  | yes | Cloudflare Turnstile secret for registration, request access and sign-in after repeated failures. Set: pins the CAPTCHA keys (the console shows them locked). Unset: the keys are set in the console (Settings > CAPTCHA), or there is no CAPTCHA (the rate limits still apply). Set together with `CAPTCHA_TURNSTILE_SITE_KEY`. |
+| `CAPTCHA_TURNSTILE_SITE_KEY` | string | empty |  |  | Cloudflare Turnstile site key (public) shown on the sign-up, request-access and sign-in forms. Set together with `CAPTCHA_TURNSTILE_SECRET`; both pin the console setting. |
 
 ### Single sign-on and social login
 
@@ -227,15 +227,15 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 |---|---|---|---|---|---|
 | `SMTP_BASE_URL` | string | `APP_URL, else http://localhost:3000` |  |  | Base URL of links in e-mails. Set it only when the console is not at `APP_URL`. |
 
-### System page
+### Health page
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SYSTEM_STORAGE_PATHS` | string | empty |  |  | `name=path,name=path` directories whose free space the platform console System page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory. |
-| `SYSTEM_BACKUP_STATUS_FILE` | path | empty |  |  | The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The System page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported. |
-| `SYSTEM_TLS_CERT_FILES` | string | empty |  |  | `name=path,name=path` PEM certificate files whose expiry the System page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked. |
-| `SYSTEM_WEB_HEALTH_URL` | url | empty |  |  | Internal health URL of the web container for the System page (one GET, no redirects). Must be http or https. Unset: not checked. |
-| `SYSTEM_GATEWAY_HEALTH_URL` | url | empty |  |  | Internal health URL of the gateway for the System page (one GET, no redirects). Must be http or https. Unset: not checked. |
+| `SYSTEM_STORAGE_PATHS` | string | empty |  |  | `name=path,name=path` directories whose free space the platform console Health page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory. |
+| `SYSTEM_BACKUP_STATUS_FILE` | path | empty |  |  | The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The Health page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported. |
+| `SYSTEM_TLS_CERT_FILES` | string | empty |  |  | `name=path,name=path` PEM certificate files whose expiry the Health page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked. |
+| `SYSTEM_WEB_HEALTH_URL` | url | empty |  |  | Internal health URL of the web container for the Health page (one GET, no redirects). Must be http or https. Unset: not checked. |
+| `SYSTEM_GATEWAY_HEALTH_URL` | url | empty |  |  | Internal health URL of the gateway for the Health page (one GET, no redirects). Must be http or https. Unset: not checked. |
 | `SYSTEM_WATCH_INTERVAL` | duration | `5m` |  |  | How often the system watcher checks free space, backup age and certificate expiry, sets the metrics and emails the platform administrators on a worse level. Minimum 1m. |
 
 ### Attachment storage
@@ -250,7 +250,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `STORAGE_LOCAL_PATH` | string | `./data/attachments` |  |  | Directory for `local` storage, relative to the working directory (`/app` in the API image, so `/app/data/attachments`). Put it on a persistent volume and back it up. |
 | `STORAGE_SSE` | string | empty |  |  | Server-side encryption asked for on every object written to the server bucket: `AES256` or `aws:kms`. Unset: the bucket's default encryption. Only with `s3` / `minio`. |
 | `STORAGE_SSE_KMS_KEY_ID` | string | empty |  |  | KMS key (id or ARN) for `STORAGE_SSE=aws:kms`. Unset: the bucket's default KMS key. |
-| `STORAGE_TENANT_QUOTA_MB` | int | `20480` |  |  | Most attachment bytes one organization may hold, in MiB (20480 = 20 GiB). An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota. |
+| `STORAGE_TENANT_QUOTA_MB` | int | `20480` |  |  | Default of the most attachment bytes one organization may hold, in MiB (20480 = 20 GiB), until a super admin sets the default in the console (Settings > Limits); an organization's own `storage_mb` limit wins over both. An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota. |
 | `STORAGE_ORPHAN_GRACE_DAYS` | int | `7` |  |  | Days evidence files stay after their finding or campaign is deleted; then the retention sweep deletes them (audited `attachment.purged`). 0 = keep them. |
 | `STORAGE_UNLINKED_RETENTION_HOURS` | int | `24` |  |  | Hours an upload never linked to a finding or campaign stays before the retention sweep deletes it. Authorization letter files are never purged. 0 = keep them. |
 | `STORAGE_PROVIDER` | string | `local` |  |  | `local`, `s3` or `minio`. Any other value stops start-up. |
@@ -416,7 +416,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off. |
+| `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off, except that with `MANAGED_SERVICE=true` in production the start-up is refused unless it is set. |
 | `ADMIN_AUDIT_SINK_SECRET` | string | empty |  | yes | HMAC-SHA256 key that signs each request to an `https://` `ADMIN_AUDIT_SINK` (`X-OpenCTEM-Signature`, `X-OpenCTEM-Timestamp`, `X-OpenCTEM-Batch-Id`). At least 32 bytes, required for https, refused for other destinations. Never logged. |
 | `ADMIN_AUDIT_SINK_SYSLOG_CA_FILE` | path | empty |  |  | PEM bundle that replaces the system roots when verifying a `syslog+tls://` `ADMIN_AUDIT_SINK`. |
 | `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT` | path | empty |  |  | PEM client certificate presented to a `syslog+tls://` `ADMIN_AUDIT_SINK` (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY`. |
@@ -465,7 +465,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AI_TRIAGE_RECOVERY_ENABLED` | bool | `true` |  |  | Requeue triage jobs stuck in processing. |
 | `AI_TRIAGE_RECOVERY_INTERVAL` | duration | `5m` |  |  | How often stuck jobs are looked for. |
 | `AI_TRIAGE_RECOVERY_STUCK_DURATION` | duration | `15m` |  |  | Age after which a processing job counts as stuck. |
-| `ANTHROPIC_API_KEY` | string | empty |  | yes | Platform key for the `claude` provider. AI triage is available when at least one provider key is set and the AI triage module is enabled for the organization. |
+| `ANTHROPIC_API_KEY` | string | empty |  | yes | Platform key for the `claude` provider. Any platform key pins the platform AI provider to the environment (the console shows it locked); without one, a super admin sets the provider and key in the console (Settings > AI provider), off by default. |
 | `GEMINI_API_KEY` | string | empty |  | yes | Platform key for the `gemini` provider. |
 | `OPENAI_API_KEY` | string | empty |  | yes | Platform key for the `openai` provider. |
 
@@ -625,7 +625,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AGENT_LB_MAX_DISK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS` |
 | `AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS` |
 | `SENSOR_TRANSPORT_V3_ENABLED` | rename it to `SENSOR_TRANSPORT_V3=auto\|off` |
-| `SCOPE_ACTIVE_PROOF` | remove it; a platform administrator sets "Require a verified domain before platform sensors scan a target" in Console > System > Platform scanning |
+| `SCOPE_ACTIVE_PROOF` | remove it; a platform administrator sets "Require a verified domain before platform sensors scan a target" in Console > Scanning > Platform scanning |
 | `APP_DEBUG` | unset it; it switched nothing on (use LOG_LEVEL=debug outside production) |
 | `GRPC_PORT` | unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR |
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |

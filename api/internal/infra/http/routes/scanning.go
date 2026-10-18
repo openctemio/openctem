@@ -94,6 +94,13 @@ func registerSensorManagementRoutes(
 		r.GET("/tool-defaults", h.ListToolDefaults, middleware.Require(permission.SensorsRead))
 		r.PUT("/tool-defaults/{tool}", h.UpdateToolDefaults, middleware.Require(permission.SensorsWrite))
 		r.DELETE("/tool-defaults/{tool}", h.ResetToolDefaults, middleware.Require(permission.SensorsWrite))
+		// The organization's own sensor products (RFC-037 §13): the release
+		// lines it records for sensors it builds itself. They change only
+		// its own verdicts; recording one is a fleet setting, so owners and
+		// administrators (sensors:write). Before /{id}.
+		r.GET("/custom-products", h.ListCustomProducts, middleware.Require(permission.SensorsRead))
+		r.PUT("/custom-products/{product}", h.SaveCustomProduct, middleware.Require(permission.SensorsWrite))
+		r.DELETE("/custom-products/{product}", h.DeleteCustomProduct, middleware.Require(permission.SensorsWrite))
 		// Scanner content (RFC-031): the tenant policy and refresh requests.
 		// Before /{id} for the same reason. Writes queue commands for the
 		// fleet, so they need sensors:write (owners and administrators).
@@ -350,9 +357,9 @@ func registerScanProfileRoutes(
 		// Write operations
 		r.POST("/", h.Create, middleware.Require(permission.ScanProfilesWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.ScanProfilesWrite))
-		r.PUT("/{id}/quality-gate", h.UpdateQualityGate, middleware.Require(permission.ScanProfilesWrite))
+		r.PUT("/{id}/quality-gate", h.UpdateQualityGate, middleware.Require(permission.ScanProfilesWrite), middleware.RequireAdmin())
 		r.POST("/{id}/evaluate-quality-gate", h.EvaluateQualityGate, middleware.Require(permission.ScanProfilesRead))
-		r.POST("/{id}/set-default", h.SetDefault, middleware.Require(permission.ScanProfilesWrite))
+		r.POST("/{id}/set-default", h.SetDefault, middleware.Require(permission.ScanProfilesWrite), middleware.RequireAdmin())
 		r.POST("/{id}/clone", h.Clone, middleware.Require(permission.ScanProfilesWrite))
 
 		// Delete operations
@@ -387,9 +394,9 @@ func registerToolRoutes(
 	router.Group("/api/v1/tools", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ToolsRead))
 		// Bulk settings (before /{id}).
-		r.PATCH("/settings", h.BulkUpdateSettings, middleware.Require(permission.TenantToolsWrite))
+		r.PATCH("/settings", h.BulkUpdateSettings, middleware.Require(permission.TenantToolsWrite), middleware.RequireAdmin())
 		r.GET("/{id}", h.Get, middleware.Require(permission.ToolsRead))
-		r.PATCH("/{id}/settings", h.UpdateSettings, middleware.Require(permission.TenantToolsWrite))
+		r.PATCH("/{id}/settings", h.UpdateSettings, middleware.Require(permission.TenantToolsWrite), middleware.RequireAdmin())
 
 		// The tenant's custom tools.
 		r.POST("/", h.Create, middleware.Require(permission.ToolsWrite))
@@ -688,7 +695,7 @@ func registerSecretStoreRoutes(
 		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
 
 		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 }
 

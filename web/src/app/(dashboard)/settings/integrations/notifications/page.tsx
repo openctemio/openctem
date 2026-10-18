@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
-import { csrfFetch } from '@/lib/api/client'
+import { csrfFetch, del } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
 import { Main } from '@/components/layout'
 import {
@@ -234,10 +234,8 @@ export default function NotificationIntegrationsPage() {
     if (!selectedIntegration) return
     setActionInProgress(selectedIntegration.id)
     try {
-      const response = await csrfFetch(`/api/v1/integrations/${selectedIntegration.id}`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) throw new Error('Delete failed')
+      // apiClient path: a STEP_UP_REQUIRED answer opens the re-authentication dialog and retries.
+      await del(`/api/v1/integrations/${selectedIntegration.id}`)
       toast.success(`Integration "${selectedIntegration.name}" deleted`)
       await invalidateNotificationIntegrationsCache()
       await mutate()

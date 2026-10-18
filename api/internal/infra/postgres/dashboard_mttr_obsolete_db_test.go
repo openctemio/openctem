@@ -53,11 +53,11 @@ func TestMTTR_ExcludesObsoleteClosures_DB(t *testing.T) {
 	if a.SampleSize != 2 {
 		t.Fatalf("MTTR analytics sample = %d, want 2", a.SampleSize)
 	}
-	s, err := repo.GetExecutiveSummary(ctx, tenant, nil, 90)
+	s, err := repo.GetExecutiveSummary(ctx, tenant, nil, nil, 90)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(s.MTTRCriticalHrs-20) > 0.1 {
-		t.Fatalf("executive MTTR critical = %.2fh, want 20h", s.MTTRCriticalHrs)
+	if s.MTTRCriticalHrs == nil || math.Abs(*s.MTTRCriticalHrs-20) > 0.1 {
+		t.Fatalf("executive MTTR critical = %v, want 20h", s.MTTRCriticalHrs)
 	}
 }

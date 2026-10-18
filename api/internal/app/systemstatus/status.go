@@ -1,4 +1,4 @@
-// Package systemstatus is the platform console's System page (RFC-114): a
+// Package systemstatus is the platform console's Health page (RFC-114): a
 // read-only, aggregate-only view of the installation's essentials (service
 // health, free space, backup age, certificate expiry, version) and the watcher
 // that tells the platform administrators when one gets worse.
@@ -102,10 +102,13 @@ type Certificate struct {
 // VersionCheck is the version-check result (RFC-105), reduced to what the
 // page shows: no feed URL, no release notes.
 type VersionCheck struct {
-	Enabled         bool       `json:"enabled"`
-	Configured      bool       `json:"configured"`
-	LastAttemptAt   *time.Time `json:"last_attempt_at,omitempty"`
-	LastError       string     `json:"last_error,omitempty"`
+	Enabled       bool       `json:"enabled"`
+	Configured    bool       `json:"configured"`
+	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	// AppliedAt is the last time a verified release feed was applied (the
+	// last success); nil when none ever was.
+	AppliedAt       *time.Time `json:"applied_at,omitempty"`
 	Latest          string     `json:"latest,omitempty"`
 	UpdateAvailable bool       `json:"update_available"`
 	Advisories      int        `json:"advisories"`

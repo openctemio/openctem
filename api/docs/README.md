@@ -20,7 +20,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 - [Setup](development/setup.md), [coding style](development/coding-style.md), [testing](development/testing.md), [logging](development/logging.md)
 - [Migrations](development/migrations.md)
-- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md), [version check](architecture/version-check.md), [signing keys](architecture/signing-keys.md)
+- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md), [version check](architecture/version-check.md), [sensor compatibility](architecture/sensor-compatibility.md), [signing keys](architecture/signing-keys.md)
 - [Pre-commit and security tooling](development/pre-commit-security.md)
 - [Asset type registry](development/asset-type-registry.md), [relationship types](development/relationship-types.md)
 - [Makefile reference](MAKEFILE.md), [Swagger annotations](SWAGGER_GUIDE.md)
@@ -28,7 +28,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 ## API
 
 - [REST API overview](api/README.md) and [reference notes](api/endpoints.md) (the spec is served at `/openapi.yaml`; see the reference notes for who can read it in production)
-- [API conventions](architecture/api-conventions.md), [list query contract](architecture/list-query-contract.md)
+- [API conventions](architecture/api-conventions.md), [dashboard metrics](architecture/dashboard-metrics.md), [list query contract](architecture/list-query-contract.md)
 - [Tenant API keys](architecture/api-keys.md), [MCP server](architecture/mcp-server.md)
 - [Credential import](api/credential-import.md), [suppressions](api/suppressions.md)
 
@@ -36,15 +36,15 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 **Foundations**
 - [Overview](architecture/overview.md), [clean architecture](architecture/clean-arch.md), [project structure](architecture/project-structure.md)
-- [Module coupling](architecture/module-coupling-and-decoupling.md), [limits and feature denies](architecture/limits.md), [idle-organization policy](architecture/idle-workspaces.md)
+- [Module coupling](architecture/module-coupling-and-decoupling.md), [limits and feature denies](architecture/limits.md), [idle-organization policy](architecture/idle-workspaces.md), [organization suspension and account block](architecture/organization-suspension.md) ([runbook](operations/suspension.md)), [organization deletion grace](architecture/organization-deletion.md)
 - [Organization settings](architecture/organization-settings.md), [product brand](architecture/brand.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md)
 - Decisions: [ADR-001 standard net/http](architecture/decisions/001-use-stdlib-http.md), [ADR-002 protocols](architecture/decisions/002-multi-protocol.md), [ADR-003 connectors](architecture/decisions/003-connector-pattern.md), [ADR-004 finding provenance](architecture/decisions/004-finding-provenance.md)
 
 **Identity and access**
 - [Authorization matrix](architecture/authorization-matrix.md) (the canonical authorization model), [access control rules](architecture/access-control-rules.md), [generated authorization reference](architecture/authorization-reference.md)
-- [User onboarding](architecture/user-onboarding.md), [two-factor authentication](architecture/user-two-factor-authentication.md), [step-up re-authentication](architecture/step-up-reauth.md)
+- [User onboarding](architecture/user-onboarding.md), [sign-up feed and burst alerts](architecture/signup-activity.md), [two-factor authentication](architecture/user-two-factor-authentication.md), [step-up re-authentication](architecture/step-up-reauth.md)
 - [SSO authentication](architecture/sso-authentication.md), [multi-tenant Entra ID model](architecture/multi-tenant-entraid-model.md), [SAML SSO](architecture/saml-sso.md), [SCIM provisioning](architecture/scim-provisioning.md)
-- [Platform console](architecture/platform-console.md) (its own service, site and plane), [Audit hash chain](architecture/audit-hash-chain.md)
+- [Platform console](architecture/platform-console.md) (its own service, site and plane), [Audit hash chain](architecture/audit-hash-chain.md), [Security overview and audit log export](architecture/security-overview.md)
 
 **Assets and scope**
 - [Asset inventory v2](architecture/asset-inventory-v2.md), [asset schema](architecture/asset-schema.md), [asset properties schema](asset-properties-schema.md)

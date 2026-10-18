@@ -75,7 +75,7 @@ scenario() {
   new_repo "$w"
   git -C "$w" remote add origin "$d/origin.git"
   version_fixture "$w"
-  sed -i 's/v0.8.0/v0.1.0/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml"
+  sed -i 's/v0.8.0/v0.1.0/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml" "$w/api/deploy/docker-compose.sensor.yml"
   commit "$w" "chore: init" a.txt
   git -C "$w" tag -a v0.1.0 -m v0.1.0
   git -C "$w" switch -q -c develop
@@ -119,6 +119,7 @@ connector-tenable:
   release_identity: https://github.com/openctemio/connector-tenable/.github/workflows/images.yml
 sdk:
   latest: v0.14.0
+  min: ""
   advisories: ""
 ci:
   latest: v0.2.0
@@ -133,6 +134,10 @@ YAML
 YAML
   cat >"$d/api/deploy/docker-compose.job-signer.yml" <<'YAML'
     image: x:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+YAML
+  cat >"$d/api/deploy/docker-compose.sensor.yml" <<'YAML'
+    image: x:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.6.4}
 YAML
   echo "export const CI_RELEASE = 'v0.2.0'" >"$d/web/src/features/ci-runners/lib/ci.ts"
   printf '{\n  "name": "w",\n  "version": "0.0.0",\n  "private": true\n}\n' >"$d/web/package.json"

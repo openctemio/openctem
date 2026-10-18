@@ -7,7 +7,8 @@
 # versions.yaml embedded at build time (api/internal/versions/versions.yaml):
 # go:embed cannot reach outside the Go module in api/. This script writes that
 # copy; no Go file holds a version, so a bump changes YAML (and the few
-# non-Go consumers below) only.
+# non-Go consumers below) only. A sensor or SDK release needs no bump at all:
+# running instances learn it from the signed release feed (RFC-037 §12).
 #
 #   sync-versions.sh            rewrite the consumers in place
 #   sync-versions.sh --check    change nothing; list each drifted default and
@@ -65,6 +66,8 @@ CONSUMERS=(
   'platform.release|api/deploy/.env.example||^(OPENCTEM_VERSION=)([^#]*)$'
   'platform.release|api/deploy/docker-compose.yml|}|(OPENCTEM_VERSION:-)([^}]*)\}'
   'platform.release|api/deploy/docker-compose.job-signer.yml|}|(OPENCTEM_VERSION:-)([^}]*)\}'
+  'platform.release|api/deploy/docker-compose.sensor.yml|}|(OPENCTEM_VERSION:-)([^}]*)\}'
+  'sensor.latest|api/deploy/docker-compose.sensor.yml|}|(SENSOR_VERSION:-)([^}]*)\}'
   'ci.latest|web/src/features/ci-runners/lib/ci.ts|'"'"'|^(export const CI_RELEASE = '"'"')([^'"'"']*)'"'"''
 )
 
@@ -81,7 +84,7 @@ mapfile -t PRODUCTS < <(awk '/^[^[:space:]#][^:]*:[[:space:]]*(#.*)?$/ { s = $0;
 
 # key | kind: version, version? (may be ""), versions (space-separated, may be
 # ""), chart (X.Y.Z), text (set), text? (may be "").
-CHECKS=(platform.release:version sdk.latest:version sdk.advisories:versions ci.latest:version ci.min:version? chart.version:chart)
+CHECKS=(platform.release:version sdk.latest:version sdk.min:version? sdk.advisories:versions ci.latest:version ci.min:version? chart.version:chart)
 for prod in "${PRODUCTS[@]}"; do
   CHECKS+=("$prod.product:text" "$prod.latest:version" "$prod.min:version?" "$prod.image:text" "$prod.install:text" "$prod.release_identity:text")
 done

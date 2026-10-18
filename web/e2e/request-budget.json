@@ -14,7 +14,8 @@
     "/validation": 8,
     "/scans": 7,
     "/settings/members": 8,
-    "/settings/scanning/scan-windows": 7
+    "/settings/scanning/scan-windows": 7,
+    "/settings/scanning/sensor-safety": 7
   },
   "sessionOnlyFromBootstrap": [
     "/api/v1/users/me",
@@ -28,5 +29,6 @@
   "pageUsesSessionEndpoint": {
     "/account/security": ["/api/v1/auth/providers"]
   },
+  "$comment_sensorSafety": "/settings/scanning/sensor-safety loads the opt-in impact, shared-sensor setting, tenant settings, identity policy and the last-changed audit line, plus the support-access banner.",
   "$comment_supportAccess": "The support-access banner (a shell element on every page) reads /organization/support-access/active once per load, so each budget above the old one counts that request; /settings/members also loads join requests and the ownership transfer."
 }

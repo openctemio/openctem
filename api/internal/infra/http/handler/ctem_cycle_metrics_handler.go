@@ -42,6 +42,9 @@ func (h *CTEMCycleHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.allowOrgMetrics(w, r, tid) {
+		return
+	}
 
 	// Confirm the cycle belongs to the tenant and learn its status, and
 	// whether it has success criteria that were never evaluated (a cycle
@@ -125,6 +128,10 @@ func (h *CTEMCycleHandler) MetricsTrend(w http.ResponseWriter, r *http.Request) 
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	if !h.allowOrgMetrics(w, r, tid) {
 		return
 	}
 
@@ -246,4 +253,55 @@ func (h *CTEMCycleHandler) parseIDs(tenantID, cycleID string) (shared.ID, shared
 		return shared.ID{}, shared.ID{}, false
 	}
 	return tid, cid, true
+}
+
+// allowOrgMetrics: the cycle metrics are computed over the whole
+// organization, so a restricted member needs dashboard:aggregate (or full
+// data access) to see them; they cannot be narrowed to their scope. It writes
+// the refusal and reports false when the caller may not read them.
+func (h *CTEMCycleHandler) allowOrgMetrics(w http.ResponseWriter, r *http.Request, tenantID shared.ID) bool {
+	ok, err := h.orgMetricsVisible(r.Context(), tenantID)
+	if err != nil {
+		h.logger.Error("ctem cycle metrics: resolve data scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	if !ok {
+		apierror.Forbidden("cycle metrics cover the whole organization: they need the dashboard:aggregate permission or full data access").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// orgMetricsVisible is the rule behind allowOrgMetrics: an unrestricted
+// viewer, or one holding dashboard:aggregate, may read figures computed over
+// the whole organization. An unwired enforcer is an error (fail closed).
+func (h *CTEMCycleHandler) orgMetricsVisible(ctx context.Context, tenantID shared.ID) (bool, error) {
+	scope, _, err := h.dataScope.ViewerScope(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	return !scope.Restricted(), nil
+}
+
+// withVisibleEvaluation leaves out of a cycle the charter evaluation (the
+// verdicts are computed from organization-wide metrics) for a viewer who may
+// not read organization metrics; the rest of the cycle stays readable. Any
+// error leaves it out.
+func (h *CTEMCycleHandler) withVisibleEvaluation(ctx context.Context, tenantID string, c CTEMCycleResponse) CTEMCycleResponse {
+	if c.CharterEvaluation == nil {
+		return c
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err == nil {
+		var ok bool
+		if ok, err = h.orgMetricsVisible(ctx, tid); ok && err == nil {
+			return c
+		}
+	}
+	if err != nil {
+		h.logger.Error("ctem cycle: resolve data scope for the charter evaluation", "error", err)
+	}
+	c.CharterEvaluation = nil
+	return c
 }

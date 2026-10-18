@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,5 +85,66 @@ func TestAuditAdminDelete(t *testing.T) {
 	log := waitForAudit(t, auditRepo.created)
 	if log.Action != admin.AuditActionAdminDelete {
 		t.Errorf("audit action: got %q, want %q", log.Action, admin.AuditActionAdminDelete)
+	}
+}
+
+// failingAuditRepo refuses every write.
+type failingAuditRepo struct{ *fakeAuditRepo }
+
+func (failingAuditRepo) Create(context.Context, *admin.AuditLog) error {
+	return context.DeadlineExceeded
+}
+
+func writeAheadRequest(t *testing.T, repo admin.AuditLogRepository, role, method, body string) (*httptest.ResponseRecorder, bool) {
+	t.Helper()
+	m := middleware.NewAuditMiddleware(repo, logger.NewNop())
+	called := false
+	h := m.WriteAhead()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(method, "/api/v1/admin/tenants", strings.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.AdminRoleKey, role))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec, called
+}
+
+func TestWriteAheadRefusesSuperAdminWriteWhenAuditFails(t *testing.T) {
+	rec, called := writeAheadRequest(t, failingAuditRepo{newFakeAuditRepo()}, "super_admin", http.MethodPost, `{"a":1}`)
+	if called {
+		t.Fatal("the handler must not run when the audit row cannot be written")
+	}
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "AUDIT_UNAVAILABLE") {
+		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWriteAheadRecordsRedactedBodyThenRunsHandler(t *testing.T) {
+	repo := newFakeAuditRepo()
+	rec, called := writeAheadRequest(t, repo, "super_admin", http.MethodPost, `{"name":"x","password":"hunter2"}`)
+	if !called || rec.Code != http.StatusNoContent {
+		t.Fatalf("handler must run: %d called=%v", rec.Code, called)
+	}
+	log := waitForAudit(t, repo.created)
+	if log.Action != middleware.AuditActionWriteStarted || log.RequestMethod != http.MethodPost {
+		t.Fatalf("row %+v", log)
+	}
+	if log.RequestBody["password"] != "[REDACTED]" || log.RequestBody["name"] != "x" {
+		t.Fatalf("body not redacted: %v", log.RequestBody)
+	}
+}
+
+func TestWriteAheadLeavesOtherRolesAndReadsAlone(t *testing.T) {
+	for _, c := range []struct{ role, method string }{
+		{"ops_admin", http.MethodPost},
+		{"readonly", http.MethodDelete},
+		{"super_admin", http.MethodGet},
+		{"super_admin", http.MethodHead},
+	} {
+		rec, called := writeAheadRequest(t, failingAuditRepo{newFakeAuditRepo()}, c.role, c.method, "")
+		if !called || rec.Code != http.StatusNoContent {
+			t.Errorf("%s %s must be unaffected: %d called=%v", c.role, c.method, rec.Code, called)
+		}
 	}
 }

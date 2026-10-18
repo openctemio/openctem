@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 
@@ -11,6 +12,8 @@ import type { VerifiedDomainInstructions } from '../types/verified-domain.types'
 
 /** A single labelled, copyable value (host / type / value). */
 function CopyField({ label, value }: { label: string; value: string }) {
+  const { t } = useTranslation()
+
   const [copied, setCopied] = useState(false)
   return (
     <div className="space-y-1">
@@ -26,7 +29,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
           type="button"
           size="icon"
           variant="ghost"
-          aria-label={`Copy ${label}`}
+          aria-label={t('admin.dnsInstructions.copy', 'Copy {label}', { label })}
           onClick={async () => {
             await copyToClipboard(value)
             setCopied(true)
@@ -51,16 +54,22 @@ export function DnsInstructions({
   instructions: VerifiedDomainInstructions
   className?: string
 }) {
+  const { t } = useTranslation()
+
   return (
     <div className={cn('space-y-3 rounded-md border bg-muted/30 p-3', className)}>
       <p className="text-muted-foreground text-xs">
-        1) Add this TXT record at your DNS provider. 2) Click{' '}
-        <span className="font-medium">Verify now</span>. DNS changes can take a while to propagate —
-        re-check if it is not picked up yet.
+        {t(
+          'admin.dnsInstructions.instructions',
+          '1) Add this TXT record at your DNS provider. 2) Click Verify now. DNS changes can take a while to propagate — re-check if it is not picked up yet.'
+        )}
       </p>
-      <CopyField label="Host / Name" value={instructions.host} />
-      <CopyField label="Type" value={instructions.type} />
-      <CopyField label="Value" value={instructions.value} />
+      <CopyField
+        label={t('admin.dnsInstructions.hostName', 'Host / Name')}
+        value={instructions.host}
+      />
+      <CopyField label={t('admin.dnsInstructions.type', 'Type')} value={instructions.type} />
+      <CopyField label={t('admin.dnsInstructions.value', 'Value')} value={instructions.value} />
     </div>
   )
 }

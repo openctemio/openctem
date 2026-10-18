@@ -111,17 +111,31 @@ export default function TargetMappingsPage() {
     try {
       if (pending.kind === 'delete') {
         await deleteTargetMapping(pending.mapping.id)
-        toast.success(`${pairLabel(pending.mapping)} deleted`)
+        toast.success(
+          t('admin.scanningTargetMappingsPage.deleted', '{pair} deleted', {
+            pair: pairLabel(pending.mapping),
+          })
+        )
       } else {
         await updateTargetMapping(pending.mapping.id, { is_active: !pending.mapping.is_active })
         toast.success(
-          `${pairLabel(pending.mapping)} ${pending.mapping.is_active ? 'deactivated' : 'activated'}`
+          pending.mapping.is_active
+            ? t('admin.scanningTargetMappingsPage.deactivated', '{pair} deactivated', {
+                pair: pairLabel(pending.mapping),
+              })
+            : t('admin.scanningTargetMappingsPage.activated', '{pair} activated', {
+                pair: pairLabel(pending.mapping),
+              })
         )
       }
       refresh()
       setPending(null)
     } catch (e) {
-      toast.error(e instanceof AdminApiError ? e.message : 'The change failed')
+      toast.error(
+        e instanceof AdminApiError
+          ? e.message
+          : t('admin.scanningTargetMappingsPage.theChangeFailed', 'The change failed')
+      )
     } finally {
       setBusy(false)
     }
@@ -147,7 +161,7 @@ export default function TargetMappingsPage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: 'Mappings',
+      label: t('admin.scanningTargetMappingsPage.mappings', 'Mappings'),
       value: s?.total ?? '—',
       active: !status,
       onClick: () => {
@@ -157,28 +171,35 @@ export default function TargetMappingsPage() {
     },
     {
       key: 'active',
-      label: 'Active',
+      label: t('admin.scanningTargetMappingsPage.active', 'Active'),
       value: s?.active_count ?? '—',
       onClick: () => toggleStatus('active'),
       active: status === 'active',
     },
     {
       key: 'inactive',
-      label: 'Inactive',
+      label: t('admin.scanningTargetMappingsPage.inactive', 'Inactive'),
       value: s?.inactive_count ?? '—',
-      hint: 'Ignored by smart filtering',
+      hint: t(
+        'admin.scanningTargetMappingsPage.ignoredBySmartFiltering',
+        'Ignored by smart filtering'
+      ),
       onClick: () => toggleStatus('inactive'),
       active: status === 'inactive',
     },
     {
       key: 'targets',
-      label: 'Target types mapped',
+      label: t('admin.scanningTargetMappingsPage.targetTypesMapped', 'Target types mapped'),
       value: s ? Object.keys(s.by_target_type).length : '—',
-      hint: unmappedTargets.length ? `${unmappedTargets.length} unmapped` : undefined,
+      hint: unmappedTargets.length
+        ? t('admin.scanningTargetMappingsPage.unmapped', '{length} unmapped', {
+            length: unmappedTargets.length,
+          })
+        : undefined,
     },
     {
       key: 'assets',
-      label: 'Asset types covered',
+      label: t('admin.scanningTargetMappingsPage.assetTypesCovered', 'Asset types covered'),
       value: s ? Object.keys(s.by_asset_type).length : '—',
     },
   ]
@@ -187,7 +208,7 @@ export default function TargetMappingsPage() {
     const cols: ColumnDef<TargetMapping>[] = [
       {
         accessorKey: 'target_type',
-        header: 'Target type',
+        header: t('admin.scanningTargetMappingsPage.targetType', 'Target type'),
         enableSorting: false,
         cell: ({ row }) => (
           <StackedCell
@@ -198,7 +219,7 @@ export default function TargetMappingsPage() {
       },
       {
         accessorKey: 'asset_type',
-        header: 'Asset type',
+        header: t('admin.scanningTargetMappingsPage.assetType', 'Asset type'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="flex items-center gap-2 text-sm">
@@ -212,29 +233,37 @@ export default function TargetMappingsPage() {
       },
       {
         accessorKey: 'priority',
-        header: 'Priority',
+        header: t('admin.scanningTargetMappingsPage.priority', 'Priority'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="flex items-center gap-2">
             <span className="text-sm tabular-nums">{row.original.priority}</span>
-            {row.original.is_primary && <Badge variant="secondary">Primary</Badge>}
+            {row.original.is_primary && (
+              <Badge variant="secondary">
+                {t('admin.scanningTargetMappingsPage.primary', 'Primary')}
+              </Badge>
+            )}
           </span>
         ),
       },
       {
         accessorKey: 'is_active',
-        header: 'Status',
+        header: t('admin.scanningTargetMappingsPage.status', 'Status'),
         enableSorting: false,
         cell: ({ row }) =>
           row.original.is_active ? (
-            <Badge variant="secondary">Active</Badge>
+            <Badge variant="secondary">
+              {t('admin.scanningTargetMappingsPage.active', 'Active')}
+            </Badge>
           ) : (
-            <Badge variant="outline">Inactive</Badge>
+            <Badge variant="outline">
+              {t('admin.scanningTargetMappingsPage.inactive', 'Inactive')}
+            </Badge>
           ),
       },
       {
         accessorKey: 'description',
-        header: 'Description',
+        header: t('admin.scanningTargetMappingsPage.description', 'Description'),
         enableSorting: false,
         cell: ({ row }) =>
           row.original.description ? (
@@ -245,7 +274,7 @@ export default function TargetMappingsPage() {
       },
       {
         accessorKey: 'updated_at',
-        header: 'Updated',
+        header: t('admin.scanningTargetMappingsPage.updated', 'Updated'),
         enableSorting: false,
         cell: ({ row }) => <RelativeTime date={row.original.updated_at} className="text-sm" />,
       },
@@ -259,15 +288,20 @@ export default function TargetMappingsPage() {
           return (
             <DataTableRowActions
               actions={[
-                { label: 'Edit', onClick: () => setDialog({ mapping: m }) },
                 {
-                  label: m.is_active ? 'Deactivate' : 'Activate',
+                  label: t('admin.scanningTargetMappingsPage.edit', 'Edit'),
+                  onClick: () => setDialog({ mapping: m }),
+                },
+                {
+                  label: m.is_active
+                    ? t('admin.scanningTargetMappingsPage.deactivate', 'Deactivate')
+                    : t('admin.scanningTargetMappingsPage.activate', 'Activate'),
                   onClick: () => setPending({ kind: 'toggle', mapping: m }),
                 },
                 ...(canDelete
                   ? [
                       {
-                        label: 'Delete',
+                        label: t('admin.scanningTargetMappingsPage.delete', 'Delete'),
                         onClick: () => setPending({ kind: 'delete', mapping: m }),
                         destructive: true,
                         separatorBefore: true,
@@ -281,12 +315,12 @@ export default function TargetMappingsPage() {
       })
     }
     return cols
-  }, [canWrite, canDelete])
+  }, [canWrite, canDelete, t])
 
   const newButton = canWrite ? (
     <Button size="sm" onClick={() => setDialog({ mapping: null })}>
       <Plus className="me-2 size-4" />
-      New mapping
+      {t('admin.scanningTargetMappingsPage.newMapping', 'New mapping')}
     </Button>
   ) : null
 
@@ -295,15 +329,22 @@ export default function TargetMappingsPage() {
   return (
     <Main>
       <PageHeader
-        title="Target mappings"
-        description="Which asset types each scanner target type can scan. Scans skip assets that no active mapping covers."
+        title={t('admin.scanningTargetMappingsPage.targetMappings', 'Target mappings')}
+        description={t(
+          'admin.scanningTargetMappingsPage.whichAssetTypesEachScanner',
+          'Which asset types each scanner target type can scan. Scans skip assets that no active mapping covers.'
+        )}
       >
         {newButton}
       </PageHeader>
       <div className="mt-5 space-y-5">
         <MetricStrip items={metrics} loading={stats.isLoading} />
         {list.error ? (
-          <ErrorState title="target mappings" error={list.error} onRetry={refresh} />
+          <ErrorState
+            title={t('admin.scanningTargetMappingsPage.targetMappings2', 'target mappings')}
+            error={list.error}
+            onRetry={refresh}
+          />
         ) : noMappingsAtAll ? (
           <EmptyState
             icon={Waypoints}
@@ -324,7 +365,10 @@ export default function TargetMappingsPage() {
             showColumnToggle={false}
             showSelectionCount={false}
             mobileCards
-            emptyMessage="No mapping matches these filters"
+            emptyMessage={t(
+              'admin.scanningTargetMappingsPage.noMappingMatchesTheseFilters',
+              'No mapping matches these filters'
+            )}
             manualPagination
             pageCount={list.data?.total_pages ?? 1}
             rowCount={list.data?.total ?? 0}
@@ -340,11 +384,19 @@ export default function TargetMappingsPage() {
                     resetPage()
                   }}
                 >
-                  <SelectTrigger className="sm:w-48" aria-label="Filter by target type">
+                  <SelectTrigger
+                    className="sm:w-48"
+                    aria-label={t(
+                      'admin.scanningTargetMappingsPage.filterByTargetType',
+                      'Filter by target type'
+                    )}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={ALL}>All target types</SelectItem>
+                    <SelectItem value={ALL}>
+                      {t('admin.scanningTargetMappingsPage.allTargetTypes', 'All target types')}
+                    </SelectItem>
                     {targetFilterOptions.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
                         {o.label}
@@ -359,11 +411,19 @@ export default function TargetMappingsPage() {
                     resetPage()
                   }}
                 >
-                  <SelectTrigger className="sm:w-56" aria-label="Filter by asset type">
+                  <SelectTrigger
+                    className="sm:w-56"
+                    aria-label={t(
+                      'admin.scanningTargetMappingsPage.filterByAssetType',
+                      'Filter by asset type'
+                    )}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={ALL}>All asset types</SelectItem>
+                    <SelectItem value={ALL}>
+                      {t('admin.scanningTargetMappingsPage.allAssetTypes', 'All asset types')}
+                    </SelectItem>
                     {assetFilterOptions.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
                         {o.label}
@@ -383,7 +443,7 @@ export default function TargetMappingsPage() {
                       resetPage()
                     }}
                   >
-                    Clear filters
+                    {t('admin.scanningTargetMappingsPage.clearFilters', 'Clear filters')}
                   </Button>
                 )}
               </div>

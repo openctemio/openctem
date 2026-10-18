@@ -30,7 +30,7 @@ func postRegister(h *handler.LocalAuthHandler, body string) *httptest.ResponseRe
 func TestRegister_CaptchaRequiredWhenConfigured(t *testing.T) {
 	svc, deps := newTestAuthService()
 	seedAuthLocalUser(deps.userRepo, "existing@example.com", "$2a$04$dummy")
-	h := handler.NewLocalAuthHandler(svc, nil, nil, nil, deps.cfg, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, nil, nil, deps.cfg, logger.NewNop())
 	h.SetCaptcha(fakeCaptcha{good: "ok-token"})
 
 	var bodies []string
@@ -61,7 +61,7 @@ func TestRegister_CaptchaRequiredWhenConfigured(t *testing.T) {
 // Without a CAPTCHA configured, registration works as before (no token).
 func TestRegister_NoCaptchaConfigured(t *testing.T) {
 	svc, deps := newTestAuthService()
-	h := handler.NewLocalAuthHandler(svc, nil, nil, nil, deps.cfg, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, nil, nil, deps.cfg, logger.NewNop())
 	if rec := postRegister(h, `{"email":"a@example.com","password":"Zr7uqLakeTunnel41","name":"N"}`); rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d %s", rec.Code, rec.Body.String())
 	}

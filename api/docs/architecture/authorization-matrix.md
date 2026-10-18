@@ -155,6 +155,32 @@ Request
 Handler
 ```
 
+### Organization suspension
+
+Every credential that reaches an organization asks one access gate
+(`tenant.AccessGate`, `internal/app/suspension.Gate`) once it knows the
+organization; a suspended organization answers **403
+`ORGANIZATION_SUSPENDED`** ("This organization is suspended — contact
+support"; the administrator's reason is never shown). The gate reads
+`tenants.status` through a shared Redis cache that the console overwrites on
+every change, and fails closed (an unreadable status refuses the request).
+
+| Credential | Where the gate runs |
+|---|---|
+| Session token (cookie or Bearer), JWT-tenant routes and the WebSocket upgrade | `RequireActiveOrganization` right after authentication in `buildBaseMiddlewares` |
+| Session token on `/api/v1/tenants/{tenant}/...` | `RequireActiveOrganizationParam` after `RequireMembership` |
+| Token mint and refresh | `AuthService.ExchangeToken` / `RefreshToken`, before the refresh token is spent, plus a backstop in every mint path |
+| `oct_` API key | the middleware above, and the key's membership check (`apikey.NewMembershipChecker`) |
+| MCP OAuth token | the same membership check, on every MCP request |
+| Sensor key (bearer, multi-key store, signed requests, mTLS) | `SensorService` after the sensor's own status check |
+| SCIM token | `scim.TokenService.Authenticate` (403 to the IdP) |
+| CI run token and the CI token exchange | `cirun.Service.Authenticate` / `Exchange` (after the workload token verified) |
+| Inbound Jira and GitHub webhooks | the webhook handlers, after the signature verified |
+
+Open WebSocket connections of the organization close at once. Scheduled work
+skips it (see `organization-suspension.md`). The GitHub App installation
+webhook is platform-level (installation lifecycle only) and is not gated.
+
 ### Step-up re-authentication
 
 A handful of routes also need **recent authentication** in the caller's own
@@ -176,6 +202,8 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
 - `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
+- `POST /api/v1/integrations`, `POST .../integrations/notifications`, `PUT`/`DELETE /api/v1/integrations/{id}`, `POST .../{id}/disable`, `PUT .../{id}/notification`
+- `PUT /api/v1/scim-tokens/group-mappings`
 - `PATCH /api/v1/attachments/storage-config`
 - `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` (finding lifecycles, RFC-110)
 
@@ -247,6 +275,8 @@ API keys are refused on both prefixes; the tenant is the session's. Design: `mcp
 | `GET /api/v1/oauth/requests/{id}`, `POST /{id}/approve`, `/{id}/deny` | any member, on a consent request they claimed (404 otherwise); the grant never exceeds what they hold |
 | `POST /api/v1/oauth/requests/{id}/access-request` | any active member, on a consent request they claimed and only when the application is blocked because its publisher is not approved; at most 5 new requests per member per day, 50 waiting per organization (429); audited |
 | `POST /api/v1/oauth/requests/{id}/allow-publisher` | `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
+| `GET /api/v1/organization/security-overview` | owner or admin with `settings:read`; the organization comes from the credential; counts and statuses only, no personal data ([security-overview.md](security-overview.md)) |
+| `GET /api/v1/audit-logs/export` | `audit:read` and the list's full-data rule; filters as the list; at most 50,000 rows, one export at a time per person, heavy-read cap; audited `audit_log.exported` |
 | `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / `settings:write` + a recent sign-in; audited |
 | `GET /api/v1/mcp-access/requests` | `settings:read` (the organization's waiting requests; requester name, no e-mail or IP) |
 | `POST /api/v1/mcp-access/requests/{id}/approve` | `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
@@ -642,6 +672,10 @@ the billing page in the UI.
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
 | Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete` |
 
+#### Organization-wide scan configuration
+
+Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profiles/{id}/quality-gate`, `POST /api/v1/scan-profiles/{id}/set-default`, `PATCH /api/v1/tools/settings`, `PATCH /api/v1/tools/{id}/settings` (each changes what every scan of the organization runs with), and `DELETE /api/v1/secret-store/{id}`. A member whose role carries the write permission is refused with 403; the web console hides these controls from members.
+
 > Writing the credential store is owner/admin only: its one consumer, a template source, is owner/admin only, so a member could otherwise replace the credential an administrator's source authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
 
 > **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
@@ -768,7 +802,8 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/organization/join-requests/{request_id}/approve`, `.../reject` | owner or admin + `team:members:write`; approve grants viewer or member only; another organization's request is 404 |
 | `GET /api/v1/organization/settings/domains` | owner or admin (`RequireAdmin`) + `settings:read` (the organization's own domains only) |
 | `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy` | **owner only** (`RequireOwner`) + `settings:write` + **step-up**; a domain of another organization is 404 (RFC-104) |
-| `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
+| `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up**; schedules the deletion (202, `deletion_due_at`): the organization is refused to every credential at once and deleted after 14 days (`organization-deletion.md`) |
+| `POST /api/v1/auth/organization-deletion/cancel` | refresh-token session (body, or cookie + CSRF pair); the service requires an **active owner** of the organization (same 403 otherwise, existing or not); token-exchange rate limit |
 | `POST /api/v1/organization/leave` | any member (`team:read`) + **step-up**, for themselves in the credential's organization; refused for the only owner (RFC-104) |
 | `DELETE /api/v1/me/account` | the caller's own account + **step-up**; refused while the caller is the only owner of an organization (RFC-104) |
 
@@ -944,8 +979,13 @@ empty `owner_emails`. Every member-list view is audited
 | `GET /api/v1/admin/platform-users?q=` | **ops_admin+** (3+ characters; account-level facts only; people's emails are not for read-only) |
 | `GET /api/v1/admin/platform-users/{user_id}` | **ops_admin+** (audited `platform_user.view`) |
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
+| `POST /api/v1/admin/platform-users/{user_id}/block`, `/unblock` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator; **critical** admin audit `platform_user.blocked` / `platform_user.unblocked`; 409 for a platform administrator's or an erased account, or when already in that state. A blocked account (`users.status = 'suspended'`) is refused at sign-in and on every request (session token, API key, MCP token); its sessions end at once. See `organization-suspension.md` |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
+| `GET /api/v1/admin/approvals` | **super_admin** (four-eyes requests: open ones and the last 30 days; whether another super admin can approve) |
+| `POST /api/v1/admin/approvals` | **super_admin** + **step-up**, `reason` (1-1000); **critical** audit `approval.requested`; 409 when no other super admin can approve |
+| `POST /api/v1/admin/approvals/{id}/approve` | **super_admin** + a **fresh** step-up (never the session window); never the requester (403, also a table constraint), never a break-glass account; **critical** audit `approval.approved` |
+| `POST /api/v1/admin/approvals/{id}/reject` · `/cancel` | reject: **super_admin** + step-up, not the requester; cancel: the requester only; **critical** audit. A protected action without its approval answers `428 SECOND_APPROVAL_REQUIRED` (RFC-022 revision 24) |
 | `GET /api/v1/admin/operations` | any admin (build, schema, database, Redis, queues, sensor versions, controllers; no tenant content) |
 | `GET /api/v1/admin/system` | any admin, read-only, no step-up (service health, free space, backup age, certificate expiry, version; aggregates only, no paths or tenant content; RFC-114) |
 | `GET /api/v1/admin/announcements` | any admin |
@@ -973,6 +1013,9 @@ empty `owner_emails`. Every member-list view is audited
 | `PUT/DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny` | **ops_admin+** + reason + a fresh authenticator code (audited high; a denied module keeps read access for 30 days) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
+| `GET /api/v1/admin/signup-events`, `/daily` | any admin; the sign-up feed holds email domains and network prefixes only (no address, name or account id; `docs/architecture/signup-activity.md`) |
+| `GET /api/v1/admin/settings/signup-alerts` | any admin |
+| `PUT /api/v1/admin/settings/signup-alerts` | **super_admin** + reason + a fresh authenticator code; optimistic version (409); audited **critical**; administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
@@ -1132,6 +1175,8 @@ and certificates are never logged — an IdP update records
 | `POST /api/v1/admin/tenants` | **ops_admin+** + **step-up** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin; audited `organization.users_view`; `readonly` gets counts by role only (`redacted: true`) |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** + **step-up**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) (the route's step-up confirms it), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
+| `POST /api/v1/admin/tenants/{tenantId}/purge` | **super_admin** + **fresh step-up**, `reason` required (10-500); deletes the organization at once whatever its status; **critical** admin audit `organization.purged`; 409 for the system organization. See `organization-deletion.md` |
+| `POST /api/v1/admin/tenants/{tenantId}/suspend`, `/unsuspend` | **ops_admin+** + **step-up**, `reason` required (10-500); **critical** admin audit `organization.suspended` / `organization.unsuspended` plus an entry in the organization's own log without the reason; 409 when already in that state or for the system organization. A suspended organization is refused to every credential (see "Organization suspension" below) |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
 | `PUT/POST/PATCH/DELETE` on those SSO resources, and `PUT .../sso/enforcement` | **super_admin** + **step-up** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/changes` | any admin (what is waiting for the owner) |
@@ -1671,7 +1716,11 @@ a personal address, or be a work domain nobody has verified.
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values. The group list itself stays tenant configuration |
-| `GET /attack-surface/attack-paths` | **bypass** | `top_assets` filtered |
+| `GET /attack-surface/attack-paths` | **bypass (summary counts over the whole graph)** | `top_assets` filtered and `summary` recomputed over the assets the caller may see (entry points, reachable assets, critical reachable, crown jewels at risk, total paths, max depth); reachability itself is still the whole graph's. A viewer with `dashboard:aggregate` keeps the organization summary and still gets only their own rows |
+| `GET /threat-intel/stats` (EPSS and KEV counts) | **bypass (organization-wide exposure counts)** | the open findings counted (EPSS high / critical, KEV past due) are those on assets in the caller's scope; `dashboard:aggregate` or full data access counts the organization. The catalog totals (entries, ransomware, recently added) are public feed context |
+| `GET /validation/coverage` | **bypass (organization-wide KPI)** | per-severity totals, validated, downgrade and priority-class coverage count the findings on assets in the caller's scope; `dashboard:aggregate` or full data access counts the organization |
+| `GET /scans/coverage` | **bypass (organization-wide estate)** | the scannable estate counted (total, never scanned, covered, stale, critical uncovered, oldest dispatch) is the caller's in-scope assets; `dashboard:aggregate` or full data access counts the organization |
+| `GET /ctem-cycles/metrics/trend` | **bypass (organization-wide cycle metrics)** | the series and maturity are computed per organization, so a restricted member without `dashboard:aggregate` or full data access gets 403 |
 | `GET /attack-surface/exposure-chains`, MCP `get_exposure_chains` | **bypass** | a chain is returned only when every hop is in scope |
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
 | `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
@@ -1709,7 +1758,36 @@ computed with the same SQL condition as every scoped list:
 | Restricted member with **`dashboard:aggregate`** (new permission, migration `000774`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
 
 Recent activity and top risks are row data and stay limited to the viewer's
-scope whatever the permission. MTTR (`GET /dashboard/mttr` and
+own scope whatever the permission: an aggregate viewer's top risks are queried
+with their own row scope, not cut down from the organization's top five (the
+totals keep the organization scope and the k-floor).
+
+Pentest findings follow the findings list on every dashboard query: for
+anyone who is not an organization administrator, a pentest finding is counted
+or shown only to a member of its campaign, and never as a draft or in-review
+finding for the campaign's `client` role. The dashboard SQL ANDs the same
+predicate the findings list compiles (`vulnerability.FindingMemberVisibilitySQL`,
+one rule for both), with the user taken from the authenticated principal.
+Recent activity, the monthly trend, velocity and the executive new-finding
+count also leave out unpublished pentest findings (draft, in review) for
+everyone, administrators included. The same rule covers the other figures
+the dashboard shows beside these: the threat-intel exposure counts (EPSS and
+KEV, `GET /threat-intel/stats`), the validation coverage and downgrade figures
+(`GET /validation/coverage`) and the program metrics (`GET
+/dashboard/program-metrics`), where a pentest draft or in-review finding
+counts for nobody. Program metrics and the risk trend are kept for the
+organization, so a restricted viewer needs `dashboard:aggregate` (or full data
+access) for them; the risk trend is a daily organization snapshot and cannot
+follow the pentest rule per viewer. A CTEM cycle's `charter_evaluation` is
+computed from the organization's metrics: `GET /ctem-cycles` and
+`/ctem-cycles/{id}` (and the close and scope-refinement responses) leave that
+one field out for a viewer who would be refused the cycle metrics, and the rest
+of the cycle stays readable. Every dashboard figure computed for the caller
+reads the data-scope enforcer's `ViewerScope` (one decision for the
+`dashboard:aggregate` check) and refuses when the enforcer is not wired; the
+attack-path and exposure-chain reads for a caller refuse likewise
+(`datascope.ErrNotConfigured`) instead of returning the organization's result.
+MTTR (`GET /dashboard/mttr` and
 `/dashboard/mttr-analytics`) follows the viewer the same way (research 24
 §5.1): a restricted member averages their own in-scope findings, with
 `dashboard:aggregate` the organization. The other dashboard metrics
@@ -1791,13 +1869,14 @@ read permission; none exposes a row, name, title or id of an out-of-scope
 object. This is **debt, not a decision**: owner decision D6 (2026-10-04) is
 that aggregates follow the viewer's scope, with org-wide totals only through
 `dashboard:aggregate` and a k ≥ 5 floor. Scoping them is RFC-050 W16;
-`/dashboard/stats` already follows D6.
+`/dashboard/stats` already follows D6, and so do the threat intel, validation
+coverage, scan coverage and attack-path summary counts (section "Data scope"
+above); the cycle metrics trend needs `dashboard:aggregate` or full data access.
 
 | Endpoint | Why tenant-wide |
 |---|---|
 | `GET /dashboard/{velocity,data-quality,risk-trend,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
 | `GET /attack-surface/stats` average risk score and per-type breakdown | aggregate; the counts and row lists on that endpoint are scoped |
-| `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
 

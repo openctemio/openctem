@@ -24,8 +24,9 @@ type TenantRepository struct {
 	// and direct adds all insert through CreateMembership or
 	// AcceptInvitationTx. Invitations: CreateInvitation (invites_per_day).
 	limitChecks
-	// defaultRegion is DEPLOYMENT_REGION: the region new organizations get.
-	defaultRegion string
+	// region is the region new organizations get (the deployment region:
+	// DEPLOYMENT_REGION or the console's one-time setting); nil: none.
+	region func(ctx context.Context) string
 }
 
 // NewTenantRepository creates a new TenantRepository.
@@ -45,17 +46,22 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 	}
 
 	// The region is set once, here: the organization's own, else the
-	// deployment's (DEPLOYMENT_REGION). Update never writes it.
+	// deployment's (DEPLOYMENT_REGION, or the console's one-time setting).
+	// Update never writes it. The console setting is also read inside the
+	// statement, so a region set on another replica a moment ago applies
+	// even before this replica's cache sees it.
 	region := t.Region()
-	if region == "" {
-		region = r.defaultRegion
+	if region == "" && r.region != nil {
+		region = r.region(ctx)
 	}
 	query := `
 		INSERT INTO tenants (id, name, slug, description, logo_url, settings, created_by, created_at, updated_at, region)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''))
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE(NULLIF($10, ''),
+			(SELECT NULLIF(value->>'region', '') FROM platform_settings WHERE key = 'deployment.region')))
+		RETURNING COALESCE(region, '')
 	`
 
-	_, err = r.db.ExecContext(ctx, query,
+	err = r.db.QueryRowContext(ctx, query,
 		t.ID().String(),
 		t.Name(),
 		t.Slug(),
@@ -66,7 +72,7 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 		t.CreatedAt(),
 		t.UpdatedAt(),
 		region,
-	)
+	).Scan(&region)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -75,8 +81,19 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 	return nil
 }
 
-// SetDefaultRegion sets the region new organizations get (DEPLOYMENT_REGION).
-func (r *TenantRepository) SetDefaultRegion(region string) { r.defaultRegion = region }
+// SetRegionSource sets where the region of a new organization comes from.
+func (r *TenantRepository) SetRegionSource(f func(ctx context.Context) string) { r.region = f }
+
+// AnyOrganization reports whether any organization exists (deleted ones
+// included: they carry a region too; the platform's system tenant is not
+// one).
+func (r *TenantRepository) AnyOrganization(ctx context.Context) (bool, error) {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE id <> $1)`, tenant.SystemTenantID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("any organization: %w", err)
+	}
+	return exists, nil
+}
 
 // GetByID retrieves a tenant by ID.
 //
@@ -235,7 +252,9 @@ func (r *TenantRepository) ExistsBySlug(ctx context.Context, slug string) (bool,
 func (r *TenantRepository) ListActiveTenantIDs(ctx context.Context) ([]shared.ID, error) {
 	// The system tenant is excluded: it is not a customer tenant, and every
 	// sweep that received it failed on it (cert-monitor warned on every tick).
-	query := `SELECT id FROM tenants WHERE id <> $1::uuid ORDER BY id`
+	// A suspended organization is left out too: its scheduled work is
+	// paused (docs/architecture/organization-suspension.md).
+	query := `SELECT id FROM tenants WHERE id <> $1::uuid AND status = 'active' ORDER BY id`
 
 	rows, err := r.db.QueryContext(ctx, query, tenant.SystemTenantID)
 	if err != nil {
@@ -376,16 +395,24 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 		}
 	}()
 
+	// The region, as in Create.
+	region := t.Region()
+	if region == "" && r.region != nil {
+		region = r.region(ctx)
+	}
 	const tenantQuery = `
-		INSERT INTO tenants (id, name, slug, description, logo_url, settings, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO tenants (id, name, slug, description, logo_url, settings, created_by, created_at, updated_at, region)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE(NULLIF($10, ''),
+			(SELECT NULLIF(value->>'region', '') FROM platform_settings WHERE key = 'deployment.region')))
+		RETURNING COALESCE(region, '')
 	`
-	if _, err = tx.ExecContext(ctx, tenantQuery,
+	if err = tx.QueryRowContext(ctx, tenantQuery,
 		t.ID().String(), t.Name(), t.Slug(), t.Description(), t.LogoURL(),
-		settings, t.CreatedBy(), t.CreatedAt(), t.UpdatedAt(),
-	); err != nil {
+		settings, t.CreatedBy(), t.CreatedAt(), t.UpdatedAt(), region,
+	).Scan(&region); err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
+	t.WithRegion(region)
 	// Limits the organization starts with (the instance's self-service
 	// defaults, when an operator set some) are stored in the same
 	// transaction: the organization is never briefly without them.
@@ -1264,7 +1291,9 @@ func (r *TenantRepository) GetUserMembershipsWithStatus(
 			t.slug,
 			t.name,
 			ver.role as effective_role,
-			COALESCE(m.status, 'active') as status
+			COALESCE(m.status, 'active') as status,
+			t.status <> 'active' as organization_suspended,
+			t.deletion_due_at
 		FROM tenant_members m
 		INNER JOIN tenants t ON t.id = m.tenant_id
 		INNER JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -1285,15 +1314,24 @@ func (r *TenantRepository) GetUserMembershipsWithStatus(
 			m      tenant.UserMembership
 			status string
 		)
-		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &status); err != nil {
+		var deletionDue sql.NullTime
+		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &status, &m.OrganizationSuspended, &deletionDue); err != nil {
 			return nil, fmt.Errorf("failed to scan membership: %w", err)
 		}
+		if deletionDue.Valid {
+			t := deletionDue.Time
+			m.DeletionDueAt = &t
+		}
 		// Positive buckets only: an offboarded tombstone (or any status
-		// added later) is in neither list, so it never yields a token.
-		switch status {
-		case "suspended":
+		// added later) is in neither list, so it never yields a token. An
+		// active membership of a suspended organization is listed with the
+		// suspended ones (no token; the sign-in page says why).
+		switch {
+		case status == "active" && m.OrganizationSuspended:
 			result.Suspended = append(result.Suspended, m)
-		case "active":
+		case status == "suspended":
+			result.Suspended = append(result.Suspended, m)
+		case status == "active":
 			result.Active = append(result.Active, m)
 		}
 	}
