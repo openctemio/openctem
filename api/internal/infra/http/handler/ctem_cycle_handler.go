@@ -559,7 +559,7 @@ func (h *CTEMCycleHandler) computeValidationCoverage(
 	ctx context.Context,
 	tenantID, startDate, endDate string,
 ) (validation.ValidationCoverage, error) {
-	return postgres.ValidationCoverageByPriority(ctx, h.db, tenantID, startDate, endDate)
+	return postgres.ValidationCoverageByPriority(ctx, h.db, tenantID, startDate, endDate, nil)
 }
 
 // GetScope retrieves the scope snapshot for a cycle, with each asset's name,

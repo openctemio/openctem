@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -36,6 +37,15 @@ type ScanHandler struct {
 	logger        *logger.Logger
 	// approvals: scan approval (RFC-073); nil when not wired.
 	approvals *ScanApprovalHandler
+	// dataScope narrows the coverage figures to the caller's data scope.
+	dataScope *datascope.Enforcer
+}
+
+// SetDataScope wires the enforcer that narrows the rolling coverage figures
+// to the caller's data scope.
+func (h *ScanHandler) SetDataScope(e *datascope.Enforcer) *ScanHandler {
+	h.dataScope = e
+	return h
 }
 
 // SetApprovals wires scan approval: the list badge and the approval routes
@@ -1041,7 +1051,15 @@ func (h *ScanHandler) CoverageStatus(w http.ResponseWriter, r *http.Request) {
 		windowDays = n
 	}
 
-	stats, err := h.coverageStats.CoverageStats(r.Context(), tenantID, windowDays)
+	// The estate counted follows the viewer (D6): a restricted member counts
+	// the assets of their own scope, dashboard:aggregate and unrestricted
+	// callers the organization.
+	scope, _, err := h.dataScope.ViewerScope(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	stats, err := h.coverageStats.CoverageStats(r.Context(), tenantID, scope, windowDays)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

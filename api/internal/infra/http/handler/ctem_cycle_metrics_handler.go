@@ -42,6 +42,9 @@ func (h *CTEMCycleHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.allowOrgMetrics(w, r, tid) {
+		return
+	}
 
 	// Confirm the cycle belongs to the tenant and learn its status, and
 	// whether it has success criteria that were never evaluated (a cycle
@@ -125,6 +128,10 @@ func (h *CTEMCycleHandler) MetricsTrend(w http.ResponseWriter, r *http.Request) 
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	if !h.allowOrgMetrics(w, r, tid) {
 		return
 	}
 
@@ -246,4 +253,22 @@ func (h *CTEMCycleHandler) parseIDs(tenantID, cycleID string) (shared.ID, shared
 		return shared.ID{}, shared.ID{}, false
 	}
 	return tid, cid, true
+}
+
+// allowOrgMetrics: the cycle metrics are computed over the whole
+// organization, so a restricted member needs dashboard:aggregate (or full
+// data access) to see them; they cannot be narrowed to their scope. It writes
+// the refusal and reports false when the caller may not read them.
+func (h *CTEMCycleHandler) allowOrgMetrics(w http.ResponseWriter, r *http.Request, tenantID shared.ID) bool {
+	scope, _, err := h.dataScope.ViewerScope(r.Context(), tenantID)
+	if err != nil {
+		h.logger.Error("ctem cycle metrics: resolve data scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	if scope.Restricted() {
+		apierror.Forbidden("cycle metrics cover the whole organization: they need the dashboard:aggregate permission or full data access").WriteJSON(w)
+		return false
+	}
+	return true
 }
