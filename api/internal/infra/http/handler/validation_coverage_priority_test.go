@@ -20,15 +20,15 @@ type fakeValidationCoverageReader struct {
 	gotTenant  string
 }
 
-func (f *fakeValidationCoverageReader) CoverageBySeverity(context.Context, shared.ID) ([]validation.SeverityCoverage, error) {
+func (f *fakeValidationCoverageReader) CoverageBySeverity(context.Context, shared.ID, *shared.DataScope) ([]validation.SeverityCoverage, error) {
 	return nil, nil
 }
 
-func (f *fakeValidationCoverageReader) DowngradeStats(context.Context, shared.ID) (int, int, error) {
+func (f *fakeValidationCoverageReader) DowngradeStats(context.Context, shared.ID, *shared.DataScope) (int, int, error) {
 	return 0, 0, nil
 }
 
-func (f *fakeValidationCoverageReader) CoverageByPriority(_ context.Context, tenantID string) (validation.ValidationCoverage, error) {
+func (f *fakeValidationCoverageReader) CoverageByPriority(_ context.Context, tenantID string, _ *shared.DataScope) (validation.ValidationCoverage, error) {
 	f.gotTenant = tenantID
 	return f.byPriority, f.priErr
 }

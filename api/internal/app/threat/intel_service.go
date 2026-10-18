@@ -757,14 +757,14 @@ func (s *IntelService) GetEPSSStats(ctx context.Context) (*EPSSStats, error) {
 // figure here counts the tenant's OPEN findings that reference an overdue KEV
 // CVE, and the ransomware / recently-added figures are real de-saturated COUNTs
 // of the global KEV feed (legitimately global context, but true totals).
-func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared.ID) (*KEVStats, error) {
+func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*KEVStats, error) {
 	catalog, err := s.getKEVCatalogCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Tenant-scoped: never cached.
-	pastDue, err := s.repo.KEV().CountTenantOpenPastDue(ctx, tenantID)
+	pastDue, err := s.repo.KEV().CountTenantOpenPastDue(ctx, tenantID, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -782,7 +782,7 @@ func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared
 // for every tenant and saturates its LIMIT-bounded counts), the high/critical
 // figures here count the tenant's OPEN findings whose CVE meets the EPSS
 // threshold — the tenant's real exploitation-probability exposure.
-func (s *IntelService) GetEPSSStatsForTenant(ctx context.Context, tenantID shared.ID) (*EPSSStats, error) {
+func (s *IntelService) GetEPSSStatsForTenant(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*EPSSStats, error) {
 	catalog, err := s.getEPSSCatalogCounts(ctx)
 	if err != nil {
 		return nil, err
@@ -791,7 +791,7 @@ func (s *IntelService) GetEPSSStatsForTenant(ctx context.Context, tenantID share
 
 	// Both buckets in ONE join of the tenant's findings to epss_scores
 	// (previously two identical joins differing only in the threshold).
-	counts, err := s.repo.EPSS().CountTenantOpenAboveScores(ctx, tenantID,
+	counts, err := s.repo.EPSS().CountTenantOpenAboveScores(ctx, tenantID, scope,
 		[]float64{epssHighThreshold, epssCriticalThreshold})
 	if err != nil {
 		return nil, err
@@ -808,14 +808,15 @@ func (s *IntelService) GetEPSSStatsForTenant(ctx context.Context, tenantID share
 }
 
 // GetThreatIntelStats returns unified threat intelligence statistics for a
-// tenant. This combines tenant-scoped EPSS stats, tenant-scoped KEV stats, and
+// tenant. A non-nil scope counts only the findings on assets inside that
+// data scope (nil: the whole tenant). This combines tenant-scoped EPSS stats, tenant-scoped KEV stats, and
 // (global) sync statuses in a single call. The KEV/EPSS figures reflect the
 // tenant's exposure, not the global CISA/EPSS catalog.
-func (s *IntelService) GetThreatIntelStats(ctx context.Context, tenantID shared.ID) (*ThreatIntelStats, error) {
+func (s *IntelService) GetThreatIntelStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*ThreatIntelStats, error) {
 	stats := &ThreatIntelStats{}
 
 	// Get EPSS stats (continue even if error - partial data is OK)
-	epssStats, err := s.GetEPSSStatsForTenant(ctx, tenantID)
+	epssStats, err := s.GetEPSSStatsForTenant(ctx, tenantID, scope)
 	if err != nil {
 		s.logger.Warn("failed to get EPSS stats", "error", err)
 	} else {
@@ -823,7 +824,7 @@ func (s *IntelService) GetThreatIntelStats(ctx context.Context, tenantID shared.
 	}
 
 	// Get KEV stats
-	kevStats, err := s.GetKEVStatsForTenant(ctx, tenantID)
+	kevStats, err := s.GetKEVStatsForTenant(ctx, tenantID, scope)
 	if err != nil {
 		s.logger.Warn("failed to get KEV stats", "error", err)
 	} else {
