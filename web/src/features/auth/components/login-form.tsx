@@ -245,6 +245,10 @@ export function LoginForm({
       // to ensure cookies set by Server Action are picked up properly
       toast.success(t('auth.login.success', 'Signed in'))
       hardNavigate(safeRedirectTo)
+    } else if (result.code === 'ORGANIZATION_SUSPENDED') {
+      toast.error(
+        t('auth.organizationSuspended.message', 'This organization is suspended — contact support')
+      )
     } else if (result.code === 'CAPTCHA_REQUIRED') {
       setCaptchaRequired(true)
       toast.error(t('auth.login.captchaRequired'))

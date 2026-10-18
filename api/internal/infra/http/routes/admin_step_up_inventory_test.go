@@ -96,6 +96,8 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy":              {stepUpRoute, "scan governance of an organization"},
 	"PUT /api/v1/admin/tenants/{tenantId}/shared-sensors":                    {stepUpRoute, "whether an organization's scans may run on shared sensors"},
 	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":          {stepUpRoute, "module entitlement"},
+	"POST /api/v1/admin/tenants/{tenantId}/suspend":                          {stepUpRoute, "cuts every credential of the organization; reason, critical audit"},
+	"POST /api/v1/admin/tenants/{tenantId}/unsuspend":                        {stepUpRoute, "restores every credential of the organization; reason, critical audit"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":       {stepUpRoute, "module entitlement"},
 	"PUT /api/v1/admin/tenants/{tenantId}/limits/{key}":                      {routine, "limits only; audited by the service"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}":                   {routine, "limits only; audited by the service"},
@@ -146,6 +148,8 @@ var adminWriteInventory = map[string]struct {
 	// Account support actions: they change a person's sign-in state, so
 	// step-up as well as reason, rate limit and audit.
 	"POST /api/v1/admin/platform-users/{user_id}/revoke-sessions":     {stepUpRoute, "ends a user's sessions; reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/block":               {stepUpRoute, "blocks an account everywhere; reason, critical audit"},
+	"POST /api/v1/admin/platform-users/{user_id}/unblock":             {stepUpRoute, "lifts an account block; reason, critical audit"},
 	"POST /api/v1/admin/platform-users/{user_id}/unlock":              {stepUpRoute, "clears a lockout; reason, audited"},
 	"POST /api/v1/admin/platform-users/{user_id}/password-reset":      {stepUpRoute, "emails the user a reset link; reason, audited"},
 	"POST /api/v1/admin/platform-users/{user_id}/verification-emails": {stepUpRoute, "re-sends verification; reason, audited"},

@@ -63,6 +63,11 @@ type AdminPlatformUserResponse struct {
 	MFAEnabled      bool       `json:"mfa_enabled"`
 	IsPlatformAdmin bool       `json:"is_platform_admin"`
 	Erased          bool       `json:"erased"`
+	// Blocked platform-wide by an administrator: no sign-in, no API key, no
+	// MCP token in any organization.
+	Blocked       bool       `json:"blocked"`
+	BlockedAt     *time.Time `json:"blocked_at,omitempty"`
+	BlockedReason string     `json:"blocked_reason,omitempty"`
 }
 
 // AdminPlatformUserListResponse is a page of accounts.
@@ -127,6 +132,7 @@ func toPlatformUserResponse(s postgres.PlatformUserSummary, now time.Time) Admin
 		LockedUntil: s.LockedUntil, FailedLogins: s.FailedLogins, LastLoginAt: s.LastLoginAt,
 		CreatedAt: s.CreatedAt, Memberships: s.Memberships, MFAEnabled: s.MFAEnabled,
 		IsPlatformAdmin: s.IsPlatformAdmin, Erased: s.Erased,
+		Blocked: s.Status == "suspended", BlockedAt: s.BlockedAt, BlockedReason: s.BlockedReason,
 	}
 }
 
