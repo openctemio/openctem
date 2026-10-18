@@ -1103,5 +1103,13 @@
   "admin.org.suspension.noticeTitle": "This organization is suspended",
   "admin.org.suspension.noticeBody": "Every credential is refused and scheduled work is skipped until the suspension is lifted.",
   "admin.org.suspension.reason": "Reason: {reason}",
-  "admin.org.suspension.since": "Suspended"
+  "admin.org.suspension.since": "Suspended",
+  "admin.org.deletion.badge": "Deletion scheduled",
+  "admin.org.deletion.purge": "Delete now",
+  "admin.org.deletion.purgeTitle": "Delete {name} now?",
+  "admin.org.deletion.purgeWhat": "Deletes {name} and everything in it at once: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone.",
+  "admin.org.deletion.purgeDone": "Organization deleted.",
+  "admin.org.deletion.noticeTitle": "An owner scheduled this organization for deletion",
+  "admin.org.deletion.noticeBody": "It is closed to every credential and is deleted when the grace period ends, unless an owner cancels from the sign-in page.",
+  "admin.org.deletion.due": "Deleted on {date}"
 }

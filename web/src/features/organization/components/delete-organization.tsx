@@ -18,10 +18,13 @@ import { useTranslation } from '@/context/i18n-provider'
  * Organization › General › Danger zone: delete the organization.
  *
  * Owner only, like the API (DELETE /api/v1/tenants/{tenant} behind
- * RequireTeamOwner). The delete cascades every row of the organization
- * (assets, findings, scans, members, roles, settings and its audit log);
- * user accounts survive and keep their other organizations. Confirmation is
- * by typing the organization's name.
+ * RequireTeamOwner). The request schedules the deletion: the organization is
+ * closed to everyone at once and deleted after the grace period (14 days),
+ * with every row (assets, findings, scans, members, roles, settings and its
+ * audit log); an owner can cancel from the sign-in page until then. User
+ * accounts survive and keep their other organizations. Confirmation is by
+ * typing the organization's name
+ * (api/docs/architecture/organization-deletion.md).
  *
  * Afterwards the session moves to another organization the user belongs to,
  * or to onboarding when there is none.
@@ -38,17 +41,34 @@ export function DeleteOrganization() {
 
   const handleDelete = async () => {
     setBusy(true)
+    let due: string | undefined
     try {
-      await del(`/api/v1/tenants/${currentTenant.slug}`)
+      const res = await del<{ status: string; deletion_due_at?: string }>(
+        `/api/v1/tenants/${currentTenant.slug}`
+      )
+      due = res?.deletion_due_at
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete the organization'))
+      toast.error(
+        getErrorMessage(error, t('org.delete.failed', 'Failed to delete the organization'))
+      )
       setBusy(false)
       return
     }
-    // The delete succeeded. Anything that fails from here on is only the move
-    // to another organization, so it must never be reported as a failed
-    // delete (the organization is already gone).
-    toast.success(`Organization "${name}" deleted`)
+    // The request succeeded. Anything that fails from here on is only the
+    // move to another organization, so it must never be reported as a failed
+    // request (the organization is already closed).
+    toast.success(
+      t('org.delete.scheduled', 'Organization "{name}" will be deleted on {date}.', {
+        name: name ?? '',
+        date: due ? new Date(due).toLocaleDateString() : '',
+      }),
+      {
+        description: t(
+          'org.delete.scheduledHint',
+          'It is closed to everyone now. An owner can cancel the deletion from the sign-in page until then.'
+        ),
+      }
+    )
     // A full reload (not router.push) so no cached data of the deleted
     // organization survives; replace() so Back does not return here.
     const next = tenants.find((t) => t.id !== currentTenant.id)
@@ -71,8 +91,11 @@ export function DeleteOrganization() {
     <>
       <DangerZone>
         <DangerZoneItem
-          title="Delete this organization"
-          description="Permanently deletes the organization and everything in it: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone."
+          title={t('org.delete.title', 'Delete this organization')}
+          description={t(
+            'org.delete.description',
+            'Closes the organization for everyone now and deletes it with everything in it after 14 days: assets, findings, scans, members, roles, settings and its audit log. An owner can cancel until then. Member accounts are kept.'
+          )}
           action={
             <Button
               variant="destructive"
@@ -83,7 +106,7 @@ export function DeleteOrganization() {
               }}
             >
               <Trash2 className="h-4 w-4" />
-              Delete organization
+              {t('confirm.org.delete', 'Delete organization')}
             </Button>
           }
         />
@@ -97,7 +120,7 @@ export function DeleteOrganization() {
         })}
         desc={t(
           'confirm.org.deleteDesc',
-          'The organization and all of its data are deleted for every member: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone.'
+          'The organization is closed for every member now and deleted with all of its data after 14 days: assets, findings, scans, members, roles, settings and its audit log. An owner can cancel the deletion from the sign-in page until then. Member accounts are kept.'
         )}
         typeToConfirm={name}
         confirmText={

@@ -48,6 +48,10 @@ export interface LoginTenant {
   slug: string
   name: string
   role: string
+  /** The organization itself is suspended by the platform operator. */
+  organization_suspended?: boolean
+  /** An owner scheduled the organization's deletion for this time. */
+  deletion_due_at?: string
 }
 
 export interface RegisterInput {
@@ -94,14 +98,7 @@ export interface LoginBackendResponse {
   // their access has been paused. They are NOT selectable; the field
   // exists so the UI can tell the user "your access to X is suspended"
   // instead of bouncing them into create-team onboarding.
-  suspended_tenants?: Array<{
-    id: string
-    slug: string
-    name: string
-    role: string
-    /** The organization itself is suspended by the platform operator. */
-    organization_suspended?: boolean
-  }>
+  suspended_tenants?: LoginTenant[]
   // True for a platform administrator (RFC-022). The account belongs to no
   // organization; it goes to the admin console, not onboarding.
   platform_admin?: boolean
@@ -145,6 +142,9 @@ export interface LoginResult {
   // The login form surfaces this so the user knows why they have no
   // accessible team, instead of being routed to create-team onboarding.
   suspendedTenants?: LoginTenant[]
+  // Organizations this user owns that are scheduled for deletion: the form
+  // offers to cancel before going on.
+  pendingDeletion?: LoginTenant[]
   // A platform administrator: the client opens the admin console.
   platformAdmin?: boolean
   // The password was right but a second factor is needed. No session exists
@@ -360,6 +360,19 @@ export async function loginAction(input: LoginInput): Promise<LoginResult> {
  * password + second factor): store the refresh token and pick the tenant.
  */
 async function completeLogin(
+  loginData: LoginBackendResponse,
+  loginRefreshFromCookie: string | undefined
+): Promise<LoginResult> {
+  const result = await completeLoginTenants(loginData, loginRefreshFromCookie)
+  // An owner of an organization waiting for deletion is offered to cancel
+  // it whatever else happens next.
+  const pendingDeletion = (loginData.suspended_tenants ?? []).filter(
+    (t) => t.deletion_due_at && t.role === 'owner'
+  )
+  return pendingDeletion.length > 0 ? { ...result, pendingDeletion } : result
+}
+
+async function completeLoginTenants(
   loginData: LoginBackendResponse,
   loginRefreshFromCookie: string | undefined
 ): Promise<LoginResult> {
@@ -1285,5 +1298,36 @@ export async function onboardingAcceptAction(ref: string): Promise<OnboardingAcc
   } catch (error) {
     const code = (error as Error & { code?: string }).code
     return { success: false, code, error: error instanceof Error ? error.message : 'error' }
+  }
+}
+
+/**
+ * An owner cancels the scheduled deletion of an organization (it is closed
+ * to tenant tokens while it waits, so this uses the session's refresh token,
+ * like create-first-team). On success the organization is active again.
+ */
+export async function cancelOrganizationDeletionAction(
+  tenantId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cookieStore = await cookies()
+    const refreshToken = cookieStore.get(env.auth.refreshCookieName)?.value
+    if (!refreshToken) {
+      return { success: false, error: 'Session expired. Please login again.' }
+    }
+    const response = await fetch(`${env.api.url}${authEndpoints.cancelOrganizationDeletion()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // Server-to-server: the refresh token goes in the body (a cookie would
+      // need the CSRF pair).
+      body: JSON.stringify({ tenant_id: tenantId, refresh_token: refreshToken }),
+    })
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: response.statusText }))
+      return { success: false, error: errorData.message || `HTTP ${response.status}` }
+    }
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Request failed' }
   }
 }

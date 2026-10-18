@@ -284,5 +284,10 @@
   "org.roles.teamRoleUnavailable": "This team role cannot be changed here",
   "org.roles.manageNote": "Custom roles add permissions on top of the role in the organization.",
   "org.roles.teamRole": "Role in the organization",
-  "org.roles.ownerLocked": "This person is the owner. Ownership moves with Transfer ownership."
+  "org.roles.ownerLocked": "This person is the owner. Ownership moves with Transfer ownership.",
+  "org.delete.title": "Delete this organization",
+  "org.delete.description": "Closes the organization for everyone now and deletes it with everything in it after 14 days: assets, findings, scans, members, roles, settings and its audit log. An owner can cancel until then. Member accounts are kept.",
+  "org.delete.failed": "Failed to delete the organization",
+  "org.delete.scheduled": "Organization \"{name}\" will be deleted on {date}.",
+  "org.delete.scheduledHint": "It is closed to everyone now. An owner can cancel the deletion from the sign-in page until then."
 }

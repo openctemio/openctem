@@ -272,6 +272,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// constructed. The handler returns 503 from the dry-run
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
+	tenantHandler.SetDeletionScheduler(svc.OrgDeletion)
 	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SignupOpen())
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
@@ -889,6 +890,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	handlers.AdminSuspension = handler.NewAdminSuspensionHandler(svc.Suspension,
 		newPlatformUserService(repos, svc, cfg, deps.DB, log), log)
+	handlers.AdminSuspension.SetOrganizationDeletion(svc.OrgDeletion)
 	// The platform policy for scan approval (RFC-073).
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
@@ -1080,6 +1082,8 @@ func InitLocalAuthHandler(
 			log,
 		)
 		log.Info("local auth handler initialized")
+		// An owner cancels a scheduled organization deletion from sign-in.
+		handlers.LocalAuth.SetOrganizationDeletion(svc.OrgDeletion)
 		if svc.Signup != nil {
 			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
 			if svc.Onboarding != nil {

@@ -284,5 +284,10 @@
   "org.roles.teamRoleUnavailable": "Không thể đổi vai trò nhóm này tại đây",
   "org.roles.manageNote": "Vai trò tùy chỉnh bổ sung quyền bên cạnh vai trò trong tổ chức.",
   "org.roles.teamRole": "Vai trò trong tổ chức",
-  "org.roles.ownerLocked": "Người này là chủ sở hữu. Quyền sở hữu được chuyển bằng Chuyển quyền sở hữu."
+  "org.roles.ownerLocked": "Người này là chủ sở hữu. Quyền sở hữu được chuyển bằng Chuyển quyền sở hữu.",
+  "org.delete.title": "Xóa tổ chức này",
+  "org.delete.description": "Đóng tổ chức với mọi người ngay bây giờ và xóa nó cùng mọi thứ bên trong sau 14 ngày: tài sản, phát hiện, bản quét, thành viên, vai trò, cài đặt và nhật ký kiểm toán. Chủ sở hữu có thể hủy trước thời điểm đó. Tài khoản thành viên được giữ lại.",
+  "org.delete.failed": "Không thể xóa tổ chức",
+  "org.delete.scheduled": "Tổ chức \"{name}\" sẽ bị xóa vào {date}.",
+  "org.delete.scheduledHint": "Tổ chức đã đóng với mọi người. Chủ sở hữu có thể hủy việc xóa từ trang đăng nhập trước thời điểm đó."
 }
