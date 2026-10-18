@@ -30,6 +30,18 @@ import { useTranslation } from '@/context/i18n-provider'
  * or to onboarding when there is none.
  */
 export function DeleteOrganization() {
+  const { currentTenant } = useTenant()
+  const { isOwner } = usePermissions()
+  if (!currentTenant || !isOwner()) return null
+  return (
+    <DangerZone>
+      <DeleteOrganizationItem />
+    </DangerZone>
+  )
+}
+
+/** The delete row of a danger zone (owner only; nothing for anyone else). */
+export function DeleteOrganizationItem() {
   const { t } = useTranslation()
   const { currentTenant, tenants, switchTeam, loadTenants } = useTenant()
   const { isOwner } = usePermissions()
@@ -49,7 +61,7 @@ export function DeleteOrganization() {
       due = res?.deletion_due_at
     } catch (error) {
       toast.error(
-        getErrorMessage(error, t('org.delete.failed', 'Failed to delete the organization'))
+        getErrorMessage(error, t('org.danger.deleteFailed', 'Failed to delete the organization'))
       )
       setBusy(false)
       return
@@ -58,13 +70,13 @@ export function DeleteOrganization() {
     // move to another organization, so it must never be reported as a failed
     // request (the organization is already closed).
     toast.success(
-      t('org.delete.scheduled', 'Organization "{name}" will be deleted on {date}.', {
+      t('org.danger.scheduled', 'Organization "{name}" will be deleted on {date}.', {
         name: name ?? '',
         date: due ? new Date(due).toLocaleDateString() : '',
       }),
       {
         description: t(
-          'org.delete.scheduledHint',
+          'org.danger.scheduledHint',
           'It is closed to everyone now. An owner can cancel the deletion from the sign-in page until then.'
         ),
       }
@@ -89,28 +101,26 @@ export function DeleteOrganization() {
 
   return (
     <>
-      <DangerZone>
-        <DangerZoneItem
-          title={t('org.delete.title', 'Delete this organization')}
-          description={t(
-            'org.delete.description',
-            'Closes the organization for everyone now and deletes it with everything in it after 14 days: assets, findings, scans, members, roles, settings and its audit log. An owner can cancel until then. Member accounts are kept.'
-          )}
-          action={
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                loadTenants()
-                setOpen(true)
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-              {t('confirm.org.delete', 'Delete organization')}
-            </Button>
-          }
-        />
-      </DangerZone>
+      <DangerZoneItem
+        title={t('org.danger.deleteTitle', 'Delete this organization')}
+        description={t(
+          'org.danger.deleteDesc',
+          'Closes the organization for everyone now and deletes it with everything in it after 14 days: assets, findings, scans, members, roles, settings and its audit log. An owner can cancel until then. Member accounts are kept.'
+        )}
+        action={
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              loadTenants()
+              setOpen(true)
+            }}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+            {t('org.danger.deleteAction', 'Delete organization')}
+          </Button>
+        }
+      />
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}

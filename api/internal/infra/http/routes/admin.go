@@ -28,78 +28,113 @@ import (
 //	/admin/overview           any admin         —
 //	/admin/operations         any admin         —
 //	/admin/system             any admin         —
-//	/admin/announcements      any admin         ops_admin+ + reason (audited)
-//	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
-//	                                            code (audited high)
+//	/admin/announcements      any admin         ops_admin+ + step-up + reason
+//	                                            (audited)
+//	/admin/console-sessions   super_admin       super_admin + step-up + reason +
+//	                                            fresh code in the body (audited
+//	                                            high)
 //	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
-//	                          audited)          audited; platform admins refused
-//	/admin/users              super_admin       super_admin + step-up (audited)
+//	                          audited)          audited; platform admins refused;
+//	                                            block/unblock: + step-up
+//	/admin/users              super_admin       update/delete: super_admin
+//	                                            (audited); reset credentials,
+//	                                            break-glass test, IdP unbind:
+//	                                            super_admin + step-up
 //	/admin/administrators     —                 super_admin + step-up (audited)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
-//	/admin/threat-intel       any admin         ops_admin+ (+ audited)
+//	/admin/threat-intel       any admin         sync: ops_admin+ (audited);
+//	                                            turn a feed on or off: ops_admin+ +
+//	                                            step-up (audited)
 //	/admin/platform-idp       super_admin       super_admin + step-up (audited)
 //	/admin/access-requests    any admin         ops_admin+ (approve: + step-up;
 //	                                            reject; audited)
-//	/admin/tenants            any admin         create, first owner: ops_admin+ +
-//	                                            step-up; SSO writes: super_admin +
-//	                                            step-up (audited)
-//	/admin/settings/limits    any admin         super_admin + fresh TOTP code
+//	/admin/tenants            any admin         create: ops_admin+ + step-up;
+//	                                            first owner: ops_admin+ + fresh
+//	                                            step-up (recovery: super_admin +
+//	                                            reason + fresh code in the body);
+//	                                            SSO writes: super_admin + step-up
+//	                                            (audited)
+//	/admin/settings/limits    any admin         super_admin + step-up + fresh code
+//	                                            in the body
 //	/admin/tenants/{id}/limits
-//	                          any admin         ops_admin+ (audited)
+//	                          any admin         ops_admin+ + step-up (audited)
 //	/admin/tenants/{id}/modules
-//	                          any admin         ops_admin+ + fresh TOTP code (deny; audited)
-//	/admin/settings/signup    any admin         super_admin + fresh TOTP code
-//	                                            (critical audit, admins emailed)
-//	/admin/settings/legal     any admin         super_admin + fresh TOTP code
-//	                                            (critical audit; read publicly
-//	                                            at GET /api/v1/legal)
-//	/admin/settings/email     any admin         super_admin + fresh TOTP code
-//	                                            (critical audit, password never
-//	                                            returned); test: super_admin,
-//	                                            to the caller's address only
+//	                          any admin         ops_admin+ + step-up + fresh code
+//	                                            in the body (deny; audited)
+//	/admin/settings/signup    any admin         super_admin + step-up + fresh code
+//	                                            in the body (critical audit,
+//	                                            admins emailed)
+//	/admin/settings/legal     any admin         super_admin + step-up + fresh code
+//	                                            in the body (critical audit; read
+//	                                            publicly at GET /api/v1/legal)
+//	/admin/settings/email     any admin         update: super_admin + step-up +
+//	                                            fresh code in the body (critical
+//	                                            audit, password never returned);
+//	                                            test: super_admin, to the
+//	                                            caller's address only (no step-up)
 //	/admin/settings/console-mfa
-//	                          any admin         super_admin + step-up
+//	                          any admin         super_admin + fresh step-up (a
+//	                                            fresh code or a single-use
+//	                                            security-key confirmation)
 //	/admin/auth/factors, webauthn/*, recovery-codes
-//	                          own account only  register, remove and new codes:
-//	                                            step-up
+//	                          own account only  register (options) and new codes:
+//	                                            fresh step-up; remove: step-up;
+//	                                            rename: session only
+//	/admin/auth/elevate       —                 start: step-up; end: session only
 //	/admin/support            own grants only   open a session: ops_admin+ named in
 //	                                            a live grant + step-up; reads only
 //	                                            through a live session (audited in
 //	                                            both logs)
 //	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
-//	                          any admin         super_admin + fresh TOTP code +
-//	                                            reason (critical audit, admins
-//	                                            emailed, tenant admins told)
+//	                          any admin         super_admin + step-up + fresh code
+//	                                            in the body + reason (critical
+//	                                            audit, admins emailed, tenant
+//	                                            admins told)
 //	/admin/shared-sensors     any admin (fleet,  pause/resume/retire: super_admin +
-//	                          queue, job         fresh TOTP code + reason (critical
-//	                          metadata)          audit); job view: super/ops_admin +
-//	                                            reason (audited high, rate-limited)
+//	                          queue, job         step-up + reason (critical audit);
+//	                          metadata)          instance enrollment token:
+//	                                            super_admin + step-up + fresh code
+//	                                            in the body; job view: super/ops
+//	                                            admin + reason (audited high,
+//	                                            rate-limited)
 //	/admin/settings/shared-sensors(/egress), /admin/tenants/{id}/shared-sensors
-//	                          any admin         super_admin + fresh TOTP code +
-//	                                            reason (critical audit, admins
-//	                                            emailed); switch-on refused until
-//	                                            shared sensors are ready
+//	                          any admin         super_admin + step-up + fresh code
+//	                                            in the body + reason (critical
+//	                                            audit, admins emailed); switch-on
+//	                                            refused until shared sensors are
+//	                                            ready
+//	/admin/instance-scan-zones
+//	                          any admin         super_admin + step-up + reason +
+//	                                            fresh code in the body
 //	/admin/tenants/{id}/audit-chain
-//	                          any admin         rebaseline: super_admin + fresh
-//	                                            TOTP code (audited, both logs)
-//	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
-//	                                            code (audited with the reason)
+//	                          any admin         rebaseline: super_admin + step-up +
+//	                                            fresh code in the body (audited,
+//	                                            both logs)
+//	/admin/content-packs      any admin         super_admin + step-up + reason +
+//	                                            fresh code in the body (audited
+//	                                            with the reason)
 //	/admin/content-catalog    any admin         import, publish, revoke: super_admin +
-//	                                            reason + fresh TOTP code (audited)
+//	                                            step-up + reason + fresh code in
+//	                                            the body (audited)
 //	/admin/program-feed       any admin         local bundle switch: super_admin +
-//	                                            reason + fresh TOTP code (audited)
+//	                                            step-up + reason + fresh code in
+//	                                            the body (audited)
 //	/admin/version-check      any admin         import: super_admin + step-up
 //	                                            (audited high)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // "step-up" is the route-level gate (middleware.RequireAdminStepUp): a fresh
 // authenticator code in X-Admin-Step-Up, or the five-minute step-up window of
-// the same console session. "fresh TOTP code" is the older check in the
-// handler (a code in the request body, every time).
+// the same console session. "fresh step-up" (RequireAdminFreshStepUp) never
+// uses the window. "fresh code in the body" is the older check in the handler
+// (confirmAdminStepUp: a code in the request body, every time), which many
+// routes keep on top of the route-level step-up.
 //
-// Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
-
+// A super administrator's write is also recorded before it runs (the
+// "admin.write_started" row of AuditMiddleware.WriteAhead); when that row
+// cannot be written the request is refused with 503 AUDIT_UNAVAILABLE.
+//
 // registerAdminRoutes registers all platform admin endpoints.
 // These are privileged operations for managing shared infrastructure.
 // Admin routes authenticate the console session, not the tenant session.
@@ -128,7 +163,15 @@ func registerAdminRoutes(
 	}
 
 	// Base chain: the network check, then a verified console session (any role).
-	adminMiddlewares := append(cloneMW(netGate), h.AdminAuthMiddleware.Authenticate)
+	// A super administrator's write is on record before it runs; when the
+	// audit log cannot be written the write is refused (authedWrite is the
+	// session check followed by that write-ahead row).
+	authedWrite := h.AdminAuthMiddleware.Authenticate
+	if h.AdminAuditMiddleware != nil {
+		authenticate, writeAhead := h.AdminAuthMiddleware.Authenticate, h.AdminAuditMiddleware.WriteAhead()
+		authedWrite = func(next http.Handler) http.Handler { return authenticate(writeAhead(next)) }
+	}
+	adminMiddlewares := append(cloneMW(netGate), authedWrite)
 
 	// Super-admin group guard, composed onto the base chain. Built here so the
 	// authorization guarantee lives at the route layer, not in handlers.
@@ -159,7 +202,10 @@ func registerAdminRoutes(
 	if h.AdminAuth != nil || h.AdminConsole != nil {
 		consoleRL := newAuthRateLimiter("console")
 		loginRL := consoleRL.LoginMiddleware()
-		authed := h.AdminAuthMiddleware.Authenticate
+		// The same chain as every other authenticated console route, so a
+		// super administrator's password, factor and elevation changes are
+		// written ahead too.
+		authed := authedWrite
 
 		router.Group("/api/v1/admin/auth", func(r Router) {
 			if h.AdminAuth != nil {
@@ -233,8 +279,11 @@ func registerAdminRoutes(
 	// one with a reason (audited).
 	if h.Announcement != nil {
 		opsAnn := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		// A banner every user of every organization sees is a phishing
+		// channel in a hijacked session: publishing or ending one needs a
+		// step-up.
 		annAudit := func(action string) []Middleware {
-			out := cloneMW(opsAnn)
+			out := append(cloneMW(opsAnn), stepUp(action))
 			if h.AdminAuditMiddleware != nil {
 				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "announcement", "announcement_id"))
 			}
@@ -605,7 +654,7 @@ func registerAdminRoutes(
 			// reads; ops_admin+ turns it on or off (audited by the service).
 			if h.IdleWorkspace != nil {
 				r.GET("/{tenantId}/idle", h.IdleWorkspace.Get, read...)
-				r.PUT("/{tenantId}/idle/policy", h.IdleWorkspace.SetPolicy, with([]Middleware{opsWrite, scope})...)
+				r.PUT("/{tenantId}/idle/policy", h.IdleWorkspace.SetPolicy, with([]Middleware{opsWrite, stepUp("organization.idle_policy"), scope})...)
 			}
 
 			// Limits of one organization: any admin reads (with usage and the
@@ -613,8 +662,9 @@ func registerAdminRoutes(
 			// the service).
 			if h.Limits != nil {
 				r.GET("/{tenantId}/limits", h.Limits.GetTenantLimits, read...)
-				r.PUT("/{tenantId}/limits/{key}", h.Limits.SetTenantLimit, with([]Middleware{opsWrite, scope})...)
-				r.DELETE("/{tenantId}/limits/{key}", h.Limits.DeleteTenantLimit, with([]Middleware{opsWrite, scope})...)
+				// A limit of 0 freezes an organization: step-up like module denies.
+				r.PUT("/{tenantId}/limits/{key}", h.Limits.SetTenantLimit, with([]Middleware{opsWrite, stepUp("organization.limit"), scope})...)
+				r.DELETE("/{tenantId}/limits/{key}", h.Limits.DeleteTenantLimit, with([]Middleware{opsWrite, stepUp("organization.limit"), scope})...)
 				// Modules of one organization: any admin reads; ops_admin+
 				// denies one or lifts the deny with a fresh authenticator code
 				// (audited by the service; a denied module keeps read access
@@ -749,7 +799,8 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/threat-intel", func(r Router) {
 			r.GET("/sync", h.ThreatIntel.GetSyncStatuses)
 			feedWrite := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
-			syncMW, toggleMW := cloneMW(feedWrite), cloneMW(feedWrite)
+			// Turning a feed off changes every organization's prioritization.
+			syncMW, toggleMW := cloneMW(feedWrite), append(cloneMW(feedWrite), stepUp("threat_intel.sync_toggle"))
 			if h.AdminAuditMiddleware != nil {
 				syncMW = append(syncMW, h.AdminAuditMiddleware.AuditLog("threat_intel.sync", "threat_intel_feed", ""))
 				toggleMW = append(toggleMW, h.AdminAuditMiddleware.AuditLog("threat_intel.sync_toggle", "threat_intel_feed", ""))
@@ -765,7 +816,9 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/mcp-clients", func(r Router) {
 			r.GET("/", h.MCPConnections.AdminListClients)
 			write := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
-			block, unblock := cloneMW(write), cloneMW(write)
+			// Unblocking readmits an application that was cut off: both
+			// directions need a step-up.
+			block, unblock := append(cloneMW(write), stepUp("mcp_client.block")), append(cloneMW(write), stepUp("mcp_client.unblock"))
 			if h.AdminAuditMiddleware != nil {
 				block = append(block, h.AdminAuditMiddleware.AuditLog("mcp_client.blocked", "mcp_client", "id"))
 				unblock = append(unblock, h.AdminAuditMiddleware.AuditLog("mcp_client.unblocked", "mcp_client", "id"))

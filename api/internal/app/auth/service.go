@@ -107,6 +107,9 @@ type AuthService struct {
 	selfServiceLimits SelfServiceLimits
 	// onSignIn runs after a sign-in created a session (signin_hook.go).
 	onSignIn SignInHook
+	// onSessionsRevoked runs after the account's sessions were revoked for a
+	// credential change (sessions_revoked_hook.go).
+	onSessionsRevoked SessionsRevokedHook
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -127,6 +130,7 @@ type AuthService struct {
 	tokenGenerator *jwt.Generator
 	config         config.AuthConfig
 	logger         *logger.Logger
+	platformAdmins PlatformAdminGate
 	auditService   *auditapp.AuditService
 	roleService    *accesscontrol.RoleService // Optional: for database-driven role permissions
 	smtpChecker    SMTPAvailabilityCheck      // Optional: enables smart email verification
@@ -734,6 +738,13 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 		return nil, err
 	}
 
+	// A platform administrator signs in on the admin console only. The answer
+	// is the wrong-password one, given before any other account state (email
+	// verification, second factor) can tell the account apart.
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "password") {
+		return nil, ErrInvalidCredentials
+	}
+
 	// Check if email is verified.
 	// If the user is already verified, allow login. Otherwise:
 	//
@@ -779,6 +790,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 // password plus second factor) and returns the global refresh token and the
 // user's memberships.
 func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddress, userAgent string) (*LoginResult, error) {
+	// Backstop for the second-factor steps: no session for an administrator.
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "login_completion") {
+		return nil, ErrInvalidCredentials
+	}
 	// Check session limit
 	activeCount, err := s.sessionRepo.CountActiveByUserID(ctx, u.ID())
 	if err != nil {
@@ -1154,6 +1169,10 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "token_exchange") {
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+
 	// Verify user has access to the requested tenant
 	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
 	if err != nil {
@@ -1447,6 +1466,12 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// A platform administrator holds no main-site session (one issued before
+	// the account became an administrator stops here too).
+	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "refresh_token") {
+		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// A suspended organization is refused before the refresh token is

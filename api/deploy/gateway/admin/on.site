@@ -27,13 +27,17 @@
 		}
 	}
 
+	# defer: the operations run when the response headers are written, after
+	# the upstream's, so they apply to the proxied console pages too. HSTS is
+	# set, not defaulted: the gateway's value wins over any the upstream sends.
 	header {
 		-Server
 		-Via
 		?X-Content-Type-Options nosniff
 		?X-Frame-Options DENY
 		?Referrer-Policy same-origin
-		?Strict-Transport-Security "max-age=31536000"
+		Strict-Transport-Security "max-age=31536000"
+		defer
 	}
 
 	# Private networks only by default: the console is not part of the

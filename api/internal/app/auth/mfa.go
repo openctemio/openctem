@@ -866,6 +866,7 @@ func (s *AuthService) revocationTTL() time.Duration {
 // ids for immediate access-token rejection.
 func (s *AuthService) revokeUserSessions(ctx context.Context, userID, except shared.ID) {
 	revokeUserSessions(ctx, s.sessionRepo, s.refreshTokenRepo, s.revocations, s.revocationTTL(), userID, except, s.logger.Error)
+	s.runSessionsRevokedHook(ctx, userID)
 }
 
 // revokeUserSessions does the work behind AuthService.revokeUserSessions.

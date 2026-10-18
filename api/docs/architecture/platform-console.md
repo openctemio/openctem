@@ -19,6 +19,34 @@ The sensor protocol's internal mTLS listener is `api:9443`; sensors reach it
 only through the gateway's port 443 (ALPN routing on that listener alone), so
 port 8443 means only the console.
 
+## Navigation
+
+The sidebar (`web/console/src/features/admin-console/config/admin-nav.ts`,
+also the command palette's index) groups the pages by what an operator is
+doing:
+
+| Group | Pages |
+|-------|-------|
+| (top) | Overview |
+| Customers | Organizations, Users, Access requests, Support access |
+| Scanning | Scan approval, Platform scanning, Shared sensors, Target mappings, Content packs, Threat intelligence |
+| Security | Administrators, Sessions, Admin sign-in, Admin activity |
+| Settings | Sign-up, Limits, E-mail, Legal, Announcements, AI applications |
+| Monitoring | Health, System, Software updates |
+
+The administrator's own security keys open from the sidebar footer, next to
+their name (the palette still finds them). Pages are listed by the
+administrator's own role, not the session's acting one: a super admin acting
+read-only sees every page, and a page that needs more shows "Elevate to see
+this page" with the elevate dialog one click away
+(`RoleRequiredNotice`). An administrator whose own role is too low is told
+which role it takes. The API enforces the acting role either way.
+
+The Overview's "Needs attention" list includes the installation's own state
+from the System page: a service that does not answer, a volume below 20%
+(warning) or 10% (critical) free, a failed, stale or unreported backup, a
+certificate close to expiry, and a newer release (a warning when it fixes
+security advisories).
 Suspending an organization and blocking an account (the console's kill
 switches): [organization-suspension.md](organization-suspension.md).
 
@@ -41,9 +69,41 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
 - CSRF: every write must carry the console's own `Origin` and its token,
   which is bound to the session (HMAC of the session secret under a key
   derived from `AUTH_JWT_SECRET`) and kept only in memory by the console.
-- Sessions: server-side, 15 minutes idle, 8 hours at most; the console's own
+- Pre-session cookie: the console's page cookie for the sign-in steps is
+  `console_csrf`, not the tenant site's `csrf_token`: cookies ignore ports,
+  so in port mode the two sites would otherwise overwrite each other's token.
+  The console proxy refuses a sign-in step that echoes only `csrf_token`.
+- Sessions: at most three verified sessions per administrator (opening a
+  fourth ends the oldest and writes `console.session_evicted`);
+  server-side, 15 minutes idle, 8 hours at most; the console's own
   sign-in and second factor (TOTP or security keys), step-up on protected
   actions, time-boxed elevation, the append-only hash-chained audit log.
+  Reads the console makes on its own (page refreshes while nobody uses the
+  tab) carry `X-Admin-Background: 1` and do not count as activity, so an
+  unattended tab signs out after the idle timeout. A password reset or
+  change, or a two-step reset, of the administrator's account ends its
+  console sessions.
+- Write-ahead audit: before a super administrator's write runs (any
+  non-read request whose acting role is super_admin), the API writes one
+  `admin.write_started` row (method, path, redacted body) in the request. If
+  that row cannot be written the request is refused with 503
+  `AUDIT_UNAVAILABLE` and nothing changes; the per-route outcome rows are
+  written as before. With `MANAGED_SERVICE=true` in production the API does
+  not start without the off-box audit sink (`ADMIN_AUDIT_SINK`). Request
+  bodies are redacted by key: any key ending in `secret`, `password`, `_key`
+  or `_token` (any case), and `code`, `totp`, `recovery_code`,
+  `recovery_codes`.
+- Administrator accounts stay off the main site: the account an administrator
+  signs in with is refused on the tenant site (password, second-factor
+  completion, refresh-token exchange, social and organization SSO sign-in).
+  The answer is the wrong-password one, with no session and no cookie, and a
+  WARN line with `alert=platform_admin_main_site_sign_in` is logged. The
+  console's own password check is a separate path and is unaffected.
+- Roster notices: every change to the administrators (added, role or state
+  changed, removed, sign-in reset, identity-provider binding removed), the
+  administrators' identity provider or the security-key policy is emailed to
+  every other active administrator and logged with
+  `alert=admin_roster_change`.
 - Network: private client networks by default at the gateway and the API;
   optional `OPENCTEM_ADMIN_BIND` to publish the console port on one interface.
 
@@ -51,6 +111,13 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
 
 - `web/console/src/__tests__/app-split.test.ts`: route lists of both apps, no
   cross-imports.
+- `web/console/src/__tests__/console-csrf-cookie.test.ts`: the console sets
+  `console_csrf` and never `csrf_token`.
+- `api/tests/unit/auth_platform_admin_main_site_test.go`: an administrator
+  with the right password gets the wrong-password answer and no cookie on the
+  main site; the console password check still works.
+- `api/internal/infra/http/middleware/admin_audit_test.go`: the write-ahead row
+  is written first, and a failing audit write refuses the request.
 - `web/console/src/__tests__/console-origin.test.ts`: a write from the tenant
   origin (same host, other port), another port or a sibling host is refused
   before any API call.
