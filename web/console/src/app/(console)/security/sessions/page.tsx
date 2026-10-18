@@ -20,6 +20,7 @@ import {
   adminCan,
   type AdminConsoleSession,
 } from '@console/features/admin-console/types'
+import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
 export default function AdminSessionsPage() {
   const admin = useAdmin()
@@ -128,9 +129,7 @@ export default function AdminSessionsPage() {
       />
       <div className="mt-5">
         {!isSuper ? (
-          <p className="text-sm text-muted-foreground">
-            {t('admin.sessions.superOnly', 'Only a super admin can see console sessions.')}
-          </p>
+          <RoleRequiredNotice needed="super_admin" variant="page" />
         ) : error ? (
           <ErrorState title="sessions" error={error} onRetry={() => void mutate()} />
         ) : (

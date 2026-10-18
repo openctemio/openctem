@@ -9,13 +9,11 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   DataTable,
   DataTableRowActions,
-  EmptyState,
   ErrorState,
   PageHeader,
   RelativeTime,
   StackedCell,
 } from '@/features/shared'
-import { ShieldAlert } from 'lucide-react'
 import {
   confirmBreakGlassTest,
   resetAdminCredentials,
@@ -35,6 +33,7 @@ import {
   type AdminUserRecord,
 } from '@console/features/admin-console/types'
 import { useTranslation } from '@/context/i18n-provider'
+import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
 const roleLabel = (r: AdminRole) => ADMIN_ROLE_OPTIONS.find((o) => o.value === r)?.label ?? r
 
@@ -229,13 +228,8 @@ export default function AdministratorsPage() {
   if (!isSuper) {
     return (
       <Main>
-        <PageHeader title="Administrators" />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldAlert}
-          title="Super admin only"
-          description="The administrator roster is visible to super admins."
-        />
+        <PageHeader title={t('admin.nav.administrators', 'Administrators')} />
+        <RoleRequiredNotice needed="super_admin" variant="page" />
       </Main>
     )
   }

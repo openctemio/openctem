@@ -51,6 +51,14 @@ function req(path: string, shape: Shape = {}): NextRequest {
   })
 }
 
+/** The same request as the console site sends it: its page cookie is `console_csrf`. */
+function asConsole(r: NextRequest): NextRequest {
+  const headers = new Headers(r.headers)
+  const cookie = headers.get('cookie')
+  if (cookie) headers.set('cookie', cookie.replace(`${CSRF_COOKIE}=`, 'console_csrf='))
+  return new NextRequest(r.url, { method: r.method, headers, body: '{}' })
+}
+
 /** The forged and malformed shapes every state-changing entry point must refuse. */
 const REFUSED: Array<[string, Shape]> = [
   ['no csrf_token cookie', { cookie: null }],
@@ -215,7 +223,8 @@ describe('route handlers', () => {
     [
       'POST /api/v1/admin/auth/login',
       '/api/v1/admin/auth/login',
-      (r) => adminPOST(r, { params: Promise.resolve({ path: ['auth', 'login'] }) }),
+      // The console site carries its own pre-session cookie name.
+      (r) => adminPOST(asConsole(r), { params: Promise.resolve({ path: ['auth', 'login'] }) }),
     ],
   ]
 

@@ -38,6 +38,7 @@ import {
   updateInstanceScanZone,
   type InstanceScanZone,
 } from '../api/use-instance-scan-zones'
+import { RoleRequiredNotice } from './role-required-notice'
 
 /** Splits a textarea into trimmed, non-empty, distinct lines. */
 export function lines(value: string): string[] {
@@ -114,9 +115,7 @@ export function InstanceScanZonesCard({ zones, canEdit, onChanged }: InstanceSca
           </ul>
         )}
         <p className="text-sm text-muted-foreground">{t('admin.instanceZones.signedHint')}</p>
-        {!canEdit && (
-          <p className="text-sm text-muted-foreground">{t('admin.scanPolicy.superOnly')}</p>
-        )}
+        {!canEdit && <RoleRequiredNotice needed="super_admin" />}
       </CardContent>
       {editing && (
         <ZoneDialog

@@ -1,4 +1,12 @@
 {
   "auditLog.needsFullData.title": "Cần quyền truy cập đầy đủ dữ liệu",
-  "auditLog.needsFullData.description": "Nhật ký kiểm toán của tổ chức nêu tên tài sản và phát hiện, nên cần quyền truy cập đầy đủ dữ liệu. Hãy nhờ quản trị viên mở rộng quyền truy cập dữ liệu của bạn."
+  "auditLog.needsFullData.description": "Nhật ký kiểm toán của tổ chức nêu tên tài sản và phát hiện, nên cần quyền truy cập đầy đủ dữ liệu. Hãy nhờ quản trị viên mở rộng quyền truy cập dữ liệu của bạn.",
+  "auditLog.export.button": "Xuất",
+  "auditLog.export.csv": "CSV",
+  "auditLog.export.jsonl": "JSON lines",
+  "auditLog.export.hint": "Xuất các sự kiện khớp với bộ lọc hiện tại, mới nhất trước.",
+  "auditLog.export.running": "Đang chuẩn bị tệp xuất...",
+  "auditLog.export.done": "Đã xuất nhật ký kiểm toán",
+  "auditLog.export.truncated": "Chỉ 50.000 sự kiện mới nhất được xuất; hãy thu hẹp bộ lọc.",
+  "auditLog.export.failed": "Không thể xuất nhật ký kiểm toán"
 }

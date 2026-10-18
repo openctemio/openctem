@@ -3,6 +3,7 @@ package adminconsole
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -225,6 +226,24 @@ func (f *fakeConsole) DeleteSessionsForAdmin(_ context.Context, id shared.ID) er
 		}
 	}
 	return nil
+}
+
+func (f *fakeConsole) EndOldestVerifiedSessions(_ context.Context, id shared.ID, keep int) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var mine []*admin.Session
+	for _, s := range f.sessions {
+		if s.AdminID == id && s.MFAVerified {
+			mine = append(mine, s)
+		}
+	}
+	sort.Slice(mine, func(i, j int) bool { return mine[i].CreatedAt.After(mine[j].CreatedAt) })
+	var n int64
+	for i := keep; i < len(mine); i++ {
+		delete(f.sessions, mine[i].TokenHash)
+		n++
+	}
+	return n, nil
 }
 
 func (f *fakeConsole) DeleteExpiredSessions(_ context.Context, now time.Time) (int64, error) {
@@ -568,6 +587,37 @@ func TestWrongCodeCountsTowardLockout(t *testing.T) {
 	}
 	if h.admin.FailedLoginCount() != 1 {
 		t.Fatalf("failed count %d, want 1", h.admin.FailedLoginCount())
+	}
+}
+
+func TestFourthVerifiedSessionEndsTheOldest(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	secret, first := h.enroll(t)
+	tokens := []string{first}
+	for i := 0; i < 3; i++ {
+		h.clock = h.clock.Add(time.Minute)
+		res, err := h.svc.Start(ctx, refresh, password, client)
+		if err != nil {
+			t.Fatalf("start %d: %v", i, err)
+		}
+		code, _ := totp.Code(secret, h.clock)
+		tok, _, err := h.svc.VerifyMFA(ctx, res.PendingToken, code, client)
+		if err != nil {
+			t.Fatalf("verify %d: %v", i, err)
+		}
+		tokens = append(tokens, tok)
+	}
+	if _, err := h.svc.Authenticate(ctx, tokens[0]); err == nil {
+		t.Fatal("the oldest session must have been ended by the fourth")
+	}
+	for _, tok := range tokens[1:] {
+		if _, err := h.svc.Authenticate(ctx, tok); err != nil {
+			t.Fatalf("a newer session must stay: %v", err)
+		}
+	}
+	if !h.audit.has(ActionSessionEvicted) {
+		t.Fatalf("eviction must be audited, got %v", h.audit.actions)
 	}
 }
 

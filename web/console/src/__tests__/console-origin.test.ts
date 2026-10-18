@@ -20,15 +20,20 @@ import { POST } from '@console/app/api/v1/admin/[...path]/route'
 
 const CONSOLE = 'https://ctem.example.test:8443'
 
-function write(origin: string, site: string) {
+function write(
+  origin: string,
+  site: string,
+  cookie = 'console_csrf=t1; admin_session=s; admin_csrf=c1',
+  token = 'c1'
+) {
   const req = new NextRequest(`${CONSOLE}/api/v1/admin/tenants`, {
     method: 'POST',
     headers: {
       host: 'ctem.example.test:8443',
       origin,
       'sec-fetch-site': site,
-      cookie: 'csrf_token=t1; admin_session=s; admin_csrf=c1',
-      'x-csrf-token': 'c1',
+      cookie,
+      'x-csrf-token': token,
       'content-type': 'application/json',
     },
     body: '{}',
@@ -62,6 +67,18 @@ describe('console API proxy and the tenant origin', () => {
     const res = await write(CONSOLE, 'same-origin')
     expect(res.status).toBe(204)
     expect(String(fetchMock.mock.calls[0][0])).toBe('http://api-admin.test/api/v1/admin/tenants')
+  })
+
+  it('does not accept the tenant site csrf_token as the console pre-session pair', async () => {
+    // Sign-in step: no console session yet, only the tenant site's cookie.
+    const res = await write(CONSOLE, 'same-origin', 'csrf_token=tenant', 'tenant')
+    expect(res.status).toBe(403)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts the console_csrf pre-session pair', async () => {
+    const res = await write(CONSOLE, 'same-origin', 'console_csrf=pre', 'pre')
+    expect(res.status).toBe(204)
   })
 
   it('sends HSTS with every console response (host mode has no other source)', async () => {

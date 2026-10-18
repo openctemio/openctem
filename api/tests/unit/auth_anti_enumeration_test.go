@@ -109,7 +109,7 @@ func TestSAMLMetadata_ServedForAnyWellFormedSlug(t *testing.T) {
 func TestRegister_NewAndExistingEmailAnswerIdentically(t *testing.T) {
 	svc, deps := newTestAuthService()
 	sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
-	h := handler.NewLocalAuthHandler(svc, sess, nil, nil, deps.cfg, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, sess, nil, deps.cfg, logger.NewNop())
 
 	first := postJSON(t, h.Register, map[string]string{"email": "taken@example.com", "password": "Str0ngPassw0rd!", "name": "Same Name"})
 	if first.Code != http.StatusCreated {
@@ -155,7 +155,7 @@ func TestForgotPassword_UnknownAndKnownEmailAnswerIdentically(t *testing.T) {
 	forgot := func(seed bool, email string) *httptest.ResponseRecorder {
 		svc, deps := newTestAuthService()
 		sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
-		h := handler.NewLocalAuthHandler(svc, sess, nil, nil, deps.cfg, logger.NewNop())
+		h := handler.NewLocalAuthHandler(svc, sess, nil, deps.cfg, logger.NewNop())
 		if seed {
 			if rec := postJSON(t, h.Register, map[string]string{"email": email, "password": "Str0ngPassw0rd!", "name": "K"}); rec.Code != http.StatusCreated {
 				t.Fatalf("seed: %d", rec.Code)

@@ -103,7 +103,7 @@ func newWSUpgradeHarness(t *testing.T) *wsUpgradeHarness {
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{
 		// Registered so the test can show /auth/ws-token is gone.
-		LocalAuth: handler.NewLocalAuthHandler(nil, nil, nil, nil, cfg.Auth, log),
+		LocalAuth: handler.NewLocalAuthHandler(nil, nil, nil, cfg.Auth, log),
 		WebSocket: websocket.NewHandler(hub, log, []string{wsUIOrigin}, config.EnvProduction),
 	}, cfg, log, authCfg, tenantRepo, tenantapp.NewUserService(userRepo, log), nil, nil, nil)
 
