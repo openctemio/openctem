@@ -188,30 +188,17 @@ func mergeGlobalProduct(ctx context.Context, tx *sql.Tx, from, into string) ([]s
 	if !ok {
 		return nil, errors.New("merge: both products must be global")
 	}
-	for _, q := range []string{
-		`CREATE TEMP TABLE IF NOT EXISTS software_merge_map (old_id UUID PRIMARY KEY, new_id UUID NOT NULL) ON COMMIT DROP`,
-		`TRUNCATE software_merge_map`,
-	} {
-		if _, err := tx.ExecContext(ctx, q); err != nil {
-			return nil, fmt.Errorf("merge map: %w", err)
-		}
-	}
 	steps := []struct{ name, query string }{
-		// Versions equal to one of into's: links and findings move to it.
-		{"equal versions", `INSERT INTO software_merge_map (old_id, new_id)
-			SELECT v.id, w.id FROM software_versions v
-			JOIN software_versions w ON w.product_id = $2 AND w.scheme = v.scheme
-			 AND COALESCE(w.normalized, 'raw:' || w.raw) = COALESCE(v.normalized, 'raw:' || v.raw)
-			 AND w.qualifier = v.qualifier AND w.edition = v.edition
-			WHERE v.product_id = $1`},
-		{"duplicate links", `DELETE FROM asset_software a USING software_merge_map m
+		// Versions equal to one of into's (mergeVersionMap): links and
+		// findings move to it.
+		{"duplicate links", `DELETE FROM asset_software a USING `+mergeVersionMap+` m
 			WHERE a.software_version_id = m.old_id AND EXISTS (SELECT 1 FROM asset_software b
 			  WHERE b.tenant_id = a.tenant_id AND b.asset_id = a.asset_id AND b.location = a.location
 			    AND b.software_version_id = m.new_id)`},
 		{"links", `UPDATE asset_software a SET product_id = $2, software_version_id = m.new_id, updated_at = now()
-			FROM software_merge_map m WHERE a.software_version_id = m.old_id`},
-		{"findings", `UPDATE findings f SET component_id = m.new_id FROM software_merge_map m WHERE f.component_id = m.old_id`},
-		{"versions", `DELETE FROM software_versions WHERE id IN (SELECT old_id FROM software_merge_map)`},
+			FROM `+mergeVersionMap+` m WHERE a.software_version_id = m.old_id`},
+		{"findings", `UPDATE findings f SET component_id = m.new_id FROM `+mergeVersionMap+` m WHERE f.component_id = m.old_id`},
+		{"versions", `DELETE FROM software_versions WHERE id IN (SELECT old_id FROM `+mergeVersionMap+` m)`},
 		// The other versions move as they are.
 		{"versions", `UPDATE software_versions SET product_id = $2, matched_at = NULL WHERE product_id = $1`},
 		{"links", `UPDATE asset_software SET product_id = $2, updated_at = now() WHERE product_id = $1`},
@@ -256,6 +243,15 @@ func requeueCVEs(ctx context.Context, tx *sql.Tx, set map[string]bool) error {
 	}
 	return nil
 }
+
+// mergeVersionMap pairs each version of from ($1) with the equal version of
+// into ($2): same scheme, normalized (or raw) version, qualifier and
+// edition.
+const mergeVersionMap = `(SELECT v.id AS old_id, w.id AS new_id FROM software_versions v
+	JOIN software_versions w ON w.product_id = $2 AND w.scheme = v.scheme
+	 AND COALESCE(w.normalized, 'raw:' || w.raw) = COALESCE(v.normalized, 'raw:' || v.raw)
+	 AND w.qualifier = v.qualifier AND w.edition = v.edition
+	WHERE v.product_id = $1)`
 
 // mergeStep returns a merge step with only the parameters it names ($1
 // from, $2 into): PostgreSQL cannot type a parameter a statement does not
