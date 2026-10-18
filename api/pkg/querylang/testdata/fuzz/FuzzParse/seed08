@@ -1,0 +1,2 @@
+go test fuzz v1
+string("findings | count by severity | sort count desc, severity | limit 10")
