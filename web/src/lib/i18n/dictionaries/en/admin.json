@@ -1221,5 +1221,17 @@
   "admin.org.suspension.noticeTitle": "This organization is suspended",
   "admin.org.suspension.noticeBody": "Every credential is refused and scheduled work is skipped until the suspension is lifted.",
   "admin.org.suspension.reason": "Reason: {reason}",
-  "admin.org.suspension.since": "Suspended"
+  "admin.org.suspension.since": "Suspended",
+  "admin.nav.health": "Health",
+  "admin.health.description": "The health of this installation: services, storage, backup, certificates, version, work queues, sensors and background jobs. Read-only: backup, restore and upgrade run from the kit on the host.",
+  "admin.health.certsSchema": "Certificates, schema and version",
+  "admin.scanning.pageDesc": "Rules for the scans that run on the platform sensors and, when enabled, the shared sensor fleet.",
+  "admin.scanning.unavailable.title": "Shared sensors are not available in this release",
+  "admin.scanning.unavailable.body": "The fleet, queue, zones, egress addresses and alert thresholds of shared sensors appear here once the release enables them. The domain-proof policy below applies to the platform sensors today.",
+  "admin.scanning.tab.policy": "Policy",
+  "admin.scanning.tab.fleet": "Fleet",
+  "admin.scanning.tab.queue": "Queue",
+  "admin.scanning.tab.zones": "Zones",
+  "admin.scanning.tab.egress": "Egress",
+  "admin.scanning.tab.anomalies": "Anomalies"
 }
