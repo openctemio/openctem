@@ -66,12 +66,12 @@ function SignInBadges({ a }: { a: AdminUserRecord }) {
       )}
       {a.password_change_required && (
         <Badge variant="outline">
-          {t('admin.securityAdministratorsPage.temporaryPassword', 'Temporary password')}
+          {t('admin.securityAdministratorsPage.temporaryCredential', 'Temporary password')}
         </Badge>
       )}
       {!a.is_break_glass && !a.idp_bound && !a.password_change_required && (
         <span className="text-sm text-muted-foreground">
-          {t('admin.securityAdministratorsPage.password', 'Password')}
+          {t('admin.securityAdministratorsPage.credential', 'Password')}
         </span>
       )}
     </div>

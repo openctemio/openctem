@@ -27,6 +27,7 @@ func registerOpsMetrics(db *sql.DB, cfg *config.Config, log *logger.Logger) {
 	}, opsmetrics.Config{
 		ShippedSchemaVersion: shipped,
 		SDKLatestFunc:        versions.SDKLatest,
+		SDKMin:               versions.SDKMin(),
 		SDKAdvisories:        versions.SDKAdvisories(),
 	}, log)
 	// go_sql_* (db_name="openctem"): the API's connection pool, for the

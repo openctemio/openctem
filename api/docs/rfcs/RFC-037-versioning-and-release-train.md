@@ -8,7 +8,8 @@
 > embeds `versions.yaml`, and each sensor product has its own release line.
 > Sensor and SDK releases without a platform release (§12) are implemented:
 > the release feed carries the first-party component releases and a running
-> instance learns them.
+> instance learns them. Product-agnostic compatibility, the SDK minimum and
+> organizations' own products (§13) are implemented.
 > Scope: `openctemio/openctem` (api + web), `openctemio/sdk-go`,
 > `openctemio/sensor`, `openctemio/helm-charts`, `openctemio/docs`.
 >
@@ -437,9 +438,7 @@ Go code in `config.go` and the sensor handler.
   a running platform through the release feed (§12). A new *product* (its
   image, install snippets and signing identity) still comes with a platform
   release or the operator's `SENSOR_PRODUCTS_FILE`.
-- **Tenant-registered custom products.** A tenant names its own sensor
-  product with its own release line, scoped to that tenant, so its sensors get
-  update verdicts too.
+- **Tenant-registered custom products.** Built in §13.
 
 ## 12. Sensor and SDK releases without a platform release (2026-10-18)
 
@@ -528,3 +527,51 @@ The runtime path is inert until a release feed key is pinned
 ([version check](../architecture/version-check.md#setup-maintainers)).
 `RELEASE_TOKEN` is not needed for any of this.
 
+## 13. Product-agnostic compatibility and organizations' own products (2026-10-18)
+
+### 13.1 Problem
+
+Organizations will build their own sensors on sdk-go. A release of such a
+sensor must not need a platform change, and the platform cannot list every
+product. Until now a product the catalog did not list got no verdict except
+SDK advisories, and there was no way to say "this SDK is too old for this
+platform" (§11.2 removed the SDK floor).
+
+### 13.2 Design
+
+- **Compatibility from declarations.** The platform judges any sensor by what
+  it declares (protocol, SDK name and version, capabilities, tools) against
+  ranges it owns: the protocols it serves, `sdk.min` and `sdk.advisories`.
+  `sdk.min` is new in `versions.yaml` (empty today): a heartbeating sensor
+  built with an older sdk-go is degraded with the critical reason
+  `sdk_unsupported`, whatever its product. It is raised only when a protocol
+  change requires it. SDK checks apply only to sensors built with sdk-go (SDK
+  name `openctem-sdk-go`, or none); a sensor on another SDK is `unknown`.
+- **Freshness of an organization's product is the organization's data.**
+  Table `tenant_sensor_products` (migration `002908`): per organization and
+  product token, an optional latest and minimum release. Routes
+  `GET /api/v1/sensors/custom-products` (`sensors:read`) and
+  `PUT|DELETE /api/v1/sensors/custom-products/{product}` (`sensors:write`),
+  audited, at most 50 per organization. The sensor handler adds the
+  organization's lines to its health policy for products the catalog does not
+  list (a catalog line is never replaced), so its sensors get `latest`,
+  `update_available` and `unsupported` verdicts.
+- **No line, no freshness verdict.** A custom product without a recorded line
+  gets only the SDK and protocol verdicts (`version_status: unknown`).
+- **Rejected: an organization-published signed feed URL.** It would add an
+  outbound request per organization (SSRF surface, egress allow-lists, key
+  handling per organization, failure states) to save typing one version.
+  Revisit when organizations ask for it repeatedly.
+- The contract for sensor authors:
+  [sensor compatibility](../architecture/sensor-compatibility.md).
+
+### 13.3 Threat model
+
+| Threat | Control |
+|---|---|
+| A sensor declares hostile values | sanitized at ingest to bounded tokens and `vX.Y.Z` (existing); they select a release line and SDK verdict only, never authorization, grants, scope or dispatch |
+| An organization records a line for a first-party product (to hide "unsupported", or to confuse its users) | names starting with `openctemio-` are refused in the domain and by a database CHECK; products the platform catalog lists are refused by the service |
+| A sensor claims a first-party product name | the claim selects the line shown to its own organization only, as before (§11.3); proving first-party origin would need image attestation, out of scope |
+| Cross-organization read or write | the tenant comes from the token; every query carries `tenant_id`; a route test shows another organization's sensor of the same product name gets no verdict, its list is empty and its delete answers 404 |
+| Oversized or hostile input | token and version shapes in the domain and in CHECKs, 4 KiB body with unknown fields refused, 50 rows per organization |
+| Members change fleet settings | writes need `sensors:write` (owners and administrators); reads `sensors:read` |

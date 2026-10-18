@@ -139,7 +139,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                 {created.password && (
                   <>
                     <dt className="text-muted-foreground">
-                      {t('admin.createAdminDialog.temporaryPassword', 'Temporary password')}
+                      {t('admin.createAdminDialog.temporaryCredential', 'Temporary password')}
                     </dt>
                     <dd className="flex min-w-0 items-center gap-2">
                       <code className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all select-all">
@@ -150,7 +150,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                         size="icon"
                         variant="outline"
                         aria-label={t(
-                          'admin.createAdminDialog.copyTemporaryPassword',
+                          'admin.createAdminDialog.copyTemporaryCredential',
                           'Copy temporary password'
                         )}
                         onClick={async () => {

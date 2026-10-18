@@ -406,8 +406,22 @@ export function sensorHealthChecks(
   const sdk = sensorSdkVersion(sensor)
   const sdkStatus = sensorSdkStatus(sensor)
   const sdkReason = sensor.health_reasons?.find((r) => r.code === 'sdk_advisory')
+  const sdkUnsupported = sensor.health_reasons?.some((r) => r.code === 'sdk_unsupported')
   const sdkName = sdk ?? msg(tr, 'sensors.checks.sdk.the', 'The SDK')
-  if (sdkStatus === 'advisory' || sdkReason) {
+  if (sdkStatus === 'unsupported' || sdkUnsupported) {
+    checks.push({
+      key: 'sdk',
+      label: L.sdk,
+      status: 'critical',
+      text: msg(
+        tr,
+        'sensors.checks.sdk.unsupported',
+        '{sdk} is older than the oldest SDK this platform supports. Rebuild the sensor with a newer sdk-go.',
+        { sdk: sdkName }
+      ),
+      action: 'install',
+    })
+  } else if (sdkStatus === 'advisory' || sdkReason) {
     checks.push({
       key: 'sdk',
       label: L.sdk,

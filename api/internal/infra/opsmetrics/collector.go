@@ -37,6 +37,8 @@ type Config struct {
 	// follows the release feed at runtime).
 	SDKLatest     string
 	SDKLatestFunc func() string
+	// SDKMin is sdk.min ("" = no floor).
+	SDKMin        string
 	SDKAdvisories []string
 	// MaxAge is how long a snapshot is reused before the next scrape reads
 	// a new one (default 30s), and Timeout bounds one read (default 5s).
@@ -190,7 +192,7 @@ func (c *Collector) collectSensors(ch chan<- prometheus.Metric, rows []postgres.
 		if r.ConfigHealth != "" {
 			config[key{kind, configHealthLabel(r.ConfigHealth)}] += r.Count
 		}
-		sdk[key{kind, string(sensor.ClassifySDK(r.SDKVersion, sdkLatest, c.cfg.SDKAdvisories))}] += r.Count
+		sdk[key{kind, string(sensor.ClassifySDK(r.SDKVersion, sdkLatest, c.cfg.SDKMin, c.cfg.SDKAdvisories))}] += r.Count
 	}
 	for k, n := range health {
 		ch <- prometheus.MustNewConstMetric(descSensors, prometheus.GaugeValue, float64(n), k.kind, k.value)
