@@ -1656,7 +1656,7 @@
   "scans.failure.NO_COMPATIBLE_TARGETS.text": "Không có đích nào phù hợp với trình quét của lượt quét.",
   "scans.failure.NO_COMPATIBLE_TARGETS.fix": "Chọn trình quét phù hợp với các đích này (dải mạng chỉ dùng cho quét cổng và tìm máy hoạt động), hoặc sửa đích trong Sửa.",
   "scans.failure.TIER_EXCEEDS.text": "Mục phạm vi bao các đích cho phép mức thấp hơn mức trình quét này dò.",
-  "scans.failure.TIER_EXCEEDS.fix": "Nâng mức của mục trong Phạm vi > Đích, hoặc dùng trình quét ít xâm nhập hơn.",
+  "scans.failure.TIER_EXCEEDS.fix": "Nâng mức của mục trong Phạm vi > Phạm vi, hoặc dùng trình quét ít xâm nhập hơn.",
   "scans.failure.INTERNAL_TARGET_OUTSIDE_ZONES.text": "Địa chỉ nội bộ nằm ngoài mọi vùng quét.",
   "scans.failure.INTERNAL_TARGET_OUTSIDE_ZONES.fix": "Thêm các dải vào một vùng quét trong Cài đặt > Vùng quét.",
   "scans.failure.NO_RESOLVING_TARGETS.text": "Gần đây không có tên đích nào phân giải được.",

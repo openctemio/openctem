@@ -1,0 +1,2 @@
+go test fuzz v1
+string("findings where severity = critical; SELECT pg_sleep(10)")

@@ -1,6 +1,6 @@
 # RFC-021 — Customizable dashboards (widgets)
 
-- Status: **Phase 1 implemented** — `/api/v1/me/dashboards` CRUD + set-default, the widget registry and starter templates (`web/src/features/dashboards`); per-widget config (rest of Phase 2), tenant-published templates (Phase 3) and the custom-query widget (Phase 4) not built.
+- Status: **Phase 1 implemented; ownership model (§11) implemented** — `/api/v1/me/dashboards` CRUD + set-default, the widget registry and starter templates (`web/src/features/dashboards`); organization and personal dashboards, audience, refresh schedule fields and `dashboards:org:view` / `dashboards:org:manage` (§11, [architecture](../architecture/dashboards.md)). Stored snapshots and the refresher, the grouped switcher, per-widget config schemas and the custom-query widget are not built.
 - Area: UI dashboards + a small per-user persistence surface in `api`.
 - Related: the existing CTEM/Classic dashboards (`web/src/features/dashboard`), the per-user notification/preferences pattern, RFC-017 (CTEM prioritization surfacing — the signals widgets show), and the "custom field query" idea (a future widget data-source — see §7).
 
@@ -194,3 +194,33 @@ reorder + fixed sizes still delivers the core value.
 1. One default dashboard per user, or per-role starter templates seeded on first login?
 2. Do we replace the CTEM/Classic toggle with "saved dashboards" outright, or keep them as built-in, non-deletable entries in the switcher? (Proposed: keep as built-ins.)
 3. Grid: free resize vs reorder-only for Phase 1 (bundle-size tradeoff).
+
+## 11. Amendment: organization and personal dashboards
+
+Phase 3's "tenant template an admin can publish" is replaced by two kinds of
+dashboards on the same model ([architecture](../architecture/dashboards.md)):
+
+- **Organization** dashboards belong to the organization: organization-wide
+  numbers, one stored result per dashboard, seen by holders of
+  `dashboards:org:view` (optionally narrowed to roles or teams), changed only by
+  holders of `dashboards:org:manage`, several per organization with an order and
+  a default, every change audited.
+- **Personal** dashboards belong to one person and show that person's own data
+  scope (up to 30 each). Sharing one sends a copy of the layout; the recipient's
+  copy shows the recipient's own scope. "Duplicate to mine" copies an
+  organization dashboard's layout the same way.
+- `dashboards:org:view` replaces `dashboard:aggregate` for every holder. It
+  shows names in organization list widgets, which the old permission did not,
+  so it counts as full-data grade (second factor for outside members, team
+  bindings owner-only), and the migration is audited and announced to owners
+  and administrators.
+- Every dashboard has a refresh schedule (manual, 5 min, 15 min, 1 h, 6 h,
+  daily) defaulting to the organization default and never below the
+  organization's refresh floor (the limit `dashboard_refresh_floor_minutes`,
+  5 minutes when unset). Opening a dashboard reads a stored result; nothing is
+  computed live (refresher still to be built).
+- Organization dashboards are org-wide only; dashboards scoped to an asset group
+  wait for a real need.
+
+This answers open question 1 (one default per person, plus one organization
+default for organization viewers).
