@@ -43,13 +43,13 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
-const CLASS_LABEL: Record<AuditChainClass, string> = {
-  verifies: 'Verifies',
-  legacy_truncate: 'Legacy timestamp truncation',
-  pre_79_nanosecond: 'Pre-#79 nanosecond hash',
-  unexplained: 'Unexplained',
-  source_missing: 'Audit log missing',
-  link_broken: 'Broken link',
+const CLASS_KEY: Record<AuditChainClass, string> = {
+  verifies: 'admin.auditChain.class.verifies',
+  legacy_truncate: 'admin.auditChain.class.legacyTruncate',
+  pre_79_nanosecond: 'admin.auditChain.class.pre79Nanosecond',
+  unexplained: 'admin.auditChain.class.unexplained',
+  source_missing: 'admin.auditChain.class.sourceMissing',
+  link_broken: 'admin.auditChain.class.linkBroken',
 }
 
 const BLOCKING: ReadonlySet<AuditChainClass> = new Set([
@@ -59,6 +59,7 @@ const BLOCKING: ReadonlySet<AuditChainClass> = new Set([
 ])
 
 function ClassBadge({ value }: { value?: AuditChainClass }) {
+  const { t } = useTranslation()
   if (!value) return null
   const blocking = BLOCKING.has(value)
   return (
@@ -71,7 +72,7 @@ function ClassBadge({ value }: { value?: AuditChainClass }) {
           : 'text-muted-foreground'
       )}
     >
-      {CLASS_LABEL[value] ?? value}
+      {CLASS_KEY[value] ? t(CLASS_KEY[value]) : value}
     </Badge>
   )
 }
@@ -124,11 +125,22 @@ export function OrganizationAuditChainPanel({
       })
       setResult(res)
       setConfirmOpen(false)
-      toast.success(`Audit chain rebaselined: ${res.entries_rewritten ?? 0} entries re-signed`)
+      toast.success(
+        t(
+          'admin.organizationAuditChainPanel.rebaselinedToast',
+          'Audit chain rebaselined: {count} entries re-signed',
+          { count: res.entries_rewritten ?? 0 }
+        )
+      )
       void mutate()
     } catch (e) {
       if (!(e instanceof AdminApiError)) {
-        toast.error('Could not rebaseline the audit chain')
+        toast.error(
+          t(
+            'admin.organizationAuditChainPanel.couldNotRebaselineTheAudit',
+            'Could not rebaseline the audit chain'
+          )
+        )
         return
       }
       if (e.status === 401) {
@@ -156,7 +168,13 @@ export function OrganizationAuditChainPanel({
   }
 
   if (error) {
-    return <ErrorState title="the audit chain" error={error} onRetry={recheck} />
+    return (
+      <ErrorState
+        title={t('admin.organizationAuditChainPanel.theAuditChain', 'the audit chain')}
+        error={error}
+        onRetry={recheck}
+      />
+    )
   }
 
   const counts = data?.counts ?? {}
@@ -178,11 +196,14 @@ export function OrganizationAuditChainPanel({
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
           <div className="space-y-1.5">
-            <CardTitle>Audit chain</CardTitle>
+            <CardTitle>
+              {t('admin.organizationAuditChainPanel.auditChain', 'Audit chain')}
+            </CardTitle>
             <CardDescription>
-              Every audit log entry is hash-chained to the one before it, so an edited or deleted
-              entry shows up as a break. Each break is checked against the known timestamp-hashing
-              defects; anything they do not explain could be tampering.
+              {t(
+                'admin.organizationAuditChainPanel.everyAuditLogEntryIs',
+                'Every audit log entry is hash-chained to the one before it, so an edited or deleted entry shows up as a break. Each break is checked against the known timestamp-hashing defects; anything they do not explain could be tampering.'
+              )}
             </CardDescription>
           </div>
           <Button
@@ -193,7 +214,7 @@ export function OrganizationAuditChainPanel({
             className="shrink-0"
           >
             <RefreshCw className={cn('me-1.5 size-4', isValidating && 'animate-spin')} />
-            Re-check
+            {t('admin.organizationAuditChainPanel.recheck', 'Re-check')}
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -208,27 +229,61 @@ export function OrganizationAuditChainPanel({
                 <DetailCallout
                   tone="destructive"
                   icon={ShieldAlert}
-                  title={`${blocking} ${blocking === 1 ? 'break' : 'breaks'} no known defect explains`}
+                  title={
+                    blocking === 1
+                      ? t(
+                          'admin.organizationAuditChainPanel.unexplainedBreakOne',
+                          '{count} break no known defect explains',
+                          { count: blocking }
+                        )
+                      : t(
+                          'admin.organizationAuditChainPanel.unexplainedBreakMany',
+                          '{count} breaks no known defect explains',
+                          { count: blocking }
+                        )
+                  }
                 >
-                  Do not rebaseline: it would erase the difference between a hashing defect and
-                  tampering. Investigate the entries below first.
+                  {t(
+                    'admin.organizationAuditChainPanel.doNotRebaselineItWould',
+                    'Do not rebaseline: it would erase the difference between a hashing defect and tampering. Investigate the entries below first.'
+                  )}
                 </DetailCallout>
               ) : breaks > 0 ? (
                 <DetailCallout
                   tone="warning"
                   icon={AlertTriangle}
-                  title={`${breaks} ${breaks === 1 ? 'break' : 'breaks'}, all explained by a known hashing defect`}
+                  title={
+                    breaks === 1
+                      ? t(
+                          'admin.organizationAuditChainPanel.explainedBreakOne',
+                          '{count} break, all explained by a known hashing defect',
+                          { count: breaks }
+                        )
+                      : t(
+                          'admin.organizationAuditChainPanel.explainedBreakMany',
+                          '{count} breaks, all explained by a known hashing defect',
+                          { count: breaks }
+                        )
+                  }
                 >
-                  They were left by the old timestamp-precision bug, not by an edit. Until the chain
-                  is rebaselined they hide any new break from verification.
+                  {t(
+                    'admin.organizationAuditChainPanel.theyWereLeftByThe',
+                    'They were left by the old timestamp-precision bug, not by an edit. Until the chain is rebaselined they hide any new break from verification.'
+                  )}
                 </DetailCallout>
               ) : null}
 
               <DetailStatGrid>
-                <DetailStat label="Entries" value={total} />
-                <DetailStat label="Verify" value={counts.verifies ?? 0} />
                 <DetailStat
-                  label="Explained breaks"
+                  label={t('admin.organizationAuditChainPanel.entries', 'Entries')}
+                  value={total}
+                />
+                <DetailStat
+                  label={t('admin.organizationAuditChainPanel.verify', 'Verify')}
+                  value={counts.verifies ?? 0}
+                />
+                <DetailStat
+                  label={t('admin.organizationAuditChainPanel.explainedBreaks', 'Explained breaks')}
                   value={explained}
                   caption={
                     explained > 0
@@ -237,28 +292,42 @@ export function OrganizationAuditChainPanel({
                   }
                 />
                 <DetailStat
-                  label="Unexplained"
+                  label={t('admin.organizationAuditChainPanel.unexplained', 'Unexplained')}
                   value={blocking}
                   tone={blocking > 0 ? 'destructive' : 'default'}
                 />
               </DetailStatGrid>
 
               <p className="text-xs text-muted-foreground">
-                Checked <RelativeTime date={data.classified_at} className="text-xs" />
+                {t('admin.organizationAuditChainPanel.checked', 'Checked')}{' '}
+                <RelativeTime date={data.classified_at} className="text-xs" />
               </p>
 
               {samples.length > 0 && (
                 <section className="space-y-2">
-                  <h3 className="text-sm font-semibold">Entries that do not verify</h3>
+                  <h3 className="text-sm font-semibold">
+                    {t(
+                      'admin.organizationAuditChainPanel.entriesThatDoNotVerify',
+                      'Entries that do not verify'
+                    )}
+                  </h3>
                   <div className="overflow-x-auto rounded-lg border">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-24">Position</TableHead>
-                          <TableHead>Why</TableHead>
-                          <TableHead>Action</TableHead>
-                          <TableHead>Logged</TableHead>
-                          <TableHead>Audit log</TableHead>
+                          <TableHead className="w-24">
+                            {t('admin.organizationAuditChainPanel.position', 'Position')}
+                          </TableHead>
+                          <TableHead>{t('admin.organizationAuditChainPanel.why', 'Why')}</TableHead>
+                          <TableHead>
+                            {t('admin.organizationAuditChainPanel.action', 'Action')}
+                          </TableHead>
+                          <TableHead>
+                            {t('admin.organizationAuditChainPanel.logged', 'Logged')}
+                          </TableHead>
+                          <TableHead>
+                            {t('admin.organizationAuditChainPanel.auditLog', 'Audit log')}
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -274,7 +343,13 @@ export function OrganizationAuditChainPanel({
                             </TableCell>
                             <TableCell>
                               {s.audit_log_id && (
-                                <DetailCopyId id={s.audit_log_id} label="Audit log ID" />
+                                <DetailCopyId
+                                  id={s.audit_log_id}
+                                  label={t(
+                                    'admin.organizationAuditChainPanel.auditLogId',
+                                    'Audit log ID'
+                                  )}
+                                />
                               )}
                             </TableCell>
                           </TableRow>
@@ -284,7 +359,10 @@ export function OrganizationAuditChainPanel({
                   </div>
                   {samples.length < breaks && (
                     <p className="text-xs text-muted-foreground">
-                      Showing every unexplained entry and a few examples of each explained kind.
+                      {t(
+                        'admin.organizationAuditChainPanel.showingEveryUnexplainedEntryAnd',
+                        'Showing every unexplained entry and a few examples of each explained kind.'
+                      )}
                     </p>
                   )}
                 </section>
@@ -298,26 +376,62 @@ export function OrganizationAuditChainPanel({
         <DetailCallout
           tone="info"
           icon={CheckCircle2}
-          title={`Rebaselined: ${result.entries_rewritten ?? 0} of ${result.entries_total ?? 0} entries re-signed`}
-          label="Rebaseline result"
+          title={t(
+            'admin.organizationAuditChainPanel.rebaselinedResult',
+            'Rebaselined: {done} of {total} entries re-signed',
+            {
+              done: result.entries_rewritten ?? 0,
+              total: result.entries_total ?? 0,
+            }
+          )}
+          label={t('admin.organizationAuditChainPanel.rebaselineResult', 'Rebaseline result')}
         >
           {result.verify
             ? result.verify.ok
-              ? `Verification now passes: ${result.verify.verified ?? 0} of ${result.verify.total ?? 0} entries, 0 breaks.`
-              : `Verification still reports ${result.verify.breaks ?? 0} breaks. Re-check the chain.`
-            : 'Re-check the chain to confirm it verifies.'}{' '}
-          The previous hashes are archived under rebaseline{' '}
-          {result.rebaseline_id && <DetailCopyId id={result.rebaseline_id} label="Rebaseline ID" />}
+              ? t(
+                  'admin.organizationAuditChainPanel.verifyPasses',
+                  'Verification now passes: {verified} of {total} entries, 0 breaks.',
+                  {
+                    verified: result.verify.verified ?? 0,
+                    total: result.verify.total ?? 0,
+                  }
+                )
+              : t(
+                  'admin.organizationAuditChainPanel.verifyStillBreaks',
+                  'Verification still reports {count} breaks. Re-check the chain.',
+                  {
+                    count: result.verify.breaks ?? 0,
+                  }
+                )
+            : t(
+                'admin.organizationAuditChainPanel.reCheckTheChainTo',
+                'Re-check the chain to confirm it verifies.'
+              )}{' '}
+          {t(
+            'admin.organizationAuditChainPanel.thePreviousHashesAreArchived',
+            'The previous hashes are archived under the rebaseline ID.'
+          )}{' '}
+          {result.rebaseline_id && (
+            <DetailCopyId
+              id={result.rebaseline_id}
+              label={t('admin.organizationAuditChainPanel.rebaselineId', 'Rebaseline ID')}
+            />
+          )}
         </DetailCallout>
       )}
 
       <DangerZone>
         <DangerZoneItem
-          title="Rebaseline audit chain"
+          title={t(
+            'admin.organizationAuditChainPanel.rebaselineAuditChain',
+            'Rebaseline audit chain'
+          )}
           description={
             <>
-              Re-signs every entry from the current audit log, so the explained breaks stop hiding
-              new ones. It cannot be undone; the old hashes are archived.
+              {t(
+                'admin.organizationAuditChainPanel.reSignsEveryEntryFrom',
+                'Re-signs every entry from the current audit log, so the explained breaks stop hiding new ones. It cannot be undone; the old hashes are archived.'
+              )}
               {disabledReason && <span className="mt-1 block">{disabledReason}</span>}
             </>
           }
@@ -328,7 +442,7 @@ export function OrganizationAuditChainPanel({
               disabled={!canRun || busy}
               onClick={openConfirm}
             >
-              Rebaseline
+              {t('admin.organizationAuditChainPanel.rebaseline', 'Rebaseline')}
             </Button>
           }
         />
@@ -396,7 +510,10 @@ export function OrganizationAuditChainPanel({
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              A new code: the one you signed in with cannot be used again.
+              {t(
+                'admin.organizationAuditChainPanel.aNewCodeTheOne',
+                'A new code: the one you signed in with cannot be used again.'
+              )}
             </p>
           )}
         </div>

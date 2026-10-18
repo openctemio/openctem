@@ -131,7 +131,11 @@ export default function AdminSessionsPage() {
         {!isSuper ? (
           <RoleRequiredNotice needed="super_admin" variant="page" />
         ) : error ? (
-          <ErrorState title="sessions" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.securitySessionsPage.sessions', 'sessions')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : (
           <DataTable
             columns={columns}
