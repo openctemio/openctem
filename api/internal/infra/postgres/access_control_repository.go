@@ -2613,19 +2613,14 @@ func (r *AccessControlRepository) ValidateAssetGroupsBelongToTenant(ctx context.
 		return nil
 	}
 
-	// Build parameterized IN clause
-	placeholders := make([]string, len(assetGroupIDs))
-	args := make([]interface{}, 0, len(assetGroupIDs)+1)
-	args = append(args, tenantID.String())
+	// One array parameter: an IN list of one parameter per id failed past
+	// the bind-parameter limit.
+	idStrs := make([]string, len(assetGroupIDs))
 	for i, id := range assetGroupIDs {
-		placeholders[i] = fmt.Sprintf("$%d", i+2)
-		args = append(args, id.String())
+		idStrs[i] = id.String()
 	}
-
-	query := fmt.Sprintf(`
-		SELECT COUNT(*) FROM asset_groups
-		WHERE tenant_id = $1 AND id IN (%s)
-	`, strings.Join(placeholders, ","))
+	query := `SELECT COUNT(*) FROM asset_groups WHERE tenant_id = $1 AND id = ANY($2::uuid[])`
+	args := []any{tenantID.String(), pq.Array(idStrs)}
 
 	var count int
 	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {

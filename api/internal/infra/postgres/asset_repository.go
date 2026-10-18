@@ -33,7 +33,7 @@ const providerUnsetSentinel = "unset"
 
 // AssetRepository implements asset.Repository using PostgreSQL.
 type AssetRepository struct {
-	db         *DB
+	db          *DB
 	limitChecks // assets: Create and the new rows of UpsertBatch (ingest)
 }
 
@@ -1988,7 +1988,8 @@ func (r *AssetRepository) renameExistingTx(ctx context.Context, tx *sql.Tx, asse
 	return nil
 }
 
-// upsertBatchMultiRow upserts the whole batch in a single multi-row INSERT.
+// upsertBatchMultiRow upserts the whole batch in one transaction, one
+// multi-row INSERT per chunk that fits in a statement.
 func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -2004,46 +2005,18 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 		return 0, 0, nil, renameErr
 	}
 
-	args := make([]any, 0, len(assets)*assetUpsertColumnCount)
-	for _, a := range assets {
-		rowArgs, argErr := assetUpsertArgs(a)
-		if argErr != nil {
-			return 0, 0, nil, argErr
-		}
-		args = append(args, rowArgs...)
-	}
-
-	query := assetUpsertColumnsSQL() + "\nVALUES " + assetValuesPlaceholders(len(assets)) + "\n" + assetUpsertConflictSQL()
-
+	// One statement per chunk, all in this transaction: 37 parameters per
+	// asset stop fitting in one statement at 1772 assets.
 	persistedIDs = make(map[string]shared.ID, len(assets))
-	rows, qErr := tx.QueryContext(ctx, query, args...)
-	if qErr != nil {
-		err = fmt.Errorf("failed to batch upsert assets: %w", qErr)
+	err = forEachStatementChunk(len(assets), assetUpsertColumnCount, 0, 0, func(start, end int) error {
+		c, u, chunkErr := upsertAssetChunkTx(ctx, tx, assets[start:end], persistedIDs)
+		created += c
+		updated += u
+		return chunkErr
+	})
+	if err != nil {
 		return 0, 0, nil, err
 	}
-	for rows.Next() {
-		var idStr, name string
-		var inserted bool
-		if scanErr := rows.Scan(&idStr, &name, &inserted); scanErr != nil {
-			_ = rows.Close()
-			err = fmt.Errorf("failed to scan upsert result: %w", scanErr)
-			return 0, 0, nil, err
-		}
-		if id, idErr := shared.IDFromString(idStr); idErr == nil {
-			persistedIDs[name] = id
-		}
-		if inserted {
-			created++
-		} else {
-			updated++
-		}
-	}
-	if rowsErr := rows.Err(); rowsErr != nil {
-		_ = rows.Close()
-		err = fmt.Errorf("error iterating upsert results: %w", rowsErr)
-		return 0, 0, nil, err
-	}
-	_ = rows.Close()
 
 	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
 		return 0, 0, nil, err
@@ -2065,6 +2038,44 @@ func isRowDataError(err error) bool {
 	}
 	class := pqErr.Code.Class()
 	return class == "22" || class == "23"
+}
+
+// upsertAssetChunkTx runs the multi-row upsert for one chunk that fits in a
+// statement and records the id each row holds in persistedIDs.
+func upsertAssetChunkTx(ctx context.Context, tx *sql.Tx, chunk []*asset.Asset, persistedIDs map[string]shared.ID) (created, updated int, err error) {
+	args := make([]any, 0, len(chunk)*assetUpsertColumnCount)
+	for _, a := range chunk {
+		rowArgs, argErr := assetUpsertArgs(a)
+		if argErr != nil {
+			return 0, 0, argErr
+		}
+		args = append(args, rowArgs...)
+	}
+	query := assetUpsertColumnsSQL() + "\nVALUES " + assetValuesPlaceholders(len(chunk)) + "\n" + assetUpsertConflictSQL()
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to batch upsert assets: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var idStr, name string
+		var inserted bool
+		if err := rows.Scan(&idStr, &name, &inserted); err != nil {
+			return 0, 0, fmt.Errorf("failed to scan upsert result: %w", err)
+		}
+		if id, idErr := shared.IDFromString(idStr); idErr == nil {
+			persistedIDs[name] = id
+		}
+		if inserted {
+			created++
+		} else {
+			updated++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, fmt.Errorf("error iterating upsert results: %w", err)
+	}
+	return created, updated, nil
 }
 
 // upsertBatchPerRow is the fallback: upsert each asset individually so a chunk
