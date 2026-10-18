@@ -1284,5 +1284,6 @@
   "admin.catalog.ackSecrets": "Tôi đã kiểm tra nội dung: mọi thứ trông giống bí mật trong đó chỉ là giá trị mẫu hoặc được phép chia sẻ.",
   "admin.catalog.revokeTitle": "Thu hồi {id} {version}?",
   "admin.catalog.revokeDesc": "Bản cài đặt phiên bản này của mọi tổ chức sẽ bị thu hồi và ngừng được gửi tới sensor của họ. Không thể hoàn tác.",
-  "admin.catalog.revoked": "Đã thu hồi phiên bản"
+  "admin.catalog.revoked": "Đã thu hồi phiên bản",
+  "admin.users.badge.active": "Đang hoạt động"
 }
