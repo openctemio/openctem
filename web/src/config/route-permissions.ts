@@ -599,14 +599,27 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  // The organization's own sensor products (latest and minimum release);
+  // saving needs sensors:write (checked by the page and the API).
+  '/settings/scanning/sensor-products': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
+  // The sensor scan-job part of the security settings: read like
+  // Authentication (team:update), changed by the owner only (the API).
+  '/settings/scanning/sensor-safety': {
+    permission: Permission.TeamUpdate,
+    module: Module.Sensors,
+    message: 'You need admin privileges to access sensor job settings.',
+  },
 
   // ========================================
   // Settings - Organization (Core feature, no module required)
   // Team management is always available, controlled by RBAC only
   // ========================================
-  // Organization › General and Access › Authentication (both were tabs of
-  // /settings/tenant). Viewing needs team:update; saving the security
-  // settings is owner-only in the API and the page.
+  // Organization › General and Security › Authentication. Viewing needs
+  // team:update; saving the security settings is owner-only in the API and
+  // the page.
   '/settings/general': {
     permission: Permission.TeamUpdate,
     message: 'You need admin privileges to access organization settings.',

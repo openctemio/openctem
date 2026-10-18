@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Settings › Policies › Scan windows: the organization's policies (kind,
+ * Settings › Scanning › Scan windows: the organization's policies (kind,
  * targets, schedule in its time zone, tier, whether it is open or blocking
  * now) and its overrides. Writes need scans:windows:manage; the API is the
  * authority, the panel only disables what the caller cannot do.

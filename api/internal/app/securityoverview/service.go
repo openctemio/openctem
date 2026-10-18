@@ -177,10 +177,15 @@ func Evaluate(sec *tenant.SecuritySettings, c *Counts, now time.Time) *Overview 
 	add := func(id, group string, st Status, count *int, link string) {
 		checks = append(checks, Check{ID: id, Group: group, Status: st, Count: count, Link: link})
 	}
+	// Each link opens the page at the setting (the web settings anchors).
 	const (
-		linkAuth    = "/settings/authentication"
-		linkMembers = "/settings/members"
-		linkKeys    = "/settings/api-keys"
+		linkTwoFactor     = "/settings/authentication#two-factor"
+		linkEmailVerify   = "/settings/authentication#email-verification"
+		linkIPAllowlist   = "/settings/authentication#ip-allowlist"
+		linkSensorOptIns  = "/settings/scanning/sensor-safety#opt-ins"
+		linkPrivateTarget = "/settings/scanning/sensor-safety#private-targets"
+		linkMembers       = "/settings/members"
+		linkKeys          = "/settings/api-keys"
 	)
 
 	if sec != nil {
@@ -188,7 +193,7 @@ func Evaluate(sec *tenant.SecuritySettings, c *Counts, now time.Time) *Overview 
 		if sec.MFARequired || sec.MFARequiredForAdmins {
 			st = StatusPass
 		}
-		add(CheckMFAAdminsRequired, GroupSignIn, st, nil, linkAuth)
+		add(CheckMFAAdminsRequired, GroupSignIn, st, nil, linkTwoFactor)
 	}
 	if c != nil {
 		add(CheckAdminsWithoutMFA, GroupSignIn, countStatus(c.AdminsWithoutMFA, StatusRisk), intp(c.AdminsWithoutMFA), linkMembers)
@@ -198,12 +203,12 @@ func Evaluate(sec *tenant.SecuritySettings, c *Counts, now time.Time) *Overview 
 		if sec.EmailVerificationMode == tenant.EmailVerificationNever {
 			st = StatusWarn
 		}
-		add(CheckEmailVerification, GroupSignIn, st, nil, linkAuth)
+		add(CheckEmailVerification, GroupSignIn, st, nil, linkEmailVerify)
 		st = StatusInfo
 		if len(sec.IPWhitelist) > 0 {
 			st = StatusPass
 		}
-		add(CheckIPAllowlist, GroupSignIn, st, nil, linkAuth)
+		add(CheckIPAllowlist, GroupSignIn, st, nil, linkIPAllowlist)
 	}
 	if c != nil {
 		add(CheckDormantMembers, GroupPeople, countStatus(c.DormantMembers, StatusWarn), intp(c.DormantMembers), linkMembers)
@@ -221,12 +226,12 @@ func Evaluate(sec *tenant.SecuritySettings, c *Counts, now time.Time) *Overview 
 		if sec.AllowSensorInteractsh || sec.AllowSensorCustomTemplates {
 			st = StatusWarn
 		}
-		add(CheckSensorOptIns, GroupScanning, st, nil, linkAuth)
+		add(CheckSensorOptIns, GroupScanning, st, nil, linkSensorOptIns)
 		st = StatusPass
 		if !sec.RequireSensorLocalPolicyForPrivateTargets {
 			st = StatusInfo
 		}
-		add(CheckPrivateTargetRule, GroupScanning, st, nil, linkAuth)
+		add(CheckPrivateTargetRule, GroupScanning, st, nil, linkPrivateTarget)
 	}
 	if c != nil {
 		st := StatusInfo
