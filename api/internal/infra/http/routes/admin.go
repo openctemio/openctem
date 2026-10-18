@@ -379,6 +379,9 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// Settings moved from the environment into the console (RFC-079).
+	registerAdminPlatformSettingsRoutes(router, h, adminMiddlewares, stepUp, freshStepUp)
+
 	// Legal information (Console > System > Legal, RFC-079): any admin reads;
 	// a super admin changes it with a fresh authenticator code.
 	if h.AdminLegal != nil {
