@@ -205,15 +205,13 @@ func kFloor(m map[string]int) map[string]int {
 // withFindingViewer records, from the authenticated principal, who reads the
 // findings behind the dashboard numbers, so the repository ANDs the findings
 // list's pentest member-visibility rule for everyone who is not an
-// administrator. An API key without a user is a viewer with no campaign
-// membership. A context with neither a user nor an API key is an internal
-// call and carries no viewer.
+// administrator. The dashboards are only ever read on behalf of a caller, so
+// it fails closed: an API key without a user, a context with no caller, or an
+// unwired enforcer is a viewer with no campaign membership (the zero id),
+// never an unfiltered read.
 func (s *DashboardService) withFindingViewer(ctx context.Context) context.Context {
 	c := s.dataScope.CallerOf(ctx)
-	if c.UserID == "" && !c.APIKey {
-		return ctx
-	}
-	// An unparseable user id is the zero id: a member of no campaign.
+	// An empty or unparseable user id is the zero id: a member of no campaign.
 	uid, _ := shared.IDFromString(c.UserID)
 	return shared.WithFindingViewer(ctx, shared.FindingViewer{UserID: uid, Admin: c.IsAdmin && !c.APIKey})
 }
