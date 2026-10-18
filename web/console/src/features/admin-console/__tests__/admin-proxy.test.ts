@@ -164,4 +164,20 @@ describe('admin API proxy', () => {
       expect(sent().get('x-forwarded-for')).toBe('203.0.113.7')
     })
   })
+
+  it('forwards the background-read marker so the API can leave the idle clock alone', async () => {
+    await call(GET, 'GET', ['overview'], { 'x-admin-background': '1' })
+    expect((fetchMock.mock.calls[0][1].headers as Headers).get('x-admin-background')).toBe('1')
+  })
+
+  it('does not tell the browser why the API could not be reached', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fetchMock.mockRejectedValueOnce(new Error('connect ECONNREFUSED 10.1.2.3:8081'))
+    const res = await call(GET, 'GET', ['overview'])
+    expect(res.status).toBe(502)
+    const body = await res.text()
+    expect(body).not.toContain('10.1.2.3')
+    expect(body).not.toContain('ECONNREFUSED')
+    spy.mockRestore()
+  })
 })
