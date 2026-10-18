@@ -190,3 +190,65 @@ describe('SoftwareUpdatesPanel', () => {
     expect(importReleaseFeed).not.toHaveBeenCalled()
   })
 })
+
+describe('SoftwareUpdatesPanel components', () => {
+  it('lists the sensor and SDK releases the feed teaches, linking only our pages', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({
+          components: [
+            {
+              component: 'sensor',
+              version: 'v0.23.2',
+              published_at: '2026-10-15T10:00:00Z',
+              notes_url: 'https://github.com/openctemio/sensor/releases/tag/v0.23.2',
+            },
+            {
+              component: 'sdk',
+              version: 'v0.34.0',
+              published_at: '2026-10-15T10:00:00Z',
+              notes_url: 'https://example.com/x',
+            },
+            { component: 'connector-new', version: 'v1.0.0', published_at: '2026-10-15T10:00:00Z' },
+          ],
+        })}
+        canImport={false}
+        onChanged={() => {}}
+      />
+    )
+    expect(screen.getByText('Scanning sensor')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'v0.23.2' })).toHaveAttribute(
+      'href',
+      'https://github.com/openctemio/sensor/releases/tag/v0.23.2'
+    )
+    // A link to another host is shown as plain text.
+    expect(screen.queryByRole('link', { name: 'v0.34.0' })).toBeNull()
+    expect(screen.getByText('v0.34.0')).toBeInTheDocument()
+    // A component the console does not know shows its id.
+    expect(screen.getByText('connector-new')).toBeInTheDocument()
+  })
+
+  it('says the built-in versions apply when the feed lists none', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({ components: [] })}
+        canImport={false}
+        onChanged={() => {}}
+      />
+    )
+    expect(screen.getByText(/the versions this release was built with apply/)).toBeInTheDocument()
+  })
+})
+
+describe('SoftwareUpdatesPanel feed state', () => {
+  it('says the feed is not published (never a silent empty page)', () => {
+    render(
+      <SoftwareUpdatesPanel
+        status={status({ last_error: 'not_published', last_attempt_at: '2026-10-18T00:00:00Z' })}
+        canImport={false}
+        onChanged={() => {}}
+      />
+    )
+    expect(screen.getByText(/No release feed is published at this address yet/)).toBeInTheDocument()
+  })
+})
