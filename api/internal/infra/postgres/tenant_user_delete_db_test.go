@@ -361,6 +361,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"scan_window_policies": func(*schemaSeeder) map[string]any {
 		return map[string]any{"kind": "allow", "timezone": "UTC", "slots": `[{"days":[1],"start":"09:00","end":"17:00"}]`}
 	},
+	// A severity request carries a reason, a tier and severities (CHECKs).
+	"finding_severity_requests": func(*schemaSeeder) map[string]any {
+		return map[string]any{"reason": "probe", "tier": "peer", "requested_severity": "low", "previous_severity": "high", "status": "pending"}
+	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}
 	},
