@@ -28,6 +28,15 @@ type AdminSuspensionHandler struct {
 	deletions *orgdeletion.Service
 	users     *platformuser.Service
 	logger    *logger.Logger
+	// approvals is the four-eyes gate: deleting an organization before its
+	// grace period ends needs a second super admin.
+	approvals approvalGate
+}
+
+// WithApprovals wires the four-eyes gate.
+func (h *AdminSuspensionHandler) WithApprovals(g approvalGate) *AdminSuspensionHandler {
+	h.approvals = g
+	return h
 }
 
 // NewAdminSuspensionHandler creates the handler. Either service may be nil;
@@ -228,6 +237,7 @@ func (h *AdminSuspensionHandler) SetOrganizationDeletion(s *orgdeletion.Service)
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error "The system organization"
+// @Failure      428  {object}  apierror.Error "SECOND_APPROVAL_REQUIRED: another super admin must approve first"
 // @Security     BearerAuth
 // @Router       /admin/tenants/{tenantId}/purge [post]
 func (h *AdminSuspensionHandler) PurgeOrganization(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +259,16 @@ func (h *AdminSuspensionHandler) PurgeOrganization(w http.ResponseWriter, r *htt
 		apierror.Unauthorized("Authentication required").WriteJSON(w)
 		return
 	}
+	// A second super admin approves the deletion of this organization; checked
+	// before anything is deleted, handed back when nothing was.
+	grant, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalOrgPurge, "tenant:"+id.String(), h.logger)
+	if !ok {
+		return
+	}
 	err := h.deletions.PurgeNow(r.Context(), actor, id, reason, orgdeletion.Client{IP: middleware.ClientIP(r), UserAgent: r.UserAgent()})
+	if err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
+	}
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, AdminSuspensionResponse{Status: "deleted"})
