@@ -217,40 +217,48 @@ COMMENT ON FUNCTION dash_fact_run_step(uuid, integer) IS
 -- out first by deleting them and marking their assets, since F2 is derived
 -- and the facts loop writes them again), and drops the partitions that end
 -- before the history window (13 months). Takes no input. SECURITY DEFINER:
--- the API role has no DDL right; this runs as the schema owner with a pinned
--- search_path and a short lock timeout, and does only this. Returns the
--- partitions created and dropped and the rows moved out of the default.
+-- the API role has no DDL right; this runs as the schema owner and does only
+-- this. Hardening: search_path is pg_catalog then pg_temp and every
+-- application object is schema-qualified, so no object or overload another
+-- role creates can be picked up while running as the owner; partition names
+-- come from dates alone; only children of public.dash_asset_day are dropped;
+-- a short lock timeout bounds how long dashboard readers queue behind it.
+-- EXECUTE is
+-- revoked from PUBLIC (the app role gets it from the migrator's default
+-- privileges; deploy/postgres/least-privilege-roles.sql takes it from the
+-- console role). Returns the partitions created and dropped and the rows
+-- moved out of the default.
 CREATE OR REPLACE FUNCTION dash_asset_day_maintain()
 RETURNS TABLE (created integer, dropped integer, moved integer)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
+SET lock_timeout = '5s'
 AS $$
 DECLARE
-    v_start date := dash_history_start();
+    v_start date := public.dash_history_start();
     v_m     date := date_trunc('month', now() AT TIME ZONE 'UTC')::date;
     v_part  text;
     v_rows  integer;
     r       record;
 BEGIN
     created := 0; dropped := 0; moved := 0;
-    SET LOCAL lock_timeout = '5s';
 
     FOR i IN 0 .. 23 LOOP
         v_part := 'dash_asset_day_' || to_char(v_m, 'YYYY_MM');
-        IF to_regclass(v_part) IS NULL THEN
+        IF to_regclass('public.' || v_part) IS NULL THEN
             WITH gone AS (
-                DELETE FROM dash_asset_day_default d
+                DELETE FROM public.dash_asset_day_default d
                 WHERE d.day >= v_m AND d.day < (v_m + interval '1 month')::date
                 RETURNING d.tenant_id, d.asset_id
             ), marks AS (
-                INSERT INTO dash_dirty_assets (tenant_id, asset_id, reasons)
+                INSERT INTO public.dash_dirty_assets (tenant_id, asset_id, reasons)
                 SELECT DISTINCT g.tenant_id, g.asset_id, 1::smallint FROM gone g
                 RETURNING 1
             )
             SELECT count(*) INTO v_rows FROM gone;
             moved := moved + v_rows;
-            EXECUTE format('CREATE TABLE %I PARTITION OF dash_asset_day FOR VALUES FROM (%L) TO (%L)',
+            EXECUTE format('CREATE TABLE public.%I PARTITION OF public.dash_asset_day FOR VALUES FROM (%L) TO (%L)',
                            v_part, v_m, (v_m + interval '1 month')::date);
             created := created + 1;
         END IF;
@@ -261,14 +269,15 @@ BEGIN
         SELECT c.relname
         FROM pg_inherits i
         JOIN pg_class c ON c.oid = i.inhrelid
-        WHERE i.inhparent = 'dash_asset_day'::regclass
+        WHERE i.inhparent = 'public.dash_asset_day'::regclass
+          AND c.relnamespace = 'public'::regnamespace
           AND c.relname ~ '^dash_asset_day_[0-9]{4}_[0-9]{2}$'
           AND (to_date(substring(c.relname from '[0-9]{4}_[0-9]{2}$'), 'YYYY_MM') + interval '1 month')::date <= v_start
     LOOP
-        EXECUTE format('DROP TABLE %I', r.relname);
+        EXECUTE format('DROP TABLE public.%I', r.relname);
         dropped := dropped + 1;
     END LOOP;
-    DELETE FROM dash_asset_day_default d WHERE d.day < v_start;
+    DELETE FROM public.dash_asset_day_default d WHERE d.day < v_start;
     RETURN NEXT;
 END;
 $$;
