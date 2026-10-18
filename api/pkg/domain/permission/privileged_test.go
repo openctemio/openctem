@@ -26,3 +26,21 @@ func TestIsAboveMember(t *testing.T) {
 		t.Error("full data access is not above member")
 	}
 }
+
+// Either organization dashboard permission opens organization-wide numbers
+// and names, so a role carrying one alone is privileged (owner-only team
+// binding, two-factor for outside members).
+func TestOrgDashboardPermissionsArePrivileged(t *testing.T) {
+	for _, p := range []permission.Permission{permission.DashboardsOrgView, permission.DashboardsOrgManage} {
+		perms := []string{string(permission.DashboardRead), string(p)}
+		if !permission.IsFullDataGrade(perms, false) {
+			t.Errorf("%s is not full-data grade", p)
+		}
+		if !permission.IsPrivilegedRole(perms, false) {
+			t.Errorf("a role with %s is not privileged", p)
+		}
+		if !permission.IsAboveMember(perms, false) {
+			t.Errorf("a role with %s is not above member", p)
+		}
+	}
+}

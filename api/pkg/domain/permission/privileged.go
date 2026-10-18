@@ -21,8 +21,9 @@ var privilegedPermissions = []Permission{
 // one sees organization-wide data outside their own scope. Organization
 // dashboards show organization-wide numbers and names, so their view
 // permission counts as full data for two-factor and for binding a role to a
-// team (docs/architecture/dashboards.md).
-var fullDataGrade = []Permission{DashboardsOrgView}
+// team (docs/architecture/dashboards.md). Manage counts too: it opens every
+// organization dashboard (the routes and the service accept it for reading).
+var fullDataGrade = []Permission{DashboardsOrgView, DashboardsOrgManage}
 
 // IsFullDataGrade reports whether a role with these permissions and full data
 // access flag sees organization-wide data: full data access, or a
