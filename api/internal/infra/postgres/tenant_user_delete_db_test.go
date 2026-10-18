@@ -386,6 +386,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"tool": "nuclei", "values": `{}`,
 			"schema_digest": "sha256:" + strings.Repeat("0", 64)}
 	},
+	// An organization's own sensor product: a token, never openctemio-*.
+	"tenant_sensor_products": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"product": "acme-" + strings.ToLower(s.uniq())}
+	},
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
 	// Definitions (RFC-044): namespace has a format CHECK; a tenant
