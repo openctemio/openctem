@@ -219,6 +219,7 @@ sensor_result_quarantine
 sensor_tool_settings
 sensors
 settings
+signup_events
 sla_policies
 software_product_aliases
 software_products
