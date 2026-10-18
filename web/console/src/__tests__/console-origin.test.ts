@@ -63,4 +63,12 @@ describe('console API proxy and the tenant origin', () => {
     expect(res.status).toBe(204)
     expect(String(fetchMock.mock.calls[0][0])).toBe('http://api-admin.test/api/v1/admin/tenants')
   })
+
+  it('sends HSTS with every console response (host mode has no other source)', async () => {
+    const { default: config } = await import('../../next.config')
+    const rules = (await config.headers?.()) ?? []
+    const all = rules.find((r) => r.source === '/:path*')
+    const hsts = all?.headers.find((h) => h.key === 'Strict-Transport-Security')
+    expect(hsts?.value).toMatch(/max-age=\d{7,}/)
+  })
 })
