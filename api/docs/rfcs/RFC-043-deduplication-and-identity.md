@@ -120,9 +120,18 @@ Non-goals
    hash over an explicit, per-parser field list. The recipe — not the sensor —
    decides which tool fields count. The opaque `Finding.Fingerprint` a sensor
    sends is stored on the sighting (`external_fingerprint`) and never becomes the
-   identity by itself (RFC-040: a sensor's claim is a hint). Today any 16-hex
-   string from any sensor becomes the identity verbatim, and every non-hex
-   tool id (Nessus, DefectDojo, gitleaks) is discarded. No field is
+   identity by itself (RFC-040: a sensor's claim is a hint). Before this
+   rule, any 16-hex string from any sensor became the identity verbatim, and
+   every non-hex tool id (Nessus, DefectDojo, gitleaks) was discarded.
+   **Done (2026-10-18):** the version-1 base is built from server inputs only.
+   A row still stored under the old composite of asset and report
+   fingerprint is re-keyed only by a result with the same asset, rule, tool
+   and location path (a strict guard on the re-key), so a report that copies
+   another finding's fingerprint can no longer move that finding's triage
+   onto a different issue. Every re-key (version 1 to 2, former key) is also
+   bound to the finding's asset. Reports may not set the server-only
+   partial-fingerprint keys (`composite/*`, `sensor/*`, `server/*`), and the
+   finding API does not return them. No field is
    "always included" across tools: an always-on field silently breaks
    cross-scanner dedup (R1).
 2. **Explicit scope** (R2). The unique key is `(tenant_id, scope_key,
@@ -152,7 +161,7 @@ Non-goals
 | SAST | rule family¹, repo-relative POSIX path², then `hash(normalized snippet)` (from `location.snippet`, else the producer's CTIS `snippetHash/v1`) + logical location + occurrence index in the file; without the code, the start line. **Tool neutral (amended 2026-10-14):** the engine name and its own fingerprints (SARIF `partialFingerprints`, `fingerprints`, Semgrep `match_based_id`) are not inputs: they differ between engines running the same rules, so an engine switch would reopen every triaged finding, and a CI job runs the code under review, so a forged value could take over a triaged finding's key. They stay on the finding as hints. A finding stored under its line key is re-keyed to its code key, within version 2, the first time a report carries the code | Never absolute lines or byte offsets (SARIF 2.1.0 App. B, R3). When a SARIF file has no fingerprints, compute the fallback server-side (GitHub only does this in `upload-sarif`, so API uploads duplicate, R3). Known limits (R4): a file rename or rule-id change re-keys (handled by the rename map / rule alias table below and a rule+snippet fallback match that copies triage); an identical block inserted earlier shifts the `:N` suffix and can swap twins |
 | SCA | asset, canonical PURL type/namespace/name (**without** version; qualifiers only from an allowlist, e.g. `distro` for OS packages)³, canonical vuln class⁴ | Version moves to the sighting (`installed_version`, `fixed_version`); manifest path moves to a location list. Decision D2 on manifest-level splitting |
 | Container | asset (image repository, RFC-042), package (PURL w/o version), canonical vuln id | Digest and tag on the sighting |
-| Secret | asset, `secret_fingerprint` (HMAC of the normalized **raw** secret under a server-held per-tenant key — not #849's key, which is a public constant + tenant id, and not over the masked string), repo-relative path | No line. Same secret in two files → two findings, one correlation group |
+| Secret | asset, `secret_fingerprint` (HMAC of the normalized **raw** secret under a server-held per-tenant key — not #849's key, which is a public constant + tenant id, and not over the masked string), repo-relative path | No line. Same secret in two files → two findings, one correlation group. The keyed hash is the producer's `secretHMAC/v1`, else the server's own HMAC of a raw value the report carried, taken before masking. **Without either** (a producer that sends only a mask), the mask is never the identity alone: the key adds rule, secret type and the start line, so two secrets that mask alike stay two findings; such a secret moving in its file is a new finding until its producer sends a keyed hash (2026-10-18) |
 | DAST | asset, canonical rule⁵, method, normalized URL template⁶, sorted parameter names | Query **values** dropped, names kept |
 | Network VA | asset, canonical vuln id, `port/proto` (or `host` for host-level) | Multi-CVE plugin → one finding per CVE (decision D3), not "lowest id" |
 | Misconfig / IaC | asset, policy id (canonical), resource id (type + name or address), repo-relative path | No message |
