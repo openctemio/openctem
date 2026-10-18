@@ -8,9 +8,17 @@
 //
 //	go run ./cmd/release-feed keygen -out online.key      # prints the key id and public key, never the seed
 //	gh release list --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > releases.json
+//	go run ./cmd/release-feed components                  # "<component> <repository> <image or ->" per line
+//	../.github/scripts/release/feed-components.sh > components.json
 //	go run ./cmd/release-feed build -key-env RELEASE_FEED_SIGNING_KEY \
-//	    -releases releases.json -advisories advisories.json -out openctem-releases.json
+//	    -releases releases.json -advisories advisories.json -components components.json \
+//	    -out openctem-releases.json
 //	go run ./cmd/release-feed verify -key <public key hex> openctem-releases.json
+//
+// The components are the first-party sensor products of versions.yaml and the
+// SDK: the feed carries the newest stable release of each, so an instance
+// learns a sensor or SDK release without an OpenCTEM release
+// (docs/rfcs/RFC-037-versioning-and-release-train.md §12).
 //
 // A key file holds the 32-byte Ed25519 seed in hex (mode 0600).
 package main
@@ -29,6 +37,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/feedsign"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
@@ -43,11 +52,13 @@ func main() {
 
 func run(args []string, out io.Writer, now time.Time) error {
 	if len(args) == 0 {
-		return errors.New("usage: release-feed keygen|build|verify [flags]")
+		return errors.New("usage: release-feed keygen|components|build|verify [flags]")
 	}
 	switch args[0] {
 	case "keygen":
 		return keygen(args[1:], out)
+	case "components":
+		return components(out)
 	case "build":
 		return build(args[1:], out, now)
 	case "verify":
@@ -119,9 +130,37 @@ var (
 	repoName   = regexp.MustCompile(`^openctemio/[A-Za-z0-9._-]+$`)
 )
 
+// SDKComponent is the SDK's component name (its versions.yaml section) and
+// SDKRepository its repository.
+const (
+	SDKComponent  = "sdk"
+	SDKRepository = "openctemio/sdk-go"
+)
+
+// identityRepo extracts the repository from a release identity
+// (https://github.com/openctemio/<repo>/.github/workflows/<file>).
+var identityRepo = regexp.MustCompile(`^https://github\.com/(openctemio/[A-Za-z0-9._-]+)/\.github/workflows/`)
+
+// components prints the first-party components the feed lists, one per line:
+// the component name, its repository and its image repository ("-" for
+// none). The publishing script resolves each one's newest release.
+func components(out io.Writer) error {
+	for _, p := range versions.Embedded().Products {
+		m := identityRepo.FindStringSubmatch(p.ReleaseIdentity)
+		if m == nil {
+			return fmt.Errorf("product %s: no repository in its release identity", p.Key)
+		}
+		if _, err := fmt.Fprintf(out, "%s %s %s\n", p.Key, m[1], p.Image); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(out, "%s %s -\n", SDKComponent, SDKRepository)
+	return err
+}
+
 type buildOptions struct {
-	keyFile, keyEnv, releases, advisories, repo, out string
-	days                                             int
+	keyFile, keyEnv, releases, advisories, components, repo, out string
+	days                                                         int
 }
 
 func build(args []string, out io.Writer, now time.Time) error {
@@ -131,6 +170,7 @@ func build(args []string, out io.Writer, now time.Time) error {
 	fs.StringVar(&o.keyEnv, "key-env", "", "environment variable holding the online key seed (hex), instead of -key")
 	fs.StringVar(&o.releases, "releases", "", "JSON from `gh release list --json tagName,publishedAt,isDraft,isPrerelease`")
 	fs.StringVar(&o.advisories, "advisories", "", "advisories file ({\"advisories\": [...]}); optional")
+	fs.StringVar(&o.components, "components", "", "components file (a JSON array from feed-components.sh); optional")
 	fs.StringVar(&o.repo, "repo", "openctemio/openctem", "repository whose release pages the notes links name")
 	fs.IntVar(&o.days, "days", 30, "feed validity in days (1 to 45)")
 	fs.StringVar(&o.out, "out", releasefeed.FileName, "output file")
@@ -193,6 +233,15 @@ func (o *buildOptions) run(now time.Time) ([]byte, error) {
 	if feed.Advisories == nil {
 		feed.Advisories = []releasefeed.Advisory{}
 	}
+	if o.components != "" {
+		raw, err := os.ReadFile(o.components)
+		if err != nil {
+			return nil, err
+		}
+		if err := feedsign.DecodeStrict(raw, &feed.Components); err != nil {
+			return nil, fmt.Errorf("%s: %w", o.components, err)
+		}
+	}
 	return releasefeed.Build(key, feed)
 }
 
@@ -243,7 +292,15 @@ func verify(args []string, out io.Writer, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "ok: sequence %d, signed by %s, %d releases, %d advisories, expires %s\n",
-		v.Feed.Sequence, v.KeyID, len(v.Feed.Releases), len(v.Feed.Advisories), v.Feed.ExpiresAt.Format(time.RFC3339))
-	return err
+	if _, err = fmt.Fprintf(out, "ok: sequence %d, signed by %s, %d releases, %d advisories, %d components, expires %s\n",
+		v.Feed.Sequence, v.KeyID, len(v.Feed.Releases), len(v.Feed.Advisories), len(v.Feed.Components),
+		v.Feed.ExpiresAt.Format(time.RFC3339)); err != nil {
+		return err
+	}
+	for _, c := range v.Feed.Components {
+		if _, err := fmt.Fprintf(out, "  %s %s %s\n", c.Component, c.Version, c.Digest); err != nil {
+			return err
+		}
+	}
+	return nil
 }
