@@ -1,0 +1,2 @@
+go test fuzz v1
+string("findings where a = 1 | count by")
