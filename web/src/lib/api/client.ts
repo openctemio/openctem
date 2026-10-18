@@ -8,6 +8,11 @@
 import { endSessionAndSignIn, useAuthStore } from '@/stores/auth-store'
 import type { ApiError, ApiRequestOptions, ApiResponse } from './types'
 import { ApiClientError } from './error-handler'
+import {
+  isOrganizationSuspended,
+  notifyOrganizationSuspended,
+  organizationSuspendedMessage,
+} from './organization-suspended'
 import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip-not-allowed'
 import { isStepUpRequired, requestStepUp } from './step-up'
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
@@ -357,6 +362,18 @@ export async function apiClient<T = unknown>(
         if (await requestStepUp()) {
           return apiClient<T>(endpoint, { ...options, _skipStepUpRetry: true })
         }
+      }
+
+      // The organization is suspended: one message for every refused
+      // request, never the generic permission text.
+      if (isOrganizationSuspended(error)) {
+        notifyOrganizationSuspended()
+        throw new ApiClientError(
+          organizationSuspendedMessage(),
+          error.code,
+          error.statusCode,
+          error.details
+        )
       }
 
       // The organization's IP allowlist blocked this request. Replace the

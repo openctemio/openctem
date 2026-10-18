@@ -3,7 +3,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { useBrand } from '@/context/brand-provider'
 import { useEffect, useState } from 'react'
-import { csrfFetch } from '@/lib/api/client'
+import { put } from '@/lib/api/client'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -288,33 +288,25 @@ export function EditNotificationDialog({
         }
       }
 
-      const response = await csrfFetch(`/api/v1/integrations/${integration.id}/notification`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: data.name,
-          description: data.description,
-          credentials,
-          channel_id: data.channel_id,
-          channel_name: data.channel_name,
-          // Severity filters (dynamic JSONB array)
-          enabled_severities: data.enabled_severities,
-          // Event type filters (dynamic JSONB array)
-          enabled_event_types: data.enabled_event_types,
-          // Advanced settings.
-          // Send an explicit "" (not undefined) so clearing the template / picking
-          // the Default preset actually resets it — the backend treats a nil
-          // pointer as "no change", which previously made the old template stick.
-          message_template: data.message_template ?? '',
-          include_details: data.include_details,
-          min_interval_minutes: data.min_interval_minutes,
-        }),
+      // apiClient path: a STEP_UP_REQUIRED answer opens the re-authentication dialog and retries.
+      await put(`/api/v1/integrations/${integration.id}/notification`, {
+        name: data.name,
+        description: data.description,
+        credentials,
+        channel_id: data.channel_id,
+        channel_name: data.channel_name,
+        // Severity filters (dynamic JSONB array)
+        enabled_severities: data.enabled_severities,
+        // Event type filters (dynamic JSONB array)
+        enabled_event_types: data.enabled_event_types,
+        // Advanced settings.
+        // Send an explicit "" (not undefined) so clearing the template / picking
+        // the Default preset actually resets it — the backend treats a nil
+        // pointer as "no change", which previously made the old template stick.
+        message_template: data.message_template ?? '',
+        include_details: data.include_details,
+        min_interval_minutes: data.min_interval_minutes,
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Failed to update')
-      }
 
       toast.success(`Notification channel "${data.name}" updated`)
       handleClose()

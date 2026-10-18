@@ -2,6 +2,7 @@ package apikey
 
 import (
 	"context"
+	"errors"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -26,17 +27,28 @@ type PermissionSource interface {
 
 // NewMembershipChecker returns the MembershipChecker production wires: the
 // key's user must be an ACTIVE member of the key's tenant and, when users is
-// non-nil, an active account. A lookup error is returned and the key rejected.
-func NewMembershipChecker(memberships MembershipSource, users UserSource) MembershipChecker {
-	return membershipChecker{memberships: memberships, users: users}
+// non-nil, an active account (not blocked); when orgs is non-nil the
+// organization must not be suspended. A lookup error is returned and the key
+// rejected. API keys and MCP tokens both ask it on every request.
+func NewMembershipChecker(memberships MembershipSource, users UserSource, orgs tenantdom.AccessGate) MembershipChecker {
+	return membershipChecker{memberships: memberships, users: users, orgs: orgs}
 }
 
 type membershipChecker struct {
 	memberships MembershipSource
 	users       UserSource
+	orgs        tenantdom.AccessGate
 }
 
 func (c membershipChecker) IsActiveMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	if c.orgs != nil {
+		if err := c.orgs.CheckAccess(ctx, tenantID); err != nil {
+			if errors.Is(err, tenantdom.ErrOrganizationSuspended) || errors.Is(err, shared.ErrNotFound) {
+				return false, nil
+			}
+			return false, err
+		}
+	}
 	m, err := c.memberships.GetMembership(ctx, userID, tenantID)
 	if err != nil {
 		return false, err

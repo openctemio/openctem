@@ -258,6 +258,9 @@ type TenantInfo struct {
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 	Role string `json:"role"`
+	// OrganizationSuspended (suspended_tenants only): the organization is
+	// suspended by a platform administrator, not the membership.
+	OrganizationSuspended bool `json:"organization_suspended,omitempty"`
 }
 
 // LoginResponse is the response body for login.
@@ -381,10 +384,11 @@ func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Requ
 		suspendedTenants = make([]TenantInfo, len(result.SuspendedTenants))
 		for i, t := range result.SuspendedTenants {
 			suspendedTenants[i] = TenantInfo{
-				ID:   t.TenantID,
-				Slug: t.TenantSlug,
-				Name: t.TenantName,
-				Role: t.Role,
+				ID:                    t.TenantID,
+				Slug:                  t.TenantSlug,
+				Name:                  t.TenantName,
+				Role:                  t.Role,
+				OrganizationSuspended: t.OrganizationSuspended,
 			}
 		}
 	}
@@ -1313,6 +1317,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.BadRequest("Current password is incorrect").WriteJSON(w)
 	case errors.Is(err, auth.ErrSessionLimitReached):
 		apierror.Forbidden("Maximum number of active sessions reached").WriteJSON(w)
+	case errors.Is(err, tenantdom.ErrOrganizationSuspended):
+		middleware.WriteOrganizationSuspended(w)
 	case errors.Is(err, auth.ErrTenantAccessDenied):
 		apierror.Forbidden("User does not have access to this tenant").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSORequired):
