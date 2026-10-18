@@ -31,6 +31,10 @@ const TECHNICAL = [
   // A decision reason the API returns verbatim (pkg/domain/ticketmap), matched
   // as a key to pick its translation.
   /finding is closed; reopen it in OpenCTEM/g,
+  // HTTP header names the API sends on platform alert webhooks
+  // (app/platformalert); receivers verify them by name, so they never follow
+  // the brand.
+  /X-OpenCTEM-(Timestamp|Signature)/g,
 ]
 
 function strip(text: string): string {
