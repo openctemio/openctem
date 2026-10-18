@@ -47,7 +47,7 @@ const (
 	// Organization deletion with a grace period
 	// (docs/architecture/organization-deletion.md).
 	ActionTenantDeletionScheduled Action = "tenant.deletion_scheduled"
-	ActionTenantDeletionCancelled Action = "tenant.deletion_cancelled"
+	ActionTenantDeletionCancelled Action = "tenant.deletion_canceled"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"

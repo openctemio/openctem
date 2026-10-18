@@ -11,7 +11,7 @@ organization at once from the console.
 | Route | `DELETE /api/v1/tenants/{tenant}` (owner, `team:delete`, recent sign-in) answers 202 with `deletion_due_at` | `POST /api/v1/admin/tenants/{tenantId}/purge` (super_admin, fresh authenticator code, reason) |
 | Effect | `tenants.status = 'pending_deletion'`, `deletion_due_at = now + 14 days`; refused to every credential at once (the organization access gate, see `organization-suspension.md`); live connections close | deleted at once, whatever its status |
 | Audit | critical entry in the organization's log (`tenant.deletion_scheduled`); the deletion itself on the platform chain (`tenant.deleted`) | critical admin audit row `organization.purged` with the reason, plus `tenant.deleted` |
-| Undo | `POST /api/v1/auth/organization-deletion/cancel` by any active owner until the due time (`tenant.deletion_cancelled`) | none |
+| Undo | `POST /api/v1/auth/organization-deletion/cancel` by any active owner until the due time (`tenant.deletion_canceled`) | none |
 
 The purge worker (`organization-delete`, every `WORKER_INVITATION_PURGE_INTERVAL`)
 deletes the organizations whose grace ended through the same

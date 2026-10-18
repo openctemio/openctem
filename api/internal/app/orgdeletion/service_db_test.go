@@ -108,7 +108,7 @@ func TestOrganizationDeletionGrace_DB(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 	if err := gate.CheckAccess(ctx, org); err != nil {
-		t.Fatalf("a cancelled deletion must reopen the organization: %v", err)
+		t.Fatalf("a canceled deletion must reopen the organization: %v", err)
 	}
 
 	// Schedule again and let the grace run out: the worker deletes it.

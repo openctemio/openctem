@@ -184,7 +184,7 @@ func (s *Service) Cancel(ctx context.Context, actx auditapp.AuditContext, tenant
 	s.logEvent(ctx, actx, tenantID, auditapp.NewSuccessEvent(auditdom.ActionTenantDeletionCancelled, auditdom.ResourceTypeTenant, tenantID.String()).
 		WithResourceName(name).
 		WithSeverity(auditdom.SeverityHigh).
-		WithMessage("The scheduled deletion of the organization was cancelled"))
+		WithMessage("The scheduled deletion of the organization was canceled"))
 	return nil
 }
 
