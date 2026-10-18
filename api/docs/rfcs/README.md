@@ -36,7 +36,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-018](RFC-018-identity-exposure-discovery.md) | Identity exposure discovery from EntraID (MFA / privilege / stale) | **Proposed** — Phase 0 (exposure vocabulary) shipped in this PR; Phase 1+ (the emitter) requires new admin-consented Microsoft Graph scopes and is **not** built. |
 | [RFC-019](RFC-019-certificate-transparency-discovery.md) | Certificate-Transparency (CT) exposure discovery | **Implemented (Phase 1); Phase 2 partial** — Phase 1 (#480): crt.sh client + parser, per-tenant scheduled controller, and two exposure types emitted. |
 | [RFC-020](RFC-020-api-ui-monorepo.md) | Consolidate `api` + `ui` into one repository (with generated contract) | **Implemented** (cutover merged 2026-10-02, [openctemio/openctem#684](https://github.com/openctemio/openctem/pull/684)) |
-| [RFC-021](RFC-021-customizable-dashboards.md) | Customizable dashboards (widgets) | **Phase 1 implemented** |
+| [RFC-021](RFC-021-customizable-dashboards.md) | Customizable dashboards (widgets) | **Phase 1 implemented; ownership model (§11) implemented** |
 | [RFC-022](RFC-022-platform-admin-console.md) | Platform administration console (system admin) | **Accepted** (2026-09-30) — Phases 1-3 implemented (api#547, api#548, openctemio/ui#505). |
 | [RFC-023](RFC-023-scan-zones-and-scanners.md) | Scan zones and the Scanners resource | **Implemented in part** (proposed 2026-10-01). |
 | [RFC-024](RFC-024-user-two-factor-authentication.md) | Two-factor authentication and account security for organization users | Implemented |
@@ -123,6 +123,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-112](RFC-112-asset-technologies.md) | Asset technologies (detected technology fingerprint per asset) | Accepted (2026-10-16). |
 | [RFC-113](RFC-113-sensor-tool-standard.md) | Sensor tool standard (one contract for jobs, targets and results) | Proposed (2026-10-17). |
 | [RFC-114](RFC-114-system-page.md) | System page and host operations for self-managed installs | Proposed (2026-10-17) |
+| [RFC-115](RFC-115-custom-query-language.md) | Custom query language | Accepted (2026-10-18). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

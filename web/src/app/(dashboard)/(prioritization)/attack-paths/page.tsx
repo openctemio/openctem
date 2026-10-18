@@ -247,7 +247,9 @@ export default function AttackPathAnalysisPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground text-sm">Crown jewels at risk</span>
+                    <span className="text-muted-foreground text-sm">
+                      {t('prioritization.attackPaths.crownOnPath')}
+                    </span>
                     <span
                       className={cn(
                         'font-semibold tabular-nums',

@@ -362,7 +362,7 @@ func (h *DashboardHandler) GetProcessMetrics(w http.ResponseWriter, r *http.Requ
 
 // GetProgramMetrics returns the CTEM program metrics for the current tenant.
 // @Summary      Get CTEM program metrics
-// @Description  Returns the ctem.org program KPIs computed from stored data, tenant-scoped (organization-wide: a restricted viewer needs dashboard:aggregate or gets 403) and windowed to the last `days` days (1-365, default 90): mean/median time to detect new internet-facing assets, mean/median time to remediate validated (reproduced) exposures, and the owner acceptance rate within the SLA window. A null value means "not measurable" (no qualifying sample) and must be shown as "—", never 0 or 100%. Time-to-break attack paths is intentionally absent: attack paths are computed on demand and no path history is stored.
+// @Description  Returns the ctem.org program KPIs computed from stored data, tenant-scoped (organization-wide: a restricted viewer needs dashboards:org:view or gets 403) and windowed to the last `days` days (1-365, default 90): mean/median time to detect new internet-facing assets, mean/median time to remediate validated (reproduced) exposures, and the owner acceptance rate within the SLA window. A null value means "not measurable" (no qualifying sample) and must be shown as "—", never 0 or 100%. Time-to-break attack paths is intentionally absent: attack paths are computed on demand and no path history is stored.
 // @Tags         Dashboard
 // @Produce      json
 // @Security     BearerAuth
