@@ -1358,11 +1358,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize dashboard service
 	s.Dashboard = module.NewDashboardService(repos.Dashboard, log)
 	s.Dashboard.SetDataScope(s.DataScope)
-	// D6: a restricted viewer holding dashboard:aggregate sees organization
-	// totals (k-floor on breakdowns); others see their own scope.
-	s.Dashboard.SetAggregateCheck(func(ctx context.Context) bool {
-		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
-	})
+	// D6 (dashboard:aggregate) is decided once, by s.DataScope.ViewerScope.
 
 	// Initialize SLA service
 	s.SLA = sla.NewService(repos.SLA, log)

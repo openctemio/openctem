@@ -97,7 +97,7 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 		  LEFT JOIN validation_evidence ve
 		         ON ve.tenant_id = f.tenant_id AND ve.finding_id = f.id
 		 WHERE f.tenant_id = $1
-		   AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		   AND ` + vulnerability.OpenStatusSQL("f.status") + pentestVisibilityExcl(ctx, "f") + `
 		   AND ` + inScope + `
 		 GROUP BY f.severity
 		 ORDER BY f.severity
@@ -135,13 +135,14 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 func (r *ValidationEvidenceRepository) DowngradeStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (downgraded, validated int, err error) {
 	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
 	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
+	vis := publishedExcl("f") + pentestVisibilityExcl(ctx, "f")
 	q := `
 		SELECT
 		    (SELECT COUNT(*) FROM findings f
-		      WHERE f.tenant_id = $1 AND f.downgraded_at IS NOT NULL AND ` + inScope + `)    AS downgraded,
+		      WHERE f.tenant_id = $1 AND f.downgraded_at IS NOT NULL` + vis + ` AND ` + inScope + `)    AS downgraded,
 		    (SELECT COUNT(DISTINCT ve.finding_id) FROM validation_evidence ve
 		       JOIN findings f ON f.tenant_id = ve.tenant_id AND f.id = ve.finding_id
-		      WHERE ve.tenant_id = $1 AND ` + inScope + `)                                    AS validated
+		      WHERE ve.tenant_id = $1` + vis + ` AND ` + inScope + `)                                    AS validated
 	`
 	row := r.db.QueryRowContext(ctx, q, args...)
 	if err := row.Scan(&downgraded, &validated); err != nil {
