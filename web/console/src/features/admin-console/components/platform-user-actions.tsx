@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { KeyRound, LogOut, MailCheck, Unlock } from 'lucide-react'
+import { Ban, KeyRound, LogOut, MailCheck, ShieldCheck, Unlock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
@@ -74,6 +74,29 @@ const ACTIONS: ActionSpec[] = [
     done: 'Verification email sent.',
     available: (u) => !u.email_verified,
   },
+  {
+    action: 'block',
+    icon: Ban,
+    labelKey: 'admin.users.action.block',
+    label: 'Block account',
+    whatKey: 'admin.users.action.blockWhat',
+    what: 'Blocks {email} in every organization: they cannot sign in, their sessions end now, and their API keys and MCP tokens stop working. Nothing they made is removed.',
+    doneKey: 'admin.users.action.blockDone',
+    done: 'Account blocked.',
+    destructive: true,
+    available: (u) => !u.blocked && u.status === 'active',
+  },
+  {
+    action: 'unblock',
+    icon: ShieldCheck,
+    labelKey: 'admin.users.action.unblock',
+    label: 'Unblock account',
+    whatKey: 'admin.users.action.unblockWhat',
+    what: 'Lets {email} sign in again. Their old sessions stay ended.',
+    doneKey: 'admin.users.action.unblockDone',
+    done: 'Account unblocked.',
+    available: (u) => u.blocked,
+  },
 ]
 
 export function PlatformUserActions({
@@ -85,7 +108,7 @@ export function PlatformUserActions({
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState<ActionSpec | null>(null)
-  const blocked = user.is_platform_admin || user.erased
+  const unavailable = user.is_platform_admin || user.erased
 
   return (
     <>
@@ -95,7 +118,7 @@ export function PlatformUserActions({
             key={a.action}
             size="sm"
             variant={a.destructive ? 'destructive' : 'outline'}
-            disabled={blocked}
+            disabled={unavailable}
             onClick={() => setOpen(a)}
           >
             <a.icon className="me-2 size-4" />
@@ -103,7 +126,14 @@ export function PlatformUserActions({
           </Button>
         ))}
       </div>
-      {blocked && (
+      {user.blocked && !unavailable && (
+        <p className="text-sm text-muted-foreground">
+          {user.blocked_reason
+            ? t('admin.users.blockedReason', 'Blocked: {reason}', { reason: user.blocked_reason })
+            : t('admin.users.blockedNoReason', 'This account is blocked.')}
+        </p>
+      )}
+      {unavailable && (
         <p className="text-sm text-muted-foreground">
           {user.is_platform_admin
             ? t(

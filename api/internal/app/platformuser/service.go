@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/password"
 )
 
@@ -76,12 +77,16 @@ type Service struct {
 	mailer    Mailer
 	states    AccountStates
 	durations Durations
+	// blocker and adminAudit: block / unblock (block.go).
+	blocker    Blocker
+	adminAudit AdminAudit
+	log        *logger.Logger
 }
 
 // NewService creates the service. Any dependency may be nil; the action that
 // needs it then answers ErrEmailUnavailable or an error.
 func NewService(users user.Repository, sessions SessionRevoker, resets ResetIssuer, mailer Mailer, states AccountStates, d Durations) *Service {
-	return &Service{users: users, sessions: sessions, resets: resets, mailer: mailer, states: states, durations: d}
+	return &Service{users: users, sessions: sessions, resets: resets, mailer: mailer, states: states, durations: d, log: logger.NewNop()}
 }
 
 // target loads the account and refuses the ones the console must not touch.

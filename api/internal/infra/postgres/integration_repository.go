@@ -530,6 +530,7 @@ func (r *IntegrationRepository) ListDueForSync(ctx context.Context, provider int
 		  AND status = 'connected'
 		  AND sync_interval_minutes > 0
 		  AND (next_sync_at IS NULL OR next_sync_at <= $2)
+		  AND ` + organizationActiveSQL("integrations.tenant_id") + `
 		ORDER BY next_sync_at ASC NULLS FIRST
 		LIMIT $3
 	`

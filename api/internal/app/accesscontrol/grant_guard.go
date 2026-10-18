@@ -287,6 +287,41 @@ func (s *RoleService) authorizeAdminPromotion(ctx context.Context, a grantActor,
 	return nil
 }
 
+// authorizePrivilegedGrant requires the acting user's recent re-authentication
+// when roles contains a privileged custom role (permission.IsPrivilegedRole)
+// that user uid does not hold yet. The system admin and owner roles are
+// handled by authorizeAdminPromotion; a system path (no actor) is bounded by
+// its own rules.
+func (s *RoleService) authorizePrivilegedGrant(ctx context.Context, a grantActor, tid, uid roledom.ID, roles []*roledom.Role) error {
+	if a.system || s.stepUp == nil {
+		return nil
+	}
+	privileged := make([]*roledom.Role, 0, len(roles))
+	for _, r := range roles {
+		if roledom.IsSystemRoleID(r.ID()) || !permission.IsPrivilegedRole(r.Permissions(), r.HasFullDataAccess()) {
+			continue
+		}
+		privileged = append(privileged, r)
+	}
+	if len(privileged) == 0 {
+		return nil
+	}
+	current, err := s.roleRepo.GetUserRoles(ctx, tid, uid)
+	if err != nil {
+		return fmt.Errorf("load user roles: %w", err)
+	}
+	held := make(map[roledom.ID]bool, len(current))
+	for _, r := range current {
+		held[r.ID()] = true
+	}
+	for _, r := range privileged {
+		if !held[r.ID()] {
+			return s.stepUp.RequireRecentAuth(ctx, a.id)
+		}
+	}
+	return nil
+}
+
 // holdsPrivilegedRoles reports whether the user currently holds the owner role
 // and whether they hold the system admin role.
 func (s *RoleService) holdsPrivilegedRoles(ctx context.Context, tid, uid roledom.ID) (owner, admin bool, err error) {

@@ -118,6 +118,8 @@ offboarding without step-up and is removed.
 |---|---|
 | `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}` | A new key outlives the session; deleting one hides it. Revoking stays one click. |
 | `POST /api/v1/scim-tokens` | A SCIM token creates, suspends and re-roles every member. |
+| `PUT /api/v1/scim-tokens/group-mappings` | The mapping decides which role a directory group's members receive. |
+| `POST /api/v1/integrations`, `POST /api/v1/integrations/notifications`, `PUT`/`DELETE /api/v1/integrations/{id}`, `POST /api/v1/integrations/{id}/disable`, `PUT /api/v1/integrations/{id}/notification` | Connecting, repointing or removing an integration decides where data and credentials go. |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | MFA requirement, IP allowlist, allowed domains, SSO enforcement. |
 | `PATCH /api/v1/tenants/{tenant}/settings/risk-scoring` | Risk scoring settings: every asset's risk band and, through the ownership floor, finding priorities ([scoring versions](scoring-versions.md)). |
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
@@ -143,6 +145,8 @@ the web dialog appears and the request is retried.
 | Action | Where it is checked |
 |---|---|
 | Making someone an administrator or an owner: `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/roles/{id}/members/bulk` with the admin or owner role, `POST/PATCH /api/v1/tenants/{tenant}/members…` with `admin`, an invitation or a created user with the admin role | `RoleService.authorizeAdminPromotion`, `TenantService.authorizeAdminPromotion` (only when the user does not hold the role yet) |
+| Giving a user a privileged custom role they do not hold (`permission.IsPrivilegedRole`: a role with full data access or a member-management, role-management, credential or similar permission) by a direct grant: `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/roles/{id}/members/bulk` | `RoleService.authorizePrivilegedGrant` (not asked of a system path, nor when the user already holds the role; the system admin and owner roles stay with `authorizeAdminPromotion`) |
+| Editing a custom role so that it becomes privileged while at least one user holds it directly: `PATCH /api/v1/roles/{id}` (team-bound roles: `guardBoundRolePrivilege`, owner only) | `RoleService.guardDirectRolePrivilege` |
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
 | Approving a finding false-positive or accepted-risk request whose approval-policy tier is `security` or `dual` (high and critical risk), or any tier when the organization requires it: `POST /api/v1/approvals/{id}/approve` | `VulnerabilityService.signOffApproval` (RFC-111) |
 | Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |

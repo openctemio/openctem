@@ -38,6 +38,7 @@ const ORG = {
   verified_domains: 0,
   sso_enforced: false,
   limits_apply: false,
+  status: 'active' as const,
 }
 
 async function fillOrg(user: ReturnType<typeof userEvent.setup>) {
