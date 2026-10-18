@@ -21,9 +21,24 @@ const LOCALE_LABELS: Record<string, string> = {
 
 // Persist the choice in the `locale` cookie (the proxy reads it first, above
 // Accept-Language) and reload so the server re-renders with the new x-locale.
-function selectLocale(locale: string) {
+export function selectLocale(locale: string) {
   document.cookie = `locale=${locale}; path=/; max-age=31536000; samesite=lax`
   window.location.reload()
+}
+
+/** The supported languages as menu items (the active one checked). */
+export function LocaleMenuItems() {
+  const { locale } = useTranslation()
+  return (
+    <>
+      {supportedLocales.map((l) => (
+        <DropdownMenuItem key={l} onClick={() => selectLocale(l)} className="gap-2">
+          <Check className={cn('h-4 w-4', l === locale ? 'opacity-100' : 'opacity-0')} />
+          {LOCALE_LABELS[l] ?? l}
+        </DropdownMenuItem>
+      ))}
+    </>
+  )
 }
 
 /**
@@ -32,7 +47,7 @@ function selectLocale(locale: string) {
  * gets a check. Meant to be placed inside a <DropdownMenuContent>.
  */
 export function LanguageSwitcher() {
-  const { locale, t } = useTranslation()
+  const { t } = useTranslation()
 
   return (
     <DropdownMenuSub>
@@ -42,12 +57,7 @@ export function LanguageSwitcher() {
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent>
-          {supportedLocales.map((l) => (
-            <DropdownMenuItem key={l} onClick={() => selectLocale(l)} className="gap-2">
-              <Check className={cn('h-4 w-4', l === locale ? 'opacity-100' : 'opacity-0')} />
-              {LOCALE_LABELS[l] ?? l}
-            </DropdownMenuItem>
-          ))}
+          <LocaleMenuItems />
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>

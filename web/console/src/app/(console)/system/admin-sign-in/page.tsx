@@ -41,12 +41,19 @@ export default function AdminSignInPage() {
     <Main>
       <PageHeader
         title={t('admin.nav.adminSignIn', 'Admin sign-in')}
-        description="How administrators sign in to this console. Separate from organization sign-in."
+        description={t(
+          'admin.systemAdminSignInPage.howAdministratorsSignInTo',
+          'How administrators sign in to this console. Separate from organization sign-in.'
+        )}
       />
       <div className="mt-5 space-y-4">
         <ConsoleMfaPolicyCard />
         {error ? (
-          <ErrorState title="admin sign-in" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.systemAdminSignInPage.adminSignIn', 'admin sign-in')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : isLoading || !data ? (
           <div className="space-y-3">
             <Skeleton className="h-48 w-full" />

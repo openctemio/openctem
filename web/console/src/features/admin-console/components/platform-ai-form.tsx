@@ -27,11 +27,11 @@ import {
   secretPatch,
 } from './console-setting-parts'
 
-/** Provider names are product names: shown as they are. */
-const PROVIDER_LABEL: Record<string, string> = {
-  claude: 'Anthropic Claude',
-  openai: 'OpenAI',
-  gemini: 'Google Gemini',
+/** Provider names are product names; the catalog keeps them as they are. */
+const PROVIDER_LABEL: Record<string, [key: string, fallback: string]> = {
+  claude: ['admin.ai.providerName.claude', 'Anthropic Claude'],
+  openai: ['admin.ai.providerName.openai', 'OpenAI'],
+  gemini: ['admin.ai.providerName.gemini', 'Google Gemini'],
 }
 
 export interface PlatformAIFormProps {
@@ -159,7 +159,7 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
                 <SelectContent>
                   {settings.providers.map((p) => (
                     <SelectItem key={p} value={p}>
-                      {PROVIDER_LABEL[p] ?? p}
+                      {PROVIDER_LABEL[p] ? t(...PROVIDER_LABEL[p]) : p}
                     </SelectItem>
                   ))}
                 </SelectContent>

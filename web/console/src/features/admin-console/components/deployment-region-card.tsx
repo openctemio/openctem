@@ -85,7 +85,7 @@ export function DeploymentRegionCard({ canEdit }: { canEdit: boolean }) {
                   id={id}
                   value={value}
                   onChange={(e) => setValue(e.target.value.toLowerCase())}
-                  placeholder="eu-central"
+                  placeholder={t('admin.region.placeholder', 'eu-central')}
                   maxLength={32}
                   aria-invalid={value !== '' && !valid}
                 />

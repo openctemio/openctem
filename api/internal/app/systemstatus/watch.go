@@ -158,7 +158,7 @@ func (w *Watcher) handle(ctx context.Context, ck check) {
 		return
 	}
 	subject := fmt.Sprintf("[%s] %s: %s", strings.ToUpper(word), ck.subject, ck.detail)
-	body := fmt.Sprintf("<p>%s is at <strong>%s</strong>: %s.</p><p>Open the System page in the platform console for the full picture.</p>",
+	body := fmt.Sprintf("<p>%s is at <strong>%s</strong>: %s.</p><p>Open the Health page in the platform console for the full picture.</p>",
 		htmlEscape(ck.subject), word, htmlEscape(ck.detail))
 	if err := w.n.NotifyAdmins(ctx, subject, body); err != nil {
 		w.log.Warn("system check mail failed", "check", ck.key)

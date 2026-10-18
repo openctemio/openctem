@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Plus } from 'lucide-react'
@@ -28,6 +29,8 @@ import { DnsInstructions } from './dns-instructions'
  * dialog triggers `onAdded` so the parent can revalidate the list.
  */
 export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdded: () => void }) {
+  const { t } = useTranslation()
+
   const [open, setOpen] = useState(false)
   const [domain, setDomain] = useState('')
   const [created, setCreated] = useState<VerifiedDomain | null>(null)
@@ -55,7 +58,9 @@ export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdd
       setCreated(result)
       onAdded()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to add domain'))
+      toast.error(
+        getErrorMessage(e, t('admin.addDomainDialog.failedToAddDomain', 'Failed to add domain'))
+      )
     }
   }
 
@@ -64,16 +69,21 @@ export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdd
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="me-2 h-4 w-4" />
-          Add domain
+          {t('admin.addDomainDialog.addDomain', 'Add domain')}
         </Button>
       </DialogTrigger>
       <DialogContent>
         {created ? (
           <>
             <DialogHeader>
-              <DialogTitle>Verify {created.domain}</DialogTitle>
+              <DialogTitle>
+                {t('admin.addDomainDialog.verify', 'Verify {domain}', { domain: created.domain })}
+              </DialogTitle>
               <DialogDescription>
-                Publish this DNS TXT record to prove you own the domain, then verify it.
+                {t(
+                  'admin.addDomainDialog.publishThisDnsTxtRecord',
+                  'Publish this DNS TXT record to prove you own the domain, then verify it.'
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -81,20 +91,30 @@ export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdd
                 <DnsInstructions instructions={created.instructions} />
               ) : (
                 <p className="text-muted-foreground text-sm">
-                  No verification record was returned. Reopen the domain from the list to retry.
+                  {t(
+                    'admin.addDomainDialog.noVerificationRecordWasReturned',
+                    'No verification record was returned. Reopen the domain from the list to retry.'
+                  )}
                 </p>
               )}
             </DialogBody>
             <DialogFooter>
-              <Button onClick={() => handleOpenChange(false)}>Done</Button>
+              <Button onClick={() => handleOpenChange(false)}>
+                {t('admin.addDomainDialog.done', 'Done')}
+              </Button>
             </DialogFooter>
           </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Add a verified domain</DialogTitle>
+              <DialogTitle>
+                {t('admin.addDomainDialog.addAVerifiedDomain', 'Add a verified domain')}
+              </DialogTitle>
               <DialogDescription>
-                Enter a domain you own. Shared/consumer domains (like gmail.com) cannot be verified.
+                {t(
+                  'admin.addDomainDialog.enterADomainYouOwn',
+                  'Enter a domain you own. Shared/consumer domains (like gmail.com) cannot be verified.'
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -105,7 +125,9 @@ export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdd
                 }}
                 className="space-y-2"
               >
-                <Label htmlFor="verified-domain-input">Domain</Label>
+                <Label htmlFor="verified-domain-input">
+                  {t('admin.addDomainDialog.domain', 'Domain')}
+                </Label>
                 <Input
                   id="verified-domain-input"
                   value={domain}
@@ -117,10 +139,12 @@ export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdd
             </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button onClick={handleSubmit} disabled={isMutating || !domain.trim()}>
-                {isMutating ? 'Adding…' : 'Add'}
+                {isMutating
+                  ? t('admin.addDomainDialog.adding', 'Adding…')
+                  : t('admin.addDomainDialog.add', 'Add')}
               </Button>
             </DialogFooter>
           </>
