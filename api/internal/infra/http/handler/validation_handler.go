@@ -484,7 +484,7 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Every figure follows the viewer (D6): a restricted member counts the
-	// findings of their own scope, dashboard:aggregate and unrestricted
+	// findings of their own scope, dashboards:org:view and unrestricted
 	// callers the organization.
 	scope, _, err := h.dataScope.ViewerScope(r.Context(), tenantID)
 	if err != nil {
