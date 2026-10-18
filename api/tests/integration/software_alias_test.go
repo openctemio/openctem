@@ -247,7 +247,11 @@ func TestSoftwareAlias_PURLAndCPEAreOneProduct(t *testing.T) {
 	assert.Equal(t, []string{e.canonical}, products, "the package resolves to the canonical global product")
 	e.svc.SoftwareChanged(tn, nil)
 	e.run()
-	assert.Len(t, e.openFindings(tn, cve), 1, "one finding per asset and CVE across both identities")
+	// One finding per location: the service on tcp/443 and the package
+	// (both on the canonical product), never two for one location.
+	ports := queryStrings(t, e.pdb.DB, `SELECT COALESCE(network_port::text, '-') FROM findings
+		WHERE tenant_id = $1 AND tool_name = 'version-match' AND cve_id = $2 ORDER BY 1`, tn.String(), cve)
+	assert.Equal(t, []string{"-", "443"}, ports)
 }
 
 // Untrusted dictionary entries: malformed ones are skipped (never fatal,
