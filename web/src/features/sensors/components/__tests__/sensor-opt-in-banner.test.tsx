@@ -43,7 +43,7 @@ describe('sensor opt-ins banner', () => {
     expect(screen.getByText('Custom checks')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Settings/ })).toHaveAttribute(
       'href',
-      '/settings/authentication'
+      '/settings/scanning/sensor-safety'
     )
   })
 

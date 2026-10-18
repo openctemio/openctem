@@ -91,5 +91,6 @@
   "common.openFullPage": "Open full page",
   "common.contextFilters.label": "Context filters",
   "common.contextFilters.remove": "Remove {kind} filter",
-  "common.contextFilters.removeNamed": "Remove {kind} filter: {label}"
+  "common.contextFilters.removeNamed": "Remove {kind} filter: {label}",
+  "common.dangerZone": "Danger zone"
 }
