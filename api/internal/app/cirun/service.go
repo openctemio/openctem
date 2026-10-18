@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/oidc"
 
@@ -147,6 +148,7 @@ func (c Config) caps() cirun.PipelineCaps {
 
 // Service is the CI run service.
 type Service struct {
+	orgs      tenantdom.AccessGate
 	repo      cirun.Repository
 	verifier  TokenVerifier
 	assets    AssetStore
@@ -323,6 +325,11 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
 		s.noteRenamedRepository(ctx, tenantID, issuer, claims, configs)
 		return nil, ErrExchangeRefused
+	}
+	// A suspended organization issues no run token. Checked once the
+	// workload token verified, so only a trusted pipeline learns the status.
+	if err := s.organizationOpen(ctx, tenantID); err != nil {
+		return nil, err
 	}
 	// A repository name stays with the repository id that first reported
 	// under it (checkRepositoryBinding).
@@ -1021,12 +1028,44 @@ func (s *Service) purgeReplay(ctx context.Context) {
 
 // ------------------------------------------------------------- run access --
 
-// Authenticate returns the run an unexpired upload token belongs to.
+// Authenticate returns the run an unexpired upload token belongs to. The
+// run's organization must not be suspended (tenantdom.ErrOrganizationSuspended).
 func (s *Service) Authenticate(ctx context.Context, token string) (*cirun.Run, error) {
 	if !cirun.LooksLikeToken(token) {
 		return nil, cirun.ErrRunNotFound
 	}
-	return s.repo.GetRunByTokenHash(ctx, cirun.HashToken(token), s.now())
+	run, err := s.repo.GetRunByTokenHash(ctx, cirun.HashToken(token), s.now())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.organizationOpen(ctx, run.TenantID); err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
+// SetOrganizationGate wires the organization access gate
+// (docs/architecture/organization-suspension.md): no run token is issued
+// or accepted for a suspended organization.
+func (s *Service) SetOrganizationGate(g tenantdom.AccessGate) { s.orgs = g }
+
+// organizationOpen passes an active organization. Suspended answers
+// tenantdom.ErrOrganizationSuspended; a missing one ErrRunNotFound; any other
+// error refuses (fail closed).
+func (s *Service) organizationOpen(ctx context.Context, tenantID shared.ID) error {
+	if s.orgs == nil {
+		return nil
+	}
+	if err := s.orgs.CheckAccess(ctx, tenantID); err != nil {
+		if errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+			return err
+		}
+		if errors.Is(err, shared.ErrNotFound) {
+			return cirun.ErrRunNotFound
+		}
+		return fmt.Errorf("organization status: %w", err)
+	}
+	return nil
 }
 
 // ------------------------------------------------------------------ upload --

@@ -33,6 +33,10 @@ type PlatformUserSummary struct {
 	MFAEnabled      bool
 	IsPlatformAdmin bool
 	Erased          bool
+	// Blocked platform-wide by an administrator (users.status 'suspended'),
+	// when and why (docs/architecture/organization-suspension.md).
+	BlockedAt     *time.Time
+	BlockedReason string
 }
 
 // PlatformUserMembership is one organization the account belongs to.
@@ -89,19 +93,25 @@ const platformUserSelect = `
 	       (SELECT count(*) FROM tenant_members m WHERE m.user_id = u.id),
 	       COALESCE((SELECT f.enabled FROM user_mfa f WHERE f.user_id = u.id), FALSE),
 	       EXISTS (SELECT 1 FROM admin_users a WHERE a.user_id = u.id),
-	       u.erased_at IS NOT NULL
+	       u.erased_at IS NOT NULL,
+	       u.blocked_at, COALESCE(u.blocked_reason, '')
 	FROM users u`
 
 func scanPlatformUser(sc interface{ Scan(...any) error }) (PlatformUserSummary, error) {
 	var (
 		s                 PlatformUserSummary
 		locked, lastLogin sql.NullTime
+		blockedAt         sql.NullTime
 		memberships       int64
 	)
 	if err := sc.Scan(&s.ID, &s.Email, &s.Name, &s.Status, &s.AuthProvider, &s.EmailVerified,
 		&locked, &s.FailedLogins, &lastLogin, &s.CreatedAt, &memberships, &s.MFAEnabled,
-		&s.IsPlatformAdmin, &s.Erased); err != nil {
+		&s.IsPlatformAdmin, &s.Erased, &blockedAt, &s.BlockedReason); err != nil {
 		return s, err
+	}
+	if blockedAt.Valid {
+		t := blockedAt.Time
+		s.BlockedAt = &t
 	}
 	if locked.Valid {
 		t := locked.Time
@@ -273,4 +283,35 @@ func (d *PlatformUserDirectory) ClearLockout(ctx context.Context, id shared.ID) 
 		return fmt.Errorf("%w: user", shared.ErrNotFound)
 	}
 	return nil
+}
+
+// SetBlocked blocks an account platform-wide (users.status 'suspended', with
+// who and why) or lifts the block (status 'active', the blocked_* columns
+// cleared). Only an active account is blocked and only a blocked one is
+// unblocked: false when the account was not in that state. An erased
+// account never matches. The user repository's Update never lifts a block
+// (it keeps 'suspended'), so this is the one way back.
+func (d *PlatformUserDirectory) SetBlocked(ctx context.Context, id shared.ID, blocked bool, by *shared.ID, reason string) (bool, error) {
+	var (
+		res sql.Result
+		err error
+	)
+	if blocked {
+		var byArg any
+		if by != nil {
+			byArg = by.String()
+		}
+		res, err = d.db.ExecContext(ctx, `
+			UPDATE users SET status = 'suspended', blocked_at = now(), blocked_by = $2, blocked_reason = $3, updated_at = now()
+			WHERE id = $1 AND status = 'active' AND erased_at IS NULL`, id.String(), byArg, reason)
+	} else {
+		res, err = d.db.ExecContext(ctx, `
+			UPDATE users SET status = 'active', blocked_at = NULL, blocked_by = NULL, blocked_reason = NULL, updated_at = now()
+			WHERE id = $1 AND status = 'suspended' AND erased_at IS NULL`, id.String())
+	}
+	if err != nil {
+		return false, fmt.Errorf("set account block: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }

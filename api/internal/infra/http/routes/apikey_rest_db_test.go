@@ -113,7 +113,7 @@ func newKeyRESTHarness(t *testing.T, extra ...func(*Handlers)) *keyRESTHarness {
 	userRepo := postgres.NewUserRepository(db)
 
 	keys := apikey.NewService(postgres.NewAPIKeyRepository(db), "route-test-pepper", log)
-	keys.SetMembershipChecker(apikey.NewMembershipChecker(tenantRepo, userRepo))
+	keys.SetMembershipChecker(apikey.NewMembershipChecker(tenantRepo, userRepo, nil))
 	keys.SetHolderPermissions(apikey.NewHolderPermissions(tenantRepo, rolePermissionSource{postgres.NewRoleRepository(db)}))
 	auditSvc := auditapp.NewAuditService(postgres.NewAuditRepository(db), log)
 

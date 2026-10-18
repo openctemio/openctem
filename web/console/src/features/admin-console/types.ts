@@ -108,6 +108,11 @@ export interface AdminOrganization {
   sso_enforced: boolean
   /** At least one limit or module deny is set for the organization. */
   limits_apply: boolean
+  /** Platform status: a suspended organization is refused to every credential. */
+  status: 'active' | 'suspended'
+  suspended_at?: string
+  /** For administrators only; members never see it. */
+  suspended_reason?: string
 }
 
 export interface AdminOrganizationList {
@@ -327,6 +332,10 @@ export interface PlatformUser {
   mfa_enabled: boolean
   is_platform_admin: boolean
   erased: boolean
+  /** Blocked platform-wide: no sign-in, API key or MCP token anywhere. */
+  blocked: boolean
+  blocked_at?: string
+  blocked_reason?: string
 }
 
 export interface PlatformUserDetail extends PlatformUser {
@@ -357,7 +366,7 @@ export interface PlatformUserDetail extends PlatformUser {
 }
 
 export type PlatformUserAction =
-  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails'
+  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails' | 'block' | 'unblock'
 
 /** GET /admin/sessions: one open console session (super admin). */
 export interface AdminConsoleSession {
