@@ -2409,7 +2409,7 @@ sensor caps them at its `SENSOR_NUCLEI_MAX_*` ceilings.
 | Upload | `internal/app/template/validator.go` (`NucleiValidator`) | refuses `code`, `javascript`, `headless`, `file` and self-contained templates on the parsed document |
 | Delivery | `command.Service.Poll` → `template.PayloadSigner` | re-validates the command's templates and adds `custom_templates_envelope`: a DSSE envelope over a manifest bound to tenant, polling sensor, command and a 1 h expiry, listing every template's SHA-256; the stored command is unchanged |
 | Keys | `scannertemplate.Keyring`, `initTemplateKeyring` | per-tenant Ed25519 via HKDF from `APP_TEMPLATE_SIGNING_KEY` (or derived from `APP_ENCRYPTION_KEY`); `GET /api/v1/scanner-templates/signing-key` shows the public key |
-| Sensor | sdk-go `core.TemplateVerifier`; sensor `nuclei.CheckCustomTemplates` | verifies before parsing against `SENSOR_TEMPLATE_SIGNING_KEYS`, fails closed; custom templates run in their own nuclei run with `-exclude-type code,file,headless,javascript`, the sensor's own templates with `-disable-unsigned-templates` |
+| Sensor | sdk-go `core.TemplateVerifier`; sensor `nuclei.CheckCustomTemplates` | verifies before parsing against `SENSOR_TEMPLATE_SIGNING_KEYS`, fails closed; refuses `code`, `javascript`, `flow`, `file`, `headless`, `workflows`, payload files and multi-document files; custom templates run in their own nuclei run with `-exclude-type code,file,headless,javascript` (plus `-lna` when the task is not network-confined and no target is local, and a CPU-time limit), the sensor's own templates with `-disable-unsigned-templates` |
 
 ## Control plane under load (RFC-035)
 
