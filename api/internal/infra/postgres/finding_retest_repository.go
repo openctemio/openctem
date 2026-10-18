@@ -382,6 +382,7 @@ func (r *FindingRetestRepository) ListDueAutoTenants(ctx context.Context, now ti
 		FROM tenants t
 		LEFT JOIN finding_retest_cursors c ON c.tenant_id = t.id
 		WHERE (t.settings->'retest'->>'auto_enabled') = 'true'
+			AND t.status = 'active'
 			AND (c.next_run_at IS NULL OR c.next_run_at <= $1)
 		ORDER BY c.next_run_at NULLS FIRST
 		LIMIT $2`, now, limit)
