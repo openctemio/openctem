@@ -233,8 +233,11 @@ func registerAdminRoutes(
 	// one with a reason (audited).
 	if h.Announcement != nil {
 		opsAnn := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		// A banner every user of every organization sees is a phishing
+		// channel in a hijacked session: publishing or ending one needs a
+		// step-up.
 		annAudit := func(action string) []Middleware {
-			out := cloneMW(opsAnn)
+			out := append(cloneMW(opsAnn), stepUp(action))
 			if h.AdminAuditMiddleware != nil {
 				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "announcement", "announcement_id"))
 			}
@@ -556,6 +559,15 @@ func registerAdminRoutes(
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
 				with([]Middleware{opsWrite, freshStepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
 
+			// Suspend / lift (docs/architecture/organization-suspension.md):
+			// cuts or restores every credential of the organization at once.
+			// ops_admin+ (abuse response), a fresh authenticator code, a
+			// reason; the service writes the critical admin audit row.
+			if h.AdminSuspension != nil {
+				r.POST("/{tenantId}/suspend", h.AdminSuspension.SuspendOrganization, opsWrite, stepUp("organization.suspend"), scope)
+				r.POST("/{tenantId}/unsuspend", h.AdminSuspension.UnsuspendOrganization, opsWrite, stepUp("organization.unsuspend"), scope)
+			}
+
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
 				with([]Middleware{superWrite, ssoStepUp}, audit("organization.sso_enforcement"))...)
@@ -592,7 +604,7 @@ func registerAdminRoutes(
 			// reads; ops_admin+ turns it on or off (audited by the service).
 			if h.IdleWorkspace != nil {
 				r.GET("/{tenantId}/idle", h.IdleWorkspace.Get, read...)
-				r.PUT("/{tenantId}/idle/policy", h.IdleWorkspace.SetPolicy, with([]Middleware{opsWrite, scope})...)
+				r.PUT("/{tenantId}/idle/policy", h.IdleWorkspace.SetPolicy, with([]Middleware{opsWrite, stepUp("organization.idle_policy"), scope})...)
 			}
 
 			// Limits of one organization: any admin reads (with usage and the
@@ -600,8 +612,9 @@ func registerAdminRoutes(
 			// the service).
 			if h.Limits != nil {
 				r.GET("/{tenantId}/limits", h.Limits.GetTenantLimits, read...)
-				r.PUT("/{tenantId}/limits/{key}", h.Limits.SetTenantLimit, with([]Middleware{opsWrite, scope})...)
-				r.DELETE("/{tenantId}/limits/{key}", h.Limits.DeleteTenantLimit, with([]Middleware{opsWrite, scope})...)
+				// A limit of 0 freezes an organization: step-up like module denies.
+				r.PUT("/{tenantId}/limits/{key}", h.Limits.SetTenantLimit, with([]Middleware{opsWrite, stepUp("organization.limit"), scope})...)
+				r.DELETE("/{tenantId}/limits/{key}", h.Limits.DeleteTenantLimit, with([]Middleware{opsWrite, stepUp("organization.limit"), scope})...)
 				// Modules of one organization: any admin reads; ops_admin+
 				// denies one or lifts the deny with a fresh authenticator code
 				// (audited by the service; a denied module keeps read access
@@ -664,6 +677,12 @@ func registerAdminRoutes(
 			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
 			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
 			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
+			// Block / unblock platform-wide: ops_admin+, step-up, reason; the
+			// service writes the critical admin audit row.
+			if h.AdminSuspension != nil {
+				r.POST("/{user_id}/block", h.AdminSuspension.BlockUser, append(cloneMW(opsSupport), stepUp("platform_user.block"))...)
+				r.POST("/{user_id}/unblock", h.AdminSuspension.UnblockUser, append(cloneMW(opsSupport), stepUp("platform_user.unblock"))...)
+			}
 		}, adminMiddlewares...)
 	}
 
@@ -730,7 +749,8 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/threat-intel", func(r Router) {
 			r.GET("/sync", h.ThreatIntel.GetSyncStatuses)
 			feedWrite := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
-			syncMW, toggleMW := cloneMW(feedWrite), cloneMW(feedWrite)
+			// Turning a feed off changes every organization's prioritization.
+			syncMW, toggleMW := cloneMW(feedWrite), append(cloneMW(feedWrite), stepUp("threat_intel.sync_toggle"))
 			if h.AdminAuditMiddleware != nil {
 				syncMW = append(syncMW, h.AdminAuditMiddleware.AuditLog("threat_intel.sync", "threat_intel_feed", ""))
 				toggleMW = append(toggleMW, h.AdminAuditMiddleware.AuditLog("threat_intel.sync_toggle", "threat_intel_feed", ""))
@@ -746,7 +766,9 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/mcp-clients", func(r Router) {
 			r.GET("/", h.MCPConnections.AdminListClients)
 			write := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
-			block, unblock := cloneMW(write), cloneMW(write)
+			// Unblocking readmits an application that was cut off: both
+			// directions need a step-up.
+			block, unblock := append(cloneMW(write), stepUp("mcp_client.block")), append(cloneMW(write), stepUp("mcp_client.unblock"))
 			if h.AdminAuditMiddleware != nil {
 				block = append(block, h.AdminAuditMiddleware.AuditLog("mcp_client.blocked", "mcp_client", "id"))
 				unblock = append(unblock, h.AdminAuditMiddleware.AuditLog("mcp_client.unblocked", "mcp_client", "id"))

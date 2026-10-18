@@ -155,6 +155,32 @@ Request
 Handler
 ```
 
+### Organization suspension
+
+Every credential that reaches an organization asks one access gate
+(`tenant.AccessGate`, `internal/app/suspension.Gate`) once it knows the
+organization; a suspended organization answers **403
+`ORGANIZATION_SUSPENDED`** ("This organization is suspended — contact
+support"; the administrator's reason is never shown). The gate reads
+`tenants.status` through a shared Redis cache that the console overwrites on
+every change, and fails closed (an unreadable status refuses the request).
+
+| Credential | Where the gate runs |
+|---|---|
+| Session token (cookie or Bearer), JWT-tenant routes and the WebSocket upgrade | `RequireActiveOrganization` right after authentication in `buildBaseMiddlewares` |
+| Session token on `/api/v1/tenants/{tenant}/...` | `RequireActiveOrganizationParam` after `RequireMembership` |
+| Token mint and refresh | `AuthService.ExchangeToken` / `RefreshToken`, before the refresh token is spent, plus a backstop in every mint path |
+| `oct_` API key | the middleware above, and the key's membership check (`apikey.NewMembershipChecker`) |
+| MCP OAuth token | the same membership check, on every MCP request |
+| Sensor key (bearer, multi-key store, signed requests, mTLS) | `SensorService` after the sensor's own status check |
+| SCIM token | `scim.TokenService.Authenticate` (403 to the IdP) |
+| CI run token and the CI token exchange | `cirun.Service.Authenticate` / `Exchange` (after the workload token verified) |
+| Inbound Jira and GitHub webhooks | the webhook handlers, after the signature verified |
+
+Open WebSocket connections of the organization close at once. Scheduled work
+skips it (see `organization-suspension.md`). The GitHub App installation
+webhook is platform-level (installation lifecycle only) and is not gated.
+
 ### Step-up re-authentication
 
 A handful of routes also need **recent authentication** in the caller's own
@@ -952,6 +978,7 @@ empty `owner_emails`. Every member-list view is audited
 | `GET /api/v1/admin/platform-users?q=` | **ops_admin+** (3+ characters; account-level facts only; people's emails are not for read-only) |
 | `GET /api/v1/admin/platform-users/{user_id}` | **ops_admin+** (audited `platform_user.view`) |
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
+| `POST /api/v1/admin/platform-users/{user_id}/block`, `/unblock` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator; **critical** admin audit `platform_user.blocked` / `platform_user.unblocked`; 409 for a platform administrator's or an erased account, or when already in that state. A blocked account (`users.status = 'suspended'`) is refused at sign-in and on every request (session token, API key, MCP token); its sessions end at once. See `organization-suspension.md` |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
 | `GET /api/v1/admin/operations` | any admin (build, schema, database, Redis, queues, sensor versions, controllers; no tenant content) |
@@ -1140,6 +1167,7 @@ and certificates are never logged — an IdP update records
 | `POST /api/v1/admin/tenants` | **ops_admin+** + **step-up** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin; audited `organization.users_view`; `readonly` gets counts by role only (`redacted: true`) |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** + **step-up**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) (the route's step-up confirms it), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
+| `POST /api/v1/admin/tenants/{tenantId}/suspend`, `/unsuspend` | **ops_admin+** + **step-up**, `reason` required (10-500); **critical** admin audit `organization.suspended` / `organization.unsuspended` plus an entry in the organization's own log without the reason; 409 when already in that state or for the system organization. A suspended organization is refused to every credential (see "Organization suspension" below) |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
 | `PUT/POST/PATCH/DELETE` on those SSO resources, and `PUT .../sso/enforcement` | **super_admin** + **step-up** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/changes` | any admin (what is waiting for the owner) |

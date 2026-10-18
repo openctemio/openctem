@@ -235,7 +235,9 @@ func (r *TenantRepository) ExistsBySlug(ctx context.Context, slug string) (bool,
 func (r *TenantRepository) ListActiveTenantIDs(ctx context.Context) ([]shared.ID, error) {
 	// The system tenant is excluded: it is not a customer tenant, and every
 	// sweep that received it failed on it (cert-monitor warned on every tick).
-	query := `SELECT id FROM tenants WHERE id <> $1::uuid ORDER BY id`
+	// A suspended organization is left out too: its scheduled work is
+	// paused (docs/architecture/organization-suspension.md).
+	query := `SELECT id FROM tenants WHERE id <> $1::uuid AND status = 'active' ORDER BY id`
 
 	rows, err := r.db.QueryContext(ctx, query, tenant.SystemTenantID)
 	if err != nil {
@@ -1264,7 +1266,8 @@ func (r *TenantRepository) GetUserMembershipsWithStatus(
 			t.slug,
 			t.name,
 			ver.role as effective_role,
-			COALESCE(m.status, 'active') as status
+			COALESCE(m.status, 'active') as status,
+			t.status <> 'active' as organization_suspended
 		FROM tenant_members m
 		INNER JOIN tenants t ON t.id = m.tenant_id
 		INNER JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -1285,15 +1288,19 @@ func (r *TenantRepository) GetUserMembershipsWithStatus(
 			m      tenant.UserMembership
 			status string
 		)
-		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &status); err != nil {
+		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &status, &m.OrganizationSuspended); err != nil {
 			return nil, fmt.Errorf("failed to scan membership: %w", err)
 		}
 		// Positive buckets only: an offboarded tombstone (or any status
-		// added later) is in neither list, so it never yields a token.
-		switch status {
-		case "suspended":
+		// added later) is in neither list, so it never yields a token. An
+		// active membership of a suspended organization is listed with the
+		// suspended ones (no token; the sign-in page says why).
+		switch {
+		case status == "active" && m.OrganizationSuspended:
 			result.Suspended = append(result.Suspended, m)
-		case "active":
+		case status == "suspended":
+			result.Suspended = append(result.Suspended, m)
+		case status == "active":
 			result.Active = append(result.Active, m)
 		}
 	}

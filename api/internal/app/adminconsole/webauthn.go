@@ -780,6 +780,11 @@ func (s *Service) SetMFAPolicy(ctx context.Context, actor *admin.AdminUser, p ad
 	}
 	s.forgetFactors(nil)
 	s.recordNote(ctx, actor, ActionMFAPolicyChanged, client, note)
+	summary := "turned off the security-key requirement for console sign-in"
+	if p.RequireWebAuthn {
+		summary = "turned on the security-key requirement for console sign-in"
+	}
+	s.NotifyRosterChange(ctx, actor, RosterSignInPolicy, summary, client)
 	return version, nil
 }
 

@@ -99,6 +99,8 @@ export interface LoginBackendResponse {
     slug: string
     name: string
     role: string
+    /** The organization itself is suspended by the platform operator. */
+    organization_suspended?: boolean
   }>
   // True for a platform administrator (RFC-022). The account belongs to no
   // organization; it goes to the admin console, not onboarding.
@@ -398,6 +400,17 @@ async function completeLogin(
     // form renders the message and stays on /login.
     if (loginData.suspended_tenants && loginData.suspended_tenants.length > 0) {
       devLog.log('[Login] User has only suspended memberships:', loginData.suspended_tenants.length)
+      // Every one of them is an organization the platform operator
+      // suspended: the form shows that message (translated) from the code.
+      if (loginData.suspended_tenants.every((t) => t.organization_suspended)) {
+        return {
+          success: false,
+          user,
+          code: 'ORGANIZATION_SUSPENDED',
+          error: 'This organization is suspended — contact support',
+          suspendedTenants: loginData.suspended_tenants,
+        }
+      }
       const tenantNames = loginData.suspended_tenants.map((t) => t.name).join(', ')
       return {
         success: false,
