@@ -394,12 +394,23 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 		return nil
 	}
 
-	query, args, err := buildExposureBulkUpsert(events)
+	stmts, err := buildExposureBulkUpsert(events)
 	if err != nil {
 		return err
 	}
-	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to bulk upsert exposure events: %w", err)
+	// All chunks or none, like the single statement before.
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin exposure upsert: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, st := range stmts {
+		if _, err := tx.ExecContext(ctx, st.query, st.args...); err != nil {
+			return fmt.Errorf("failed to bulk upsert exposure events: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit exposure upsert: %w", err)
 	}
 	return nil
 }
@@ -420,18 +431,29 @@ func (r *ExposureRepository) BulkUpsertInTx(ctx context.Context, tx *sql.Tx, eve
 	if len(events) == 0 {
 		return nil, nil
 	}
-	query, args, err := buildExposureBulkUpsert(events)
+	stmts, err := buildExposureBulkUpsert(events)
 	if err != nil {
 		return nil, err
 	}
+	out := make([]UpsertedExposure, 0, len(events))
+	for _, st := range stmts {
+		if out, err = upsertExposureChunkTx(ctx, tx, st, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// upsertExposureChunkTx runs one statement of BulkUpsertInTx and appends the
+// rows it wrote to out.
+func upsertExposureChunkTx(ctx context.Context, tx *sql.Tx, st exposureStatement, out []UpsertedExposure) ([]UpsertedExposure, error) {
 	// xmax = 0 only on a freshly inserted tuple; an ON CONFLICT update locks
 	// the existing row and sets it.
-	rows, err := tx.QueryContext(ctx, query+` RETURNING id, tenant_id, fingerprint, (xmax = 0)`, args...)
+	rows, err := tx.QueryContext(ctx, st.query+` RETURNING id, tenant_id, fingerprint, (xmax = 0)`, st.args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bulk upsert exposure events: %w", err)
 	}
 	defer rows.Close()
-	out := make([]UpsertedExposure, 0, len(events))
 	for rows.Next() {
 		var u UpsertedExposure
 		if err := rows.Scan(&u.ID, &u.TenantID, &u.Fingerprint, &u.Inserted); err != nil {
@@ -445,14 +467,38 @@ func (r *ExposureRepository) BulkUpsertInTx(ctx context.Context, tx *sql.Tx, eve
 	return out, nil
 }
 
-// buildExposureBulkUpsert builds the batch INSERT ... ON CONFLICT statement.
-func buildExposureBulkUpsert(events []*exposure.ExposureEvent) (string, []any, error) {
+// exposureUpsertColumns is the number of parameters per row of the bulk upsert.
+const exposureUpsertColumns = 18
+
+// exposureStatement is one statement of a bulk upsert.
+type exposureStatement struct {
+	query string
+	args  []any
+}
+
+// buildExposureBulkUpsert builds the batch INSERT ... ON CONFLICT statements,
+// one per chunk that fits under the bind-parameter limit (18 per row stop
+// fitting at 3641 rows; the certificate and DNS monitors can pass more).
+func buildExposureBulkUpsert(events []*exposure.ExposureEvent) ([]exposureStatement, error) {
 	// Fold events that share a fingerprint: the statement below cannot update
 	// one row twice, and a single duplicate used to fail the whole batch.
+	// Folding before chunking keeps every fingerprint in one chunk only.
 	rows := foldExposureBatch(events)
+	var out []exposureStatement
+	err := forEachStatementChunk(len(rows), exposureUpsertColumns, 0, 0, func(start, end int) error {
+		q, a, err := exposureUpsertSQL(rows[start:end])
+		if err != nil {
+			return err
+		}
+		out = append(out, exposureStatement{query: q, args: a})
+		return nil
+	})
+	return out, err
+}
 
-	// Build batch INSERT query
-	const numCols = 18 // number of columns in the insert
+// exposureUpsertSQL builds the INSERT ... ON CONFLICT statement for rows.
+func exposureUpsertSQL(rows []exposureBatchRow) (string, []any, error) {
+	const numCols = exposureUpsertColumns
 	valueStrings := make([]string, 0, len(rows))
 	valueArgs := make([]any, 0, len(rows)*numCols)
 
