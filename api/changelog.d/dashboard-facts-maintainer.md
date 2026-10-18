@@ -11,6 +11,6 @@
 - New metrics `openctem_dashboard_fact_lag_seconds`, `openctem_dashboard_fact_queue_depth`,
   `openctem_dashboard_fact_queue_oldest_seconds`, `openctem_dashboard_fact_drift_rows_total`,
   `openctem_dashboard_fact_runs_total`, and alerts `DashboardFactsLagging` and `DashboardFactsDrift`.
-- Migration `002931_dashboard_facts_maintainer`.
+- Migration `002939_dashboard_facts_maintainer`.
 - **Upgrade note:** no action. After the upgrade the reconcile controller builds each organization's facts in
   batches of 200 assets (short transactions), most urgent first; dashboards do not read the facts yet.
