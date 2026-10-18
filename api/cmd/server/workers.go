@@ -40,6 +40,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -241,7 +242,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// tasks and never consumed them. jobs.NewWorker logs which handlers it had
 	// to skip.
 	var err error
-	w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
+	w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, log)
 	if err != nil {
 		return nil, err
 	}
@@ -896,6 +897,24 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		}
 		w.ControllerManager.Register(controller.NewAssetRiskScoreController(svc.Asset, 0))
 		w.ControllerManager.Register(controller.NewAssetRiskReconcileController(svc.Asset, 0))
+	}
+
+	// Durable jobs: ticket status sync and invitation e-mails, queued in the
+	// transaction of the change that needs them.
+	if svc != nil {
+		handlers := map[durablejob.Kind]controller.DurableJobHandler{}
+		if svc.JiraSync != nil {
+			handlers[durablejob.KindJiraStatusSync] = jobs.StatusSyncHandler(svc.JiraSync)
+		}
+		if svc.GitHubTicket != nil {
+			handlers[durablejob.KindGitHubStatusSync] = jobs.StatusSyncHandler(svc.GitHubTicket)
+		}
+		if svc.Email != nil && svc.Encryptor != nil {
+			handlers[durablejob.KindInvitationEmail] = jobs.InvitationEmailHandler(svc.Email, svc.Encryptor)
+		}
+		w.ControllerManager.Register(controller.NewDurableJobsController(
+			postgres.NewDurableJobRepository(&postgres.DB{DB: deps.DB}), handlers, 0,
+			log.With("controller", "durable-jobs")))
 	}
 
 	// Risk snapshot — computes daily risk/MTTR/SLA metrics per tenant (RFC-005 Gap 4)
