@@ -77,6 +77,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/auth":                                {classSystem, "authentication flows"},
 	"/api/v1/users":                               {classSystem, "the caller's own account"},
 	"/api/v1/me":                                  {classSystem, "the caller's own permissions, groups and assets"},
+	"/api/v1/query":                               {classScoped, "custom queries compile through filterspec as the caller: tenant, data scope, pentest member rule and mandatory exclusions are injected into every statement (docs/architecture/query-language.md)"},
 	"/api/v1/views":                               {classSystem, "the caller's saved views and those shared with their groups; a view runs as the viewer, scoped (D15)"},
 	"/api/v1/invitations":                         {classSystem, "invitation acceptance (token)"},
 	"/api/v2/sensor":                              {classSystem, "sensor protocol v2 (write-only, tenant from the key)"},
