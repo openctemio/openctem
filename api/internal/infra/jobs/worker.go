@@ -27,26 +27,10 @@ type WorkerOption func(*Worker)
 
 // Worker processes background jobs.
 type Worker struct {
-	server             *asynq.Server
-	mux                *asynq.ServeMux
-	logger             *logger.Logger
-	aiTriageProcessor  AITriageProcessor
-	jiraStatusSyncer   JiraStatusSyncer
-	githubStatusSyncer GitHubStatusSyncer
-}
-
-// WithJiraStatusSyncer adds the outbound Jira status-sync handler to the worker.
-func WithJiraStatusSyncer(syncer JiraStatusSyncer) WorkerOption {
-	return func(w *Worker) {
-		w.jiraStatusSyncer = syncer
-	}
-}
-
-// WithGitHubStatusSyncer adds the outbound GitHub issue status-sync handler.
-func WithGitHubStatusSyncer(syncer GitHubStatusSyncer) WorkerOption {
-	return func(w *Worker) {
-		w.githubStatusSyncer = syncer
-	}
+	server            *asynq.Server
+	mux               *asynq.ServeMux
+	logger            *logger.Logger
+	aiTriageProcessor AITriageProcessor
 }
 
 // WithAITriageProcessor adds an AI triage processor to the worker.
@@ -84,7 +68,6 @@ func NewWorker(cfg WorkerConfig, emailService *auth.EmailService, log *logger.Lo
 	// up in Redis with nothing consuming them.
 	if emailService != nil {
 		emailHandler := NewEmailTaskHandler(emailService, log)
-		mux.HandleFunc(TypeEmailTeamInvitation, emailHandler.HandleTeamInvitation)
 		mux.HandleFunc(TypeEmailWelcome, emailHandler.HandleWelcomeEmail)
 		mux.HandleFunc(TypeEmailVerification, emailHandler.HandleVerificationEmail)
 		mux.HandleFunc(TypeEmailPasswordReset, emailHandler.HandlePasswordReset)
@@ -93,7 +76,6 @@ func NewWorker(cfg WorkerConfig, emailService *auth.EmailService, log *logger.Lo
 		log.Warn("email task handlers NOT registered - SMTP is not configured; "+
 			"other job handlers still run",
 			"unregistered_task_types", strings.Join([]string{
-				TypeEmailTeamInvitation,
 				TypeEmailWelcome,
 				TypeEmailVerification,
 				TypeEmailPasswordReset,
@@ -117,18 +99,6 @@ func NewWorker(cfg WorkerConfig, emailService *auth.EmailService, log *logger.Lo
 		aiTriageHandler := NewAITriageTaskHandler(w.aiTriageProcessor, log.Logger)
 		aiTriageHandler.RegisterHandlers(mux)
 		log.Info("AI triage task handlers registered")
-	}
-
-	// Register outbound Jira status-sync handler if wired
-	if w.jiraStatusSyncer != nil {
-		jiraSyncHandler := NewJiraSyncTaskHandler(w.jiraStatusSyncer, log.Logger)
-		jiraSyncHandler.RegisterHandlers(mux)
-	}
-
-	if w.githubStatusSyncer != nil {
-		githubSyncHandler := NewGitHubSyncTaskHandler(w.githubStatusSyncer, log.Logger)
-		githubSyncHandler.RegisterHandlers(mux)
-		log.Info("github status-sync task handler registered")
 	}
 
 	return w, nil
