@@ -75,7 +75,7 @@ console says the feed cannot be verified.
 
 An instance without internet access records the failure (`unreachable`),
 logs one line per check and backs off to weekly. A super administrator can
-import the same file in the console (System > Software updates > Import):
+import the same file in the console (Monitoring > Software updates > Import):
 download `openctem-releases.json` from the latest release on a connected
 machine, carry it in, upload it. It goes through exactly the same
 verification, including rollback and expiry. Set `VERSION_CHECK_ENABLED=false`
@@ -92,7 +92,7 @@ used by this client.
 - A banner on every console page: "Update available" (information) or
   "Security release: upgrade" (highlighted, with the highest severity and the
   version that fixes it), linking to the Software updates page.
-- System > Software updates: running version, latest release, releases newer
+- Monitoring > Software updates: running version, latest release, releases newer
   than the running one, the advisories that affect it, where the information
   came from (online or imported) and when, the last check's outcome and the
   next check, and the import.
@@ -183,7 +183,7 @@ keep the sensor and SDK versions built into their release.
    `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
    then answers 200.
 6. On an instance with that release: Console > System shows the version check
-   "OK" and a "Last release information" time; System > Software updates lists
+   "OK" and a "Last release information" time; Monitoring > Software updates lists
    the sensor and SDK releases.
 
 Rotation and compromise: see [signing keys](signing-keys.md). The catalog

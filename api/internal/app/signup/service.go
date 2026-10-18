@@ -89,7 +89,7 @@ func (s *Service) SetStartLimitsCheck(f func(ctx context.Context) (bool, error))
 
 // ErrStartLimitsRequired refuses turning self-service sign-up on while no
 // starting limits are configured.
-var ErrStartLimitsRequired = errors.New("self-service sign-up needs starting limits first: save them in System > Limits " +
+var ErrStartLimitsRequired = errors.New("self-service sign-up needs starting limits first: save them in Console > Settings > Limits " +
 	"(empty is allowed only by setting SELF_SERVICE_START_LIMITS=unlimited), or turn on the internal entitlements API")
 
 // NewService creates the service. audit, admins and notifier may be nil
@@ -154,7 +154,7 @@ func (s *Service) Current(ctx context.Context) signupdom.Policy {
 func (s *Service) Effective(p signupdom.Policy) signupdom.Policy {
 	p = s.ceiling.Clamp(p)
 	if p.AllowsPublicSignup() && s.mailReady != nil && !s.mailReady() {
-		s.log.Warn("platform e-mail is not configured; public sign-up is closed until it is (System > E-mail)")
+		s.log.Warn("platform e-mail is not configured; public sign-up is closed until it is (Console > Settings > E-mail)")
 		p.Mode, p.Accounts = signupdom.ModeAdminOnly, signupdom.AccountsClosed
 	}
 	if p.AccountSignup() == signupdom.AccountsOpen && s.captchaReady != nil && !s.captchaReady() {

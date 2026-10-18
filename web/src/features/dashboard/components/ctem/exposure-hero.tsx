@@ -43,7 +43,10 @@ export function ExposureHero({ summary, trend, kevChainCount, isLoading }: Expos
   if (isLoading) {
     return (
       <Card className="gap-4">
-        <Head title="Active exposure" desc="exploitable now" />
+        <Head
+          title={t('dashboardMetrics.hero.activeExposure')}
+          desc={t('dashboardMetrics.hero.exploitableNow')}
+        />
         <CardContent className="space-y-4">
           <Skeleton className="h-14 w-40" />
           <Skeleton className="h-4 w-full" />
@@ -70,7 +73,10 @@ export function ExposureHero({ summary, trend, kevChainCount, isLoading }: Expos
 
   return (
     <Card className="gap-4">
-      <Head title="Active exposure" desc="exploitable now" />
+      <Head
+        title={t('dashboardMetrics.hero.activeExposure')}
+        desc={t('dashboardMetrics.hero.exploitableNow')}
+      />
       <CardContent className="flex flex-1 flex-col">
         {/* Hero number + tiny label */}
         <div className="flex items-center gap-4">
@@ -91,20 +97,23 @@ export function ExposureHero({ summary, trend, kevChainCount, isLoading }: Expos
             >
               P0
             </span>
-            <span className="text-xs text-muted-foreground">exploitable now</span>
+            <span className="text-xs text-muted-foreground">
+              {t('dashboardMetrics.hero.exploitableNow')}
+            </span>
           </div>
         </div>
 
         {/* Compact sub-stats */}
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
           <span>
-            Risk{' '}
+            {t('dashboardMetrics.hero.risk')}{' '}
             <span className="font-semibold text-foreground">
               {summary ? formatRiskScore(summary.risk_score_current) : '—'}
             </span>
           </span>
           <span>
-            KEV chains <span className="font-semibold text-foreground">{kevChainCount}</span>
+            {t('dashboardMetrics.hero.kevChains')}{' '}
+            <span className="font-semibold text-foreground">{kevChainCount}</span>
           </span>
           <span>
             {t('dashboardMetrics.hero.crownJewels')}{' '}

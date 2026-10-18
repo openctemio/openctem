@@ -42,7 +42,7 @@ Lowering `SIGNUP_MODE` closes sign-up at the next start with no console change.
 Start-up refuses to run when:
 
 - `SIGNUP_MODE` is not `disabled`, `domain` or `open`;
-- `SIGNUP_MODE=domain` or `open` and the platform e-mail (System > E-mail) is
+- `SIGNUP_MODE=domain` or `open` and the platform e-mail (Settings > E-mail) is
   not set: every self-registered address must be verified. Set it with
   `bootstrap-admin` (`BOOTSTRAP_SMTP_*`), or start with `disabled`, set it in
   the console and restart. While running, public sign-up is also closed
@@ -75,7 +75,7 @@ way for a new and an existing address, so it does not enumerate.
   organization setting, then the platform e-mail (auto: no e-mail, no
   verification) and `AUTH_REQUIRE_EMAIL_VERIFICATION` apply as before.
 
-## Sign-up policy (Console > System > Sign-up)
+## Sign-up policy (Console > Settings > Sign-up)
 
 Who may create an account and who may create an organization on this
 deployment is **one platform setting** with two decisions, `signup_policy` in
@@ -402,7 +402,7 @@ Tests: `tests/unit/auth_anti_enumeration_test.go`.
 
 An organization a person creates themselves starts with the instance's
 self-service default limits, which are empty (no limits) unless a super
-admin sets them in Console > System > Limits. The same setting can cap how
+admin sets them in Console > Settings > Limits. The same setting can cap how
 many organizations one person may own (`orgs_per_user`, unlimited by
 default); over it, `POST /api/v1/tenants` is refused with 403
 `LIMIT_REACHED`. See `docs/architecture/limits.md`.

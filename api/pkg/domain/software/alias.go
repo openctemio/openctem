@@ -30,11 +30,23 @@ const (
 // FeedAlias says that the product known as Value (kind cpe:
 // "part:vendor:product"; kind purl: "pkg:type/namespace/name") is the
 // catalog product with the CPE identity Target ("part:vendor:product").
+// Basis is why the feed says so: BasisCurated for a reviewed override in
+// the feed repository, anything else (learned from advisory text, name
+// rules) is evidence only.
 type FeedAlias struct {
 	Kind   string
 	Value  string
 	Target string
+	Basis  string
 }
+
+// BasisCurated marks a reviewed dictionary entry. Only a reviewed entry may
+// fold a product that has data of its own beyond CNA-named ranges, and only
+// a reviewed entry may alias a package identity.
+const BasisCurated = "curated"
+
+// Reviewed reports whether the entry is a reviewed override.
+func (a FeedAlias) Reviewed() bool { return a.Basis == BasisCurated }
 
 // ErrInvalidAlias is returned for an alias that fails validation.
 var ErrInvalidAlias = errors.New("invalid feed alias")
@@ -60,6 +72,12 @@ func (a FeedAlias) Validate() error {
 	case AliasKindPURL:
 		if !validPURLAlias(a.Value) {
 			return fmt.Errorf("%w: purl %q", ErrInvalidAlias, a.Value)
+		}
+		// A package alias wins over a tenant's own package row, so a
+		// learned one could turn an internal package that shares a public
+		// name into the public product (dependency confusion).
+		if !a.Reviewed() {
+			return fmt.Errorf("%w: purl %q is not a reviewed entry", ErrInvalidAlias, a.Value)
 		}
 	default:
 		return fmt.Errorf("%w: kind %q", ErrInvalidAlias, a.Kind)
@@ -132,18 +150,31 @@ type AliasResult struct {
 	// curated product holds the value.
 	Unchanged int
 	Skipped   int
+	// Held: entries not applied because they would fold a product with
+	// data of its own and are not reviewed (HeldValues lists the first
+	// MaxHeldValues of them for the operator).
+	Held       int
+	HeldValues []string
+	// Removed: feed aliases the dictionary no longer carries.
+	Removed int
 	// Requeued: CVEs whose ranges moved and are matched again.
 	Requeued int
 }
 
+// MaxHeldValues caps AliasResult.HeldValues.
+const MaxHeldValues = 50
+
 // AliasWriter applies the feed's alias dictionary to the global catalog.
 type AliasWriter interface {
 	// ApplyFeedAliases writes the aliases as global feed aliases in one
-	// transaction and folds every feed-created product an alias names into
+	// transaction, removes the feed aliases the dictionary no longer
+	// carries, and folds every feed-created product an alias names into
 	// its canonical product (its ranges, versions and links move; the CVEs
-	// it touched are matched again). A curated alias or curated product is
-	// never changed. It refuses a dictionary that would fold more than
-	// maxMerges products.
+	// it touched are matched again; every fold is journaled). A curated
+	// alias or curated product is never changed. An entry that is not
+	// reviewed folds only a product whose ranges all come from CNA names;
+	// otherwise it is held. It refuses an empty dictionary and one that
+	// would fold more than maxMerges products.
 	ApplyFeedAliases(ctx context.Context, aliases []FeedAlias, maxMerges int) (AliasResult, error)
 }
 

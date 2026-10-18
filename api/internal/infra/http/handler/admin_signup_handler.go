@@ -18,7 +18,7 @@ import (
 
 const stepUpPurposeSignupPolicy = "sign-up policy change"
 
-// AdminSignupHandler serves Console > System > Sign-up: who may create an
+// AdminSignupHandler serves Console > Settings > Sign-up: who may create an
 // organization on this deployment (docs/architecture/user-onboarding.md,
 // "Sign-up policy").
 type AdminSignupHandler struct {

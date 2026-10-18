@@ -149,11 +149,27 @@ func TestVulnFeedAliases(t *testing.T) {
 
 	// A newer version applies and clears the error.
 	feed.publish(feed.root, release(5), nil)
+	// It also carries a learned entry that would fold the canonical
+	// product (NVD ranges) into another one: held, not applied, and listed.
+	poison := entry("a:"+vendor+":widget", "a:"+vendor+"_evil:widget")
 	feed.writeAliases(feed.online, 5, 2, []map[string]any{entry("a:"+vendor+"_inc:widget", "a:"+vendor+":widget"),
-		entry("a:"+vendor+"_corp:widget", "a:"+vendor+":widget")}, false)
+		entry("a:"+vendor+"_corp:widget", "a:"+vendor+":widget"), poison}, false)
 	run()
 	m = meta()
 	assert.EqualValues(t, 2, m["aliases_version"])
 	assert.Nil(t, m["aliases_error"])
+	assert.EqualValues(t, 1, m["aliases_held"])
+	assert.Equal(t, []any{"a:" + vendor + ":widget -> a:" + vendor + "_evil:widget"}, m["aliases_held_values"])
+	assert.Equal(t, vendor, productOf(Y), "a held entry folds nothing")
 	assert.Len(t, queryStrings(t, db, `SELECT value FROM software_product_aliases WHERE tenant_id IS NULL AND source = 'feed' AND value LIKE $1`, "a:"+vendor+"%"), 2)
+
+	// Rollback: an older dictionary version next to a newer release is
+	// not applied (and is not an error).
+	feed.publish(feed.root, release(6), nil)
+	feed.writeAliases(feed.online, 6, 1, []map[string]any{entry("a:"+vendor+"_old:widget", "a:"+vendor+":widget")}, false)
+	run()
+	m = meta()
+	assert.EqualValues(t, 2, m["aliases_version"])
+	assert.Nil(t, m["aliases_error"])
+	assert.Empty(t, queryStrings(t, db, `SELECT value FROM software_product_aliases WHERE value = $1`, "a:"+vendor+"_old:widget"))
 }

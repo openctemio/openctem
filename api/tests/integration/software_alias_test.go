@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -72,11 +73,29 @@ func (e *aliasEnv) observeCPE(tenantID, assetID shared.ID, vendor, version strin
 	return assetID
 }
 
+// alias applies a one-entry dictionary whose entry was learned (not
+// reviewed).
 func (e *aliasEnv) alias(kind, value, target string) software.AliasResult {
 	e.t.Helper()
-	res, err := e.corpus.ApplyFeedAliases(context.Background(), []software.FeedAlias{{Kind: kind, Value: value, Target: target}}, 100)
+	return e.aliasBasis(kind, value, target, "learned")
+}
+
+func (e *aliasEnv) aliasBasis(kind, value, target, basis string) software.AliasResult {
+	e.t.Helper()
+	res, err := e.corpus.ApplyFeedAliases(context.Background(), []software.FeedAlias{{Kind: kind, Value: value, Target: target, Basis: basis}}, 100)
 	require.NoError(e.t, err)
 	return res
+}
+
+// publishNVD (re)writes one CVE with an NVD range of vendor:widget.
+func (e *aliasEnv) publishNVD(cveID, vendor string, r vm.Range) {
+	e.t.Helper()
+	score := 7.5
+	p, err := vm.ParseCPE("cpe:2.3:a:" + vendor + ":widget:*")
+	require.NoError(e.t, err)
+	_, err = e.corpus.ApplyPage(context.Background(), []cvecorpus.CVE{{ID: cveID, Status: "Analyzed", Description: "Widget bug.",
+		CVSSScore: &score, Severity: "high", Ranges: []cvecorpus.Range{{Product: p, Range: r, Source: "nvd"}}}})
+	require.NoError(e.t, err)
 }
 
 func (e *aliasEnv) openFindings(tenantID shared.ID, cveID string) []string {
@@ -131,6 +150,7 @@ func TestSoftwareAlias_CNANameResolvesAfterDictionary(t *testing.T) {
 
 	// Case 8: the same dictionary again changes nothing, and nothing flaps.
 	res = e.alias(software.AliasKindCPE, "a:"+e.cna+":widget", "a:"+e.canonical+":widget")
+	res.Removed = 0 // other tests' feed aliases in the shared database
 	assert.Equal(t, software.AliasResult{Unchanged: 1}, res)
 	e.run()
 	assert.Equal(t, got, e.openFindings(tn, cve))
@@ -212,7 +232,12 @@ func TestSoftwareAlias_PURLAndCPEAreOneProduct(t *testing.T) {
 	_, err = writer.WritePackages(context.Background(), tn, snap)
 	require.NoError(t, err)
 
+	// A learned package alias is refused: it would win over the tenant's
+	// own package row (dependency confusion).
 	res := e.alias(software.AliasKindPURL, "pkg:maven/"+ns+"/widget-core", "a:"+e.canonical+":widget")
+	res.Removed = 0 // other tests' feed aliases in the shared database
+	assert.Equal(t, software.AliasResult{Skipped: 1}, res)
+	res = e.aliasBasis(software.AliasKindPURL, "pkg:maven/"+ns+"/widget-core", "a:"+e.canonical+":widget", software.BasisCurated)
 	assert.Equal(t, 1, res.Written)
 	_, err = writer.WritePackages(context.Background(), tn, snap)
 	require.NoError(t, err)
@@ -222,7 +247,11 @@ func TestSoftwareAlias_PURLAndCPEAreOneProduct(t *testing.T) {
 	assert.Equal(t, []string{e.canonical}, products, "the package resolves to the canonical global product")
 	e.svc.SoftwareChanged(tn, nil)
 	e.run()
-	assert.Len(t, e.openFindings(tn, cve), 1, "one finding per asset and CVE across both identities")
+	// One finding per location: the service on tcp/443 and the package
+	// (both on the canonical product), never two for one location.
+	ports := queryStrings(t, e.pdb.DB, `SELECT COALESCE(network_port::text, '-') FROM findings
+		WHERE tenant_id = $1 AND tool_name = 'version-match' AND cve_id = $2 ORDER BY 1`, tn.String(), cve)
+	assert.Equal(t, []string{"-", "443"}, ports)
 }
 
 // Untrusted dictionary entries: malformed ones are skipped (never fatal,
@@ -264,6 +293,14 @@ func TestSoftwareAlias_RefusesBadAndPoisonedEntries(t *testing.T) {
 		{Kind: "cpe", Value: "a:" + e.cna + "2:widget", Target: target},
 	}, 1)
 	require.ErrorIs(t, err, software.ErrMergeLimit)
+	// An empty dictionary is refused (it would remove every feed alias).
+	_, err = e.corpus.ApplyFeedAliases(ctx, nil, 1)
+	require.ErrorIs(t, err, software.ErrInvalidAlias)
+	_, err = e.corpus.ApplyFeedAliases(ctx, []software.FeedAlias{
+		{Kind: "cpe", Value: "a:" + e.cna + ":widget", Target: target},
+		{Kind: "cpe", Value: "a:" + e.cna + "2:widget", Target: target},
+	}, 1)
+	require.ErrorIs(t, err, software.ErrMergeLimit)
 	assert.True(t, e.productExists(e.cna))
 	var n int
 	require.NoError(t, e.pdb.QueryRow(`SELECT count(*) FROM software_product_aliases WHERE value LIKE $1`, "a:"+e.cna+"%").Scan(&n))
@@ -297,4 +334,117 @@ func TestSoftwareAlias_RepointAndCuratedWins(t *testing.T) {
 	require.NoError(t, e.pdb.QueryRow(`SELECT p.cpe_vendor || ':' || a.source FROM software_product_aliases a
 		JOIN software_products p ON p.id = a.product_id WHERE a.tenant_id IS NULL AND a.kind = 'cpe' AND a.value = 'a:nginx:nginx'`).Scan(&curated))
 	assert.Equal(t, "f5:curated", curated)
+}
+
+// Poisoning: a learned entry (advisory text, not reviewed) that names a
+// product with data of its own (NVD ranges, tenant links) is held: no
+// alias, no fold, the tenant's link and finding stay. The same entry,
+// reviewed, folds the product and journals the fold so it can be split.
+func TestSoftwareAlias_LearnedEntryNeverFoldsARealProduct(t *testing.T) {
+	e := newAliasEnv(t)
+	tn := e.tenant("alias-poison", true)
+	victim := e.cna // a real product that NVD names
+	cve := testCVEID()
+	e.publishNVD(cve, victim, vm.Range{End: "3.0"})
+	e.publishNVD(testCVEID(), e.canonical, vm.Range{Exact: "9.9"})
+	asset := e.observeCPE(tn, shared.ID{}, victim, "2.0.0")
+	e.run()
+	before := e.openFindings(tn, cve)
+	require.Len(t, before, 1)
+
+	value, target := "a:"+victim+":widget", "a:"+e.canonical+":widget"
+	res := e.alias(software.AliasKindCPE, value, target)
+	assert.Equal(t, 1, res.Held)
+	assert.Equal(t, []string{value + " -> " + target}, res.HeldValues)
+	assert.Zero(t, res.Written+res.Merged)
+	assert.True(t, e.productExists(victim), "a learned entry never folds a product NVD names")
+	var n int
+	require.NoError(t, e.pdb.QueryRow(`SELECT count(*) FROM software_product_aliases WHERE tenant_id IS NULL AND value = $1`, value).Scan(&n))
+	assert.Zero(t, n, "a held entry changes no resolution")
+	e.run()
+	assert.Equal(t, before, e.openFindings(tn, cve))
+
+	res = e.aliasBasis(software.AliasKindCPE, value, target, software.BasisCurated)
+	assert.Equal(t, 1, res.Merged)
+	assert.False(t, e.productExists(victim))
+	var identity, basis string
+	var cves, moved int
+	require.NoError(t, e.pdb.QueryRow(`SELECT from_identity, basis, cardinality(cve_ids), cardinality(moved_version_ids)
+		FROM software_product_merges m JOIN software_products p ON p.id = m.into_product_id
+		WHERE p.cpe_vendor = $1`, e.canonical).Scan(&identity, &basis, &cves, &moved))
+	assert.Equal(t, value, identity)
+	assert.Equal(t, software.BasisCurated, basis)
+	assert.Equal(t, 1, cves)
+	assert.Equal(t, 1, moved, "the 2.0.0 version moved as it is (journaled for a split)")
+	e.run()
+	got := e.openFindings(tn, cve)
+	require.Len(t, got, 1)
+	assert.Equal(t, "new|"+asset.String(), got[0])
+}
+
+// A feed alias the dictionary no longer carries is removed (a retracted
+// entry stops resolving); curated and tenant aliases are never removed.
+func TestSoftwareAlias_RetractedEntryIsRemoved(t *testing.T) {
+	e := newAliasEnv(t)
+	gone, kept := "a:"+e.cna+":widget", "a:"+e.cna+"2:widget"
+	target := "a:" + e.canonical + ":widget"
+	_, err := e.corpus.ApplyFeedAliases(context.Background(), []software.FeedAlias{
+		{Kind: "cpe", Value: gone, Target: target}, {Kind: "cpe", Value: kept, Target: target}}, 10)
+	require.NoError(t, err)
+	res := e.alias(software.AliasKindCPE, kept, target)
+	assert.Equal(t, 1, res.Unchanged)
+	assert.GreaterOrEqual(t, res.Removed, 1)
+	values := queryStrings(t, e.pdb.DB, `SELECT value FROM software_product_aliases WHERE tenant_id IS NULL AND source = 'feed' AND value LIKE $1 ORDER BY 1`, "a:"+e.cna+"%")
+	assert.Equal(t, []string{kept}, values)
+	var curated int
+	require.NoError(t, e.pdb.QueryRow(`SELECT count(*) FROM software_product_aliases WHERE tenant_id IS NULL AND source = 'curated' AND value = 'a:nginx:nginx'`).Scan(&curated))
+	assert.Equal(t, 1, curated)
+}
+
+// A tenant's VEX statements on both products for the same subject: the
+// fold keeps the one on the canonical product instead of failing the whole
+// dictionary on the one-statement-per-subject key, and each statement keeps
+// its tenant.
+func TestSoftwareAlias_FoldKeepsOneVEXStatementPerSubject(t *testing.T) {
+	e := newAliasEnv(t)
+	tn := e.tenant("alias-vex", true)
+	other := e.tenant("alias-vex-other", true)
+	cve := testCVEID()
+	e.publish(cve, false, map[string]vm.Range{e.cna: {End: "2"}, e.canonical: {End: "2"}})
+	product := func(vendor string) string {
+		var id string
+		require.NoError(t, e.pdb.QueryRow(`SELECT id FROM software_products WHERE tenant_id IS NULL AND cpe_vendor = $1`, vendor).Scan(&id))
+		return id
+	}
+	from, into := product(e.cna), product(e.canonical)
+	vex := func(tenant shared.ID, productID, status string) {
+		_, err := e.pdb.Exec(`INSERT INTO vex_statements (tenant_id, vuln_id, product_id, status, justification, origin)
+			VALUES ($1, $2, $3, $4, CASE WHEN $4 = 'not_affected' THEN 'component_not_present' END, 'manual')`, tenant.String(), cve, productID, status)
+		require.NoError(t, err)
+	}
+	vex(tn, from, "not_affected")
+	vex(tn, into, "affected")
+	vex(other, from, "not_affected")
+
+	res := e.alias(software.AliasKindCPE, "a:"+e.cna+":widget", "a:"+e.canonical+":widget")
+	require.Equal(t, 1, res.Merged)
+	rows := queryStrings(t, e.pdb.DB, `SELECT tenant_id::text || '|' || status FROM vex_statements WHERE product_id = $1 ORDER BY 1`, into)
+	assert.ElementsMatch(t, []string{tn.String() + "|affected", other.String() + "|not_affected"}, rows)
+}
+
+// Folds serialize with the bundle importer of every replica: while a chunk
+// transaction holds the vulnfeed checkpoint, the dictionary waits.
+func TestSoftwareAlias_WaitsForTheBundleImporter(t *testing.T) {
+	e := newAliasEnv(t)
+	_, err := e.pdb.Exec(`INSERT INTO feed_checkpoints (feed) VALUES ('vulnfeed') ON CONFLICT (feed) DO NOTHING`)
+	require.NoError(t, err)
+	tx, err := e.pdb.Begin()
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.Exec(`SELECT 1 FROM feed_checkpoints WHERE feed = 'vulnfeed' FOR UPDATE`)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, err = e.corpus.ApplyFeedAliases(ctx, []software.FeedAlias{{Kind: "cpe", Value: "a:" + e.cna + ":widget", Target: "a:" + e.canonical + ":widget"}}, 10)
+	require.Error(t, err, "the dictionary must not run beside a chunk transaction")
 }
