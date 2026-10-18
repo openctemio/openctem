@@ -5,8 +5,8 @@
 #   ./backup.sh verify          restore the newest backup into a throwaway Postgres
 #                               and compare row counts with the running database
 #   ./backup.sh restore <dir> --yes
-#                               restore a backup over the running stack (stops api,
-#                               web and gateway, restores, starts them again)
+#                               restore a backup over the running stack (stops the gateway, web, console and
+#                               api, restores, starts them again)
 #
 # What one backup holds, under $BACKUP_DIR/<UTC time>/ (directory 0700, files 0600):
 #   openctem.dump        pg_dump -Fc of the database, checked with pg_restore --list
@@ -151,8 +151,8 @@ do_restore() {
 		log "WARNING: the backup was taken on $(cat "${dir}/VERSION"); the stack runs $(env_get OPENCTEM_VERSION)."
 		log "         Restore with the backup's OPENCTEM_VERSION, then upgrade (migrations run on start)."
 	fi
-	log "stopping gateway, web, api"
-	dc stop gateway web api
+	log "stopping gateway, web, console, api"
+	dc stop gateway web console api
 	log "restoring the database"
 	dc exec -T postgres psql -U "$db_super" -d postgres -v ON_ERROR_STOP=1 -qX \
 		-c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${db_name}' AND pid <> pg_backend_pid()" >/dev/null
