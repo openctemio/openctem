@@ -238,7 +238,7 @@ func TestMandatoryFiltersAlwaysApplied(t *testing.T) {
 			}
 		}
 		// And they sit at the top level: ANDed, not under the user's tree.
-		if eff.Root.All == nil || len(eff.Root.All) < 1 {
+		if len(eff.Root.All) < 1 {
 			t.Errorf("%q: effective root is not an AND", src)
 		}
 		last := eff.Root.All[len(eff.Root.All)-1]
