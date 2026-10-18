@@ -12,6 +12,14 @@
 // A malformed manifest is a build error, never a silent fallback: the package
 // panics while loading, which fails every test of every package that imports
 // it, and TestManifestParses names the problem.
+//
+// The manifest's "latest" of a first-party component (a sensor product, the
+// SDK) is the release this build was made with. At runtime the instance
+// learns newer releases from the signed release feed (SetLearned, fed by the
+// version check), so a sensor or SDK release needs no API release
+// (api/docs/rfcs/RFC-037-versioning-and-release-train.md §12). The getters
+// return the effective value: the learned release when it is newer than the
+// built-in one, else the built-in one. A learned release never lowers it.
 package versions
 
 import (
@@ -55,10 +63,87 @@ type Product struct {
 	// ReleaseIdentity is the workflow that signs the image; the certificate
 	// identity of a release is it + "@refs/tags/" + the tag.
 	ReleaseIdentity string
+	// LatestSource says where Latest comes from: SourceBuiltIn (this
+	// build's manifest, possibly outdated), SourceFeed (the verified
+	// release feed) or SourceOperator (the operator's product file).
+	LatestSource string
+	// Digest is the image manifest digest of Latest ("sha256:<hex>"), known
+	// only when the release feed supplied Latest; "" otherwise.
+	Digest string
 }
 
-// ImageRef is the image of the product's latest release.
-func (p Product) ImageRef() string { return p.Image + ":" + p.Latest }
+// Where an effective latest release comes from.
+const (
+	SourceBuiltIn = "built_in"
+	SourceFeed    = "feed"
+	// SourceOperator: a product of the operator's file
+	// (SENSOR_PRODUCTS_FILE), whose release line the operator keeps.
+	SourceOperator = "operator"
+)
+
+// ImageRef is the image of the product's latest release, pinned by digest
+// when the release feed supplied one.
+func (p Product) ImageRef() string {
+	if p.Digest != "" {
+		return p.Image + ":" + p.Latest + "@" + p.Digest
+	}
+	return p.Image + ":" + p.Latest
+}
+
+// SDKKey is the SDK's section in the manifest, and its component name in the
+// release feed.
+const SDKKey = "sdk"
+
+// Learned is a component release the instance learned from the verified
+// release feed.
+type Learned struct {
+	Version string
+	Digest  string
+}
+
+var (
+	learnedMu sync.RWMutex
+	learned   map[string]Learned
+)
+
+// SetLearned replaces the releases learned from the release feed, keyed by
+// component (the manifest section: "sensor", "connector-tenable", "sdk"). A
+// value that is not vX.Y.Z, or a digest that is not sha256:<hex>, is dropped
+// (the feed was verified, this is defense in depth). nil forgets them.
+func SetLearned(m map[string]Learned) {
+	clean := make(map[string]Learned, len(m))
+	for k, l := range m {
+		if !versionRE.MatchString(l.Version) {
+			continue
+		}
+		if !digestRE.MatchString(l.Digest) {
+			l.Digest = ""
+		}
+		clean[k] = l
+	}
+	learnedMu.Lock()
+	learned = clean
+	learnedMu.Unlock()
+}
+
+// effective is the latest release of component key whose built-in latest is
+// builtIn: the learned one when it is newer or equal (then with its digest),
+// else the built-in one.
+func effective(key, builtIn string) (latest, source, digest string) {
+	learnedMu.RLock()
+	l, ok := learned[key]
+	learnedMu.RUnlock()
+	if ok && semver.Compare(l.Version, builtIn) >= 0 {
+		return l.Version, SourceFeed, l.Digest
+	}
+	return builtIn, SourceBuiltIn, ""
+}
+
+// withLearned is p with its effective latest release.
+func withLearned(p Product) Product {
+	p.Latest, p.LatestSource, p.Digest = effective(p.Key, p.Latest)
+	return p
+}
 
 // Manifest is the parsed versions.yaml.
 type Manifest struct {
@@ -98,20 +183,24 @@ func Embedded() *Manifest { return embedded }
 func PlatformRelease() string { return embedded.PlatformRelease }
 
 // Products is the sensor product catalog: the built-in products in
-// manifest order, then the operator's (LoadExtraProducts). The slice is a
+// manifest order with their effective latest release, then the operator's
+// (LoadExtraProducts), which the release feed never changes. The slice is a
 // copy.
 func Products() []Product {
 	extraMu.RLock()
 	defer extraMu.RUnlock()
-	out := append([]Product(nil), embedded.Products...)
+	out := make([]Product, 0, len(embedded.Products)+len(extra))
+	for _, p := range embedded.Products {
+		out = append(out, withLearned(p))
+	}
 	return append(out, extra...)
 }
 
-// LookupProduct returns the catalog entry of a product id, built-in or the
-// operator's.
+// LookupProduct returns the catalog entry of a product id, built-in (with its
+// effective latest release) or the operator's.
 func LookupProduct(id string) (Product, bool) {
 	if p, ok := embedded.Product(id); ok {
-		return p, true
+		return withLearned(p), true
 	}
 	extraMu.RLock()
 	defer extraMu.RUnlock()
@@ -205,6 +294,7 @@ func ParseExtraProducts(b []byte, base *Manifest) ([]Product, error) {
 		if err != nil {
 			return nil, err
 		}
+		p.LatestSource = SourceOperator
 		for _, q := range base.Products {
 			if q.Key == p.Key || q.ID == p.ID {
 				return nil, fmt.Errorf("%s: product %q is built in and cannot be redefined", name, p.ID)
@@ -220,8 +310,8 @@ func ParseExtraProducts(b []byte, base *Manifest) ([]Product, error) {
 	return out, nil
 }
 
-// SensorLatest is the scanning sensor's latest release.
-func SensorLatest() string { return defaultProduct().Latest }
+// SensorLatest is the scanning sensor's effective latest release.
+func SensorLatest() string { return withLearned(defaultProduct()).Latest }
 
 // SensorMin is the scanning sensor's minimum release ("" = none).
 func SensorMin() string { return defaultProduct().Min }
@@ -229,8 +319,12 @@ func SensorMin() string { return defaultProduct().Min }
 // SensorImage is the scanning sensor's image repository, without a tag.
 func SensorImage() string { return defaultProduct().Image }
 
-// SDKLatest is sdk.latest (informational).
-func SDKLatest() string { return embedded.SDKLatest }
+// SDKLatest is the effective latest SDK release (informational): the
+// learned one when newer than sdk.latest.
+func SDKLatest() string {
+	v, _, _ := effective(SDKKey, embedded.SDKLatest)
+	return v
+}
 
 // SDKAdvisories lists the SDK releases with a published security advisory.
 // The slice is a copy.
@@ -258,6 +352,7 @@ var (
 	// shell snippet.
 	imageRE   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*(:[0-9]+)?(/[a-z0-9][a-z0-9._-]*)+$`)
 	installRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+	digestRE  = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	// identityRE is a GitHub Actions workflow of the openctemio organization.
 	identityRE = regexp.MustCompile(`^https://github\.com/openctemio/[a-z0-9._-]+/\.github/workflows/[a-z0-9._-]+\.ya?ml$`)
 	// extraIdentityRE is a GitHub Actions workflow of any organization, or
@@ -412,6 +507,7 @@ func productWith(name string, v map[string]string, identity *regexp.Regexp) (Pro
 	p := Product{
 		Key: name, ID: v["product"], Latest: v["latest"], Min: v["min"],
 		Image: v["image"], Install: v["install"], ReleaseIdentity: v["release_identity"],
+		LatestSource: SourceBuiltIn,
 	}
 	if !productIDRE.MatchString(p.ID) {
 		return p, fmt.Errorf("%s.product %q is not a product token (lower-case, digits, '.', '_', '-')", name, p.ID)

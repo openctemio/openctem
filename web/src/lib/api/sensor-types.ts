@@ -73,8 +73,14 @@ export interface SensorProduct {
   latest_version: string
   /** "" = no minimum. */
   min_version: string
-  /** The image, with its pinned tag, its install snippets run. */
+  /** The image, with its pinned tag (and digest when known), its install snippets run. */
   image: string
+  /**
+   * Where latest_version comes from: "feed" (the signed release feed),
+   * "built_in" (the release this platform was built with: newer releases may
+   * exist) or "operator" (the operator's product file).
+   */
+  latest_source?: 'feed' | 'built_in' | 'operator'
 }
 
 /** One problem found on a sensor (stable `code`; `message` is a fallback). */

@@ -21,7 +21,7 @@ head="$(sed -n 's/^HEAD=//p' <<<"$out")"
 assert_eq "train: head is the -s ours merge (two parents)" 3 "$(git -C "$w" rev-list --parents -n 1 "$head" | wc -w)"
 assert_eq "train: version commit sits on develop's commit" "$dev" "$(git -C "$w" rev-parse "$head^1^1")"
 assert_eq "train: tree is develop's plus the version commit" \
-  "$(printf 'api/deploy/.env.example\napi/deploy/docker-compose.job-signer.yml\napi/deploy/docker-compose.yml\napi/internal/versions/versions.yaml\nversions.yaml')" \
+  "$(printf 'api/deploy/.env.example\napi/deploy/docker-compose.job-signer.yml\napi/deploy/docker-compose.sensor.yml\napi/deploy/docker-compose.yml\napi/internal/versions/versions.yaml\nversions.yaml')" \
   "$(git -C "$w" diff --name-only "$dev" "$head")"
 assert_contains "train: versions.yaml names the release" "release: v0.3.0" "$(git -C "$w" show "$head:versions.yaml")"
 assert_contains "train: the checkout defaults to the release" "OPENCTEM_VERSION=v0.3.0" "$(git -C "$w" show "$head:api/deploy/.env.example")"
