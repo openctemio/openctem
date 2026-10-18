@@ -33,7 +33,6 @@ export type IntegrationProvider =
   | 'crowdstrike'
   | 'jira'
   | 'linear'
-  | 'asana'
   // Cloud
   | 'aws'
   | 'gcp'
