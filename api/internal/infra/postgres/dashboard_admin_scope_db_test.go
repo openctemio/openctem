@@ -44,7 +44,7 @@ func TestDashboard_UnrestrictedScopeKeepsTenantWideFigures(t *testing.T) {
 		if got := q.DeduplicationRate > 0; got != tc.wantDedup {
 			t.Errorf("%s: dedup rate %v, reported=%v want %v", name, q.DeduplicationRate, got, tc.wantDedup)
 		}
-		s, err := repo.GetExecutiveSummary(ctx, tenant, tc.scope, 30)
+		s, err := repo.GetExecutiveSummary(ctx, tenant, tc.scope, tc.scope, 30)
 		if err != nil {
 			t.Fatalf("%s summary: %v", name, err)
 		}

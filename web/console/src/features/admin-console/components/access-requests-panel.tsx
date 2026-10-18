@@ -57,11 +57,11 @@ export function slugFromCompany(name: string): string {
     .slice(0, 50)
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Pending',
-  unconfirmed: 'Email not confirmed',
-  approved: 'Approved',
-  rejected: 'Rejected',
+const STATUS_KEY: Record<string, string> = {
+  pending: 'admin.accessRequestsPanel.status.pending',
+  unconfirmed: 'admin.accessRequestsPanel.status.unconfirmed',
+  approved: 'admin.accessRequestsPanel.status.approved',
+  rejected: 'admin.accessRequestsPanel.status.rejected',
 }
 
 function ApproveDialog({
@@ -73,6 +73,8 @@ function ApproveDialog({
   onClose: () => void
   onDone: () => void
 }) {
+  const { t } = useTranslation()
+
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [busy, setBusy] = useState(false)
@@ -95,7 +97,11 @@ function ApproveDialog({
     setError(null)
     try {
       const res = await approveAccessRequest(request.id, { name: name.trim(), slug: slug.trim() })
-      toast.success(`Organization created for ${request.email}`)
+      toast.success(
+        t('admin.accessRequestsPanel.organizationCreatedFor', 'Organization created for {email}', {
+          email: request.email ?? '',
+        })
+      )
       if (res.owner_setup?.setup_token) {
         setResult(res)
       } else {
@@ -114,9 +120,14 @@ function ApproveDialog({
         {result?.owner_setup ? (
           <>
             <DialogHeader>
-              <DialogTitle>Organization created</DialogTitle>
+              <DialogTitle>
+                {t('admin.accessRequestsPanel.organizationCreated', 'Organization created')}
+              </DialogTitle>
               <DialogDescription>
-                Email could not be sent. Give the owner this one-time link.
+                {t(
+                  'admin.accessRequestsPanel.emailCouldNotBeSent',
+                  'Email could not be sent. Give the owner this one-time link.'
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -126,21 +137,28 @@ function ApproveDialog({
               />
             </DialogBody>
             <DialogFooter>
-              <Button onClick={onDone}>Done</Button>
+              <Button onClick={onDone}>{t('admin.accessRequestsPanel.done', 'Done')}</Button>
             </DialogFooter>
           </>
         ) : (
           <DialogForm onSubmit={submit}>
             <DialogHeader>
-              <DialogTitle>Approve access request</DialogTitle>
+              <DialogTitle>
+                {t('admin.accessRequestsPanel.approveAccessRequest', 'Approve access request')}
+              </DialogTitle>
               <DialogDescription>
-                Creates the organization with {request?.email} as its owner. A new account gets a
-                one-time set-password link by email.
+                {t(
+                  'admin.accessRequestsPanel.createsTheOrganizationWithAs',
+                  'Creates the organization with {email} as its owner. A new account gets a one-time set-password link by email.',
+                  { email: request?.email ?? '' }
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="ar-name">Organization name</Label>
+                <Label htmlFor="ar-name">
+                  {t('admin.accessRequestsPanel.organizationName', 'Organization name')}
+                </Label>
                 <Input
                   id="ar-name"
                   value={name}
@@ -150,7 +168,7 @@ function ApproveDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ar-slug">Slug</Label>
+                <Label htmlFor="ar-slug">{t('admin.accessRequestsPanel.slug', 'Slug')}</Label>
                 <Input
                   id="ar-slug"
                   value={slug}
@@ -169,11 +187,11 @@ function ApproveDialog({
             </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={busy || !name.trim() || slug.trim().length < 3}>
                 {busy && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                Create organization
+                {t('admin.accessRequestsPanel.createOrganization', 'Create organization')}
               </Button>
             </DialogFooter>
           </DialogForm>
@@ -201,11 +219,15 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
     setBusy(true)
     try {
       await rejectAccessRequest(rejecting.id)
-      toast.success('Request rejected')
+      toast.success(t('admin.accessRequestsPanel.requestRejected', 'Request rejected'))
       setRejecting(null)
       void mutate()
     } catch (err) {
-      toast.error(err instanceof AdminApiError ? err.message : 'Could not reject the request')
+      toast.error(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.accessRequestsPanel.couldNotRejectTheRequest', 'Could not reject the request')
+      )
     } finally {
       setBusy(false)
     }
@@ -217,46 +239,75 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {data ? `${data.total ?? 0} ${status ? STATUS_LABEL[status].toLowerCase() : 'open'}` : ''}
+          {data
+            ? t('admin.accessRequestsPanel.countStatus', '{count} {status}', {
+                count: data.total ?? 0,
+                status: status
+                  ? t(STATUS_KEY[status]).toLowerCase()
+                  : t('admin.accessRequestsPanel.status.open', 'open'),
+              })
+            : ''}
         </p>
         <Select
           value={status || 'open'}
           onValueChange={(v) => setStatus(v === 'open' ? '' : (v as AccessRequestStatusFilter))}
         >
-          <SelectTrigger className="w-48" aria-label="Status">
+          <SelectTrigger
+            className="w-48"
+            aria-label={t('admin.accessRequestsPanel.status', 'Status')}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="unconfirmed">Email not confirmed</SelectItem>
-            <SelectItem value="approved">Approved</SelectItem>
-            <SelectItem value="rejected">Rejected</SelectItem>
+            <SelectItem value="open">{t('admin.accessRequestsPanel.open', 'Open')}</SelectItem>
+            <SelectItem value="pending">
+              {t('admin.accessRequestsPanel.pending', 'Pending')}
+            </SelectItem>
+            <SelectItem value="unconfirmed">
+              {t('admin.accessRequestsPanel.emailNotConfirmed', 'Email not confirmed')}
+            </SelectItem>
+            <SelectItem value="approved">
+              {t('admin.accessRequestsPanel.approved', 'Approved')}
+            </SelectItem>
+            <SelectItem value="rejected">
+              {t('admin.accessRequestsPanel.rejected', 'Rejected')}
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {error ? (
-        <ErrorState title="access requests" error={error} onRetry={() => void mutate()} />
+        <ErrorState
+          title={t('admin.accessRequestsPanel.accessRequests', 'access requests')}
+          error={error}
+          onRetry={() => void mutate()}
+        />
       ) : isLoading ? (
         <Skeleton className="h-40 w-full" />
       ) : rows.length === 0 ? (
         <EmptyState
           icon={Inbox}
-          title="No requests"
-          description="Requests appear here when sign-up is closed and request access is on (System > Sign-up)."
+          title={t('admin.accessRequestsPanel.noRequests', 'No requests')}
+          description={t(
+            'admin.accessRequestsPanel.requestsAppearHereWhenSign',
+            'Requests appear here when sign-up is closed and request access is on (System > Sign-up).'
+          )}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Received</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Requester</TableHead>
-                <TableHead>Note</TableHead>
-                <TableHead>Status</TableHead>
-                {canDecide && <TableHead className="text-end">Decision</TableHead>}
+                <TableHead>{t('admin.accessRequestsPanel.received', 'Received')}</TableHead>
+                <TableHead>{t('admin.accessRequestsPanel.company', 'Company')}</TableHead>
+                <TableHead>{t('admin.accessRequestsPanel.requester', 'Requester')}</TableHead>
+                <TableHead>{t('admin.accessRequestsPanel.note', 'Note')}</TableHead>
+                <TableHead>{t('admin.accessRequestsPanel.status', 'Status')}</TableHead>
+                {canDecide && (
+                  <TableHead className="text-end">
+                    {t('admin.accessRequestsPanel.decision', 'Decision')}
+                  </TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -272,7 +323,7 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
                   </TableCell>
                   <TableCell>
                     <Badge variant={r.status === 'pending' ? 'default' : 'outline'}>
-                      {STATUS_LABEL[r.status ?? ''] ?? r.status}
+                      {STATUS_KEY[r.status ?? ''] ? t(STATUS_KEY[r.status ?? '']) : r.status}
                     </Badge>
                   </TableCell>
                   {canDecide && (
@@ -284,17 +335,20 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
                             disabled={r.status !== 'pending'}
                             title={
                               r.status !== 'pending'
-                                ? 'The requester has not confirmed the email yet'
+                                ? t(
+                                    'admin.accessRequestsPanel.theRequesterHasNotConfirmed',
+                                    'The requester has not confirmed the email yet'
+                                  )
                                 : undefined
                             }
                             onClick={() => setApproving(r)}
                           >
                             <Check className="me-1 size-4" />
-                            Approve
+                            {t('admin.accessRequestsPanel.approve', 'Approve')}
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => setRejecting(r)}>
                             <X className="me-1 size-4" />
-                            Reject
+                            {t('admin.accessRequestsPanel.reject', 'Reject')}
                           </Button>
                         </div>
                       )}

@@ -518,3 +518,37 @@ func TestEnforcer_ResolveActingOwnerIsTheCallerOnly(t *testing.T) {
 		t.Fatalf("non-owner caller acting as the owner: scope %+v err %v, want hidden assets", scope, err)
 	}
 }
+
+// ViewerScope fails closed: an unwired enforcer is an error, never an
+// organization-wide figure. A restricted member counts their scope unless
+// they hold the aggregate permission; an owner is unrestricted.
+func TestEnforcer_ViewerScope(t *testing.T) {
+	tenant, user, owner := shared.NewID(), shared.NewID(), shared.NewID()
+	var nilEnforcer *Enforcer
+	if _, _, err := nilEnforcer.ViewerScope(withCaller(Caller{UserID: user.String()}), tenant); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("nil enforcer ViewerScope err = %v, want ErrNotConfigured", err)
+	}
+	if _, _, err := New(nil, ctxCaller, nil).ViewerScope(withCaller(Caller{}), tenant); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("enforcer without repository ViewerScope err = %v, want ErrNotConfigured", err)
+	}
+
+	repo := &fakeRepo{rows: map[shared.ID]map[shared.ID]bool{user: {shared.NewID(): true}}}
+	aggregate := false
+	e := New(repo, ctxCaller, nil)
+	e.SetAggregateCheck(func(context.Context) bool { return aggregate })
+	member := withCaller(Caller{UserID: user.String()})
+
+	scope, orgWide, err := e.ViewerScope(member, tenant)
+	if err != nil || !scope.Restricted() || orgWide {
+		t.Fatalf("restricted member = %v, %v, %v; want their scope", scope, orgWide, err)
+	}
+	aggregate = true
+	scope, orgWide, err = e.ViewerScope(member, tenant)
+	if err != nil || scope != nil || !orgWide {
+		t.Fatalf("aggregate member = %v, %v, %v; want organization", scope, orgWide, err)
+	}
+	scope, orgWide, err = e.ViewerScope(withCaller(Caller{UserID: owner.String(), IsOwner: true}), tenant)
+	if err != nil || scope != nil || orgWide {
+		t.Fatalf("owner = %v, %v, %v; want unrestricted", scope, orgWide, err)
+	}
+}

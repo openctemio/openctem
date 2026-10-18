@@ -134,30 +134,48 @@ export function SamlConfigForm({
       const res = await save(payload)
       if (isPendingSSOChange(res)) {
         // Stored for an owner's approval; the live config is unchanged.
-        toast.info(PENDING_SSO_MESSAGE)
+        toast.info(t('admin.identityProvidersPanel.pendingChange', PENDING_SSO_MESSAGE))
         resetToSaved()
         void mutatePending()
       } else {
-        toast.success('SAML configuration saved')
+        toast.success(t('admin.samlConfigForm.samlConfigurationSaved', 'SAML configuration saved'))
         void mutate()
       }
       onChanged?.()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to save SAML configuration'))
+      toast.error(
+        getErrorMessage(
+          e,
+          t(
+            'admin.samlConfigForm.failedToSaveSamlConfiguration',
+            'Failed to save SAML configuration'
+          )
+        )
+      )
     }
   }
 
   const handleDelete = async () => {
     try {
       await remove()
-      toast.success('SAML configuration removed')
+      toast.success(
+        t('admin.samlConfigForm.samlConfigurationRemoved', 'SAML configuration removed')
+      )
       setRemoveOpen(false)
       setForm(emptySamlConfig)
       setDomainsText('')
       void mutate()
       onChanged?.()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to remove SAML configuration'))
+      toast.error(
+        getErrorMessage(
+          e,
+          t(
+            'admin.samlConfigForm.failedToRemoveSamlConfiguration',
+            'Failed to remove SAML configuration'
+          )
+        )
+      )
     }
   }
 
@@ -174,16 +192,16 @@ export function SamlConfigForm({
                 disabled={isDeleting}
               >
                 <Trash2 className="me-2 h-4 w-4" />
-                Remove
+                {t('admin.samlConfigForm.remove', 'Remove')}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={resetToSaved} disabled={!isDirty}>
               <RotateCcw className="me-2 h-4 w-4" />
-              Reset
+              {t('admin.samlConfigForm.reset', 'Reset')}
             </Button>
             <Button size="sm" onClick={handleSave} disabled={!isDirty || isSaving}>
               {isSaving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Save changes
+              {t('admin.samlConfigForm.saveChanges', 'Save changes')}
             </Button>
           </>
         )}
@@ -194,7 +212,11 @@ export function SamlConfigForm({
           // A read failure must NOT fall through to the blank form: it reads as
           // "SAML is not configured", and saving from there would PUT empty values
           // over a live IdP config the admin never saw.
-          <ErrorState title="SAML configuration" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.samlConfigForm.samlConfiguration', 'SAML configuration')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-32 w-full" />
@@ -205,15 +227,21 @@ export function SamlConfigForm({
             <div className="space-y-5 lg:col-span-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>Identity provider</CardTitle>
+                  <CardTitle>
+                    {t('admin.samlConfigForm.identityProvider', 'Identity provider')}
+                  </CardTitle>
                   <CardDescription>
-                    Paste the details from your IdP&apos;s SAML application. Login stays disabled
-                    until you enable it below.
+                    {t(
+                      'admin.samlConfigForm.pasteTheDetailsFromYour',
+                      "Paste the details from your IdP's SAML application. Login stays disabled until you enable it below."
+                    )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="idp_entity_id">IdP entity ID (issuer)</Label>
+                    <Label htmlFor="idp_entity_id">
+                      {t('admin.samlConfigForm.idpEntityIdIssuer', 'IdP entity ID (issuer)')}
+                    </Label>
                     <Input
                       id="idp_entity_id"
                       value={form.idp_entity_id}
@@ -223,7 +251,9 @@ export function SamlConfigForm({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="idp_sso_url">IdP SSO URL</Label>
+                    <Label htmlFor="idp_sso_url">
+                      {t('admin.samlConfigForm.idpSsoUrl', 'IdP SSO URL')}
+                    </Label>
                     <Input
                       id="idp_sso_url"
                       value={form.idp_sso_url}
@@ -233,7 +263,12 @@ export function SamlConfigForm({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="idp_certificate">IdP signing certificate (PEM)</Label>
+                    <Label htmlFor="idp_certificate">
+                      {t(
+                        'admin.samlConfigForm.idpSigningCertificatePem',
+                        'IdP signing certificate (PEM)'
+                      )}
+                    </Label>
                     <Textarea
                       id="idp_certificate"
                       value={form.idp_certificate}
@@ -248,22 +283,37 @@ export function SamlConfigForm({
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Provisioning</CardTitle>
-                  <CardDescription>How users are mapped when they log in via SAML.</CardDescription>
+                  <CardTitle>{t('admin.samlConfigForm.provisioning', 'Provisioning')}</CardTitle>
+                  <CardDescription>
+                    {t(
+                      'admin.samlConfigForm.howUsersAreMappedWhen',
+                      'How users are mapped when they log in via SAML.'
+                    )}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="allowed_domains">Allowed email domains</Label>
+                    <Label htmlFor="allowed_domains">
+                      {t('admin.samlConfigForm.allowedEmailDomains', 'Allowed email domains')}
+                    </Label>
                     <Input
                       id="allowed_domains"
                       value={domainsText}
                       disabled={!canManage}
                       onChange={(e) => setDomainsText(e.target.value)}
-                      placeholder="acme.com, contoso.com (blank = any)"
+                      placeholder={t(
+                        'admin.samlConfigForm.acmeComContosoComBlank',
+                        'acme.com, contoso.com (blank = any)'
+                      )}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Default role for new users</Label>
+                    <Label>
+                      {t(
+                        'admin.samlConfigForm.defaultRoleForNewUsers',
+                        'Default role for new users'
+                      )}
+                    </Label>
                     <Select
                       value={form.default_role}
                       disabled={!canManage}
@@ -273,20 +323,32 @@ export function SamlConfigForm({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="member">Member</SelectItem>
-                        <SelectItem value="viewer">Viewer</SelectItem>
+                        <SelectItem value="member">
+                          {t('admin.samlConfigForm.member', 'Member')}
+                        </SelectItem>
+                        <SelectItem value="viewer">
+                          {t('admin.samlConfigForm.viewer', 'Viewer')}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <div>
-                      <p className="text-sm font-medium">Auto-provision users</p>
+                      <p className="text-sm font-medium">
+                        {t('admin.samlConfigForm.autoProvisionUsers', 'Auto-provision users')}
+                      </p>
                       <p className="text-muted-foreground text-xs">
-                        Create an account on first login for allowed domains.
+                        {t(
+                          'admin.samlConfigForm.createAnAccountOnFirst',
+                          'Create an account on first login for allowed domains.'
+                        )}
                       </p>
                     </div>
                     <Switch
-                      aria-label="Auto-provision users"
+                      aria-label={t(
+                        'admin.samlConfigForm.autoProvisionUsers',
+                        'Auto-provision users'
+                      )}
                       checked={form.auto_provision}
                       disabled={!canManage}
                       onCheckedChange={(v) => set('auto_provision', v)}
@@ -294,13 +356,18 @@ export function SamlConfigForm({
                   </div>
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <div>
-                      <p className="text-sm font-medium">Enable SAML login</p>
+                      <p className="text-sm font-medium">
+                        {t('admin.samlConfigForm.enableSamlLogin', 'Enable SAML login')}
+                      </p>
                       <p className="text-muted-foreground text-xs">
-                        When off, SAML is configured but the login endpoint refuses requests.
+                        {t(
+                          'admin.samlConfigForm.whenOffSamlIsConfigured',
+                          'When off, SAML is configured but the login endpoint refuses requests.'
+                        )}
                       </p>
                     </div>
                     <Switch
-                      aria-label="Enable SAML login"
+                      aria-label={t('admin.samlConfigForm.enableSamlLogin', 'Enable SAML login')}
                       checked={form.enabled}
                       disabled={!canManage}
                       onCheckedChange={(v) => set('enabled', v)}
@@ -313,22 +380,42 @@ export function SamlConfigForm({
             <div className="space-y-5">
               <Card>
                 <CardHeader>
-                  <CardTitle>Service provider details</CardTitle>
+                  <CardTitle>
+                    {t('admin.samlConfigForm.serviceProviderDetails', 'Service provider details')}
+                  </CardTitle>
                   <CardDescription>
-                    Register these URLs in your IdP&apos;s SAML application.
+                    {t(
+                      'admin.samlConfigForm.registerTheseUrlsInYour',
+                      "Register these URLs in your IdP's SAML application."
+                    )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {spURLs ? (
                     <>
-                      <CopyableUrl label="Metadata / Entity ID" url={spURLs.metadata} />
-                      <CopyableUrl label="ACS (reply) URL" url={spURLs.acs} />
+                      <CopyableUrl
+                        label={t('admin.samlConfigForm.metadataEntityId', 'Metadata / Entity ID')}
+                        url={spURLs.metadata}
+                      />
+                      <CopyableUrl
+                        label={t('admin.samlConfigForm.acsReplyUrl', 'ACS (reply) URL')}
+                        url={spURLs.acs}
+                      />
                       <Separator />
-                      <CopyableUrl label="Login URL (SP-initiated)" url={spURLs.login} />
+                      <CopyableUrl
+                        label={t(
+                          'admin.samlConfigForm.loginUrlSpInitiated',
+                          'Login URL (SP-initiated)'
+                        )}
+                        url={spURLs.login}
+                      />
                     </>
                   ) : (
                     <p className="text-muted-foreground text-sm">
-                      Service provider URLs appear once a tenant is selected.
+                      {t(
+                        'admin.samlConfigForm.serviceProviderUrlsAppearOnce',
+                        'Service provider URLs appear once a tenant is selected.'
+                      )}
                     </p>
                   )}
                 </CardContent>

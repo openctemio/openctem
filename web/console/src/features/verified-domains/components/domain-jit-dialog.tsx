@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -53,6 +54,8 @@ export function DomainJITDialog({
   onOpenChange: (open: boolean) => void
   onSaved: () => void
 }) {
+  const { t } = useTranslation()
+
   const { trigger, isMutating } = useUpdateDomainJIT(tenantId)
   const [enabled, setEnabled] = useState(true)
   const [role, setRole] = useState<string>(DEFAULT_ROLE)
@@ -73,15 +76,28 @@ export function DomainJITDialog({
       })
       if (isPendingChange(res)) {
         toast.info(
-          `${domain.domain}: admitting more people waits for an owner of the organization to approve it`
+          t(
+            'admin.domainJitDialog.admittingMorePeopleWaitsFor',
+            '{domain}: admitting more people waits for an owner of the organization to approve it',
+            { domain: domain.domain }
+          )
         )
       } else {
-        toast.success(`${domain.domain}: provisioning updated`)
+        toast.success(
+          t('admin.domainJitDialog.provisioningUpdated', '{domain}: provisioning updated', {
+            domain: domain.domain,
+          })
+        )
       }
       onSaved()
       onOpenChange(false)
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Could not update provisioning'))
+      toast.error(
+        getErrorMessage(
+          e,
+          t('admin.domainJitDialog.couldNotUpdateProvisioning', 'Could not update provisioning')
+        )
+      )
     }
   }
 
@@ -95,17 +111,24 @@ export function DomainJITDialog({
     >
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>New people on {domain?.domain}</DialogTitle>
+          <DialogTitle>
+            {t('admin.domainJitDialog.newPeopleOn', 'New people on {domain}', {
+              domain: domain?.domain ?? '',
+            })}
+          </DialogTitle>
           <DialogDescription>
-            Whether the organization&apos;s SSO lets people with an address on this domain join on
-            their first sign-in, and with which role. Administrators are never added this way.
-            Admitting more people, or with a higher role, waits for an owner&apos;s approval.
+            {t(
+              'admin.domainJitDialog.whetherTheOrganizationSSso',
+              "Whether the organization's SSO lets people with an address on this domain join on their first sign-in, and with which role. Administrators are never added this way. Admitting more people, or with a higher role, waits for an owner's approval."
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="space-y-4 py-4">
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="domain-jit-enabled">Admit new people</Label>
+              <Label htmlFor="domain-jit-enabled">
+                {t('admin.domainJitDialog.admitNewPeople', 'Admit new people')}
+              </Label>
               <Switch
                 id="domain-jit-enabled"
                 checked={enabled}
@@ -114,15 +137,24 @@ export function DomainJITDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="domain-jit-role">Role</Label>
+              <Label htmlFor="domain-jit-role">{t('admin.domainJitDialog.role', 'Role')}</Label>
               <Select value={role} onValueChange={setRole} disabled={!enabled || isMutating}>
                 <SelectTrigger id="domain-jit-role" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={DEFAULT_ROLE}>Identity provider default</SelectItem>
-                  <SelectItem value="viewer">Viewer</SelectItem>
-                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value={DEFAULT_ROLE}>
+                    {t(
+                      'admin.domainJitDialog.identityProviderDefault',
+                      'Identity provider default'
+                    )}
+                  </SelectItem>
+                  <SelectItem value="viewer">
+                    {t('admin.domainJitDialog.viewer', 'Viewer')}
+                  </SelectItem>
+                  <SelectItem value="member">
+                    {t('admin.domainJitDialog.member', 'Member')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -130,11 +162,11 @@ export function DomainJITDialog({
         </DialogBody>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={save} disabled={isMutating}>
             {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Save
+            {t('common.save', 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
