@@ -124,7 +124,7 @@ var consoleSettings = []consoleSetting{
 	{key: "version_check", group: GroupUpdates, page: "/system/software-updates", ceilingEnv: "VERSION_CHECK_ENABLED"},
 	{key: "captcha.turnstile", group: GroupSignIn, page: "/system/captcha",
 		lockEnv: []string{"CAPTCHA_TURNSTILE_SECRET", "CAPTCHA_TURNSTILE_SITE_KEY"}},
-	{key: "deployment.region", group: GroupInstance, page: "/system/configuration", lockEnv: []string{"DEPLOYMENT_REGION"}},
+	{key: "deployment.region", group: GroupInstance, lockEnv: []string{"DEPLOYMENT_REGION"}}, // set on this page
 	{key: "storage.tenant_quota_mb", group: GroupStorage, page: "/system/limits", defaultEnv: "STORAGE_TENANT_QUOTA_MB"},
 	{key: "alerts.webhook", group: GroupAlerts, page: "/system/alerts"},
 	{key: "ai.platform", group: GroupAI, page: "/system/ai-provider",
