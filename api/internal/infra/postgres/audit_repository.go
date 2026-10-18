@@ -81,12 +81,33 @@ func (r *AuditRepository) Create(ctx context.Context, log *audit.AuditLog) error
 	return nil
 }
 
-// CreateBatch persists multiple audit log entries.
+// auditInsertColumns is the number of parameters per audit row.
+const auditInsertColumns = 18
+
+// CreateBatch persists multiple audit log entries, all or none, one statement
+// per chunk that fits under the bind-parameter limit.
 func (r *AuditRepository) CreateBatch(ctx context.Context, logs []*audit.AuditLog) error {
 	if len(logs) == 0 {
 		return nil
 	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin audit batch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := forEachStatementChunk(len(logs), auditInsertColumns, 0, 0, func(start, end int) error {
+		return createAuditChunkTx(ctx, tx, logs[start:end])
+	}); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit audit batch: %w", err)
+	}
+	return nil
+}
 
+// createAuditChunkTx inserts one chunk of audit rows.
+func createAuditChunkTx(ctx context.Context, tx *sql.Tx, logs []*audit.AuditLog) error {
 	// Build batch insert query
 	valueStrings := make([]string, 0, len(logs))
 	valueArgs := make([]any, 0, len(logs)*18)
@@ -146,8 +167,7 @@ func (r *AuditRepository) CreateBatch(ctx context.Context, logs []*audit.AuditLo
 		)
 		VALUES ` + strings.Join(valueStrings, ", ")
 
-	_, err := r.db.ExecContext(ctx, query, valueArgs...)
-	if err != nil {
+	if _, err := tx.ExecContext(ctx, query, valueArgs...); err != nil {
 		return fmt.Errorf("failed to batch create audit logs: %w", err)
 	}
 
