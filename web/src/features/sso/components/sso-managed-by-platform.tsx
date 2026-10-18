@@ -7,6 +7,7 @@ import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState, PageHeader } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** One wording for every place that explains where SSO is configured. */
 export const SSO_MANAGED_TITLE = 'SSO is configured by your platform administrator'
@@ -28,17 +29,20 @@ interface SsoManagedByPlatformProps {
  * account they do not have.
  */
 export function SsoManagedByPlatform({ title, what }: SsoManagedByPlatformProps) {
+  const { t } = useTranslation()
   return (
     <Main>
       <PageHeader title={title} />
       <div className="mt-5">
         <EmptyState
           icon={ShieldCheck}
-          title={SSO_MANAGED_TITLE}
-          description={ssoManagedText(what)}
+          title={t('org.sso.managedTitle', SSO_MANAGED_TITLE)}
+          description={t('org.sso.managedText', ssoManagedText('{what}'), { what })}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href="/settings/authentication">Authentication settings</Link>
+              <Link href="/settings/authentication">
+                {t('org.sso.authLink', 'Authentication settings')}
+              </Link>
             </Button>
           }
         />
@@ -53,16 +57,20 @@ export function SsoManagedByPlatform({ title, what }: SsoManagedByPlatformProps)
  * (SAML/OIDC providers, verified domains, enforcement) is set instead.
  */
 export function SsoManagedNotice() {
+  const { t } = useTranslation()
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-muted-foreground" />
-          Single sign-on
+          <ShieldCheck className="h-5 w-5 text-muted-foreground" aria-hidden />
+          {t('org.sso.title', 'Single sign-on')}
         </CardTitle>
         <CardDescription>
-          {SSO_MANAGED_TITLE}.{' '}
-          {ssoManagedText('Single sign-on (SAML or OIDC), with verified domains,')}
+          {t('org.sso.managedTitle', SSO_MANAGED_TITLE)}.{' '}
+          {t(
+            'org.sso.noticeText',
+            'Single sign-on (SAML or OIDC), with verified domains, is set up for your organization in the platform administration console. To add or change it, contact your platform administrator.'
+          )}
         </CardDescription>
       </CardHeader>
     </Card>
