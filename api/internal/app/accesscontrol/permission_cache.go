@@ -69,7 +69,7 @@ func (s *PermissionCacheService) versionedKey(ctx context.Context, tenantID, use
 	v, err := s.versionSvc.Current(ctx, tenantID, userID)
 	if err != nil {
 		s.logger.Warn("permission version unavailable, bypassing the permission cache",
-			"tenant_id", tenantID, "user_id", userID, "error", err)
+			"tenant_id", logger.SanitizeValue(tenantID), "user_id", logger.SanitizeValue(userID), "error", err)
 		return "", false
 	}
 	return s.cacheKey(tenantID, userID, v), true
