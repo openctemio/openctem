@@ -103,6 +103,9 @@ type AuthService struct {
 	selfServiceLimits SelfServiceLimits
 	// onSignIn runs after a sign-in created a session (signin_hook.go).
 	onSignIn SignInHook
+	// onSessionsRevoked runs after the account's sessions were revoked for a
+	// credential change (sessions_revoked_hook.go).
+	onSessionsRevoked SessionsRevokedHook
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource

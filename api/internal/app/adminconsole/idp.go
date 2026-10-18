@@ -276,6 +276,8 @@ func (s *Service) SavePlatformIdP(ctx context.Context, actor *admin.AdminUser, i
 			Build()
 		s.writeAudit(ctx, ActionPlatformIdPSave, entry)
 	}
+	summary := fmt.Sprintf("saved the administrators' identity provider %s (enabled: %t, required: %t)", p.Issuer, p.Enabled, p.RequireIdP)
+	s.NotifyRosterChange(ctx, actor, RosterIdentityProvider, summary, client)
 	return s.idps.Get(ctx)
 }
 
@@ -299,6 +301,8 @@ func (s *Service) DeletePlatformIdP(ctx context.Context, actor *admin.AdminUser,
 			Build()
 		s.writeAudit(ctx, ActionPlatformIdPDel, entry)
 	}
+	s.NotifyRosterChange(ctx, actor, RosterIdentityProvider,
+		fmt.Sprintf("removed the administrators' identity provider %s", existing.Issuer), client)
 	return nil
 }
 
@@ -325,6 +329,8 @@ func (s *Service) UnbindIdP(ctx context.Context, actor *admin.AdminUser, targetI
 			Build()
 		s.writeAudit(ctx, ActionIdPUnbound, entry)
 	}
+	s.NotifyRosterChange(ctx, actor, RosterIdPUnbound,
+		fmt.Sprintf("removed the identity provider binding of %s", target.Email()), client)
 	return nil
 }
 

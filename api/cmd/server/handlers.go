@@ -189,6 +189,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	adminConsoleSvc.SetFactorChangeNotifier(adminFactorMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+	// A password reset or change, or a two-step reset, of the linked account
+	// also ends the administrator's console sessions.
+	svc.Auth.SetSessionsRevokedHook(adminConsoleSvc.EndSessionsForAccount)
+	adminConsoleSvc.SetRosterChangeNotifier(rosterChangeMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// Console security keys (RFC-078): the relying party is the console origin.
 	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
 		rp, err := adminconsole.NewConsoleWebAuthn(adminconsole.WebAuthnConfig{
@@ -707,7 +711,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminMappingRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.DefaultAdminMappingRateLimitConfig(), log),
 
 		// Admin Management (CRUD for admin users, audit logs, and target mappings)
-		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log),
+		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log).WithRosterNotifier(adminConsoleSvc),
 		AdminAudit:         handler.NewAdminAuditHandler(repos.AdminAuditLog, log),
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
