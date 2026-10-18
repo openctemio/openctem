@@ -9,7 +9,7 @@ here as they ship.
 |---|---|
 | Ownership: organization and personal dashboards, `dashboards:org:view` / `dashboards:org:manage`, audiences, schedule fields | **Shipped** (migration `002930_dashboard_ownership`) |
 | Fact layer: per-asset fact tables, dirty queue, change triggers, recompute and rebuild functions | **Shipped** (migration `002916_dashboard_fact_tables`) |
-| Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002939_dashboard_facts_maintainer`) |
+| Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002963_dashboard_facts_maintainer`) |
 | Widget registry reading the facts; viewer-scope and organization-wide reads | Planned |
 | Snapshots, the refresher, Refresh now | Planned |
 
@@ -385,7 +385,7 @@ and `DashboardFactsDrift` (any drift in a day); runbooks in
   their own organization per hour; the run is batched (200 assets per short
   transaction) and time-boxed per tick.
 
-Key files: `migrations/002939_dashboard_facts_maintainer.up.sql`,
+Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
 `internal/infra/postgres/dashboard_facts_maintainer.go`,
 `internal/infra/controller/dashboard_facts.go`,
 `internal/app/dashboard/facts/service.go`,
