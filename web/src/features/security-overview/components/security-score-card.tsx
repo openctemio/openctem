@@ -79,7 +79,7 @@ export function SecurityScoreCard({ enabled }: { enabled: boolean }) {
                     className={
                       c.status === 'risk'
                         ? 'mt-0.5 shrink-0 rounded bg-destructive/10 px-1.5 text-xs font-medium text-destructive'
-                        : 'mt-0.5 shrink-0 rounded bg-amber-500/10 px-1.5 text-xs font-medium text-amber-700 dark:text-amber-400'
+                        : 'mt-0.5 shrink-0 rounded bg-warning/10 px-1.5 text-xs font-medium text-warning'
                     }
                   >
                     {t(`securityOverview.status.${c.status}`, c.status)}
