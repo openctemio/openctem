@@ -626,6 +626,10 @@ func (m *ssoMockRefreshTokenRepo) Update(_ context.Context, _ *session.RefreshTo
 	return nil
 }
 
+func (m *ssoMockRefreshTokenRepo) MarkUsedIfUnused(_ context.Context, _ shared.ID) (bool, error) {
+	return true, nil
+}
+
 func (m *ssoMockRefreshTokenRepo) Delete(_ context.Context, _ shared.ID) error {
 	return nil
 }
