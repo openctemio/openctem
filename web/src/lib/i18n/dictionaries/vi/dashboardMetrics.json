@@ -25,5 +25,10 @@
   "dashboardMetrics.executive.sla": "Đang mở trong hạn SLA",
   "dashboardMetrics.executive.mttrCritical": "Thời gian khắc phục · nghiêm trọng (trung vị)",
   "dashboardMetrics.executive.mttrHigh": "Thời gian khắc phục · cao (trung vị)",
-  "dashboardMetrics.executive.mttrSub": "trung bình {mean} · p90 {p90} · đã khắc phục {n}"
+  "dashboardMetrics.executive.mttrSub": "trung bình {mean} · p90 {p90} · đã khắc phục {n}",
+  "dashboardMetrics.hero.activeExposure": "Phơi nhiễm đang hoạt động",
+  "dashboardMetrics.hero.exploitableNow": "có thể khai thác ngay",
+  "dashboardMetrics.hero.risk": "Rủi ro",
+  "dashboardMetrics.hero.kevChains": "Chuỗi KEV",
+  "dashboardMetrics.coverage.validation": "Xác thực"
 }

@@ -15,7 +15,7 @@ import (
 
 const stepUpPurposeLegalSettings = "legal settings change"
 
-// AdminLegalHandler serves Console > System > Legal and the public read the
+// AdminLegalHandler serves Console > Settings > Legal and the public read the
 // web console renders the sign-in notice, the legal pages and security.txt
 // from (RFC-079).
 type AdminLegalHandler struct {

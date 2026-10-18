@@ -48,7 +48,7 @@ vars:
     group: "Application"
     type: bool
     default: "false"
-    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
+    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
   - name: DEPLOYMENT_REGION
     component: api
     group: "Application"
@@ -630,12 +630,12 @@ vars:
     group: "Organizations and scope guardrails"
     type: string
     default: "disabled"
-    description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
+    description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (Console > Settings > E-mail) at start and verify every self-registered address; `open` in production also needs a CAPTCHA: until one is configured (Console > Settings > CAPTCHA, or the `CAPTCHA_TURNSTILE_*` keys), open sign-up stays closed at runtime. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
   - name: SIGNUP_CAPTCHA
     component: api
     group: "Organizations and scope guardrails"
     type: string
-    description: "Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`."
+    description: "Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: the API starts, but open sign-up in production stays closed until a CAPTCHA is configured (Console > Settings > CAPTCHA, or `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`)."
   - name: CAPTCHA_TURNSTILE_SECRET
     component: api
     group: "Organizations and scope guardrails"
@@ -1593,7 +1593,7 @@ vars:
     component: api
     group: "Organizations"
     type: string
-    description: "Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{\"seats\":5,\"assets\":500,\"orgs_per_user\":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API."
+    description: "Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > Settings > Limits: a JSON object of limit keys, for example `{\"seats\":5,\"assets\":500,\"orgs_per_user\":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`SIGNUP_MODE=open`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API."
   - name: METRICS_PUBLIC
     component: api
     group: "Metrics"
@@ -1715,7 +1715,7 @@ vars:
     type: string
     default: "the origin of APP_URL"
     example: "https://admin.ctem.example.com"
-    description: "Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8444` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off."
+    description: "Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8443` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off."
   - name: ADMIN_SESSION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"
@@ -1864,7 +1864,7 @@ vars:
     component: tool
     group: "Administration tools"
     type: string
-    description: "`bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (System > E-mail)."
+    description: "`bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (Console > Settings > E-mail)."
   - name: BOOTSTRAP_SMTP_PORT
     component: tool
     group: "Administration tools"

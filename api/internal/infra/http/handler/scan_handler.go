@@ -1052,7 +1052,7 @@ func (h *ScanHandler) CoverageStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The estate counted follows the viewer (D6): a restricted member counts
-	// the assets of their own scope, dashboard:aggregate and unrestricted
+	// the assets of their own scope, dashboards:org:view and unrestricted
 	// callers the organization.
 	scope, _, err := h.dataScope.ViewerScope(r.Context(), tenantID)
 	if err != nil {

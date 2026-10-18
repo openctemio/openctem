@@ -68,7 +68,7 @@ type Service struct {
 // ErrStartLimitsRequired refuses self-service sign-up while no starting
 // limits are configured.
 var ErrStartLimitsRequired = errors.New("self-service sign-up needs starting limits: set SELF_SERVICE_START_LIMITS " +
-	"(a JSON object of limits, or \"unlimited\" to choose none), save them in Console > System > Limits, " +
+	"(a JSON object of limits, or \"unlimited\" to choose none), save them in Console > Settings > Limits, " +
 	"or turn on the internal entitlements API")
 
 // SetStartLimits reads SELF_SERVICE_START_LIMITS: empty (not configured),
@@ -251,8 +251,8 @@ func (s *Service) Effective(ctx context.Context, tenantID shared.ID) (*Summary, 
 	for i := range sum.Limits {
 		e := &sum.Limits[i]
 		e.Used = usage[e.Key]
-		e.Uncounted = e.Key == limits.Findings && !countFindings
-		e.OverLimit = e.Limit != limits.Unlimited && e.Used > e.Limit
+		e.Uncounted = (e.Key == limits.Findings && !countFindings) || e.Key.IsFloor()
+		e.OverLimit = !e.Key.IsFloor() && e.Limit != limits.Unlimited && e.Used > e.Limit
 		sum.OverLimit = sum.OverLimit || e.OverLimit
 		sum.Applies = sum.Applies || e.Limit != limits.Unlimited
 	}
@@ -321,7 +321,7 @@ func (s *Service) Limit(ctx context.Context, tenantID shared.ID, key limits.Key)
 // organization's limit: *limits.ErrLimitReached. Any read error refuses too
 // (fail-closed). Unlimited never refuses and counts no usage.
 func (s *Service) Check(ctx context.Context, tenantID shared.ID, key limits.Key, delta int) error {
-	if !key.PerOrganization() {
+	if !key.PerOrganization() || key.IsFloor() {
 		return limits.ErrInvalid
 	}
 	limit, used, err := s.limitAndUsage(ctx, tenantID, key)
