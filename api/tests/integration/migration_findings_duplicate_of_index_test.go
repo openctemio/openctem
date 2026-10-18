@@ -6,6 +6,7 @@ package integration
 // and up again.
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -36,24 +37,8 @@ func TestMigrationFindingsDuplicateOfIndex(t *testing.T) {
 	if _, err := db.Exec(`SET enable_seqscan = off`); err != nil {
 		t.Fatal(err)
 	}
-	var plan strings.Builder
-	rows, err := db.Query(`EXPLAIN SELECT 1 FROM findings WHERE duplicate_of = '00000000-0000-0000-0000-000000000001'`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rows.Next() {
-		var line string
-		if err := rows.Scan(&line); err != nil {
-			t.Fatal(err)
-		}
-		plan.WriteString(line + "\n")
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	_ = rows.Close()
-	if !strings.Contains(plan.String(), "idx_findings_duplicate_of") {
-		t.Fatalf("duplicate_of lookup does not use the index:\n%s", plan.String())
+	if plan := explainPlan(t, db, `SELECT 1 FROM findings WHERE duplicate_of = '00000000-0000-0000-0000-000000000001'`); !strings.Contains(plan, "idx_findings_duplicate_of") {
+		t.Fatalf("duplicate_of lookup does not use the index:\n%s", plan)
 	}
 
 	testdb.Migrate(t, db, dir, v, v, true)
@@ -64,4 +49,25 @@ func TestMigrationFindingsDuplicateOfIndex(t *testing.T) {
 	if exists, ok := valid(); !exists || !ok {
 		t.Fatalf("after up again: index exists=%v valid=%v", exists, ok)
 	}
+}
+
+func explainPlan(t *testing.T, db *sql.DB, query string) string {
+	t.Helper()
+	rows, err := db.Query("EXPLAIN " + query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		plan.WriteString(line + "\n")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return plan.String()
 }
