@@ -24,6 +24,7 @@ import type { SelfServiceLimitsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveSelfServiceLimits } from '../api/use-limits'
 import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { RoleRequiredNotice } from './role-required-notice'
 
 type Values = Record<LimitKey, string>
 
@@ -190,9 +191,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
                 {t('limits.console.save', 'Save')}
               </Button>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                {t('limits.console.defaults.superOnly', 'Only a super admin can change them.')}
-              </p>
+              <RoleRequiredNotice needed="super_admin" />
             )}
           </div>
         </CardContent>

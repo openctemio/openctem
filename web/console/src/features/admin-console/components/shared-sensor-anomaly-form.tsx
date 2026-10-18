@@ -22,6 +22,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorAnomalyThresholds } from '../api/use-scan-policy'
 import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { RoleRequiredNotice } from './role-required-notice'
 
 const FIELDS = [
   ['distinct_domains_per_day', 'domains'],
@@ -115,7 +116,7 @@ export function SharedSensorAnomalyForm({
               </Button>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">{t('admin.scanPolicy.superOnly')}</p>
+            <RoleRequiredNotice needed="super_admin" />
           )}
         </CardContent>
       </Card>
