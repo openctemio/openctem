@@ -21,6 +21,7 @@ import {
   Cloud,
   Server,
   SlidersHorizontal,
+  UserCheck,
   UserCog,
   UserPlus,
   UserSearch,
@@ -187,6 +188,14 @@ export const adminNav: AdminNavSection[] = [
         icon: MonitorSmartphone,
         minRole: 'super_admin',
         keywords: ['signed in', 'console sessions', 'sign out', 'devices'],
+      },
+      {
+        title: 'Approvals',
+        i18nKey: 'admin.nav.approvals',
+        url: '/security/approvals',
+        icon: UserCheck,
+        minRole: 'super_admin',
+        keywords: ['four-eyes', 'second approval', 'approve', 'dual control'],
       },
       {
         title: 'Admin sign-in',
