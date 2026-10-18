@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 
@@ -22,6 +23,14 @@ type ThreatIntelHandler struct {
 	service   *threat.IntelService
 	validator *validator.Validator
 	logger    *logger.Logger
+	dataScope *datascope.Enforcer
+}
+
+// SetDataScope wires the enforcer that narrows the tenant exposure counts
+// (EPSS, KEV) to the caller's data scope.
+func (h *ThreatIntelHandler) SetDataScope(e *datascope.Enforcer) *ThreatIntelHandler {
+	h.dataScope = e
+	return h
 }
 
 // NewThreatIntelHandler creates a new ThreatIntelHandler.
@@ -335,7 +344,15 @@ func (h *ThreatIntelHandler) GetThreatIntelStats(w http.ResponseWriter, r *http.
 		return
 	}
 
-	stats, err := h.service.GetThreatIntelStats(ctx, tenantID)
+	// The exposure counts follow the viewer (D6): a restricted member counts
+	// their own scope, dashboard:aggregate and unrestricted callers the
+	// organization.
+	scope, _, err := h.dataScope.ViewerScope(ctx, tenantID)
+	if err != nil {
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+	stats, err := h.service.GetThreatIntelStats(ctx, tenantID, scope)
 	if err != nil {
 		apierror.InternalError(err).WriteJSON(w)
 		return

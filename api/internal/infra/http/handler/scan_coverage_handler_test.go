@@ -20,7 +20,7 @@ type fakeCoverageReader struct {
 	err       error
 }
 
-func (f *fakeCoverageReader) CoverageStats(_ context.Context, tenantID shared.ID, window int) (*scancoverage.CoverageStats, error) {
+func (f *fakeCoverageReader) CoverageStats(_ context.Context, tenantID shared.ID, _ *shared.DataScope, window int) (*scancoverage.CoverageStats, error) {
 	f.gotTenant = tenantID
 	f.gotWindow = window
 	if f.err != nil {

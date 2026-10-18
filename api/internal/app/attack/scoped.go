@@ -14,11 +14,13 @@ import (
 // are always computed over every asset; only what is shown to a restricted
 // member is narrowed:
 //
-//   - attack paths: TopAssets keeps only in-scope assets;
+//   - attack paths: TopAssets keeps only in-scope assets and the summary is
+//     recomputed over them (a viewer with dashboard:aggregate keeps the
+//     organization summary, no rows);
 //   - exposure chains: a chain is shown only when every hop is in scope, so
 //     no out-of-scope asset name or id is revealed along the way;
 //   - the exposure-chain summary is recomputed from the chains kept; the
-//     attack-path summary stays a tenant-wide count (no row data, no ids).
+//     attack-path summary likewise.
 //
 // GetAttackPathScores / GetExposureChains stay unscoped: priority
 // classification (reachability oracle) and threat models depend on the full
@@ -43,7 +45,18 @@ func (s *SurfaceService) AttackPathScoresForCaller(ctx context.Context, tenantID
 	if scope == nil {
 		return res, nil
 	}
-	ids := make([]shared.ID, 0, len(res.TopAssets))
+	basis := res.basis
+	res.basis = nil
+	var all []AssetPathScore
+	if basis != nil {
+		all = basis.all
+	}
+	ids := make([]shared.ID, 0, len(all)+len(res.TopAssets))
+	for _, a := range all {
+		if id, perr := shared.IDFromString(a.AssetID); perr == nil {
+			ids = append(ids, id)
+		}
+	}
 	for _, a := range res.TopAssets {
 		if id, perr := shared.IDFromString(a.AssetID); perr == nil {
 			ids = append(ids, id)
@@ -60,7 +73,45 @@ func (s *SurfaceService) AttackPathScoresForCaller(ctx context.Context, tenantID
 		}
 	}
 	res.TopAssets = top
+	// The summary follows the viewer: the assets they may see, unless they
+	// hold dashboard:aggregate (organization totals, no rows).
+	if basis != nil && !(scope.Restricted() && s.dataScope.AggregateViewer(ctx)) {
+		res.Summary = summarizeKept(basis, keep)
+	}
 	return res, nil
+}
+
+// summarizeKept recomputes the summary over the assets keep admits: the same
+// rules as ComputeAttackPathScores, applied to the kept assets only. The
+// reachability itself stays that of the whole graph.
+func summarizeKept(b *pathBasis, keep func(shared.ID) bool) PathSummary {
+	out := PathSummary{}
+	for _, a := range b.all {
+		id, err := shared.IDFromString(a.AssetID)
+		if err != nil || !keep(id) {
+			continue
+		}
+		if a.IsEntryPoint {
+			out.EntryPoints++
+		}
+		if d := b.depth[a.AssetID]; d > out.MaxDepth {
+			out.MaxDepth = d
+		}
+		if b.edgeNodes[a.AssetID] {
+			out.HasRelationshipData = true
+		}
+		if a.ReachableFrom > 0 {
+			out.ReachableAssets++
+			out.TotalPaths += a.ReachableFrom
+			if a.Criticality == "critical" || a.Criticality == "high" {
+				out.CriticalReachable++
+			}
+		}
+		if a.IsCrownJewel && (a.ReachableFrom > 0 || a.IsEntryPoint) {
+			out.CrownJewelsAtRisk++
+		}
+	}
+	return out
 }
 
 // ExposureChainsForCaller is GetExposureChains narrowed to the request

@@ -97,6 +97,7 @@ type Enforcer struct {
 	caller      CallerFunc
 	adminLookup AdminLookup
 	ownerLookup OwnerLookup
+	aggregate   func(ctx context.Context) bool
 	logger      *logger.Logger
 }
 
@@ -123,6 +124,36 @@ func (e *Enforcer) SetOwnerLookup(fn OwnerLookup) {
 	if e != nil {
 		e.ownerLookup = fn
 	}
+}
+
+// SetAggregateCheck wires the decision "this caller may see organization
+// totals" (the dashboard:aggregate permission). Unset, nobody does.
+func (e *Enforcer) SetAggregateCheck(fn func(ctx context.Context) bool) {
+	if e != nil {
+		e.aggregate = fn
+	}
+}
+
+// AggregateViewer reports whether the caller may see organization totals
+// whatever their data scope (the dashboard:aggregate permission).
+func (e *Enforcer) AggregateViewer(ctx context.Context) bool {
+	return e != nil && e.aggregate != nil && e.aggregate(ctx)
+}
+
+// ViewerScope is the scope a dashboard figure is counted over: the caller's
+// data scope, except that a restricted caller holding the aggregate
+// permission is counted over the organization (nil scope, orgWide true).
+// A nil scope with orgWide false is an unrestricted caller. A figure that
+// cannot be computed per scope refuses when scope.Restricted().
+func (e *Enforcer) ViewerScope(ctx context.Context, tenantID shared.ID) (scope *shared.DataScope, orgWide bool, err error) {
+	scope, err = e.Resolve(ctx, tenantID)
+	if err != nil || !scope.Restricted() {
+		return scope, false, err
+	}
+	if e.AggregateViewer(ctx) {
+		return nil, true, nil
+	}
+	return scope, false, nil
 }
 
 // CallerOf returns the caller of a request context (empty when unwired).

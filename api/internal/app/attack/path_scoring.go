@@ -91,6 +91,19 @@ type PathScoringResult struct {
 	Summary PathSummary `json:"summary"`
 	// TopAssets is the ranked list of assets by PathScore (descending), limited to 50.
 	TopAssets []AssetPathScore `json:"top_assets"`
+
+	// basis lets the summary be recomputed over a subset of the assets (a
+	// restricted viewer); it is never serialized.
+	basis *pathBasis
+}
+
+// pathBasis is what PathSummary was computed from: every scored asset (not
+// just the top 50), the deepest chain reaching each asset and the assets that
+// take part in a relationship.
+type pathBasis struct {
+	all       []AssetPathScore
+	depth     map[string]int
+	edgeNodes map[string]bool
 }
 
 // criticalityMultiplier returns an impact multiplier for a criticality level.
@@ -169,6 +182,7 @@ func (s *SurfaceService) ComputeAttackPathScores(
 	// Step 4 — BFS from each entry point, counting reachability per node
 	reachableFrom := make(map[string]int, len(nodes)) // assetID → count of entry points that can reach it
 	maxDepth := 0
+	nodeDepth := make(map[string]int, len(nodes))
 
 	for _, ep := range entryPoints {
 		visited := make(map[string]bool)
@@ -191,6 +205,9 @@ func (s *SurfaceService) ComputeAttackPathScores(
 					continue
 				}
 				visited[neighborID] = true
+				if cur.depth+1 > nodeDepth[neighborID] {
+					nodeDepth[neighborID] = cur.depth + 1
+				}
 				// Only count non-public assets as "reachable internal assets"
 				if n, ok := nodeByID[neighborID]; ok && n.Exposure != "public" {
 					reachableFrom[neighborID]++
@@ -270,6 +287,7 @@ func (s *SurfaceService) ComputeAttackPathScores(
 		return scored[i].Name < scored[j].Name
 	})
 
+	all := scored
 	// Cap at 50
 	if len(scored) > 50 {
 		scored = scored[:50]
@@ -285,8 +303,15 @@ func (s *SurfaceService) ComputeAttackPathScores(
 		HasRelationshipData: len(edges) > 0,
 	}
 
+	edgeNodes := make(map[string]bool, 2*len(edges))
+	for _, e := range edges {
+		edgeNodes[e.SourceAssetID] = true
+		edgeNodes[e.TargetAssetID] = true
+	}
+
 	return &PathScoringResult{
 		Summary:   summary,
 		TopAssets: scored,
+		basis:     &pathBasis{all: all, depth: nodeDepth, edgeNodes: edgeNodes},
 	}, nil
 }

@@ -1052,6 +1052,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
+	// D6: a restricted viewer holding dashboard:aggregate is counted over the
+	// organization by the dashboard figures (ViewerScope).
+	s.DataScope.SetAggregateCheck(func(ctx context.Context) bool {
+		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+	})
 	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
 	s.Asset.SetScoringConfigProvider(asset.NewTenantScoringConfigProvider(repos.Tenant))

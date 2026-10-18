@@ -128,6 +128,20 @@ func (h *CTEMCycleHandler) MetricsTrend(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// The cycle metrics are computed over the whole organization, so a
+	// restricted member needs dashboard:aggregate (or full data access) to see
+	// them; the series cannot be narrowed to their scope.
+	scope, _, err := h.dataScope.ViewerScope(r.Context(), tid)
+	if err != nil {
+		h.logger.Error("ctem cycle metrics: resolve data scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	if scope.Restricted() {
+		apierror.Forbidden("cycle metrics cover the whole organization: they need the dashboard:aggregate permission or full data access").WriteJSON(w)
+		return
+	}
+
 	cycles, err := h.metrics.ListClosedForTenant(r.Context(), tid)
 	if err != nil {
 		h.logger.Error("ctem cycle metrics: trend list", "error", err)
