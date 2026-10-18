@@ -248,6 +248,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"scopes": "{findings}", "reason": "seeded support grant", "access_level": "read",
 			"starts_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
 	},
+	// A tenant row of the alias table is an observed alias.
+	"software_product_aliases": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "name", "value": "seeded", "source": "observed"}
+	},
 	"signup_events": func(*schemaSeeder) map[string]any {
 		return map[string]any{"kind": "account_created", "source": "password"}
 	},

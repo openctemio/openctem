@@ -188,6 +188,21 @@ probe 404 GET /ready/detail
 probe 404 GET /debug/pprof/
 probe 404 GET /debug
 
+echo "== Health listener on :2020 (plain HTTP, in-network only, proxies nothing)"
+gwip2020="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")"
+h2020() { # h2020 <path>: "<body> <status>" from the gateway's :2020 listener
+	docker run --rm --network "$net" curlimages/curl:latest -s -m 5 -w ' %{http_code}' "http://$gwip2020:2020$1" 2>/dev/null || true
+}
+expect() { if [ "$3" = "$2" ]; then ok "$1"; else bad "$1: got '$3', want '$2'"; fi; }
+expect ":2020/health answers 200 ok" "ok 200" "$(h2020 /health)"
+for p in / /api/v1/findings /login /metrics /health/x; do
+	got="$(h2020 "$p")"
+	case "$got" in
+	*" 404") case "$got" in api* | web* | console*) bad ":2020$p reached an upstream: $got" ;; *) ok ":2020$p is 404, not proxied" ;; esac ;;
+	*) bad ":2020$p -> $got, want 404" ;;
+	esac
+done
+
 echo "== Client address is set by the gateway, not the client"
 body="$(docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 \
 	--resolve "gateway.test:443:$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")" \

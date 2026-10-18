@@ -125,13 +125,18 @@ export default function SCMConnectionsPage() {
     try {
       await invalidateSCMConnectionsCache()
       await mutate()
-      toast.success('Connections refreshed')
+      toast.success(t('scmIntegration.toast.refreshed', 'Connections refreshed'))
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to refresh connections'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('scmIntegration.toast.refreshFailed', 'Failed to refresh connections')
+        )
+      )
     } finally {
       setActionInProgress(null)
     }
-  }, [mutate])
+  }, [mutate, t])
 
   const handleTestConnection = useCallback(
     async (connection: SCMConnection) => {
@@ -143,18 +148,26 @@ export default function SCMConnectionsPage() {
         if (!response.ok) throw new Error('Test failed')
         const result = await response.json()
         if (result.status === 'connected') {
-          toast.success(`Connection "${connection.name}" is working`)
+          toast.success(
+            t('scmIntegration.toast.testOk', 'Connection "{name}" is working', {
+              name: connection.name,
+            })
+          )
         } else {
-          toast.error(result.status_message || 'Connection test failed')
+          toast.error(
+            result.status_message || t('scmIntegration.toast.testFailed', 'Connection test failed')
+          )
         }
         await mutate()
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to test connection'))
+        toast.error(
+          getErrorMessage(err, t('scmIntegration.toast.testError', 'Failed to test connection'))
+        )
       } finally {
         setActionInProgress(null)
       }
     },
-    [mutate]
+    [mutate, t]
   )
 
   const handleDelete = useCallback(async () => {
@@ -163,17 +176,23 @@ export default function SCMConnectionsPage() {
     try {
       // apiClient path: a STEP_UP_REQUIRED answer opens the re-authentication dialog and retries.
       await del(`/api/v1/integrations/${selectedConnection.id}`)
-      toast.success(`Connection "${selectedConnection.name}" deleted`)
+      toast.success(
+        t('scmIntegration.toast.deleted', 'Connection "{name}" deleted', {
+          name: selectedConnection.name,
+        })
+      )
       await invalidateSCMConnectionsCache()
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete connection'))
+      toast.error(
+        getErrorMessage(err, t('scmIntegration.toast.deleteFailed', 'Failed to delete connection'))
+      )
     } finally {
       setDeleteDialogOpen(false)
       setSelectedConnection(null)
       setActionInProgress(null)
     }
-  }, [selectedConnection, mutate])
+  }, [selectedConnection, mutate, t])
 
   const handleEditClick = (connection: SCMConnection) => {
     setSelectedConnection(connection)
@@ -194,7 +213,12 @@ export default function SCMConnectionsPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Connection" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scmIntegration.col.connection', 'Connection')}
+          />
+        ),
         cell: ({ row }) => {
           const connection = row.original
           return (
@@ -214,7 +238,12 @@ export default function SCMConnectionsPage() {
       },
       {
         accessorKey: 'provider',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Provider" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scmIntegration.col.provider', 'Provider')}
+          />
+        ),
         cell: ({ row }) => (
           <Badge variant="outline" className="text-xs">
             {PROVIDER_LABELS[row.original.provider] || row.original.provider}
@@ -223,20 +252,28 @@ export default function SCMConnectionsPage() {
       },
       {
         accessorKey: 'scmOrganization',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Organization" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scmIntegration.col.organization', 'Organization')}
+          />
+        ),
         cell: ({ row }) => <span className="text-sm">{row.original.scmOrganization || '-'}</span>,
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scmIntegration.col.status', 'Status')} />
+        ),
         cell: ({ row }) => {
           const connection = row.original
-          const statusConfig = STATUS_CONFIG[connection.status] || STATUS_CONFIG.pending
+          const statusKey = STATUS_CONFIG[connection.status] ? connection.status : 'pending'
+          const statusConfig = STATUS_CONFIG[statusKey]
           return (
             <>
               <Badge variant={statusConfig.variant} className="gap-1">
                 {statusConfig.icon}
-                {statusConfig.label}
+                {t(`scmIntegration.status.${statusKey}`, statusConfig.label)}
               </Badge>
               {connection.errorMessage && connection.status === 'error' && (
                 <p className="mt-1 max-w-[200px] truncate text-xs text-destructive">
@@ -249,7 +286,7 @@ export default function SCMConnectionsPage() {
       },
       {
         id: 'repositories',
-        header: 'Repositories',
+        header: t('scmIntegration.col.repositories', 'Repositories'),
         enableSorting: false,
         cell: ({ row }) => {
           const connection = row.original
@@ -260,7 +297,9 @@ export default function SCMConnectionsPage() {
               className="h-auto p-0"
               onClick={() => handleSyncClick(connection)}
             >
-              {connection.repositoryCount || 0} repos
+              {t('scmIntegration.repoCount', '{count} repos', {
+                count: connection.repositoryCount || 0,
+              })}
               <ExternalLink className="ms-1 h-3 w-3" />
             </Button>
           )
@@ -268,7 +307,12 @@ export default function SCMConnectionsPage() {
       },
       {
         accessorKey: 'lastValidatedAt',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last verified" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scmIntegration.col.lastVerified', 'Last verified')}
+          />
+        ),
         cell: ({ row }) => <RelativeTime date={row.original.lastValidatedAt} />,
       },
       {
@@ -280,25 +324,25 @@ export default function SCMConnectionsPage() {
           const connection = row.original
           const actions: RowAction[] = [
             {
-              label: 'Sync repositories',
+              label: t('scmIntegration.actions.sync', 'Sync repositories'),
               icon: GitBranch,
               onClick: () => handleSyncClick(connection),
               route: 'POST /api/v1/integrations/{id}/sync',
             },
             {
-              label: 'Test connection',
+              label: t('scmIntegration.actions.test', 'Test connection'),
               icon: Eye,
               onClick: () => handleTestConnection(connection),
               route: 'POST /api/v1/integrations/{id}/test',
             },
             {
-              label: 'Edit',
+              label: t('scmIntegration.actions.edit', 'Edit'),
               icon: Pencil,
               onClick: () => handleEditClick(connection),
               route: 'PUT /api/v1/integrations/{id}',
             },
             {
-              label: 'Delete',
+              label: t('scmIntegration.actions.delete', 'Delete'),
               icon: Trash2,
               onClick: () => handleDeleteClick(connection),
               destructive: true,
@@ -310,22 +354,42 @@ export default function SCMConnectionsPage() {
         },
       },
     ],
-    [handleTestConnection]
+    [handleTestConnection, t]
   )
 
   const metrics: MetricStripItem[] = [
-    { key: 'total', label: 'Connections', value: stats.total },
-    { key: 'connected', label: 'Connected', value: stats.connected },
-    { key: 'error', label: 'Errors', value: stats.error, tone: 'danger' },
-    { key: 'repos', label: 'Repositories', value: stats.totalRepos },
+    {
+      key: 'total',
+      label: t('scmIntegration.metrics.connections', 'Connections'),
+      value: stats.total,
+    },
+    {
+      key: 'connected',
+      label: t('scmIntegration.metrics.connected', 'Connected'),
+      value: stats.connected,
+    },
+    {
+      key: 'error',
+      label: t('scmIntegration.metrics.errors', 'Errors'),
+      value: stats.error,
+      tone: 'danger',
+    },
+    {
+      key: 'repos',
+      label: t('scmIntegration.metrics.repositories', 'Repositories'),
+      value: stats.totalRepos,
+    },
   ]
 
   return (
     <>
       <Main>
         <PageHeader
-          title="SCM connections"
-          description="Connect GitHub, GitLab, Bitbucket or Azure DevOps, then import repositories for scanning."
+          title={t('scmIntegration.page.title', 'SCM connections')}
+          description={t(
+            'scmIntegration.page.description',
+            'Connect GitHub, GitLab, Bitbucket or Azure DevOps, then import repositories for scanning.'
+          )}
         >
           <Button
             variant="outline"
@@ -333,19 +397,23 @@ export default function SCMConnectionsPage() {
             onClick={() => router.push('/assets?types=repository')}
           >
             <GitBranch className="me-2 h-4 w-4" />
-            Repositories
+            {t('scmIntegration.page.repositories', 'Repositories')}
           </Button>
           <Can route="POST /api/v1/integrations">
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
-              Add connection
+              {t('scmIntegration.page.addConnection', 'Add connection')}
             </Button>
           </Can>
         </PageHeader>
 
         {error ? (
           <div className="mt-5">
-            <ErrorState title="SCM connections" error={error} onRetry={() => void mutate()} />
+            <ErrorState
+              title={t('scmIntegration.page.errorTitle', 'SCM connections')}
+              error={error}
+              onRetry={() => void mutate()}
+            />
           </div>
         ) : (
           <>
@@ -360,13 +428,16 @@ export default function SCMConnectionsPage() {
               ) : connections.length === 0 ? (
                 <EmptyState
                   icon={Link2}
-                  title="No SCM connections"
-                  description="Connect your GitHub, GitLab, Bitbucket, or Azure DevOps account to import and scan repositories."
+                  title={t('scmIntegration.page.emptyTitle', 'No SCM connections')}
+                  description={t(
+                    'scmIntegration.page.emptyDescription',
+                    'Connect your GitHub, GitLab, Bitbucket, or Azure DevOps account to import and scan repositories.'
+                  )}
                   action={
                     <Can route="POST /api/v1/integrations">
                       <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                         <Plus className="me-2 h-4 w-4" />
-                        Add connection
+                        {t('scmIntegration.page.addConnection', 'Add connection')}
                       </Button>
                     </Can>
                   }
@@ -376,15 +447,18 @@ export default function SCMConnectionsPage() {
                   columns={columns}
                   data={connections}
                   getRowId={(c) => c.id}
-                  searchPlaceholder="Search connections..."
+                  searchPlaceholder={t(
+                    'scmIntegration.page.searchPlaceholder',
+                    'Search connections...'
+                  )}
                   showSelectionCount={false}
                   toolbarEnd={
                     <Button
                       variant="outline"
                       size="icon"
                       className="h-9 w-9"
-                      aria-label="Refresh"
-                      title="Refresh"
+                      aria-label={t('scmIntegration.page.refresh', 'Refresh')}
+                      title={t('scmIntegration.page.refresh', 'Refresh')}
                       onClick={handleRefresh}
                       disabled={actionInProgress === 'refresh'}
                     >
@@ -395,7 +469,10 @@ export default function SCMConnectionsPage() {
                       )}
                     </Button>
                   }
-                  emptyMessage="No connections match your search"
+                  emptyMessage={t(
+                    'scmIntegration.page.noMatch',
+                    'No connections match your search'
+                  )}
                 />
               )}
             </div>
