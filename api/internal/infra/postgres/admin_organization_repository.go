@@ -46,7 +46,7 @@ const adminOrganizationSelect = `
 	       COALESCE((t.settings -> 'security' ->> 'sso_enforced')::boolean, FALSE),
 	       (EXISTS (SELECT 1 FROM tenant_limits l WHERE l.tenant_id = t.id)
 	        OR EXISTS (SELECT 1 FROM tenant_feature_denies d WHERE d.tenant_id = t.id)),
-	       t.status, t.suspended_at, COALESCE(t.suspended_reason, '')
+	       t.status, t.suspended_at, COALESCE(t.suspended_reason, ''), t.deletion_due_at
 	FROM tenants t`
 
 // adminOrganizationActiveOwner holds when the organization has an active owner.
@@ -63,7 +63,7 @@ func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, 
 	if err := sc.Scan(&id, &o.Name, &o.Slug, &o.Description, &o.CreatedAt,
 		&o.ActiveMembers, &owners, &o.SAMLEnabled, &o.ActiveIdentityProviders,
 		&o.VerifiedDomains, &o.SSOEnforced, &o.LimitsApply,
-		&o.Status, &o.SuspendedAt, &o.SuspendedReason); err != nil {
+		&o.Status, &o.SuspendedAt, &o.SuspendedReason, &o.DeletionDueAt); err != nil {
 		return nil, err
 	}
 	parsed, err := shared.IDFromString(id)

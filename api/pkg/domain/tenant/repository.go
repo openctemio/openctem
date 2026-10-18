@@ -231,6 +231,9 @@ type UserMembership struct {
 	// OrganizationSuspended: the organization itself is suspended by a
 	// platform administrator (set by GetUserMembershipsWithStatus).
 	OrganizationSuspended bool
+	// DeletionDueAt: an owner scheduled the organization's deletion; it is
+	// deleted at this time unless an owner cancels.
+	DeletionDueAt *time.Time
 }
 
 // UserMembershipsByStatus partitions a user's memberships by lifecycle

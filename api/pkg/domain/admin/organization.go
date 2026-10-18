@@ -31,6 +31,9 @@ type Organization struct {
 	Status          string
 	SuspendedAt     *time.Time
 	SuspendedReason string
+	// DeletionDueAt: an owner scheduled the deletion; the purge worker
+	// deletes the organization at this time unless an owner cancels.
+	DeletionDueAt *time.Time
 }
 
 // Owner filter values for OrganizationFilter.Owner.

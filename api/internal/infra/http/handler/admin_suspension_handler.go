@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
 	"github.com/openctemio/openctem/api/internal/app/platformuser"
 	"github.com/openctemio/openctem/api/internal/app/suspension"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -23,9 +24,10 @@ import (
 // and block / unblock (accounts). Every action needs a reason and a fresh
 // authenticator code (route step-up) and writes a critical admin audit row.
 type AdminSuspensionHandler struct {
-	orgs   *suspension.Service
-	users  *platformuser.Service
-	logger *logger.Logger
+	orgs      *suspension.Service
+	deletions *orgdeletion.Service
+	users     *platformuser.Service
+	logger    *logger.Logger
 }
 
 // NewAdminSuspensionHandler creates the handler. Either service may be nil;
@@ -208,4 +210,52 @@ func (h *AdminSuspensionHandler) UnblockUser(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	h.account(w, r, h.users.Unblock, "active")
+}
+
+// SetOrganizationDeletion wires the console's immediate deletion.
+func (h *AdminSuspensionHandler) SetOrganizationDeletion(s *orgdeletion.Service) { h.deletions = s }
+
+// PurgeOrganization handles POST /api/v1/admin/tenants/{tenantId}/purge.
+//
+// @Summary      Delete an organization now (platform admin)
+// @Description  Deletes the organization and everything in it at once, whatever its status (active, suspended or waiting for its deletion). Member accounts are kept. super_admin, reason and a fresh step-up; critical admin audit. Cannot be undone.
+// @Tags         Admin Organizations
+// @Accept       json
+// @Produce      json
+// @Param        tenantId  path  string                  true  "Organization ID"
+// @Param        request   body  AdminSuspensionRequest  true  "Reason"
+// @Success      200  {object}  AdminSuspensionResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error "The system organization"
+// @Security     BearerAuth
+// @Router       /admin/tenants/{tenantId}/purge [post]
+func (h *AdminSuspensionHandler) PurgeOrganization(w http.ResponseWriter, r *http.Request) {
+	if h.deletions == nil {
+		apierror.ServiceUnavailable("Organization deletion is not available").WriteJSON(w)
+		return
+	}
+	id, ok := orgIDParam(r)
+	if !ok {
+		apierror.BadRequest("invalid organization id").WriteJSON(w)
+		return
+	}
+	reason, ok := readSuspensionReason(w, r)
+	if !ok {
+		return
+	}
+	actor := middleware.GetAdminUser(r.Context())
+	if actor == nil {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	err := h.deletions.PurgeNow(r.Context(), actor, id, reason, orgdeletion.Client{IP: middleware.ClientIP(r), UserAgent: r.UserAgent()})
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, AdminSuspensionResponse{Status: "deleted"})
+	case errors.Is(err, orgdeletion.ErrSystemOrganization):
+		apierror.Conflict("The system organization cannot be deleted.").WriteJSON(w)
+	default:
+		h.writeError(w, err, "organization")
+	}
 }

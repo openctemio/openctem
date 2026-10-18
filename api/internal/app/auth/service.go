@@ -597,6 +597,9 @@ type TenantMembershipInfo struct {
 	// OrganizationSuspended: the organization is suspended by a platform
 	// administrator; the client shows tenant.MessageOrganizationSuspended.
 	OrganizationSuspended bool `json:"organization_suspended,omitempty"`
+	// DeletionDueAt: the organization is scheduled for deletion at this time;
+	// an owner may still cancel.
+	DeletionDueAt *time.Time `json:"deletion_due_at,omitempty"`
 }
 
 // LoginResult represents the result of login.
@@ -839,6 +842,7 @@ func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddr
 				TenantName:            m.TenantName,
 				Role:                  m.Role,
 				OrganizationSuspended: m.OrganizationSuspended,
+				DeletionDueAt:         m.DeletionDueAt,
 			})
 		}
 	}

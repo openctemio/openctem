@@ -563,6 +563,10 @@ func registerAdminRoutes(
 			if h.AdminSuspension != nil {
 				r.POST("/{tenantId}/suspend", h.AdminSuspension.SuspendOrganization, opsWrite, stepUp("organization.suspend"), scope)
 				r.POST("/{tenantId}/unsuspend", h.AdminSuspension.UnsuspendOrganization, opsWrite, stepUp("organization.unsuspend"), scope)
+				// Delete now (docs/architecture/organization-deletion.md):
+				// irreversible, so super_admin and a fresh code, not the
+				// step-up window.
+				r.POST("/{tenantId}/purge", h.AdminSuspension.PurgeOrganization, superWrite, freshStepUp("organization.purge"), scope)
 			}
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)

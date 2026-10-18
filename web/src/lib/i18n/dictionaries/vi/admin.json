@@ -1103,5 +1103,13 @@
   "admin.org.suspension.noticeTitle": "Tổ chức này đang bị tạm ngưng",
   "admin.org.suspension.noticeBody": "Mọi thông tin xác thực bị từ chối và công việc theo lịch bị bỏ qua cho đến khi gỡ tạm ngưng.",
   "admin.org.suspension.reason": "Lý do: {reason}",
-  "admin.org.suspension.since": "Tạm ngưng"
+  "admin.org.suspension.since": "Tạm ngưng",
+  "admin.org.deletion.badge": "Đã lên lịch xóa",
+  "admin.org.deletion.purge": "Xóa ngay",
+  "admin.org.deletion.purgeTitle": "Xóa {name} ngay?",
+  "admin.org.deletion.purgeWhat": "Xóa {name} cùng mọi thứ bên trong ngay lập tức: tài sản, phát hiện, bản quét, thành viên, vai trò, cài đặt và nhật ký kiểm toán. Tài khoản thành viên được giữ lại. Không thể hoàn tác.",
+  "admin.org.deletion.purgeDone": "Đã xóa tổ chức.",
+  "admin.org.deletion.noticeTitle": "Một chủ sở hữu đã lên lịch xóa tổ chức này",
+  "admin.org.deletion.noticeBody": "Tổ chức bị từ chối với mọi thông tin xác thực và sẽ bị xóa khi hết thời gian chờ, trừ khi chủ sở hữu hủy từ trang đăng nhập.",
+  "admin.org.deletion.due": "Bị xóa vào {date}"
 }
