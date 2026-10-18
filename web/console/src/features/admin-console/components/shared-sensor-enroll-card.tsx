@@ -22,6 +22,7 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorEnrollmentToken } from '../api/use-scan-policy'
 import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { RoleRequiredNotice } from './role-required-notice'
 
 export const SHARED_SENSOR_TOKEN_ENV = 'SENSOR_INSTANCE_ENROLLMENT_TOKEN'
 
@@ -149,7 +150,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">{t('admin.scanPolicy.superOnly')}</p>
+            <RoleRequiredNotice needed="super_admin" />
           )}
         </CardContent>
       </Card>
