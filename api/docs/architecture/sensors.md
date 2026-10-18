@@ -621,7 +621,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   serving sensor, exact ranges) and the sensor reaches private addresses only
   inside them. A deleted zone leaves its queued jobs unsigned.
 
-  Once an administrator saves a value in Console > System > Platform
+  Once an administrator saves a value in Console > Scanning > Platform
   scanning, the stored value wins. The GET routes return the value in force,
   `default` (the deployment default) and `version` (0 while nothing is
   stored). An unreadable stored value fails closed: proof required,

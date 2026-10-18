@@ -190,3 +190,10 @@ The live order is:
   - with `admin_user`: asserts the app reads `admin_users` and nothing more of
     the console's tables, and the console role writes them but cannot alter the
     admin audit log or the schema.
+
+## Upgrading to v0.11.0
+
+v0.11.0 adds the console table `admin_approvals` (the second-administrator
+approvals). An installation that uses `DB_ADMIN_USER` re-runs the grant script
+after upgrading so the console role can write it; the shipped Compose stack does
+this itself through `db-grants`.

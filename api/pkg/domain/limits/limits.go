@@ -53,10 +53,16 @@ const (
 	// create one themselves (self-service). It is an instance setting (the
 	// self-service defaults), never a per-organization limit.
 	OrgsPerUser Key = "orgs_per_user"
+	// DashboardRefreshFloorMinutes is the shortest refresh cadence, in
+	// minutes, an organization's dashboards may use (docs/architecture/dashboards.md).
+	// Unlike the other keys it is a floor, not a cap: nothing is counted
+	// against it, and without it the installation's base floor (5 minutes)
+	// applies. The hosting plan or the operator raises it.
+	DashboardRefreshFloorMinutes Key = "dashboard_refresh_floor_minutes"
 )
 
 // Keys lists every limit key in display order.
-var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, StorageMB, OrgsPerUser}
+var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, StorageMB, OrgsPerUser, DashboardRefreshFloorMinutes}
 
 // IsValid reports whether k is a known key.
 func (k Key) IsValid() bool {
@@ -67,6 +73,10 @@ func (k Key) IsValid() bool {
 	}
 	return false
 }
+
+// IsFloor reports whether k is a floor (a minimum the organization must
+// respect) rather than a cap on what it adds: no usage is counted for it.
+func (k Key) IsFloor() bool { return k == DashboardRefreshFloorMinutes }
 
 // PerOrganization reports whether k can be set for one organization.
 func (k Key) PerOrganization() bool { return k.IsValid() && k != OrgsPerUser }

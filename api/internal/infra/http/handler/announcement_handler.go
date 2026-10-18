@@ -37,7 +37,7 @@ type AnnouncementStore interface {
 }
 
 // AnnouncementHandler serves platform announcements (RFC-022): the operator
-// writes a short plain-text notice in the console (System > Announcements),
+// writes a short plain-text notice in the console (Settings > Announcements),
 // and every signed-in user sees it as a banner while it is active.
 type AnnouncementHandler struct {
 	store  AnnouncementStore

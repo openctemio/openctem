@@ -2,7 +2,7 @@ package routes
 
 // Dashboard MTTR follows the viewer (research 24 §5.1, owner decision D6):
 // a restricted member's mean time to remediate comes from findings on their
-// own assets only; with dashboard:aggregate they see the organization figure;
+// own assets only; with dashboards:org:view they see the organization figure;
 // owners and unrestricted members see the organization. It used to average
 // the whole tenant for everyone.
 
@@ -54,7 +54,7 @@ func TestDashboardMTTR_FollowsTheViewer_DB(t *testing.T) {
 	}
 	near := func(a, b float64) bool { return math.Abs(a-b) < 0.5 }
 
-	aggPerms := append(append([]string{}, dsMemberPerms...), permission.DashboardAggregate.String())
+	aggPerms := append(append([]string{}, dsMemberPerms...), permission.DashboardsOrgView.String())
 	cases := []struct {
 		name    string
 		user    string
@@ -66,7 +66,7 @@ func TestDashboardMTTR_FollowsTheViewer_DB(t *testing.T) {
 		{"restricted member", h.memberA.String(), false, nil, 10, 1},
 		{"owner", h.owner.String(), true, nil, 505, 2},
 		{"full-data role", h.memberFull.String(), false, nil, 505, 2},
-		{"restricted member with dashboard:aggregate", h.memberA.String(), false, aggPerms, 505, 2},
+		{"restricted member with dashboards:org:view", h.memberA.String(), false, aggPerms, 505, 2},
 		{"member without a group", h.memberStrict.String(), false, nil, 0, 0},
 	}
 	for _, c := range cases {

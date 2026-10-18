@@ -105,7 +105,7 @@ func proofError(why string, missing []string) error {
 	}
 	sort.Strings(missing)
 	listed := missing[:min(len(missing), maxListedRefusals)]
-	msg := fmt.Sprintf("%s: verify the domain of %s in Scoping > Verified domains", why, strings.Join(listed, ", "))
+	msg := fmt.Sprintf("%s: verify the domain of %s in Scoping > Scope", why, strings.Join(listed, ", "))
 	if len(missing) > len(listed) {
 		msg += fmt.Sprintf(" and %d more", len(missing)-len(listed))
 	}
