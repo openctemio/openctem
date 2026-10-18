@@ -2,8 +2,11 @@
 package template
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"regexp/syntax"
 	"strings"
@@ -227,16 +230,37 @@ func ValidateTemplate(templateType scannertemplate.TemplateType, content []byte)
 // NucleiValidator validates Nuclei template files (YAML).
 type NucleiValidator struct{}
 
-// Validate validates Nuclei template content.
+// NucleiOptions say what a template may reference besides itself.
+type NucleiOptions struct {
+	// Snapshot is set when the template is linted as one file of a content
+	// pack: workflows and payload files may then reference other files of
+	// the same pack (the caller resolves them, see contentpack.Lint). A
+	// single custom template has nothing to reference: the engine would
+	// resolve a workflow's or payload's path against its own template
+	// directory, outside anything the platform reviewed.
+	Snapshot bool
+	// PayloadSizer sizes payload list files of the snapshot (with Snapshot).
+	PayloadSizer PayloadSizer
+}
+
+// Validate validates one custom Nuclei template on its own.
 func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
+	return ValidateNuclei(content, NucleiOptions{})
+}
+
+// ValidateNuclei validates Nuclei template content and records its
+// capability analysis in Metadata["capabilities"] and
+// Metadata["estimated_requests"].
+func ValidateNuclei(content []byte, opts NucleiOptions) *ValidationResult {
+	v := &NucleiValidator{}
 	result := &ValidationResult{
 		Valid:    true,
 		Metadata: make(map[string]any),
 	}
 
-	var tpl map[string]any
-	if err := yaml.Unmarshal(content, &tpl); err != nil {
-		result.AddError("content", fmt.Sprintf("invalid YAML: %v", err), "INVALID_YAML")
+	tpl, err := decodeSingleDocument(content)
+	if err != nil {
+		result.AddError("content", err.Error(), "INVALID_YAML")
 		return result
 	}
 
@@ -301,8 +325,8 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 	// (block YAML, flow YAML, JSON, escaped or differently-cased keys)
 	// cannot hide them. Sensors refuse them again and never enable them
 	// (no -code, -file or -headless for custom templates).
-	if key, found := execProtocolKey(tpl); found {
-		result.AddError(key, fmt.Sprintf("the %q protocol %s and is not allowed in custom templates", key, nucleiForbiddenProtocols[key]), "DANGEROUS_PATTERN")
+	if key, why, found := CodeClass(tpl); found {
+		result.AddError(key, fmt.Sprintf("the %q block %s and is not allowed in custom templates", key, why), "DANGEROUS_PATTERN")
 	} else if key, found := selfContainedKey(tpl); found {
 		result.AddError(key, "self-contained templates are not allowed in custom templates", "DANGEROUS_PATTERN")
 	} else if v.hasDangerousPatterns(content) {
@@ -317,38 +341,80 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 	// starving other tenants on the same sensor pool.
 	v.validateMatcherRegexes(tpl, result)
 
+	analysis := AnalyzeNuclei(tpl, opts.PayloadSizer)
+	checkReferences(analysis, opts, result)
+	if analysis.Requests > MaxTemplateRequests {
+		result.AddError("requests", fmt.Sprintf("the template sends about %d requests per target; the limit is %d", analysis.Requests, MaxTemplateRequests), "REQUEST_VOLUME_CAP")
+	}
+	caps := analysis.SortedCaps()
+	names := make([]string, 0, len(caps))
+	for _, c := range caps {
+		names = append(names, string(c))
+	}
+	result.Metadata["capabilities"] = names
+	result.Metadata["estimated_requests"] = analysis.Requests
+
 	result.RuleCount = 1 // Nuclei templates are typically single templates
 	return result
 }
 
-// nucleiForbiddenProtocols are the Nuclei protocol blocks a custom template
-// may not use, with why: code (shell/python/... source) and javascript
-// (in-template JS) execute code on the scanner host, headless drives a
-// browser with template scripts, and file reads the scanner's own disk.
-var nucleiForbiddenProtocols = map[string]string{
-	"code":       "runs code on the scanner",
-	"javascript": "runs code on the scanner",
-	"headless":   "drives a browser on the scanner",
-	"file":       "reads files on the scanner",
-}
-
-// nucleiForbiddenProtocolOrder fixes which key is reported first.
-var nucleiForbiddenProtocolOrder = []string{"code", "javascript", "headless", "file"}
-
-// execProtocolKey reports the first top-level key of a parsed Nuclei
-// template that names a forbidden protocol. Keys are compared with Unicode
-// case folding because nuclei also loads JSON templates, and encoding/json
-// matches field names case-insensitively ("CODE" and "ſ"-for-"s" variants
-// included).
-func execProtocolKey(tpl map[string]any) (string, bool) {
-	for _, p := range nucleiForbiddenProtocolOrder {
-		for key := range tpl {
-			if strings.EqualFold(strings.TrimSpace(key), p) {
-				return p, true
-			}
+// checkReferences refuses what a template pulls in from outside itself:
+// a single custom template may not reference other templates (workflows)
+// or payload files at all; a pack file may reference only files of its
+// own pack, by a relative path that stays inside it, and may not select
+// templates by tag (a tag selects from whatever is on the scanner's disk).
+func checkReferences(a *NucleiAnalysis, opts NucleiOptions, result *ValidationResult) {
+	if !opts.Snapshot {
+		if len(a.WorkflowRefs) > 0 || a.WorkflowTags != "" {
+			result.AddError("workflows", "a single custom template may not run other templates; publish workflows in a content pack, where every referenced template is reviewed with it", "WORKFLOW_OUTSIDE_SNAPSHOT")
+		}
+		if len(a.PayloadFiles) > 0 {
+			result.AddError("payloads", "a single custom template may not load payload files from the scanner's disk; list the payloads in the template", "PAYLOAD_FILE_OUTSIDE_SNAPSHOT")
+		}
+		return
+	}
+	if a.WorkflowTags != "" {
+		result.AddError(a.WorkflowTags, "a workflow may not select templates by tag; reference each template of the pack by path", "WORKFLOW_TAG_SELECTOR")
+	}
+	for _, r := range a.WorkflowRefs {
+		if _, err := CleanRef(r.Path); err != nil {
+			result.AddError(r.Field, err.Error(), "WORKFLOW_OUTSIDE_SNAPSHOT")
 		}
 	}
-	return "", false
+	for _, p := range a.PayloadFiles {
+		if _, err := CleanRef(p); err != nil {
+			result.AddError("payloads", err.Error(), "PAYLOAD_FILE_OUTSIDE_SNAPSHOT")
+		}
+	}
+	for _, p := range a.UnresolvedPayloads {
+		if _, err := CleanRef(p); err == nil {
+			result.AddError("payloads", fmt.Sprintf("payload file %q is not in the pack", p), "PAYLOAD_FILE_OUTSIDE_SNAPSHOT")
+		}
+	}
+}
+
+// decodeSingleDocument parses a template that must be exactly one YAML
+// document. A second document is refused: parsers disagree on which
+// document of a stream counts, and that disagreement is how content hides
+// from a check that reads a different document than the engine.
+func decodeSingleDocument(content []byte) (map[string]any, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(content))
+	var tpl map[string]any
+	if err := dec.Decode(&tpl); err != nil {
+		return nil, fmt.Errorf("invalid YAML: %w", err)
+	}
+	var extra any
+	switch err := dec.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+	case err != nil:
+		return nil, fmt.Errorf("invalid YAML: %w", err)
+	default:
+		return nil, fmt.Errorf("a template must be one YAML document; found more than one")
+	}
+	if tpl == nil {
+		return nil, fmt.Errorf("invalid YAML: empty document")
+	}
+	return tpl, nil
 }
 
 // selfContainedKey reports a top-level "self-contained" key that is not
