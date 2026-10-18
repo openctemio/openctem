@@ -6,7 +6,8 @@ import Link from '@/components/link'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSecurityOverview } from '../api/use-security-overview'
-import { normalizeChecks, safeInternalLink } from '../lib/checks'
+import { safeInternalHref } from '@/lib/safe-href'
+import { normalizeChecks } from '../lib/checks'
 
 /**
  * The security overview in brief, at the top of /settings for owners and
@@ -70,7 +71,7 @@ export function SecurityScoreCard({ enabled }: { enabled: boolean }) {
         ) : (
           <ul className="space-y-1.5">
             {todo.map((c) => {
-              const href = safeInternalLink(c.link)
+              const href = safeInternalHref(c.link)
               const title = t(`securityOverview.check.${c.id}.title`, c.id)
               return (
                 <li key={c.id} className="flex items-start gap-2 text-sm">
@@ -84,7 +85,10 @@ export function SecurityScoreCard({ enabled }: { enabled: boolean }) {
                     {t(`securityOverview.status.${c.status}`, c.status)}
                   </span>
                   {href ? (
-                    <Link href={href} className="min-w-0 hover:underline">
+                    <Link
+                      href={safeInternalHref(href) ?? '/settings/security'}
+                      className="min-w-0 hover:underline"
+                    >
                       {title}
                     </Link>
                   ) : (

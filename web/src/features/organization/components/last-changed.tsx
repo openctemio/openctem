@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { History } from 'lucide-react'
 import { RelativeTime } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
