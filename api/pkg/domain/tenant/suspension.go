@@ -25,7 +25,15 @@ const (
 	OrganizationActive OrganizationStatus = "active"
 	// OrganizationSuspended refuses every credential for the organization.
 	OrganizationSuspended OrganizationStatus = "suspended"
+	// OrganizationPendingDeletion: an owner asked for deletion; refused like
+	// a suspended organization until the grace period ends and the purge
+	// worker deletes it, or an owner cancels
+	// (docs/architecture/organization-deletion.md).
+	OrganizationPendingDeletion OrganizationStatus = "pending_deletion"
 )
+
+// DeletionGrace is how long a requested organization deletion waits.
+const DeletionGrace = 14 * 24 * time.Hour
 
 // IsActive reports whether the organization may be reached. Positive check:
 // any value other than active (including one added later) is refused.
