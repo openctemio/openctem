@@ -33,7 +33,7 @@ export interface StartOwnershipTransferInput {
   confirm_internal?: boolean
 }
 
-/** The open request, or null when there is none the caller may see (404). */
+/** The open request, or null when there is none the caller may see (the API answers 200 null; an older API answered 404). */
 async function fetchPending(url: string): Promise<OwnershipTransfer | null> {
   try {
     return await fetcherWithOptions<OwnershipTransfer>(url, { method: 'GET' })

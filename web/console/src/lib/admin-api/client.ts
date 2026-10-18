@@ -87,6 +87,37 @@ export function setAdminEnrollmentListener(listener: (() => void) | null) {
   enrollmentListener = listener
 }
 
+/**
+ * Reads the console makes on its own (the periodic refresh of an open page)
+ * carry this header, so the API does not count them as activity and an
+ * unattended tab still reaches the 15-minute idle timeout. A read counts as
+ * background when the page is hidden or nobody pressed a key, clicked or
+ * touched it for a minute. It never grants anything; writes never carry it.
+ */
+export const ADMIN_BACKGROUND_HEADER = 'X-Admin-Background'
+/** How long after the last key, click or touch a read still counts as the administrator's. */
+export const INTERACTION_WINDOW_MS = 60_000
+
+let lastInteraction = Date.now()
+
+/** Records that the administrator used the page now (tests call it directly). */
+export function noteAdminInteraction(at: number = Date.now()) {
+  lastInteraction = at
+}
+
+if (typeof window !== 'undefined') {
+  const note = () => noteAdminInteraction()
+  for (const type of ['pointerdown', 'keydown', 'touchstart'] as const) {
+    window.addEventListener(type, note, { capture: true, passive: true })
+  }
+}
+
+/** Whether a read now is the console's own, not the administrator's. */
+export function isBackgroundRead(now: number = Date.now()): boolean {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return true
+  return now - lastInteraction > INTERACTION_WINDOW_MS
+}
+
 export class AdminApiError extends Error {
   constructor(
     message: string,
@@ -210,6 +241,9 @@ async function adminRequest<T>(
     const csrf = sessionCsrf ?? readCookie(PAGE_CSRF_COOKIE)
     if (csrf) headers['X-CSRF-Token'] = csrf
     if (stepUpCode) headers[ADMIN_STEP_UP_HEADER] = stepUpCode
+  }
+  if ((method === 'GET' || method === 'HEAD') && isBackgroundRead()) {
+    headers[ADMIN_BACKGROUND_HEADER] = '1'
   }
 
   const res = await fetch(`${ADMIN_API}${path}`, {

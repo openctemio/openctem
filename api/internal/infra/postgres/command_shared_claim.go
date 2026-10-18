@@ -54,7 +54,8 @@ var sharedClaimWhere = `commands.is_platform_job = TRUE
 		AND ` + hostFreePredicate + `
 		AND ` + refusedByPredicate("$1") + `
 		AND ` + sharedSensorGateSQL + `
-		AND ` + capabilityClaimPredicate("$2")
+		AND ` + capabilityClaimPredicate("$2") + `
+		AND ` + organizationActiveSQL("commands.tenant_id")
 
 // GetSharedPendingForSensor returns the shared jobs the shared sensor may
 // claim now, at most limit, in the shared dispatch order: priority class
