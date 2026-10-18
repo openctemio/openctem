@@ -210,54 +210,54 @@ func (h *AdminApprovalHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, h.toResponse(a, actor.ID(), h.svc.Now()))
 }
 
-// Approve handles POST /api/v1/admin/approvals/{approval_id}/approve.
+// Approve handles POST /api/v1/admin/approvals/{id}/approve.
 // @Summary Approve another super admin's request
 // @Description Super admin with a fresh step-up; never the requester, never a break-glass account. The requester then repeats the action within the request's 24 hours, once. Audited critical; the administrators are e-mailed.
 // @Tags Admin Approvals
 // @Accept json
 // @Produce json
-// @Param approval_id path string true "Approval ID"
+// @Param id path string true "Approval ID"
 // @Param request body AdminApprovalDecisionRequest false "Optional note"
 // @Success 200 {object} AdminApprovalResponse
 // @Failure 403 {object} apierror.Error "Your own request, or a break-glass account"
 // @Failure 404 {object} apierror.Error "Not Found"
 // @Failure 409 {object} apierror.Error "No longer pending"
 // @Security BearerAuth
-// @Router /admin/approvals/{approval_id}/approve [post]
+// @Router /admin/approvals/{id}/approve [post]
 func (h *AdminApprovalHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	h.decide(w, r, h.svc.Approve, "approve")
 }
 
-// Reject handles POST /api/v1/admin/approvals/{approval_id}/reject.
+// Reject handles POST /api/v1/admin/approvals/{id}/reject.
 // @Summary Reject another super admin's request
 // @Description Super admin with a step-up; never the requester. Audited critical.
 // @Tags Admin Approvals
 // @Accept json
 // @Produce json
-// @Param approval_id path string true "Approval ID"
+// @Param id path string true "Approval ID"
 // @Param request body AdminApprovalDecisionRequest false "Optional note"
 // @Success 200 {object} AdminApprovalResponse
 // @Failure 403 {object} apierror.Error "Your own request"
 // @Failure 404 {object} apierror.Error "Not Found"
 // @Failure 409 {object} apierror.Error "No longer pending"
 // @Security BearerAuth
-// @Router /admin/approvals/{approval_id}/reject [post]
+// @Router /admin/approvals/{id}/reject [post]
 func (h *AdminApprovalHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	h.decide(w, r, h.svc.Reject, "reject")
 }
 
-// Cancel handles POST /api/v1/admin/approvals/{approval_id}/cancel.
+// Cancel handles POST /api/v1/admin/approvals/{id}/cancel.
 // @Summary Withdraw your own request
 // @Description Super admin; only the requester. Audited critical.
 // @Tags Admin Approvals
 // @Produce json
-// @Param approval_id path string true "Approval ID"
+// @Param id path string true "Approval ID"
 // @Success 200 {object} AdminApprovalResponse
 // @Failure 403 {object} apierror.Error "Not your request"
 // @Failure 404 {object} apierror.Error "Not Found"
 // @Failure 409 {object} apierror.Error "No longer pending"
 // @Security BearerAuth
-// @Router /admin/approvals/{approval_id}/cancel [post]
+// @Router /admin/approvals/{id}/cancel [post]
 func (h *AdminApprovalHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	h.decide(w, r, func(ctx context.Context, a *admin.AdminUser, id shared.ID, _ string, c adminconsole.ClientInfo) (*admin.Approval, error) {
 		return h.svc.Cancel(ctx, a, id, c)
@@ -268,7 +268,7 @@ type approvalDecision func(ctx context.Context, actor *admin.AdminUser, id share
 
 func (h *AdminApprovalHandler) decide(w http.ResponseWriter, r *http.Request, fn approvalDecision, what string) {
 	actor := middleware.MustGetAdminUser(r.Context())
-	id, err := shared.IDFromString(chi.URLParam(r, "approval_id"))
+	id, err := shared.IDFromString(chi.URLParam(r, "id"))
 	if err != nil {
 		apierror.BadRequest("invalid approval id").WriteJSON(w)
 		return
