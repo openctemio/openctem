@@ -350,6 +350,22 @@ func (s *TenantService) hasOtherOrganization(ctx context.Context, tenantID, user
 // notifyAdmins tells every active owner and administrator, in-app. Best
 // effort: the action already happened and is audited.
 func (s *TenantService) notifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string) {
+	s.notifyAdminsAbout(ctx, tenantID, adminNotice{
+		Type: notificationdom.TypeMemberLifecycle, ResourceType: "membership", URL: "/settings/members",
+	}, title, body, severity)
+}
+
+// adminNotice says what kind of notice goes to the administrators and where
+// it leads.
+type adminNotice struct {
+	Type         string
+	ResourceType string
+	URL          string
+}
+
+// notifyAdminsAbout tells every active owner and administrator, in-app, with
+// the given notification type, resource type and link. Best effort.
+func (s *TenantService) notifyAdminsAbout(ctx context.Context, tenantID shared.ID, n adminNotice, title, body, severity string) {
 	if s.lifecycle == nil || s.lifecycleNotifier == nil {
 		return
 	}
@@ -364,14 +380,14 @@ func (s *TenantService) notifyAdmins(ctx context.Context, tenantID shared.ID, ti
 			TenantID:         tenantID,
 			Audience:         notificationdom.AudienceUser,
 			AudienceID:       &uid,
-			NotificationType: notificationdom.TypeMemberLifecycle,
+			NotificationType: n.Type,
 			Title:            title,
 			Body:             body,
 			Severity:         severity,
-			ResourceType:     "membership",
-			URL:              "/settings/members",
+			ResourceType:     n.ResourceType,
+			URL:              n.URL,
 		}); err != nil {
-			s.logger.Warn("notify admin of member lifecycle", "error", err)
+			s.logger.Warn("notify admin", "type", n.Type, "error", err)
 		}
 	}
 }

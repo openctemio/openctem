@@ -350,9 +350,9 @@ func registerScanProfileRoutes(
 		// Write operations
 		r.POST("/", h.Create, middleware.Require(permission.ScanProfilesWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.ScanProfilesWrite))
-		r.PUT("/{id}/quality-gate", h.UpdateQualityGate, middleware.Require(permission.ScanProfilesWrite))
+		r.PUT("/{id}/quality-gate", h.UpdateQualityGate, middleware.Require(permission.ScanProfilesWrite), middleware.RequireAdmin())
 		r.POST("/{id}/evaluate-quality-gate", h.EvaluateQualityGate, middleware.Require(permission.ScanProfilesRead))
-		r.POST("/{id}/set-default", h.SetDefault, middleware.Require(permission.ScanProfilesWrite))
+		r.POST("/{id}/set-default", h.SetDefault, middleware.Require(permission.ScanProfilesWrite), middleware.RequireAdmin())
 		r.POST("/{id}/clone", h.Clone, middleware.Require(permission.ScanProfilesWrite))
 
 		// Delete operations
@@ -387,9 +387,9 @@ func registerToolRoutes(
 	router.Group("/api/v1/tools", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ToolsRead))
 		// Bulk settings (before /{id}).
-		r.PATCH("/settings", h.BulkUpdateSettings, middleware.Require(permission.TenantToolsWrite))
+		r.PATCH("/settings", h.BulkUpdateSettings, middleware.Require(permission.TenantToolsWrite), middleware.RequireAdmin())
 		r.GET("/{id}", h.Get, middleware.Require(permission.ToolsRead))
-		r.PATCH("/{id}/settings", h.UpdateSettings, middleware.Require(permission.TenantToolsWrite))
+		r.PATCH("/{id}/settings", h.UpdateSettings, middleware.Require(permission.TenantToolsWrite), middleware.RequireAdmin())
 
 		// The tenant's custom tools.
 		r.POST("/", h.Create, middleware.Require(permission.ToolsWrite))
@@ -688,7 +688,7 @@ func registerSecretStoreRoutes(
 		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
 
 		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 }
 
