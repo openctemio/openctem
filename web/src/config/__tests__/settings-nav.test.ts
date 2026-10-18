@@ -21,6 +21,24 @@ import type { NavCollapsible, NavItem } from '@/components/types'
 
 const APP_DIR = join(process.cwd(), 'src', 'app')
 
+/** Every literal id="…" in the app and feature components (anchor targets). */
+const SOURCE_IDS: Set<string> = (() => {
+  const ids = new Set<string>()
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) {
+        if (entry !== '__tests__' && entry !== 'node_modules') walk(full)
+      } else if (entry.endsWith('.tsx')) {
+        for (const m of readFileSync(full, 'utf8').matchAll(/\bid="([a-z0-9-]+)"/g)) ids.add(m[1])
+      }
+    }
+  }
+  walk(join(process.cwd(), 'src', 'app'))
+  walk(join(process.cwd(), 'src', 'features'))
+  return ids
+})()
+
 /** Resolve a URL to its page file through route groups (see sidebar-no-scaffolds). */
 function findPageFile(url: string): string | null {
   function walk(dir: string, rest: string[]): string | null {
@@ -67,14 +85,15 @@ function staticPagesUnder(prefix: string): string[] {
 const isPersonal = (url: string) => url === '/account' || url.startsWith('/account/')
 
 describe('settings nav config', () => {
-  it('has the seven groups in order', () => {
+  it('has the eight groups in order', () => {
     expect(settingsNav.map((g) => g.id)).toEqual([
       'account',
       'organization',
+      'security',
       'access',
       'findings',
-      'policies',
       'scanning',
+      'content',
       'integrations',
     ])
   })
@@ -150,6 +169,18 @@ describe('every settings item', () => {
           expect(dict[`settings.desc.${item.id}`], `settings.desc.${item.id}`).toBeTruthy()
         }
         expect((en as Record<string, string>)[`settings.item.${item.id}`]).toBe(item.title)
+      })
+
+      it('anchors: unique ids, en (equal to the title) and vi strings, an element with that id', () => {
+        const ids = (item.anchors ?? []).map((a) => a.id)
+        expect(new Set(ids).size).toBe(ids.length)
+        for (const a of item.anchors ?? []) {
+          expect(a.id).toMatch(/^[a-z0-9][a-z0-9-]*$/)
+          const key = `settings.anchor.${item.id}.${a.id}`
+          expect((en as Record<string, string>)[key], key).toBe(a.title)
+          expect((vi as Record<string, string>)[key], key).toBeTruthy()
+          expect(SOURCE_IDS.has(a.id), `no element with id="${a.id}" in src`).toBe(true)
+        }
       })
     })
   }

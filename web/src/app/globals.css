@@ -273,3 +273,26 @@
 [data-sonner-toaster] {
   pointer-events: auto;
 }
+
+/* A setting opened from search (settings-search.ts): outlined for a moment so
+   the eye finds it after the scroll. */
+[data-anchor-highlight] {
+  outline: 2px solid var(--primary);
+  outline-offset: 6px;
+  border-radius: var(--radius);
+  animation: anchor-highlight 2.4s ease-out both;
+}
+@keyframes anchor-highlight {
+  0%,
+  60% {
+    outline-color: var(--primary);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-anchor-highlight] {
+    animation: none;
+  }
+}

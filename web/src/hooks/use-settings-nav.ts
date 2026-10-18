@@ -7,6 +7,7 @@ import useSWR from 'swr'
 import { LIMITS_APPLY_KEY } from '@/context/bootstrap-session'
 import { useNavItemAccess, subModuleStatus } from '@/lib/permissions'
 import { settingsNav, type SettingsNavGroup, type SettingsNavItem } from '@/config/settings-nav'
+import type { SearchableAnchor } from '@/config/settings-search'
 
 export interface VisibleSettingsItem extends SettingsNavItem {
   /** Translated title. */
@@ -15,6 +16,10 @@ export interface VisibleSettingsItem extends SettingsNavItem {
   desc: string
   /** Translated group title. */
   groupLabel: string
+  /** English group title (search matches both languages). */
+  groupTitle: string
+  /** The page's settings that search can find, translated. */
+  searchAnchors: SearchableAnchor[]
 }
 
 export interface VisibleSettingsGroup extends Omit<SettingsNavGroup, 'items'> {
@@ -61,6 +66,11 @@ export function useSettingsNav(): VisibleSettingsGroup[] {
               label: t(`settings.item.${item.id}`, item.title),
               desc: t(`settings.desc.${item.id}`, item.description),
               groupLabel: label,
+              groupTitle: group.title,
+              searchAnchors: (item.anchors ?? []).map((a) => ({
+                ...a,
+                label: t(`settings.anchor.${item.id}.${a.id}`, a.title),
+              })),
             }))
           return { ...group, label, items }
         })

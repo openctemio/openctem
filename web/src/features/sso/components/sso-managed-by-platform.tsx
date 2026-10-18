@@ -48,7 +48,7 @@ export function SsoManagedByPlatform({ title, what }: SsoManagedByPlatformProps)
 }
 
 /**
- * The same explanation as a card, for Settings › Access › Authentication:
+ * The same explanation as a card, for Settings › Security › Authentication:
  * that page holds the tenant's own sign-in rules, and this says where SSO
  * (SAML/OIDC providers, verified domains, enforcement) is set instead.
  */
