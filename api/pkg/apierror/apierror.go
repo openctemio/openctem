@@ -49,6 +49,10 @@ const (
 	// CodeInvalidInclude is a 400 for an include= value the resource does
 	// not offer, a nested one, or too many (internal/infra/http/include).
 	CodeInvalidInclude Code = "INVALID_INCLUDE"
+	// CodeInvalidQuery is a 400 for a custom query that does not parse or
+	// does not check against its entity (pkg/querylang). Details carry the
+	// byte range, line and column of each problem.
+	CodeInvalidQuery Code = "INVALID_QUERY"
 )
 
 // Error represents a standardized API error.
