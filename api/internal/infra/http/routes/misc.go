@@ -6,6 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
@@ -282,7 +283,10 @@ func registerIntegrationRoutes(
 		r.POST("/notifications", h.CreateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Test credentials without creating (must be before /{id} routes)
-		r.POST("/test-credentials", h.TestCredentials, middleware.Require(permission.IntegrationsManage))
+		// A probe of a caller-chosen URL answers differently for reachable and
+		// unreachable hosts, so it is rate limited per tenant.
+		r.POST("/test-credentials", h.TestCredentials, middleware.Require(permission.IntegrationsManage),
+			newTestCredentialsLimiter().TenantMiddleware())
 
 		// Per-tenant GitHub inbound-webhook secret (static paths; must be
 		// before /{id} routes). Gated by IntegrationsManage because the
@@ -352,7 +356,9 @@ func registerIntegrationRoutes(
 			}
 			r.POST("/{id}/scans/run", scanNow.ConnectorScanNow, mws...)
 		}
-		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage))
+		// Enabling restarts outbound data to the destination, so it needs a
+		// recent sign-in like creating or disabling the integration.
+		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage), requireStepUp())
 		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Inbound Jira webhook of one integration: its URL and whether a
@@ -609,4 +615,15 @@ func includeProgramAssets(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// newTestCredentialsLimiter limits connection tests to 10 a minute per tenant
+// (burst 5): enough for a setup wizard, too slow to scan ports.
+func newTestCredentialsLimiter() *middleware.RateLimiter {
+	return middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled:         true,
+		RequestsPerSec:  10.0 / 60.0,
+		Burst:           5,
+		CleanupInterval: 5 * time.Minute,
+	}, nil)
 }
