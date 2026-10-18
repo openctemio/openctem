@@ -1267,7 +1267,8 @@ func (r *TenantRepository) GetUserMembershipsWithStatus(
 			t.name,
 			ver.role as effective_role,
 			COALESCE(m.status, 'active') as status,
-			t.status <> 'active' as organization_suspended
+			t.status <> 'active' as organization_suspended,
+			t.deletion_due_at
 		FROM tenant_members m
 		INNER JOIN tenants t ON t.id = m.tenant_id
 		INNER JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -1288,8 +1289,13 @@ func (r *TenantRepository) GetUserMembershipsWithStatus(
 			m      tenant.UserMembership
 			status string
 		)
-		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &status, &m.OrganizationSuspended); err != nil {
+		var deletionDue sql.NullTime
+		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &status, &m.OrganizationSuspended, &deletionDue); err != nil {
 			return nil, fmt.Errorf("failed to scan membership: %w", err)
+		}
+		if deletionDue.Valid {
+			t := deletionDue.Time
+			m.DeletionDueAt = &t
 		}
 		// Positive buckets only: an offboarded tombstone (or any status
 		// added later) is in neither list, so it never yields a token. An

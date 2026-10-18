@@ -9,6 +9,7 @@ const ACTION_FALLBACK: Record<string, string> = {
   'platform_idp.remove': "Remove or relax the administrators' identity provider",
   'signup.open': 'Open sign-up',
   'audit_chain.rebaseline': "Re-sign an organization's audit chain",
+  'organization.purge': 'Delete an organization now',
 }
 
 /** The protected action in words. */

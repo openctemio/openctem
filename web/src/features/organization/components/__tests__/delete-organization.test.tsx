@@ -57,6 +57,17 @@ describe('DeleteOrganization', () => {
     await waitFor(() => expect(window.location.replace).toHaveBeenCalled())
   })
 
+  it('says when the scheduled deletion happens and that an owner can cancel', async () => {
+    del.mockResolvedValue({ status: 'pending_deletion', deletion_due_at: '2026-11-01T09:00:00Z' })
+    switchTeam.mockResolvedValue(undefined)
+    await confirmDelete()
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
+    const [message, opts] = toastSuccess.mock.calls[0] as [string, { description: string }]
+    expect(message).toContain('Acme')
+    expect(message).toContain('will be deleted on')
+    expect(opts.description).toMatch(/owner can cancel/i)
+  })
+
   it('a failed delete is reported as a failure', async () => {
     del.mockRejectedValue(new Error('forbidden'))
     await confirmDelete()

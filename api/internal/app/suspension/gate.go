@@ -36,6 +36,7 @@ type CachedStatus struct {
 type StatusCache interface {
 	Get(ctx context.Context, key string) (*CachedStatus, error)
 	Set(ctx context.Context, key string, value CachedStatus) error
+	Delete(ctx context.Context, key string) error
 }
 
 // CacheTTL bounds how long a cached status lives. A change overwrites the
@@ -109,5 +110,16 @@ func (g *Gate) Remember(ctx context.Context, tenantID shared.ID, status tenantdo
 	}
 	if err := g.cache.Set(ctx, tenantID.String(), CachedStatus{Status: string(status)}); err != nil {
 		g.log.Warn("organization status cache write failed", "tenant_id", tenantID.String(), "error", err)
+	}
+}
+
+// Forget drops an organization's cached status, so the next check reads the
+// store (used when a change was announced but did not happen).
+func (g *Gate) Forget(ctx context.Context, tenantID shared.ID) {
+	if g == nil || g.cache == nil {
+		return
+	}
+	if err := g.cache.Delete(ctx, tenantID.String()); err != nil {
+		g.log.Warn("organization status cache delete failed", "tenant_id", tenantID.String(), "error", err)
 	}
 }
