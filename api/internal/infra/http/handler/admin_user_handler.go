@@ -314,7 +314,7 @@ func (h *AdminUserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Admin").WriteJSON(w)
 			return
 		}
-		h.logger.Error("failed to get admin", "error", err, "id", idStr)
+		h.logger.Error("failed to get admin", "error", err, "id", id.String())
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
