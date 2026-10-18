@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS software_product_merges;
 DELETE FROM software_product_aliases WHERE kind = 'purl';
 ALTER TABLE software_product_aliases DROP CONSTRAINT IF EXISTS software_product_aliases_kind_check;
 ALTER TABLE software_product_aliases
