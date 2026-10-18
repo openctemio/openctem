@@ -44,6 +44,7 @@ type AttachmentService struct {
 	storageFactory  StorageFactory            // Optional: creates provider from config
 	storageCache    sync.Map                  // tenantID → *storageCacheEntry
 	quotaBytes      int64                     // per-tenant total of attachment bytes; 0 = no quota
+	quotaSource     QuotaSource
 	scanner         attachmentdom.Scanner     // optional malware scanner; nil = off
 	scanRepo        attachmentdom.ScanRepository
 	retentionRepo   attachmentdom.RetentionRepository
@@ -58,6 +59,15 @@ type AttachmentService struct {
 // SetTenantQuota bounds the bytes one organization's attachments may hold
 // (STORAGE_TENANT_QUOTA_MB). 0 or less: no quota.
 func (s *AttachmentService) SetTenantQuota(bytes int64) { s.quotaBytes = bytes }
+
+// QuotaSource answers an organization's storage quota in bytes, or
+// unlimited (no quota). A quota of 0 refuses every upload.
+type QuotaSource func(ctx context.Context, tenantID shared.ID) (bytes int64, unlimited bool, err error)
+
+// SetTenantQuotaSource makes the quota a decision per upload: the
+// organization's storage limit, else the platform default set in the
+// console (or STORAGE_TENANT_QUOTA_MB). It replaces the fixed quota.
+func (s *AttachmentService) SetTenantQuotaSource(f QuotaSource) { s.quotaSource = f }
 
 // InvalidateTenantStorage drops the cached storage providers of a tenant, so
 // a changed storage setting applies to the next upload, not after the cache
@@ -192,16 +202,27 @@ func (c *cappedReader) Read(p []byte) (int, error) {
 // checkQuota refuses an upload of size bytes that would take the tenant's
 // attachments over the quota.
 func (s *AttachmentService) checkQuota(ctx context.Context, tenantID shared.ID, size int64) error {
-	if s.quotaBytes <= 0 {
+	quota := s.quotaBytes
+	if s.quotaSource != nil {
+		q, unlimited, err := s.quotaSource(ctx, tenantID)
+		if err != nil {
+			// Fail closed: an unknown quota is not "no quota".
+			return fmt.Errorf("read storage quota: %w", err)
+		}
+		if unlimited {
+			return nil
+		}
+		quota = q
+	} else if quota <= 0 {
 		return nil
 	}
 	used, err := s.repo.TotalSize(ctx, tenantID)
 	if err != nil {
 		return fmt.Errorf("read storage usage: %w", err)
 	}
-	if used+size > s.quotaBytes {
+	if used+size > quota {
 		s.event("quota_rejected")
-		return fmt.Errorf("%w: %d MiB used of %d MiB", attachmentdom.ErrQuotaExceeded, used>>20, s.quotaBytes>>20)
+		return fmt.Errorf("%w: %d MiB used of %d MiB", attachmentdom.ErrQuotaExceeded, used>>20, quota>>20)
 	}
 	return nil
 }

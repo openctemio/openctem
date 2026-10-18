@@ -109,6 +109,14 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/email/":                             {stepUpRoute, "platform mail relay"},
 	"POST /api/v1/admin/settings/email/test":                        {routine, "sends a test to the caller's own address"},
 	"PUT /api/v1/admin/settings/legal/":                             {stepUpRoute, "legal pages"},
+	"PUT /api/v1/admin/settings/captcha/":                           {stepUpRoute, "abuse controls of sign-up and every sign-in (fresh)"},
+	"POST /api/v1/admin/settings/captcha/verify":                    {routine, "asks Turnstile about a secret; changes nothing"},
+	"PUT /api/v1/admin/settings/region/":                            {stepUpRoute, "data residency of every new organization, once (fresh)"},
+	"PUT /api/v1/admin/settings/storage-quota/":                     {stepUpRoute, "default storage quota of organizations"},
+	"PUT /api/v1/admin/settings/alerts/":                            {stepUpRoute, "where administrator alerts go (fresh)"},
+	"POST /api/v1/admin/settings/alerts/test":                       {routine, "sends a test alert to the stored webhook; changes nothing"},
+	"PUT /api/v1/admin/settings/ai/":                                {stepUpRoute, "platform AI provider and key: cost and subprocessor (fresh)"},
+	"POST /api/v1/admin/settings/ai/test":                           {routine, "one minimal request with the stored key; changes nothing"},
 	"PUT /api/v1/admin/settings/limits/":                            {stepUpRoute, "self-service default limits"},
 	"PUT /api/v1/admin/settings/scan-approval-policy/":              {stepUpRoute, "scan governance default"},
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":             {stepUpRoute, "platform sensor domain proof"},
@@ -235,6 +243,11 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		{"POST", "/api/v1/admin/auth/webauthn/credentials/options", "webauthn.register"},
 		{"POST", "/api/v1/admin/auth/recovery-codes", "recovery_codes.generate"},
 		{"PUT", "/api/v1/admin/settings/console-mfa/", "settings.console_mfa"},
+		// Settings whose loosening is a security decision (RFC-079).
+		{"PUT", "/api/v1/admin/settings/captcha/", "settings.captcha"},
+		{"PUT", "/api/v1/admin/settings/region/", "settings.region"},
+		{"PUT", "/api/v1/admin/settings/alerts/", "settings.alerts"},
+		{"PUT", "/api/v1/admin/settings/ai/", "settings.ai"},
 		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/users", "organization.owner_create"},
 	} {
 		req := httptest.NewRequest(c.method, c.path, strings.NewReader(`{}`))

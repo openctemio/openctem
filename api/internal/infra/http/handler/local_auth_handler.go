@@ -167,7 +167,7 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// The CAPTCHA is checked before the account lookup and the same way for
 	// every address, so it says nothing about the email. A verifier error
 	// (Turnstile unreachable) refuses: sign-up is not worth an open door.
-	if h.captcha != nil {
+	if captchaOn(r.Context(), h.captcha) {
 		ok, cerr := h.captcha.Verify(r.Context(), req.CaptchaToken, getClientIP(r))
 		if cerr != nil || !ok {
 			if cerr != nil {

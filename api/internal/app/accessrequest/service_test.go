@@ -143,6 +143,12 @@ type fakeCaptcha struct{ ok bool }
 
 func (f fakeCaptcha) Verify(context.Context, string, string) (bool, error) { return f.ok, nil }
 
+// inactiveCaptcha is a console CAPTCHA with no keys: Verify would refuse.
+type inactiveCaptcha struct{}
+
+func (inactiveCaptcha) Verify(context.Context, string, string) (bool, error) { return false, nil }
+func (inactiveCaptcha) Active(context.Context) bool                       { return false }
+
 var openPolicy = signupdom.Static{Mode: signupdom.ModeAdminOnly, RequestAccess: true}
 
 func newSvc(t *testing.T, policy signupdom.PolicySource, mailer *fakeMailer, captcha Captcha) (*Service, *memRepo, *fakeOrgs) {
@@ -204,6 +210,13 @@ func TestSubmit_Refusals(t *testing.T) {
 			}
 		})
 	}
+	t.Run("captcha keys removed at runtime", func(t *testing.T) {
+		// A console CAPTCHA without keys is not asked (the rate limits apply).
+		svc, repo, _ := newSvc(t, openPolicy, nil, inactiveCaptcha{})
+		if err := submit(svc, "a@acme.com", "203.0.113.1"); err != nil || len(repo.rows) != 1 {
+			t.Fatalf("expected the request stored, got %v (%d rows)", err, len(repo.rows))
+		}
+	})
 	t.Run("captcha failed", func(t *testing.T) {
 		svc, repo, _ := newSvc(t, openPolicy, nil, fakeCaptcha{ok: false})
 		if err := submit(svc, "a@acme.com", "203.0.113.1"); !errors.Is(err, ErrCaptcha) {

@@ -70,6 +70,9 @@ type Service struct {
 	// e-mail, so without it public sign-up is closed (fail-closed). Nil:
 	// not checked (tests).
 	mailReady func() bool
+	// captchaReady reports whether a CAPTCHA is configured (nil: not
+	// required by this deployment).
+	captchaReady func() bool
 
 	mu       sync.Mutex
 	cached   *signupdom.State
@@ -107,6 +110,12 @@ func (s *Service) Ceiling() signupdom.Ceiling { return signupdom.Ceiling(s.ceili
 
 // SetMailReady wires the check that the platform can send e-mail.
 func (s *Service) SetMailReady(f func() bool) { s.mailReady = f }
+
+// SetCaptchaReady wires the check that a CAPTCHA is configured, for a
+// production deployment whose ceiling allows open sign-up without having
+// accepted it without a CAPTCHA (SIGNUP_CAPTCHA). Open account sign-up is
+// closed while it reports false (the keys are set in Settings > CAPTCHA).
+func (s *Service) SetCaptchaReady(f func() bool) { s.captchaReady = f }
 
 // SetNotifier wires the notification to the other administrators (email in
 // production).
@@ -146,6 +155,10 @@ func (s *Service) Effective(p signupdom.Policy) signupdom.Policy {
 	p = s.ceiling.Clamp(p)
 	if p.AllowsPublicSignup() && s.mailReady != nil && !s.mailReady() {
 		s.log.Warn("platform e-mail is not configured; public sign-up is closed until it is (System > E-mail)")
+		p.Mode, p.Accounts = signupdom.ModeAdminOnly, signupdom.AccountsClosed
+	}
+	if p.AccountSignup() == signupdom.AccountsOpen && s.captchaReady != nil && !s.captchaReady() {
+		s.log.Warn("no CAPTCHA is configured; open sign-up is closed until one is (Settings > CAPTCHA)")
 		p.Mode, p.Accounts = signupdom.ModeAdminOnly, signupdom.AccountsClosed
 	}
 	return p

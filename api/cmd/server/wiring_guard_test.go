@@ -302,6 +302,8 @@ var optionalServiceSetters = map[string]string{
 
 	// Business operations named Set*, not collaborator seams.
 	"ProgramFeedSettings.SetLocalBundle": "business operation (the admin console switch of the local program bundle), not a collaborator seam",
+	"DeploymentRegion.Set":               "business operation (the console's one-time region setting), not a collaborator seam",
+	"PlatformAlert.SetHTTPClient":        "test seam: a local receiver the SSRF guard would refuse; production uses the guarded client",
 	"Branch.SetDefaultBranch":            "request operation, called by the branch handler",
 	"PermVersion.Set":                    "cache operation, not a seam",
 	"Role.SetUserRoles":                  "request operation, called by the role handler",
