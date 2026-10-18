@@ -343,3 +343,8 @@ export type SupportAssetView =
   Schemas['github_com_openctemio_openctem_api_pkg_domain_supportaccess.AssetView']
 export type SupportOverview =
   Schemas['github_com_openctemio_openctem_api_pkg_domain_supportaccess.Overview']
+
+export type SecurityOverview =
+  Schemas['github_com_openctemio_openctem_api_internal_app_securityoverview.Overview']
+export type SecurityOverviewCheck =
+  Schemas['github_com_openctemio_openctem_api_internal_app_securityoverview.Check']

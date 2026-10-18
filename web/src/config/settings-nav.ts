@@ -57,6 +57,7 @@ import {
   Settings2,
   Shield,
   SlidersHorizontal,
+  ShieldAlert,
   ShieldCheck,
   Timer,
   User,
@@ -195,6 +196,18 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.TeamUpdate,
         keywords: ['limits', 'quota', 'seats', 'usage'],
         onlyWhenLimitsApply: true,
+      },
+      {
+        // The organization's posture checks and score (api: GET
+        // /organization/security-overview, owners and admins). It moves to a
+        // Security group later.
+        id: 'security-overview',
+        title: 'Security overview',
+        description: 'A score and checklist of what to fix first in your organization.',
+        url: '/settings/security',
+        icon: ShieldAlert,
+        permission: Permission.TeamUpdate,
+        keywords: ['security', 'health', 'score', 'checklist', 'posture', '2fa', 'mfa'],
       },
       {
         // What the verified SSO domains do to accounts on them (api RFC-104):
