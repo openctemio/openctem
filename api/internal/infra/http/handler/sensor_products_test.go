@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/versions"
@@ -17,7 +18,7 @@ func TestSensorHandler_DefaultCatalog(t *testing.T) {
 	if !ok || p.ID != versions.DefaultProductID || p.Image != versions.SensorImage()+":"+versions.SensorLatest() {
 		t.Fatalf("default install product = %+v (%v)", p, ok)
 	}
-	if l, ok := h.healthPolicy.ReleaseLineFor(versions.DefaultProductID); !ok || l.Latest != versions.SensorLatest() {
+	if l, ok := h.currentPolicy().ReleaseLineFor(versions.DefaultProductID); !ok || l.Latest != versions.SensorLatest() {
 		t.Fatalf("release line = %+v (%v)", l, ok)
 	}
 	if got := h.productResponses(); len(got) != len(versions.Products()) {
@@ -53,12 +54,12 @@ func TestSensorHandler_InstallProduct(t *testing.T) {
 		})
 	}
 	// The release lines follow the catalog.
-	if l, ok := h.healthPolicy.ReleaseLineFor("openctemio-connector-tenable"); !ok || l.Latest != "v0.1.0" {
+	if l, ok := h.currentPolicy().ReleaseLineFor("openctemio-connector-tenable"); !ok || l.Latest != "v0.1.0" {
 		t.Fatalf("connector line = %+v (%v)", l, ok)
 	}
-	// SetHealthPolicy without lines keeps the catalog's.
+	// SetHealthPolicy keeps the catalog's lines.
 	h.SetHealthPolicy(sensor.HealthPolicy{SDKLatestVersion: "v1.0.0"})
-	if _, ok := h.healthPolicy.ReleaseLineFor("openctemio-connector-tenable"); !ok {
+	if _, ok := h.currentPolicy().ReleaseLineFor("openctemio-connector-tenable"); !ok {
 		t.Fatal("SetHealthPolicy dropped the catalog's release lines")
 	}
 }
@@ -90,7 +91,42 @@ func TestSensorHandler_ProductAddedAsData(t *testing.T) {
 	if p, ok := h.installProduct("", reporting); !ok || p.ID != "acme-toy-sensor" {
 		t.Fatalf("a toy sensor gets its own snippets: %+v (%v)", p, ok)
 	}
-	if l, ok := h.healthPolicy.ReleaseLineFor("acme-toy-sensor"); !ok || l.Latest != "v1.2.3" || l.Min != "v1.0.0" {
+	if l, ok := h.currentPolicy().ReleaseLineFor("acme-toy-sensor"); !ok || l.Latest != "v1.2.3" || l.Min != "v1.0.0" {
 		t.Fatalf("toy release line = %+v (%v)", l, ok)
+	}
+}
+
+// A release learned from the release feed reaches the install snippets, the
+// release lines and the console list on the next request, without
+// re-wiring the handler: no API release, no restart.
+func TestSensorHandler_LearnedReleaseAppliesPerRequest(t *testing.T) {
+	t.Cleanup(func() { versions.SetLearned(nil) })
+	h := NewSensorHandler(nil, nil, logger.NewNop())
+	h.SetSDKLatestSource(versions.SDKLatest)
+	digest := "sha256:" + strings.Repeat("cd", 32)
+
+	versions.SetLearned(map[string]versions.Learned{"sensor": {Version: "v99.1.0", Digest: digest}, versions.SDKKey: {Version: "v99.2.0"}})
+	p, ok := h.installProduct("", &sensor.Sensor{})
+	if !ok || p.Latest != "v99.1.0" || p.Image != versions.SensorImage()+":v99.1.0@"+digest || p.LatestSource != versions.SourceFeed {
+		t.Fatalf("install product = %+v (%v)", p, ok)
+	}
+	pol := h.currentPolicy()
+	if l, _ := pol.ReleaseLineFor(versions.DefaultProductID); l.Latest != "v99.1.0" || pol.SDKLatestVersion != "v99.2.0" {
+		t.Fatalf("policy = %+v", pol)
+	}
+	var listed SensorProductResponse
+	for _, r := range h.productResponses() {
+		if r.ID == versions.DefaultProductID {
+			listed = r
+		}
+	}
+	if listed.LatestVersion != "v99.1.0" || listed.LatestSource != "feed" {
+		t.Fatalf("listed = %+v", listed)
+	}
+
+	// Forgetting the feed falls back to the built-in release, marked as such.
+	versions.SetLearned(nil)
+	if p, _ := h.installProduct("", &sensor.Sensor{}); p.Latest == "v99.1.0" || p.LatestSource != versions.SourceBuiltIn || strings.Contains(p.Image, "@") {
+		t.Fatalf("after forgetting: %+v", p)
 	}
 }

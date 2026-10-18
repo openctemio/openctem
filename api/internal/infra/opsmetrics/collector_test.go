@@ -196,3 +196,18 @@ openctem_command_queue_top_tenant_pending 7
 		t.Fatal(err)
 	}
 }
+
+// SDKLatestFunc is read on every scrape, so a newer SDK learned from the
+// release feed turns current sensors into outdated ones without a restart.
+func TestCollectorReadsTheLatestSDKPerScrape(t *testing.T) {
+	latest := "v0.14.0"
+	c := New(func(context.Context) (postgres.OpsSnapshot, error) { return snapshot(), nil },
+		Config{SDKLatest: "v0.1.0", SDKLatestFunc: func() string { return latest }, SDKAdvisories: []string{"v0.8.0"}, MaxAge: time.Nanosecond}, nil)
+	if m := gather(t, c, "openctem_sensors_sdk"); m[`kind="tenant",status="current"`] != 3 {
+		t.Fatalf("sdk statuses = %v", m)
+	}
+	latest = "v0.15.0"
+	if m := gather(t, c, "openctem_sensors_sdk"); m[`kind="tenant",status="outdated"`] != 3 {
+		t.Fatalf("sdk statuses after a newer SDK = %v", m)
+	}
+}
