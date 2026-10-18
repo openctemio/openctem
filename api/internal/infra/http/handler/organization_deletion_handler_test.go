@@ -37,7 +37,7 @@ func TestCancelOrganizationDeletion_Refusals(t *testing.T) {
 	}
 }
 
-// The cancel is authorised by a refresh token, and a refresh token exists
+// The cancel is authorized by a refresh token, and a refresh token exists
 // only after the second factor succeeded: until then the sign-in holds just
 // an opaque two-factor challenge token. Presenting that challenge token (or
 // an access token) as the refresh token is refused before any lookup, and the
