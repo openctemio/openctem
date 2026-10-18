@@ -41,12 +41,22 @@ const DURATIONS = [15, 30, 60] as const
 export function AdminElevationBar({
   admin,
   onChanged,
+  open: openProp,
+  onOpenChange,
 }: {
   admin: AdminIdentity
   onChanged: () => void
+  /**
+   * The elevate dialog, when the shell owns it (so a page's read-only notice
+   * can open it too); uncontrolled otherwise.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+  const [ownOpen, setOwnOpen] = useState(false)
+  const open = openProp ?? ownOpen
+  const setOpen = onOpenChange ?? setOwnOpen
   const [busy, setBusy] = useState(false)
   const max = admin.max_role ?? admin.role
   const elevated = !!admin.elevated_until
