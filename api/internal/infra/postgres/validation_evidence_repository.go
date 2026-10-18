@@ -84,8 +84,11 @@ func (r *ValidationEvidenceRepository) Create(ctx context.Context, ev validation
 // denominator excludes closed findings (resolved/false_positive/accepted/
 // duplicate); otherwise a tenant with a large closed
 // history would show a permanently low coverage. Findings with no severity are
-// grouped under "".
-func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error) {
+// grouped under "". A non-nil scope counts only findings on assets inside that
+// data scope.
+func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) ([]validation.SeverityCoverage, error) {
+	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
 	q := `
 		SELECT f.severity,
 		       COUNT(DISTINCT f.id)            AS total,
@@ -95,10 +98,11 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 		         ON ve.tenant_id = f.tenant_id AND ve.finding_id = f.id
 		 WHERE f.tenant_id = $1
 		   AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		   AND ` + inScope + `
 		 GROUP BY f.severity
 		 ORDER BY f.severity
 	`
-	rows, err := r.db.QueryContext(ctx, q, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query validation coverage: %w", err)
 	}
@@ -126,16 +130,20 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 //     (the denominator — "of what we validated, how much got downgraded").
 //
 // Every downgraded finding necessarily has evidence, so downgraded ≤ validated
-// and the resulting percentage is in [0,100].
-func (r *ValidationEvidenceRepository) DowngradeStats(ctx context.Context, tenantID shared.ID) (downgraded, validated int, err error) {
-	const q = `
+// and the resulting percentage is in [0,100]. A non-nil scope counts only
+// findings on assets inside that data scope.
+func (r *ValidationEvidenceRepository) DowngradeStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (downgraded, validated int, err error) {
+	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
+	q := `
 		SELECT
 		    (SELECT COUNT(*) FROM findings f
-		      WHERE f.tenant_id = $1 AND f.downgraded_at IS NOT NULL)                        AS downgraded,
+		      WHERE f.tenant_id = $1 AND f.downgraded_at IS NOT NULL AND ` + inScope + `)    AS downgraded,
 		    (SELECT COUNT(DISTINCT ve.finding_id) FROM validation_evidence ve
-		      WHERE ve.tenant_id = $1)                                                        AS validated
+		       JOIN findings f ON f.tenant_id = ve.tenant_id AND f.id = ve.finding_id
+		      WHERE ve.tenant_id = $1 AND ` + inScope + `)                                    AS validated
 	`
-	row := r.db.QueryRowContext(ctx, q, tenantID.String())
+	row := r.db.QueryRowContext(ctx, q, args...)
 	if err := row.Scan(&downgraded, &validated); err != nil {
 		return 0, 0, fmt.Errorf("query downgrade stats: %w", err)
 	}
