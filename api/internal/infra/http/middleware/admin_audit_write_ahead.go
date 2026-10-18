@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -70,10 +69,4 @@ func writeAheadApplies(r *http.Request) bool {
 		return false
 	}
 	return GetAdminRole(r.Context()) == string(admin.AdminRoleSuperAdmin)
-}
-
-// logSafe strips CR/LF from a request-controlled value before it is logged.
-func logSafe(s string) string {
-	s = strings.ReplaceAll(s, "\r", " ")
-	return strings.ReplaceAll(s, "\n", " ")
 }
