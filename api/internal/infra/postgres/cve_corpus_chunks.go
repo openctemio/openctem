@@ -47,6 +47,11 @@ func (r *CVECorpusRepository) ApplyFeedChunk(ctx context.Context, c cvecorpus.Ch
 	if err := r.feedCheckpoint().AdvanceTx(ctx, tx, next); err != nil {
 		return res, err
 	}
+	if next.NextChunk == 1 {
+		// A new bundle: another replica may have folded or re-aliased
+		// products since this one cached their ids.
+		r.resetProductCache()
+	}
 	created := map[string]string{}
 	if err := r.upsertFeedProducts(ctx, tx, c.Products, seq, created); err != nil {
 		return res, err
