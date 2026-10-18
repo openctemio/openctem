@@ -86,3 +86,58 @@ func TestBuildRefusals(t *testing.T) {
 		}
 	}
 }
+
+// components lists every built-in sensor product with its repository and
+// image, and the SDK.
+func TestComponents(t *testing.T) {
+	got := runOK(t, "components")
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("components: %q", got)
+	}
+	if !strings.Contains(got, "sensor openctemio/sensor ghcr.io/openctemio/sensor\n") {
+		t.Fatalf("no scanning sensor line in %q", got)
+	}
+	if lines[len(lines)-1] != "sdk openctemio/sdk-go -" {
+		t.Fatalf("last line %q", lines[len(lines)-1])
+	}
+	for _, l := range lines {
+		if f := strings.Fields(l); len(f) != 3 || !strings.HasPrefix(f[1], "openctemio/") {
+			t.Fatalf("line %q", l)
+		}
+	}
+}
+
+// A components file goes into the signed feed; an invalid or unknown-field
+// one is refused.
+func TestBuildWithComponents(t *testing.T) {
+	dir := t.TempDir()
+	p := func(n string) string { return filepath.Join(dir, n) }
+	out := runOK(t, "keygen", "-out", p("online.key"))
+	pub := regexp.MustCompile(`public key:\s+(\S+)`).FindStringSubmatch(out)[1]
+	_ = os.WriteFile(p("releases.json"), []byte(`[{"tagName":"v0.9.8","publishedAt":"2026-10-15T10:00:00Z"}]`), 0o600)
+	digest := "sha256:" + strings.Repeat("0a", 32)
+	_ = os.WriteFile(p("components.json"), []byte(`[
+	  {"component":"sensor","version":"v0.23.2","published_at":"2026-10-15T10:00:00Z",
+	   "notes_url":"https://github.com/openctemio/sensor/releases/tag/v0.23.2","digest":"`+digest+`"},
+	  {"component":"sdk","version":"v0.34.0","published_at":"2026-10-15T10:00:00Z"}]`), 0o600)
+	runOK(t, "build", "-key", p("online.key"), "-releases", p("releases.json"),
+		"-components", p("components.json"), "-out", p("feed.json"))
+	got := runOK(t, "verify", "-key", pub, p("feed.json"))
+	if !strings.Contains(got, "2 components") || !strings.Contains(got, "sensor v0.23.2 "+digest) {
+		t.Fatalf("verify: %s", got)
+	}
+
+	for name, body := range map[string]string{
+		"unknown field": `[{"component":"sensor","version":"v0.23.2","published_at":"2026-10-15T10:00:00Z","image":"evil/x"}]`,
+		"bad version":   `[{"component":"sensor","version":"latest","published_at":"2026-10-15T10:00:00Z"}]`,
+		"foreign link":  `[{"component":"sensor","version":"v1.0.0","published_at":"2026-10-15T10:00:00Z","notes_url":"https://example.com/"}]`,
+		"not an array":  `{"component":"sensor"}`,
+	} {
+		_ = os.WriteFile(p("bad.json"), []byte(body), 0o600)
+		if err := run([]string{"build", "-key", p("online.key"), "-releases", p("releases.json"),
+			"-components", p("bad.json"), "-out", p("bad-feed.json")}, &bytes.Buffer{}, now); err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+	}
+}
