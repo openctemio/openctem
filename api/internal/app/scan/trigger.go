@@ -1506,12 +1506,12 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	}
 	if len(r.Targets) == 0 && r.TierExceeded > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeTierExceeds,
-			fmt.Sprintf("No target of scan %q may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Targets, or use a less intrusive scanner.", sc.Name),
+			fmt.Sprintf("No target of scan %q may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Scope, or use a less intrusive scanner.", sc.Name),
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
-			fmt.Sprintf("No target of scan %q is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Targets.", sc.Name),
+			fmt.Sprintf("No target of scan %q is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Scope.", sc.Name),
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.InternalOutsideZones > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {

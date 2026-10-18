@@ -1,5 +1,5 @@
 // Package platformemail is the platform's own e-mail (SMTP) settings, set by a
-// platform administrator in the admin console (System > E-mail) instead of
+// platform administrator in the admin console (Settings > E-mail) instead of
 // SMTP_* environment variables. Organizations may still send through their
 // own e-mail integration; this is the default.
 //
