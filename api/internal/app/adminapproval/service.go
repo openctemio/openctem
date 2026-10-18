@@ -393,6 +393,8 @@ func describe(a admin.ApprovalAction) string {
 		return "open sign-up"
 	case admin.ApprovalAuditChainRebaseline:
 		return "re-sign an organization's audit chain"
+	case admin.ApprovalOrgPurge:
+		return "delete an organization now"
 	}
 	return string(a)
 }

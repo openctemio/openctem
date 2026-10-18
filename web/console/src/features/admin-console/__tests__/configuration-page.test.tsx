@@ -41,7 +41,8 @@ vi.mock('../api/use-configuration', () => ({
   useConfiguration: () => ({ data: { data: items }, isLoading: false, mutate: vi.fn() }),
 }))
 
-const { default: ConfigurationPage } = await import('@console/app/(console)/system/configuration/page')
+const { default: ConfigurationPage } =
+  await import('@console/app/(console)/system/configuration/page')
 
 describe('Configuration page', () => {
   it('shows where each setting comes from, with secrets only as set or not set', () => {

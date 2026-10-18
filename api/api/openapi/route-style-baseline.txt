@@ -341,6 +341,7 @@ R3 GET /api/v1/admin/tenants/{tenantId}/limits
 # route under it (one chi pattern); renaming it is a group-wide change.
 R3 POST /api/v1/admin/tenants/{tenantId}/suspend
 R3 POST /api/v1/admin/tenants/{tenantId}/unsuspend
+R3 POST /api/v1/admin/tenants/{tenantId}/purge
 R3 PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny
 R3 GET /api/v1/admin/tenants/{tenantId}/shared-sensors
 R3 PUT /api/v1/admin/tenants/{tenantId}/shared-sensors

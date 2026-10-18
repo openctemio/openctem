@@ -44,6 +44,10 @@ const (
 	// (docs/architecture/organization-suspension.md).
 	ActionTenantSuspended   Action = "tenant.suspended"
 	ActionTenantUnsuspended Action = "tenant.unsuspended"
+	// Organization deletion with a grace period
+	// (docs/architecture/organization-deletion.md).
+	ActionTenantDeletionScheduled Action = "tenant.deletion_scheduled"
+	ActionTenantDeletionCancelled Action = "tenant.deletion_canceled"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
@@ -719,6 +723,7 @@ func (a Action) IsValid() bool {
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
 		ActionTenantSuspended, ActionTenantUnsuspended,
+		ActionTenantDeletionScheduled, ActionTenantDeletionCancelled,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,

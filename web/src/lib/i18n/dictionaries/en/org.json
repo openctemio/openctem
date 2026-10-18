@@ -372,10 +372,9 @@
   "org.danger.transferTitle": "Transfer ownership",
   "org.danger.transferDesc": "Make another member the owner. You choose your new role; the new owner must accept. Open the member in Members and choose Transfer ownership.",
   "org.danger.transferAction": "Choose the new owner",
-  "org.danger.deleteFailed": "Could not delete the organization",
-  "org.danger.deleted": "Organization \"{name}\" deleted",
+  "org.danger.deleteFailed": "Failed to delete the organization",
   "org.danger.deleteTitle": "Delete this organization",
-  "org.danger.deleteDesc": "Permanently deletes the organization and everything in it: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone.",
+  "org.danger.deleteDesc": "Closes the organization for everyone now and deletes it with everything in it after 14 days: assets, findings, scans, members, roles, settings and its audit log. An owner can cancel until then. Member accounts are kept.",
   "org.danger.deleteAction": "Delete organization",
   "org.auth.loosen.mfaOff": "Two-factor authentication is no longer required for everyone.",
   "org.auth.loosen.mfaAdminsOff": "Owners and administrators no longer need two-factor authentication.",
@@ -412,5 +411,7 @@
   "org.sso.managedText": "{what} is set up for your organization in the platform administration console. To add or change it, contact your platform administrator.",
   "org.sso.authLink": "Authentication settings",
   "org.sso.title": "Single sign-on",
-  "org.sso.noticeText": "Single sign-on (SAML or OIDC), with verified domains, is set up for your organization in the platform administration console. To add or change it, contact your platform administrator."
+  "org.sso.noticeText": "Single sign-on (SAML or OIDC), with verified domains, is set up for your organization in the platform administration console. To add or change it, contact your platform administrator.",
+  "org.danger.scheduled": "Organization \"{name}\" will be deleted on {date}.",
+  "org.danger.scheduledHint": "It is closed to everyone now. An owner can cancel the deletion from the sign-in page until then."
 }
