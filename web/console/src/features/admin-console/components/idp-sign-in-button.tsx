@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { KeyRound, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -22,6 +23,8 @@ export function IdPSignInButton({
   next: string
   variant?: 'default' | 'outline'
 }) {
+  const { t } = useTranslation()
+
   const [busy, setBusy] = useState(false)
 
   const start = async () => {
@@ -50,7 +53,9 @@ export function IdPSignInButton({
       ) : (
         <KeyRound className="me-2 size-4" />
       )}
-      Sign in with {displayName || 'single sign-on'}
+      {t('admin.idpSignInButton.signInWith', 'Sign in with {name}', {
+        name: displayName || t('admin.idpSignInButton.singleSignOn', 'single sign-on'),
+      })}
     </Button>
   )
 }

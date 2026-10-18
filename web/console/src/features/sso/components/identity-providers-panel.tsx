@@ -125,7 +125,7 @@ export function IdentityProvidersPanel({
   const handleSaveSSO = async (type: SSOProviderType) => {
     const form = getSsoForm(type)
     if (!form.client_id) {
-      toast.error('Client ID is required')
+      toast.error(t('admin.identityProvidersPanel.clientIdIsRequired', 'Client ID is required'))
       return
     }
 
@@ -150,14 +150,23 @@ export function IdentityProvidersPanel({
           is_active: form.is_active,
         })
         if (isPendingSSOChange(res)) {
-          toast.info(PENDING_SSO_MESSAGE)
+          toast.info(t('admin.identityProvidersPanel.pendingChange', PENDING_SSO_MESSAGE))
         } else {
-          toast.success(`${getProviderLabel(type)} updated`)
+          toast.success(
+            t('admin.identityProvidersPanel.providerUpdated', '{provider} updated', {
+              provider: getProviderLabel(type),
+            })
+          )
         }
       } else {
         // Create new
         if (!form.client_secret) {
-          toast.error('Client Secret is required for new providers')
+          toast.error(
+            t(
+              'admin.identityProvidersPanel.clientSecretIsRequiredFor',
+              'Client Secret is required for new providers'
+            )
+          )
           setSsoSaving(null)
           return
         }
@@ -172,9 +181,13 @@ export function IdentityProvidersPanel({
           default_role: form.default_role,
         })
         if (isPendingSSOChange(res)) {
-          toast.info(PENDING_SSO_MESSAGE)
+          toast.info(t('admin.identityProvidersPanel.pendingChange', PENDING_SSO_MESSAGE))
         } else {
-          toast.success(`${getProviderLabel(type)} configured`)
+          toast.success(
+            t('admin.identityProvidersPanel.providerConfigured', '{provider} configured', {
+              provider: getProviderLabel(type),
+            })
+          )
         }
       }
       await mutateIdPs()
@@ -187,7 +200,14 @@ export function IdentityProvidersPanel({
         return next
       })
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to save ${getProviderLabel(type)}`))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('admin.identityProvidersPanel.failedToSaveProvider', 'Failed to save {provider}', {
+            provider: getProviderLabel(type),
+          })
+        )
+      )
     } finally {
       setSsoSaving(null)
     }
@@ -205,9 +225,18 @@ export function IdentityProvidersPanel({
         delete next[ssoDeleteTarget.provider]
         return next
       })
-      toast.success(`${getProviderLabel(ssoDeleteTarget.provider)} removed`)
+      toast.success(
+        t('admin.identityProvidersPanel.providerRemoved', '{provider} removed', {
+          provider: getProviderLabel(ssoDeleteTarget.provider),
+        })
+      )
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete provider'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('admin.identityProvidersPanel.failedToDeleteProvider', 'Failed to delete provider')
+        )
+      )
     } finally {
       setSsoDeleteTarget(null)
     }
@@ -218,12 +247,17 @@ export function IdentityProvidersPanel({
       {/* SSO Identity Providers */}
       <Card>
         <CardHeader>
-          <CardTitle>Single sign-on (SSO)</CardTitle>
+          <CardTitle>
+            {t('admin.identityProvidersPanel.singleSignOnSso', 'Single sign-on (SSO)')}
+          </CardTitle>
           <CardDescription>
-            Allow members to sign in with your organization&apos;s identity provider.
+            {t(
+              'admin.identityProvidersPanel.allowMembersToSignIn',
+              "Allow members to sign in with your organization's identity provider."
+            )}
             {identityProviders && identityProviders.some((p) => p.is_active) && (
               <span className="mt-1 block">
-                SSO login URL:{' '}
+                {t('admin.identityProvidersPanel.ssoLoginUrl', 'SSO login URL:')}{' '}
                 <code className="bg-muted rounded px-1 text-xs">/login?org={tenantSlug}</code>
               </span>
             )}
@@ -258,11 +292,13 @@ export function IdentityProvidersPanel({
                       <div className="flex items-center gap-2">
                         {isConfigured ? (
                           <Badge variant={existing.is_active ? 'default' : 'secondary'}>
-                            {existing.is_active ? 'Active' : 'Inactive'}
+                            {existing.is_active
+                              ? t('admin.identityProvidersPanel.active', 'Active')
+                              : t('admin.identityProvidersPanel.inactive', 'Inactive')}
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-muted-foreground">
-                            Not configured
+                            {t('admin.identityProvidersPanel.notConfigured', 'Not configured')}
                           </Badge>
                         )}
                         <ChevronDown
@@ -276,23 +312,34 @@ export function IdentityProvidersPanel({
                     <div className="border-t px-4 pb-4 pt-3 space-y-4">
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <Label>Display name</Label>
+                          <Label>
+                            {t('admin.identityProvidersPanel.displayName', 'Display name')}
+                          </Label>
                           <Input
                             value={form.display_name}
                             onChange={(e) =>
                               updateSsoForm(providerDef.value, 'display_name', e.target.value)
                             }
-                            placeholder="Corporate SSO"
+                            placeholder={t(
+                              'admin.identityProvidersPanel.corporateSso',
+                              'Corporate SSO'
+                            )}
                             disabled={!canManage}
                           />
                         </div>
                         <div className="space-y-2">
                           <Label>
                             {providerDef.value === 'entra_id'
-                              ? 'Directory (Tenant) ID'
+                              ? t(
+                                  'admin.identityProvidersPanel.directoryTenantId',
+                                  'Directory (Tenant) ID'
+                                )
                               : providerDef.value === 'okta'
-                                ? 'Okta Org URL'
-                                : 'Workspace domain'}
+                                ? t('admin.identityProvidersPanel.oktaOrgUrl', 'Okta Org URL')
+                                : t(
+                                    'admin.identityProvidersPanel.workspaceDomain',
+                                    'Workspace domain'
+                                  )}
                           </Label>
                           <Input
                             value={form.tenant_identifier}
@@ -313,18 +360,23 @@ export function IdentityProvidersPanel({
 
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <Label>Client ID</Label>
+                          <Label>{t('admin.identityProvidersPanel.clientId', 'Client ID')}</Label>
                           <Input
                             value={form.client_id}
                             onChange={(e) =>
                               updateSsoForm(providerDef.value, 'client_id', e.target.value)
                             }
-                            placeholder="Application (client) ID"
+                            placeholder={t(
+                              'admin.identityProvidersPanel.applicationClientId',
+                              'Application (client) ID'
+                            )}
                             disabled={!canManage}
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label>Client secret</Label>
+                          <Label>
+                            {t('admin.identityProvidersPanel.clientSecret', 'Client secret')}
+                          </Label>
                           <Input
                             type="password"
                             value={form.client_secret}
@@ -332,7 +384,15 @@ export function IdentityProvidersPanel({
                               updateSsoForm(providerDef.value, 'client_secret', e.target.value)
                             }
                             placeholder={
-                              isConfigured ? 'Leave empty to keep current' : 'Client secret value'
+                              isConfigured
+                                ? t(
+                                    'admin.identityProvidersPanel.leaveEmptyToKeepCurrent',
+                                    'Leave empty to keep current'
+                                  )
+                                : t(
+                                    'admin.identityProvidersPanel.clientSecretValue',
+                                    'Client secret value'
+                                  )
                             }
                             disabled={!canManage}
                           />
@@ -340,29 +400,51 @@ export function IdentityProvidersPanel({
                       </div>
 
                       <div className="space-y-2">
-                        <Label>Allowed email domains</Label>
+                        <Label>
+                          {t(
+                            'admin.identityProvidersPanel.allowedEmailDomains',
+                            'Allowed email domains'
+                          )}
+                        </Label>
                         <Input
                           value={form.allowed_domains}
                           onChange={(e) =>
                             updateSsoForm(providerDef.value, 'allowed_domains', e.target.value)
                           }
-                          placeholder="example.com, corp.example.com"
+                          placeholder={t(
+                            'admin.identityProvidersPanel.exampleComCorpExampleCom',
+                            'example.com, corp.example.com'
+                          )}
                           disabled={!canManage}
                         />
                         <p className="text-muted-foreground text-xs">
-                          Comma-separated. Leave empty to allow all domains.
+                          {t(
+                            'admin.identityProvidersPanel.commaSeparatedLeaveEmptyTo',
+                            'Comma-separated. Leave empty to allow all domains.'
+                          )}
                         </p>
                       </div>
 
                       <div className="flex items-center justify-between rounded-lg border p-3">
                         <div>
-                          <p className="text-sm font-medium">Auto-provision users</p>
+                          <p className="text-sm font-medium">
+                            {t(
+                              'admin.identityProvidersPanel.autoProvisionUsers',
+                              'Auto-provision users'
+                            )}
+                          </p>
                           <p className="text-muted-foreground text-xs">
-                            Automatically add new SSO users to this team
+                            {t(
+                              'admin.identityProvidersPanel.automaticallyAddNewSsoUsers',
+                              'Automatically add new SSO users to this team'
+                            )}
                           </p>
                         </div>
                         <Switch
-                          aria-label="Auto-provision users"
+                          aria-label={t(
+                            'admin.identityProvidersPanel.autoProvisionUsers',
+                            'Auto-provision users'
+                          )}
                           checked={form.auto_provision}
                           onCheckedChange={(checked) =>
                             updateSsoForm(providerDef.value, 'auto_provision', checked)
@@ -373,7 +455,9 @@ export function IdentityProvidersPanel({
 
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <Label>Default role</Label>
+                          <Label>
+                            {t('admin.identityProvidersPanel.defaultRole', 'Default role')}
+                          </Label>
                           <Select
                             value={form.default_role}
                             onValueChange={(value) =>
@@ -395,10 +479,10 @@ export function IdentityProvidersPanel({
                         </div>
                         {isConfigured && (
                           <div className="space-y-2">
-                            <Label>Status</Label>
+                            <Label>{t('admin.identityProvidersPanel.status', 'Status')}</Label>
                             <div className="flex items-center gap-2 pt-1">
                               <Switch
-                                aria-label="Status"
+                                aria-label={t('admin.identityProvidersPanel.status', 'Status')}
                                 checked={form.is_active}
                                 onCheckedChange={(checked) =>
                                   updateSsoForm(providerDef.value, 'is_active', checked)
@@ -406,7 +490,9 @@ export function IdentityProvidersPanel({
                                 disabled={!canManage}
                               />
                               <span className="text-sm">
-                                {form.is_active ? 'Active' : 'Inactive'}
+                                {form.is_active
+                                  ? t('admin.identityProvidersPanel.active', 'Active')
+                                  : t('admin.identityProvidersPanel.inactive', 'Inactive')}
                               </span>
                             </div>
                           </div>
@@ -423,7 +509,7 @@ export function IdentityProvidersPanel({
                               onClick={() => setSsoDeleteTarget(existing)}
                             >
                               <Trash2 className="me-2 h-4 w-4" />
-                              Remove
+                              {t('admin.identityProvidersPanel.remove', 'Remove')}
                             </Button>
                           ) : (
                             <div />
@@ -438,7 +524,9 @@ export function IdentityProvidersPanel({
                             ) : (
                               <Save className="me-2 h-4 w-4" />
                             )}
-                            {isConfigured ? 'Save changes' : 'Configure'}
+                            {isConfigured
+                              ? t('admin.identityProvidersPanel.saveChanges', 'Save changes')
+                              : t('admin.identityProvidersPanel.configure', 'Configure')}
                           </Button>
                         </div>
                       )}

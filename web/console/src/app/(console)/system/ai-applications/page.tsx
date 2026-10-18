@@ -21,10 +21,10 @@ import {
 import { adminCan } from '@console/features/admin-console/types'
 import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
-const KIND_LABEL: Record<AdminMcpClient['kind'], string> = {
-  metadata_document: 'Published metadata',
-  organization: 'Registered by an organization',
-  dynamic: 'Self-registered (unverified)',
+const KIND_KEY: Record<AdminMcpClient['kind'], string> = {
+  metadata_document: 'admin.aiApplications.kind.metadataDocument',
+  organization: 'admin.aiApplications.kind.organization',
+  dynamic: 'admin.aiApplications.kind.dynamic',
 }
 
 /**
@@ -46,10 +46,21 @@ export default function AiApplicationsPage() {
     try {
       await setMcpClientBlocked(c.id, !c.blocked)
       setPendingBlock(null)
-      toast.success(c.blocked ? `${c.name} unblocked` : `${c.name} blocked everywhere`)
+      toast.success(
+        c.blocked
+          ? t('admin.systemAiApplicationsPage.unblocked', '{name} unblocked', { name: c.name })
+          : t('admin.systemAiApplicationsPage.blockedEverywhere', '{name} blocked everywhere', {
+              name: c.name,
+            })
+      )
       await mutate()
     } catch {
-      toast.error('Could not update the application')
+      toast.error(
+        t(
+          'admin.systemAiApplicationsPage.couldNotUpdateTheApplication',
+          'Could not update the application'
+        )
+      )
     } finally {
       setBusy(null)
     }
@@ -58,19 +69,32 @@ export default function AiApplicationsPage() {
   return (
     <Main>
       <PageHeader
-        title="AI applications"
-        description="MCP clients that connect to this deployment, with their usage. Block one to stop it everywhere."
+        title={t('admin.systemAiApplicationsPage.aiApplications', 'AI applications')}
+        description={t(
+          'admin.systemAiApplicationsPage.mcpClientsThatConnectTo',
+          'MCP clients that connect to this deployment, with their usage. Block one to stop it everywhere.'
+        )}
       />
       <div className="mt-5">
         {error ? (
-          <ErrorState title="AI applications" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('admin.systemAiApplicationsPage.aiApplications', 'AI applications')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : isLoading || !data ? (
           <Skeleton className="h-48 w-full" />
         ) : data.data.length === 0 ? (
           <EmptyState
             icon={Bot}
-            title="No AI applications yet"
-            description="Applications appear after their first authorization request."
+            title={t(
+              'admin.systemAiApplicationsPage.noAiApplicationsYet',
+              'No AI applications yet'
+            )}
+            description={t(
+              'admin.systemAiApplicationsPage.applicationsAppearAfterTheirFirst',
+              'Applications appear after their first authorization request.'
+            )}
           />
         ) : (
           <Card>
@@ -85,19 +109,30 @@ export default function AiApplicationsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium break-words">{c.name}</span>
                         <Badge variant={c.kind === 'dynamic' ? 'outline' : 'secondary'}>
-                          {KIND_LABEL[c.kind]}
+                          {t(KIND_KEY[c.kind])}
                         </Badge>
-                        {c.blocked && <Badge variant="destructive">Blocked</Badge>}
+                        {c.blocked && (
+                          <Badge variant="destructive">
+                            {t('admin.systemAiApplicationsPage.blocked', 'Blocked')}
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-muted-foreground font-mono text-xs break-all">
                         {c.host || c.client_id}
                       </p>
                       <p className="text-muted-foreground text-xs">
-                        {c.active_connections} active connection
-                        {c.active_connections === 1 ? '' : 's'} in {c.organizations} organization
-                        {c.organizations === 1 ? '' : 's'} · first seen{' '}
-                        {formatDateSafe(c.created_at)} · last used{' '}
-                        {c.last_used_at ? formatRelative(c.last_used_at) : 'never'}
+                        {c.active_connections}{' '}
+                        {t('admin.systemAiApplicationsPage.activeConnection', 'active connection')}
+                        {c.active_connections === 1 ? '' : 's'}{' '}
+                        {t('admin.systemAiApplicationsPage.in', 'in')} {c.organizations}{' '}
+                        {t('admin.systemAiApplicationsPage.organization', 'organization')}
+                        {c.organizations === 1 ? '' : 's'}{' '}
+                        {t('admin.systemAiApplicationsPage.firstSeen', '· first seen')}{' '}
+                        {formatDateSafe(c.created_at)}{' '}
+                        {t('admin.systemAiApplicationsPage.lastUsed', '· last used')}{' '}
+                        {c.last_used_at
+                          ? formatRelative(c.last_used_at)
+                          : t('admin.systemAiApplicationsPage.never', 'never')}
                       </p>
                     </div>
                     {canBlock && (
@@ -116,7 +151,9 @@ export default function AiApplicationsPage() {
                         ) : (
                           <Ban className="mr-2 h-4 w-4" aria-hidden />
                         )}
-                        {c.blocked ? 'Unblock' : 'Block'}
+                        {c.blocked
+                          ? t('admin.systemAiApplicationsPage.unblock', 'Unblock')
+                          : t('admin.systemAiApplicationsPage.block', 'Block')}
                       </Button>
                     )}
                   </li>

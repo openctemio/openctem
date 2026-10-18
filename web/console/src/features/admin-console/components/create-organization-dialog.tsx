@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState, type FormEvent } from 'react'
 import { Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -39,6 +40,8 @@ export function CreateOrganizationDialog({
 }: {
   onCreated: (org: AdminOrganization) => void
 }) {
+  const { t } = useTranslation()
+
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -81,7 +84,9 @@ export function CreateOrganizationDialog({
         owner_name: ownerName.trim() || undefined,
         description: description.trim() || undefined,
       })
-      toast.success(`${org.name} created`)
+      toast.success(
+        t('admin.createOrganizationDialog.created', '{name} created', { name: org.name })
+      )
       if (org.owner_setup?.setup_token || org.owner_setup?.email_failed) {
         // No email could be sent: show the owner's one-time link before
         // leaving. A failed send (SMTP configured) returns no link; say so.
@@ -89,7 +94,13 @@ export function CreateOrganizationDialog({
         return
       }
       if (org.owner_setup?.email_sent) {
-        toast.success(`${owner.trim()} was emailed a link to set their password`)
+        toast.success(
+          t(
+            'admin.createOrganizationDialog.emailedSetPasswordLink',
+            '{owner} was emailed a link to set their password',
+            { owner: owner.trim() }
+          )
+        )
       }
       finish(org)
     } catch (err) {
@@ -114,17 +125,24 @@ export function CreateOrganizationDialog({
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="me-2 size-4" />
-          New organization
+          {t('admin.createOrganizationDialog.newOrganization', 'New organization')}
         </Button>
       </DialogTrigger>
       <DialogContent size="sm">
         {created?.owner_setup ? (
           <>
             <DialogHeader>
-              <DialogTitle>{created.name} created</DialogTitle>
+              <DialogTitle>
+                {t('admin.createOrganizationDialog.created', '{name} created', {
+                  name: created.name,
+                })}
+              </DialogTitle>
               <DialogDescription>
-                An account was created for the owner, {owner.trim()}. They sign in after setting a
-                password.
+                {t(
+                  'admin.createOrganizationDialog.accountCreatedForOwner',
+                  'An account was created for the owner, {owner}. They sign in after setting a password.',
+                  { owner: owner.trim() }
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -133,22 +151,30 @@ export function CreateOrganizationDialog({
               </div>
             </DialogBody>
             <DialogFooter>
-              <Button onClick={() => finish(created)}>Done</Button>
+              <Button onClick={() => finish(created)}>
+                {t('admin.createOrganizationDialog.done', 'Done')}
+              </Button>
             </DialogFooter>
           </>
         ) : (
           <DialogForm onSubmit={submit}>
             <DialogHeader>
-              <DialogTitle>New organization</DialogTitle>
+              <DialogTitle>
+                {t('admin.createOrganizationDialog.newOrganization', 'New organization')}
+              </DialogTitle>
               <DialogDescription>
-                The owner becomes the organization&apos;s first owner. If they have no account yet,
-                one is created and they get a link to set their password.
+                {t(
+                  'admin.createOrganizationDialog.theOwnerBecomesTheOrganization',
+                  "The owner becomes the organization's first owner. If they have no account yet, one is created and they get a link to set their password."
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="org-name">Name</Label>
+                  <Label htmlFor="org-name">
+                    {t('admin.createOrganizationDialog.name', 'Name')}
+                  </Label>
                   <Input
                     id="org-name"
                     required
@@ -162,14 +188,19 @@ export function CreateOrganizationDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="org-slug">Slug</Label>
+                  <Label htmlFor="org-slug">
+                    {t('admin.createOrganizationDialog.slug', 'Slug')}
+                  </Label>
                   <Input
                     id="org-slug"
                     required
                     minLength={3}
                     maxLength={100}
                     pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                    title="Lowercase letters, digits and hyphens"
+                    title={t(
+                      'admin.createOrganizationDialog.lowercaseLettersDigitsAndHyphens',
+                      'Lowercase letters, digits and hyphens'
+                    )}
                     value={slug}
                     onChange={(e) => {
                       setSlugEdited(true)
@@ -177,11 +208,16 @@ export function CreateOrganizationDialog({
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Used in URLs, including the SAML sign-in addresses.
+                    {t(
+                      'admin.createOrganizationDialog.usedInUrlsIncludingThe',
+                      'Used in URLs, including the SAML sign-in addresses.'
+                    )}
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="org-owner">Owner email</Label>
+                  <Label htmlFor="org-owner">
+                    {t('admin.createOrganizationDialog.ownerEmail', 'Owner email')}
+                  </Label>
                   <Input
                     id="org-owner"
                     type="email"
@@ -190,11 +226,16 @@ export function CreateOrganizationDialog({
                     onChange={(e) => setOwner(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    An existing account, or a new person (an account is created for them).
+                    {t(
+                      'admin.createOrganizationDialog.anExistingAccountOrA',
+                      'An existing account, or a new person (an account is created for them).'
+                    )}
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="org-owner-name">Owner name (optional)</Label>
+                  <Label htmlFor="org-owner-name">
+                    {t('admin.createOrganizationDialog.ownerNameOptional', 'Owner name (optional)')}
+                  </Label>
                   <Input
                     id="org-owner-name"
                     maxLength={255}
@@ -202,11 +243,19 @@ export function CreateOrganizationDialog({
                     onChange={(e) => setOwnerName(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Used only when a new account is created for the owner.
+                    {t(
+                      'admin.createOrganizationDialog.usedOnlyWhenANew',
+                      'Used only when a new account is created for the owner.'
+                    )}
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="org-description">Description (optional)</Label>
+                  <Label htmlFor="org-description">
+                    {t(
+                      'admin.createOrganizationDialog.descriptionOptional',
+                      'Description (optional)'
+                    )}
+                  </Label>
                   <Textarea
                     id="org-description"
                     maxLength={500}
@@ -219,11 +268,11 @@ export function CreateOrganizationDialog({
             </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="me-2 size-4 animate-spin" />}
-                Create organization
+                {t('admin.createOrganizationDialog.createOrganization', 'Create organization')}
               </Button>
             </DialogFooter>
           </DialogForm>

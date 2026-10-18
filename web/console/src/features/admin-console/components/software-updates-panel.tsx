@@ -53,18 +53,18 @@ const SEVERITY_TONE: Record<ReleaseFeedAdvisory['severity'], PillTone> = {
   low: 'info',
 }
 
-const ERROR_FALLBACK: Record<VersionCheckErrorCode, string> = {
-  unreachable: 'The release feed could not be reached (no internet access?).',
-  not_published:
-    'No release feed is published at this address yet. Release information comes from the version built into this release; import a feed file to update it.',
-  http_status: 'The release feed host answered with an error.',
-  too_large: 'The file is larger than a release feed can be.',
-  invalid: 'Not a valid signed release feed.',
-  rollback: 'Older than the release information already applied.',
-  conflict: 'Another release feed with the same sequence is already applied.',
-  expired: 'The release feed has expired; get a current copy.',
-  no_key: 'This build pins no release feed key.',
-}
+// Codes the release-feed check can report; each has a text under admin.versionCheck.error.<code>.
+const ERROR_CODES: ReadonlySet<string> = new Set<VersionCheckErrorCode>([
+  'unreachable',
+  'not_published',
+  'http_status',
+  'too_large',
+  'invalid',
+  'rollback',
+  'conflict',
+  'expired',
+  'no_key',
+])
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -139,8 +139,7 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
     }
   }
 
-  const errorText = (code: VersionCheckErrorCode) =>
-    t(`admin.versionCheck.error.${code}`, ERROR_FALLBACK[code])
+  const errorText = (code: VersionCheckErrorCode) => t(`admin.versionCheck.error.${code}`)
 
   // A component the console has no name for (a product added later) shows
   // its id.
@@ -174,7 +173,7 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
           ? err.code?.replace(/^RELEASE_FEED_/, '').toLowerCase()
           : undefined
       toast.error(
-        code && code in ERROR_FALLBACK
+        code && ERROR_CODES.has(code)
           ? errorText(code as VersionCheckErrorCode)
           : err instanceof AdminApiError
             ? err.message

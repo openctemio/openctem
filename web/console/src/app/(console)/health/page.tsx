@@ -564,14 +564,22 @@ export default function AdminHealthPage() {
       </PageHeader>
       <div className="mt-5 space-y-5">
         {sys.error && !sys.data ? (
-          <ErrorState title="system" error={sys.error} onRetry={() => void sys.mutate()} />
+          <ErrorState
+            title={t('admin.healthPage.system', 'system')}
+            error={sys.error}
+            onRetry={() => void sys.mutate()}
+          />
         ) : sys.isLoading || !sys.data ? (
           <Skeleton className="h-64 w-full" />
         ) : (
           <HostSections s={sys.data} o={ops.data} />
         )}
         {ops.error && !ops.data ? (
-          <ErrorState title="operations" error={ops.error} onRetry={() => void ops.mutate()} />
+          <ErrorState
+            title={t('admin.healthPage.operations', 'operations')}
+            error={ops.error}
+            onRetry={() => void ops.mutate()}
+          />
         ) : ops.isLoading || !ops.data ? (
           <Skeleton className="h-64 w-full" />
         ) : (
