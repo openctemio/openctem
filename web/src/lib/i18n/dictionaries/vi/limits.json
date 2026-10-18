@@ -80,5 +80,6 @@
   "limits.until": "đến {date}",
   "limits.usage.description": "Những gì tổ chức này có thể thêm. Để thay đổi giới hạn, hãy liên hệ quản trị viên của bản cài đặt này.",
   "limits.usage.title": "Giới hạn",
-  "limits.accountPortal": "Quản lý tài khoản dịch vụ"
+  "limits.accountPortal": "Quản lý tài khoản dịch vụ",
+  "limits.key.storage_mb": "Lưu trữ (MiB)"
 }

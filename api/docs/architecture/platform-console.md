@@ -31,7 +31,7 @@ doing:
 | Customers | Organizations, Users, Access requests, Support access |
 | Scanning | Scan approval, Platform scanning (policy, fleet, queue, zones, egress, anomalies), Target mappings, Content packs, Content catalog, Threat intelligence |
 | Security | Administrators, Sessions, Admin sign-in, Admin activity |
-| Settings | Sign-up, Limits, E-mail, Legal, Announcements, AI applications |
+| Settings | Configuration, Sign-up, Limits, CAPTCHA, E-mail, Legal, Announcements, Alerts, AI provider, AI applications |
 | Monitoring | Health (services, storage, backup, certificates, schema, version, queues, sensors, jobs), Software updates |
 
 The administrator's own security keys open from the sidebar footer, next to
@@ -83,8 +83,10 @@ console, set on the server, or the built-in default. A secret (CAPTCHA keys,
 AI provider keys, the audit stream address) is reported only as set or not
 set. Where the environment value bounds a console setting (`SIGNUP_MODE`,
 `VERSION_CHECK_ENABLED=false`) the row says so: the console may tighten it,
-never loosen it. Rows marked "Moving to the console" are server settings
-planned to become console settings.
+never loosen it. Where a set environment variable pins a console setting
+(the CAPTCHA keys, the deployment region, the platform AI keys) the row says
+"locked by the server configuration" and names it. Rows marked "Moving to the
+console" are server settings planned to become console settings.
 
 What stays on the server by design: database and Redis credentials, the
 encryption, fingerprint and session keys, listen addresses, trusted proxies,
@@ -94,7 +96,49 @@ stream and retention, backups and the host firewall. A stolen console
 session must not be able to read a secret, redirect evidence or audit, or
 widen who can reach the console.
 
-## Settings
+## Settings moved from the environment
+
+These settings used to need a server edit and a restart; they are now
+console settings (RFC-079), stored in `platform_settings`, read through a
+15-second cache so a change applies on every replica without a restart
+(`internal/app/consolesetting`). Secrets are encrypted with
+`APP_ENCRYPTION_KEY` and write-only: reads say "set" and who changed them
+when, never the value, and neither the audit log nor the notice carries it.
+Guarded settings need a super admin, a fresh confirmation (a code or a
+security key, never the step-up window), a reason, a critical admin audit row
+with the old and new values, and a notice to every administrator (e-mail and
+the alert webhook).
+
+| Setting | Page | API | Environment | Guard |
+|---|---|---|---|---|
+| CAPTCHA (Turnstile site key and secret), with "check the secret key" | Settings > CAPTCHA | `/admin/settings/captcha`, `/verify` | `CAPTCHA_TURNSTILE_SECRET` + `_SITE_KEY` lock it | guarded |
+| Deployment region, once, before the first organization (the platform's system tenant does not count) | Settings > Configuration | `/admin/settings/region` | `DEPLOYMENT_REGION` locks it | guarded; immutable once set |
+| Default storage quota per organization (an organization's `storage_mb` limit wins; 0 = no quota) | Settings > Limits | `/admin/settings/storage-quota` | `STORAGE_TENANT_QUOTA_MB` is the default until the console stores one | super admin + step-up, audited |
+| Alert webhook (HTTPS only, SSRF-guarded, optional HMAC signature), with "send a test alert" | Settings > Alerts | `/admin/settings/alerts`, `/test` | none (the kit's host probes stay host-side) | guarded; the previous receiver is told first |
+| Platform AI provider, model and key, off by default, with "test the key" | Settings > AI provider | `/admin/settings/ai`, `/test` | any of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` locks it | guarded |
+
+How each applies without a restart:
+
+- CAPTCHA: one verifier (`platformcaptcha.Service`) serves registration,
+  request access and the tenant and console sign-ins; it is asked only while
+  keys are configured. A stored secret that no longer decrypts keeps the
+  CAPTCHA on and refuses every token (fail closed). In production with
+  `SIGNUP_MODE=open` and no `SIGNUP_CAPTCHA` waiver, open sign-up is closed
+  at runtime until a CAPTCHA is configured (it used to refuse to start).
+- Region: new organizations read it at creation; the insert also reads the
+  stored value itself, so another replica's stale cache cannot create an
+  organization without it. Setting it holds a lock on the organization table,
+  so a concurrent organization creation cannot slip in.
+- Storage quota: checked per upload; an unreadable quota refuses the upload.
+- Alert webhook: the system watch and the setting notices fan out to e-mail
+  and the webhook. The address is treated as a credential (only its host is
+  shown); delivery never follows the address into a log or error.
+- AI provider: the AI client reads the console provider per request when no
+  environment key is set; AI triage is always available for organizations
+  that bring their own key, and platform mode is refused with a clear message
+  until a provider is on.
+
+## Installer settings
 
 The same four settings in every installer (Compose and `setup.sh`, the Helm
 chart, the Ansible kit): mode (`port` | `host` | `off`), host name, port

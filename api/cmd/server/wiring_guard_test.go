@@ -303,6 +303,8 @@ var optionalServiceSetters = map[string]string{
 	"SignupEvents.SetClock":           "test seam: replaces the clock; production uses time.Now",
 
 	// Business operations named Set*, not collaborator seams.
+	"DeploymentRegion.Set":              "business operation (the console's one-time region setting), not a collaborator seam",
+	"PlatformAlert.SetHTTPClient":       "test seam: a local receiver the SSRF guard would refuse; production uses the guarded client",
 	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
 	"PermVersion.Set":                   "cache operation, not a seam",
 	"Role.SetUserRoles":                 "request operation, called by the role handler",

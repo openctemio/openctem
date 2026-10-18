@@ -74,8 +74,7 @@ func TestSecretsAreNeverReturned(t *testing.T) {
 			t.Fatalf("the overview leaks %q", secret)
 		}
 	}
-	turnstile := find(t, items, "CAPTCHA_TURNSTILE_SECRET")
-	if !turnstile.Secret || turnstile.IsSet == nil || !*turnstile.IsSet || turnstile.Value != "" {
+	if turnstile := find(t, items, "captcha.turnstile"); turnstile.Value != "" || turnstile.Managed != ManagedConsole {
 		t.Fatalf("turnstile row = %+v", turnstile)
 	}
 }
@@ -92,12 +91,49 @@ func TestServerSettingSources(t *testing.T) {
 	if app.Source != SourceEnvironment || !app.RestartRequired || app.Managed != ManagedServer || app.Value != "https://ctem.example.test" {
 		t.Fatalf("APP_URL = %+v", app)
 	}
-	quota := find(t, items, "STORAGE_TENANT_QUOTA_MB")
-	if quota.Source != SourceDefault || quota.Value != "20480" || !quota.Planned {
+	quota := find(t, items, "storage.tenant_quota_mb")
+	if quota.Source != SourceDefault || quota.Managed != ManagedConsole || quota.EnvVar != "STORAGE_TENANT_QUOTA_MB" || quota.Page != "/system/limits" {
 		t.Fatalf("quota = %+v", quota)
 	}
-	if ai := find(t, items, "AI_PLATFORM_API_KEY"); ai.Source != SourceEnvironment {
-		t.Fatalf("any provider key set means environment: %+v", ai)
+	// Any provider key in the environment pins the console's AI provider.
+	if ai := find(t, items, "ai.platform"); ai.Source != SourceEnvironment || ai.LockedBy != "OPENAI_API_KEY" {
+		t.Fatalf("any provider key set locks the console setting: %+v", ai)
+	}
+	if region := find(t, items, "deployment.region"); region.LockedBy != "" || region.Managed != ManagedConsole {
+		t.Fatalf("an unset DEPLOYMENT_REGION leaves the region to the console: %+v", region)
+	}
+	// The moved settings are no longer listed as server settings.
+	for _, gone := range []string{"CAPTCHA_TURNSTILE_SECRET", "STORAGE_TENANT_QUOTA_MB", "DEPLOYMENT_REGION", "AI_PLATFORM_API_KEY", "AI_PLATFORM_PROVIDER"} {
+		for _, it := range items {
+			if it.Key == gone {
+				t.Fatalf("%s moved into the console but is still a server row", gone)
+			}
+		}
+	}
+}
+
+// A set environment variable locks a console setting and hides its console
+// author; a default variable makes the source environment until the console
+// stores a value.
+func TestEnvironmentLocksAndDefaults(t *testing.T) {
+	actor, _ := admin.NewAdminUser("root@example.test", "Root", admin.AdminRoleSuperAdmin, nil)
+	id := actor.ID()
+	at := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
+	settings := settingsMap{
+		"captcha.turnstile": {Value: json.RawMessage(`{}`), Version: 1, Source: platformsetting.SourceConsole, UpdatedBy: &id, UpdatedAt: at},
+	}
+	env := map[string]string{"CAPTCHA_TURNSTILE_SECRET": "s", "STORAGE_TENANT_QUOTA_MB": "100"}
+	b := NewBuilder(testConfig(), settings, adminsMap{id.String(): actor}, func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	items, err := b.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := find(t, items, "captcha.turnstile")
+	if c.LockedBy != "CAPTCHA_TURNSTILE_SECRET" || c.Source != SourceEnvironment || c.ChangedBy != "" || c.ChangedAt != nil {
+		t.Fatalf("captcha = %+v", c)
+	}
+	if q := find(t, items, "storage.tenant_quota_mb"); q.Source != SourceEnvironment || q.LockedBy != "" {
+		t.Fatalf("quota = %+v", q)
 	}
 }
 
