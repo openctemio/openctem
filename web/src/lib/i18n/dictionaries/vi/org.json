@@ -407,5 +407,10 @@
   "org.personal.reason": "Lý do",
   "org.personal.reasonPlaceholder": "Nhà thầu không có tài khoản trong nhà cung cấp danh tính của chúng tôi",
   "org.personal.until": "Đến ngày",
-  "org.personal.add": "Thêm ngoại lệ"
+  "org.personal.add": "Thêm ngoại lệ",
+  "org.sso.managedTitle": "SSO do quản trị viên nền tảng cấu hình",
+  "org.sso.managedText": "{what} được thiết lập cho tổ chức của bạn trong bảng điều khiển quản trị nền tảng. Để thêm hoặc thay đổi, hãy liên hệ quản trị viên nền tảng.",
+  "org.sso.authLink": "Cài đặt xác thực",
+  "org.sso.title": "Đăng nhập một lần (SSO)",
+  "org.sso.noticeText": "Đăng nhập một lần (SAML hoặc OIDC), cùng các tên miền đã xác minh, được thiết lập cho tổ chức của bạn trong bảng điều khiển quản trị nền tảng. Để thêm hoặc thay đổi, hãy liên hệ quản trị viên nền tảng."
 }
