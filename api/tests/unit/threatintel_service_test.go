@@ -252,6 +252,10 @@ func (m *threatIntelMockKEVRepo) GetRansomwareRelated(_ context.Context, _ int) 
 	return m.ransomEntries, nil
 }
 
+func (m *threatIntelMockKEVRepo) CountTenantOpenInKEV(_ context.Context, _ shared.ID, _ *shared.DataScope) (int64, error) {
+	return 0, nil
+}
+
 func (m *threatIntelMockKEVRepo) CountTenantOpenPastDue(_ context.Context, _ shared.ID, _ *shared.DataScope) (int64, error) {
 	m.tenantPastDueCalls++
 	if m.tenantPastDueErr != nil {

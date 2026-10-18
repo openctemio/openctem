@@ -93,8 +93,11 @@ export function ExecutiveSummarySection() {
           },
           {
             key: 'sla',
-            label: 'SLA compliance',
-            value: summary ? `${summary.sla_compliance_pct.toFixed(0)}%` : '—',
+            label: t('dashboardMetrics.executive.sla'),
+            value:
+              summary && summary.sla_compliance_pct != null
+                ? `${summary.sla_compliance_pct.toFixed(0)}%`
+                : '—',
           },
         ]}
       />

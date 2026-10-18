@@ -769,8 +769,14 @@ func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared
 		return nil, err
 	}
 
+	openInKEV, err := s.repo.KEV().CountTenantOpenInKEV(ctx, tenantID, scope)
+	if err != nil {
+		return nil, err
+	}
+
 	return &KEVStats{
 		TotalEntries:            int(catalog.total),
+		TenantOpenCount:         int(openInKEV),
 		PastDueCount:            int(pastDue),
 		RecentlyAddedLast30Days: int(catalog.recent30d),
 		RansomwareRelatedCount:  int(catalog.ransomware),
@@ -871,6 +877,7 @@ func (s *IntelService) GetThreatIntelStats(ctx context.Context, tenantID shared.
 // KEVStats contains KEV catalog statistics.
 type KEVStats struct {
 	TotalEntries            int `json:"total_entries"`
+	TenantOpenCount         int `json:"tenant_open_count"` // the tenant's open findings in the KEV catalog
 	PastDueCount            int `json:"past_due_count"`
 	RecentlyAddedLast30Days int `json:"recently_added_last_30_days"`
 	RansomwareRelatedCount  int `json:"ransomware_related_count"`
