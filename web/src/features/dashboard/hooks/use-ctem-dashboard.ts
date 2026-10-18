@@ -72,9 +72,18 @@ export interface ExecutiveSummary {
   p0_open: number
   p0_resolved_period: number
   p1_open: number
-  sla_compliance_pct: number
+  /** Open within SLA: null when no open finding has an SLA (not measured, never 100). */
+  sla_compliance_pct: number | null
   sla_breached: number
-  mttr_critical_hours: number
+  /** Time to fix critical findings in the period: null when none was fixed. */
+  mttr_critical_hours: number | null
+  mttr_critical_median_hours?: number | null
+  mttr_critical_p90_hours?: number | null
+  mttr_critical_sample?: number
+  mttr_high_hours?: number | null
+  mttr_high_median_hours?: number | null
+  mttr_high_p90_hours?: number | null
+  mttr_high_sample?: number
   crown_jewels_at_risk: number
   findings_total: number
   findings_resolved_period: number
@@ -89,7 +98,11 @@ export interface ExecutiveSummary {
 export interface MttrAnalytics {
   by_severity: Record<string, number>
   by_priority_class: Record<PriorityClass, number>
-  overall_hours: number
+  /** Null (with the median and p90) when nothing was remediated in the period. */
+  overall_hours: number | null
+  overall_median_hours?: number | null
+  overall_p90_hours?: number | null
+  sample_size?: number
 }
 
 export interface DataQualityScorecard {
@@ -115,6 +128,8 @@ export interface ThreatIntelStats {
   }
   kev: {
     total_entries: number
+    /** The tenant's open findings in the KEV catalog (older API builds omit it). */
+    tenant_open_count?: number
     past_due_count: number
     ransomware_related_count: number
     recently_added_last_30_days: number
