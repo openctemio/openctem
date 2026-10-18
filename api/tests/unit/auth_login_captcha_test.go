@@ -28,7 +28,7 @@ func postLogin(h *handler.LocalAuthHandler, ip, body string) *httptest.ResponseR
 func TestLogin_CaptchaAfterRepeatedFailures(t *testing.T) {
 	svc, deps := newTestAuthService()
 	sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
-	h := handler.NewLocalAuthHandler(svc, sess, nil, nil, deps.cfg, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, sess, nil, deps.cfg, logger.NewNop())
 	if rec := postJSON(t, h.Register, map[string]string{"email": "known@example.com", "password": "Str0ngPassw0rd!", "name": "K"}); rec.Code != http.StatusCreated {
 		t.Fatalf("seed: %d", rec.Code)
 	}
@@ -76,7 +76,7 @@ func (brokenCounter) Record(context.Context, string) error { return errors.New("
 func TestLogin_CaptchaWhenCounterUnreadable(t *testing.T) {
 	svc, deps := newTestAuthService()
 	sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
-	h := handler.NewLocalAuthHandler(svc, sess, nil, nil, deps.cfg, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, sess, nil, deps.cfg, logger.NewNop())
 	if rec := postJSON(t, h.Register, map[string]string{"email": "known@example.com", "password": "Str0ngPassw0rd!", "name": "K"}); rec.Code != http.StatusCreated {
 		t.Fatalf("seed: %d", rec.Code)
 	}

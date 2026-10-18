@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -196,6 +197,55 @@ func (h *AuditHandler) handleServiceError(w http.ResponseWriter, err error) {
 // Handlers
 // =============================================================================
 
+// auditFilterParams are the query parameters that filter the audit log list
+// and its export.
+var auditFilterParams = []string{
+	"actor_id", "action", "resource_type", "resource_id", "result", "severity",
+	"request_id", "since", "until", "search", "exclude_system",
+}
+
+// parseAuditFilters reads the filter parameters shared by the list and the
+// export into input. An unparsable since or until is ignored.
+func parseAuditFilters(query url.Values, input *auditsvc.ListAuditLogsInput) {
+	if actorID := query.Get("actor_id"); actorID != "" {
+		input.ActorID = actorID
+	}
+	if actions := query["action"]; len(actions) > 0 {
+		input.Actions = actions
+	}
+	if resourceTypes := query["resource_type"]; len(resourceTypes) > 0 {
+		input.ResourceTypes = resourceTypes
+	}
+	if resourceID := query.Get("resource_id"); resourceID != "" {
+		input.ResourceID = resourceID
+	}
+	if results := query["result"]; len(results) > 0 {
+		input.Results = results
+	}
+	if severities := query["severity"]; len(severities) > 0 {
+		input.Severities = severities
+	}
+	if requestID := query.Get("request_id"); requestID != "" {
+		input.RequestID = requestID
+	}
+	if since := query.Get("since"); since != "" {
+		if t, err := time.Parse(time.RFC3339, since); err == nil {
+			input.Since = &t
+		}
+	}
+	if until := query.Get("until"); until != "" {
+		if t, err := time.Parse(time.RFC3339, until); err == nil {
+			input.Until = &t
+		}
+	}
+	if search := query.Get("search"); search != "" {
+		input.SearchTerm = search
+	}
+	if query.Get("exclude_system") == queryParamTrue {
+		input.ExcludeSystem = true
+	}
+}
+
 // List handles GET /api/v1/audit-logs
 // @Summary      List audit logs
 // @Description  Returns paginated audit logs for the current tenant
@@ -243,60 +293,12 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	input.Page, input.PerPage = paging.Page, paging.PerPage
 
 	// Parse filters
-	if actorID := query.Get("actor_id"); actorID != "" {
-		input.ActorID = actorID
-	}
-
-	if actions := query["action"]; len(actions) > 0 {
-		input.Actions = actions
-	}
-
-	if resourceTypes := query["resource_type"]; len(resourceTypes) > 0 {
-		input.ResourceTypes = resourceTypes
-	}
-
-	if resourceID := query.Get("resource_id"); resourceID != "" {
-		input.ResourceID = resourceID
-	}
-
-	if results := query["result"]; len(results) > 0 {
-		input.Results = results
-	}
-
-	if severities := query["severity"]; len(severities) > 0 {
-		input.Severities = severities
-	}
-
-	if requestID := query.Get("request_id"); requestID != "" {
-		input.RequestID = requestID
-	}
-
-	if since := query.Get("since"); since != "" {
-		if t, err := time.Parse(time.RFC3339, since); err == nil {
-			input.Since = &t
-		}
-	}
-
-	if until := query.Get("until"); until != "" {
-		if t, err := time.Parse(time.RFC3339, until); err == nil {
-			input.Until = &t
-		}
-	}
-
-	if search := query.Get("search"); search != "" {
-		input.SearchTerm = search
-	}
-
+	parseAuditFilters(query, &input)
 	if sortBy := query.Get("sort_by"); sortBy != "" {
 		input.SortBy = sortBy
 	}
-
 	if sortOrder := query.Get("sort_order"); sortOrder != "" {
 		input.SortOrder = sortOrder
-	}
-
-	if excludeSystem := query.Get("exclude_system"); excludeSystem == queryParamTrue {
-		input.ExcludeSystem = true
 	}
 
 	// Execute query

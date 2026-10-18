@@ -66,7 +66,7 @@ export function AdminCommandMenu() {
     [setOpen]
   )
 
-  const sections = visibleAdminNav(admin.role)
+  const sections = visibleAdminNav(admin.max_role ?? admin.role)
   const orgResults = orgPath ? (orgs.data?.data ?? []) : []
   const userResults = userPath ? (users.data?.data ?? []) : []
 
