@@ -41,7 +41,7 @@ func newPlatformUsersHarness(t *testing.T) *chainHarness {
 		sessions := auth.NewSessionService(postgres.NewSessionRepository(db.DB), postgres.NewRefreshTokenRepository(db.DB), log)
 		dir := postgres.NewPlatformUserDirectory(db)
 		svc := platformuser.NewService(postgres.NewUserRepository(db), sessions, nil, nil, dir, platformuser.Durations{})
-		h.AdminPlatformUser = handler.NewAdminPlatformUserHandler(dir, svc, log)
+		h.AdminPlatformUser = handler.NewAdminPlatformUserHandler(dir, svc, log).WithAudit(postgres.NewAuditLogRepository(db))
 		h.AdminAuditMiddleware = middleware.NewAuditMiddleware(postgres.NewAuditLogRepository(db), log)
 	})
 }
@@ -92,6 +92,59 @@ func (h *chainHarness) auditRow(action, resourceID string) (found bool, body str
 }
 
 const supportReason = `{"reason":"Support case 4411: user locked out after a phone change"}`
+
+// Browsing without a search: ops_admin+ lists accounts by state, newest
+// first, with the count of each state; the list carries no name (minimal
+// personal data); every list view is audited; a read-only administrator is
+// refused; an unknown state is refused.
+func TestAdminPlatformUsers_BrowseByState(t *testing.T) {
+	h := newPlatformUsersHarness(t)
+	org := h.organization(0)
+	lockedID, lockedEmail := h.supportUser(org)
+	tag := lockedEmail[8:16]
+	blockedID, verifiedID := uuid.NewString(), uuid.NewString()
+	h.exec(`INSERT INTO users (id, email, name, status, blocked_at, email_verified) VALUES ($1, $2, 'Blocked IT', 'suspended', now(), true)`,
+		blockedID, "blocked-"+tag+"@it.test")
+	h.exec(`INSERT INTO users (id, email, name, email_verified) VALUES ($1, $2, 'Verified IT', true)`, verifiedID, "verified-"+tag+"@it.test")
+	t.Cleanup(func() { h.exec(`DELETE FROM users WHERE id IN ($1, $2)`, blockedID, verifiedID) })
+
+	reader := h.newAdmin(admin.AdminRoleReadonly)
+	reader.verify()
+	if code, _ := reader.do(http.MethodGet, "/api/v1/admin/platform-users", nil, false); code != http.StatusForbidden {
+		t.Fatalf("a read-only administrator browsed accounts: %d", code)
+	}
+
+	c := h.newAdmin(admin.AdminRoleOpsAdmin)
+	c.verify()
+	if code, _ := c.do(http.MethodGet, "/api/v1/admin/platform-users?state=everything", nil, false); code != http.StatusBadRequest {
+		t.Fatalf("unknown state: %d, want 400", code)
+	}
+	code, body := c.do(http.MethodGet, "/api/v1/admin/platform-users?per_page=100", nil, false)
+	if code != http.StatusOK || strings.Contains(body, "Verified IT") || strings.Contains(body, `"name"`) {
+		t.Fatalf("browse: %d (the list must carry no names) %s", code, body)
+	}
+	var all handler.AdminPlatformUserListResponse
+	_ = json.Unmarshal([]byte(body), &all)
+	if all.Counts["all"] < 3 || all.Counts["blocked"] < 1 || all.Counts["locked"] < 1 {
+		t.Fatalf("counts = %+v", all.Counts)
+	}
+
+	// The tabs, narrowed to this test's accounts by a search.
+	expect := map[string]string{"blocked": blockedID, "locked": lockedID, "active": verifiedID}
+	for state, want := range expect {
+		code, body = c.do(http.MethodGet, "/api/v1/admin/platform-users?q="+tag+"&state="+state, nil, false)
+		var page handler.AdminPlatformUserListResponse
+		_ = json.Unmarshal([]byte(body), &page)
+		if code != http.StatusOK || page.Total != 1 || page.Data[0].ID != want || page.Counts[state] != 1 || page.Counts["all"] != 3 {
+			t.Fatalf("state %s: %d %+v", state, code, page)
+		}
+	}
+	var n int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM admin_audit_logs
+		WHERE admin_id = $1 AND action = 'platform_user.list'`, c.a.ID().String()).Scan(&n); err != nil || n < 4 {
+		t.Fatalf("list views audited: %d %v, want at least 4", n, err)
+	}
+}
 
 func TestAdminPlatformUsers_SearchAndView(t *testing.T) {
 	h := newPlatformUsersHarness(t)

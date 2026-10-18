@@ -131,7 +131,6 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":             {stepUpRoute, "shared sensor anomaly alert thresholds"},
 	"PUT /api/v1/admin/settings/signup-alerts/":                     {stepUpRoute, "sign-up burst alert thresholds"},
 	"PUT /api/v1/admin/settings/shared-sensors/egress":              {stepUpRoute, "egress addresses every organization is told to allowlist"},
-	"PUT /api/v1/admin/program-feed/local-bundle":                   {stepUpRoute, "program feed source"},
 	"POST /api/v1/admin/shared-sensors/enrollment-tokens":           {stepUpRoute, "shared sensor enrollment token"},
 	"POST /api/v1/admin/version-check/import":                       {stepUpRoute, "release feed trust: what the console says about releases"},
 	"PUT /api/v1/admin/version-check/enabled":                       {stepUpRoute, "egress and privacy: the daily outbound check"},

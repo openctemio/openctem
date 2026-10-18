@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -85,6 +86,81 @@ func (h *AdminContentCatalogHandler) Status(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeScanZoneJSON(w, http.StatusOK, toContentTrust(t))
+}
+
+// Packages handles GET /api/v1/admin/content-catalog/packages
+// @Summary      Instance content catalog packages
+// @Description  The packages of the instance catalog (imported bundles and instance packages), newest version first per package; never an organization's private package or installation. Any administrator.
+// @Tags         Admin Content Catalog
+// @Produce      json
+// @Param        q         query  string  false  "Package id or title contains"
+// @Param        type      query  string  false  "Package type"
+// @Param        page      query  int     false  "Page"
+// @Param        per_page  query  int     false  "Page size (max 100)"
+// @Success      200  {object}  ContentPackageListResponse
+// @Failure      400  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /admin/content-catalog/packages [get]
+func (h *AdminContentCatalogHandler) Packages(w http.ResponseWriter, r *http.Request) {
+	page, ok := listPageMax(w, r, 50, 100)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	f := dom.Filter{Type: contentpkg.Type(q.Get("type")), Search: q.Get("q"), Limit: page.Limit(), Offset: page.Offset()}
+	if f.Type != "" && !isContentType(f.Type) {
+		apierror.BadRequest("unknown package type").WriteJSON(w)
+		return
+	}
+	if len(f.Search) > 100 {
+		apierror.BadRequest("q is over 100 characters").WriteJSON(w)
+		return
+	}
+	items, total, err := h.service.ListInstance(r.Context(), f)
+	if err != nil {
+		h.logger.Error("list the instance content catalog", "error", err)
+		apierror.InternalServerError("could not list the content catalog").WriteJSON(w)
+		return
+	}
+	resp := ContentPackageListResponse{Data: make([]ContentPackageListItem, 0, len(items)), Total: total}
+	for _, it := range items {
+		resp.Data = append(resp.Data, ContentPackageListItem{Latest: toContentPackageVersion(it.Latest), Versions: it.Versions})
+	}
+	writeScanZoneJSON(w, http.StatusOK, resp)
+}
+
+// PackageVersions handles GET /api/v1/admin/content-catalog/packages/{namespace}/{name}/versions
+// @Summary      Versions of an instance content catalog package
+// @Description  Every version of the package (revoked ones included), for the revoke action. Any administrator.
+// @Tags         Admin Content Catalog
+// @Produce      json
+// @Param        namespace  path  string  true  "Package namespace"
+// @Param        name       path  string  true  "Package name"
+// @Success      200  {object}  ContentPackageDetailResponse
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /admin/content-catalog/packages/{namespace}/{name}/versions [get]
+func (h *AdminContentCatalogHandler) PackageVersions(w http.ResponseWriter, r *http.Request) {
+	id := packageIDParam(r)
+	if id == "" || len(id) > 200 {
+		apierror.BadRequest("invalid package id").WriteJSON(w)
+		return
+	}
+	versions, err := h.service.InstanceVersions(r.Context(), id)
+	if errors.Is(err, dom.ErrNotFound) {
+		apierror.NotFound("content package").WriteJSON(w)
+		return
+	}
+	if err != nil {
+		h.logger.Error("list content package versions", "error", err)
+		apierror.InternalServerError("could not read the package").WriteJSON(w)
+		return
+	}
+	resp := ContentPackageDetailResponse{PackageID: id, Versions: make([]ContentPackageVersionResponse, 0, len(versions))}
+	for _, v := range versions {
+		resp.Versions = append(resp.Versions, toContentPackageVersion(v))
+	}
+	writeScanZoneJSON(w, http.StatusOK, resp)
 }
 
 // Import handles POST /api/v1/admin/content-catalog/import
