@@ -41,6 +41,11 @@ import (
 //	                                            break-glass test, IdP unbind:
 //	                                            super_admin + step-up
 //	/admin/administrators     —                 super_admin + step-up (audited)
+//	/admin/approvals          super_admin       request: super_admin + step-up;
+//	                                            approve: another super_admin
+//	                                            (not break-glass) + fresh
+//	                                            step-up; reject: step-up;
+//	                                            cancel: requester (critical audit)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         sync: ops_admin+ (audited);
@@ -574,6 +579,20 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminConsole.GetPlatformIdP)
 			r.PUT("/", h.AdminConsole.PutPlatformIdP, stepUp("platform_idp.update"))
 			r.DELETE("/", h.AdminConsole.DeletePlatformIdP, stepUp("platform_idp.delete"))
+		}, superAdminOnly...)
+	}
+
+	// Security > Approvals (four-eyes): a super admin asks with a reason and
+	// a step-up; another super admin approves with a fresh step-up (never
+	// their own request, never a break-glass account) or rejects; the
+	// requester may cancel. The service writes the critical audit rows.
+	if h.AdminApproval != nil {
+		router.Group("/api/v1/admin/approvals", func(r Router) {
+			r.GET("/", h.AdminApproval.List)
+			r.POST("/", h.AdminApproval.Create, stepUp("approval.request"))
+			r.POST("/{approval_id}/approve", h.AdminApproval.Approve, freshStepUp("approval.approve"))
+			r.POST("/{approval_id}/reject", h.AdminApproval.Reject, stepUp("approval.reject"))
+			r.POST("/{approval_id}/cancel", h.AdminApproval.Cancel)
 		}, superAdminOnly...)
 	}
 

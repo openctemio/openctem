@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -458,8 +459,24 @@ func (h *AdminConsoleHandler) PutMFAPolicy(w http.ResponseWriter, r *http.Reques
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
+	// Turning "require security keys" off needs a second super admin.
+	var grant *adminapproval.Grant
+	if !req.RequireWebAuthn {
+		cur, _, err := h.svc.MFAPolicy(r.Context())
+		if err != nil {
+			h.writeFactorError(w, err, "read policy")
+			return
+		}
+		if cur.RequireWebAuthn {
+			var ok bool
+			if grant, ok = requireSecondApproval(w, r, h.approvals, a, admin.ApprovalConsoleMFAOff, "off", h.logger); !ok {
+				return
+			}
+		}
+	}
 	v, err := h.svc.SetMFAPolicy(r.Context(), a, admin.ConsoleMFAPolicy{RequireWebAuthn: req.RequireWebAuthn}, req.Version, clientInfo(r))
 	if err != nil {
+		releaseSecondApproval(r, h.approvals, a, grant)
 		h.writeFactorError(w, err, "set policy")
 		return
 	}
