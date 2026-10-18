@@ -278,6 +278,12 @@ type Handlers struct {
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
 	// after 90 days without a sign-in).
 	IdleReadOnly middleware.IdleReadOnlyChecker
+	// OrganizationGate refuses every credential of a suspended organization
+	// (docs/architecture/organization-suspension.md).
+	OrganizationGate tenant.AccessGate
+	// AdminSuspension: Console > Organizations suspend / lift, and
+	// Console > Users block / unblock.
+	AdminSuspension *handler.AdminSuspensionHandler
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
 	// AdminEmail: Console > System > E-mail (the platform SMTP server, RFC-079).
@@ -506,6 +512,17 @@ func Register(
 		ssoEnforcementMiddleware = middleware.NewSSOEnforcementGate(
 			tenantSSOEnforcedAdapter{repo: tenantRepo}, 60*time.Second, log,
 		).Enforce
+	}
+
+	// Suspended organizations (docs/architecture/organization-suspension.md):
+	// every request whose credential carries a suspended organization is
+	// refused. Appended to buildBaseMiddlewares right after authentication
+	// and to the /tenants/{tenant} chain. Reset on every Register so a
+	// previous router's gate cannot leak into this one.
+	organizationAccessMiddleware = nil
+	organizationGate = h.OrganizationGate
+	if h.OrganizationGate != nil {
+		organizationAccessMiddleware = middleware.RequireActiveOrganization(h.OrganizationGate, log)
 	}
 
 	// Idle Free organizations are read-only after 90 days without a sign-in
@@ -1144,6 +1161,10 @@ func Register(
 // buildBaseMiddlewares builds a middleware chain with auth and optional user sync.
 func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
 	middlewares := []Middleware{authMiddleware}
+	// A suspended organization is refused before anything else runs for it.
+	if organizationAccessMiddleware != nil {
+		middlewares = append(middlewares, organizationAccessMiddleware)
+	}
 	if userSyncMiddleware != nil {
 		middlewares = append(middlewares, userSyncMiddleware)
 	}
@@ -1229,6 +1250,15 @@ var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once du
 
 // idleReadOnlyMiddleware refuses changes to an idle Free organization.
 var idleReadOnlyMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// organizationAccessMiddleware refuses every request whose credential's
+// organization is suspended (middleware.RequireActiveOrganization). Set
+// once during Register; nil only in tests with a minimal handler set.
+var organizationAccessMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// organizationGate is the access gate behind organizationAccessMiddleware,
+// for chains that name the organization in the path.
+var organizationGate tenant.AccessGate //nolint:gochecknoglobals // set once during init
 
 // ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
 // user sessions. Set once during Register; nil disables it (tests).
