@@ -111,6 +111,11 @@ longer exists is skipped; the cascade removes every fact of the tenant. The
 trigger functions have no `EXCEPTION` block, which would open a
 subtransaction per statement on the busiest write path.
 
+An asset merge deletes the merged assets' facts and change marks (derived
+data) and marks the kept asset, so the facts loop recomputes it from the
+findings it received (`mergeDashboardFacts` in
+`internal/infra/postgres/asset_merge_plan.go`).
+
 Updates that change no fact input (a re-sighting moving `last_seen_at`)
 insert nothing. On `findings` all three triggers are statement-level, so a
 bulk change of 10,000 findings on one asset writes one queue row, not
