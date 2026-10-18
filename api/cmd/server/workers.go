@@ -525,6 +525,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		repos.AssetChangeEvents, svc.Asset, cfg.AssetChangeRetentionDays,
 		log.With("controller", "asset-change-timeline")))
 
+	// Dashboard facts (docs/architecture/dashboards.md, "Facts maintainer"):
+	// the change queue every 30 s; full runs, age bands and partitions.
+	w.ControllerManager.Register(controller.NewDashboardFactsController(
+		repos.DashboardFacts, log.With("controller", "dashboard-facts")))
+	w.ControllerManager.Register(controller.NewDashboardFactReconcileController(
+		repos.DashboardFacts, log.With("controller", "dashboard-facts-reconcile")))
+
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
 		&controller.RoleSyncControllerConfig{
