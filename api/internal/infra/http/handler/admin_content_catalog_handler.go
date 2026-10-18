@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -131,18 +129,19 @@ func (h *AdminContentCatalogHandler) Packages(w http.ResponseWriter, r *http.Req
 	writeScanZoneJSON(w, http.StatusOK, resp)
 }
 
-// PackageVersions handles GET /api/v1/admin/content-catalog/packages/{package_id}/versions
+// PackageVersions handles GET /api/v1/admin/content-catalog/packages/{namespace}/{name}/versions
 // @Summary      Versions of an instance content catalog package
 // @Description  Every version of the package (revoked ones included), for the revoke action. Any administrator.
 // @Tags         Admin Content Catalog
 // @Produce      json
-// @Param        package_id  path  string  true  "Package id"
+// @Param        namespace  path  string  true  "Package namespace"
+// @Param        name       path  string  true  "Package name"
 // @Success      200  {object}  ContentPackageDetailResponse
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /admin/content-catalog/packages/{package_id}/versions [get]
+// @Router       /admin/content-catalog/packages/{namespace}/{name}/versions [get]
 func (h *AdminContentCatalogHandler) PackageVersions(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "package_id")
+	id := packageIDParam(r)
 	if id == "" || len(id) > 200 {
 		apierror.BadRequest("invalid package id").WriteJSON(w)
 		return
