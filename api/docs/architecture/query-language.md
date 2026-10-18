@@ -145,7 +145,7 @@ material, free-form properties and personal contact data.
 | Result | 1000 rows (`truncated` is set when more existed) |
 | Complexity score | <= 100: 1 + conditions + 2 per relation condition + 3 per text search + 2 per group (+3 for a relation group) + 2 for a bucket + 1 per aggregate (+2 for distinct, median, p90) + stages |
 | Execution | READ ONLY transaction, `statement_timeout` 5 s (422 on timeout), `work_mem` 32 MB |
-| Rate | per user: burst 30, 1 request/s on explain and run; 2 concurrent per user, 4 per tenant per API process (429) |
+| Rate | per user: burst 30, 1 request/s on explain and run; 2 concurrent per user, 4 per tenant and 8 in total per API process, so queries hold at most a third of the default connection pool (429) |
 
 ## Execution backends
 

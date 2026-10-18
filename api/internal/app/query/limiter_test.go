@@ -7,7 +7,7 @@ import (
 )
 
 func TestLimiter(t *testing.T) {
-	l := newLimiter(2, 4)
+	l := newLimiter(2, 4, 100)
 	r1, err := l.acquire("t1", "u1")
 	if err != nil {
 		t.Fatal(err)
@@ -42,8 +42,35 @@ func TestLimiter(t *testing.T) {
 	}
 }
 
+// Many tenants, each under its own cap, still share the process cap.
+func TestLimiterProcessCap(t *testing.T) {
+	l := newLimiter(MaxPerUser, MaxPerTenant, 3)
+	var rel []func()
+	for i, tenant := range []string{"t1", "t2", "t3"} {
+		r, err := l.acquire(tenant, "u")
+		if err != nil {
+			t.Fatalf("tenant %d: %v", i, err)
+		}
+		rel = append(rel, r)
+	}
+	if _, err := l.acquire("t4", "u"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("over the process cap: %v", err)
+	}
+	rel[0]()
+	if r, err := l.acquire("t4", "u"); err != nil {
+		t.Fatalf("after release: %v", err)
+	} else {
+		r()
+	}
+	rel[1]()
+	rel[2]()
+	if l.running != 0 {
+		t.Fatalf("running = %d", l.running)
+	}
+}
+
 func TestLimiterConcurrent(t *testing.T) {
-	l := newLimiter(MaxPerUser, MaxPerTenant)
+	l := newLimiter(MaxPerUser, MaxPerTenant, MaxPerProcess)
 	var wg sync.WaitGroup
 	for i := 0; i < 200; i++ {
 		wg.Add(1)
@@ -55,7 +82,7 @@ func TestLimiterConcurrent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if len(l.users) != 0 || len(l.tenants) != 0 {
+	if len(l.users) != 0 || len(l.tenants) != 0 || l.running != 0 {
 		t.Fatalf("leaked counters: %v %v", l.users, l.tenants)
 	}
 }
