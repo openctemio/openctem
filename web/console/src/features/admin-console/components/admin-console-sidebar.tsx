@@ -25,6 +25,7 @@ import { SidebarFooterLinks } from '@/components/layout/sidebar-footer-links'
 import { ADMIN_API_VERSION_PATH, setAdminApiVersionFetcher } from '@/hooks/use-build-versions'
 import { adminFetch } from '@console/lib/admin-api/client'
 import { useTranslation } from '@/context/i18n-provider'
+import { ConsoleLanguagePicker } from './console-language-picker'
 import { visibleAdminNav } from '../lib/admin-nav-visibility'
 import { ADMIN_ROLE_LABELS, type AdminIdentity } from '../types'
 
@@ -126,6 +127,9 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
               <span>{t('admin.nav.securityKeys', 'My security keys')}</span>
             </Link>
           </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <ConsoleLanguagePicker />
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton
