@@ -83,7 +83,7 @@ func runDays(t *testing.T, svc *Service, c *clock, days int) {
 // the instance afterwards, and the view says it is off.
 func TestConsoleSwitchTurnsTheCheckOff(t *testing.T) {
 	svc, srv, c, _ := switchService(t, true)
-	if err := svc.SetEnabled(context.Background(), false, shared.NewID()); err != nil {
+	if err := svc.UpdateEnabled(context.Background(), false, shared.NewID()); err != nil {
 		t.Fatal(err)
 	}
 	runDays(t, svc, c, 3)
@@ -96,7 +96,7 @@ func TestConsoleSwitchTurnsTheCheckOff(t *testing.T) {
 	}
 
 	// And back on.
-	if err := svc.SetEnabled(context.Background(), true, shared.NewID()); err != nil {
+	if err := svc.UpdateEnabled(context.Background(), true, shared.NewID()); err != nil {
 		t.Fatal(err)
 	}
 	runDays(t, svc, c, 2)
@@ -109,7 +109,7 @@ func TestConsoleSwitchTurnsTheCheckOff(t *testing.T) {
 // outbound request on.
 func TestEnvironmentOffIsACeiling(t *testing.T) {
 	svc, srv, c, settings := switchService(t, false)
-	if err := svc.SetEnabled(context.Background(), true, shared.NewID()); !errors.Is(err, ErrLockedByEnvironment) {
+	if err := svc.UpdateEnabled(context.Background(), true, shared.NewID()); !errors.Is(err, ErrLockedByEnvironment) {
 		t.Fatalf("turning on under VERSION_CHECK_ENABLED=false: %v, want ErrLockedByEnvironment", err)
 	}
 	if len(settings.rows) != 0 {
@@ -127,7 +127,7 @@ func TestEnvironmentOffIsACeiling(t *testing.T) {
 		t.Fatalf("view = %+v", v)
 	}
 	// Turning it off is always allowed.
-	if err := svc.SetEnabled(context.Background(), false, shared.NewID()); err != nil {
+	if err := svc.UpdateEnabled(context.Background(), false, shared.NewID()); err != nil {
 		t.Fatalf("turning off: %v", err)
 	}
 }

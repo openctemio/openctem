@@ -29,7 +29,7 @@ import (
 type VersionCheckService interface {
 	View(ctx context.Context) (versioncheck.View, error)
 	Import(ctx context.Context, raw []byte) (*releasefeed.Verified, error)
-	SetEnabled(ctx context.Context, enabled bool, by shared.ID) error
+	UpdateEnabled(ctx context.Context, enabled bool, by shared.ID) error
 }
 
 // VersionCheckSwitchRequest turns the daily online check on or off.
@@ -64,7 +64,7 @@ func (h *AdminVersionCheckHandler) SetEnabled(w http.ResponseWriter, r *http.Req
 		apierror.BadRequest("Send {\"enabled\": true|false}").WriteJSON(w)
 		return
 	}
-	err := h.svc.SetEnabled(r.Context(), *req.Enabled, actor.ID())
+	err := h.svc.UpdateEnabled(r.Context(), *req.Enabled, actor.ID())
 	switch {
 	case errors.Is(err, versioncheck.ErrLockedByEnvironment):
 		h.auditSwitch(r, actor, *req.Enabled, http.StatusConflict, "locked by VERSION_CHECK_ENABLED")

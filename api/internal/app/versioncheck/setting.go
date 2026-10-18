@@ -70,9 +70,9 @@ func (s *Service) stored(ctx context.Context) (Setting, bool, error) {
 	return st, true, nil
 }
 
-// SetEnabled stores the console switch for the administrator by. Turning it
+// UpdateEnabled stores the console switch for the administrator by. Turning it
 // on is refused while the environment forbids it.
-func (s *Service) SetEnabled(ctx context.Context, enabled bool, by shared.ID) error {
+func (s *Service) UpdateEnabled(ctx context.Context, enabled bool, by shared.ID) error {
 	if s.settings == nil {
 		return errors.New("version check: console setting store is not configured")
 	}
