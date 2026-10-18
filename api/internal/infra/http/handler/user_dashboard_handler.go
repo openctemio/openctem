@@ -762,7 +762,7 @@ func (h *UserDashboardHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrConflict):
 		apierror.Conflict(strings.TrimPrefix(err.Error(), shared.ErrConflict.Error()+": ")).WriteJSON(w)
 	default:
-		h.logger.Error("dashboard error", "error", err)
+		h.logger.Error("dashboard error", "error", sanitizeLogField(err.Error()))
 		apierror.InternalServerError("internal error").WriteJSON(w)
 	}
 }
