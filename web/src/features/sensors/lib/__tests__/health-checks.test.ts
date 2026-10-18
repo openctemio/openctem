@@ -73,6 +73,32 @@ describe('sensorHealthChecks', () => {
     expect(c.protocol).toBeUndefined() // the API does not report it yet
   })
 
+  it('says "latest" may be out of date when the platform only has its built-in release line', () => {
+    const builtIn = {
+      ...ctx,
+      channel: {
+        products: [
+          {
+            id: 'openctemio-sensor',
+            latest_version: 'v0.4.2',
+            min_version: 'v0.4.0',
+            image: '',
+            latest_source: 'built_in' as const,
+          },
+        ],
+      },
+    }
+    const c = byKey(sensorHealthChecks(sensor(), builtIn))
+    expect(c.version.status).toBe('ok')
+    expect(c.version.text).toContain('the newest release this platform knows')
+    // From the release feed: a plain "latest".
+    const fed = {
+      ...builtIn,
+      channel: { products: [{ ...builtIn.channel.products[0], latest_source: 'feed' as const }] },
+    }
+    expect(byKey(sensorHealthChecks(sensor(), fed)).version.text).toBe('v0.4.2, the latest release')
+  })
+
   it('says what is wrong and offers the fix', () => {
     const c = byKey(
       sensorHealthChecks(
