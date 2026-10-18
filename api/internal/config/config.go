@@ -2507,11 +2507,10 @@ func (c *Config) validateProductionAuth() error {
 			return fmt.Errorf("AUTH_REQUIRE_EMAIL_VERIFICATION must be true in production")
 		}
 		// Open sign-up on the internet needs a CAPTCHA, or an explicit
-		// acceptance of running without one.
-		if c.Auth.SignupMode == SignupModeOpen && strings.TrimSpace(c.Auth.CaptchaTurnstileSecret) == "" &&
-			c.Auth.SignupCaptcha != SignupCaptchaOffAccepted {
-			return fmt.Errorf("SIGNUP_MODE=open in production needs CAPTCHA_TURNSTILE_SECRET and CAPTCHA_TURNSTILE_SITE_KEY (or SIGNUP_CAPTCHA=%s to accept open sign-up without a CAPTCHA)", SignupCaptchaOffAccepted)
-		}
+		// acceptance of running without one (SIGNUP_CAPTCHA). The keys may
+		// be set in the console after start, so this is enforced at runtime:
+		// open sign-up stays closed while no CAPTCHA is configured
+		// (signup.Service.SetCaptchaReady).
 		// Validate SameSite policy
 		switch c.Auth.CookieSameSite {
 		case "strict", "lax":

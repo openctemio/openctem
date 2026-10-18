@@ -7,6 +7,7 @@ import { ErrorState, PageHeader } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useSelfServiceLimits } from '@console/features/admin-console/api/use-limits'
 import { SelfServiceLimitsForm } from '@console/features/admin-console/components/self-service-limits-form'
+import { StorageQuotaCard } from '@console/features/admin-console/components/storage-quota-card'
 import { adminCan } from '@console/features/admin-console/types'
 
 /**
@@ -44,6 +45,7 @@ export default function LimitsPage() {
             onSaved={() => void mutate()}
           />
         )}
+        <StorageQuotaCard canEdit={adminCan(me.role, 'super_admin')} />
       </div>
     </Main>
   )

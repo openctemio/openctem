@@ -231,7 +231,7 @@ func (r *LimitsRepository) ReplaceOrigin(ctx context.Context, tenantID shared.ID
 // findings limit applies: the count runs over the largest table, so an
 // organization without that limit never pays for it.
 func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFindings bool) (map[limits.Key]int, error) {
-	var seats, assets, sensors, keys, trusts, invites, subStatuses, schemes int
+	var seats, assets, sensors, keys, trusts, invites, subStatuses, schemes, storageMB int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
 		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'),
@@ -241,8 +241,9 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		  (SELECT count(*) FROM ci_trust_configs WHERE tenant_id = $1),
 		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours'),
 		  (SELECT count(*) FROM lifecycle_sub_statuses WHERE tenant_id = $1 AND archived_at IS NULL),
-		  (SELECT count(*) FROM lifecycle_schemes WHERE tenant_id = $1 AND archived_at IS NULL)`,
-		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites, &subStatuses, &schemes)
+		  (SELECT count(*) FROM lifecycle_schemes WHERE tenant_id = $1 AND archived_at IS NULL),
+		  (SELECT CEIL(COALESCE(SUM(size), 0) / 1048576.0)::int FROM attachments WHERE tenant_id = $1)`,
+		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites, &subStatuses, &schemes, &storageMB)
 	if err != nil {
 		return nil, fmt.Errorf("count usage: %w", err)
 	}
@@ -250,6 +251,7 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		limits.Seats: seats, limits.Assets: assets, limits.Sensors: sensors,
 		limits.APIKeys: keys, limits.CITrusts: trusts, limits.InvitesPerDay: invites,
 		limits.LifecycleSubStatuses: subStatuses, limits.LifecycleSchemes: schemes,
+		limits.StorageMB: storageMB,
 	}
 	// Shared-sensor scans started today (UTC): one per run (a run's chunks
 	// count once), or per command outside a run.

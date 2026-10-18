@@ -19,7 +19,9 @@ import {
   filterConfig,
   type ConfigFilter,
 } from '@console/features/admin-console/lib/configuration'
-import type { ConfigurationItem } from '@console/features/admin-console/types'
+import { adminCan, type ConfigurationItem } from '@console/features/admin-console/types'
+import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
+import { DeploymentRegionCard } from '@console/features/admin-console/components/deployment-region-card'
 
 /**
  * Settings -> Configuration (RFC-022 revision 22): every operator setting,
@@ -29,6 +31,7 @@ import type { ConfigurationItem } from '@console/features/admin-console/types'
  */
 export default function ConfigurationPage() {
   const { t } = useTranslation()
+  const me = useAdmin()
   const { data, error, isLoading, mutate } = useConfiguration()
   const [filter, setFilter] = useState<ConfigFilter>('all')
   const items = useMemo(() => filterConfig(data?.data ?? [], filter), [data, filter])
@@ -43,6 +46,7 @@ export default function ConfigurationPage() {
         )}
       />
       <div className="mt-5 space-y-4">
+        <DeploymentRegionCard canEdit={adminCan(me.role, 'super_admin')} />
         <Tabs value={filter} onValueChange={(v) => setFilter(v as ConfigFilter)}>
           <TabsList className="flex-wrap">
             <TabsTrigger value="all">{t('admin.config.filter.all', 'All')}</TabsTrigger>
@@ -118,6 +122,13 @@ function ConfigRow({ item }: { item: ConfigurationItem }) {
         <p className="text-sm font-medium">{name}</p>
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {item.env_var && <code className="break-all">{item.env_var}</code>}
+          {item.locked_by && (
+            <span>
+              {t('admin.config.lockedBy', 'locked by the server configuration ({name})', {
+                name: item.locked_by,
+              })}
+            </span>
+          )}
           {item.ceiling && (
             <span>
               {t(
@@ -146,6 +157,9 @@ function ConfigRow({ item }: { item: ConfigurationItem }) {
         />
         {item.restart_required && (
           <TonePill tone="warning" label={t('admin.config.restart', 'Restart to change')} />
+        )}
+        {item.locked_by && (
+          <TonePill tone="warning" label={t('admin.config.locked', 'Locked by the server')} />
         )}
         {item.planned && (
           <TonePill tone="muted" label={t('admin.config.planned', 'Moving to the console')} />

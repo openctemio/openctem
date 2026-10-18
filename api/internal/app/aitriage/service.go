@@ -184,6 +184,8 @@ type AITriageService struct {
 	// dataScope applies the Layer 2 data scope to by-result-id reads and bulk
 	// triage requests (nil = unrestricted).
 	dataScope *datascope.Enforcer
+	// platformAI is the console's platform AI provider (nil: environment only).
+	platformAI PlatformAISource
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer.
@@ -223,6 +225,45 @@ type AITriageModuleGuard interface {
 // SetModuleGuard stops auto-triage for a tenant with the ai_triage module
 // off; the manual routes are gated by the route module gate.
 func (s *AITriageService) SetModuleGuard(g AITriageModuleGuard) { s.modules = g }
+
+// PlatformAISource is the console's platform AI provider
+// (platformai.Service), used when no environment key is set.
+type PlatformAISource interface {
+	PlatformAI(ctx context.Context) (provider, model, apiKey string, ok bool)
+}
+
+// SetPlatformAISource wires the console's platform AI provider.
+func (s *AITriageService) SetPlatformAISource(src PlatformAISource) { s.platformAI = src }
+
+// platformReady refuses a request that would use platform AI while none is
+// available, before a triage record is created for a job that cannot run.
+func (s *AITriageService) platformReady(ctx context.Context, mode tenant.AIMode) error {
+	if mode != tenant.AIModePlatform && mode != "" {
+		return nil
+	}
+	if s.platformCfg.IsConfigured() {
+		return nil // the client reports a disabled environment provider itself
+	}
+	if s.platformAI != nil {
+		if _, _, _, ok := s.platformAI.PlatformAI(ctx); ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: platform AI is not set up on this installation; use the organization's own AI key, or ask the platform administrator", shared.ErrForbidden)
+}
+
+// platformOn reports whether platform AI is available: AI_TRIAGE_ENABLED
+// with environment keys, or the console's platform AI turned on.
+func (s *AITriageService) platformOn(ctx context.Context) bool {
+	if s.platformCfg.Enabled {
+		return true
+	}
+	if s.platformCfg.IsConfigured() || s.platformAI == nil {
+		return false
+	}
+	_, _, _, ok := s.platformAI.PlatformAI(ctx)
+	return ok
+}
 
 // SetAuditService sets the audit service for logging AI operations.
 func (s *AITriageService) SetAuditService(auditSvc *auditapp.AuditService) {
@@ -325,6 +366,9 @@ func (s *AITriageService) RequestTriage(ctx context.Context, req TriageRequest) 
 	aiSettings := t.TypedSettings().AI
 	if aiSettings.Mode == tenant.AIModeDisabled {
 		return nil, fmt.Errorf("%w: AI is disabled for this tenant", shared.ErrForbidden)
+	}
+	if err := s.platformReady(ctx, aiSettings.Mode); err != nil {
+		return nil, err
 	}
 
 	// Verify finding exists and belongs to tenant
@@ -952,6 +996,9 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 	if aiSettings.Mode == tenant.AIModeDisabled {
 		return nil, fmt.Errorf("%w: AI is disabled for this tenant", shared.ErrForbidden)
 	}
+	if err := s.platformReady(ctx, aiSettings.Mode); err != nil {
+		return nil, err
+	}
 
 	// Parse user ID if provided
 	var userID *shared.ID
@@ -1076,7 +1123,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 
 // ShouldAutoTriage checks if a finding should be auto-triaged based on tenant settings.
 func (s *AITriageService) ShouldAutoTriage(ctx context.Context, tenantID shared.ID, severity string) (bool, error) {
-	if !s.platformCfg.Enabled {
+	if !s.platformOn(ctx) {
 		return false, nil
 	}
 	if s.modules != nil && s.modules.TenantDisabledModules(ctx, tenantID.String())[moduledom.ModuleAITriage] {
@@ -1691,6 +1738,11 @@ func (s *AITriageService) GetAIConfig(ctx context.Context, tenantID string) (*AI
 		// Use platform config
 		info.Provider = s.platformCfg.PlatformProvider
 		info.Model = s.platformCfg.PlatformModel
+		if !s.platformCfg.IsConfigured() && s.platformAI != nil {
+			if p, m, _, ok := s.platformAI.PlatformAI(ctx); ok {
+				info.Provider, info.Model = p, m
+			}
+		}
 		if info.Provider == "" {
 			info.Provider = "claude" // default
 		}
