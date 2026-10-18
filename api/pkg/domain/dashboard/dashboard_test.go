@@ -14,7 +14,7 @@ func TestNewDashboard(t *testing.T) {
 
 	okWidgets := []Widget{{WidgetType: "risk_summary", X: 0, Y: 0, W: 4, H: 2}}
 
-	manyWidgets := make([]Widget, 51)
+	manyWidgets := make([]Widget, 41)
 	for i := range manyWidgets {
 		manyWidgets[i] = Widget{WidgetType: "tile", X: 0, Y: 0, W: 1, H: 1}
 	}
@@ -94,12 +94,12 @@ func TestDashboardDescriptionAndColumnsRoundTrip(t *testing.T) {
 	}
 
 	// Reconstruct preserves the persisted values.
-	r := Reconstruct(d.ID(), d.TenantID(), d.UserID(), "Board", "note", 3, false, nil, d.CreatedAt(), d.UpdatedAt())
+	r := Reconstruct(Stored{ID: d.ID(), TenantID: d.TenantID(), UserID: d.UserID(), Name: "Board", Description: "note", Columns: 3, CreatedAt: d.CreatedAt(), UpdatedAt: d.UpdatedAt()})
 	if r.Description() != "note" || r.Columns() != 3 {
 		t.Fatalf("reconstruct lost fields: desc=%q cols=%d", r.Description(), r.Columns())
 	}
 	// A zero column_count from an old row falls back to the default.
-	r0 := Reconstruct(d.ID(), d.TenantID(), d.UserID(), "Board", "", 0, false, nil, d.CreatedAt(), d.UpdatedAt())
+	r0 := Reconstruct(Stored{ID: d.ID(), TenantID: d.TenantID(), UserID: d.UserID(), Name: "Board", CreatedAt: d.CreatedAt(), UpdatedAt: d.UpdatedAt()})
 	if r0.Columns() != 2 {
 		t.Fatalf("reconstruct zero columns = %d, want default 2", r0.Columns())
 	}
