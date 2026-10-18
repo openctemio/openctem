@@ -446,7 +446,14 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/version-check", func(r Router) {
 			r.GET("/", vc.Status)
 			r.POST("/import", vc.Import, requireSuper, stepUp("version_check.import"))
+			// Switching the daily check: an egress and privacy decision.
+			r.PUT("/enabled", vc.SetEnabled, requireSuper, stepUp("version_check.switch"))
 		}, adminMiddlewares...)
+	}
+
+	// Configuration overview: any admin reads where each setting comes from.
+	if h.AdminConfiguration != nil {
+		router.GET("/api/v1/admin/configuration", h.AdminConfiguration.List, adminMiddlewares...)
 	}
 
 	if h.AdminContentCatalog != nil {

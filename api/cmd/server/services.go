@@ -1242,6 +1242,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 	}, log)
+	// System > Software updates switches the daily check without a restart;
+	// VERSION_CHECK_ENABLED=false stays a ceiling.
+	if repos.PlatformSetting != nil {
+		s.VersionCheck.SetSettings(repos.PlatformSetting)
+	}
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
 	// transaction (research/22 P0-7, decision E4).

@@ -498,6 +498,8 @@ export type VersionCheckErrorCode =
 /** GET /admin/version-check/: what the release feed says about this instance. */
 export interface VersionCheckStatus {
   enabled: boolean
+  /** VERSION_CHECK_ENABLED=false keeps the online check off; the console cannot turn it on. */
+  locked_by_environment?: boolean
   configured: boolean
   feed_url: string
   source?: 'online' | 'import'
@@ -574,4 +576,31 @@ export interface AdminSystem {
   }
   level: number
   checked_at: string
+}
+
+/** One row of GET /admin/configuration (RFC-022 revision 22). Secrets come back as is_set only. */
+export interface ConfigurationItem {
+  key: string
+  group:
+    | 'instance'
+    | 'sign_in'
+    | 'email'
+    | 'scanning'
+    | 'storage'
+    | 'ai'
+    | 'console'
+    | 'audit'
+    | 'updates'
+  managed: 'console' | 'server'
+  source: 'console' | 'environment' | 'default'
+  value?: string
+  secret?: boolean
+  is_set?: boolean
+  env_var?: string
+  ceiling?: boolean
+  restart_required: boolean
+  page?: string
+  planned?: boolean
+  changed_at?: string
+  changed_by?: string
 }

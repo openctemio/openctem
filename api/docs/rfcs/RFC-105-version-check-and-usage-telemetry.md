@@ -23,7 +23,12 @@ Decision:
    console shows "update available" and, when an advisory affects the running
    version, "security release: upgrade". Offline it fails silently and backs
    off; air-gapped installs import the same signed file in the console;
-   `VERSION_CHECK_ENABLED=false` turns it off.
+   `VERSION_CHECK_ENABLED=false` turns it off. A super admin also switches it
+   in the console (System > Software updates, `PUT
+   /api/v1/admin/version-check/enabled`, step-up, audited
+   `version_check.switched`) without a restart; `VERSION_CHECK_ENABLED=false`
+   stays a ceiling the console cannot raise (409
+   `VERSION_CHECK_LOCKED_BY_ENVIRONMENT`).
 2. **Usage ping: not built.** If it is ever built it is off by default, enabled
    only by a console administrator after seeing the exact JSON it would send,
    aggregate counts only (§8).

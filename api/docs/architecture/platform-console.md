@@ -48,6 +48,28 @@ from the System page: a service that does not answer, a volume below 20%
 certificate close to expiry, and a newer release (a warning when it fixes
 security advisories).
 
+## Configuration page
+
+Settings > Configuration (`GET /api/v1/admin/configuration`, any role,
+`internal/app/configoverview`) lists the operator settings: the ones the
+console manages (applied without a restart, with who changed them and when,
+and a link to the page that changes them) and the main server settings
+(environment or installer, restart needed), each with its source: set in the
+console, set on the server, or the built-in default. A secret (CAPTCHA keys,
+AI provider keys, the audit stream address) is reported only as set or not
+set. Where the environment value bounds a console setting (`SIGNUP_MODE`,
+`VERSION_CHECK_ENABLED=false`) the row says so: the console may tighten it,
+never loosen it. Rows marked "Moving to the console" are server settings
+planned to become console settings.
+
+What stays on the server by design: database and Redis credentials, the
+encryption, fingerprint and session keys, listen addresses, trusted proxies,
+the console's allowed networks (a ceiling), the API plane, trust roots of
+signed content and sensor certificates, the storage backend, the admin audit
+stream and retention, backups and the host firewall. A stolen console
+session must not be able to read a secret, redirect evidence or audit, or
+widen who can reach the console.
+
 ## Settings
 
 The same four settings in every installer (Compose and `setup.sh`, the Helm
