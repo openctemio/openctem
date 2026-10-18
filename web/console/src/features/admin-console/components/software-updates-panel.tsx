@@ -86,11 +86,9 @@ function readText(file: File): Promise<string> {
   })
 }
 
-const COMPONENT_FALLBACK: Record<string, string> = {
-  sensor: 'Scanning sensor',
-  'connector-tenable': 'Tenable.sc connector',
-  sdk: 'Sensor SDK (sdk-go)',
-}
+// Components the console has a name for, under
+// admin.versionCheck.components.name.<id>.
+const NAMED_COMPONENTS: ReadonlySet<string> = new Set(['sensor', 'connector-tenable', 'sdk'])
 
 function dateOnly(iso: string | undefined) {
   return iso ? new Date(iso).toLocaleDateString() : '-'
@@ -144,9 +142,7 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
   // A component the console has no name for (a product added later) shows
   // its id.
   const componentName = (id: string) =>
-    COMPONENT_FALLBACK[id]
-      ? t(`admin.versionCheck.components.name.${id}`, COMPONENT_FALLBACK[id])
-      : id
+    NAMED_COMPONENTS.has(id) ? t(`admin.versionCheck.components.name.${id}`) : id
 
   const doImport = async () => {
     if (!file) return
