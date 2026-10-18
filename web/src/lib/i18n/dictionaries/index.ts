@@ -56,6 +56,7 @@ import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
 import en_sensors from './en/sensors.json'
 import en_settings from './en/settings.json'
+import en_securityOverview from './en/securityOverview.json'
 import en_supportAccess from './en/supportAccess.json'
 import en_riskScore from './en/riskScore.json'
 import en_severity from './en/severity.json'
@@ -115,6 +116,7 @@ import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
 import vi_sensors from './vi/sensors.json'
 import vi_settings from './vi/settings.json'
+import vi_securityOverview from './vi/securityOverview.json'
 import vi_supportAccess from './vi/supportAccess.json'
 import vi_riskScore from './vi/riskScore.json'
 import vi_severity from './vi/severity.json'
@@ -180,6 +182,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   scope: en_scope,
   sensors: en_sensors,
   settings: en_settings,
+  securityOverview: en_securityOverview,
   supportAccess: en_supportAccess,
   severity: en_severity,
   userMenu: en_userMenu,
@@ -242,6 +245,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   scope: vi_scope,
   sensors: vi_sensors,
   settings: vi_settings,
+  securityOverview: vi_securityOverview,
   supportAccess: vi_supportAccess,
   severity: vi_severity,
   userMenu: vi_userMenu,
