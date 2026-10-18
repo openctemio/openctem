@@ -44,6 +44,12 @@ type Captcha interface {
 	Verify(ctx context.Context, token, remoteIP string) (bool, error)
 }
 
+// captchaActivity is a CAPTCHA whose keys change at runtime (the console
+// setting): it is asked only while keys are configured.
+type captchaActivity interface {
+	Active(ctx context.Context) bool
+}
+
 // Mailer sends the requester's emails. Implementations send asynchronously.
 type Mailer interface {
 	Configured() bool
@@ -103,6 +109,16 @@ func ipHash(ip string) string {
 	return crypto.HashToken("access-request-ip:" + ip)
 }
 
+func (s *Service) captchaOn(ctx context.Context) bool {
+	if s.captcha == nil {
+		return false
+	}
+	if a, ok := s.captcha.(captchaActivity); ok {
+		return a.Active(ctx)
+	}
+	return true
+}
+
 // SetSignupRecorder wires the sign-up feed.
 func (s *Service) SetSignupRecorder(r signupevent.Recorder) { s.signups = r }
 
@@ -122,7 +138,7 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) error {
 		domain == "" || len(email) > 254 || strings.Count(email, "@") != 1 || strings.ContainsAny(email, " \t\r\n<>") {
 		return ardom.ErrInvalid
 	}
-	if s.captcha != nil {
+	if s.captchaOn(ctx) {
 		ok, err := s.captcha.Verify(ctx, in.CaptchaToken, in.IP)
 		if err != nil || !ok {
 			return ErrCaptcha

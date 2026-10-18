@@ -48,6 +48,7 @@ const (
 	GroupConsole  = "console"
 	GroupAudit    = "audit"
 	GroupUpdates  = "updates"
+	GroupAlerts   = "alerts"
 )
 
 // Item is one row of the Configuration page.
@@ -69,7 +70,10 @@ type Item struct {
 	EnvVar string `json:"env_var,omitempty"`
 	// Ceiling: the environment value is an upper bound the console can only
 	// tighten (a stolen console session cannot loosen it).
-	Ceiling         bool   `json:"ceiling,omitempty"`
+	Ceiling bool `json:"ceiling,omitempty"`
+	// LockedBy names the environment variable that pins a console setting:
+	// while it is set the console shows the value and cannot change it.
+	LockedBy        string `json:"locked_by,omitempty"`
 	RestartRequired bool   `json:"restart_required"`
 	Page            string `json:"page,omitempty"`
 	// Planned: a server setting scheduled to move into the console.
@@ -100,6 +104,11 @@ func NewBuilder(cfg *config.Config, settings platformsetting.Repository, admins 
 // consoleSetting describes a setting stored in platform_settings.
 type consoleSetting struct {
 	key, group, page, ceilingEnv string
+	// lockEnv: any of these variables, when set, pins the setting.
+	lockEnv []string
+	// defaultEnv: this variable is the default until the console stores a
+	// value.
+	defaultEnv string
 }
 
 // consoleSettings are the settings the console manages today.
@@ -113,6 +122,13 @@ var consoleSettings = []consoleSetting{
 	{key: "shared_sensors", group: GroupScanning, page: "/scanning/platform"},
 	{key: "console_mfa_policy", group: GroupConsole, page: "/system/admin-sign-in"},
 	{key: "version_check", group: GroupUpdates, page: "/system/software-updates", ceilingEnv: "VERSION_CHECK_ENABLED"},
+	{key: "captcha.turnstile", group: GroupSignIn, page: "/system/captcha",
+		lockEnv: []string{"CAPTCHA_TURNSTILE_SECRET", "CAPTCHA_TURNSTILE_SITE_KEY"}},
+	{key: "deployment.region", group: GroupInstance, lockEnv: []string{"DEPLOYMENT_REGION"}}, // set on this page
+	{key: "storage.tenant_quota_mb", group: GroupStorage, page: "/system/limits", defaultEnv: "STORAGE_TENANT_QUOTA_MB"},
+	{key: "alerts.webhook", group: GroupAlerts, page: "/system/alerts"},
+	{key: "ai.platform", group: GroupAI, page: "/system/ai-provider",
+		lockEnv: []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}},
 }
 
 // serverSetting describes a setting read from the environment at start.
@@ -132,20 +148,9 @@ var serverSettings = []serverSetting{
 	{env: "APP_URL", group: GroupInstance, value: func(c *config.Config) string { return c.App.URL }},
 	{env: "ADMIN_PUBLIC_URL", group: GroupConsole, value: func(c *config.Config) string { return c.AdminPublicURL }},
 	{env: "MANAGED_SERVICE", group: GroupInstance, value: func(c *config.Config) string { return boolText(c.App.ManagedService) }},
-	{env: "DEPLOYMENT_REGION", group: GroupInstance, planned: true, value: func(c *config.Config) string { return c.App.Region }},
 	{env: "SIGNUP_MODE", group: GroupSignIn, value: func(c *config.Config) string { return c.Auth.SignupMode }},
-	{env: "CAPTCHA_TURNSTILE_SECRET", group: GroupSignIn, secret: true, planned: true, isSet: func(c *config.Config) bool {
-		return c.Auth.CaptchaTurnstileSecret != "" && c.Auth.CaptchaTurnstileSiteKey != ""
-	}},
 	{env: "SENSOR_PUBLIC_API_URL", group: GroupScanning, planned: true, value: func(c *config.Config) string { return c.SensorConfig.PublicAPIURL }},
 	{env: "STORAGE_PROVIDER", group: GroupStorage, value: func(c *config.Config) string { return c.Storage.Provider }},
-	{env: "STORAGE_TENANT_QUOTA_MB", group: GroupStorage, planned: true, value: func(c *config.Config) string {
-		return strconv.FormatInt(c.Storage.TenantQuotaMB, 10)
-	}},
-	{env: "AI_PLATFORM_PROVIDER", group: GroupAI, planned: true, value: func(c *config.Config) string { return c.AITriage.PlatformProvider }},
-	{env: "AI_PLATFORM_API_KEY", group: GroupAI, secret: true, planned: true, isSet: func(c *config.Config) bool {
-		return c.AITriage.AnthropicAPIKey != "" || c.AITriage.OpenAIAPIKey != "" || c.AITriage.GeminiAPIKey != ""
-	}},
 	{env: "ADMIN_ALLOWED_CIDRS", group: GroupConsole, value: func(c *config.Config) string { return strings.Join(c.AdminPlane.AllowedCIDRs, ", ") }},
 	{env: "ADMIN_ELEVATION", group: GroupConsole, value: func(c *config.Config) string {
 		if c.AdminElevationRequired {
@@ -163,10 +168,7 @@ var serverSettings = []serverSetting{
 
 // envAliases: rows that stand for several variables report environment when
 // any of them is set.
-var envAliases = map[string][]string{
-	"CAPTCHA_TURNSTILE_SECRET": {"CAPTCHA_TURNSTILE_SECRET", "CAPTCHA_TURNSTILE_SITE_KEY"},
-	"AI_PLATFORM_API_KEY":      {"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"},
-}
+var envAliases = map[string][]string{}
 
 // Build returns every row: console settings first, then server settings.
 func (b *Builder) Build(ctx context.Context) ([]Item, error) {
@@ -175,6 +177,12 @@ func (b *Builder) Build(ctx context.Context) ([]Item, error) {
 	for _, cs := range consoleSettings {
 		it := Item{Key: cs.key, Group: cs.group, Managed: ManagedConsole, Source: SourceDefault, Page: cs.page,
 			EnvVar: cs.ceilingEnv, Ceiling: cs.ceilingEnv != ""}
+		if cs.defaultEnv != "" {
+			it.EnvVar = cs.defaultEnv
+			if v, ok := b.lookupEnv(cs.defaultEnv); ok && strings.TrimSpace(v) != "" {
+				it.Source = SourceEnvironment
+			}
+		}
 		if b.settings != nil {
 			st, err := b.settings.Get(ctx, cs.key)
 			switch {
@@ -193,6 +201,13 @@ func (b *Builder) Build(ctx context.Context) ([]Item, error) {
 				if st.UpdatedBy != nil {
 					it.ChangedBy = b.author(ctx, *st.UpdatedBy, authors)
 				}
+			}
+		}
+		for _, name := range cs.lockEnv {
+			if v, ok := b.lookupEnv(name); ok && strings.TrimSpace(v) != "" {
+				it.LockedBy, it.EnvVar, it.Source = name, name, SourceEnvironment
+				it.ChangedAt, it.ChangedBy = nil, ""
+				break
 			}
 		}
 		items = append(items, it)

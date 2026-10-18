@@ -1,6 +1,9 @@
 import {
   ArrowUpCircle,
+  BellRing,
   Bot,
+  BrainCircuit,
+  ShieldQuestion,
   Building2,
   Activity,
   Fingerprint,
@@ -273,6 +276,13 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['limits', 'quotas', 'self-service', 'seats'],
       },
       {
+        title: 'CAPTCHA',
+        i18nKey: 'admin.nav.captcha',
+        url: '/system/captcha',
+        icon: ShieldQuestion,
+        keywords: ['turnstile', 'bots', 'abuse', 'sign-up', 'brute force'],
+      },
+      {
         title: 'E-mail',
         i18nKey: 'admin.nav.email',
         url: '/system/email',
@@ -292,6 +302,20 @@ export const adminNav: AdminNavSection[] = [
         url: '/system/announcements',
         icon: Megaphone,
         keywords: ['maintenance', 'banner', 'notice', 'downtime'],
+      },
+      {
+        title: 'Alerts',
+        i18nKey: 'admin.nav.alerts',
+        url: '/system/alerts',
+        icon: BellRing,
+        keywords: ['webhook', 'paging', 'chat', 'notifications', 'monitoring'],
+      },
+      {
+        title: 'AI provider',
+        i18nKey: 'admin.nav.aiProvider',
+        url: '/system/ai-provider',
+        icon: BrainCircuit,
+        keywords: ['ai', 'llm', 'triage', 'api key', 'model'],
       },
       {
         title: 'AI applications',
