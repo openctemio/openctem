@@ -142,6 +142,24 @@ lifecycle version unchanged.
   and `trg_finding_evidence_single_person_fp_review` (new evidence). See
   [finding status lifecycle](finding-status-lifecycle.md#false-positive-approval-level).
 
+## Dashboard fact functions
+
+Migration `002916_dashboard_fact_tables`; see [dashboards.md](dashboards.md#fact-layer).
+
+- `dash_recompute_asset(p_tenant uuid, p_asset uuid) RETURNS integer` - recomputes F1 (`dash_asset_state`),
+  F2 (`dash_asset_day`) and F3 (`dash_asset_rank`) of one asset from its findings, writing only differences;
+  returns the fact rows changed. The all-zero asset id means findings without an asset.
+- `dash_rebuild_tenant_batch(p_tenant uuid, p_after uuid, p_limit integer) RETURNS uuid` - one step of a
+  tenant rebuild; NULL after the final step. Go: `DashboardFactsRepository.RebuildTenant`.
+- `dash_mark_aged_assets(p_tenant uuid, p_since timestamptz, p_until timestamptz) RETURNS integer` - marks
+  assets whose open findings crossed an age band.
+- `dash_asset_day_ensure_partitions(from_month date, months integer) RETURNS integer` - creates F2 monthly
+  partitions.
+- Helpers shared by recompute and reads: `dash_finding_lens(text)`, `dash_sla_state(text)`,
+  `dash_age_band(text, timestamptz)`, `dash_fix_hours_bucket(double precision)`, `dash_history_start()`.
+- Trigger functions: `dash_mark_from_finding_rows`, `dash_mark_from_finding_update`, `dash_mark_from_asset_rows`,
+  `dash_mark_asset_update`, `dash_mark_from_member_rows`, and `dash_mark_asset(uuid, uuid, smallint)`.
+
 ## Best Practices
 
 1. **Never add a `finding_count` column** - Keep it calculated dynamically
