@@ -66,10 +66,10 @@ export interface ExecutiveSummary {
   p0_resolved_period: number
   p1_open: number
   p1_resolved_period: number
-  sla_compliance_pct: number
+  sla_compliance_pct: number | null
   sla_breached: number
-  mttr_critical_hours: number
-  mttr_high_hours: number
+  mttr_critical_hours: number | null
+  mttr_high_hours: number | null
   crown_jewels_at_risk: number
   regression_count: number
   regression_rate_pct: number

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   coverageState,
   openCountState,
@@ -77,6 +78,7 @@ export function CtemLoop({
   scoping,
   isLoading,
 }: CtemLoopProps) {
+  const { t } = useTranslation()
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
@@ -91,8 +93,10 @@ export function CtemLoop({
   const scanPct = scanCoverage?.coverage_percent ?? 0
   const p0 = summary?.p0_open ?? 0
   const valPct = validationCoverage?.overall_pct ?? 0
-  const slaPct = summary?.sla_compliance_pct ?? 0
-  const kevTotal = threatIntel?.kev?.total_entries ?? 0
+  // Null: no open finding has an SLA, so the share is not measured.
+  const slaPct = summary?.sla_compliance_pct ?? null
+  // The tenant's own exposure to the KEV catalog, never the catalog's size.
+  const kevOpen = threatIntel?.kev?.tenant_open_count ?? 0
 
   const stages: Stage[] = [
     // Scoping opens the Scoping overview and shows its readiness. It used to
@@ -109,7 +113,13 @@ export function CtemLoop({
               <Unit>/{scoping.total} ready</Unit>
             </>
           ),
-          sub: `${scoping.crownJewels} crown jewel${scoping.crownJewels === 1 ? '' : 's'} · ${atRisk} at risk`,
+          sub:
+            scoping.crownJewels === 1
+              ? t('dashboardMetrics.loop.crownSubOne', undefined, { open: atRisk })
+              : t('dashboardMetrics.loop.crownSubMany', undefined, {
+                  n: scoping.crownJewels,
+                  open: atRisk,
+                }),
           flag: scoping.crownJewels === 0 ? 'designate crown jewels' : undefined,
           state: scoping.ready >= scoping.total ? 'good' : 'warn',
         }
@@ -119,10 +129,10 @@ export function CtemLoop({
           href: '/scoping',
           value: (
             <>
-              {atRisk} <Unit>at risk</Unit>
+              {atRisk} <Unit>{t('dashboardMetrics.loop.crownUnit')}</Unit>
             </>
           ),
-          sub: 'crown jewels on an attack path',
+          sub: t('dashboardMetrics.loop.crownFallback'),
           state: atRisk > 0 ? 'crit' : 'good',
         },
     {
@@ -151,7 +161,7 @@ export function CtemLoop({
           {p0} <Unit>P0</Unit>
         </>
       ),
-      sub: `${kevTotal.toLocaleString()} KEV in catalog`,
+      sub: t('dashboardMetrics.loop.openKev', undefined, { n: kevOpen.toLocaleString() }),
       flag: p0 > 0 ? 'exploitable now' : undefined,
       state: openCountState(p0),
     },
@@ -175,13 +185,19 @@ export function CtemLoop({
       href: '/remediation',
       value: (
         <>
-          {slaPct.toFixed(0)}
-          <Unit>%</Unit>
+          {slaPct === null ? (
+            '—'
+          ) : (
+            <>
+              {slaPct.toFixed(0)}
+              <Unit>%</Unit>
+            </>
+          )}
         </>
       ),
-      sub: `SLA · ${summary?.sla_breached ?? 0} breached`,
-      flag: slaPct >= 90 ? 'on track' : undefined,
-      state: slaPct >= 90 ? 'good' : slaPct >= 70 ? 'warn' : 'crit',
+      sub: t('dashboardMetrics.loop.sla', undefined, { n: summary?.sla_breached ?? 0 }),
+      flag: slaPct !== null && slaPct >= 90 ? 'on track' : undefined,
+      state: slaPct === null ? 'good' : slaPct >= 90 ? 'good' : slaPct >= 70 ? 'warn' : 'crit',
     },
   ]
 

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/features/shared'
 import { Crown, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { KevChip } from './kev-chip'
 import { STATE_TEXT } from '../../lib/ctem-colors'
 import type { AttackPathsResponse, ExposureChain } from '../../hooks/use-ctem-dashboard'
@@ -25,6 +26,7 @@ export function AttackPathsCard({
   crownJewelsTotal,
   isLoading,
 }: AttackPathsCardProps) {
+  const { t } = useTranslation()
   const reachable = attackPaths?.summary?.reachable_assets ?? 0
   const crownJewels = attackPaths?.summary?.crown_jewels_at_risk ?? 0
   const topChains = (chains ?? []).slice(0, 4)
@@ -45,7 +47,7 @@ export function AttackPathsCard({
           // None AT RISK is not none designated: say which one it is.
           <EmptyState
             icon={Crown}
-            title="No crown jewels at risk"
+            title={t('dashboardMetrics.attack.none')}
             description={
               crownJewelsTotal
                 ? `${crownJewelsTotal} crown jewel${crownJewelsTotal === 1 ? ' is' : 's are'} designated; no attack path reaches ${crownJewelsTotal === 1 ? 'it' : 'them'}.`
@@ -83,7 +85,9 @@ export function AttackPathsCard({
             <span className={cn('text-3xl font-semibold tabular-nums', STATE_TEXT.crit)}>
               {crownJewels}
             </span>
-            <span className="text-xs text-muted-foreground">crown jewels at risk</span>
+            <span className="text-xs text-muted-foreground">
+              {t('dashboardMetrics.attack.label')}
+            </span>
           </div>
         )}
 
