@@ -24,7 +24,12 @@ var ledgerTableName = regexp.MustCompile(`(^|_)(backup|backups|ledger|archive|le
 
 // ledgerTableAllowlist: table -> the date (YYYY-MM-DD) by which a migration
 // must drop it, with the reason it is kept until then. Keep entries short-lived.
-var ledgerTableAllowlist = map[string]struct{ expires, reason string }{}
+var ledgerTableAllowlist = map[string]struct{ expires, reason string }{
+	"vulnerability_report_content_archive": {
+		expires: "2026-12-31",
+		reason:  "rollback copy of the tenant-report text catalog_report_stubs removed from global CVE rows; drop once that release is final",
+	},
+}
 
 var (
 	sqlLineComment = regexp.MustCompile(`--[^\n]*`)

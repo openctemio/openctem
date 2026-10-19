@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -293,8 +294,9 @@ func (r *CommandRepository) HeldSharedJobsForPlatform(ctx context.Context, senso
 }
 
 // RenewSharedLeasesForPlatform extends the leases of the shared jobs among ids that the
-// shared sensor holds (acknowledged or running), in whatever organization.
-func (r *CommandRepository) RenewSharedLeasesForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (int64, error) {
+// shared sensor holds (acknowledged or running), in whatever organization,
+// whose lease has less than command.LeaseRenewBefore(lease, interval) left.
+func (r *CommandRepository) RenewSharedLeasesForPlatform(ctx context.Context, sensorID shared.ID, ids []string, interval time.Duration) (int64, error) {
 	valid := validIDs(ids)
 	if len(valid) == 0 {
 		return 0, nil
@@ -304,7 +306,9 @@ func (r *CommandRepository) RenewSharedLeasesForPlatform(ctx context.Context, se
 		SET lease_expires_at = NOW() + make_interval(secs => $3)
 		WHERE sensor_id = $1 AND is_platform_job = TRUE
 		  AND status IN ('acknowledged', 'running')
-		  AND id = ANY($2::uuid[])`, sensorID.String(), pq.Array(valid), r.leaseSeconds())
+		  AND id = ANY($2::uuid[])
+		  AND (lease_expires_at IS NULL OR lease_expires_at < NOW() + make_interval(secs => $4))`,
+		sensorID.String(), pq.Array(valid), r.leaseSeconds(), r.renewBeforeSeconds(interval))
 	if err != nil {
 		return 0, fmt.Errorf("failed to renew shared job leases: %w", err)
 	}
