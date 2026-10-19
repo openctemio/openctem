@@ -244,20 +244,30 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 }
 
 // RecordFailedLogin atomically adds one failed attempt and locks the account
-// once the count reaches maxAttempts. Concurrent failures each count.
+// by the backed-off rule of user.LockoutAfter: the maxAttempts-th failure
+// locks for lockout, each further run of maxAttempts failures (including
+// failures while locked) locks for twice as long, up to
+// user.MaxLockoutDuration. Concurrent failures each count.
 func (r *UserRepository) RecordFailedLogin(ctx context.Context, id shared.ID, maxAttempts int, lockout time.Duration) (*time.Time, error) {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
 	var lockedUntil sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
 		UPDATE users
 		SET failed_login_attempts = failed_login_attempts + 1,
 		    locked_until = CASE
-		        WHEN failed_login_attempts + 1 >= $2 THEN NOW() + make_interval(secs => $3)
+		        WHEN failed_login_attempts + 1 >= $2::int
+		         AND (failed_login_attempts + 1 - $2::int) % $2::int = 0
+		        THEN NOW() + make_interval(secs => LEAST(
+		            $3::float8 * power(2, LEAST((failed_login_attempts + 1 - $2::int) / $2::int, $5::int)),
+		            $4::float8))
 		        ELSE locked_until
 		    END,
 		    updated_at = NOW()
 		WHERE id = $1
 		RETURNING locked_until`,
-		id.String(), maxAttempts, lockout.Seconds(),
+		id.String(), maxAttempts, lockout.Seconds(), user.MaxLockoutDuration.Seconds(), user.LockoutMaxDoublings,
 	).Scan(&lockedUntil)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -288,10 +298,13 @@ func (r *UserRepository) RecordSuccessfulLogin(ctx context.Context, id shared.ID
 	return nil
 }
 
-// UpdatePasswordHash sets the password hash and nothing else.
+// UpdatePasswordHash sets the password hash and clears the failed-sign-in
+// count and lock: guesses at the old password say nothing about the new one,
+// and a reset by emailed link is how the owner of a locked account gets back
+// in without waiting out the lock.
 func (r *UserRepository) UpdatePasswordHash(ctx context.Context, id shared.ID, hash string) error {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`, id.String(), hash)
+		`UPDATE users SET password_hash = $2, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW() WHERE id = $1`, id.String(), hash)
 	if err != nil {
 		return fmt.Errorf("update password hash: %w", err)
 	}

@@ -593,41 +593,74 @@ func (r *RemediationSuggestionRepository) GetSuggestion(ctx context.Context, ten
 	return s, nil
 }
 
-// SuggestionMembers lists a suggestion's findings in the scope.
-func (r *RemediationSuggestionRepository) SuggestionMembers(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[remediation.TaskMember], error) {
+// SuggestionMembers lists a suggestion's findings in the scope, with their
+// location, rule, installed version, scanner advice and the active task that
+// holds them now. The fix code of a secret finding is never returned (it
+// may carry the secret).
+func (r *RemediationSuggestionRepository) SuggestionMembers(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[remediation.SuggestionMember], error) {
 	args := []any{tenantID.String(), id.String()}
 	scopeCond, args := dataScopeCond("f.asset_id", scope, args)
-	from := ` FROM remediation_suggestions s
+	joins := ` FROM remediation_suggestions s
 		JOIN findings f ON f.tenant_id = s.tenant_id AND f.id = ANY(s.finding_ids)
-		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
-		WHERE s.tenant_id = $1 AND s.id = $2 AND ` + scopeCond
+		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id`
+	where := ` WHERE s.tenant_id = $1 AND s.id = $2 AND ` + scopeCond
 	var total int64
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*)`+from, args...).Scan(&total); err != nil {
-		return pagination.Result[remediation.TaskMember]{}, fmt.Errorf("count suggestion members: %w", err)
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*)`+joins+where, args...).Scan(&total); err != nil {
+		return pagination.Result[remediation.SuggestionMember]{}, fmt.Errorf("count suggestion members: %w", err)
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT f.id, COALESCE(f.title, f.message, ''), f.severity, f.status,
-		COALESCE(f.priority_class, ''), f.asset_id, COALESCE(a.name, ''), f.sla_deadline`+from+
+		COALESCE(f.priority_class, ''), f.asset_id, COALESCE(a.name, ''), f.sla_deadline,
+		COALESCE(f.rule_id, ''), COALESCE(f.cwe_ids, '{}'::text[]), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
+		COALESCE(f.first_detected_branch, ''), COALESCE(f.network_port, 0), COALESCE(f.network_transport, ''),
+		COALESCE((SELECT array_agg(x.v) FROM (SELECT jsonb_array_elements_text(f.metadata->'affected_assets') AS v
+			WHERE jsonb_typeof(f.metadata->'affected_assets') = 'array' LIMIT 6) x), '{}'::text[]),
+		COALESCE(a.criticality, ''),
+		COALESCE((SELECT p.name FROM software_versions sv
+			JOIN software_products p ON p.id = sv.product_id AND (p.tenant_id IS NULL OR p.tenant_id = f.tenant_id)
+			WHERE sv.id = f.component_id AND (sv.tenant_id IS NULL OR sv.tenant_id = f.tenant_id)),
+			f.metadata->'version_match'->>'product', ''),
+		COALESCE((SELECT sv.raw FROM software_versions sv
+			WHERE sv.id = f.component_id AND (sv.tenant_id IS NULL OR sv.tenant_id = f.tenant_id)),
+			f.metadata->'version_match'->>'version', ''),
+		COALESCE(f.remediation->>'recommendation', ''),
+		CASE WHEN f.finding_type = 'secret' OR f.secret_type IS NOT NULL OR f.source = 'secret' THEN ''
+		     ELSE COALESCE(f.remediation->>'fix_code', '') END,
+		at.id, COALESCE(at.title, '')`+joins+`
+		LEFT JOIN LATERAL (SELECT t.id, t.title FROM remediation_task_members m
+			JOIN remediation_tasks t ON t.tenant_id = m.tenant_id AND t.id = m.task_id
+			WHERE m.tenant_id = f.tenant_id AND m.finding_id = f.id AND m.left_at IS NULL AND m.role = 'primary'
+			LIMIT 1) at ON true`+where+
 		` ORDER BY `+FindingRiskPointsSQL+` DESC, f.sla_deadline ASC NULLS LAST, f.id`+
 		fmt.Sprintf(` LIMIT %d OFFSET %d`, page.Limit(), page.Offset()), args...)
 	if err != nil {
-		return pagination.Result[remediation.TaskMember]{}, fmt.Errorf("list suggestion members: %w", err)
+		return pagination.Result[remediation.SuggestionMember]{}, fmt.Errorf("list suggestion members: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]remediation.TaskMember, 0)
+	out := make([]remediation.SuggestionMember, 0)
 	for rows.Next() {
 		var (
-			m       remediation.TaskMember
-			assetID sql.NullString
-			sla     sql.NullTime
+			m         remediation.SuggestionMember
+			assetID   sql.NullString
+			sla       sql.NullTime
+			cwes      pq.StringArray
+			targets   pq.StringArray
+			taskID    sql.NullString
+			taskTitle string
 		)
-		if err := rows.Scan(&m.FindingID, &m.Title, &m.Severity, &m.Status, &m.PriorityClass, &assetID, &m.AssetName, &sla); err != nil {
-			return pagination.Result[remediation.TaskMember]{}, fmt.Errorf("scan suggestion member: %w", err)
+		if err := rows.Scan(&m.FindingID, &m.Title, &m.Severity, &m.Status, &m.PriorityClass, &assetID, &m.AssetName, &sla,
+			&m.RuleID, &cwes, &m.FilePath, &m.StartLine, &m.Branch, &m.NetworkPort, &m.NetworkTransport, &targets,
+			&m.AssetCriticality, &m.PackageName, &m.InstalledVersion, &m.Recommendation, &m.FixCode, &taskID, &taskTitle); err != nil {
+			return pagination.Result[remediation.SuggestionMember]{}, fmt.Errorf("scan suggestion member: %w", err)
 		}
 		m.AssetID, m.SLADeadline = rtNullID(assetID), rtTimePtr(sla)
+		m.CWEIDs, m.LocationTargets = []string(cwes), []string(targets)
+		if id := rtNullID(taskID); id != nil {
+			m.ActiveTask = &remediation.TaskRef{ID: *id, Title: taskTitle}
+		}
 		out = append(out, m)
 	}
 	if err := rows.Err(); err != nil {
-		return pagination.Result[remediation.TaskMember]{}, fmt.Errorf("list suggestion members: %w", err)
+		return pagination.Result[remediation.SuggestionMember]{}, fmt.Errorf("list suggestion members: %w", err)
 	}
 	return pagination.NewResult(out, total, page), nil
 }

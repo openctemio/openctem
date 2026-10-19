@@ -183,9 +183,13 @@ func NewScanRunSensorSelectorAdapter(selector *sensor.SensorSelector, policy Sha
 	return &scanRunSensorSelectorAdapter{selector: selector, shared: policy}
 }
 
-// SelectSensor implements scanrun.SensorSelector.
+// SelectSensor implements scanrun.SensorSelector. The selector looks at the
+// organization's own sensors; under SelectTenantFirst (routing auto) a step
+// goes to the shared fleet (IsPlatform) when none of them can run the tool
+// at all and the organization may use shared sensors now. An organization
+// whose capable sensors are only busy keeps the work: it is never moved to
+// shared sensors because its own fleet is busy (research/191 W-1).
 func (a *scanRunSensorSelectorAdapter) SelectSensor(ctx context.Context, req scanrun.SelectSensorRequest) (*scanrun.SelectSensorResult, error) {
-	// Make the call with app types
 	appReq := sensor.SelectSensorRequest{
 		TenantID:     req.TenantID,
 		Capabilities: req.Capabilities,
@@ -199,9 +203,13 @@ func (a *scanRunSensorSelectorAdapter) SelectSensor(ctx context.Context, req sca
 		return nil, err
 	}
 
-	return &scanrun.SelectSensorResult{
-		Sensor: result.Sensor,
-	}, nil
+	out := &scanrun.SelectSensorResult{Sensor: result.Sensor}
+	if req.Mode == scanrun.SelectTenantFirst && result.Sensor == nil && result.Queued && !result.TenantBusy {
+		if ok, _ := allowShared(ctx, a.shared, req.TenantID); ok {
+			out.IsPlatform = true
+		}
+	}
+	return out, nil
 }
 
 // CanUsePlatformSensors implements scanrun.SensorSelector.

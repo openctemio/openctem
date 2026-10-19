@@ -126,7 +126,8 @@ func FollowedHeartbeatInterval(control *ControlReport, advisedSeconds int, aware
 }
 
 // Ladder places a sensor on the suspicion ladder at now. The effective
-// deadline is the later of the stored one and last_seen_at + interval: any
+// deadline is the later of the stored one and last_seen_at + interval,
+// capped at last_seen_at + MaxHeartbeatInterval: any
 // authenticated request proves the sensor alive, and a row without a stored
 // deadline falls back to last_seen_at + DefaultHeartbeatInterval. A sensor
 // never seen at all is offline.
@@ -140,6 +141,15 @@ func Ladder(now time.Time, d HeartbeatDeadline) LadderPosition {
 	}
 	if d.DueAt != nil && d.DueAt.After(due) {
 		due = *d.DueAt
+	}
+	// A stored deadline never reaches further than the longest interval the
+	// protocol allows: a far-future value (clock jump, restore, bad write)
+	// must not keep a silent sensor online. Sensors that follow the protocol
+	// never exceed the cap.
+	if d.LastSeenAt != nil {
+		if limit := d.LastSeenAt.Add(MaxHeartbeatInterval); due.After(limit) {
+			due = limit
+		}
 	}
 	if due.IsZero() {
 		return pos
