@@ -91,7 +91,7 @@ func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, sc
 		return nil, 0, sum, fmt.Errorf("list alerts: %w", err)
 	}
 	defer rows.Close()
-	out := make([]threatalert.Alert, 0, per)
+	out := make([]threatalert.Alert, 0)
 	for rows.Next() {
 		var c, p, i int
 		a, err := scanAlert(rows, &c, &p, &i)
