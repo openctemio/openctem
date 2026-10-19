@@ -7,7 +7,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -47,7 +46,6 @@ const metricsFreshness = 5 * time.Minute
 type SensorSelector struct {
 	sensorRepo  sensordom.Repository
 	commandRepo command.Repository
-	sensorState *redis.SensorStateStore
 	logger      *logger.Logger
 
 	// weights drive selectLeastLoaded's scoring. Defaults to the compiled-in
@@ -60,13 +58,11 @@ type SensorSelector struct {
 func NewSensorSelector(
 	sensorRepo sensordom.Repository,
 	commandRepo command.Repository,
-	sensorState *redis.SensorStateStore,
 	log *logger.Logger,
 ) *SensorSelector {
 	return &SensorSelector{
 		sensorRepo:  sensorRepo,
 		commandRepo: commandRepo,
-		sensorState: sensorState,
 		logger:      log.With("service", "sensor_selector"),
 		weights:     sensordom.DefaultLoadBalancingWeights(),
 	}

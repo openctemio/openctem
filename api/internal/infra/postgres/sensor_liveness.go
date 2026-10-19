@@ -202,8 +202,7 @@ func healthStrings(hs []sensor.SensorHealth) []string {
 // minAge ago (never seen counts as long ago). It is the ladder without the
 // health controller's platform-health guard and notifications: the
 // controller is what convicts in normal operation (it moves a sensor to late
-// and stale first); these are the backstops behind MarkStaleSensorsOffline
-// and MarkStaleAsOffline.
+// and stale first); this is the backstop behind MarkStaleSensorsOffline.
 func (r *SensorRepository) convictOffline(ctx context.Context, from []sensor.SensorHealth, minAge time.Duration) ([]shared.ID, error) {
 	now, candidates, err := r.ListLivenessCandidates(ctx)
 	if err != nil {
