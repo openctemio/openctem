@@ -28,21 +28,43 @@
 // left alone, so re-running with -backup-email adds a backup to an existing
 // installation; an organization whose slug exists is reported and left alone.
 //
-// Usage:
+// Accountability: every administrator it creates, replaces (-force) or links
+// (-link) is written in one transaction with an entry in the administrators'
+// hash-chained audit log (admin.created, admin.replaced, admin.relinked; actor
+// bootstrap-admin, with the OS user and host), and the other active
+// administrators are emailed when the platform e-mail is configured (a
+// warning is printed when it is not). -force replaces only the -email
+// administrator and keeps its role unless -role is given; it refuses to bring
+// back an inactive administrator without -role, and to leave the platform with
+// no active super admin. -force-backup replaces the break-glass backup. Each
+// replacement is confirmed by typing the email back on a terminal, or with
+// -yes.
+//
+// Secrets: the temporary passwords and the set-password link are printed once
+// to stdout. When stdout is not a terminal the command refuses to run unless
+// -print-secrets is given. The database credentials come from the
+// environment, never from argv: -db exists for tests only, because a password
+// on the command line shows in ps and the shell history.
+//
+// Usage (DATABASE_URL, or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME with
+// DB_MIGRATE_USER/DB_MIGRATE_PASSWORD, in the environment):
 //
 //	# Create the first administrator and its break-glass backup
-//	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -backup-email=breakglass@example.com
+//	./bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com
 //
 //	# ...and the first organization, owned by a new account
-//	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -backup-email=breakglass@example.com \
+//	./bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com \
 //	    -org-name="Acme Security" -org-owner-email=owner@example.com
 //
 //	# Only the primary (not recommended; prints a warning)
-//	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -no-backup
+//	./bootstrap-admin -email=admin@example.com -no-backup
+//
+//	# Replace a lost primary administrator (asks to type the email back)
+//	./bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com -force
 //
 //	# Link an existing administrator (created before sign-in accounts were
 //	# linked) to a sign-in account, keeping its role and authenticator
-//	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -link
+//	./bootstrap-admin -email=admin@example.com -link
 //
 //	# A single-use enrollment token for the bundled shared sensor (sensor_token.go)
 //	./bootstrap-admin sensor-token -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN
@@ -50,19 +72,22 @@
 //	# Copy the server file storage between local and S3 (storage_migrate.go)
 //	./bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run
 //
-//	# Or via environment variables
-//	DATABASE_URL=postgres://... ADMIN_EMAIL=admin@example.com ADMIN_BACKUP_EMAIL=bg@example.com \
-//	    ORG_NAME="Acme Security" ORG_OWNER_EMAIL=owner@example.com ./bootstrap-admin
+//	# In Compose: a one-shot container attached to the terminal
+//	docker compose run --rm bootstrap-admin -email=admin@example.com -backup-email=bg@example.com
 package bootstrapadmin
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
+	"os/user"
 	"strconv"
 	"strings"
 	"time"
@@ -70,9 +95,9 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/adminbootstrap"
+	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/brand"
@@ -100,115 +125,218 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "verify-audit" {
 		os.Exit(runVerifyAudit(os.Args[2:], os.Stdout, os.Stderr))
 	}
-	dbURL := flag.String("db", "", "Database URL (or set DATABASE_URL env)")
-	email := flag.String("email", "", "Admin email (or set ADMIN_EMAIL env)")
-	name := flag.String("name", "", "Admin name (defaults to email prefix)")
-	role := flag.String("role", "super_admin", "Admin role: super_admin, ops_admin, readonly")
-	backupEmail := flag.String("backup-email", "", "Break-glass backup admin email (or set ADMIN_BACKUP_EMAIL env)")
-	backupName := flag.String("backup-name", "", "Break-glass backup admin name (defaults to email prefix)")
-	noBackup := flag.Bool("no-backup", false, "Do not create a break-glass backup admin (not recommended)")
-	force := flag.Bool("force", false, "Delete and re-create an existing admin with the same email")
-	linkOnly := flag.Bool("link", false, "Only link the existing admin with this email (one from v0.8 or older) to a new sign-in account and reactivate it (keeps role and authenticator)")
-	orgName := flag.String("org-name", "", "Create the first organization with this name (or set ORG_NAME env); needs -org-owner-email")
-	orgSlug := flag.String("org-slug", "", "URL slug of the first organization (or set ORG_SLUG env; derived from -org-name when empty)")
-	orgOwnerEmail := flag.String("org-owner-email", "", "Owner of the first organization (or set ORG_OWNER_EMAIL env); a new account gets a one-time set-password link")
-	orgOwnerName := flag.String("org-owner-name", "", "Owner's display name for a new account (or set ORG_OWNER_NAME env)")
-	flag.Parse()
+	os.Exit(runBootstrap(os.Args[1:], os.Getenv, os.Stdin, os.Stdout, os.Stderr))
+}
 
-	log := logger.New(logger.Config{Level: "warn", Format: "text", Output: os.Stderr})
+// runBootstrap is the admin-creating command (everything but the
+// subcommands). It returns the exit code.
+func runBootstrap(args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("bootstrap-admin", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dbURL := fs.String("db", "", "Database URL. Testing only: the password then shows in ps and the shell history; use DATABASE_URL or DB_* env")
+	email := fs.String("email", "", "Admin email (or set ADMIN_EMAIL env)")
+	name := fs.String("name", "", "Admin name (defaults to email prefix)")
+	role := fs.String("role", "", "Admin role: super_admin, ops_admin, readonly. A new admin defaults to super_admin; with -force the existing role is kept unless -role is given")
+	backupEmail := fs.String("backup-email", "", "Break-glass backup admin email (or set ADMIN_BACKUP_EMAIL env)")
+	backupName := fs.String("backup-name", "", "Break-glass backup admin name (defaults to email prefix)")
+	noBackup := fs.Bool("no-backup", false, "Do not create a break-glass backup admin (not recommended)")
+	force := fs.Bool("force", false, "Delete and re-create the existing -email admin (new account and temporary password; keeps its role unless -role is given; never touches the backup)")
+	forceBackup := fs.Bool("force-backup", false, "Delete and re-create the existing break-glass backup admin (-backup-email)")
+	yes := fs.Bool("yes", false, "Confirm -force/-force-backup without typing the email back (needed without a terminal)")
+	printSecrets := fs.Bool("print-secrets", false, "Print the temporary passwords and set-password link even when stdout is not a terminal (they then reach whatever stdout is: a file, a pipe, a log)")
+	linkOnly := fs.Bool("link", false, "Only link the existing admin with this email (one from v0.8 or older) to a new sign-in account and reactivate it (keeps role and authenticator)")
+	orgName := fs.String("org-name", "", "Create the first organization with this name (or set ORG_NAME env); needs -org-owner-email")
+	orgSlug := fs.String("org-slug", "", "URL slug of the first organization (or set ORG_SLUG env; derived from -org-name when empty)")
+	orgOwnerEmail := fs.String("org-owner-email", "", "Owner of the first organization (or set ORG_OWNER_EMAIL env); a new account gets a one-time set-password link")
+	orgOwnerName := fs.String("org-owner-name", "", "Owner's display name for a new account (or set ORG_OWNER_NAME env)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	fail := func(format string, a ...any) int {
+		msg := fmt.Sprintf(format, a...)
+		if !strings.HasSuffix(msg, "\n") {
+			msg += "\n"
+		}
+		fmt.Fprint(stderr, "Error: "+msg)
+		return 1
+	}
+
+	// The temporary passwords and the set-password link are printed once.
+	// Without a terminal they would land in a container log, a CI log or a
+	// file, so the run is refused before anything is created.
+	if !*printSecrets && !isTerminal(stdout) {
+		return fail("stdout is not a terminal, and this command prints one-time credentials. " +
+			"Run it attached to a terminal (docker compose run --rm bootstrap-admin ...), " +
+			"or pass -print-secrets if the output is meant to be captured. Nothing was changed")
+	}
+
+	log := logger.New(logger.Config{Level: "warn", Format: "text", Output: stderr})
 
 	opts := adminbootstrap.Options{
-		Email:       firstNonEmpty(*email, os.Getenv("ADMIN_EMAIL")),
-		Name:        firstNonEmpty(*name, os.Getenv("ADMIN_NAME")),
+		Email:       firstNonEmpty(*email, getenv("ADMIN_EMAIL")),
+		Name:        firstNonEmpty(*name, getenv("ADMIN_NAME")),
 		Role:        *role,
-		BackupEmail: firstNonEmpty(*backupEmail, os.Getenv("ADMIN_BACKUP_EMAIL")),
-		BackupName:  firstNonEmpty(*backupName, os.Getenv("ADMIN_BACKUP_NAME")),
+		BackupEmail: firstNonEmpty(*backupEmail, getenv("ADMIN_BACKUP_EMAIL")),
+		BackupName:  firstNonEmpty(*backupName, getenv("ADMIN_BACKUP_NAME")),
 		NoBackup:    *noBackup,
 		Force:       *force,
+		ForceBackup: *forceBackup,
+		Yes:         *yes,
 		LinkOnly:    *linkOnly,
+		Actor:       commandActor(getenv),
 
-		OrgName:       firstNonEmpty(*orgName, os.Getenv("ORG_NAME")),
-		OrgSlug:       firstNonEmpty(*orgSlug, os.Getenv("ORG_SLUG")),
-		OrgOwnerEmail: firstNonEmpty(*orgOwnerEmail, os.Getenv("ORG_OWNER_EMAIL")),
-		OrgOwnerName:  firstNonEmpty(*orgOwnerName, os.Getenv("ORG_OWNER_NAME")),
+		OrgName:       firstNonEmpty(*orgName, getenv("ORG_NAME")),
+		OrgSlug:       firstNonEmpty(*orgSlug, getenv("ORG_SLUG")),
+		OrgOwnerEmail: firstNonEmpty(*orgOwnerEmail, getenv("ORG_OWNER_EMAIL")),
+		OrgOwnerName:  firstNonEmpty(*orgOwnerName, getenv("ORG_OWNER_NAME")),
 		// The printed link uses the UI origin the server would put in the
 		// email; without one it prints a <ui-url> placeholder.
-		UIBaseURL: firstNonEmpty(os.Getenv("SMTP_BASE_URL"), os.Getenv("APP_URL")),
+		UIBaseURL: firstNonEmpty(getenv("SMTP_BASE_URL"), getenv("APP_URL")),
 		// The console has its own site; its origin is printed when known.
-		AdminPublicURL: os.Getenv("ADMIN_PUBLIC_URL"),
+		AdminPublicURL: getenv("ADMIN_PUBLIC_URL"),
 		Logger:         log,
 	}
+	if isTerminal(stdin) {
+		opts.Confirm = typedConfirmation(stdin, stderr)
+	}
 	if err := opts.Normalize(); err != nil {
-		fatal("%v", err)
+		return fail("%v", err)
 	}
-	databaseURL := firstNonEmpty(*dbURL, os.Getenv("DATABASE_URL"), databaseURLFromParts())
+	databaseURL := firstNonEmpty(*dbURL, getenv("DATABASE_URL"), databaseURLFrom(getenv))
 	if databaseURL == "" {
-		fatal("Database URL required. Use -db flag, set DATABASE_URL, or set DB_HOST/DB_USER/DB_PASSWORD/DB_NAME env vars")
+		return fail("Database URL required: set DATABASE_URL, or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME env vars")
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
-		fatal("Error connecting to database: %v", err)
+		return fail("Error connecting to database: %v", err)
 	}
 	defer db.Close()
-	if err := db.PingContext(ctx); err != nil {
-		fatal("Error pinging database: %v", err)
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelPing()
+	if err := db.PingContext(pingCtx); err != nil {
+		return fail("Error pinging database: %v", err)
 	}
 
-	opts.OrgSetupMailer = setupMailer(ctx, db, log)
+	// Long enough for the operator to type a confirmation.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	mailer, err := setupMailer(ctx, db, getenv, stdout, log)
+	if err != nil {
+		return fail("%v", err)
+	}
+	if mailer != nil {
+		opts.OrgSetupMailer = mailer
+		opts.Notifier = rosterMailer{email: mailer, appName: firstNonEmpty(getenv("BRAND_NAME"), brand.DefaultName)}
+	}
 
-	if err := adminbootstrap.Run(ctx, db, opts, os.Stdout); err != nil {
-		fatal("%v", err)
+	if err := adminbootstrap.Run(ctx, db, opts, stdout); err != nil {
+		return fail("%v", err)
+	}
+	return 0
+}
+
+// isTerminal reports whether f is a character device (a terminal). Anything
+// that is not an *os.File (a buffer in tests) is not one.
+func isTerminal(f any) bool {
+	file, ok := f.(*os.File)
+	if !ok {
+		return false
+	}
+	st, err := file.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+// typedConfirmation asks for the email of an administrator about to be
+// replaced to be typed back.
+func typedConfirmation(stdin io.Reader, prompt io.Writer) func(string) bool {
+	in := bufio.NewReader(stdin)
+	return func(email string) bool {
+		fmt.Fprintf(prompt, "Type %s to confirm replacing it: ", email)
+		line, err := in.ReadString('\n')
+		if err != nil && line == "" {
+			return false
+		}
+		return strings.EqualFold(strings.TrimSpace(line), email)
 	}
 }
 
-// setupMailer emails the first organization owner's set-password link through
-// the platform e-mail settings (admin console, Settings > E-mail). For a
-// headless install, BOOTSTRAP_SMTP_HOST (with _PORT, _USER, _PASSWORD, _FROM,
-// _FROM_NAME, _STARTTLS) stores those settings first, when none are stored,
-// encrypted with APP_ENCRYPTION_KEY. Without e-mail it returns nil (an untyped
-// nil interface, never a nil *EmailService) and the link is printed instead.
-func setupMailer(ctx context.Context, db *sql.DB, log *logger.Logger) tenantapp.AccountSetupMailer {
-	key := os.Getenv("APP_ENCRYPTION_KEY")
-	if key == "" {
-		return nil
+// commandActor names who ran the command for the audit entry: the account
+// that invoked sudo, else the login user, else the process's own user; and
+// the host (in a container, its host name).
+func commandActor(getenv func(string) string) adminbootstrap.Actor {
+	who := firstNonEmpty(getenv("SUDO_USER"), getenv("USER"), getenv("LOGNAME"))
+	if who == "" {
+		if u, err := user.Current(); err == nil {
+			who = u.Username
+		} else {
+			who = "uid " + strconv.Itoa(os.Getuid())
+		}
 	}
-	enc, err := crypto.NewCipherFromKey(key, os.Getenv("APP_ENCRYPTION_KEY_FORMAT"))
+	host, _ := os.Hostname()
+	return adminbootstrap.Actor{OSUser: who, Hostname: host}
+}
+
+// rosterMailer sends the roster-change notice to the other administrators
+// synchronously (the command exits right after), with the same subject and
+// body as the console's notice.
+type rosterMailer struct {
+	email   *authapp.EmailService
+	appName string
+}
+
+func (m rosterMailer) NotifyRosterChange(ctx context.Context, c adminconsole.RosterChange) error {
+	subject, body := adminconsole.RosterChangeEmail(m.appName, c)
+	sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return m.email.SendReport(sendCtx, "", c.Recipients, subject, body)
+}
+
+// setupMailer returns the platform e-mail sender: it emails the first
+// organization owner's set-password link and tells the other administrators
+// what the run changed (admin console, Settings > E-mail). For a headless
+// install, BOOTSTRAP_SMTP_HOST (with _PORT, _USER, _PASSWORD, _FROM,
+// _FROM_NAME, _STARTTLS) stores those settings first, when none are stored,
+// encrypted with APP_ENCRYPTION_KEY. Without e-mail it returns nil, and the
+// link is printed instead.
+func setupMailer(ctx context.Context, db *sql.DB, getenv func(string) string, out io.Writer, log *logger.Logger) (*authapp.EmailService, error) {
+	key := getenv("APP_ENCRYPTION_KEY")
+	if key == "" {
+		return nil, nil
+	}
+	enc, err := crypto.NewCipherFromKey(key, getenv("APP_ENCRYPTION_KEY_FORMAT"))
 	if err != nil {
-		fatal("APP_ENCRYPTION_KEY is not a valid key")
+		return nil, errors.New("APP_ENCRYPTION_KEY is not a valid key")
 	}
 	svc := platformemail.NewService(postgres.NewPlatformSettingRepository(&postgres.DB{DB: db}), enc, nil, log)
-	if host := os.Getenv("BOOTSTRAP_SMTP_HOST"); host != "" {
-		port, err := strconv.Atoi(firstNonEmpty(os.Getenv("BOOTSTRAP_SMTP_PORT"), "587"))
+	if host := getenv("BOOTSTRAP_SMTP_HOST"); host != "" {
+		port, err := strconv.Atoi(firstNonEmpty(getenv("BOOTSTRAP_SMTP_PORT"), "587"))
 		if err != nil {
-			fatal("BOOTSTRAP_SMTP_PORT is not a number")
+			return nil, errors.New("BOOTSTRAP_SMTP_PORT is not a number")
 		}
 		var password *string
 		if p, ok := os.LookupEnv("BOOTSTRAP_SMTP_PASSWORD"); ok {
 			password = &p
 		}
-		startTLS := os.Getenv("BOOTSTRAP_SMTP_STARTTLS") != "false"
+		startTLS := getenv("BOOTSTRAP_SMTP_STARTTLS") != "false"
 		created, err := svc.Seed(ctx, platformemail.Input{
-			Host: host, Port: port, Username: os.Getenv("BOOTSTRAP_SMTP_USER"), Password: password,
-			From: os.Getenv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(os.Getenv("BOOTSTRAP_SMTP_FROM_NAME"), os.Getenv("BRAND_NAME"), brand.DefaultName), StartTLS: startTLS,
+			Host: host, Port: port, Username: getenv("BOOTSTRAP_SMTP_USER"), Password: password,
+			From: getenv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(getenv("BOOTSTRAP_SMTP_FROM_NAME"), getenv("BRAND_NAME"), brand.DefaultName), StartTLS: startTLS,
 		})
 		if err != nil {
-			fatal("BOOTSTRAP_SMTP_*: %v", err)
+			return nil, fmt.Errorf("BOOTSTRAP_SMTP_*: %w", err)
 		}
 		if created {
-			fmt.Println("Platform e-mail settings stored from BOOTSTRAP_SMTP_* (change them in the admin console, Settings > E-mail).")
+			fmt.Fprintln(out, "Platform e-mail settings stored from BOOTSTRAP_SMTP_* (change them in the admin console, Settings > E-mail).")
 		} else {
-			fmt.Println("Platform e-mail settings already stored; BOOTSTRAP_SMTP_* ignored.")
+			fmt.Fprintln(out, "Platform e-mail settings already stored; BOOTSTRAP_SMTP_* ignored.")
 		}
 	}
-	mailer := authapp.NewEmailService(svc.Sender(), config.SMTPFromEnv(), firstNonEmpty(os.Getenv("BRAND_NAME"), brand.DefaultName), log)
+	mailer := authapp.NewEmailService(svc.Sender(), config.SMTPFromEnv(), firstNonEmpty(getenv("BRAND_NAME"), brand.DefaultName), log)
 	if !mailer.IsConfigured() {
-		return nil
+		return nil, nil
 	}
-	return mailer
+	return mailer, nil
 }
 
 // databaseURLFromParts builds a URL from DB_* variables (containers that use
@@ -247,13 +375,4 @@ func firstNonEmpty(v ...string) string {
 		}
 	}
 	return ""
-}
-
-func fatal(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	if !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	fmt.Fprint(os.Stderr, "Error: "+msg)
-	os.Exit(1)
 }

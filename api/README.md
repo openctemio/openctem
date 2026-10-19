@@ -435,24 +435,34 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
   /app/bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com
 ```
 
-**Standalone binary:**
+**Standalone binary** (the database URL from the environment, never on the
+command line, where `ps` and the shell history would show the password):
 ```bash
-./bootstrap-admin \
-  -db="postgres://user:pass@host:5432/openctem?sslmode=require" \
-  -email=admin@example.com \
-  -backup-email=breakglass@example.com
+read -rs DATABASE_URL && export DATABASE_URL   # postgres://user:pass@host:5432/openctem?sslmode=require
+./bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com
 ```
+
+The temporary passwords (and a set-password link) are printed once, so the
+command refuses to run when stdout is not a terminal unless `-print-secrets`
+is given; the Compose service has no container log. Every administrator it
+creates, replaces or links is recorded in the administrators' hash-chained
+audit log in the same transaction (`admin.created`, `admin.replaced`,
+`admin.relinked`; actor `bootstrap-admin`, with the OS user and host), and the
+other active administrators are emailed when the platform e-mail is configured.
 
 | Flag | Env Var | Description |
 |------|---------|-------------|
-| `-db` | `DATABASE_URL` or `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` | Database connection |
+| `-db` | `DATABASE_URL` or `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` | Database connection: use the env vars; the flag is for tests only (it puts the password in `ps`) |
 | `-email` | `ADMIN_EMAIL` | Admin email (required) |
 | `-name` | `ADMIN_NAME` | Display name (defaults to email prefix) |
-| `-role` | — | `super_admin`, `ops_admin`, `readonly` (primary only) |
+| `-role` | — | `super_admin`, `ops_admin`, `readonly` (primary only). A new admin defaults to `super_admin`; `-force` keeps the existing role unless `-role` is given |
 | `-backup-email` | `ADMIN_BACKUP_EMAIL` | Break-glass backup administrator (required unless `-no-backup`) |
 | `-backup-name` | `ADMIN_BACKUP_NAME` | Backup display name (defaults to email prefix) |
 | `-no-backup` | — | Skip the break-glass backup (not recommended; prints a warning) |
-| `-force` | — | Delete and re-create an existing admin with the same email (and its sign-in account) |
+| `-force` | — | Delete and re-create the existing `-email` admin and its sign-in account (new temporary password, authenticator removed). Never touches the backup. Keeps the role unless `-role` is given; refuses to bring back an inactive admin without `-role`, and to leave no active super admin. Prints the role and status before and after |
+| `-force-backup` | — | The same for the existing break-glass backup (`-backup-email`) |
+| `-yes` | — | Confirm `-force`/`-force-backup` without a terminal; on a terminal the email is typed back instead |
+| `-print-secrets` | — | Print the one-time credentials even when stdout is not a terminal (a file, a pipe, a job log) |
 | `-link` | — | Link an administrator created before sign-in accounts (v0.8 and older) to a new one and reactivate it (keeps role and authenticator) |
 | `-org-name` | `ORG_NAME` | Create the first organization (needs `-org-owner-email`) |
 | `-org-slug` | `ORG_SLUG` | Its URL slug (derived from the name when empty) |
