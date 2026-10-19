@@ -37,6 +37,9 @@ func claimSkipped(reason string, before, after int) {
 	}
 }
 
+// claimPaged counts one extra candidate page read by a claim of mode.
+func claimPaged(mode string) { metrics.CommandClaimPagesTotal.WithLabelValues(mode).Inc() }
+
 // observeHostSplit counts one command split for busy hosts.
 func observeHostSplit() { metrics.CommandHostSplitsTotal.Inc() }
 

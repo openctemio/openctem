@@ -1624,6 +1624,8 @@
   "scans.placement.allBusy": "Số cảm biến có thể nhận: {count}, hiện đều bận. Tác vụ bắt đầu khi có cảm biến rảnh.",
   "scans.placement.someCan": "Số cảm biến có thể nhận: {count} ({busy} đang bận). Tác vụ sẽ sớm bắt đầu.",
   "scans.placement.noSensors": "Tổ chức chưa có cảm biến nào.",
+  "scans.placement.sharedNotUsed": "Cảm biến dùng chung có thể nhận việc này, nhưng lần quét này chỉ chạy trên cảm biến của tổ chức.",
+  "scans.placement.sharedNotAllowed": "Tổ chức này không được dùng cảm biến dùng chung, nên việc này chờ một cảm biến của chính tổ chức.",
   "scans.placement.noneCan": "Không cảm biến nào trong {count} cảm biến nhận được:",
   "scans.placement.truncated": "Chỉ kiểm tra những cảm biến đầu tiên theo tên.",
   "scans.placement.perSensor": "Từng cảm biến ({count})",
