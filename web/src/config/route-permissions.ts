@@ -96,6 +96,7 @@ export const Module = {
   ScanWorkflows: 'scan_workflows',
   AttackSimulation: 'attack_simulation',
   ControlTesting: 'control_testing',
+  AITriage: 'ai_triage',
 } as const
 
 /**
@@ -719,6 +720,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   '/settings/api-keys': {
     permission: Permission.ApiKeysRead,
+  },
+  // AI triage consent: owners and administrators read and change it (api
+  // RequireTeamAdmin + settings:read / settings:write).
+  '/settings/ai': {
+    permission: Permission.SettingsRead,
+    module: Module.AITriage,
   },
   // MCP access is issued as API keys (oct_ keys).
   '/settings/mcp': {

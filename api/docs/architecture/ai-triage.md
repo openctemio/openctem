@@ -35,6 +35,24 @@ administrator turns it on in Settings > AI), `platform_not_configured` (a
 platform administrator sets up a provider in the console) or
 `budget_exhausted`. It also returns the month's platform token use and limit.
 
+## Web UI
+
+- **Settings > AI** (`web/src/app/(dashboard)/settings/ai`, Security group,
+  module `ai_triage`): the on/off switch with a consent dialog, what is sent,
+  the pentest data policy, the provider and the month's token use. Read-only
+  for anyone who may not change it; a notice when no provider is set up.
+- **AI triage button** (finding header): hidden when the module is off. When
+  AI cannot run, it stays visible but disabled-looking and opens a short
+  explanation instead: off for the organization (owners and administrators
+  get a link to Settings > AI, members are told to ask one), no provider on
+  the installation (a platform administrator sets it up in the console), or
+  the monthly allowance used up. A refused request (for example
+  `AI_POLICY_RESTRICTED`) and a failed triage show a translated message for
+  their code; one toast per run.
+- The Overview tab shows the false-positive likelihood (older activity rows,
+  which stored the model's confidence that the finding is real, are shown as
+  the inverse band).
+
 ## Cost controls
 
 - Monthly budget per organization for platform AI (`ai_triage_budgets`), on

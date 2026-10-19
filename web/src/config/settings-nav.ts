@@ -64,6 +64,7 @@ import {
   Settings2,
   Shield,
   SlidersHorizontal,
+  Sparkles,
   ShieldAlert,
   ShieldCheck,
   ShieldHalf,
@@ -334,6 +335,20 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: LifeBuoy,
         permission: Permission.TeamUpdate,
         keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
+      },
+      {
+        // The organization's consent to AI triage (api: GET/PUT
+        // /tenants/{tenant}/settings/ai, owners and administrators; the PUT
+        // needs a recent sign-in). Nothing goes to an AI provider until it is on.
+        id: 'ai',
+        title: 'AI',
+        description: 'Whether findings may be sent to an AI provider for triage.',
+        url: '/settings/ai',
+        icon: Sparkles,
+        permission: Permission.SettingsRead,
+        module: 'ai_triage',
+        keywords: ['ai', 'llm', 'triage', 'consent', 'opt in', 'provider', 'data', 'privacy'],
+        anchors: [{ id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] }],
       },
       {
         id: 'audit-log',

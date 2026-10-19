@@ -27,7 +27,8 @@ export interface ApiTriageResult {
   completion_tokens?: number
   created_at: string
   completed_at?: string
-  error_message?: string
+  /** Failure code of a failed triage (never raw error text). */
+  error_code?: string
 }
 
 /**
@@ -72,6 +73,8 @@ export interface ApiAIConfigResponse {
   provider: string
   model: string
   is_enabled: boolean
+  /** Why is_enabled is false: not_enabled, platform_not_configured, budget_exhausted. */
+  reason?: string
   auto_triage_enabled: boolean
   auto_triage_severities?: string[]
   monthly_token_limit: number
