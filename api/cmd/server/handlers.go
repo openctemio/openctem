@@ -831,6 +831,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Outbox.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.Integration.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.PriorityRule.SetAuditService(svc.Audit)
+	handlers.CompensatingControl.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.AssetOwner.SetAttributeLocker(svc.Asset)

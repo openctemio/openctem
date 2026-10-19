@@ -349,6 +349,11 @@ func planAdmins(ctx context.Context, db *sql.DB, o Options, specs []adminSpec) (
 				// Never change the role as a side effect of a re-create.
 				s.Role = st.Role
 			}
+			// Nor the break-glass mark: -email naming the backup replaces it
+			// as the backup, not as an ordinary administrator.
+			if st.BreakGlass {
+				s.BreakGlass = true
+			}
 			plan = append(plan, planStep{spec: s, existing: st, action: actionReplace})
 		}
 	}
