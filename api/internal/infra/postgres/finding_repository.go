@@ -744,7 +744,9 @@ func findingUpsertConflictSQL() string {
 			title = COALESCE(EXCLUDED.title, findings.title),
 			description = COALESCE(EXCLUDED.description, findings.description),
 			message = EXCLUDED.message,
-			severity = EXCLUDED.severity,
+			-- An analyst's severity override stands: the reported severity
+			-- then moves source_severity only.
+			` + reportedSeveritySetSQL("findings.", "EXCLUDED.severity") + `,
 			scan_id = EXCLUDED.scan_id,
 			-- The tool of the sighting moves with scan_id (RFC-043 interim
 			-- auto-resolve guard); tool_name stays the first reporter.
@@ -790,8 +792,13 @@ func findingUpsertConflictSQL() string {
 			epss_percentile = EXCLUDED.epss_percentile,
 			is_in_kev = EXCLUDED.is_in_kev,
 			kev_due_date = EXCLUDED.kev_due_date,
-			priority_class = CASE WHEN findings.priority_class_override THEN findings.priority_class ELSE EXCLUDED.priority_class END,
-			priority_class_reason = CASE WHEN findings.priority_class_override THEN findings.priority_class_reason ELSE EXCLUDED.priority_class_reason END,
+			-- The incoming class was computed from the reported severity: a
+			-- finding with a severity override keeps its own (the
+			-- finding-priority worker recomputes it from the effective one).
+			priority_class = CASE WHEN findings.priority_class_override OR findings.severity_overridden_at IS NOT NULL
+				THEN findings.priority_class ELSE EXCLUDED.priority_class END,
+			priority_class_reason = CASE WHEN findings.priority_class_override OR findings.severity_overridden_at IS NOT NULL
+				THEN findings.priority_class_reason ELSE EXCLUDED.priority_class_reason END,
 			priority_class_override = findings.priority_class_override,
 			priority_class_overridden_by = findings.priority_class_overridden_by,
 			priority_class_overridden_at = findings.priority_class_overridden_at,
@@ -1448,6 +1455,10 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 		var cond string
 		cond, args = dataScopeCond("f.asset_id", filter.DataScope, args)
 		statusFilter += " AND " + cond
+	}
+	if filter.PentestMemberFor != nil {
+		args = append(args, filter.PentestMemberFor.String())
+		statusFilter += " AND " + vulnerability.FindingMemberVisibilitySQL("f", "$1", fmt.Sprintf("$%d::uuid", len(args)))
 	}
 	argN := len(args) + 1
 
@@ -2421,6 +2432,7 @@ func (r *FindingRepository) selectQuery() string {
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
+			` + findingSeverityColumnsSQL + `,
 			branch_only,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
@@ -2565,6 +2577,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	var typeCols findingTypeScan
 	var netCols findingNetworkScan
 	var scanCols findingScannerScan
+	var sevCols findingSeverityScan
 	dests := []any{
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
 		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
@@ -2594,6 +2607,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	dests = append(dests, typeCols.dests()...)
 	dests = append(dests, netCols.dests()...)
 	dests = append(dests, scanCols.dests()...)
+	dests = append(dests, sevCols.dests()...)
 	dests = append(dests, &branchOnly, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
@@ -2641,6 +2655,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	f.RestoreTypeDetails(typeCols.details())
 	f.RestoreNetwork(netCols.location())
 	f.RestoreScannerDetails(scanCols.details())
+	f.RestoreSeverityProvenance(sevCols.provenance())
 	f.RestoreBranchOnly(branchOnly)
 	return f, nil
 }
@@ -3216,6 +3231,10 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
+	}
+	if filter.PentestMemberFor != nil {
+		args = append(args, filter.PentestMemberFor.String())
+		query += " AND " + vulnerability.FindingMemberVisibilitySQL("findings", "$1", fmt.Sprintf("$%d::uuid", len(args)))
 	}
 
 	return r.queryFindingStats(ctx, query, args)
@@ -3985,6 +4004,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
+			` + findingSeverityColumnsSQL + `,
 			branch_only,
 			FALSE AS has_data_flow
 		FROM findings
@@ -4200,7 +4220,10 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		nullString(f.Description()),
 		nullString(f.Snippet()),
 		f.Message(),
-		f.Severity().String(),
+		// The reported severity after the merge; buildBatchEnrichQuery
+		// writes it to severity or, under an analyst override, to
+		// source_severity.
+		f.SourceSeverity().String(),
 		nullFloat64(f.CVSSScore()),
 		nullString(f.CVSSVector()),
 		nullString(f.CVEID()),
@@ -4293,6 +4316,12 @@ func buildBatchEnrichQuery(rowCount int) string {
 			sb.WriteString(", ")
 		}
 		col := enrichColumnDefs[i].name
+		if col == "severity" {
+			// The analyst's override stands; the row's current override is
+			// read here, not the one loaded before the merge.
+			sb.WriteString(reportedSeverityMaxSetSQL("f.", "d.severity"))
+			continue
+		}
 		sb.WriteString(col)
 		if col == "occurrence_count" {
 			// A re-sighting counts one, computed from the row being updated.

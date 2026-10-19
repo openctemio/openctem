@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // CTEMCycleMetricsRepository computes, persists and reads per-cycle CTEM
@@ -62,6 +63,9 @@ func (r *CTEMCycleMetricsRepository) window(
 	return start, end, nil
 }
 
+// remediatedSQL is "a remediated finding" over the bare findings table.
+var remediatedSQL = vulnerability.RemediatedSQL("")
+
 // Compute runs the metric queries over the cycle's active window and
 // returns the values without persisting them.
 func (r *CTEMCycleMetricsRepository) Compute(
@@ -74,19 +78,27 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	tid := tenantID.String()
 	out := ctemcycle.CycleMetricSet{}
 
-	// mttr_hours — mean hours from finding creation to resolution, for
-	// findings resolved within the window.
-	var mttr float64
+	// mttr_hours — mean hours from first detection (the earlier of
+	// first_detected_at and created_at) to resolution, for
+	// findings REMEDIATED within the window (vulnerability.RemediatedSQL: a
+	// false positive, an accepted risk or an obsolete closure is not a fix).
+	// No remediated finding means no sample: the metric is left out (null),
+	// never 0 h, so a charter criterion on it reads not_measurable instead of
+	// passing with nothing fixed.
+	var mttr sql.NullFloat64
 	if err := r.db.QueryRowContext(ctx, `
-		SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0), 0)::double precision
+		SELECT AVG(GREATEST(EXTRACT(EPOCH FROM (resolved_at - LEAST(first_detected_at, created_at))), 0) / 3600.0)::double precision
 		  FROM findings
 		 WHERE tenant_id = $1 AND NOT branch_only
+		   AND `+remediatedSQL+`
 		   AND resolved_at IS NOT NULL
 		   AND resolved_at >= $2 AND resolved_at < $3
 	`, tid, start, end).Scan(&mttr); err != nil {
 		return nil, fmt.Errorf("compute mttr_hours: %w", err)
 	}
-	out[ctemcycle.MetricMTTRHours] = mttr
+	if mttr.Valid {
+		out[ctemcycle.MetricMTTRHours] = mttr.Float64
+	}
 
 	// findings_opened — findings created within the window.
 	var opened int64
@@ -98,11 +110,12 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	}
 	out[ctemcycle.MetricFindingsOpened] = float64(opened)
 
-	// findings_resolved — findings resolved within the window.
+	// findings_resolved — findings remediated within the window.
 	var resolved int64
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM findings
 		 WHERE tenant_id = $1 AND NOT branch_only
+		   AND `+remediatedSQL+`
 		   AND resolved_at IS NOT NULL
 		   AND resolved_at >= $2 AND resolved_at < $3
 	`, tid, start, end).Scan(&resolved); err != nil {
@@ -120,8 +133,9 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	}
 	out[ctemcycle.MetricPClassChurn] = float64(churn)
 
-	// validation_coverage — % of findings resolved in the window that
-	// carry at least one validation_evidence record.
+	// validation_coverage — % of findings remediated in the window that
+	// carry at least one validation_evidence record. Nothing remediated means
+	// no sample: left out (null).
 	var totalClosed, withEvidence int64
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT
@@ -134,16 +148,15 @@ func (r *CTEMCycleMetricsRepository) Compute(
 		  ) AS with_ev
 		FROM findings f
 		WHERE f.tenant_id = $1 AND NOT f.branch_only
+		  AND `+vulnerability.RemediatedSQL("f")+`
 		  AND f.resolved_at IS NOT NULL
 		  AND f.resolved_at >= $2 AND f.resolved_at < $3
 	`, tid, start, end).Scan(&totalClosed, &withEvidence); err != nil {
 		return nil, fmt.Errorf("compute validation_coverage: %w", err)
 	}
-	coverage := 0.0
 	if totalClosed > 0 {
-		coverage = 100.0 * float64(withEvidence) / float64(totalClosed)
+		out[ctemcycle.MetricValidationCoverage] = 100.0 * float64(withEvidence) / float64(totalClosed)
 	}
-	out[ctemcycle.MetricValidationCoverage] = coverage
 
 	// scope_drift_size — new external attack surface this cycle (RFC-036
 	// §6.9): external-surface assets first seen in the window. Names a person
@@ -163,7 +176,7 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	}
 	out[ctemcycle.MetricScopeDriftSize] = float64(drift)
 
-	// p0_resolved / p1_resolved — findings of that priority class resolved
+	// p0_resolved / p1_resolved — findings of that priority class remediated
 	// within the window. Priority class is read as it is now; a finding
 	// re-classified after it was resolved counts under its current class.
 	var p0Resolved, p1Resolved int64
@@ -172,6 +185,7 @@ func (r *CTEMCycleMetricsRepository) Compute(
 		       COUNT(*) FILTER (WHERE priority_class = 'P1')
 		  FROM findings
 		 WHERE tenant_id = $1 AND NOT branch_only
+		   AND `+remediatedSQL+`
 		   AND resolved_at IS NOT NULL
 		   AND resolved_at >= $2 AND resolved_at < $3
 	`, tid, start, end).Scan(&p0Resolved, &p1Resolved); err != nil {

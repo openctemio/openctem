@@ -130,3 +130,41 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 	}
 	return nil
 }
+
+// RelaxForDecision recomputes the deadline of each open finding from its
+// first detection and its current priority class, and moves it LATER when
+// that window ends later than the stored deadline. It is the explicit
+// extension ApplyBatch never makes: only an analyst's severity downgrade
+// that the organization's approval policy allowed calls it
+// (docs/architecture/finding-severity-override.md). Counting from the first
+// detection, not from now, means a downgrade never restarts the clock.
+func (a *Applier) RelaxForDecision(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error {
+	if a.calc == nil {
+		return nil
+	}
+	tid := tenantID.String()
+	for _, f := range findings {
+		if f.IsClosed() {
+			continue
+		}
+		priorityClass := ""
+		if pc := f.PriorityClass(); pc != nil {
+			priorityClass = string(*pc)
+		}
+		assetID := ""
+		if !f.AssetID().IsZero() {
+			assetID = f.AssetID().String()
+		}
+		deadline, err := a.calc.CalculateSLADeadlineForPriority(ctx, tid, assetID, priorityClass, f.Severity(), f.FirstDetectedAt())
+		if err != nil {
+			return fmt.Errorf("sla deadline: %w", err)
+		}
+		if deadline.IsZero() {
+			continue
+		}
+		if old := f.SLADeadline(); old == nil || deadline.After(*old) {
+			f.SetSLADeadline(deadline)
+		}
+	}
+	return nil
+}
