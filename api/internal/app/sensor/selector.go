@@ -38,9 +38,11 @@ var (
 // metricsFreshness bounds how old a sensor's resource metrics may be before
 // the selector stops trusting them. A crashed or wedged sensor keeps its last
 // reported CPU/memory forever; without this guard one bad sample would
-// permanently bias scheduling away from (or towards) that sensor. Sensors
-// heartbeat far more often than this, so fresh sensors are unaffected.
-const metricsFreshness = 5 * time.Minute
+// permanently bias scheduling away from (or towards) that sensor. It is
+// longer than the liveness checkpoint period (with its jitter): with the
+// liveness store in redis mode a steady sensor's metrics reach Postgres
+// only with each checkpoint. A dead sensor is offline long before.
+const metricsFreshness = sensordom.LivenessCheckpointPeriod + 5*time.Minute
 
 // SensorSelector handles intelligent sensor selection for job execution.
 type SensorSelector struct {
