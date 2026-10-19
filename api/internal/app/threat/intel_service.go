@@ -613,7 +613,7 @@ const kevValidatorsKey = "validators"
 // ETag and Last-Modified.
 type kevValidator struct {
 	ETag         string `json:"etag,omitempty"`
-	LastModified string `json:"last_modified,omitempty"`
+	LastModified string `json:"modified,omitempty"`
 }
 
 // readKEVValidators reads the stored validators (any shape a JSON round
@@ -633,7 +633,7 @@ func readKEVValidators(meta map[string]any) map[string]kevValidator {
 			continue
 		}
 		et, _ := m["etag"].(string)
-		lm, _ := m["last_modified"].(string)
+		lm, _ := m["modified"].(string)
 		if len(et) > 256 || len(lm) > 64 {
 			continue
 		}
