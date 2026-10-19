@@ -19,13 +19,14 @@ others see. A hostile or compromised sensor, or just a buggy one, could:
 
 > Shared catalog fields are written only by trusted sources. A tenant's
 > observation is stored on that tenant's own rows, and that tenant's views read
-> it from there. Tenant input can **create** a catalog entry for something
-> nobody has reported yet. It can never **change** an existing one.
+> it from there. Tenant input can **create** an identity-only CVE entry (a
+> stub) for something the feeds do not know yet. It can never **change** an
+> existing one, and it never supplies a CVE's text.
 
 | Data | Trusted writer | Tenant input may | Tenant observation lives on |
 |---|---|---|---|
 | CVE identity (`cve_id`) | — | create the row | — |
-| CVE title, description, CVSS, severity, references, versions, dates | first report (CISA KEV name and description take precedence) | set them only when it creates the row | `findings.title`, `findings.severity`, `findings.cvss_score` |
+| CVE title, description, CVSS, severity, references, versions, dates | the CVE corpus (`cve_records`, from the vulnerability feed); the CISA KEV name and description | nothing: a new row is filled from the corpus, or is an identity stub (title = the id) until the corpus import fills it | `findings.title`, `findings.description`, `findings.severity`, `findings.cvss_score`, `findings.metadata` (references, fixed versions) |
 | `epss_score`, `epss_percentile` | EPSS feed (`epss_scores`) | nothing | `findings.epss_score` (also from the feed, via enrichment) |
 | `cisa_kev_*` | CISA KEV feed (`kev_catalog`) | nothing | `findings.is_in_kev` (also from the feed) |
 | `exploit_available`, `exploit_maturity` | CISA KEV feed (KEV means exploited) | nothing | `findings.exploit_available` (read by the list filter, the CVE groups and the tenant CVE views through one predicate, `vulnerability.FindingExploitAvailableSQL`) |
@@ -37,10 +38,31 @@ others see. A hostile or compromised sensor, or just a buggy one, could:
 ### How it is enforced
 
 - **CVE ingest** (`VulnerabilityRepository.UpsertBatchByCVE`, which also backs
-  `UpsertByCVE`): `INSERT ... ON CONFLICT (cve_id) DO NOTHING`. The risk
-  columns are taken from `LEFT JOIN epss_scores / kev_catalog`, never from the
-  report. The row ids of existing CVEs are read back separately. The old
-  fill-blanks merge and the OR on `exploit_available` are gone.
+  `UpsertByCVE`): `INSERT ... ON CONFLICT (cve_id) DO NOTHING`, with nothing
+  from the report but the CVE id (`CVEProcessor.ProcessBatch` sends no more).
+  A CVE the corpus holds gets the corpus record (`origin = 'nvd'`); any other
+  becomes an identity stub (`origin = 'report'`: title = the id or the CISA KEV
+  name, no description but the KEV one, no CVSS, references, versions,
+  remediation or dates). The risk columns are taken from
+  `LEFT JOIN epss_scores / kev_catalog`, never from the report. The row ids of
+  existing CVEs are read back separately. The old fill-blanks merge and the OR
+  on `exploit_available` are gone.
+- **Stub fill**: the corpus import fills every stub of the CVEs it writes, in
+  the same transaction (`fillCatalogStubsFromCorpus`, from
+  `CVECorpusRepository.ApplyPage` and `ApplyFeedChunk`), and so does the
+  matcher's `EnsureDefinitions`. The fill replaces every content column and
+  clears the ones only a report could have set; the row becomes
+  `origin = 'nvd'`.
+- **Catalog reads** (`GET /api/v1/vulnerabilities`, `/{id}`, `/cve/{cveId}`,
+  and the CVE lookup of `/cve/{cveId}/affected-assets`): feed-backed rows,
+  plus the stubs the caller's own organization's findings link to
+  (`VulnerabilityFilter.CatalogView`, the organization from the authenticated
+  principal). A stub only another organization's report created answers 404,
+  like an unknown CVE: its existence alone would tell that someone reported
+  it. The response carries no `created_at`/`updated_at` and the list never
+  sorts by them (the old sort keys sort by `published_at`/`modified_at`): when
+  a shared row was created tells when some organization first reported or
+  matched the CVE.
 - **Feed propagation**: after every EPSS or KEV sync,
   `ThreatIntelRepository.PropagateToVulnerabilityCatalog` copies the feeds onto
   the catalog. Only rows that differ are written. A CVE that CISA removed
@@ -136,9 +158,9 @@ so they must not decide what another tenant's view shows:
   already see.
 
 Display-only fields (a CVE's title in a list, a component's description) still
-come from the catalog. The first reporter can choose them for a CVE or
-component nobody had seen, but they no longer change any number, filter, sort
-order or flag a tenant acts on.
+come from the catalog. For a CVE they come from the feeds (or are the bare id
+of a stub); a component's description is still the first reporter's, but it
+no longer changes any number, filter, sort order or flag a tenant acts on.
 
 ## Other platform-wide data tenants must not change
 
@@ -181,6 +203,23 @@ The down migration does not restore the cleared risk values: they were written
 by tenant input into a catalog every tenant shares, which is the defect being
 fixed.
 
+## Migration catalog_report_stubs
+
+Global CVE rows a report created before the stub rule (`origin = 'report'`)
+are corrected once:
+
+1. Their report-written content (title, description, severity, CVSS,
+   aliases, references, versions, remediation, dates) is copied to
+   `vulnerability_report_content_archive`, a platform table no API reads.
+2. They are reset to identity stubs.
+3. Those whose CVE the corpus already holds are filled from it
+   (`origin = 'nvd'`); the rest are filled by the next corpus import that
+   brings their CVE.
+
+The reporting organization keeps its own text on its findings, which never
+read it from the catalog row. The down migration restores the archived
+content. A later contract migration drops the archive.
+
 ## What users notice
 
 - On a deployment where the EPSS or KEV sync is off, the catalog's EPSS, KEV
@@ -191,3 +230,7 @@ fixed.
 - An organization can no longer create, edit or delete CVE catalog entries
   through the API (403).
 - A component's description and homepage keep the first value reported.
+- A CVE the vulnerability feed does not know yet shows in the CVE catalog
+  only to the organizations whose findings name it, as its bare id; the
+  scanner's text stays on each organization's findings. It gets its
+  description and CVSS from the next feed import that brings it.
