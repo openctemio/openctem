@@ -158,6 +158,26 @@ func planDocument(res *importer.Result, assetBound bool, out *ImportResult) []pl
 	return plan
 }
 
+// addIssues lists the document's parse issues, at most maxListedIssues.
+func (r *ImportResult) addIssues(doc *importer.Result) {
+	for _, is := range doc.Issues {
+		if len(r.Issues) >= maxListedIssues {
+			break
+		}
+		r.Issues = append(r.Issues, truncate(is.String(), 300))
+	}
+}
+
+// hasFixed reports whether any planned statement has status fixed.
+func hasFixed(plan []plannedStatement) bool {
+	for _, p := range plan {
+		if vexdom.Status(p.vex.Status) == vexdom.StatusFixed {
+			return true
+		}
+	}
+	return false
+}
+
 // primaryVulnID is the statement's CVE when it has one, else its first id.
 func primaryVulnID(ids []ctis.VulnerabilityID) (string, error) {
 	for _, id := range ids {
@@ -184,7 +204,7 @@ func truncate(s string, n int) string {
 // for assetID or, empty, for every asset; then applies them. With dryRun it
 // reports what it would do and writes nothing. A statement the
 // organization wrote by hand for the same subject is never overwritten.
-func (s *Service) Import(ctx context.Context, tenantID shared.ID, assetID string, r io.Reader, dryRun bool,
+func (s *Service) Import(ctx context.Context, tenantID shared.ID, assetID string, r io.Reader, dryRun, canVerify bool,
 	actx auditapp.AuditContext) (*ImportResult, error) {
 	aid, err := parseOptionalID(assetID, "asset_id")
 	if err != nil {
@@ -198,13 +218,13 @@ func (s *Service) Import(ctx context.Context, tenantID shared.ID, assetID string
 		return nil, err
 	}
 	out := &ImportResult{Format: string(doc.Format), DryRun: dryRun, Skipped: []ImportSkip{}, Issues: []string{}, Items: []ImportItem{}}
-	for _, is := range doc.Issues {
-		if len(out.Issues) >= maxListedIssues {
-			break
-		}
-		out.Issues = append(out.Issues, truncate(is.String(), 300))
-	}
+	out.addIssues(doc)
 	plan := planDocument(doc, aid != nil, out)
+	if !canVerify && hasFixed(plan) {
+		// A fixed statement resolves findings: refuse the whole document
+		// before anything is written (a preview included, so it matches).
+		return nil, ErrVerifyRequired
+	}
 	now := s.now()
 	seen := map[string]bool{}
 	var written []*vexdom.Statement

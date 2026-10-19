@@ -57,21 +57,36 @@ var sharedClaimWhere = `commands.is_platform_job = TRUE
 		AND ` + capabilityClaimPredicate("$2") + `
 		AND ` + organizationActiveSQL("commands.tenant_id")
 
+// sharedTenantBurst is how many of one organization's shared jobs a poll
+// offers before the next organization's: jobs are offered in rounds of this
+// many per organization. One organization's deep or old queue therefore never
+// fills the candidate window or the poll, and an organization the claim then
+// skips (not allowed, or at its in-flight limit) cannot starve the others.
+const sharedTenantBurst = 5
+
 // GetSharedPendingForSensor returns the shared jobs the shared sensor may
-// claim now, at most limit, in the shared dispatch order: priority class
-// (one class up per 30 minutes waited, never into critical), then the
-// organization with the fewest shared jobs in flight (shared sensors are
-// shared fairly across organizations), then queue priority and age.
+// claim now, at most limit, in the shared dispatch order: rounds of
+// sharedTenantBurst jobs per organization (each organization's own jobs in
+// class and age order), and within a round priority class (one class up per
+// 30 minutes waited, never into critical), then the organization with the
+// fewest shared jobs in flight, then queue priority and age.
 func (r *CommandRepository) GetSharedPendingForSensor(ctx context.Context, sensorID shared.ID, capabilities []string, limit int) ([]*command.Command, error) {
 	if limit <= 0 {
 		limit = 1
 	}
 	query := `
-		WITH cand AS (
-			SELECT commands.id AS c_id, ` + claimClassSQL + ` AS c_cls
+		WITH elig AS (
+			SELECT commands.id AS c_id, commands.tenant_id AS c_tenant, commands.created_at AS c_at,
+			       ` + claimClassSQL + ` AS c_cls
 			FROM commands
 			WHERE ` + sharedClaimWhere + `
-			ORDER BY c_cls, commands.created_at
+		), ranked AS (
+			SELECT c_id, c_cls, c_at,
+			       (ROW_NUMBER() OVER (PARTITION BY c_tenant ORDER BY c_cls, c_at, c_id) - 1) / ` + fmt.Sprint(sharedTenantBurst) + ` AS c_round
+			FROM elig
+		), cand AS (
+			SELECT c_id, c_cls, c_round FROM ranked
+			ORDER BY c_round, c_cls, c_at, c_id
 			LIMIT ` + fmt.Sprint(fairCandidateWindow) + `
 		), load AS (
 			SELECT l.tenant_id AS l_tenant, count(*) AS l_n
@@ -82,7 +97,7 @@ func (r *CommandRepository) GetSharedPendingForSensor(ctx context.Context, senso
 		` + r.selectQuery() + `
 		JOIN cand ON cand.c_id = commands.id
 		LEFT JOIN load ON load.l_tenant = commands.tenant_id
-		ORDER BY cand.c_cls, COALESCE(load.l_n, 0), commands.queue_priority DESC,
+		ORDER BY cand.c_round, cand.c_cls, COALESCE(load.l_n, 0), commands.queue_priority DESC,
 		         COALESCE(commands.queued_at, commands.created_at), commands.id
 		LIMIT $3`
 	rows, err := r.db.QueryContext(ctx, query, sensorID.String(), pq.Array(capabilities), limit)
