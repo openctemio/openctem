@@ -481,6 +481,14 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `BOOTSTRAP_SMTP_FROM` | string | empty |  |  | `bootstrap-admin`: sender address. |
 | `RELAY_TLS_CERT` | path | empty | yes |  | `openctem-sensor-relay`: path to the relay's server certificate (PEM) presented to sensors. The relay does not start without it. See the sensor relay architecture note. |
 | `RELAY_TLS_KEY` | path | empty | yes | yes | `openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it. |
+| `CONNECTOR_RELAY_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: https URL of the sensor relay the connector takes requests from. |
+| `CONNECTOR_RELAY_PIN` | string | empty |  |  | `openctem-sensor-relay connector`: hex SHA-256 of the relay's public key. When set, the relay's certificate is accepted only if its key matches. |
+| `CONNECTOR_TLS_CERT` | path | empty | yes |  | `openctem-sensor-relay connector`: path to the connector's client certificate (PEM), pinned on the relay. |
+| `CONNECTOR_TLS_KEY` | path | empty | yes | yes | `openctem-sensor-relay connector`: path to the private key (PEM) of `CONNECTOR_TLS_CERT`. |
+| `CONNECTOR_REALM` | string | empty | yes |  | `openctem-sensor-relay connector`: the realm whose requests the connector takes. |
+| `CONNECTOR_INGEST_KEYS` | list | empty | yes | yes | `openctem-sensor-relay connector`: comma-separated paths of the ingest private key files that open the sensors' sealed requests. |
+| `CONNECTOR_RESPONSE_KEY` | path | empty | yes | yes | `openctem-sensor-relay connector`: path to the Ed25519 key that signs the responses. |
+| `CONNECTOR_API_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to. |
 | `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM). |
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
