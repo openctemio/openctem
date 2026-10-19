@@ -21,10 +21,10 @@ const DRAFT_PREFIX = 'openctem:new-scan-draft:'
 const LONG_TARGETS = [
   '*.example.com',
   '*.www.manhnv.com',
-  '*.vndirect.com.vn',
+  '*.example.com',
   'a-very-long-subdomain-name-that-keeps-going-and-going.department.example.com',
   'https://portal.example.com/a/very/long/path/that/should/wrap/or/truncate?with=query&and=more',
-  'trungtamhotrokhachhangvndirectchinhanhhungsi.vndirect.com.vn',
+  'a-very-long-support-center-label-for-a-branch-office.example.com',
 ]
 
 async function openNewScan(page: Page): Promise<Locator> {
