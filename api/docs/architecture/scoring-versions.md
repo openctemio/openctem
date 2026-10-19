@@ -72,10 +72,18 @@ work on restart and was per replica.
 
 Rows are written by:
 
-- triggers: a new open finding, a reopen, a severity or asset change, an
-  asset's criticality, exposure or crown-jewel flag (or restore), business
-  unit and business service membership and criticality, and the settings
-  triggers above;
+- triggers: a new open finding, a reopen, a severity or asset change, a
+  change of a finding's CVE, catalog link, CVSS score, internet or network
+  accessibility, exposure vector, data exposure risk or compliance impact (an
+  open finding only; a write that leaves the value as it was queues nothing),
+  an asset's criticality, exposure, crown-jewel flag (or restore) or CIA impact
+  ratings, an owner added to, removed from or moved between assets (any owner
+  row; the worker re-reads owner presence, so the ownership floor follows at
+  once), business unit and business service membership and criticality, and
+  the settings triggers above. The columns the worker writes itself
+  (`is_reachable`, `reachable_from_count`, EPSS, KEV and the SLA columns) are
+  not watched. `PriorityContext` has a guard test that lists every input and
+  what requeues it, so a new input without a trigger fails the build;
 - producers: compensating control changes, attribution decisions, AI triage
   verdicts and the threat-intel refresh (`ControlChangePublisher`).
 
