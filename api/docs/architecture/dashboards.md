@@ -17,6 +17,30 @@ The facts are built and kept current, but no endpoint reads them yet: the
 dashboard endpoints still aggregate `findings` directly until the widget
 registry ships.
 
+## Current figures and history
+
+A figure labelled as current is always live and counted over the viewer's
+scope; stored snapshots are only the history behind a trend line.
+
+- `GET /dashboard/executive-summary` returns the open counts by priority class
+  (`p0_open` .. `p3_open`, the open lens, their sum is `findings_total`) and
+  `scoped`: true when the figures are counted over the viewer's data scope.
+  The CTEM view's "Open now" bars read these (each bar opens
+  `/findings?state=open&priority_class=Px`); the P0 line and the open-findings
+  trend end at the live count.
+- `GET /dashboard/risk-trend` reads the daily `risk_snapshots`, which are
+  organization-wide. A scoped viewer gets no trend and the web says "Trend not
+  available for your scope" instead of zeros. The chart caption names the date
+  of the last snapshot.
+- "Open findings" has one definition, the open lens (the findings list's
+  `state=open`): `GET /findings/stats` returns `open_count` equal to
+  `by_state.open`, and the scheduled report uses it.
+- Time to remediate is read from one place, `GET /dashboard/mttr-analytics`
+  over 90 days (`overall_hours`), on the Classic card and the Executive page.
+- A failed read shows an error with Retry on the card it feeds; a figure with
+  no denominator (no scannable asset, nothing to validate, no approval
+  decided, nothing fixed) shows "—" with the reason, never 0.
+
 ## Ownership: organization and personal dashboards
 
 Design: [RFC-021](../rfcs/RFC-021-customizable-dashboards.md) (§11 is the ownership model).
