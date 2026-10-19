@@ -62,7 +62,7 @@ func TestFetchKEVFrom_UnexpectedNotModified(t *testing.T) {
 
 func TestReadKEVValidators(t *testing.T) {
 	meta := map[string]any{kevValidatorsKey: map[string]any{
-		kevURL:                   map[string]any{"etag": `"a"`, "last_modified": "Mon, 19 Oct 2026 08:00:00 GMT"},
+		kevURL:                   map[string]any{"etag": `"a"`, "modified": "Mon, 19 Oct 2026 08:00:00 GMT"},
 		"https://evil.example/x": map[string]any{"etag": `"b"`},
 		kevMirrorURL:             "not a map",
 	}}
