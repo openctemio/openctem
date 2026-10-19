@@ -43,16 +43,6 @@ security-endpoints.analyticsEndpoints.riskTrend
 security-endpoints.assetEndpoints.scans
 security-endpoints.findingEndpoints.bySeverity
 security-endpoints.findingEndpoints.history
-security-endpoints.remediationEndpoints.assign
-security-endpoints.remediationEndpoints.create
-security-endpoints.remediationEndpoints.delete
-security-endpoints.remediationEndpoints.get
-security-endpoints.remediationEndpoints.list
-security-endpoints.remediationEndpoints.overdue
-security-endpoints.remediationEndpoints.priority
-security-endpoints.remediationEndpoints.stats
-security-endpoints.remediationEndpoints.update
-security-endpoints.remediationEndpoints.updateStatus
 security-endpoints.reportEndpoints.download
 security-endpoints.reportEndpoints.generate
 security-endpoints.reportEndpoints.get
