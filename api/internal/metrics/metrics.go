@@ -348,6 +348,17 @@ var (
 		[]string{"reason"},
 	)
 
+	// CommandClaimPagesTotal counts the extra candidate pages claims read
+	// because the checks after the query withheld a whole page (research/191
+	// W-2), by mode (poll, shared).
+	CommandClaimPagesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "command_claim_pages_total",
+			Help: "Extra candidate pages claims read because a whole page was withheld, by mode (poll, shared)",
+		},
+		[]string{"mode"},
+	)
+
 	// CommandHostSplitsTotal counts pending commands split at claim time
 	// because some of their hosts were busy: the targets on free hosts
 	// started, the others waited in a new command of the same step.

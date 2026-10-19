@@ -61,8 +61,11 @@ export function SelectionSummary({
     tier,
   })
   const results = check.results ?? []
-  const refused = results.filter((r) => !r.allowed).length
-  const allowed = results.length - refused
+  // "Can be scanned" counts only what the gate lets through; a name that does
+  // not resolve in DNS is counted on its own, not as "may not be scanned".
+  const unresolved = results.filter((r) => !r.allowed && r.code === 'unresolved').length
+  const refused = results.filter((r) => !r.allowed).length - unresolved
+  const allowed = results.length - refused - unresolved
   const over = targets.length > MAX_DIRECT_TARGETS
   const empty = targets.length === 0 && groupCount === 0
 
@@ -100,13 +103,26 @@ export function SelectionSummary({
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />{' '}
                   {t('scans.summary.checking')}
                 </>
-              ) : refused > 0 ? (
+              ) : refused > 0 || unresolved > 0 ? (
                 <>
                   <ShieldAlert className="h-3.5 w-3.5 text-warning" aria-hidden />
-                  {t('scans.summary.inScope', undefined, { count: allowed })} ·{' '}
-                  <span className="text-warning">
-                    {t('scans.summary.mayNotScan', undefined, { count: refused })}
-                  </span>
+                  {t('scans.summary.inScope', undefined, { count: allowed })}
+                  {refused > 0 && (
+                    <>
+                      {' · '}
+                      <span className="text-warning">
+                        {t('scans.summary.mayNotScan', undefined, { count: refused })}
+                      </span>
+                    </>
+                  )}
+                  {unresolved > 0 && (
+                    <>
+                      {' · '}
+                      <span className="text-warning">
+                        {t('scans.summary.unresolved', undefined, { count: unresolved })}
+                      </span>
+                    </>
+                  )}
                 </>
               ) : results.length > 0 ? (
                 <>

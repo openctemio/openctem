@@ -103,9 +103,7 @@ func (t Ticket) check() error {
 }
 
 func signed(payload []byte) []byte {
-	out := make([]byte, 0, len(ticketLabel)+1+len(payload))
-	out = append(out, ticketLabel...)
-	out = append(out, 0)
+	out := append([]byte(ticketLabel), 0)
 	return append(out, payload...)
 }
 

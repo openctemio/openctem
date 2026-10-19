@@ -75,6 +75,9 @@ type Route struct {
 	// OutsideZones is set when the target is uncovered only because no
 	// zone range holds it (as opposed to the deny list or failed DNS).
 	OutsideZones bool
+	// Unresolved is set when a hostname has no address from the platform's
+	// resolver: it cannot be placed in any zone, whatever its scope says.
+	Unresolved bool
 }
 
 // Uncovered is a target that will not be scanned, with the reason.
@@ -154,6 +157,7 @@ func (r *Router) routeTarget(ctx context.Context, target string, pt Target) Rout
 	}
 	addrs := r.resolve(ctx, pt.Host)
 	if len(addrs) == 0 {
+		rt.Unresolved = true
 		rt.Reason = "hostname did not resolve from the platform; zones route hostnames by resolved address, so add the address or fix DNS"
 		return rt
 	}

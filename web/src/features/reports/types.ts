@@ -34,6 +34,16 @@ export interface ReportSchedule {
   next_run_at?: string | null
   run_count: number
   created_at: string
+  /** Creator's user id; absent for a schedule without a recorded creator. */
+  created_by?: string
+  /** Creator's display name (never an email). */
+  created_by_name?: string
+  /**
+   * Whether the caller may pause, resume or delete this schedule: its
+   * creator, or a holder of reports:manage. `recipients` is empty otherwise.
+   */
+  can_manage: boolean
+  recipient_count: number
 }
 
 export interface ReportSchedulesResponse {

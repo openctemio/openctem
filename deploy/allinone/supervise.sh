@@ -12,10 +12,21 @@
 #    the unit. (Deliberately no in-container restart loop: a half-running
 #    appliance that reports healthy is worse than a restart.)
 # 4. SIGTERM/SIGINT: forwarded to all children, then waited for (graceful).
+# 5. isolation: started as root (the image default), the supervisor prepares
+#    the data directories and starts each child under its own uid with
+#    no-new-privileges and no capabilities (api, web, console, gateway), and
+#    each child gets only its own environment (child-env.sh). Only the
+#    supervisor ever holds the schema owner's credentials, and it passes them
+#    to psql/migrate in PGPASSWORD, never on a command line. Started as a
+#    non-root uid (e.g. --user 1001, or a Kubernetes runAsNonRoot policy) every
+#    child shares that uid: one trust domain, fit for evaluation and small
+#    single-tenant installs only (api/docs/deployment/docker.md, "All-in-one
+#    image: process isolation").
 set -euo pipefail
 
 GATEWAY="${GATEWAY:-on}"
 . /usr/local/bin/openctem-console-plan
+. /usr/local/bin/openctem-child-env
 case "$GATEWAY" in on|off) ;; *) echo "[supervise] GATEWAY must be on|off, got '$GATEWAY'" >&2; exit 64 ;; esac
 
 # The gateway's entrypoint refuses incomplete TLS settings too; checking here
@@ -28,8 +39,70 @@ fi
 log() { printf '[supervise] %s\n' "$*"; }
 prefix() { local tag="$1"; while IFS= read -r line || [ -n "$line" ]; do printf '[%s] %s\n' "$tag" "$line"; done; }
 
-# Percent-encodes one URL part (user or password): a value with @ : / ? # or %
-# in it otherwise breaks the URL or changes what it means.
+# Who runs what. As root, each child gets its own user (created in the image);
+# otherwise everything runs as the uid the container was started with.
+ISOLATED=false
+if [ "$(id -u)" = 0 ]; then
+  ISOLATED=true
+  if ! setpriv --reuid=nextjs --regid=nodejs --clear-groups true 2>/dev/null; then
+    echo "[supervise] started as root but cannot switch users (the container needs CAP_SETUID and CAP_SETGID, which Docker grants by default); or start it as --user 1001 to run every process under one uid" >&2
+    exit 64
+  fi
+else
+  log "WARNING: running every process as uid $(id -u): api, web, console and gateway share one trust domain (a compromised web process can read the API's secrets). Start the container as root (the image default) to run each under its own uid; this mode suits evaluation and small single-tenant installs, never a multi-tenant service."
+fi
+child_user() { # child_user <role> -> user:group
+  case "$1" in
+    api) echo openctem-api:openctem-api ;;
+    web) echo nextjs:nodejs ;;
+    console) echo openctem-console:openctem-console ;;
+    gateway) echo openctem-gateway:openctem-gateway ;;
+  esac
+}
+
+# own <dir> <role> <mode>: dir exists, belongs to <role>'s user (recursively,
+# once: only when the top is not theirs yet, e.g. a volume from a release that
+# ran everything as uid 1001) and has <mode>.
+# Runs as root on directories a process could write before, so it never
+# follows a symbolic link: a planted link must not hand a root-owned file
+# (the supervisor itself, say) to a process's user.
+own() {
+  local dir="$1" ug; ug="$(child_user "$2")"
+  if [ -L "$dir" ]; then echo "[supervise] $dir is a symbolic link; refusing to change its owner" >&2; exit 1; fi
+  mkdir -p "$dir"
+  if [ "$(stat -c %U:%G "$dir")" != "$ug" ]; then chown -hR "$ug" "$dir"; fi
+  chmod "$3" "$dir"
+}
+
+# The gateway keeps Caddy's storage in /data/gateway (it used /data until this
+# release): its entrypoint refuses a data directory holding files it does not
+# own, and /data also holds the API's attachments and sensor CA.
+case "${XDG_DATA_HOME:-}" in "" | /data | /data/) export XDG_DATA_HOME=/data/gateway ;; esac
+if [ -d /data/caddy ] && [ ! -e "$XDG_DATA_HOME/caddy" ] && [ "$XDG_DATA_HOME" = /data/gateway ]; then
+  mkdir -p "$XDG_DATA_HOME" && mv /data/caddy "$XDG_DATA_HOME/caddy" && log "moved the gateway's storage from /data/caddy to $XDG_DATA_HOME/caddy"
+fi
+mkdir -p "$XDG_DATA_HOME"
+
+# The gateway's admin API on a unix socket in a directory only the gateway
+# can open, not on 127.0.0.1:2019 where any process in the container (all
+# share one network namespace) could load a new configuration.
+GATEWAY_RUN="$(mktemp -d /tmp/openctem-gateway.XXXXXX)"
+export OPENCTEM_CADDY_ADMIN="unix/$GATEWAY_RUN/admin.sock|0600"
+
+if [ "$ISOLATED" = true ]; then
+  chown root:root /data && chmod 0755 /data
+  case "${STORAGE_LOCAL_PATH:-/data/attachments}" in /data/*) own "${STORAGE_LOCAL_PATH:-/data/attachments}" api 0700 ;; esac
+  case "${SENSOR_MTLS_CA_DIR:-}" in /data/*) own "$SENSOR_MTLS_CA_DIR" api 0700 ;; esac
+  case "$XDG_DATA_HOME" in /data/*) own "$XDG_DATA_HOME" gateway 0700 ;; esac
+  case "${OPENCTEM_CA_EXPORT_DIR:-}" in /data/*) own "$OPENCTEM_CA_EXPORT_DIR" gateway 0755 ;; esac
+  own "${XDG_CONFIG_HOME:-/config}" gateway 0700
+  own "$GATEWAY_RUN" gateway 0700
+  own /opt/openctem/web/.next/cache web 0700
+  own /opt/openctem/console/console/.next/cache console 0700
+fi
+
+# Percent-encodes one URL part (user or database name): a value with @ : / ?
+# # or % in it otherwise breaks the URL or changes what it means.
 urlenc() (
   LC_ALL=C
   s=$1
@@ -44,22 +117,45 @@ urlenc() (
   done
 )
 
-db_url() {
-  if [ -n "${DATABASE_URL:-}" ]; then printf '%s' "$DATABASE_URL"; return; fi
-  printf 'postgres://%s:%s@%s:%s/%s?sslmode=%s' \
-    "$(urlenc "${DB_USER:-openctem}")" "$(urlenc "${DB_PASSWORD:-}")" "${DB_HOST:-postgres}" "${DB_PORT:-5432}" \
-    "$(urlenc "${DB_NAME:-openctem}")" "${DB_SSLMODE:-disable}"
-}
+# Decodes %XX escapes (a password taken out of a URL).
+urldec() (
+  LC_ALL=C
+  s=$1
+  while [ -n "$s" ]; do
+    case $s in
+      %[0-9A-Fa-f][0-9A-Fa-f]*) printf "\\x${s:1:2}"; s=${s:3} ;;
+      *) printf '%s' "${s:0:1}"; s=${s:1} ;;
+    esac
+  done
+)
 
-# Migrations connect as the schema owner (D-6, api/docs/deployment/database-roles.md):
-# DATABASE_MIGRATE_URL, or DB_MIGRATE_USER/DB_MIGRATE_PASSWORD, and the API keeps
-# the least-privilege DB_USER. Without either, migrations use DB_USER as before.
-migrate_url() {
-  if [ -n "${DATABASE_MIGRATE_URL:-}" ]; then printf '%s' "$DATABASE_MIGRATE_URL"; return; fi
-  if [ -z "${DB_MIGRATE_USER:-}" ]; then db_url; return; fi
-  printf 'postgres://%s:%s@%s:%s/%s?sslmode=%s' \
-    "$(urlenc "${DB_MIGRATE_USER}")" "$(urlenc "${DB_MIGRATE_PASSWORD:-}")" "${DB_HOST:-postgres}" "${DB_PORT:-5432}" \
-    "$(urlenc "${DB_NAME:-openctem}")" "${DB_SSLMODE:-disable}"
+# The migrations' connection, schema owner first (D-6,
+# api/docs/deployment/database-roles.md): DATABASE_MIGRATE_URL, else
+# DB_MIGRATE_USER/DB_MIGRATE_PASSWORD, else (as before) the API's own DB_USER /
+# DATABASE_URL. Sets MIG_URL WITHOUT the password and MIG_PASS: psql and
+# migrate read the password from PGPASSWORD, so it never shows in ps or
+# /proc/<pid>/cmdline.
+migrate_conn() {
+  local url="" user pass
+  if [ -n "${DATABASE_MIGRATE_URL:-}" ]; then url="$DATABASE_MIGRATE_URL"
+  elif [ -n "${DB_MIGRATE_USER:-}" ]; then user="$DB_MIGRATE_USER" pass="${DB_MIGRATE_PASSWORD:-}"
+  elif [ -n "${DATABASE_URL:-}" ]; then url="$DATABASE_URL"
+  else user="${DB_USER:-openctem}" pass="${DB_PASSWORD:-}"
+  fi
+  if [ -n "$url" ]; then
+    local re='^([A-Za-z][A-Za-z0-9+.-]*://)([^:@/]*):([^@/]*)@(.*)$'
+    if [[ $url =~ $re ]]; then
+      MIG_URL="${BASH_REMATCH[1]}${BASH_REMATCH[2]}@${BASH_REMATCH[4]}"
+      MIG_PASS="$(urldec "${BASH_REMATCH[3]}")"
+    else
+      MIG_URL="$url" MIG_PASS="${PGPASSWORD:-}"
+    fi
+    return
+  fi
+  MIG_URL="$(printf 'postgres://%s@%s:%s/%s?sslmode=%s' \
+    "$(urlenc "$user")" "${DB_HOST:-postgres}" "${DB_PORT:-5432}" \
+    "$(urlenc "${DB_NAME:-openctem}")" "${DB_SSLMODE:-disable}")"
+  MIG_PASS="$pass"
 }
 
 # Migrations under a lock that NOBODY WAITS ON INSIDE POSTGRES.
@@ -75,7 +171,7 @@ migrate_locked() {
   for i in $(seq 1 150); do
     # (Re)open the session if there is none: the DB may not be up yet.
     if [ -z "${PSQL_PID:-}" ] || ! kill -0 "$PSQL_PID" 2>/dev/null; then
-      coproc PSQL { psql "$(migrate_url)" -qtAX 2>&1; }
+      coproc PSQL { PGPASSWORD="$MIG_PASS" psql "$MIG_URL" -qtAX 2>&1; }
     fi
     fd="${PSQL[1]:-}"
     got=error
@@ -90,7 +186,7 @@ migrate_locked() {
   log "migration lock held; applying migrations"
   # openctem-migrate: migrate, plus what to do with a database older than the
   # migration baseline (api/scripts/migrate-entrypoint.sh).
-  openctem-migrate -path /opt/openctem/api/migrations -database "$(migrate_url)" up 2>&1 | prefix migrate || rc=$?
+  PGPASSWORD="$MIG_PASS" openctem-migrate -path /opt/openctem/api/migrations -database "$MIG_URL" up 2>&1 | prefix migrate || rc=$?
   fd="${PSQL[1]:-}"
   [ -n "$fd" ] && { echo "SELECT pg_advisory_unlock(${MIGRATE_LOCK_KEY});" >&"$fd"; } 2>/dev/null
   kill "$PSQL_PID" 2>/dev/null || true; wait "$PSQL_PID" 2>/dev/null || true
@@ -98,8 +194,12 @@ migrate_locked() {
 }
 
 if [ "${MIGRATE_ON_START:-true}" = "true" ]; then
+  migrate_conn
   migrate_locked || { log "migrations failed; not starting (a dirty schema needs 'migrate force' by an operator)"; exit 1; }
 fi
+# Nothing after the migrations needs the schema owner: drop it here (the
+# children never get it either, child-env.sh).
+unset MIG_PASS MIG_URL DB_MIGRATE_PASSWORD DATABASE_MIGRATE_URL DB_MIGRATE_USER PGPASSWORD 2>/dev/null || true
 
 if [ "$GATEWAY" = on ]; then
   # Only the gateway listens on a routable address.
@@ -132,9 +232,21 @@ cidrs="$(console_allowed_cidrs)"
 [ -z "$cidrs" ] || export ADMIN_ALLOWED_CIDRS="$cidrs"
 
 declare -A PIDS=()
-start() { # start <tag> <dir> <cmd...>
+start() { # start <tag> <dir> <cmd...>; <tag> is also the role (child-env.sh)
   local tag="$1" dir="$2"; shift 2
-  ( cd "$dir" && exec "$@" ) > >(prefix "$tag") 2> >(prefix "$tag" >&2) &
+  (
+    cd "$dir"
+    child_env_scrub "$tag"
+    if [ "$ISOLATED" = true ]; then
+      local ug nnp=--no-new-privs; ug="$(child_user "$tag")"
+      # The gateway's Caddy binds 443 through a file capability, which
+      # no-new-privileges would cancel; it still starts with none of its own.
+      [ "$tag" = gateway ] && nnp=
+      export HOME="$dir"
+      exec setpriv --reuid="${ug%%:*}" --regid="${ug##*:}" --clear-groups --inh-caps=-all $nnp -- "$@"
+    fi
+    exec "$@"
+  ) > >(prefix "$tag") 2> >(prefix "$tag" >&2) &
   PIDS[$tag]=$!
   log "started $tag (pid ${PIDS[$tag]})"
 }
