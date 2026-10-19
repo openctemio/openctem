@@ -6,6 +6,14 @@ import { ApiClientError } from '@/lib/api/error-handler'
 import { AITriageButton } from '../ai-triage-button'
 import type { AIConfig } from '../../types'
 
+// Radix Tooltip/Popover measure themselves on hover; jsdom has no
+// ResizeObserver (without this the click tests fail at random).
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+
 let hasModule = true
 let config: Partial<AIConfig> | undefined
 let role = 'member'
