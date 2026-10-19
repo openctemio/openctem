@@ -400,7 +400,17 @@ echo "== Gateway image with the layer4 module: sensor ALPN and SNI routing (RFC-
 l4image="${GATEWAY_L4_IMAGE:-}"
 if [ -z "$l4image" ]; then
 	l4image="$run-l4"
-	docker build -q -t "$l4image" "$here" >/dev/null
+	# The build downloads Caddy and its modules; one retry covers a proxy
+	# hiccup, and a failure prints the build's own error (quiet mode hides it).
+	buildlog="$(mktemp)"
+	if ! docker build --progress=plain -t "$l4image" "$here" >"$buildlog" 2>&1 &&
+		! docker build --progress=plain -t "$l4image" "$here" >"$buildlog" 2>&1; then
+		tail -60 "$buildlog" >&2
+		rm -f "$buildlog"
+		echo "gateway layer4 image build failed" >&2
+		exit 1
+	fi
+	rm -f "$buildlog"
 fi
 for sg in alpn passthrough; do
 	if docker run --rm -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=203.0.113.10 \
