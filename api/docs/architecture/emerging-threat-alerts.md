@@ -123,6 +123,21 @@ Settings (`settings.emerging_threats`): `disabled`, `immediate_threshold`
 Audit: `tenant.emerging_threats_updated`, `emerging_threat.state_changed`
 (high when a KEV CVE is marked not affected).
 
+## Console (shipped)
+
+- **Prioritization > Emerging threats** (`/emerging-threats`): summary cards,
+  filters (level, state, tier, internet-facing, search), the list by level
+  and score; the alert page shows the score breakdown, the recommended
+  action, exploitation facts, what changed (the public events) and the
+  affected assets by tier with their findings and tasks.
+- Triage (`findings:triage`): acknowledge, remediating, reopen, not affected
+  (reason required; hidden with a hint when assets are outside the viewer's
+  scope). **Create remediation task** (`findings:remediation:write`) from the
+  open findings not yet in a task; findings in a task are listed, not moved.
+- **Settings > Emerging threats** (administrators): every setting above.
+- Code: `web/src/features/emerging-threats/`, strings in
+  `web/src/lib/i18n/dictionaries/{en,vi}/emergingThreats.json`.
+
 ## Key files
 
 | File | What |
