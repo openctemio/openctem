@@ -397,6 +397,11 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 	if err := recordClaimMovesInTx(ctx, tx, t.TenantID, rec.Claimed, rec.ActorID); err != nil {
 		return err
 	}
+	if rec.Query != nil {
+		if err := insertTaskQueryInTx(ctx, tx, t, rec.Query); err != nil {
+			return err
+		}
+	}
 	data := rec.EventData
 	if data == nil {
 		data = map[string]any{}
