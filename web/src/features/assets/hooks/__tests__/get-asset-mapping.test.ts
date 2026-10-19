@@ -37,7 +37,7 @@ const liveGitleaksPayload = {
   discovered_at: '2026-07-14T04:54:45.713383Z',
   pii_data_exposed: false,
   phi_data_exposed: false,
-  is_internet_accessible: false,
+  internet_facing: false,
   sync_status: 'synced',
   first_seen: '2026-07-14T04:54:45.713378Z',
   last_seen: '2026-07-14T05:57:44.236867Z',
@@ -60,7 +60,7 @@ describe('getAsset mapping', () => {
     expect(a.discoveredAt).toBe('2026-07-14T04:54:45.713383Z')
     expect(a.piiDataExposed).toBe(false)
     expect(a.phiDataExposed).toBe(false)
-    expect(a.isInternetAccessible).toBe(false)
+    expect(a.isInternetFacing).toBe(false)
     expect(a.syncStatus).toBe('synced')
     expect(a.metadata).toEqual({ source: 'parse_options' })
   })

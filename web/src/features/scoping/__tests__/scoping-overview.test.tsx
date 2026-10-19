@@ -50,7 +50,7 @@ const LIVE: ScopingSummary = {
   business_services: { total: 3, with_assets: 2 },
   business_units: { total: 4 },
   assets: { total: 69, in_business_unit: 0 },
-  boundary: { targets: 5, exclusions: 3 },
+  boundary: { targets: 5, targets_waiting: 2, exclusions: 3 },
   attacker_profiles: { total: 8 },
   threat_models: { total: 3, crown_jewels_covered: 3 },
   cycles: { total: 1 },
@@ -84,7 +84,10 @@ describe('readinessRows', () => {
     expect(row('crown_jewel_owners')).toMatchObject({ ready: false, value: '3 of 9' })
     expect(row('service_assets')).toMatchObject({ ready: false, value: '2 of 3' })
     expect(row('business_units')).toMatchObject({ ready: false, value: '0 of 69', href: '/assets' })
-    expect(row('boundary')).toMatchObject({ ready: true, value: '5 targets · 3 exclusions' })
+    expect(row('boundary')).toMatchObject({
+      ready: true,
+      value: '5 entries in effect · 3 exclusions · 2 waiting for approval',
+    })
     expect(row('attacker_profiles')).toMatchObject({
       ready: false,
       href: '/cycles/c1?tab=profiles',
