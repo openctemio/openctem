@@ -42,6 +42,8 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
+
+> **Compensating controls.** An effective control lowers the priority and SLA of every finding on the assets it covers, so `ctem:compensating_controls:write` (create, update, delete, record a test, link assets or findings) is held by owners, admins and roles granted it explicitly (the program-lead template); the built-in Member role reads controls only (migration `002950`). Every write is audited (High; findings links Medium).
 | **Total** | **166** | |
 
 > There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and
@@ -1720,6 +1722,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
 | `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
 | `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
+| `POST /findings/{id}/severity-requests/{request_id}/{approve,reject}` (`findings:approve`), `/cancel` (`findings:severity`, requester only) | new | 404 (guard) + `getFindingWithTenantCheck`; the request must belong to that finding and tenant; approve runs the approval policy (never the requester or an asset owner, approver needs the finding in scope) |
 | `PUT/DELETE /findings/{id}/comments/{comment_id}` | bypass | 404 (guard) + comment's finding checked |
 | `POST /comments/{comment_id}/reactions`, `DELETE /comments/{comment_id}/reactions/{emoji}` | (new) | comment resolved by (tenant, id); its finding goes through the comment-list gate (data scope, or pentest campaign membership instead of it; a client reaches client-visible comments only): 404. Removing another member's reaction (`?user_id=`) needs owner/admin and is audited |
 | `PUT/DELETE /assets/{id}`, activate/deactivate/archive, crown-jewel, snooze, sync, scan | **bypass (write)** | 404 (guard) |
