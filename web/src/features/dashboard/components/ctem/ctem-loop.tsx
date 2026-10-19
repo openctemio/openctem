@@ -64,6 +64,11 @@ interface CtemLoopProps {
    */
   scoping?: { ready: number; total: number; crownJewels: number }
   isLoading?: boolean
+  /**
+   * Reads that failed. A stage fed by a failed read shows "—" and says so,
+   * never a confident 0.
+   */
+  errors?: { summary?: unknown; scan?: unknown; validation?: unknown; threat?: unknown }
 }
 
 function Unit({ children }: { children: ReactNode }) {
@@ -77,6 +82,7 @@ export function CtemLoop({
   threatIntel,
   scoping,
   isLoading,
+  errors,
 }: CtemLoopProps) {
   const { t } = useTranslation()
   if (isLoading) {
@@ -161,7 +167,9 @@ export function CtemLoop({
           {p0} <Unit>P0</Unit>
         </>
       ),
-      sub: t('dashboardMetrics.loop.openKev', undefined, { n: kevOpen.toLocaleString() }),
+      sub: t('dashboardMetrics.loop.openKev', undefined, {
+        n: threatIntel ? kevOpen.toLocaleString() : '—',
+      }),
       flag: p0 > 0 ? 'exploitable now' : undefined,
       state: openCountState(p0),
     },
@@ -201,11 +209,50 @@ export function CtemLoop({
     },
   ]
 
+  // A stage whose source failed, or whose figure has no denominator, shows
+  // "—" with the reason instead of 0 %.
+  const failed = t('dashboardMetrics.state.loadFailed', "Couldn't load these figures")
+  const blank = (stage: Stage, sub: string): Stage => ({
+    ...stage,
+    value: '—',
+    sub,
+    flag: undefined,
+    state: 'warn',
+  })
+  const shown = stages.map((s) => {
+    switch (s.index) {
+      case '01':
+        return !scoping && errors?.summary && !summary ? blank(s, failed) : s
+      case '02':
+        if (errors?.scan && !scanCoverage) return blank(s, failed)
+        if (scanCoverage?.total_scannable === 0)
+          return blank(
+            s,
+            t('dashboardMetrics.loop.noScannable', 'No scannable assets in your scope')
+          )
+        return s
+      case '03':
+        return errors?.summary && !summary ? blank(s, failed) : s
+      case '04':
+        if (errors?.validation && !validationCoverage) return blank(s, failed)
+        if (validationCoverage && validationCoverage.total === 0)
+          return blank(
+            s,
+            t('dashboardMetrics.loop.nothingToValidate', 'No open findings to validate')
+          )
+        return s
+      case '05':
+        return errors?.summary && !summary ? blank(s, failed) : s
+      default:
+        return s
+    }
+  })
+
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold tracking-tight">The CTEM loop</h2>
       <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
-        {stages.map((s) => (
+        {shown.map((s) => (
           <StageCard key={s.index} stage={s} />
         ))}
       </div>

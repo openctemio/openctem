@@ -44,6 +44,7 @@ var permSeedMigrations = []string{
 	"content_private_packages",                // content:publish (RFC-099)
 	"finding_lifecycles_permission",           // findings:lifecycles:write (RFC-110)
 	"dashboard_ownership",                     // dashboards:org:manage
+	"reports_manage_permission",               // reports:manage
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with

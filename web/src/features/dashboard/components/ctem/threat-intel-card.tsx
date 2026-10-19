@@ -5,10 +5,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { STATE_TEXT } from '../../lib/ctem-colors'
 import type { ThreatIntelStats } from '../../hooks/use-ctem-dashboard'
+import { WidgetError } from '../widget-error'
 
 interface ThreatIntelCardProps {
   stats?: ThreatIntelStats
   isLoading?: boolean
+  error?: unknown
+  onRetry?: () => void
 }
 
 function Kv({ n, label, danger }: { n: number; label: string; danger?: boolean }) {
@@ -22,7 +25,7 @@ function Kv({ n, label, danger }: { n: number; label: string; danger?: boolean }
   )
 }
 
-export function ThreatIntelCard({ stats, isLoading }: ThreatIntelCardProps) {
+export function ThreatIntelCard({ stats, isLoading, error, onRetry }: ThreatIntelCardProps) {
   return (
     <Card className="gap-4">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -36,6 +39,8 @@ export function ThreatIntelCard({ stats, isLoading }: ThreatIntelCardProps) {
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
+        ) : !stats && error ? (
+          <WidgetError onRetry={onRetry} />
         ) : stats ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Kv n={stats.kev?.past_due_count ?? 0} label="KEV past-due" danger />
