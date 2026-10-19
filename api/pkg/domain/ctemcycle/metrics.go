@@ -38,10 +38,16 @@ type CycleMetrics struct {
 
 // Value returns the metric value for key, or 0 when absent.
 func (c CycleMetrics) Value(key string) float64 {
-	if c.Metrics == nil {
-		return 0
-	}
-	return c.Metrics[key]
+	v, _ := c.Lookup(key)
+	return v
+}
+
+// Lookup returns the metric value for key and whether the cycle has one. A
+// metric without a sample in the cycle window (MTTR or validation coverage
+// when nothing was remediated) is absent, not 0.
+func (c CycleMetrics) Lookup(key string) (float64, bool) {
+	v, ok := c.Metrics[key]
+	return v, ok
 }
 
 // MetricsRepository computes, persists and reads per-cycle metrics.

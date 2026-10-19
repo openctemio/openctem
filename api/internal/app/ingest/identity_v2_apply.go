@@ -10,11 +10,12 @@ import (
 )
 
 // applyIdentityV2Of computes the version-2 identity of every item and hands
-// it to set, with the former key a finding may still be stored under within
+// it to set, with the former keys a finding may still be stored under within
 // version 2 (a SAST finding anchored on its line before its reports carried
-// the code; "" when none). Items without one keep their version-1 key.
+// the code; a secret keyed on its mask). Items without one keep their
+// version-1 key.
 func applyIdentityV2Of[T any](p *FindingProcessor, tenantID shared.ID, items []T,
-	get func(*T) (shared.ID, *ctis.Finding), set func(item *T, k vulnerability.IdentityKey, former string),
+	get func(*T) (shared.ID, *ctis.Finding), set func(item *T, k vulnerability.IdentityKey, formers []string),
 ) {
 	findings := make([]ctis.Finding, len(items))
 	assets := make([]shared.ID, len(items))
@@ -25,38 +26,83 @@ func applyIdentityV2Of[T any](p *FindingProcessor, tenantID shared.ID, items []T
 	occ := sastOccurrences(findings, func(i int) shared.ID { return assets[i] })
 	for i := range items {
 		f := &findings[i]
-		// A secret is keyed on the producer's keyed hash of the raw value
-		// (secretHMAC/v1, the raw value never leaves the producer), else on
-		// the masked value; keyed per tenant with a server secret, never
-		// logged. A finding keyed on its masked value moves to the producer
-		// key the first time a report carries it.
-		secretHMAC, maskedHMAC := "", ""
-		if f.Secret != nil && f.Secret.MaskedValue != "" {
-			maskedHMAC = p.secretFingerprinter.Fingerprint(tenantID, f.Secret.MaskedValue)
-		}
-		secretHMAC = maskedHMAC
-		if v := f.PartialFingerprints[partialSecretHMAC]; v != "" {
-			if h := p.secretFingerprinter.ProducerFingerprint(tenantID, v); h != "" {
-				secretHMAC = h
+		if identityKind(f) == vulnerability.IdentityKindSecret {
+			if k, formers, ok := p.secretIdentity(tenantID, assets[i], f); ok {
+				set(&items[i], k, formers)
 			}
+			continue
 		}
-		if k, ok := identityV2(assets[i], f, secretHMAC, occ[i]); ok {
-			former := formerKey(assets[i], f, k)
-			if former == "" && maskedHMAC != "" && secretHMAC != maskedHMAC {
-				if mk, ok := identityV2(assets[i], f, maskedHMAC, occ[i]); ok {
-					former = mk.Fingerprint()
-				}
+		if k, ok := identityV2(assets[i], f, "", occ[i]); ok {
+			var formers []string
+			if former := formerKey(assets[i], f, k); former != "" {
+				formers = append(formers, former)
 			}
-			set(&items[i], k, former)
+			set(&items[i], k, formers)
 		}
 	}
+}
+
+// secretIdentity keys a secret on a keyed hash of the raw value: the
+// producer's (secretHMAC/v1; the raw value never leaves the producer),
+// re-keyed per tenant with a server secret, else the server's own when the
+// report carried the raw value (keyRawSecrets). Neither is ever logged. Without one, the mask is
+// only part of a key that also names the rule and secret type, and the line
+// when the mask shows too little of the secret (SecretMaskIdentity), never
+// the identity on its own. formers are the keys an earlier ingest gave the same
+// secret: the mask-anchored key and the mask-only key of older versions.
+func (p *FindingProcessor) secretIdentity(tenantID, assetID shared.ID, f *ctis.Finding) (vulnerability.IdentityKey, []string, bool) {
+	asset := assetID.String()
+	path := locationPath(f)
+	maskedHMAC, rule, stype, line := "", f.RuleID, "", 0
+	if f.Secret != nil {
+		stype = f.Secret.SecretType
+		if f.Secret.MaskedValue != "" {
+			maskedHMAC = p.secretFingerprinter.Fingerprint(tenantID, f.Secret.MaskedValue)
+		}
+	}
+	if f.Location != nil && f.Secret != nil && !vulnerability.SecretMaskDistinctive(f.Secret.MaskedValue) {
+		line = f.Location.StartLine
+	}
+	var formers []string
+	maskKey, maskOK := vulnerability.SecretMaskIdentity(asset, maskedHMAC, path, rule, stype, line)
+	secretHMAC := ""
+	if v := f.PartialFingerprints[partialSecretHMAC]; v != "" {
+		secretHMAC = p.secretFingerprinter.ProducerFingerprint(tenantID, v)
+	}
+	if secretHMAC == "" {
+		secretHMAC = f.PartialFingerprints[partialServerSecretHMAC]
+	}
+	if k, ok := vulnerability.SecretIdentity(asset, secretHMAC, path); ok {
+		if maskOK {
+			formers = append(formers, maskKey.Fingerprint())
+		}
+		if old, ok := vulnerability.SecretIdentity(asset, maskedHMAC, path); ok {
+			formers = append(formers, old.Fingerprint())
+		}
+		return k, formers, true
+	}
+	if !maskOK {
+		return vulnerability.IdentityKey{}, nil, false
+	}
+	if old, ok := vulnerability.SecretIdentity(asset, maskedHMAC, path); ok {
+		formers = append(formers, old.Fingerprint())
+	}
+	return maskKey, formers, true
 }
 
 // fingerprintAdopter is implemented by the postgres finding repository.
 // Optional: a repository without it (tests, mocks) re-keys nothing.
 type fingerprintAdopter interface {
 	CheckFingerprintsExist(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error)
-	AdoptFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int) (bool, error)
+	AdoptFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, g vulnerability.AdoptGuard) (bool, error)
+}
+
+// adoptKeys is what one item offers to a re-key: the key a stored finding
+// may still carry, the item's identity, and the guard naming its issue.
+type adoptKeys struct {
+	from     string
+	identity *vulnerability.IdentityKey
+	guard    vulnerability.AdoptGuard
 }
 
 // adoptV1KeysOf re-keys, to its version-2 key, a finding that is still
@@ -65,7 +111,7 @@ type fingerprintAdopter interface {
 // the version-1 key becomes an alias (RFC-043 §6, "re-keyed on the next
 // sighting"). A version-1 finding is taken over by the first item only.
 func adoptV1KeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID shared.ID, items []T,
-	keys func(T) (v1 string, identity *vulnerability.IdentityKey),
+	keys func(T) adoptKeys,
 ) {
 	adopter, ok := p.repo.(fingerprintAdopter)
 	if !ok {
@@ -78,14 +124,14 @@ func adoptV1KeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID sha
 // repository). Optional, like fingerprintAdopter.
 type formerAdopter interface {
 	fingerprintAdopter
-	AdoptFormerFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int) (bool, error)
+	AdoptFormerFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, g vulnerability.AdoptGuard) (bool, error)
 }
 
 // adoptFormerKeysOf re-keys a finding still stored under the former
 // version-2 key an item names (sastFormerLineKey) to the item's key, with the
 // same rules as adoptV1KeysOf.
 func adoptFormerKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID shared.ID, items []T,
-	keys func(T) (former string, identity *vulnerability.IdentityKey),
+	keys func(T) adoptKeys,
 ) {
 	adopter, ok := p.repo.(formerAdopter)
 	if !ok {
@@ -98,18 +144,20 @@ func adoptFormerKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID
 }
 
 func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID shared.ID, items []T,
-	keys func(T) (v1 string, identity *vulnerability.IdentityKey), adopter fingerprintAdopter,
-	adopt func(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int) (bool, error),
+	keys func(T) adoptKeys, adopter fingerprintAdopter,
+	adopt func(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, g vulnerability.AdoptGuard) (bool, error),
 	followAliases bool,
 ) {
 	type pair struct {
 		v1, v2 string
 		raw    []byte
+		guard  vulnerability.AdoptGuard
 	}
 	pairs := make([]pair, 0, len(items))
 	v2s := make([]string, 0, len(items))
 	for _, it := range items {
-		v1, k := keys(it)
+		ak := keys(it)
+		v1, k := ak.from, ak.identity
 		if k == nil || v1 == "" {
 			continue
 		}
@@ -121,7 +169,7 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 		if err != nil {
 			continue
 		}
-		pairs = append(pairs, pair{v1: v1, v2: v2, raw: raw})
+		pairs = append(pairs, pair{v1: v1, v2: v2, raw: raw, guard: ak.guard})
 		v2s = append(v2s, v2)
 	}
 	if len(pairs) == 0 {
@@ -179,7 +227,7 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 			continue
 		}
 		claimed[from] = true
-		moved, err := adopt(ctx, tenantID, from, pr.v2, pr.raw, vulnerability.IdentityVersion)
+		moved, err := adopt(ctx, tenantID, from, pr.v2, pr.raw, vulnerability.IdentityVersion, pr.guard)
 		if err != nil {
 			p.logger.Warn("failed to re-key a finding to its version-2 identity", "error", err)
 			continue
@@ -190,6 +238,70 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 	}
 	if adopted > 0 {
 		p.logger.Info("re-keyed findings to their version-2 identity", "count", adopted)
+	}
+}
+
+// clientKeyAdopter re-keys a version-1 finding stored under a key its report
+// chose (the postgres finding repository). Optional, like fingerprintAdopter.
+type clientKeyAdopter interface {
+	fingerprintAdopter
+	AdoptClientKeyedFingerprint(ctx context.Context, tenantID shared.ID, from, to string, g vulnerability.AdoptGuard) (bool, error)
+}
+
+// adoptLegacyClientKeysOf re-keys a finding still stored under the key the
+// old ingest built from the report's own fingerprint (legacyClientFingerprint)
+// to the item's server key: its version-2 key when a recipe applies, else its
+// server version-1 key. The key alone never decides: the stored finding must
+// be on the same asset with the same rule, tool and location (a strict
+// guard), so a report that copies another finding's fingerprint cannot move
+// that finding's triage onto a different issue. Aliases are not followed.
+func adoptLegacyClientKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID shared.ID, items []T,
+	keys func(T) (legacy, v1 string, identity *vulnerability.IdentityKey, guard vulnerability.AdoptGuard),
+) {
+	adopter, ok := p.repo.(clientKeyAdopter)
+	if !ok {
+		return
+	}
+	strict := func(it T) adoptKeys {
+		legacy, _, identity, g := keys(it)
+		g.Strict = true
+		return adoptKeys{from: legacy, identity: identity, guard: g}
+	}
+	// Items with a version-2 identity: the same path as a version-1 key.
+	adoptKeysOf(ctx, p, tenantID, items, strict, adopter, adopter.AdoptFingerprint, false)
+
+	// Items that keep a version-1 key: legacy -> server version-1 key.
+	type pair struct {
+		from, to string
+		guard    vulnerability.AdoptGuard
+	}
+	pairs := make([]pair, 0, len(items))
+	froms := make([]string, 0, len(items))
+	for _, it := range items {
+		legacy, v1, identity, g := keys(it)
+		if identity != nil || legacy == "" || v1 == "" || legacy == v1 {
+			continue
+		}
+		pairs = append(pairs, pair{from: legacy, to: v1, guard: g})
+		froms = append(froms, legacy)
+	}
+	if len(pairs) == 0 {
+		return
+	}
+	live, err := adopter.CheckFingerprintsExist(ctx, tenantID, froms)
+	if err != nil {
+		p.logger.Warn("failed to check legacy finding keys", "error", err)
+		return
+	}
+	claimed := map[string]bool{}
+	for _, pr := range pairs {
+		if claimed[pr.from] || !live[pr.from] {
+			continue
+		}
+		claimed[pr.from] = true
+		if _, err := adopter.AdoptClientKeyedFingerprint(ctx, tenantID, pr.from, pr.to, pr.guard); err != nil {
+			p.logger.Warn("failed to re-key a finding from its report-chosen key", "error", err)
+		}
 	}
 }
 
