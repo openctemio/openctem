@@ -14,7 +14,7 @@ owns this asset" uses it.
 | `internal/infra/controller/owner_resolution.go` | Matches `owner_ref` to a member every 30 minutes |
 | `web/src/features/assets/components/asset-owners-tab.tsx` | The Owners tab |
 | `migrations/000372_asset_access_grants.up.sql` | Explicit grants |
-| `migrations/002980_asset_owner_view_scope.up.sql` | `v_asset_owner_scope`: primary and secondary owners set by a person see the asset; creator grants |
+| `migrations/003053_asset_owner_view_scope.up.sql` | `v_asset_owner_scope`: primary and secondary owners set by a person see the asset; creator grants |
 | `internal/infra/postgres/asset_access_grant_repository.go` · `handler/asset_access_grant_handler.go` | Grant storage and `/assets/{id}/access-grants` |
 | `web/src/features/assets/components/asset-access-grants-section.tsx` | *Direct access* on the Owners tab |
 
