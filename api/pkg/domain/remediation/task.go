@@ -414,8 +414,11 @@ type TaskFilter struct {
 	CampaignID *shared.ID
 	NoCampaign bool       // tasks in no campaign
 	FindingID  *shared.ID // tasks the finding is an active member of
-	Search     string
-	Sort       TaskSort
+	// Overdue keeps tasks whose deadline has passed. Combine it with States
+	// to count the open ones; a task without a deadline is never overdue.
+	Overdue bool
+	Search  string
+	Sort    TaskSort
 	// Scope limits the list to tasks with at least one active primary
 	// member in the caller's data scope (nil = unrestricted).
 	Scope *shared.DataScope
