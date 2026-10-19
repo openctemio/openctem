@@ -84,6 +84,11 @@ refingerprint -apply          # commit; resumable from finding_rekey_runs, idemp
 refingerprint -json           # machine-readable report
 ```
 
+An applying run writes one `findings.refingerprinted` entry in each tenant it
+changed (counts scanned, re-keyed and merged, the run id, actor `refingerprint`),
+so an organization can see why its findings merged or changed ids. A dry run and a
+tenant with nothing to change write none.
+
 It recomputes a key only where the row holds every recipe input
 (`vulnerability.IdentityFromStored`: SCA with a linked PURL, secrets with a
 stored HMAC, misconfig, SAST with a tool anchor); network VA and DAST rows lack
