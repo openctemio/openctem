@@ -16,7 +16,6 @@ import (
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -149,8 +148,8 @@ func (f fakeCampaignRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*p
 
 type fakeOrgPolicy struct{ maxTLP string }
 
-func (f fakeOrgPolicy) MCPPolicy(context.Context, shared.ID) (tenantdom.MCPSettings, error) {
-	return tenantdom.MCPSettings{MaxTLP: f.maxTLP}, nil
+func (f fakeOrgPolicy) MCPPolicy(context.Context, shared.ID) (tenant.MCPSettings, error) {
+	return tenant.MCPSettings{MaxTLP: f.maxTLP}, nil
 }
 
 // --- harness -------------------------------------------------------------
