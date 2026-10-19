@@ -92,5 +92,9 @@
   "common.contextFilters.label": "Context filters",
   "common.contextFilters.remove": "Remove {kind} filter",
   "common.contextFilters.removeNamed": "Remove {kind} filter: {label}",
-  "common.dangerZone": "Danger zone"
+  "common.dangerZone": "Danger zone",
+  "common.noAccessTo": "You do not have access to {title}",
+  "common.moduleOffFor": "{title} is not enabled for this organization",
+  "common.noAccessHint": "Ask an organization administrator to grant access.",
+  "common.moduleOffHint": "Ask an organization administrator to enable it."
 }
