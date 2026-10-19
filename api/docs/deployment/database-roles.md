@@ -39,6 +39,7 @@ These were checked against the code and against the full test suite run as
 | `LISTEN`/`NOTIFY` | not used (job notifications use Redis pub/sub) | none |
 | Extensions `pgcrypto`, `pg_trgm`, `uuid-ossp` | migrations | created by the bootstrap script as the superuser; the migrations' `CREATE EXTENSION IF NOT EXISTS` is then a no-op |
 | Runtime DDL | none in the server. `CREATE INDEX CONCURRENTLY` and every `ALTER`/`CREATE` live in migrations | migrator only |
+| Owner-rights functions | two `SECURITY DEFINER` functions, each doing one fixed job as the schema owner: `admin_audit_prune` (administrators' audit retention) and `dash_asset_day_maintain` (no input: creates the coming monthly partitions of `dash_asset_day` and drops those past the 13-month window; names come from dates only). Both pin `search_path`; `EXECUTE` is revoked from `PUBLIC`, and the console role does not get `dash_asset_day_maintain` | `EXECUTE` on those functions only; the app still cannot create or drop anything itself |
 
 If a future change needs something the app does not have, the API fails with
 `permission denied` (SQLSTATE 42501). Move the DDL into a migration; grant a
