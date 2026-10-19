@@ -51,6 +51,10 @@ type sensorV2Budgets struct {
 	read        *middleware.TelemetryRateLimiter
 	renew       *middleware.TelemetryRateLimiter
 	concurrency *middleware.TenantConcurrencyLimiter
+	// perSensor and sharedPool bound the result uploads in flight per
+	// sensor, and of all shared sensors together (research/191 R-1).
+	perSensor  *middleware.TenantConcurrencyLimiter
+	sharedPool *middleware.TenantConcurrencyLimiter
 	// control is the per-tenant control-plane budget.
 	control *middleware.TelemetryRateLimiter
 }
@@ -62,6 +66,8 @@ func newSensorV2Budgets(tenantRateLimiter *middleware.TelemetryRateLimiter, log 
 		read:        middleware.NewTelemetryRateLimiter(v2ReadRatePerSensor, v2ReadBurstPerSensor, 10*time.Minute, log),
 		renew:       middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log),
 		concurrency: middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerTenant),
+		perSensor:   middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerSensor),
+		sharedPool:  middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerTenant),
 		control:     middleware.NewTelemetryRateLimiter(v2ControlRatePerTenant, v2ControlBurstPerTenant, 10*time.Minute, log),
 	}
 }
@@ -110,14 +116,18 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 	throttleRead := middleware.V2Throttle(nil, b.read, nil, handler.SensorKey)
 	// The content chain of a PUT, in the RFC-026 §3.3 order. BodyLimit
 	// replaces the global 10 MB limit with the v2 request limit.
+	// One sensor (or the shared sensors together) cannot take every
+	// in-flight slot of its organization (or, having none, go unbounded).
+	inFlight := middleware.V2SensorInFlight(b.perSensor, b.sharedPool, sensorInFlightKey)
 	content := []Middleware{
 		throttleWrite,
+		inFlight,
 		middleware.V2ContentType(),
 		middleware.V2ContentEncoding(),
 		middleware.BodyLimit(limits.MaxContentBytes),
 		middleware.V2ReadVerified(limits),
 	}
-	commit := []Middleware{throttleWrite, middleware.BodyLimit(1 << 20)}
+	commit := []Middleware{throttleWrite, inFlight, middleware.BodyLimit(1 << 20)}
 
 	// Control plane (RFC-029): per-sensor budgets only (the per-tenant ingest
 	// budget is for report writes). Key renewal also takes a per-sensor renewal
@@ -238,4 +248,14 @@ func sensorControlV2Handler(h Handlers, log *logger.Logger) *handler.SensorContr
 		}
 	}
 	return handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, suppressionsEnabled, log)
+}
+
+// sensorInFlightKey is the authenticated sensor's in-flight key and whether
+// it is a shared sensor ("" when there is none).
+func sensorInFlightKey(r *http.Request) (string, bool) {
+	s := handler.SensorFromContext(r.Context())
+	if s == nil {
+		return "", false
+	}
+	return s.ID.String(), s.IsShared()
 }
