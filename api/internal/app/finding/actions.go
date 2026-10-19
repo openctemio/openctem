@@ -43,6 +43,49 @@ type FindingActionsService struct {
 	db              *sql.DB
 	logger          *logger.Logger
 	lifecycles      LifecycleSchemes // organization lifecycles (RFC-110); nil = the platform alone
+	statusEffects   StatusEffects    // side effects of applied status moves; nil = proof-of-fix only
+}
+
+// SetStatusEffects wires the shared side effects of a status change
+// (VulnerabilityService.AfterStatusMoves): every action that moves findings
+// runs them once per finding it moved.
+func (s *FindingActionsService) SetStatusEffects(e StatusEffects) { s.statusEffects = e }
+
+// ticketSyncCtx puts the ticket status pushes of the linked findings among
+// ids on ctx for the status write to queue with the moves.
+func (s *FindingActionsService) ticketSyncCtx(ctx context.Context, tid shared.ID, ids []shared.ID) context.Context {
+	if s.statusEffects == nil {
+		return ctx
+	}
+	return s.statusEffects.TicketSyncContext(ctx, tid, ids)
+}
+
+// afterMoves runs the side effects of the moves an action applied and returns
+// the proof-of-fix re-checks queued. Without the shared effects wired, a fix
+// claim still queues its proof-of-fix re-check.
+func (s *FindingActionsService) afterMoves(ctx context.Context, tid shared.ID, actorID string, moves []vulnerability.StatusMove) int {
+	if len(moves) == 0 {
+		return 0
+	}
+	if s.statusEffects != nil {
+		return s.statusEffects.AfterStatusMoves(ctx, tid, actorID, moves)
+	}
+	claims := make([]shared.ID, 0, len(moves))
+	for _, m := range moves {
+		if m.New == vulnerability.FindingStatusFixApplied {
+			claims = append(claims, m.FindingID)
+		}
+	}
+	return s.autoQueueValidations(ctx, tid, claims)
+}
+
+// personActionCtx marks an action's status write as a person's decision with
+// its timeline entry written in the same transaction (the transition
+// trigger), naming the actor.
+func personActionCtx(ctx context.Context, reason string, uid shared.ID, message string) context.Context {
+	return vulnerability.WithPersonMove(vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: string(vulnerability.SourceAPI), Reason: reason, ActorType: "user", ActorID: uid.String(), Message: message,
+	}))
 }
 
 // SetLifecycles wires the organization lifecycles: each action is then also
@@ -439,6 +482,8 @@ func (s *FindingActionsService) BulkFixApplied(
 	if err != nil {
 		return nil, err
 	}
+	byID := make(map[shared.ID]*vulnerability.Finding, len(allFindings))
+	claimIDs := make([]shared.ID, 0, len(allFindings))
 	for _, f := range allFindings {
 		facts := transitionFactsOf(f)
 		facts.CanClaimFix = s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, ownedAssets, f)
@@ -446,34 +491,34 @@ func (s *FindingActionsService) BulkFixApplied(
 			result.Skipped++
 			continue
 		}
+		byID[f.ID()] = f
+		claimIDs = append(claimIDs, f.ID())
+	}
 
-		// Transition status
-		if err := f.TransitionStatus(vulnerability.FindingStatusFixApplied, input.Note, &uid); err != nil {
-			result.Skipped++
-			continue
-		}
-
-		if err := s.findingRepo.Update(ctx, f); err != nil {
-			// A persistence failure is NOT a skip — count it separately so the
-			// caller can distinguish "not permitted / invalid" (Skipped) from
-			// "write failed, the fix_applied transition was lost, retry" (Failed).
-			s.logger.Warn("failed to update finding", "finding_id", f.ID(), "error", err)
-			result.Failed++
-			continue
-		}
-
+	// One status-guarded write (still in_progress), with the timeline entry
+	// in the same transaction. A finding that moved on since it was read is
+	// not claimed: counted as failed, so the caller can retry.
+	moved, err := moveStatusBatch(s.ticketSyncCtx(personActionCtx(ctx, "fix_applied", uid, input.Note), tid, claimIDs), s.findingRepo, tid, claimIDs,
+		[]vulnerability.FindingStatus{vulnerability.FindingStatusInProgress}, vulnerability.FindingStatusFixApplied, input.Note, &uid, vulnerability.Closure{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to mark findings fix applied: %w", err)
+	}
+	result.Failed += len(claimIDs) - len(moved)
+	for _, id := range moved {
+		f := byID[id]
 		result.Updated++
 		result.ByCVE[f.CVEID()]++
 		assetSet[f.AssetID()] = true
-		fixedIDs = append(fixedIDs, f.ID())
+		fixedIDs = append(fixedIDs, id)
 	}
 
 	result.AssetsAffected = len(assetSet)
 
-	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check per fixed
-	// finding so a "fix applied" claim is verified, not trusted. Bounded and
-	// best-effort — never affects the fix_applied result above.
-	result.ValidationsQueued = s.autoQueueValidations(ctx, tid, fixedIDs)
+	// The side effects of each claim, once: workflow event, assignee
+	// notification, ticket sync and a proof-of-fix re-check (a fix claim is
+	// verified, not trusted). Best effort; never affects the result above.
+	result.ValidationsQueued = s.afterMoves(ctx, tid, uid.String(),
+		movesOf(fixedIDs, func(shared.ID) vulnerability.FindingStatus { return vulnerability.FindingStatusInProgress }, vulnerability.FindingStatusFixApplied))
 
 	return result, nil
 }
@@ -535,6 +580,66 @@ func (s *FindingActionsService) assetsOwnedBy(ctx context.Context, tenantID, use
 
 // --- Bulk Verify ---
 
+// actionTarget is a finding an action by id may move, after its checks.
+type actionTarget struct {
+	ids []shared.ID
+	old map[shared.ID]vulnerability.FindingStatus
+}
+
+func (t *actionTarget) add(id shared.ID, old vulnerability.FindingStatus) {
+	if t.old == nil {
+		t.old = map[shared.ID]vulnerability.FindingStatus{}
+	}
+	t.ids = append(t.ids, id)
+	t.old[id] = old
+}
+
+// loadActionFinding reads one finding of a by-id action in the caller's data
+// scope (out of scope reads as not found).
+func (s *FindingActionsService) loadActionFinding(ctx context.Context, tid shared.ID, idStr string) (*vulnerability.Finding, error) {
+	fid, err := shared.IDFromString(idStr)
+	if err != nil {
+		return nil, errors.New("invalid id")
+	}
+	f, err := s.findingRepo.GetByID(ctx, tid, fid)
+	if err == nil && s.dataScope.AssertAsset(ctx, tid, f.AssetID()) != nil {
+		// Layer 2: an out-of-scope finding reads exactly as a missing one.
+		err = vulnerability.FindingNotFoundError(fid)
+	}
+	return f, err
+}
+
+// applyFixDecision writes a verifier's decision on the checked fix_applied
+// findings in one status-guarded statement (still fix_applied) with the
+// timeline entry in the same transaction, counts what it moved, reports a
+// finding that moved on since it was read, and runs the side effects of the
+// moves once.
+func (s *FindingActionsService) applyFixDecision(ctx context.Context, tid, uid shared.ID, t actionTarget, reason string,
+	to vulnerability.FindingStatus, note string, closure vulnerability.Closure, result *BulkUpdateResult,
+) error {
+	if len(t.ids) == 0 {
+		return nil
+	}
+	moved, err := moveStatusBatch(s.ticketSyncCtx(personActionCtx(ctx, reason, uid, note), tid, t.ids), s.findingRepo, tid, t.ids,
+		[]vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied}, to, note, &uid, closure)
+	if err != nil {
+		return fmt.Errorf("failed to update findings: %w", err)
+	}
+	movedSet := make(map[shared.ID]bool, len(moved))
+	for _, id := range moved {
+		movedSet[id] = true
+	}
+	for _, id := range t.ids {
+		if !movedSet[id] {
+			result.fail(id.String(), "changed since it was read; reload and retry")
+		}
+	}
+	result.Updated += len(moved)
+	result.ValidationsQueued += s.afterMoves(ctx, tid, uid.String(),
+		movesOf(moved, func(id shared.ID) vulnerability.FindingStatus { return t.old[id] }, to))
+	return nil
+}
+
 // BulkVerify resolves fix_applied findings (manual security review).
 func (s *FindingActionsService) BulkVerify(
 	ctx context.Context, tenantID string, userID string, findingIDs []string, note string,
@@ -543,93 +648,67 @@ func (s *FindingActionsService) BulkVerify(
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+	}
 	cands, err := s.lifecycleCandidates(ctx, tid)
 	if err != nil {
 		return nil, err
 	}
+	resolution := "Verified by security review"
+	if note != "" {
+		resolution = note
+	}
 
 	result := &BulkUpdateResult{}
-
+	var target actionTarget
 	for _, idStr := range findingIDs {
-		fid, err := shared.IDFromString(idStr)
+		f, err := s.loadActionFinding(ctx, tid, idStr)
 		if err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: invalid id", idStr))
+			result.fail(idStr, err.Error())
 			continue
 		}
-
-		f, err := s.findingRepo.GetByID(ctx, tid, fid)
-		if err == nil && s.dataScope.AssertAsset(ctx, tid, f.AssetID()) != nil {
-			// Layer 2: an out-of-scope finding reads exactly as a missing one.
-			err = vulnerability.FindingNotFoundError(fid)
-		}
-		if err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
-			continue
-		}
-
 		if f.Status() != vulnerability.FindingStatusFixApplied {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: not in fix_applied status", idStr))
+			result.fail(idStr, "not in fix_applied status")
 			continue
-		}
-
-		resolution := "Verified by security review"
-		if note != "" {
-			resolution = note
-		}
-
-		uid, uidErr := shared.IDFromString(userID)
-		if uidErr != nil {
-			return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
 		}
 		// F4: FixApplied → Resolved goes through the checklist gate. A
 		// missing/incomplete checklist is returned to the operator so
 		// they can fill it before retrying — the domain layer owns
 		// the rejection message.
-		checklist, err := s.loadVerificationChecklist(ctx, tid, fid)
+		checklist, err := s.loadVerificationChecklist(ctx, tid, f.ID())
 		if err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			result.fail(idStr, err.Error())
 			continue
 		}
 		// The transition engine (the route requires findings:verify), with
 		// the evidence the finding's risk asks for.
 		facts := transitionFactsOf(f)
 		if s.db != nil {
-			if err := loadResolveEvidence(ctx, s.db, tid, fid, &facts); err != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			if err := loadResolveEvidence(ctx, s.db, tid, f.ID(), &facts); err != nil {
+				result.fail(idStr, err.Error())
 				continue
 			}
 		}
 		if err := actionAllowed(ctx, cands, f, facts, personActor(uid, TransitionPermissions{Verify: true}),
 			vulnerability.FindingStatusResolved, resolution); err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			result.fail(idStr, err.Error())
 			continue
 		}
+		// The domain checks the move and the checklist (in memory; the
+		// write below is the guarded batch statement).
 		if err := f.TransitionStatusWithChecklist(vulnerability.FindingStatusResolved, resolution, &uid, checklist); err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			result.fail(idStr, err.Error())
 			continue
 		}
-		if err := f.SetClosure(vulnerability.Fixed(vulnerability.VerificationSecurityReview)); err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
-			continue
-		}
-
-		if err := s.findingRepo.Update(ctx, f); err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
-			continue
-		}
-
-		result.Updated++
+		target.add(f.ID(), vulnerability.FindingStatusFixApplied)
 	}
 
+	if err := s.applyFixDecision(ctx, tid, uid, target, "verified", vulnerability.FindingStatusResolved, resolution,
+		vulnerability.Fixed(vulnerability.VerificationSecurityReview), result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -659,54 +738,35 @@ func (s *FindingActionsService) BulkRejectFix(
 		return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
 	}
 
+	var target actionTarget
 	for _, idStr := range findingIDs {
-		fid, err := shared.IDFromString(idStr)
+		f, err := s.loadActionFinding(ctx, tid, idStr)
 		if err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: invalid id", idStr))
+			result.fail(idStr, err.Error())
 			continue
 		}
-
-		f, err := s.findingRepo.GetByID(ctx, tid, fid)
-		if err == nil && s.dataScope.AssertAsset(ctx, tid, f.AssetID()) != nil {
-			// Layer 2: an out-of-scope finding reads exactly as a missing one.
-			err = vulnerability.FindingNotFoundError(fid)
-		}
-		if err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
-			continue
-		}
-
 		if f.Status() != vulnerability.FindingStatusFixApplied {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: not in fix_applied status (current: %s)", idStr, f.Status()))
+			result.fail(idStr, fmt.Sprintf("not in fix_applied status (current: %s)", f.Status()))
 			continue
 		}
-
 		// The transition engine: a verifier may reject a fix (the route
 		// requires findings:verify).
 		if err := actionAllowed(ctx, cands, f, transitionFactsOf(f),
 			personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress, reason); err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			result.fail(idStr, err.Error())
 			continue
 		}
-		if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, reason, &uid); err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+		if !f.CanTransitionTo(vulnerability.FindingStatusInProgress) {
+			result.fail(idStr, fmt.Sprintf("cannot transition from %s to %s", f.Status(), vulnerability.FindingStatusInProgress))
 			continue
 		}
-
-		if err := s.findingRepo.Update(ctx, f); err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
-			continue
-		}
-
-		result.Updated++
+		target.add(f.ID(), vulnerability.FindingStatusFixApplied)
 	}
 
+	if err := s.applyFixDecision(ctx, tid, uid, target, "fix_rejected", vulnerability.FindingStatusInProgress, reason,
+		vulnerability.Closure{}, result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -786,11 +846,13 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
 		Source: string(vulnerability.SourceAPI), Reason: "verified_by_filter", ActorType: "user", ActorID: uid.String(), Message: resolution,
 	})
-	if err := s.moveFixApplied(moveCtx, tid, allowed,
-		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.Fixed(verifyByFilterVerification)); err != nil {
+	moved, err := s.moveFixApplied(moveCtx, tid, allowed,
+		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.Fixed(verifyByFilterVerification))
+	if err != nil {
 		return 0, fmt.Errorf("failed to verify findings: %w", err)
 	}
-	return int64(len(allowed)), nil
+	s.afterMoves(ctx, tid, uid.String(), movesOf(moved, fixApplied, vulnerability.FindingStatusResolved))
+	return int64(len(moved)), nil
 }
 
 // moveFixApplied writes a verifier's decision on fix_applied findings, limited
@@ -799,14 +861,13 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 // A repository that cannot limit the write is refused, never written blind.
 func (s *FindingActionsService) moveFixApplied(ctx context.Context, tid shared.ID, ids []shared.ID,
 	to vulnerability.FindingStatus, resolution string, by *shared.ID, closure vulnerability.Closure,
-) error {
-	w, ok := s.findingRepo.(vulnerability.FixClaimBatchWriter)
-	if !ok {
-		return fmt.Errorf("%w: the finding store cannot limit a batch to fix_applied findings", shared.ErrValidation)
-	}
-	return w.UpdateStatusBatchFrom(ctx, tid, ids, []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied},
+) ([]shared.ID, error) {
+	return moveStatusBatch(s.ticketSyncCtx(ctx, tid, ids), s.findingRepo, tid, ids, []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied},
 		to, resolution, by, closure)
 }
+
+// fixApplied is the status a by-filter verifier decision reads its findings in.
+func fixApplied(shared.ID) vulnerability.FindingStatus { return vulnerability.FindingStatusFixApplied }
 
 // verifyByFilterVerification is how a verify-by-filter close is recorded: it
 // reads no per-finding verification checklist, so it is a findings:verify
@@ -853,31 +914,25 @@ func (s *FindingActionsService) BulkRejectByFilter(
 	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
 		Source: string(vulnerability.SourceAPI), Reason: "fix_rejected_by_filter", ActorType: "user", ActorID: uid.String(), Message: input.Reason,
 	})
-	// An organization lifecycle decides each finding: read the set (at most
-	// 1000) and reject only the findings it allows.
+	// The set is read (at most 1000) and each finding decided (an
+	// organization lifecycle can narrow the move), so the write names the
+	// findings and the side effects run for exactly the ones it moved.
 	cands, err := s.lifecycleCandidates(ctx, tid)
 	if err != nil {
 		return 0, err
 	}
-	if len(cands) > 0 {
-		allowed, err := s.allowedByFilter(ctx, cands, input.Filter, personActor(uid, TransitionPermissions{Verify: true}),
-			vulnerability.FindingStatusInProgress, input.Reason)
-		if err != nil || len(allowed) == 0 {
-			return 0, err
-		}
-		if err := s.moveFixApplied(moveCtx, tid, allowed,
-			vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{}); err != nil {
-			return 0, fmt.Errorf("failed to reject findings: %w", err)
-		}
-		return int64(len(allowed)), nil
+	allowed, err := s.allowedByFilter(ctx, cands, input.Filter, personActor(uid, TransitionPermissions{Verify: true}),
+		vulnerability.FindingStatusInProgress, input.Reason)
+	if err != nil || len(allowed) == 0 {
+		return 0, err
 	}
-	count, err := s.findingRepo.BulkUpdateStatusByFilter(moveCtx, tid, input.Filter,
+	moved, err := s.moveFixApplied(moveCtx, tid, allowed,
 		vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to reject findings: %w", err)
 	}
-
-	return count, nil
+	s.afterMoves(ctx, tid, uid.String(), movesOf(moved, fixApplied, vulnerability.FindingStatusInProgress))
+	return int64(len(moved)), nil
 }
 
 // --- Auto-Assign to Owners ---
