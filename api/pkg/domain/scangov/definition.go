@@ -29,8 +29,9 @@ type Definition struct {
 	// workflow edit that changes the tools changes the definition).
 	WorkflowSteps []string `json:"workflow_steps,omitempty"`
 	ProfileID     string   `json:"profile_id,omitempty"`
-	// RuleSources is the scan's own rule sources (empty: inherited), so
-	// switching which rules run needs a new approval.
+	// RuleSources is the rule sources a run uses (the scan's, else its
+	// profile's; empty: both), so switching which rules run, on the scan or
+	// on its profile, needs a new approval.
 	RuleSources string `json:"rule_sources,omitempty"`
 	Intensity   string `json:"intensity"`
 	// When.

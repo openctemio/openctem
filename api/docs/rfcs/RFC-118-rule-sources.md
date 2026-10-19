@@ -66,8 +66,10 @@ silently ran without the rules its owner picked.
   signature check and before writing, so a merged run cannot execute a code
   template even if the platform were wrong.
 - **Silent loss of detection.** Unresolvable templates fail the run instead
-  of being dropped; the approval digest (RFC-073) covers the scan's rule
-  sources, so changing them needs a new approval.
+  of being dropped; the approval digest (RFC-073) covers the rule
+  sources a run uses (the scan's, else its profile's; `both` is left out so
+  approvals made before rule sources keep matching), so changing them on the
+  scan or on its profile needs a new approval.
 
 ## 4. Not in scope
 
