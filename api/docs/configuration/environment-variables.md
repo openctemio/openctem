@@ -544,7 +544,8 @@ Read by the bundled Caddy gateway (`api/deploy/gateway`).
 | `GATEWAY_MAX_BODY_SIZE` | string | `256MB` |  |  | Largest request body the gateway accepts. The API enforces the per-route limits. |
 | `AUTH_COOKIE_NAME` | string | `auth_token` |  |  | Session cookie name used by the routing rule that sends token clients to the API. |
 | `OPENCTEM_GATEWAY_DIR` | string | `/etc/caddy` |  |  | Directory with `Caddyfile`, `planes.caddy` and `modes/`. |
-| `XDG_DATA_HOME` | string | `/data` |  |  | Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. |
+| `XDG_DATA_HOME` | string | `/data` |  |  | Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. The all-in-one image uses `/data/gateway` (it moves an older `/data/caddy` there on start). |
+| `OPENCTEM_CADDY_ADMIN` | string | `127.0.0.1:2019` |  |  | Address of Caddy's admin API. The all-in-one image sets a unix socket only the gateway's uid can open (`unix/<dir>/admin.sock\|0600`), because every process there shares one network namespace. |
 | `OPENCTEM_API_UPSTREAM` | string | `api:8080` |  |  | Address of the API. |
 | `OPENCTEM_WEB_UPSTREAM` | string | `web:3000` |  |  | Address of the web console. |
 | `OPENCTEM_CONSOLE_UPSTREAM` | string | `console:3000` |  |  | Address of the platform console service, which the console's site (`OPENCTEM_ADMIN_SITE`) serves at its root. |

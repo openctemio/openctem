@@ -5,7 +5,7 @@ import { SWRConfig } from 'swr'
 
 import { RunTasksTable } from '../run-tasks-table'
 import { RunStepPanel } from '../run-step-panel'
-import { TaskPlacementPanel, placementSummary } from '../task-placement'
+import { TaskPlacementPanel, placementSummary, sharedFleetNote } from '../task-placement'
 import { enTranslate } from '../../lib/translate'
 
 const getMock = vi.fn()
@@ -86,6 +86,20 @@ describe('why a queued task waits', () => {
       /2 \(1 busy\)/
     )
     expect(placementSummary({ queued: true, evaluated: 0 }, t)).toMatch(/no sensor/)
+  })
+
+  // research/191 W-1: a task nobody of the organization can take says
+  // whether the shared sensors were an option.
+  it('says whether the shared sensors were an option', () => {
+    const t = enTranslate
+    expect(sharedFleetNote({ queued: true, evaluated: 0, shared_fleet: 'not_used' }, t)).toMatch(
+      /own sensors only/
+    )
+    expect(sharedFleetNote({ queued: true, evaluated: 1, shared_fleet: 'not_allowed' }, t)).toMatch(
+      /not available/
+    )
+    expect(sharedFleetNote({ queued: true, eligible: 1, shared_fleet: 'not_used' }, t)).toBeNull()
+    expect(sharedFleetNote({ queued: true, platform: true }, t)).toBeNull()
   })
 
   it('says which task holds its hosts instead of "should start shortly"', () => {
