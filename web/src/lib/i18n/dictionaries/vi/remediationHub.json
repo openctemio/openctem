@@ -87,6 +87,7 @@
   "remediationHub.dismiss.reasons.wrong_grouping": "Nhóm sai",
   "remediationHub.dismiss.reasons.wrong_owner": "Sai chủ sở hữu",
   "remediationHub.dismiss.title": "Bỏ qua đề xuất",
+  "remediationHub.event.campaign_conflict": "Khi chiến dịch chuyển sang chứa công việc, một chiến dịch khác cũng nhận {count} phát hiện của công việc này; chúng vẫn ở lại đây",
   "remediationHub.event.created": "Tạo công việc với {count} phát hiện",
   "remediationHub.event.fix_claimed": "Đánh dấu đã sửa: {updated} phát hiện đã báo sửa",
   "remediationHub.event.members_added": "Thêm {count} phát hiện",
