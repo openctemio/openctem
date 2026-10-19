@@ -111,8 +111,8 @@ func registerAssetOwnerRoutes(
 		r.DELETE("/{ownerId}", h.RemoveOwner, middleware.Require(permission.AssetsDelete))
 	}, middlewares...)
 
-	// Explicit per-user data-scope grants. Being an owner gives no access
-	// (owner decision O1); these grants and group assignments do, so they are
+	// Explicit per-user data-scope grants. They change who can see the asset,
+	// like group assignments and primary / secondary ownership, so they are
 	// gated like group data scope (team:groups:*), not like asset edits.
 	router.Group("/api/v1/assets/{id}/access-grants", func(r Router) {
 		r.GET("/", h.ListAccessGrants, middleware.Require(permission.GroupsRead))

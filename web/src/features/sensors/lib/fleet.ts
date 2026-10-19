@@ -10,6 +10,8 @@ import type { ScanZone } from '@/lib/api/scan-zone-types'
 
 import type { Tr } from './format'
 import { dispatchTools, sensorCapacity } from './capabilities'
+import { configHealthNeedsAttention } from './config-report'
+import { postureIssues } from './posture'
 import { canTakeJobs, sensorState, SENSOR_STATES, type FleetThresholds } from './sensor-state'
 import {
   compareSensorVersions,
@@ -55,6 +57,7 @@ export type AttentionKind =
   | 'tools'
   | 'content'
   | 'preflight'
+  | 'posture'
   | 'error'
 
 /**
@@ -93,6 +96,12 @@ function attentionKindsOf(
                       : null
     if (kind && !kinds.includes(kind)) kinds.push(kind)
   }
+  // The sensor's own setup checks and its security posture count too: the
+  // drawer lists them as issues, so the fleet must not call the sensor fine.
+  if (configHealthNeedsAttention(sensor.config_health) && !kinds.includes('preflight')) {
+    kinds.push('preflight')
+  }
+  if (postureIssues(sensor).length > 0) kinds.push('posture')
   // Older APIs send no reasons: derive what the page can see itself.
   if (!sensor.health_reasons) {
     if (sensor.outbox_warning) kinds.push('backlog')

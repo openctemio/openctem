@@ -401,6 +401,10 @@ const (
 	// Report permissions (reports:*)
 	ReportsRead  Permission = "reports:read"
 	ReportsWrite Permission = "reports:write"
+	// ReportsManage pauses, resumes and deletes report schedules other
+	// members created and shows their recipients. Without it a member changes
+	// only the schedules they created (owners and admins hold it).
+	ReportsManage Permission = "reports:manage"
 )
 
 // =============================================================================
@@ -538,7 +542,7 @@ func AllPermissions() []Permission {
 		ComplianceMappingsRead, ComplianceMappingsWrite,
 
 		// Reports module
-		ReportsRead, ReportsWrite,
+		ReportsRead, ReportsWrite, ReportsManage,
 
 		// Threat Intel module
 		ThreatIntelRead, ThreatIntelWrite,

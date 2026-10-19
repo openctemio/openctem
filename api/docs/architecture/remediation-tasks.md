@@ -30,8 +30,17 @@ manual states (on hold, canceled).
 
 ## Membership rules
 
-- Creating a task or adding primary members refuses a finding that is already the primary member of another
-  active task: `409` with `code: FINDINGS_IN_OTHER_TASK` and the `finding_ids`.
+- Creating a task, adding primary members and accepting a suggestion claim their findings (RFC-098 §6.1,
+  `claimFindingsInTx` in `remediation_claim.go`). A finding that is already the primary member of another
+  active task refuses the request: `409` with `code: FINDINGS_IN_OTHER_TASK` and `details.conflicts`, one entry
+  per finding (`finding_id`, `finding_title`, `task_id`, and `task_title`, `assignee_user_id`,
+  `assignee_group_id` only when the caller can read that task, else null; `can_move`).
+- The request resolves conflicts with `"conflicts": {"skip": true}` (leave them out) or
+  `{"move": [ids], "move_reason": "..."}` (move those, skip the others). Moving needs write access to the
+  holding task (visible, no finding outside the caller's scope; else `403`), ends the old membership with
+  `left_reason = 'moved'`, keeps the SLA, writes timeline entries on both tasks, recomputes (and, when emptied,
+  archives) the source, tells both trackers and writes one `remediation_task.findings_moved` audit row per source
+  task. Of two concurrent claims of one finding exactly one wins; the other answers `409`.
 - Closed findings never join as primary members; another tenant's finding, a missing one and one outside the
   caller's scope answer the same `404`.
 - Canceling a task (a reason is required) releases its findings (`left_reason = canceled`), so they may join
@@ -106,8 +115,9 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   secondary owner, directly or through a group (`asset_owners`, joined through `assets.tenant_id`). A new fix
   (`new_group`) stays with `findings:remediation:write`. The audit event carries `as_owner`. Owning an asset is
   not a scope grant: the data scope check applies on top.
-- Findings that closed or joined another task since the suggestion are left out and returned in `dropped`; with
-  none left the accept answers 400.
+- Findings that closed since the suggestion are left out and returned in `dropped`; findings another active task
+  took since answer `409 FINDINGS_IN_OTHER_TASK` unless `conflicts` skips them (returned in `skipped`) or moves
+  them (counted in `moved`); with none left the accept answers 400.
 - `POST /api/v1/remediation/suggestions/approve` accepts up to 50 suggestions (5000 findings) as they are, each
   on its own.
 - Auto-join (`remediation_actions.auto_join`, `PATCH /api/v1/remediation/actions/{id}`): exact keys only
@@ -220,7 +230,8 @@ are in the `myWork` dictionary (en, vi).
 
 - `api/migrations/*_remediation_tasks.up.sql`, `*_remediation_task_activity_type*.sql` (finding activity type)
 - `api/pkg/domain/remediation/task.go`, `task_repository.go`
-- `api/internal/infra/postgres/remediation_task_repository.go`
+- `api/internal/infra/postgres/remediation_task_repository.go`, `remediation_claim.go` (claim conflicts)
+- `api/pkg/domain/remediation/claim.go`, `api/internal/app/remediation/claims.go`
 - `api/internal/app/remediation/tasks.go`
 - `api/internal/infra/http/handler/remediation_task_handler.go`, `routes/remediation.go`
 - `api/internal/infra/controller/remediation_tasks.go`
@@ -229,4 +240,4 @@ are in the `myWork` dictionary (en, vi).
   `api/internal/infra/postgres/remediation_suggestion_repository.go`,
   `api/internal/infra/http/handler/remediation_suggestion_handler.go`,
   `api/internal/infra/controller/remediation_suggestions.go`
-- `api/tests/integration/remediation_tasks_test.go`, `remediation_suggestions_test.go`
+- `api/tests/integration/remediation_tasks_test.go`, `remediation_suggestions_test.go`, `remediation_claim_test.go`

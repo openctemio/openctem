@@ -81,7 +81,7 @@ func (h *ctlHarness) load(s ctlSensor) *sensor.Sensor {
 }
 
 func (h *ctlHarness) selector() *sensorapp.SensorSelector {
-	return sensorapp.NewSensorSelector(h.repo, nil, nil, logger.NewNop())
+	return sensorapp.NewSensorSelector(h.repo, nil, logger.NewNop())
 }
 
 func ids(ss []*sensor.Sensor) []string {

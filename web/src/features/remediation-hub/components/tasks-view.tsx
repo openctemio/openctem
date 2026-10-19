@@ -157,7 +157,9 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
         id: 'risk',
         header: t('remediationHub.tasks.columns.risk'),
         cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.counts.risk_points}</span>
+          <span className="font-mono text-sm" title={t('remediationHub.risk.explain')}>
+            {row.original.counts.risk_points}
+          </span>
         ),
       },
     ],
