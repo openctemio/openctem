@@ -69,12 +69,33 @@ func scanControl(id shared.ID, raw []byte, at sql.NullTime) *sensor.ControlRepor
 // (health online, late or stale) with its deadline, and the database's now.
 func (r *SensorRepository) ListLivenessCandidates(ctx context.Context) (time.Time, []sensor.LivenessCandidate, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, health, last_seen_at, heartbeat_due_at, heartbeat_interval_seconds, NOW()
+		SELECT id, tenant_id, health, last_seen_at, heartbeat_due_at, heartbeat_interval_seconds, NOW()
 		FROM sensors
 		WHERE health IN ('online', 'late', 'stale')`)
 	if err != nil {
 		return time.Time{}, nil, fmt.Errorf("failed to list sensor deadlines: %w", err)
 	}
+	return r.scanLivenessCandidates(ctx, rows)
+}
+
+// ListLivenessCandidatesByIDForPlatform is ListLivenessCandidates restricted to ids
+// (the health controller's fast path over the liveness store's due index).
+func (r *SensorRepository) ListLivenessCandidatesByIDForPlatform(ctx context.Context, ids []shared.ID) (time.Time, []sensor.LivenessCandidate, error) {
+	strs := make([]string, len(ids))
+	for i, id := range ids {
+		strs[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, health, last_seen_at, heartbeat_due_at, heartbeat_interval_seconds, NOW()
+		FROM sensors
+		WHERE id = ANY($1::uuid[]) AND health IN ('online', 'late', 'stale')`, pq.Array(strs))
+	if err != nil {
+		return time.Time{}, nil, fmt.Errorf("failed to list sensor deadlines: %w", err)
+	}
+	return r.scanLivenessCandidates(ctx, rows)
+}
+
+func (r *SensorRepository) scanLivenessCandidates(ctx context.Context, rows *sql.Rows) (time.Time, []sensor.LivenessCandidate, error) {
 	defer rows.Close()
 
 	var (
@@ -85,13 +106,14 @@ func (r *SensorRepository) ListLivenessCandidates(ctx context.Context) (time.Tim
 	for rows.Next() {
 		var (
 			id       string
+			tenant   sql.NullString
 			health   string
 			lastSeen sql.NullTime
 			due      sql.NullTime
 			interval sql.NullInt32
 			dbNow    time.Time
 		)
-		if err := rows.Scan(&id, &health, &lastSeen, &due, &interval, &dbNow); err != nil {
+		if err := rows.Scan(&id, &tenant, &health, &lastSeen, &due, &interval, &dbNow); err != nil {
 			return time.Time{}, nil, fmt.Errorf("failed to scan sensor deadline: %w", err)
 		}
 		if !seen {
@@ -102,6 +124,11 @@ func (r *SensorRepository) ListLivenessCandidates(ctx context.Context) (time.Tim
 			continue
 		}
 		c := sensor.LivenessCandidate{ID: sid, Health: sensor.SensorHealth(health)}
+		if tenant.Valid {
+			if tid, err := shared.IDFromString(tenant.String); err == nil {
+				c.TenantID = &tid
+			}
+		}
 		if lastSeen.Valid {
 			t := lastSeen.Time
 			c.Deadline.LastSeenAt = &t

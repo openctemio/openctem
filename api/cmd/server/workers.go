@@ -345,6 +345,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// No offline conviction while the platform itself is degraded (RFC-035
 	// D3): just started, stalled, or slow to handle heartbeats.
 	sensorHealth.SetPlatformHealth(svc.SensorPlatformHealth)
+	// Judges from the liveness store in redis mode, compares in shadow mode.
+	if svc.Sensor != nil {
+		sensorHealth.SetLiveness(svc.Sensor.LivenessMode(), svc.Sensor.LivenessStore())
+	}
+	// An offline conviction ends the sensor's leases at once.
+	sensorHealth.SetLeaseExpirer(repos.Command)
 	w.ControllerManager.Register(sensorHealth)
 	// How many sensors still use a legacy rda_ key (a gauge and a log line
 	// when it changes).
@@ -934,6 +940,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc != nil && svc.RemediationTask != nil {
 		w.ControllerManager.Register(controller.NewRemediationTaskController(
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
+		))
+	}
+	// Tasks from a query in auto mode: add new matches as each task's owner
+	// (suspends a task whose owner left or lost access).
+	if svc != nil && svc.RemediationTask != nil {
+		w.ControllerManager.Register(controller.NewRemediationTaskQueryController(
+			svc.RemediationTask, 5*time.Minute, log.With("controller", "remediation-task-queries"),
 		))
 	}
 	// Task issues: push each task's state to its tracker issue (move and a

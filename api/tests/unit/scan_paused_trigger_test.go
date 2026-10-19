@@ -59,8 +59,11 @@ func TestLastRun_Progress(t *testing.T) {
 		t.Errorf("steps progress = %d, want 25", got)
 	}
 	tasks := &scanrun.TaskSummary{Total: 8, Completed: 3, Failed: 1, Running: 4}
-	if got := (scanservice.LastRun{Run: run, Tasks: tasks}).Progress(); got != 50 {
-		t.Errorf("task progress = %d, want 50 (tasks win over steps)", got)
+	if got := (scanservice.LastRun{Run: run, Tasks: tasks}).Progress(); got != 25 {
+		t.Errorf("progress with steps and tasks = %d, want 25 (planned steps win over tasks)", got)
+	}
+	if got := (scanservice.LastRun{Run: &scanrun.Run{}, Tasks: tasks}).Progress(); got != 50 {
+		t.Errorf("task progress before steps are known = %d, want 50", got)
 	}
 	if got := (scanservice.LastRun{}).Progress(); got != 0 {
 		t.Errorf("no run progress = %d, want 0", got)

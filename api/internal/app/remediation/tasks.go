@@ -52,6 +52,13 @@ type TaskService struct {
 	exceptions TaskExceptionRequester
 	campaigns  TaskCampaignGate
 	logger     *logger.Logger
+
+	// Tasks from a query (query_tasks.go).
+	queries       QueryTaskRepository
+	matcher       QueryMatcher
+	owners        QueryOwnerDirectory
+	queryNotifier QueryTaskNotifier
+	modules       ModuleGuard
 }
 
 // TaskCampaignGate decides whether the caller may move a task out of one

@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -388,7 +389,11 @@ func (h *DashboardHandler) GetProgramMetrics(w http.ResponseWriter, r *http.Requ
 
 	metrics, err := h.dashboardService.GetProgramMetrics(r.Context(), tid, days)
 	if errors.Is(err, module.ErrAggregateRequired) {
-		apierror.Forbidden(err.Error()).WriteJSON(w)
+		// Name the grant, so the web can tell "no access" from a disabled
+		// module or a failure and say who can grant it.
+		apierror.Forbidden(err.Error()).
+			WithDetails(middleware.PermissionDeniedDetails{AnyOf: orgFiguresPermissions()}).
+			WriteJSON(w)
 		return
 	}
 	if err != nil {
@@ -492,4 +497,10 @@ func (h *DashboardHandler) GetDataQuality(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, scorecard)
+}
+
+// orgFiguresPermissions are the grants that show organization-wide figures
+// to a viewer restricted by data scope (full data access does too).
+func orgFiguresPermissions() []string {
+	return []string{permission.DashboardsOrgView.String(), permission.DashboardsOrgManage.String()}
 }

@@ -10,6 +10,8 @@ import (
 	"net"
 	"time"
 
+	queryapp "github.com/openctemio/openctem/api/internal/app/query"
+
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
@@ -325,7 +327,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
 		IsOwner: middleware.IsOwner(ctx),
-		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
+		APIKey:  middleware.IsDelegatedCredential(ctx),
 	}
 }
 
@@ -375,6 +377,13 @@ func (r workflowMemberReader) IsActiveTenantMember(ctx context.Context, tenantID
 // workflowPermissionReader reads the automation principal's permissions
 // from the database (the union of their roles), never from a cache.
 type workflowPermissionReader struct{ roles *postgres.RoleRepository }
+
+// queryTaskOwners reads the owner of an auto-mode task query outside a
+// request: membership, role and permissions.
+type queryTaskOwners struct {
+	workflowMemberReader
+	workflowPermissionReader
+}
 
 func (r workflowPermissionReader) GetUserPermissions(ctx context.Context, tenantID, userID string) ([]string, error) {
 	tid, err := role.ParseID(tenantID)
@@ -782,8 +791,11 @@ type Services struct {
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
 	RemediationTask     *remediation.TaskService
-	RemediationSuggest  *remediation.SuggestionService
-	RemediationGroup    *remediation.GroupService
+	// Query runs custom queries (one instance: its concurrency caps are
+	// per process).
+	Query              *queryapp.Service
+	RemediationSuggest *remediation.SuggestionService
+	RemediationGroup   *remediation.GroupService
 
 	// Business Units
 	BusinessUnit *asset.BusinessUnitService
@@ -1688,6 +1700,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// One exception over a task's open findings (RFC-111 §7).
 	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
+	if deps.DB != nil {
+		s.Query = queryapp.NewService(postgres.NewQueryExecutor(&postgres.DB{DB: deps.DB}, postgres.InteractiveQueryTimeout), s.DataScope, log)
+	}
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
@@ -1975,6 +1990,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Heartbeat gaps: the fleet histogram and each tenant sensor's 48 h
 	// history (the Control channel sparkline; RFC-035).
 	s.Sensor.SetHeartbeatHistory(repos.SensorHeartbeatHistory)
+	// Heartbeat soft state (SENSOR_LIVENESS_STORE): shadow by default, so
+	// the Redis verdict is compared with Postgres before the switch.
+	if mode, err := sensordom.ParseLivenessMode(cfg.SensorConfig.LivenessStore); err == nil && mode != sensordom.LivenessPostgres && deps.RedisClient != nil {
+		store := redis.NewSensorLivenessStore(deps.RedisClient.Client())
+		s.Sensor.SetLiveness(mode, store, repos.Sensor, repos.SensorHeartbeatHistory)
+		if mode == sensordom.LivenessRedis {
+			// Postgres holds checkpoints only: every read of a sensor
+			// overlays the live deadline.
+			repos.Sensor.SetLivenessOverlay(store)
+		}
+		log.Info("sensor liveness store", "mode", string(mode))
+		if w := redis.EvictionPolicyWarning(context.Background(), deps.RedisClient.Client()); w != "" {
+			log.Warn(w)
+		}
+	}
 	s.Sensor.SetHeartbeatGapObserver(telemetry.SensorHeartbeatMetrics{})
 	// Command leases (RFC-035 D6): a claim holds for SENSOR_COMMAND_LEASE
 	// and every heartbeat renews what the sensor holds; job recovery takes
@@ -3151,6 +3181,16 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// once.
 	if s.Scan != nil {
 		s.Scan.SetOwnerNotifications(repos.MemberLifecycle, s.Notification)
+	}
+	// Tasks from a query: the query runs as the creator; auto mode re-reads
+	// the owner's membership and permissions on every run and tells them
+	// of additions and suspensions.
+	if s.RemediationTask != nil && s.Query != nil {
+		s.RemediationTask.SetQueryTasks(repos.RemediationTask, s.Query, queryTaskOwners{
+			workflowMemberReader{tenants: repos.Tenant, access: repos.AccessControl},
+			workflowPermissionReader{roles: repos.Role},
+		}, s.Notification)
+		s.RemediationTask.SetModuleGuard(s.Module)
 	}
 
 	// Scope entries: settings, the approval count and the widening notice to
