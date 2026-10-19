@@ -65,15 +65,15 @@ func verifyChain(t *testing.T, db *sql.DB) {
 }
 
 type adminRow struct {
-	ID, Role, UserID string
-	Active           bool
+	ID, Role, UserID   string
+	Active, BreakGlass bool
 }
 
 func getAdmin(t *testing.T, db *sql.DB, email string) *adminRow {
 	t.Helper()
 	var a adminRow
-	err := db.QueryRow(`SELECT id, role, coalesce(user_id::text, ''), is_active FROM admin_users WHERE email = $1`, email).
-		Scan(&a.ID, &a.Role, &a.UserID, &a.Active)
+	err := db.QueryRow(`SELECT id, role, coalesce(user_id::text, ''), is_active, is_break_glass FROM admin_users WHERE email = $1`, email).
+		Scan(&a.ID, &a.Role, &a.UserID, &a.Active, &a.BreakGlass)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -231,6 +231,14 @@ func TestBootstrapAccountability_DB(t *testing.T) {
 	}
 	if _, err := runOpts(t, db, Options{Email: backup, NoBackup: true, Force: true, Yes: true, Role: "super_admin"}); err != nil {
 		t.Fatalf("re-creating the last super admin as super admin: %v", err)
+	}
+
+	// -force with -email naming the break-glass backup keeps it break-glass.
+	if _, err := runOpts(t, db, Options{Email: backup, NoBackup: true, Force: true, Yes: true}); err != nil {
+		t.Fatalf("force on the backup through -email: %v", err)
+	}
+	if !getAdmin(t, db, backup).BreakGlass {
+		t.Fatal("-force through -email dropped the break-glass mark")
 	}
 
 	// -link: an administrator from before sign-in accounts gets one, audited.
