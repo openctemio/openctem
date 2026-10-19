@@ -343,11 +343,11 @@ func TestAttackSurfaceService_GetStats_Success(t *testing.T) {
 	if stats.TotalAssets != 42 {
 		t.Errorf("expected TotalAssets=42, got %d", stats.TotalAssets)
 	}
-	if stats.ExposedServices != 10 {
-		t.Errorf("expected ExposedServices=10, got %d", stats.ExposedServices)
+	if stats.InternetFacingAssets != 10 {
+		t.Errorf("expected InternetFacingAssets=10, got %d", stats.InternetFacingAssets)
 	}
-	if stats.CriticalExposures != 3 {
-		t.Errorf("expected CriticalExposures=3, got %d", stats.CriticalExposures)
+	if stats.CriticalInternetFacingAssets != 3 {
+		t.Errorf("expected CriticalInternetFacingAssets=3, got %d", stats.CriticalInternetFacingAssets)
 	}
 	if stats.RiskScore != 65.5 {
 		t.Errorf("expected RiskScore=65.5, got %f", stats.RiskScore)
@@ -370,11 +370,11 @@ func TestAttackSurfaceService_GetStats_EmptyTenant(t *testing.T) {
 	if stats.TotalAssets != 0 {
 		t.Errorf("expected TotalAssets=0, got %d", stats.TotalAssets)
 	}
-	if stats.ExposedServices != 0 {
-		t.Errorf("expected ExposedServices=0, got %d", stats.ExposedServices)
+	if stats.InternetFacingAssets != 0 {
+		t.Errorf("expected InternetFacingAssets=0, got %d", stats.InternetFacingAssets)
 	}
-	if stats.CriticalExposures != 0 {
-		t.Errorf("expected CriticalExposures=0, got %d", stats.CriticalExposures)
+	if stats.CriticalInternetFacingAssets != 0 {
+		t.Errorf("expected CriticalInternetFacingAssets=0, got %d", stats.CriticalInternetFacingAssets)
 	}
 	if stats.RiskScore != 0 {
 		t.Errorf("expected RiskScore=0, got %f", stats.RiskScore)
@@ -402,11 +402,11 @@ func TestAttackSurfaceService_GetStats_TotalCountError(t *testing.T) {
 		t.Errorf("expected TotalAssets=0 on error, got %d", stats.TotalAssets)
 	}
 	// Other counts should still work
-	if stats.ExposedServices != 5 {
-		t.Errorf("expected ExposedServices=5, got %d", stats.ExposedServices)
+	if stats.InternetFacingAssets != 5 {
+		t.Errorf("expected InternetFacingAssets=5, got %d", stats.InternetFacingAssets)
 	}
-	if stats.CriticalExposures != 2 {
-		t.Errorf("expected CriticalExposures=2, got %d", stats.CriticalExposures)
+	if stats.CriticalInternetFacingAssets != 2 {
+		t.Errorf("expected CriticalInternetFacingAssets=2, got %d", stats.CriticalInternetFacingAssets)
 	}
 }
 
@@ -424,11 +424,11 @@ func TestAttackSurfaceService_GetStats_ExposedCountError(t *testing.T) {
 	if stats.TotalAssets != 100 {
 		t.Errorf("expected TotalAssets=100, got %d", stats.TotalAssets)
 	}
-	if stats.ExposedServices != 0 {
-		t.Errorf("expected ExposedServices=0 on error, got %d", stats.ExposedServices)
+	if stats.InternetFacingAssets != 0 {
+		t.Errorf("expected InternetFacingAssets=0 on error, got %d", stats.InternetFacingAssets)
 	}
-	if stats.CriticalExposures != 5 {
-		t.Errorf("expected CriticalExposures=5, got %d", stats.CriticalExposures)
+	if stats.CriticalInternetFacingAssets != 5 {
+		t.Errorf("expected CriticalInternetFacingAssets=5, got %d", stats.CriticalInternetFacingAssets)
 	}
 }
 
@@ -446,11 +446,11 @@ func TestAttackSurfaceService_GetStats_CriticalCountError(t *testing.T) {
 	if stats.TotalAssets != 100 {
 		t.Errorf("expected TotalAssets=100, got %d", stats.TotalAssets)
 	}
-	if stats.ExposedServices != 20 {
-		t.Errorf("expected ExposedServices=20, got %d", stats.ExposedServices)
+	if stats.InternetFacingAssets != 20 {
+		t.Errorf("expected InternetFacingAssets=20, got %d", stats.InternetFacingAssets)
 	}
-	if stats.CriticalExposures != 0 {
-		t.Errorf("expected CriticalExposures=0 on error, got %d", stats.CriticalExposures)
+	if stats.CriticalInternetFacingAssets != 0 {
+		t.Errorf("expected CriticalInternetFacingAssets=0 on error, got %d", stats.CriticalInternetFacingAssets)
 	}
 }
 
@@ -719,11 +719,11 @@ func TestAttackSurfaceService_GetStats_AllErrors(t *testing.T) {
 	if stats.TotalAssets != 0 {
 		t.Errorf("expected TotalAssets=0, got %d", stats.TotalAssets)
 	}
-	if stats.ExposedServices != 0 {
-		t.Errorf("expected ExposedServices=0, got %d", stats.ExposedServices)
+	if stats.InternetFacingAssets != 0 {
+		t.Errorf("expected InternetFacingAssets=0, got %d", stats.InternetFacingAssets)
 	}
-	if stats.CriticalExposures != 0 {
-		t.Errorf("expected CriticalExposures=0, got %d", stats.CriticalExposures)
+	if stats.CriticalInternetFacingAssets != 0 {
+		t.Errorf("expected CriticalInternetFacingAssets=0, got %d", stats.CriticalInternetFacingAssets)
 	}
 	if stats.RiskScore != 0 {
 		t.Errorf("expected RiskScore=0, got %f", stats.RiskScore)
@@ -752,18 +752,13 @@ func TestAttackSurfaceService_GetStats_CountFilterVerification(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	// Three totals, then three trend counts (new in the trend window).
-	if repo.countCall != 6 {
-		t.Fatalf("expected 6 Count calls, got %d", repo.countCall)
+	// Three totals, then the new-assets trend count (newly exposed comes
+	// from the state history, like Assets > What changed).
+	if repo.countCall != 4 {
+		t.Fatalf("expected 4 Count calls, got %d", repo.countCall)
 	}
-	for i := 3; i < 6; i++ {
-		f := repo.countFilters[i]
-		if f.TenantID == nil {
-			t.Errorf("trend Count call %d should have TenantID set", i)
-		}
-		if f.CreatedAfter == nil && f.ExposureChangedOrCreatedAfter == nil {
-			t.Errorf("trend Count call %d should be bounded to the trend window", i)
-		}
+	if f := repo.countFilters[3]; f.TenantID == nil || f.CreatedAfter == nil {
+		t.Errorf("trend Count call should have TenantID and be bounded to the trend window")
 	}
 
 	// First call: total assets (only tenantID filter)
@@ -775,22 +770,22 @@ func TestAttackSurfaceService_GetStats_CountFilterVerification(t *testing.T) {
 		t.Error("first Count call should not have exposure filter")
 	}
 
-	// Second call: exposed services (tenantID + exposure=public)
+	// Second call: internet-facing assets (the one definition, not exposure alone)
 	f1 := repo.countFilters[1]
 	if f1.TenantID == nil {
 		t.Error("second Count call should have TenantID set")
 	}
-	if len(f1.Exposures) != 1 || f1.Exposures[0] != asset.ExposurePublic {
-		t.Errorf("second Count call should filter by ExposurePublic, got %v", f1.Exposures)
+	if f1.InternetFacing == nil || !*f1.InternetFacing || len(f1.Exposures) != 0 {
+		t.Errorf("second Count call should filter internet-facing, got %v / %v", f1.InternetFacing, f1.Exposures)
 	}
 
-	// Third call: critical exposures (tenantID + exposure=public + criticality=critical,high)
+	// Third call: critical internet-facing assets
 	f2 := repo.countFilters[2]
 	if f2.TenantID == nil {
 		t.Error("third Count call should have TenantID set")
 	}
-	if len(f2.Exposures) != 1 || f2.Exposures[0] != asset.ExposurePublic {
-		t.Errorf("third Count call should filter by ExposurePublic, got %v", f2.Exposures)
+	if f2.InternetFacing == nil || !*f2.InternetFacing || len(f2.Exposures) != 0 {
+		t.Errorf("third Count call should filter internet-facing, got %v / %v", f2.InternetFacing, f2.Exposures)
 	}
 	if len(f2.Criticalities) != 2 {
 		t.Fatalf("third Count call should filter by 2 criticalities, got %d", len(f2.Criticalities))
@@ -829,8 +824,8 @@ func TestAttackSurfaceService_GetStats_ListFilterVerification(t *testing.T) {
 	if lf0.TenantID == nil {
 		t.Error("first List call should have TenantID set")
 	}
-	if len(lf0.Exposures) != 1 || lf0.Exposures[0] != asset.ExposurePublic {
-		t.Fatalf("first List call should filter by public only, got %v", lf0.Exposures)
+	if lf0.InternetFacing == nil || !*lf0.InternetFacing || len(lf0.Exposures) != 0 {
+		t.Fatalf("first List call should filter internet-facing only, got %v / %v", lf0.InternetFacing, lf0.Exposures)
 	}
 
 	// Second List call: recent changes (tenantID only)
@@ -845,8 +840,8 @@ func TestAttackSurfaceService_GetStats_ListFilterVerification(t *testing.T) {
 
 func TestAttackSurfaceService_GetStats_TrendsFromWindowCounts(t *testing.T) {
 	repo := newMockAttackSurfaceRepo()
-	// totals, then new assets / newly exposed / newly exposed critical
-	repo.countResults = []int64{50, 15, 3, 7, 4, 1}
+	// totals, then new assets (newly exposed: state history, none wired here)
+	repo.countResults = []int64{50, 15, 3, 7}
 
 	svc := newTestAttackSurfaceService(repo)
 	stats, err := svc.GetStats(context.Background(), serviceTenantID)
@@ -854,9 +849,8 @@ func TestAttackSurfaceService_GetStats_TrendsFromWindowCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if stats.TotalAssetsChange != 7 || stats.ExposedServicesChange != 4 || stats.CriticalExposuresChange != 1 {
-		t.Errorf("trends = %d/%d/%d, want 7/4/1",
-			stats.TotalAssetsChange, stats.ExposedServicesChange, stats.CriticalExposuresChange)
+	if stats.TotalAssetsChange != 7 || stats.NewlyExposed != 0 {
+		t.Errorf("trends = %d/%d, want 7/0", stats.TotalAssetsChange, stats.NewlyExposed)
 	}
 	if stats.TrendWindowDays != 7 {
 		t.Errorf("expected TrendWindowDays=7, got %d", stats.TrendWindowDays)

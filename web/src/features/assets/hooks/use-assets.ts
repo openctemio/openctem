@@ -96,7 +96,7 @@ export interface AssetSearchFilters {
   hasOwner?: boolean
   dataClassifications?: string[] // public | internal | confidential | restricted | secret
   isControlPlane?: boolean
-  isInternetAccessible?: boolean
+  isInternetFacing?: boolean
   environments?: string[] // production | staging | development | testing | dr
   providers?: string[]
   lastSeenBefore?: string // ISO timestamp — assets last seen before this instant
@@ -139,7 +139,7 @@ interface BackendAsset {
   status: string // active, inactive, archived
   scope: string // internal, external, cloud, partner, vendor, shadow
   exposure: string // public, restricted, private, isolated, unknown
-  is_internet_accessible?: boolean // optional: present once the api surfaces the column
+  internet_facing?: boolean // exposure public OR reported reachable (one definition)
   // CTEM Scoping CIA impact ratings (api #467). Omitted by the backend when
   // a dimension is unrated (json omitempty), so these are optional here.
   impact_confidentiality?: string // low | moderate | high
@@ -204,7 +204,7 @@ function transformAsset(backend: BackendAsset): Asset {
     ownerRef: backend.owner_ref,
     scope: backend.scope as AssetScope,
     exposure: backend.exposure as ExposureLevel,
-    isInternetAccessible: backend.is_internet_accessible,
+    isInternetFacing: backend.internet_facing,
     // CIA impact ratings (api #467). Backend omits unrated dimensions, so
     // coerce the empty string to undefined to mean "not rated".
     impactConfidentiality: (backend.impact_confidentiality as ImpactRating) || undefined,
@@ -296,7 +296,7 @@ interface BackendAssetStats {
   by_data_classification?: Record<string, number>
   by_environment?: Record<string, number>
   by_provider?: Record<string, number>
-  by_internet_accessible?: Record<string, number> // keys "true" | "false"
+  by_internet_facing?: Record<string, number> // keys "true" | "false"
   by_has_owner?: Record<string, number> // keys "true" | "false"
   by_control_plane?: Record<string, number> // keys "true" | "false"
   by_business_unit?: Record<string, number> // keys = business_unit id
@@ -321,7 +321,7 @@ export interface AssetStatsData {
   byDataClassification: Record<string, number>
   byEnvironment: Record<string, number>
   byProvider: Record<string, number>
-  byInternetAccessible: Record<string, number> // keys "true" | "false"
+  byInternetFacing: Record<string, number> // keys "true" | "false"
   byHasOwner: Record<string, number> // keys "true" | "false"
   byControlPlane: Record<string, number> // keys "true" | "false"
   byBusinessUnit: Record<string, number> // keys = business_unit id
@@ -345,7 +345,7 @@ function transformAssetStats(backend: BackendAssetStats): AssetStatsData {
     byDataClassification: backend.by_data_classification || {},
     byEnvironment: backend.by_environment || {},
     byProvider: backend.by_provider || {},
-    byInternetAccessible: backend.by_internet_accessible || {},
+    byInternetFacing: backend.by_internet_facing || {},
     byHasOwner: backend.by_has_owner || {},
     byControlPlane: backend.by_control_plane || {},
     byBusinessUnit: backend.by_business_unit || {},
@@ -495,8 +495,8 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.dataClassifications?.length)
     params.data_classifications = filters.dataClassifications.join(',')
   if (filters.isControlPlane !== undefined) params.is_control_plane = String(filters.isControlPlane)
-  if (filters.isInternetAccessible !== undefined)
-    params.is_internet_accessible = String(filters.isInternetAccessible)
+  if (filters.isInternetFacing !== undefined)
+    params.internet_facing = String(filters.isInternetFacing)
   if (filters.environments?.length) params.environments = filters.environments.join(',')
   if (filters.providers?.length) params.providers = filters.providers.join(',')
   if (filters.lastSeenBefore) params.last_seen_before = filters.lastSeenBefore
@@ -587,6 +587,9 @@ export function useAssets(filters?: AssetSearchFilters) {
       pageSize: data?.per_page || 20,
       totalPages: data?.total_pages || 1,
       isLoading: shouldFetch ? isLoading : false,
+      /** True once a response arrived (false while the tenant or the
+       * permissions are still loading and nothing was requested yet). */
+      hasLoaded: data !== undefined,
       isError: !!error,
       error,
       mutate,
@@ -839,7 +842,7 @@ export function useAssetStats({ types, lenses, tags, subType, countBy }: AssetSt
     byDataClassification: {},
     byEnvironment: {},
     byProvider: {},
-    byInternetAccessible: {},
+    byInternetFacing: {},
     byHasOwner: {},
     byControlPlane: {},
     byBusinessUnit: {},

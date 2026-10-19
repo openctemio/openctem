@@ -392,6 +392,17 @@ type ListStateHistoryOptions struct {
 	SortOrder string // asc, desc
 }
 
+// NewlyExposedHistory narrows opts to the "became internet-facing" changes:
+// exposure changed to public, or the reachability flag turned true. Assets >
+// What changed and the attack surface overview count newly exposed assets
+// with it, so they agree.
+func NewlyExposedHistory(opts ListStateHistoryOptions) ListStateHistoryOptions {
+	opts.ChangeType = nil
+	opts.ChangeTypes = []StateChangeType{StateChangeExposureChanged, StateChangeInternetExposureChanged}
+	opts.NewValues = []string{string(ExposurePublic), "true"}
+	return opts
+}
+
 // EffectiveChangeTypes merges the single ChangeType filter into ChangeTypes.
 func (o ListStateHistoryOptions) EffectiveChangeTypes() []StateChangeType {
 	if o.ChangeType == nil {

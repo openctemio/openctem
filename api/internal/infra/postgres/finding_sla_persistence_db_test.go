@@ -289,17 +289,18 @@ func TestEnrichColumns_CountsAgree(t *testing.T) {
 	if len(args) != enrichColumnsPerRow {
 		t.Errorf("collectEnrichArgs returns %d values, enrichColumnsPerRow=%d", len(args), enrichColumnsPerRow)
 	}
-	// Assert the SLA columns are present in the def set.
-	var hasDeadline, hasStatus bool
+	// Enrichment writes only what it merges from a sighting: the columns
+	// other writers own (SLA, priority and its override, EPSS/KEV,
+	// reachability) are never written back from the row read before the merge.
 	for _, c := range enrichColumnDefs {
 		switch c.name {
-		case "sla_deadline":
-			hasDeadline = true
-		case "sla_status":
-			hasStatus = true
+		case "sla_deadline", "sla_status", "priority_class", "priority_class_reason",
+			"priority_class_override", "priority_class_overridden_by", "priority_class_overridden_at",
+			"epss_score", "epss_percentile", "is_in_kev", "kev_due_date", "is_reachable", "reachable_from_count":
+			t.Errorf("enrichColumnDefs writes %s, a column another writer owns", c.name)
 		}
 	}
-	if !hasDeadline || !hasStatus {
-		t.Errorf("enrichColumnDefs missing sla columns: deadline=%v status=%v", hasDeadline, hasStatus)
+	if enrichColumnDefs[enrichWhereColumns-1].name != "row_version" {
+		t.Errorf("the enrichment write is not guarded by row_version")
 	}
 }
