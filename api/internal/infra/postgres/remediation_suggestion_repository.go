@@ -63,7 +63,7 @@ func (r *RemediationSuggestionRepository) Candidates(ctx context.Context, tenant
 	q := `
 		SELECT f.id, frk.remediation_key, frk.title, f.asset_id, COALESCE(f.priority_class, ''), f.severity,
 		       COALESCE(f.is_in_kev, false), f.sla_deadline, ` + FindingRiskPointsSQL + `,
-		       ou.user_id, og.group_id
+		       ou.user_id, og.group_id, COALESCE(f.rule_id, ''), COALESCE(f.title, f.message, '')
 		FROM finding_remediation_keys frk
 		JOIN findings f ON f.id = frk.finding_id AND f.tenant_id = frk.tenant_id
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
@@ -79,13 +79,16 @@ func (r *RemediationSuggestionRepository) Candidates(ctx context.Context, tenant
 			WHERE ao.asset_id = a.id AND ao.ownership_type = 'primary' AND ao.group_id IS NOT NULL
 			ORDER BY ao.assigned_at, ao.id LIMIT 1) og ON true
 		WHERE frk.tenant_id = $1
+		  AND frk.algorithm_version >= $4
 		  AND f.source <> 'pentest'
 		  AND f.status <> ALL($2::text[])
 		  AND NOT EXISTS (SELECT 1 FROM remediation_task_members m
 		                  WHERE m.tenant_id = f.tenant_id AND m.finding_id = f.id AND m.left_at IS NULL AND m.role = 'primary')
 		ORDER BY f.id
 		LIMIT $3`
-	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), closedStatusArray(), maxCandidates)
+	// A key derived by older key rules is never trusted: the generator
+	// re-derives the tenant's keys first (SuggestionService.RunTenant).
+	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), closedStatusArray(), maxCandidates, remediation.KeyAlgorithmVersion)
 	if err != nil {
 		return nil, fmt.Errorf("read suggestion candidates: %w", err)
 	}
@@ -98,7 +101,7 @@ func (r *RemediationSuggestionRepository) Candidates(ctx context.Context, tenant
 			sla                  sql.NullTime
 		)
 		if err := rows.Scan(&c.FindingID, &c.Key, &c.Title, &assetID, &c.PriorityClass, &c.Severity, &c.InKEV, &sla,
-			&c.RiskPoints, &user, &group); err != nil {
+			&c.RiskPoints, &user, &group, &c.RuleID, &c.FindingTitle); err != nil {
 			return nil, fmt.Errorf("read suggestion candidates: %w", err)
 		}
 		c.AssetID, c.SLADeadline = rtNullID(assetID), rtTimePtr(sla)
