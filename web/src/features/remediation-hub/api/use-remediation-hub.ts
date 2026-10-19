@@ -37,6 +37,10 @@ export interface TaskListFilters {
   sort?: 'deadline' | 'risk' | 'updated' | 'created'
   findingId?: string
   actionId?: string
+  /** Tasks of one campaign. */
+  campaignId?: string
+  /** Tasks in no campaign (the campaign "Add tasks" picker). */
+  noCampaign?: boolean
   page?: number
   perPage?: number
 }
@@ -49,6 +53,8 @@ export function taskListUrl(f: TaskListFilters): string {
   if (f.sort) p.set('sort', f.sort)
   if (f.findingId) p.set('finding_id', f.findingId)
   if (f.actionId) p.set('action_id', f.actionId)
+  if (f.campaignId) p.set('campaign_id', f.campaignId)
+  if (f.noCampaign) p.set('no_campaign', 'true')
   p.set('page', String(f.page ?? 1))
   p.set('per_page', String(f.perPage ?? 25))
   return `${TASKS}?${p.toString()}`

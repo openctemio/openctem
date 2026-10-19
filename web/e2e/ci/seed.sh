@@ -153,8 +153,8 @@ log "a scan with a run in progress"
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
 
-log "remediation task"
-call POST /api/v1/remediation/campaigns '{"name":"E2E remediation task","description":"e2e","priority":"high"}'
+log "remediation campaign"
+call POST /api/v1/remediation/campaigns '{"name":"E2E remediation campaign","description":"e2e","priority":"high"}'
 
 # Ingest is asynchronous: wait until the findings are listed.
 for _ in $(seq 1 30); do

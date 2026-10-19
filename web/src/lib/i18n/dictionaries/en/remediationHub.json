@@ -28,8 +28,6 @@
   "remediationHub.actions.undo": "Undo",
   "remediationHub.actions.why": "Why?",
   "remediationHub.band.tracked": "Tracked in task",
-  "remediationHub.campaigns.description": "Programs that track many fixes toward one goal and deadline.",
-  "remediationHub.campaigns.title": "Campaigns",
   "remediationHub.cancelTask.confirm": "Cancel task",
   "remediationHub.cancelTask.description": "Its findings are released and can join another task. This cannot be undone.",
   "remediationHub.cancelTask.reason": "Reason",
