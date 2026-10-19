@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -60,7 +61,7 @@ type removedProfileFields struct {
 }
 
 // errProfileRemovedFields is the answer to a request that sets a removed field.
-const errProfileRemovedFields = "a scan profile is only a quality gate (pass/fail rule): tools_config, intensity, max_concurrent_scans and timeout_seconds are not supported; choose intensity and tools on the scan or its workflow"
+const errProfileRemovedFields = "a scan profile is a quality gate (pass/fail rule) and the rule sources its scans run: tools_config, intensity, max_concurrent_scans and timeout_seconds are not supported; choose intensity and tools on the scan or its workflow"
 
 // removed reports whether the request sets any removed field (a JSON null
 // counts as not set).
@@ -94,6 +95,9 @@ type CreateScanProfileRequest struct {
 	Tags        []string            `json:"tags" validate:"max=20,dive,max=50"`
 	IsDefault   bool                `json:"is_default"`
 	QualityGate *QualityGateRequest `json:"quality_gate,omitempty"`
+	// RuleSources is which detection rules the profile's scans run unless a
+	// scan sets its own: both (default), platform or tenant.
+	RuleSources string `json:"rule_sources" validate:"omitempty,oneof=both platform tenant"`
 }
 
 // UpdateScanProfileRequest represents the request body for updating a scan profile.
@@ -103,6 +107,8 @@ type UpdateScanProfileRequest struct {
 	removedProfileFields
 	Tags        []string            `json:"tags" validate:"max=20,dive,max=50"`
 	QualityGate *QualityGateRequest `json:"quality_gate,omitempty"`
+	// RuleSources: omitted = unchanged, else both, platform or tenant.
+	RuleSources *string `json:"rule_sources" validate:"omitempty,oneof=both platform tenant"`
 }
 
 // UpdateQualityGateRequest represents the request body for updating quality gate.
@@ -181,6 +187,7 @@ type ScanProfileResponse struct {
 	Tags        []string            `json:"tags"`
 	Metadata    map[string]any      `json:"metadata,omitempty"`
 	QualityGate QualityGateResponse `json:"quality_gate"`
+	RuleSources string              `json:"rule_sources"`
 	CreatedBy   *string             `json:"created_by,omitempty"`
 	CreatedAt   string              `json:"created_at"`
 	UpdatedAt   string              `json:"updated_at"`
@@ -226,6 +233,7 @@ func (h *ScanProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Tags:        req.Tags,
 		IsDefault:   req.IsDefault,
 		QualityGate: toQualityGateDomain(req.QualityGate),
+		RuleSources: req.RuleSources,
 	}
 
 	profile, err := h.service.CreateScanProfile(r.Context(), input)
@@ -408,6 +416,7 @@ func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 		Tags:        req.Tags,
 		QualityGate: toQualityGateDomain(req.QualityGate),
+		RuleSources: req.RuleSources,
 	}
 
 	profile, err := h.service.UpdateScanProfile(r.Context(), input)
@@ -673,6 +682,7 @@ func toScanProfileResponse(p *scanprofile.ScanProfile) *ScanProfileResponse {
 		Tags:        p.Tags,
 		Metadata:    p.Metadata,
 		QualityGate: toQualityGateResponse(p.QualityGate),
+		RuleSources: string(scannertemplate.EffectiveRuleSources(p.RuleSources, "")),
 		CreatedAt:   p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}

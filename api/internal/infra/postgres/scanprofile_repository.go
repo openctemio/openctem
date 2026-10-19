@@ -10,6 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -47,9 +48,9 @@ func (r *ScanProfileRepository) Create(ctx context.Context, p *scanprofile.ScanP
 			id, tenant_id, name, description,
 			is_default, is_system, tools_config,
 			intensity, max_concurrent_scans, timeout_seconds,
-			tags, metadata, quality_gate, created_by, created_at, updated_at
+			tags, metadata, quality_gate, created_by, created_at, updated_at, rule_sources
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
 	var createdBy sql.NullString
@@ -74,6 +75,7 @@ func (r *ScanProfileRepository) Create(ctx context.Context, p *scanprofile.ScanP
 		createdBy,
 		p.CreatedAt,
 		p.UpdatedAt,
+		profileRuleSources(p.RuleSources),
 	)
 
 	if err != nil {
@@ -185,7 +187,7 @@ func (r *ScanProfileRepository) Update(ctx context.Context, p *scanprofile.ScanP
 		SET name = $2, description = $3,
 		    is_default = $4, tools_config = $5,
 		    intensity = $6, max_concurrent_scans = $7, timeout_seconds = $8,
-		    tags = $9, metadata = $10, quality_gate = $11, updated_at = $12
+		    tags = $9, metadata = $10, quality_gate = $11, updated_at = $12, rule_sources = $14
 		WHERE id = $1 AND tenant_id = $13
 	`
 
@@ -203,6 +205,7 @@ func (r *ScanProfileRepository) Update(ctx context.Context, p *scanprofile.ScanP
 		qualityGate,
 		p.UpdatedAt,
 		p.TenantID.String(),
+		profileRuleSources(p.RuleSources),
 	)
 
 	if err != nil {
@@ -344,7 +347,7 @@ func (r *ScanProfileRepository) selectQuery() string {
 		SELECT id, tenant_id, name, description,
 		       is_default, is_system, tools_config,
 		       intensity, max_concurrent_scans, timeout_seconds,
-		       tags, metadata, quality_gate, created_by, created_at, updated_at
+		       tags, metadata, quality_gate, created_by, created_at, updated_at, rule_sources
 		FROM scan_profiles
 	`
 }
@@ -403,6 +406,7 @@ func (r *ScanProfileRepository) scanProfile(row *sql.Row) (*scanprofile.ScanProf
 		metadata    []byte
 		qualityGate []byte
 		createdBy   sql.NullString
+		ruleSources string
 	)
 
 	err := row.Scan(
@@ -422,6 +426,7 @@ func (r *ScanProfileRepository) scanProfile(row *sql.Row) (*scanprofile.ScanProf
 		&createdBy,
 		&p.CreatedAt,
 		&p.UpdatedAt,
+		&ruleSources,
 	)
 
 	if err != nil {
@@ -435,6 +440,7 @@ func (r *ScanProfileRepository) scanProfile(row *sql.Row) (*scanprofile.ScanProf
 	p.TenantID, _ = shared.IDFromString(tenantID)
 	p.Intensity = scanprofile.Intensity(intensity)
 	p.Tags = tags
+	p.RuleSources = scannertemplate.EffectiveRuleSources(scannertemplate.RuleSources(ruleSources), "")
 
 	if createdBy.Valid {
 		createdByID, _ := shared.IDFromString(createdBy.String)
@@ -474,6 +480,7 @@ func (r *ScanProfileRepository) scanProfileFromRows(rows *sql.Rows) (*scanprofil
 		metadata    []byte
 		qualityGate []byte
 		createdBy   sql.NullString
+		ruleSources string
 	)
 
 	err := rows.Scan(
@@ -493,6 +500,7 @@ func (r *ScanProfileRepository) scanProfileFromRows(rows *sql.Rows) (*scanprofil
 		&createdBy,
 		&p.CreatedAt,
 		&p.UpdatedAt,
+		&ruleSources,
 	)
 
 	if err != nil {
@@ -503,6 +511,7 @@ func (r *ScanProfileRepository) scanProfileFromRows(rows *sql.Rows) (*scanprofil
 	p.TenantID, _ = shared.IDFromString(tenantID)
 	p.Intensity = scanprofile.Intensity(intensity)
 	p.Tags = tags
+	p.RuleSources = scannertemplate.EffectiveRuleSources(scannertemplate.RuleSources(ruleSources), "")
 
 	if createdBy.Valid {
 		createdByID, _ := shared.IDFromString(createdBy.String)
@@ -528,4 +537,10 @@ func (r *ScanProfileRepository) scanProfileFromRows(rows *sql.Rows) (*scanprofil
 	}
 
 	return p, nil
+}
+
+// profileRuleSources is the stored value of a profile's rule sources: both
+// when unset.
+func profileRuleSources(rs scannertemplate.RuleSources) string {
+	return string(scannertemplate.EffectiveRuleSources(rs, ""))
 }
