@@ -234,3 +234,16 @@ import modes/{$OPENCTEM_TLS_MODE}.site
 
 # The platform console's own site, or nothing (OPENCTEM_ADMIN_SITE).
 import admin/{$OPENCTEM_ADMIN_SITE_FILE:off}.site
+
+# The gateway's health for the platform console's Health page
+# (SYSTEM_GATEWAY_HEALTH_URL, http://gateway:2020/health in the compose file).
+# Plain HTTP on a port that is never published: only containers on the
+# stack's network reach it. It says nothing but that the gateway answers.
+http://:2020 {
+	handle /health {
+		respond "ok" 200
+	}
+	handle {
+		respond 404
+	}
+}

@@ -98,6 +98,7 @@ dashboard_audience
 definition_identifiers
 definition_relations
 definition_taxonomy
+durable_jobs
 easm_alert_throttle
 easm_dns_name_state
 easm_evidence
