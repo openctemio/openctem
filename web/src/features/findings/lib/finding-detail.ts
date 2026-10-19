@@ -600,7 +600,10 @@ export function mapFindingSourceData(
         }
       : undefined,
     sourceExtra: Object.entries(api.source_extra ?? {}).sort(([a], [b]) => a.localeCompare(b)),
-    rule: api.rule && (api.rule.path || api.rule.pack) ? api.rule : undefined,
+    rule:
+      api.rule && (api.rule.path || api.rule.pack || api.rule.source === 'tenant')
+        ? api.rule
+        : undefined,
     locationKey: api.location_key || undefined,
   }
   const empty =
