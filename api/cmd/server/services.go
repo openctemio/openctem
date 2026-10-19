@@ -11,6 +11,7 @@ import (
 	"time"
 
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
+	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
@@ -654,7 +655,11 @@ type Services struct {
 	FindingActions  *finding.FindingActionsService
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
-	CTEMID          *ctemidapp.Service
+	// ThreatAlertPlanner plans and delivers emerging-threat alerts (RFC-117).
+	ThreatAlertPlanner *threatalertapp.Planner
+	// ThreatAlerts is the emerging-threat alert API.
+	ThreatAlerts *threatalertapp.Service
+	CTEMID       *ctemidapp.Service
 	// VersionCheck is the release feed check (RFC-105); never nil with a database.
 	VersionCheck *versioncheck.Service
 	CertMonitor  *certmonitorapp.Service
@@ -1949,9 +1954,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// PriorityClassification setters because s.Outbox does not exist yet at
 	// that point. The publisher itself filters to escalations only (see its
 	// doc comment) so ingest does not double-notify alongside "new_finding".
-	s.PriorityClassification.SetChangePublisher(
-		finding.NewOutboxPriorityChangePublisher(s.Outbox, log),
-	)
+	priorityPublisher := finding.NewOutboxPriorityChangePublisher(s.Outbox, log)
+	if repos.ThreatAlert != nil {
+		// A KEV addition on an alerted CVE is announced once, by the alert.
+		priorityPublisher.SetAlertCoverage(repos.ThreatAlert)
+	}
+	s.PriorityClassification.SetChangePublisher(priorityPublisher)
 	// A recompute caused by a scoring change sends one summary per change
 	// instead of one escalation per finding (docs/architecture/scoring-versions.md).
 	if s.Reclassifier != nil {
@@ -2219,6 +2227,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
+	// Emerging-threat alerts (RFC-117): matched findings are announced by
+	// their alert. The delivery sinks are wired with the workers.
+	if repos.ThreatAlert != nil {
+		s.ThreatAlertPlanner = threatalertapp.NewPlanner(repos.ThreatAlert, repos.Tenant, log)
+		s.VulnMatch.SetAlertQueue(s.ThreatAlertPlanner)
+		s.ThreatAlerts = threatalertapp.NewService(repos.ThreatAlert, s.Audit, log)
+	}
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships

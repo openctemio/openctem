@@ -156,6 +156,15 @@ const (
 	// one message per tenant and day, never one per suggestion.
 	EventTypeRemediationSuggestionsDigest EventType = "remediation_suggestions_digest"
 
+	// EventTypeEmergingThreat is an urgent emerging-threat alert: one message
+	// per alert and level, at most a few per hour per organization
+	// (docs/rfcs/RFC-117-emerging-threat-alerts.md). Matched findings and
+	// KEV additions of an alerted CVE are announced by it, not one by one.
+	EventTypeEmergingThreat EventType = "emerging_threat"
+	// EventTypeEmergingThreatDigest is the daily emerging-threat digest at
+	// the organization's local digest hour, sent only when something changed.
+	EventTypeEmergingThreatDigest EventType = "emerging_threat_digest"
+
 	// EventTypeSensorOffline fires when the sensor-health controller sees a
 	// sensor stop heartbeating (online -> offline). The id keeps the dotted
 	// form of the event_types catalog row it has always had, which is also
@@ -212,6 +221,8 @@ const (
 	ModuleAttackSurface = "attack_surface"
 	// ModuleRemediation is the remediation tasks and campaigns module.
 	ModuleRemediation = "remediation"
+	// ModuleThreatIntel is the threat intelligence module.
+	ModuleThreatIntel = "threat_intel"
 )
 
 // AllEventTypes returns all event types with metadata for UI.
@@ -253,6 +264,10 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Remediation events - require the 'remediation' module
 		{Type: EventTypeRemediationSuggestionsDigest, Category: EventCategoryRemediation, Label: "Remediation Suggestions Digest", Description: "Daily summary of new remediation suggestions to review (findings one fix closes); nothing changes until someone accepts one", RequiredModule: ModuleRemediation},
+
+		// Emerging-threat alerts - require the 'threat_intel' module
+		{Type: EventTypeEmergingThreat, Category: EventCategoryFinding, Label: "Emerging Threat", Description: "A newly urgent vulnerability (new CVE, KEV addition, EPSS jump) affects your assets: one message per alert, at most five an hour", RequiredModule: ModuleThreatIntel},
+		{Type: EventTypeEmergingThreatDigest, Category: EventCategoryFinding, Label: "Emerging Threats Daily Digest", Description: "Daily summary of new and escalated emerging-threat alerts, sent at the organization's digest hour when something changed", RequiredModule: ModuleThreatIntel},
 
 		// Sensor events - require 'sensors' module
 		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
@@ -318,6 +333,12 @@ func DefaultEnabledEventTypes() []EventType {
 		// caused (docs/architecture/scoring-versions.md), so it is on
 		// wherever escalations are.
 		EventTypeScoringChangeApplied,
+		// An urgent vulnerability on the organization's assets is the
+		// message this channel exists for; the alert replaces the matched
+		// findings' silence and the per-finding KEV escalations. At most
+		// five an hour, digest once a day.
+		EventTypeEmergingThreat,
+		EventTypeEmergingThreatDigest,
 
 		// A scheduled CI scan that silently stopped, a repository that lost
 		// its scanning, or a runner below the supported version are the
@@ -391,6 +412,11 @@ func SeverityFilterApplies(eventType EventType) bool {
 		return false
 	// The suggestions digest is a summary with a fixed "info" severity.
 	case EventTypeRemediationSuggestionsDigest:
+		return false
+	// Emerging-threat messages carry a constant severity (critical for an
+	// immediate alert, info for the digest): the alert's level decided to
+	// send them, and the event-type list is the switch.
+	case EventTypeEmergingThreat, EventTypeEmergingThreatDigest:
 		return false
 	default:
 		return true
