@@ -95,6 +95,7 @@ type fileConfig struct {
 		MailboxItems      int           `yaml:"mailbox_items"`
 		MailboxBytes      int64         `yaml:"mailbox_bytes"`
 		TotalBytes        int64         `yaml:"total_bytes"`
+		RealmBytes        int64         `yaml:"realm_bytes"`
 		TTL               time.Duration `yaml:"ttl"`
 		SensorRate        float64       `yaml:"sensor_rate"`
 		SensorBurst       int           `yaml:"sensor_burst"`
@@ -135,7 +136,7 @@ func loadConfig(path string) (sensorrelay.Config, error) {
 		out.Realms = append(out.Realms, realm)
 	}
 	l := fc.Limits
-	out.Limits = sensorrelay.Limits{MailboxItems: l.MailboxItems, MailboxBytes: l.MailboxBytes, TotalBytes: l.TotalBytes,
+	out.Limits = sensorrelay.Limits{MailboxItems: l.MailboxItems, MailboxBytes: l.MailboxBytes, TotalBytes: l.TotalBytes, RealmBytes: l.RealmBytes,
 		TTL: l.TTL, SensorRate: l.SensorRate, SensorBurst: l.SensorBurst, MaxWait: l.MaxWait, MaxPollsPerSensor: l.MaxPollsPerSensor}
 	return out, nil
 }

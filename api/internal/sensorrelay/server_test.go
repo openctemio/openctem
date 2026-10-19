@@ -374,3 +374,65 @@ func TestConfigRefusals(t *testing.T) {
 		t.Errorf("pin round trip: %v", err)
 	}
 }
+
+// A full mailbox is refused from the headers: the relay answers while the
+// body has not been sent at all.
+func TestQuotaRefusesBeforeReadingBody(t *testing.T) {
+	h := newHarness(t, Limits{MailboxItems: 1, SensorRate: 1000, SensorBurst: 1000})
+	a := h.sensor("sensor-a", "realm-1", nil)
+	if code, _ := h.do(a.cert, "POST", relay.PathSensorUp, a.ticket, []byte("x")); code != http.StatusAccepted {
+		t.Fatalf("first put = %d", code)
+	}
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "POST", h.ts.URL+relay.PathSensorUp, pr)
+	req.ContentLength = 1 << 20 // announced, never sent
+	req.Header.Set(relay.TicketHeader, a.ticket)
+	resp, err := h.client(a.cert).Do(req)
+	if err != nil {
+		t.Fatalf("relay waited for the body of a refused request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	// An announced size over the envelope cap is refused the same way.
+	req2, _ := http.NewRequestWithContext(ctx, "POST", h.ts.URL+relay.PathSensorUp, pr)
+	req2.ContentLength = relay.MaxEnvelope + 1
+	req2.Header.Set(relay.TicketHeader, a.ticket)
+	resp2, err := h.client(a.cert).Do(req2)
+	if err != nil {
+		t.Fatalf("oversize announce: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversize status = %d", resp2.StatusCode)
+	}
+}
+
+// One realm cannot fill the relay: the per-realm byte cap holds across
+// sensors and both directions, and draining gives the bytes back.
+func TestRealmByteCap(t *testing.T) {
+	h := newHarness(t, Limits{RealmBytes: 10, SensorRate: 1000, SensorBurst: 1000})
+	a := h.sensor("sensor-a", "realm-1", nil)
+	b := h.sensor("sensor-b", "realm-1", nil)
+	six := []byte("sixsix")
+	if code, _ := h.do(a.cert, "POST", relay.PathSensorUp, a.ticket, six); code != http.StatusAccepted {
+		t.Fatalf("a = %d", code)
+	}
+	if code, _ := h.do(b.cert, "POST", relay.PathSensorUp, b.ticket, six); code != http.StatusTooManyRequests {
+		t.Fatalf("b over the realm cap = %d", code)
+	}
+	if code, _ := h.do(h.conn1, "POST", relay.PathConnectorDown+"sensor-z", "", six); code != http.StatusTooManyRequests {
+		t.Fatalf("down over the realm cap = %d", code)
+	}
+	if code, _ := h.do(h.conn2, "POST", relay.PathConnectorDown+"sensor-c", "", six); code != http.StatusAccepted {
+		t.Fatalf("other realm blocked: %d", code)
+	}
+	h.do(h.conn1, "GET", relay.PathConnectorUp+"?wait=0", "", nil)
+	if code, _ := h.do(b.cert, "POST", relay.PathSensorUp, b.ticket, six); code != http.StatusAccepted {
+		t.Fatalf("after drain = %d", code)
+	}
+}

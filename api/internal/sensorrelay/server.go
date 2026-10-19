@@ -60,6 +60,7 @@ type Limits struct {
 	MailboxItems      int
 	MailboxBytes      int64
 	TotalBytes        int64
+	RealmBytes        int64 // per realm, both directions
 	TTL               time.Duration
 	SensorRate        float64
 	SensorBurst       int
@@ -74,6 +75,7 @@ var DefaultLimits = Limits{ //nolint:gochecknoglobals // read-only defaults
 	MailboxItems:      64,
 	MailboxBytes:      64 << 20,
 	TotalBytes:        2 << 30,
+	RealmBytes:        512 << 20,
 	TTL:               10 * time.Minute,
 	SensorRate:        10,
 	SensorBurst:       20,
@@ -93,6 +95,9 @@ func (l Limits) withDefaults() Limits {
 	}
 	if l.TotalBytes > 0 {
 		d.TotalBytes = l.TotalBytes
+	}
+	if l.RealmBytes > 0 {
+		d.RealmBytes = l.RealmBytes
 	}
 	if l.TTL > 0 {
 		d.TTL = l.TTL
@@ -312,6 +317,33 @@ func (s *Server) allow(k sensorKey) bool {
 	return e.l.Allow()
 }
 
+// declaredSize is the size a request announces for its body; a body of
+// unknown length (chunked) is assumed to be as large as an envelope can be.
+func declaredSize(r *http.Request) int64 {
+	if r.ContentLength < 0 {
+		return relay.MaxEnvelope
+	}
+	return r.ContentLength
+}
+
+// admit refuses an oversized or unaffordable envelope from its headers,
+// before any of the body is read, so a full mailbox costs the relay no
+// memory or bandwidth. It reports whether the request may proceed.
+func (s *Server) admit(w http.ResponseWriter, r *http.Request, dir string, fits func(n int64) bool) bool {
+	n := declaredSize(r)
+	if n > relay.MaxEnvelope {
+		s.met.envelopes.WithLabelValues(dir, "refused").Inc()
+		http.Error(w, "envelope too large", http.StatusRequestEntityTooLarge)
+		return false
+	}
+	if n > 0 && !fits(n) {
+		s.met.envelopes.WithLabelValues(dir, "quota").Inc()
+		tooMany(w, 5*time.Second)
+		return false
+	}
+	return true
+}
+
 // readEnvelope reads one envelope body.
 func readEnvelope(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, relay.MaxEnvelope))
@@ -341,6 +373,9 @@ func (s *Server) sensorUp(w http.ResponseWriter, r *http.Request) {
 	if !s.allow(k) {
 		s.met.envelopes.WithLabelValues("up", "rate_limited").Inc()
 		tooMany(w, time.Second)
+		return
+	}
+	if !s.admit(w, r, "up", func(n int64) bool { return s.boxes.roomUp(t.Realm, t.Sensor, n) }) {
 		return
 	}
 	env, ok := readEnvelope(w, r)
@@ -421,6 +456,9 @@ func (s *Server) connectorDown(w http.ResponseWriter, r *http.Request) {
 	sensor := r.PathValue("sensor")
 	if !relay.ValidID(sensor) {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if !s.admit(w, r, "down", func(n int64) bool { return s.boxes.roomDown(realm, sensor, n) }) {
 		return
 	}
 	env, ok := readEnvelope(w, r)
