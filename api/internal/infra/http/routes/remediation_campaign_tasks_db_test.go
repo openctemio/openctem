@@ -206,6 +206,14 @@ func TestRemediationCampaignTasks_RestrictedMemberSeesThroughTheirTasks_DB(t *te
 	if sc, _ := list["status_counts"].(map[string]any); sc["active"] != float64(3) {
 		t.Errorf("status counts = %v, want 3 active visible campaigns", list["status_counts"])
 	}
+	if _, l := h.call(member, false, http.MethodGet, "/api/v1/remediation/campaigns/?search=ct-own", nil); l["status_counts"].(map[string]any)["active"] != float64(1) {
+		t.Errorf("status counts with a search = %v, want 1", l["status_counts"])
+	}
+	// The owner field clears with null.
+	h.exec(`UPDATE remediation_campaigns SET assigned_to = $1 WHERE id = $2`, owner.String(), ownEmpty.String())
+	if code, body := h.call(member, false, http.MethodPatch, "/api/v1/remediation/campaigns/"+ownEmpty.String(), map[string]any{"assigned_to": nil}); code != http.StatusOK || body["assigned_to"] != nil {
+		t.Errorf("clear the owner: %d %v", code, body)
+	}
 
 	// Every route on the other team's campaign answers 404.
 	base := "/api/v1/remediation/campaigns/" + other.String()

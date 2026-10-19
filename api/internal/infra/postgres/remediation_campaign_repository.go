@@ -225,9 +225,11 @@ func (r *RemediationCampaignRepository) List(ctx context.Context, filter remedia
 	return pagination.NewResult(items, total, page), nil
 }
 
-// CountByStatus counts the campaigns the viewer may see, per status.
-func (r *RemediationCampaignRepository) CountByStatus(ctx context.Context, tenantID shared.ID, viewer remediation.CampaignViewer) (map[remediation.CampaignStatus]int, error) {
-	where, args := campaignListWhere(remediation.CampaignFilter{TenantID: &tenantID, Viewer: viewer})
+// CountByStatus counts the campaigns that match the filter (its status
+// ignored), per status.
+func (r *RemediationCampaignRepository) CountByStatus(ctx context.Context, filter remediation.CampaignFilter) (map[remediation.CampaignStatus]int, error) {
+	filter.Status = nil
+	where, args := campaignListWhere(filter)
 	rows, err := r.db.QueryContext(ctx, "SELECT c.status, COUNT(*) FROM remediation_campaigns c WHERE "+where+" GROUP BY c.status", args...)
 	if err != nil {
 		return nil, fmt.Errorf("count campaigns by status: %w", err)
