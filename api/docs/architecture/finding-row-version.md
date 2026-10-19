@@ -1,6 +1,6 @@
 # Finding write concurrency (row_version)
 
-Status: shipped (migration 003055).
+Status: shipped (migration 003102).
 
 ## Problem
 
@@ -81,7 +81,7 @@ caller just passed the scope check on; the full finding is read again through
 
 ## Key files
 
-- `migrations/003055_finding_row_version.up.sql`
+- `migrations/003102_finding_row_version.up.sql`
 - `pkg/domain/vulnerability/finding_row_version.go`
 - `internal/infra/postgres/finding_repository.go` (`Update`, `findingConflict`, `EnrichBatchByFingerprints`)
 - `internal/infra/http/handler/finding_row_version.go` (If-Match, 409)
