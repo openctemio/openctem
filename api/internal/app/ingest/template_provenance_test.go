@@ -131,3 +131,15 @@ func TestFindingTemplateProvenance_SensorLocalPath(t *testing.T) {
 		t.Fatalf("template path = %q", got.TemplatePath)
 	}
 }
+
+// An absolute path outside the content store names no pack template: it is
+// dropped, never stored as its last segments.
+func TestFindingTemplateProvenance_OtherAbsolutePathDropped(t *testing.T) {
+	d := "sha256:" + strings.Repeat("c", 64)
+	for _, abs := range []string{"/abs/path.yaml", "/tmp/nuclei-signed-123/x.yaml", "/var/lib/openctem/workspaces/t/j-1/x.yaml"} {
+		got := findingTemplateProvenance(&ctis.Finding{Properties: ctis.Properties{"template_digest": d, "template_path": abs}}, nil)
+		if got.TemplatePath != "" || got.TemplateDigest != d {
+			t.Fatalf("%s: provenance = %+v, want the digest kept and no path", abs, got)
+		}
+	}
+}
