@@ -86,6 +86,12 @@ type RunTaskPlacementResponse struct {
 	Sensors    []RunTaskPlacementSensor `json:"sensors,omitempty"`
 	// HostWait is set when the task waits for its hosts (host_busy).
 	HostWait *RunTaskHostWait `json:"host_wait,omitempty"`
+	// SharedFleet is set when none of the organization's sensors may take
+	// the task: "not_used" (shared sensors were allowed, the task was routed
+	// to the organization's own) or "not_allowed" (SharedFleetReason is the
+	// access policy's reason, English).
+	SharedFleet       string `json:"shared_fleet,omitempty"`
+	SharedFleetReason string `json:"shared_fleet_reason,omitempty"`
 }
 
 // GetRunTaskPlacement handles GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement
@@ -155,6 +161,7 @@ func placementResponse(p *commandapp.Placement, withSensors bool) RunTaskPlaceme
 	resp.JobReasons = append(resp.JobReasons, p.JobReasons...)
 	resp.Evaluated, resp.Truncated = len(p.Sensors), p.Truncated
 	resp.Eligible, resp.Busy = p.Eligible, p.Busy
+	resp.SharedFleet, resp.SharedFleetReason = p.SharedFleet, p.SharedFleetReason
 	for _, b := range p.Blocking {
 		resp.Blocking = append(resp.Blocking, RunTaskPlacementReason{Code: b.Code, Count: b.Count})
 	}

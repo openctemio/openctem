@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // SuggestionNotifier enqueues a notification (*outbox.Service).
@@ -277,16 +278,42 @@ func (s *SuggestionService) Get(ctx context.Context, tenantID, id shared.ID) (*r
 	return s.repo.GetSuggestion(ctx, tenantID, id, scope)
 }
 
-// Members lists a suggestion's findings the caller may see.
-func (s *SuggestionService) Members(ctx context.Context, tenantID, id shared.ID, page pagination.Pagination) (pagination.Result[remediationdom.TaskMember], error) {
+// Members lists a suggestion's findings the caller may see (the others are
+// counted in the suggestion's hidden_members), with the scanner's advice as
+// capped plain text with secret shapes redacted.
+func (s *SuggestionService) Members(ctx context.Context, tenantID, id shared.ID, page pagination.Pagination) (pagination.Result[remediationdom.SuggestionMember], error) {
 	scope, err := s.scope(ctx, tenantID)
 	if err != nil {
-		return pagination.Result[remediationdom.TaskMember]{}, err
+		return pagination.Result[remediationdom.SuggestionMember]{}, err
 	}
 	if _, err := s.repo.GetSuggestion(ctx, tenantID, id, scope); err != nil {
-		return pagination.Result[remediationdom.TaskMember]{}, err
+		return pagination.Result[remediationdom.SuggestionMember]{}, err
 	}
-	return s.repo.SuggestionMembers(ctx, tenantID, id, scope, page)
+	res, err := s.repo.SuggestionMembers(ctx, tenantID, id, scope, page)
+	if err != nil {
+		return res, err
+	}
+	for i := range res.Data {
+		m := &res.Data[i]
+		m.Recommendation = memberText(m.Recommendation, remediationdom.MaxMemberRecommendation)
+		m.FixCode = memberText(m.FixCode, remediationdom.MaxMemberFixCode)
+		if len(m.LocationTargets) > remediationdom.MaxMemberTargets {
+			m.LocationTargets = m.LocationTargets[:remediationdom.MaxMemberTargets]
+		}
+		for j, t := range m.LocationTargets {
+			m.LocationTargets[j] = safetext.SingleLine(safetext.RedactSecrets(t), 500)
+		}
+	}
+	return res, nil
+}
+
+// memberText is scanner text made safe to show: secret shapes redacted,
+// control characters removed, capped.
+func memberText(s string, maxRunes int) string {
+	if s == "" {
+		return ""
+	}
+	return safetext.Truncate(safetext.Clean(safetext.RedactSecrets(s)), maxRunes)
 }
 
 // Counts summarizes the open suggestions the caller may see.
