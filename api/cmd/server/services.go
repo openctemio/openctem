@@ -2019,6 +2019,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Heartbeat gaps: the fleet histogram and each tenant sensor's 48 h
 	// history (the Control channel sparkline; RFC-035).
 	s.Sensor.SetHeartbeatHistory(repos.SensorHeartbeatHistory)
+	// Heartbeat soft state (SENSOR_LIVENESS_STORE): shadow by default, so
+	// the Redis verdict is compared with Postgres before the switch.
+	if mode, err := sensordom.ParseLivenessMode(cfg.SensorConfig.LivenessStore); err == nil && mode != sensordom.LivenessPostgres && deps.RedisClient != nil {
+		store := redis.NewSensorLivenessStore(deps.RedisClient.Client())
+		s.Sensor.SetLiveness(mode, store, repos.Sensor, repos.SensorHeartbeatHistory)
+		if mode == sensordom.LivenessRedis {
+			// Postgres holds checkpoints only: every read of a sensor
+			// overlays the live deadline.
+			repos.Sensor.SetLivenessOverlay(store)
+		}
+		log.Info("sensor liveness store", "mode", string(mode))
+	}
 	s.Sensor.SetHeartbeatGapObserver(telemetry.SensorHeartbeatMetrics{})
 	// Command leases (RFC-035 D6): a claim holds for SENSOR_COMMAND_LEASE
 	// and every heartbeat renews what the sensor holds; job recovery takes

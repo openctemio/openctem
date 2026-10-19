@@ -591,6 +591,11 @@ func run() int {
 		log.Error("shutdown error", "error", err)
 		return 1
 	}
+	// Last sensor liveness checkpoint and heartbeat history batch, once no
+	// heartbeat can arrive any more.
+	if services.Sensor != nil {
+		services.Sensor.FlushLiveness(shutdownCtx)
+	}
 
 	log.Info("application stopped")
 	return 0
