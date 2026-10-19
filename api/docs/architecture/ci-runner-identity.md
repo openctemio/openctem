@@ -221,6 +221,10 @@ group (`FOR UPDATE`): a run, finding or branch written meanwhile either
 commits first and moves with the rest, or waits and fails its foreign key;
 it is never left on a duplicate and lost to its delete. Idempotent.
 
+An applying run writes one `assets.merged` entry in each tenant where it merged
+assets (counts, the run id, actor `repomerge`); a dry run and an untouched tenant
+write none.
+
 A repository whose duplicates carry several gate policies is refused
 (`gate_policy_conflict`, listed by the dry run): keeping the wrong one would
 loosen its gate. With `-resolve` it is merged keeping the policy at least as

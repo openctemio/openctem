@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // SuggestionNotifier enqueues a notification (*outbox.Service).
@@ -51,6 +52,7 @@ type SuggestionService struct {
 	notifier  SuggestionNotifier
 	modules   ModuleGuard
 	tasks     *TaskService
+	keys      KeyRederiver
 	logger    *logger.Logger
 	now       func() time.Time
 }
@@ -69,6 +71,16 @@ func (s *SuggestionService) SetAuditLogger(a TaskAuditLogger) { s.audit = a }
 // SetNotifier wires the digest notification.
 func (s *SuggestionService) SetNotifier(n SuggestionNotifier) { s.notifier = n }
 
+// KeyRederiver re-derives a tenant's remediation keys when some were derived
+// by older key rules (*KeyApplier).
+type KeyRederiver interface {
+	HasStaleKeys(ctx context.Context, tenantID shared.ID) (bool, error)
+	Backfill(ctx context.Context, tenantID shared.ID, write bool, batch int) (*KeyChanges, error)
+}
+
+// SetKeyRederiver wires the self-healing re-derivation of stale keys.
+func (s *SuggestionService) SetKeyRederiver(k KeyRederiver) { s.keys = k }
+
 // SetModuleGuard skips tenants with the remediation module off.
 func (s *SuggestionService) SetModuleGuard(g ModuleGuard) { s.modules = g }
 
@@ -80,6 +92,7 @@ const digestInterval = 24 * time.Hour
 
 // RunTenant runs the generator for one tenant.
 func (s *SuggestionService) RunTenant(ctx context.Context, tenantID shared.ID) (remediationdom.RunStats, error) {
+	s.rederiveStaleKeys(ctx, tenantID)
 	cands, err := s.repo.Candidates(ctx, tenantID)
 	if err != nil {
 		return remediationdom.RunStats{}, err
@@ -116,6 +129,30 @@ func (s *SuggestionService) RunTenant(ctx context.Context, tenantID shared.ID) (
 	}
 	st.Candidates, st.AutoJoined = len(cands), autoJoined
 	return st, nil
+}
+
+// rederiveStaleKeys derives the tenant's keys again when some were derived by
+// older key rules, so no suggestion is built on a key the current rules would
+// not give (older rules grouped findings by boilerplate advice). Candidates
+// skip stale keys anyway, so a failure here only delays those findings.
+func (s *SuggestionService) rederiveStaleKeys(ctx context.Context, tenantID shared.ID) {
+	if s.keys == nil {
+		return
+	}
+	stale, err := s.keys.HasStaleKeys(ctx, tenantID)
+	if err != nil || !stale {
+		if err != nil {
+			s.logger.Warn("check stale remediation keys", "tenant_id", tenantID.String(), "error", err)
+		}
+		return
+	}
+	ch, err := s.keys.Backfill(ctx, tenantID, true, DefaultBackfillBatch)
+	if err != nil {
+		s.logger.Warn("re-derive stale remediation keys", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	s.logger.Info("re-derived stale remediation keys", "tenant_id", tenantID.String(),
+		"scanned", ch.Scanned, "changed", ch.Changed, "removed", ch.Removed, "added", ch.Added)
 }
 
 // Refresh runs the generator for the caller's tenant now, at most once a
@@ -241,16 +278,42 @@ func (s *SuggestionService) Get(ctx context.Context, tenantID, id shared.ID) (*r
 	return s.repo.GetSuggestion(ctx, tenantID, id, scope)
 }
 
-// Members lists a suggestion's findings the caller may see.
-func (s *SuggestionService) Members(ctx context.Context, tenantID, id shared.ID, page pagination.Pagination) (pagination.Result[remediationdom.TaskMember], error) {
+// Members lists a suggestion's findings the caller may see (the others are
+// counted in the suggestion's hidden_members), with the scanner's advice as
+// capped plain text with secret shapes redacted.
+func (s *SuggestionService) Members(ctx context.Context, tenantID, id shared.ID, page pagination.Pagination) (pagination.Result[remediationdom.SuggestionMember], error) {
 	scope, err := s.scope(ctx, tenantID)
 	if err != nil {
-		return pagination.Result[remediationdom.TaskMember]{}, err
+		return pagination.Result[remediationdom.SuggestionMember]{}, err
 	}
 	if _, err := s.repo.GetSuggestion(ctx, tenantID, id, scope); err != nil {
-		return pagination.Result[remediationdom.TaskMember]{}, err
+		return pagination.Result[remediationdom.SuggestionMember]{}, err
 	}
-	return s.repo.SuggestionMembers(ctx, tenantID, id, scope, page)
+	res, err := s.repo.SuggestionMembers(ctx, tenantID, id, scope, page)
+	if err != nil {
+		return res, err
+	}
+	for i := range res.Data {
+		m := &res.Data[i]
+		m.Recommendation = memberText(m.Recommendation, remediationdom.MaxMemberRecommendation)
+		m.FixCode = memberText(m.FixCode, remediationdom.MaxMemberFixCode)
+		if len(m.LocationTargets) > remediationdom.MaxMemberTargets {
+			m.LocationTargets = m.LocationTargets[:remediationdom.MaxMemberTargets]
+		}
+		for j, t := range m.LocationTargets {
+			m.LocationTargets[j] = safetext.SingleLine(safetext.RedactSecrets(t), 500)
+		}
+	}
+	return res, nil
+}
+
+// memberText is scanner text made safe to show: secret shapes redacted,
+// control characters removed, capped.
+func memberText(s string, maxRunes int) string {
+	if s == "" {
+		return ""
+	}
+	return safetext.Truncate(safetext.Clean(safetext.RedactSecrets(s)), maxRunes)
 }
 
 // Counts summarizes the open suggestions the caller may see.
