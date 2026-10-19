@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
@@ -138,5 +139,77 @@ func TestDispatch_RefusedQueueHeadDoesNotStarve(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != ok {
 		t.Fatalf("polled %d commands, want only the httpx job", len(got))
+	}
+}
+
+// research/191 W-2: more refused jobs at the head of the queue than one
+// candidate page holds no longer starve the sensor: the claim reads the next
+// page without them and claims the job it accepts.
+func TestDispatch_RefusedPageDoesNotStarveTheClaim(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	pg := &DB{DB: sqlDB}
+	sensors := NewSensorRepository(pg)
+	cmds := NewCommandRepository(pg)
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	s := seedZoneSensor(ctx, t, sqlDB, &tenant, "httpx-only", zoneSensorOpts{tools: []string{"nuclei", "httpx"}})
+	setLocalPolicy(ctx, t, sensors, tenant, s, &sensor.LocalPolicyReport{State: sensor.LocalPolicyEnforced,
+		Summary: &sensor.LocalPolicySummary{TargetsAllow: -1, Tools: []string{"httpx"}}})
+	// candidateLimit(2) = 12 per page: 20 refused jobs fill the first page.
+	for i := range 20 {
+		createPayloadCommand(ctx, t, cmds, tenant, nil, map[string]any{"scanner": "nuclei", "target": fmt.Sprintf("203.0.113.%d", i+1)})
+	}
+	ok := createPayloadCommand(ctx, t, cmds, tenant, nil, map[string]any{"scanner": "httpx", "target": "198.51.100.7"})
+
+	svc := commandapp.NewService(cmds, logger.NewNop(), commandapp.WithSensorLookup(sensors))
+	got, err := svc.Claim(ctx, commandapp.ClaimInput{TenantID: tenant.String(), SensorID: s.String(), Limit: 2, MaxJobs: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != ok {
+		t.Fatalf("claimed %d commands, want only the httpx job behind 20 refused ones", len(got))
+	}
+}
+
+// The next page excludes what was read: a shared sensor's page and an
+// organization sensor's page never repeat an excluded job.
+func TestPendingPages_ExcludeWhatWasRead(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	cmds := NewCommandRepository(&DB{DB: sqlDB})
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	s := seedZoneSensor(ctx, t, sqlDB, &tenant, "pager", zoneSensorOpts{tools: []string{"nuclei"}})
+	for i := range 5 {
+		createPayloadCommand(ctx, t, cmds, tenant, nil, map[string]any{"scanner": "nuclei", "target": fmt.Sprintf("192.0.2.%d", i+1)})
+	}
+	first, err := cmds.GetPendingForSensor(ctx, tenant, &s, nil, 3)
+	if err != nil || len(first) != 3 {
+		t.Fatalf("first page: %d %v", len(first), err)
+	}
+	seen := []shared.ID{first[0].ID, first[1].ID, first[2].ID}
+	next, err := cmds.GetPendingForSensorExcluding(ctx, tenant, &s, nil, 3, seen)
+	if err != nil || len(next) != 2 {
+		t.Fatalf("next page: %d %v", len(next), err)
+	}
+	for _, c := range next {
+		for _, id := range seen {
+			if c.ID == id {
+				t.Fatalf("the next page repeated %s", id)
+			}
+		}
+	}
+
+	db := openPlatformJobDB(t)
+	tool := uniqueTool()
+	shs := seedSharedSensor(ctx, t, db, sharedSensorSeed{tools: []string{tool}})
+	org := seedTestTenant(ctx, t, db)
+	a := seedSharedJob(ctx, t, db, org, sharedJobSeed{tool: tool, platform: true})
+	b := seedSharedJob(ctx, t, db, org, sharedJobSeed{tool: tool, platform: true})
+	shared1, err := cmds.GetSharedPendingForSensorExcluding(ctx, shs, nil, 10, []shared.ID{a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shared1) != 1 || shared1[0].ID != b {
+		t.Fatalf("shared page without %s: %v", a, shared1)
 	}
 }

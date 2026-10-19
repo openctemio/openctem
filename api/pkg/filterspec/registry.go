@@ -212,6 +212,10 @@ type Registry struct {
 	// ScopeAssetSQL is the asset column the data scope applies to, e.g.
 	// "f.asset_id". Empty only with Unscoped set.
 	ScopeAssetSQL string
+	// ScopeAssigneeSQL, when set, is the column naming the person a row is
+	// assigned to: a restricted caller also sees the rows assigned to them
+	// (AssigneeScopeSQL), e.g. "f.assigned_to".
+	ScopeAssigneeSQL string
 	// Unscoped explains why the resource has no data scope (tenant
 	// configuration). It must be set when ScopeAssetSQL is empty.
 	Unscoped string
@@ -416,7 +420,7 @@ func opFitsType(op Op, f *Field) error {
 // its curated relation fields this way, without changing the list
 // endpoints' contracts.
 func (r *Registry) Extend(extra ...Field) (*Registry, error) {
-	cfg := Registry{Name: r.Name, TenantSQL: r.TenantSQL, ScopeAssetSQL: r.ScopeAssetSQL, Unscoped: r.Unscoped,
+	cfg := Registry{Name: r.Name, TenantSQL: r.TenantSQL, ScopeAssetSQL: r.ScopeAssetSQL, ScopeAssigneeSQL: r.ScopeAssigneeSQL, Unscoped: r.Unscoped,
 		IDSQL: r.IDSQL, MemberVisibility: r.MemberVisibility, DefaultSort: r.DefaultSort, Search: r.Search}
 	replaced := make(map[string]bool, len(extra))
 	for _, f := range extra {
@@ -439,6 +443,7 @@ func (r *Registry) Rebase(table, alias string) *Registry {
 	sub := func(s string) string { return re.ReplaceAllString(s, alias+".") }
 	cp := *r
 	cp.TenantSQL, cp.ScopeAssetSQL, cp.IDSQL = sub(r.TenantSQL), sub(r.ScopeAssetSQL), sub(r.IDSQL)
+	cp.ScopeAssigneeSQL = sub(r.ScopeAssigneeSQL)
 	cp.MemberVisibility = sub(r.MemberVisibility)
 	if r.Search != nil {
 		srch := *r.Search
