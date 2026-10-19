@@ -53,7 +53,6 @@ import en_pentestChecklists from './en/pentestChecklists.json'
 import en_limits from './en/limits.json'
 import en_prioritization from './en/prioritization.json'
 import en_programs from './en/programs.json'
-import en_remediation from './en/remediation.json'
 import en_reports from './en/reports.json'
 import en_scanWindows from './en/scanWindows.json'
 import en_tenableSc from './en/tenableSc.json'
@@ -74,9 +73,9 @@ import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
 import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
-import en_remediationTasks from './en/remediationTasks.json'
 import en_remediationHub from './en/remediationHub.json'
 import en_remediationClaim from './en/remediationClaim.json'
+import en_remediationCampaigns from './en/remediationCampaigns.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
 import vi_activity from './vi/activity.json'
@@ -125,7 +124,6 @@ import vi_pentestChecklists from './vi/pentestChecklists.json'
 import vi_limits from './vi/limits.json'
 import vi_prioritization from './vi/prioritization.json'
 import vi_programs from './vi/programs.json'
-import vi_remediation from './vi/remediation.json'
 import vi_reports from './vi/reports.json'
 import vi_scanWindows from './vi/scanWindows.json'
 import vi_tenableSc from './vi/tenableSc.json'
@@ -146,9 +144,9 @@ import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
 import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
-import vi_remediationTasks from './vi/remediationTasks.json'
 import vi_remediationHub from './vi/remediationHub.json'
 import vi_remediationClaim from './vi/remediationClaim.json'
+import vi_remediationCampaigns from './vi/remediationCampaigns.json'
 import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
 
@@ -202,7 +200,6 @@ export const enNamespaces: Record<string, Dictionary> = {
   limits: en_limits,
   prioritization: en_prioritization,
   programs: en_programs,
-  remediation: en_remediation,
   reports: en_reports,
   riskScore: en_riskScore,
   scanWindows: en_scanWindows,
@@ -223,9 +220,9 @@ export const enNamespaces: Record<string, Dictionary> = {
   validation: en_validation,
   webEvidence: en_webEvidence,
   workflowStages: en_workflowStages,
-  remediationTasks: en_remediationTasks,
   remediationHub: en_remediationHub,
   remediationClaim: en_remediationClaim,
+  remediationCampaigns: en_remediationCampaigns,
   remediationQuery: en_remediationQuery,
   myWork: en_myWork,
 }
@@ -277,7 +274,6 @@ export const viNamespaces: Record<string, Dictionary> = {
   limits: vi_limits,
   prioritization: vi_prioritization,
   programs: vi_programs,
-  remediation: vi_remediation,
   reports: vi_reports,
   riskScore: vi_riskScore,
   scanWindows: vi_scanWindows,
@@ -298,9 +294,9 @@ export const viNamespaces: Record<string, Dictionary> = {
   validation: vi_validation,
   webEvidence: vi_webEvidence,
   workflowStages: vi_workflowStages,
-  remediationTasks: vi_remediationTasks,
   remediationHub: vi_remediationHub,
   remediationClaim: vi_remediationClaim,
+  remediationCampaigns: vi_remediationCampaigns,
   remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
 }
