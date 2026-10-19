@@ -757,6 +757,13 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 |----------|---------------------|
 | `GET /api/v1/dashboard/stats` | `dashboard:read` |
 
+#### Dashboard data (`/api/v1/dashboard-data`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/dashboard-data/` | owner or administrator (`RequireAdmin`) |
+| `POST /api/v1/dashboard-data/rebuild` | owner or administrator (`RequireAdmin`); once per organization per hour, shared with the console route (`docs/architecture/dashboards.md`) |
+
 #### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
 
 Two kinds ([dashboards](dashboards.md)). Personal dashboards are the caller's

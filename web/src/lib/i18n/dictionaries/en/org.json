@@ -413,5 +413,20 @@
   "org.sso.title": "Single sign-on",
   "org.sso.noticeText": "Single sign-on (SAML or OIDC), with verified domains, is set up for your organization in the platform administration console. To add or change it, contact your platform administrator.",
   "org.danger.scheduled": "Organization \"{name}\" will be deleted on {date}.",
-  "org.danger.scheduledHint": "It is closed to everyone now. An owner can cancel the deletion from the sign-in page until then."
+  "org.danger.scheduledHint": "It is closed to everyone now. An owner can cancel the deletion from the sign-in page until then.",
+  "org.general.tab.dashboardData": "Dashboard data",
+  "org.dashboardData.title": "Dashboard data",
+  "org.dashboardData.description": "Dashboard numbers are computed from stored per-asset data, kept current from every change and checked every night. Rebuild it if dashboards look wrong.",
+  "org.dashboardData.requested": "Rebuild requested. Dashboards update when it finishes.",
+  "org.dashboardData.tooSoon": "Dashboard data can be rebuilt once per hour.",
+  "org.dashboardData.failed": "Could not request a rebuild.",
+  "org.dashboardData.loadFailed": "Could not load dashboard data status",
+  "org.dashboardData.notBuilt": "Not built yet: the first build runs in the background.",
+  "org.dashboardData.running": "Rebuilding now.",
+  "org.dashboardData.pending": "Rebuild requested; it starts within a few minutes.",
+  "org.dashboardData.upToDate": "Kept up to date automatically.",
+  "org.dashboardData.lastRebuilt": "Last full rebuild",
+  "org.dashboardData.pendingChanges": "Changes waiting",
+  "org.dashboardData.rebuild": "Rebuild dashboard data",
+  "org.dashboardData.nextAt": "Next rebuild possible at {time}"
 }

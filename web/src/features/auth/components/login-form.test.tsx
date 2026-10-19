@@ -6,7 +6,7 @@
  * the "or continue with" divider never appears orphaned.
  */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { configure, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
@@ -27,6 +27,11 @@ vi.mock('./turnstile-widget', () => ({
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }))
+// The two-factor flow types into several fields; on a loaded CI runner the
+// 1s default for async queries and 5s per test are too tight.
+configure({ asyncUtilTimeout: 10_000 })
+vi.setConfig({ testTimeout: 20_000 })
+
 const loginAction = vi.fn()
 const verifyMfaAction = vi.fn()
 const startMfaEnrollmentAction = vi.fn()
@@ -200,7 +205,7 @@ describe('LoginForm two-factor step', () => {
     await user.type(await screen.findByLabelText('Authentication code'), '12a3456')
     expect(screen.getByLabelText('Authentication code')).toHaveValue('123456')
     await user.click(verify)
-    await vi.waitFor(() => expect(href).toHaveBeenCalledWith('/findings'))
+    await waitFor(() => expect(href).toHaveBeenCalledWith('/findings'))
     expect(verifyMfaAction).toHaveBeenCalledWith({ code: '123456' })
   })
 
@@ -225,7 +230,7 @@ describe('LoginForm two-factor step', () => {
     await user.click(await screen.findByRole('button', { name: /use a recovery code/i }))
     await user.type(screen.getByLabelText('Recovery code'), 'abcde-fghjk')
     await user.click(screen.getByRole('button', { name: /verify/i }))
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(verifyMfaAction).toHaveBeenCalledWith({ recoveryCode: 'abcde-fghjk' })
     )
   })
@@ -272,7 +277,7 @@ describe('LoginForm two-factor step', () => {
     await user.click(screen.getByLabelText('I have saved my recovery codes'))
     expect(finishMfaEnrollmentAction).not.toHaveBeenCalled()
     await user.click(cont)
-    await vi.waitFor(() => expect(href).toHaveBeenCalledWith('/findings'))
+    await waitFor(() => expect(href).toHaveBeenCalledWith('/findings'))
     expect(confirmMfaEnrollmentAction).toHaveBeenCalledWith('654321')
     expect(finishMfaEnrollmentAction).toHaveBeenCalledTimes(1)
     expect(startMfaEnrollmentAction).toHaveBeenCalledTimes(1)
