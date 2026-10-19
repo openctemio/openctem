@@ -159,6 +159,18 @@ Migration `002916_dashboard_fact_tables`; see [dashboards.md](dashboards.md#fact
   `dash_age_band(text, timestamptz)`, `dash_fix_hours_bucket(double precision)`, `dash_history_start()`.
 - Trigger functions: `dash_mark_from_finding_rows`, `dash_mark_from_finding_update`, `dash_mark_from_asset_rows`,
   `dash_mark_asset_update`, `dash_mark_from_member_rows`, and `dash_mark_asset(uuid, uuid, smallint)`.
+- Facts maintainer (migration `dashboard_facts_maintainer`, docs/architecture/dashboards.md "Facts maintainer"):
+  - `dash_process_dirty(p_tenant uuid, p_limit integer) RETURNS TABLE (claimed, assets, recomputed, changed,
+    oldest_marked_at)` - claims up to `p_limit` dirty rows of the tenant (`FOR UPDATE SKIP LOCKED`), recomputes
+    assets whose ORed reasons include 1 or 16, deletes exactly the claimed rows; one transaction.
+  - `dash_reconcile_asset(p_tenant uuid, p_asset uuid) RETURNS integer` - recomputes one asset and returns the fact
+    rows corrected without a pending mark or an unmarked age-band crossing (drift).
+  - `dash_fact_run_step(p_tenant uuid, p_limit integer) RETURNS TABLE (done, run_kind, step_drift)` - one resumable
+    step of a full run started by setting `dash_fact_status.run_kind`; Go: `DashboardFactsRepository.StartRun`,
+    `RunStep`.
+  - `dash_asset_day_maintain() RETURNS TABLE (created, dropped, moved)` - `SECURITY DEFINER`, no input: creates the
+    next 24 monthly partitions of `dash_asset_day`, drops those ending before `dash_history_start()`; not executable
+    by `PUBLIC`.
 
 ## Best Practices
 
