@@ -116,6 +116,9 @@ function buildFindingEndpoint(findingId: string): string {
   return `/api/v1/findings/${findingId}`
 }
 
+/** The SWR key of one finding's detail (useFindingApi). */
+export const findingDetailKey = buildFindingEndpoint
+
 function buildAssetFindingsEndpoint(
   assetId: string,
   sort?: string,
@@ -274,7 +277,10 @@ export function useMarkDuplicateApi(findingId: string) {
 }
 
 /**
- * Update finding severity
+ * Change a finding's severity (an analyst override with a reason, or a
+ * restore of the reported severity). The answer is the finding with its
+ * recomputed priority, SLA deadline and reason; a downgrade that waits for
+ * approval comes back unchanged with `pending_severity_request` set.
  */
 export function useUpdateFindingSeverityApi(findingId: string) {
   const { currentTenant } = useTenant()
@@ -285,6 +291,22 @@ export function useUpdateFindingSeverityApi(findingId: string) {
       return patch<ApiFinding>(url, arg)
     }
   )
+}
+
+export type SeverityRequestDecision = 'approve' | 'reject' | 'cancel'
+
+/**
+ * Decide a pending severity request: approve or reject it (findings:approve)
+ * or withdraw one's own (cancel). Answers the finding as it is now.
+ */
+export async function decideSeverityRequest(
+  findingId: string,
+  requestId: string,
+  decision: SeverityRequestDecision,
+  reason?: string
+): Promise<ApiFinding> {
+  const url = `${buildFindingEndpoint(findingId)}/severity-requests/${encodeURIComponent(requestId)}/${decision}`
+  return post<ApiFinding>(url, decision === 'reject' ? { reason } : {})
 }
 
 /**

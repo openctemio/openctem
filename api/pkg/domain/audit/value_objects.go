@@ -241,6 +241,16 @@ const (
 	// ActionFindingDuplicateMarked records a user folding a finding into the
 	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
 	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
+	// ActionFindingSeverityChanged records a change of a finding's effective
+	// severity by a person: an override, a restore of the reported severity,
+	// or an approved request (old, new, reported severity, reason).
+	ActionFindingSeverityChanged Action = "finding.severity_changed"
+	// ActionFindingSeverityRequested records a severity downgrade that waits
+	// for the approval the organization's policy asks for.
+	ActionFindingSeverityRequested Action = "finding.severity_requested"
+	// ActionFindingSeverityRequestClosed records a severity request rejected
+	// by an approver or withdrawn by its requester.
+	ActionFindingSeverityRequestClosed Action = "finding.severity_request_closed"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -757,6 +767,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted,
@@ -883,7 +894,8 @@ func (a Action) Category() string {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
 		return "saved_view"

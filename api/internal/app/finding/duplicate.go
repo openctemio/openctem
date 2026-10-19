@@ -108,3 +108,33 @@ func (s *VulnerabilityService) auditDuplicateMarked(ctx context.Context, in Mark
 		s.logger.Warn("failed to audit duplicate marking", "error", err)
 	}
 }
+
+// auditFindingDeleted records the deletion of a finding before it happens.
+// It returns the write error so the caller can refuse the delete.
+func (s *VulnerabilityService) auditFindingDeleted(ctx context.Context, actx audit.AuditContext, f *vulnerability.Finding) error {
+	if s.auditService == nil {
+		return nil
+	}
+	if actx.TenantID == "" {
+		actx.TenantID = f.TenantID().String()
+	}
+	event := audit.NewSuccessEvent(auditdom.ActionFindingDeleted, auditdom.ResourceTypeFinding, f.ID().String()).
+		WithResourceName(f.Title()).
+		WithMessage("Deleted a finding and its activity timeline").
+		WithSeverity(auditdom.SeverityHigh).
+		WithMetadata("severity", f.Severity().String()).
+		WithMetadata("status", f.Status().String()).
+		WithMetadata("source", string(f.Source())).
+		WithMetadata("cve_id", f.CVEID()).
+		WithMetadata("asset_id", f.AssetID().String()).
+		WithMetadata("fingerprint", f.Fingerprint()).
+		WithMetadata("tool_name", f.ToolName())
+	if s.activityService != nil {
+		// The timeline is removed with the row; the count says how much
+		// history went with it. A count failure does not block the audit.
+		if n, err := s.activityService.CountActivities(ctx, f.TenantID().String(), f.ID().String(), vulnerability.FindingActivityFilter{}); err == nil {
+			event = event.WithMetadata("activities_removed", n)
+		}
+	}
+	return s.auditService.LogEvent(ctx, actx, event)
+}

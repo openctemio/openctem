@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/app/supportaccess"
@@ -567,6 +568,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
+		DashboardFacts: handler.NewDashboardFactsHandler(
+			dashfactsapp.NewService(repos.DashboardFacts, svc.Audit, log), log),
 		Branch: func() *handler.BranchHandler {
 			h := handler.NewBranchHandler(svc.Branch, v, log)
 			// S-2: wire AssetService so branch handler can verify repo ownership.
@@ -829,6 +832,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Outbox.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.Integration.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.PriorityRule.SetAuditService(svc.Audit)
+	handlers.CompensatingControl.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.AssetOwner.SetAttributeLocker(svc.Asset)
