@@ -390,6 +390,10 @@ func (r *VEXStatementRepository) WriteEffects(ctx context.Context, tenantID shar
 	}
 	defer func() { _ = tx.Rollback() }()
 	moved = make([]shared.ID, 0, len(effects))
+	attempted := make([]shared.ID, 0, len(effects))
+	for i := range effects {
+		attempted = append(attempted, effects[i].FindingID)
+	}
 	for i := range effects {
 		e := &effects[i]
 		var (
@@ -446,6 +450,10 @@ func (r *VEXStatementRepository) WriteEffects(ctx context.Context, tenantID shar
 		}
 		if n == 0 || !e.Changes() {
 			continue
+		}
+		// The finding's ticket status push, queued with the move.
+		if err := enqueueContextJobsForTx(ctx, tx, attempted, []shared.ID{e.FindingID}); err != nil {
+			return nil, nil, err
 		}
 		reason := "vex_statement_withdrawn"
 		var sid any

@@ -56,9 +56,9 @@ func (e *KEVEscalator) EscalateKEVFindings(ctx context.Context) (threat.KEVEscal
 	// 1. Severity escalation — non-critical KEV findings become critical.
 	escQuery := `
 		UPDATE findings
-		SET severity = 'critical', updated_at = NOW()
+		SET ` + reportedSeveritySetSQL("", "'critical'") + `, updated_at = NOW()
 		WHERE cve_id IN (SELECT cve_id FROM kev_catalog)
-		  AND severity != 'critical'
+		  AND COALESCE(source_severity, severity) != 'critical'
 		  AND ` + terminalStatusFilter + `
 		  AND cve_id IS NOT NULL
 		  AND cve_id != ''

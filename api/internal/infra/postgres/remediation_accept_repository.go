@@ -3,8 +3,9 @@ package postgres
 // Accepting remediation suggestions and the auto-join rule
 // (docs/rfcs/RFC-098-remediation-tasks.md §6). Each accept is one
 // transaction: the suggestion is locked at the caller's version, the
-// findings are locked in id order and re-checked (closed or taken findings
-// are dropped and reported), then the action, the tasks and the memberships
+// findings are claimed (claimFindingsInTx: closed findings are dropped and
+// reported; findings another active task took since are refused, skipped or
+// moved as the request says), then the action, the tasks and the memberships
 // are written and the suggestion is marked accepted.
 
 import (
@@ -34,30 +35,43 @@ func (r *RemediationSuggestionRepository) AcceptSuggestion(ctx context.Context, 
 		return nil, err
 	}
 
+	tr := &RemediationTaskRepository{db: r.db}
+	targets := map[shared.ID]claimTarget{}
+	for i := range plan.Tasks {
+		if plan.Tasks[i].ID.IsZero() {
+			plan.Tasks[i].ID = shared.NewID()
+		}
+		for _, id := range plan.Tasks[i].FindingIDs {
+			targets[id] = claimTarget{id: plan.Tasks[i].ID, title: plan.Tasks[i].Title}
+		}
+	}
+	if plan.TargetTaskID != nil && len(plan.JoinIDs) > 0 {
+		// The join target is locked before the findings (the order every
+		// member change uses).
+		jt, err := lockTaskInTx(ctx, tx, plan.TenantID, *plan.TargetTaskID, 0)
+		if err != nil {
+			return nil, err
+		}
+		if jt.State.IsTerminal() {
+			return nil, remediation.ErrTaskTerminal
+		}
+		for _, id := range plan.JoinIDs {
+			targets[id] = claimTarget{id: jt.ID, title: jt.Title}
+		}
+	}
 	all := append([]shared.ID{}, plan.JoinIDs...)
 	for _, t := range plan.Tasks {
 		all = append(all, t.FindingIDs...)
 	}
-	if err := lockFindingsInTx(ctx, tx, plan.TenantID, all); err != nil {
-		return nil, err
-	}
-	gone, err := unavailableFindingsInTx(ctx, tx, plan.TenantID, all)
+	claim, err := tr.claimFindingsInTx(ctx, tx, claimInput{tenantID: plan.TenantID, ids: all, except: plan.TargetTaskID,
+		res: plan.Conflicts, into: func(id shared.ID) claimTarget { return targets[id] }, actor: plan.ActorID})
 	if err != nil {
 		return nil, err
 	}
-	res := &remediation.AcceptResult{SuggestionID: plan.SuggestionID, TaskIDs: []shared.ID{}, Dropped: []shared.ID{}}
-	for id := range gone {
-		res.Dropped = append(res.Dropped, id)
-	}
-	keep := func(ids []shared.ID) []shared.ID {
-		out := make([]shared.ID, 0, len(ids))
-		for _, id := range ids {
-			if !gone[id] {
-				out = append(out, id)
-			}
-		}
-		return out
-	}
+	res := &remediation.AcceptResult{SuggestionID: plan.SuggestionID, TaskIDs: []shared.ID{},
+		Dropped: claim.closedIDs(), Skipped: claim.skippedIDs(), Moved: claim.moved(), Claim: claim.report}
+	res.Claim.Skipped = res.Skipped
+	keep := claim.keep
 
 	actionID, err := ensureActionInTx(ctx, tx, plan)
 	if err != nil {
@@ -65,7 +79,6 @@ func (r *RemediationSuggestionRepository) AcceptSuggestion(ctx context.Context, 
 	}
 	res.ActionID = actionID
 
-	tr := &RemediationTaskRepository{db: r.db}
 	created, err := tr.createPlanTasksInTx(ctx, tx, plan, actionID, keep, res)
 	if err != nil {
 		return nil, err
@@ -76,6 +89,9 @@ func (r *RemediationSuggestionRepository) AcceptSuggestion(ctx context.Context, 
 	}
 	if created == 0 && res.Joined == 0 {
 		return nil, remediation.ErrNothingToAccept
+	}
+	if err := recordClaimMovesInTx(ctx, tx, plan.TenantID, res.Claim, plan.ActorID); err != nil {
+		return nil, err
 	}
 
 	if len(plan.Excluded) > 0 {
@@ -171,7 +187,7 @@ func (r *RemediationTaskRepository) createPlanTasksInTx(ctx context.Context, tx 
 		if len(members) == 0 {
 			continue
 		}
-		t := &remediation.Task{ID: shared.NewID(), TenantID: plan.TenantID, ActionID: actionID, Title: pt.Title,
+		t := &remediation.Task{ID: pt.ID, TenantID: plan.TenantID, ActionID: actionID, Title: pt.Title,
 			AssigneeUserID: pt.Owner.UserID, AssigneeGroupID: pt.Owner.GroupID, ManualDeadline: pt.Deadline, CreatedBy: plan.ActorID}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO remediation_tasks (id, tenant_id, action_id, title, assignee_user_id, assignee_group_id, manual_deadline, created_by)
