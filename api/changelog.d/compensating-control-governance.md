@@ -1,0 +1,7 @@
+### Security: compensating controls need a verified test, a review date and an elevated role
+
+- The built-in Member role no longer holds `ctem:compensating_controls:write` (migration `002950`). Owners, admins and roles granted it explicitly (the program-lead template) create, change, test, link and delete controls. An effective control lowers the priority and SLA of every finding on the assets it covers.
+- A control counts only when it is active, its last test passed and its review date (`expires_at`) has not passed. Before, an untested control counted in full. Every control now has a review date: `expires_at` must be in the future and at most 366 days ahead; a control created without one gets 90 days, and an update without one keeps the stored date (it can no longer be cleared).
+- A control lowers a finding by at most one priority level, and only with a reduction of at least 0.25. Adding a control can no longer raise a finding (it used to turn some P3 findings into P2), and a control never takes a CISA KEV finding below P1. The priority reason names the step.
+- Every create, update, delete, test and asset link is audited at High severity; finding links at Medium.
+- **Upgrade note:** the migration queues every asset a control covers, so its findings and asset risk are recomputed once under the new rule. Existing controls without a passing test or a review date stop lowering priorities until someone records a test and sets a review date.

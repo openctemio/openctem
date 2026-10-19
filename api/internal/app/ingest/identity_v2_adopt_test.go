@@ -25,7 +25,7 @@ func (r *adoptingRepo) CheckFingerprintsExist(_ context.Context, _ shared.ID, fp
 	return m, nil
 }
 
-func (r *adoptingRepo) AdoptFingerprint(_ context.Context, _ shared.ID, from, _ string, _ []byte, _ int) (bool, error) {
+func (r *adoptingRepo) AdoptFingerprint(_ context.Context, _ shared.ID, from, _ string, _ []byte, _ int, _ vulnerability.AdoptGuard) (bool, error) {
 	r.adopted = append(r.adopted, from)
 	return true, nil
 }
@@ -45,18 +45,18 @@ func TestAdoptV1Keys_OnlyLiveKeysAreRekeyed(t *testing.T) {
 		{v1: "v1-new-1", k: vulnerability.NewIdentityKey("test", "host", "b.example.test")},
 		{v1: "v1-new-2", k: vulnerability.NewIdentityKey("test", "host", "c.example.test")},
 	}
-	adoptV1KeysOf(context.Background(), p, shared.NewID(), items, func(it adoptItem) (string, *vulnerability.IdentityKey) {
+	adoptV1KeysOf(context.Background(), p, shared.NewID(), items, func(it adoptItem) adoptKeys {
 		k := it.k
-		return it.v1, &k
+		return adoptKeys{from: it.v1, identity: &k}
 	})
 	if len(repo.adopted) != 1 || repo.adopted[0] != "v1-live" {
 		t.Fatalf("adopted = %v, want only v1-live", repo.adopted)
 	}
 
 	repo.adopted, repo.live = nil, map[string]bool{}
-	adoptV1KeysOf(context.Background(), p, shared.NewID(), items, func(it adoptItem) (string, *vulnerability.IdentityKey) {
+	adoptV1KeysOf(context.Background(), p, shared.NewID(), items, func(it adoptItem) adoptKeys {
 		k := it.k
-		return it.v1, &k
+		return adoptKeys{from: it.v1, identity: &k}
 	})
 	if len(repo.adopted) != 0 {
 		t.Fatalf("new findings issued %d re-key updates, want 0", len(repo.adopted))

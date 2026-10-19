@@ -42,6 +42,8 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
+
+> **Compensating controls.** An effective control lowers the priority and SLA of every finding on the assets it covers, so `ctem:compensating_controls:write` (create, update, delete, record a test, link assets or findings) is held by owners, admins and roles granted it explicitly (the program-lead template); the built-in Member role reads controls only (migration `002950`). Every write is audited (High; findings links Medium).
 | **Total** | **166** | |
 
 > There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and
@@ -296,7 +298,7 @@ API keys are refused on both prefixes; the tenant is the session's. Design: `mcp
 | `GET /api/v1/assets/{id}/components`, `/dependency-paths`, `/dependency-graph` | `components:read` (asset in scope) |
 | `GET /api/v1/vex-statements`, `/{id}` | `components:read` (asset-bound statements: asset in scope; statements for every asset: an in-scope asset uses the package; else 404) |
 | `GET`/`PUT /api/v1/organization/settings/license-policy` | `settings:read` / `settings:write` (configuration of the caller's organization; a PUT re-evaluates its package links and license findings; audited) |
-| `POST /api/v1/vex-statements`, `PATCH`/`DELETE /{id}`, `POST /import` | `findings:approve` (closes findings: asset-bound needs the asset in scope, 404 otherwise; a statement for every asset needs full data access, 403 otherwise; import rate limited) |
+| `POST /api/v1/vex-statements`, `PATCH`/`DELETE /{id}`, `POST /import` | `findings:approve`, plus `findings:verify` to write a `fixed` statement (create or patch to `fixed`, widen a fixed one, or import a document with any `fixed` statement; the whole import is refused with 403 before anything is written), because `fixed` resolves findings with verification `vex_statement`; `not_affected` and delete need only approve (closes findings: asset-bound needs the asset in scope, 404 otherwise; a statement for every asset needs full data access, 403 otherwise; import rate limited) |
 
 The inventory has no manual create, update or delete (RFC-070): sensors, CI
 and SBOM import write it.
@@ -308,7 +310,7 @@ and SBOM import write it.
 | `GET /api/v1/findings` | `findings:read` |
 | `GET /api/v1/findings/{id}` | `findings:read` |
 | `POST /api/v1/findings` | `findings:write` |
-| `DELETE /api/v1/findings/{id}` | `findings:delete` |
+| `DELETE /api/v1/findings/{id}` | `findings:delete` (hard delete; the activity timeline goes with the row. An audit event `finding.deleted` is written first with the actor, title, severity, status, source, CVE, asset, fingerprint, tool and the number of activities removed; if that write fails the finding is not deleted) |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
@@ -756,6 +758,13 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/dashboard/stats` | `dashboard:read` |
+
+#### Dashboard data (`/api/v1/dashboard-data`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/dashboard-data/` | owner or administrator (`RequireAdmin`) |
+| `POST /api/v1/dashboard-data/rebuild` | owner or administrator (`RequireAdmin`); once per organization per hour, shared with the console route (`docs/architecture/dashboards.md`) |
 
 #### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
 
@@ -1713,6 +1722,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
 | `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
 | `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
+| `POST /findings/{id}/severity-requests/{request_id}/{approve,reject}` (`findings:approve`), `/cancel` (`findings:severity`, requester only) | new | 404 (guard) + `getFindingWithTenantCheck`; the request must belong to that finding and tenant; approve runs the approval policy (never the requester or an asset owner, approver needs the finding in scope) |
 | `PUT/DELETE /findings/{id}/comments/{comment_id}` | bypass | 404 (guard) + comment's finding checked |
 | `POST /comments/{comment_id}/reactions`, `DELETE /comments/{comment_id}/reactions/{emoji}` | (new) | comment resolved by (tenant, id); its finding goes through the comment-list gate (data scope, or pentest campaign membership instead of it; a client reaches client-visible comments only): 404. Removing another member's reaction (`?user_id=`) needs owner/admin and is audited |
 | `PUT/DELETE /assets/{id}`, activate/deactivate/archive, crown-jewel, snooze, sync, scan | **bypass (write)** | 404 (guard) |
