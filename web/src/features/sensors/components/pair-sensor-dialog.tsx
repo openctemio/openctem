@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, Link2, Loader2, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, Link2, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -39,11 +39,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useDocsHref } from '@/context/brand-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { useNow } from '@/hooks/use-now'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
-import { invalidateSensorsCache } from '@/lib/api/sensor-hooks'
+import { invalidateSensorsCache, useTenantSensorStats } from '@/lib/api/sensor-hooks'
 import {
   approvePairing,
   createPairingExpectation,
@@ -54,6 +56,7 @@ import {
   type SensorPairingView,
 } from '@/lib/api/sensor-pairing-hooks'
 import type { SensorType } from '@/lib/api/sensor-types'
+import { DOCS } from '@/lib/docs-links'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import {
@@ -70,6 +73,7 @@ import {
   stepUpMethodOf,
   validIntegrationName,
 } from '../lib/pairing'
+import { DEFAULT_SENSOR_PRODUCT } from '../lib/sensor-version'
 import { Snippet } from './sensor-install-snippets'
 import { ToggleChip } from './toggle-chip'
 
@@ -91,6 +95,42 @@ export function PairSensorButton({ onClick }: { onClick: () => void }) {
       <Link2 className="h-4 w-4" />
       {t('sensors.pair.title')}
     </Button>
+  )
+}
+
+/**
+ * "Don't have the sensor yet?": how to get it onto the host before pairing.
+ * Keyless by design: the sensor makes its own key when it pairs, so nothing
+ * here carries a secret. The image comes from the platform's release line
+ * and is shown only to a reader of the fleet (the stats endpoint's gate).
+ */
+function GetTheSensor() {
+  const { t } = useTranslation()
+  const docsHref = useDocsHref()
+  const canReadFleet = useHasPermission(Permission.SensorsRead)
+  const { data: stats } = useTenantSensorStats({ isPaused: () => !canReadFleet })
+  const image = stats?.products?.find((p) => p.id === DEFAULT_SENSOR_PRODUCT)?.image
+  return (
+    <Collapsible className="mb-4 rounded-lg border">
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm font-medium">
+        {t('sensors.pair.getSensor.title')}
+        <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-3 border-t px-3 py-3">
+        <p className="text-sm text-muted-foreground">{t('sensors.pair.getSensor.body')}</p>
+        {image && (
+          <Snippet text={`docker pull ${image}`} label={t('sensors.pair.getSensor.pull')} />
+        )}
+        <a
+          href={docsHref(DOCS.sensors.install)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-primary underline-offset-4 hover:underline"
+        >
+          {t('sensors.pair.getSensor.guide')}
+        </a>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -116,18 +156,21 @@ export function PairSensorDialog({
           {approved ? (
             <ApprovedNotice view={approved} onClose={() => onOpenChange(false)} />
           ) : (
-            <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
-              <TabsList>
-                <TabsTrigger value="code">{t('sensors.pair.tabCode')}</TabsTrigger>
-                <TabsTrigger value="expect">{t('sensors.pair.tabExpect')}</TabsTrigger>
-              </TabsList>
-              <TabsContent value="code" className="mt-4">
-                <EnterCodePanel onApproved={setApproved} onClose={() => onOpenChange(false)} />
-              </TabsContent>
-              <TabsContent value="expect" className="mt-4">
-                <ExpectPanel onApproved={setApproved} onClose={() => onOpenChange(false)} />
-              </TabsContent>
-            </Tabs>
+            <>
+              <GetTheSensor />
+              <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
+                <TabsList>
+                  <TabsTrigger value="code">{t('sensors.pair.tabCode')}</TabsTrigger>
+                  <TabsTrigger value="expect">{t('sensors.pair.tabExpect')}</TabsTrigger>
+                </TabsList>
+                <TabsContent value="code" className="mt-4">
+                  <EnterCodePanel onApproved={setApproved} onClose={() => onOpenChange(false)} />
+                </TabsContent>
+                <TabsContent value="expect" className="mt-4">
+                  <ExpectPanel onApproved={setApproved} onClose={() => onOpenChange(false)} />
+                </TabsContent>
+              </Tabs>
+            </>
           )}
         </DialogBody>
       </DialogContent>
