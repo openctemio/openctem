@@ -83,7 +83,7 @@ nobody owning **definition → coverage**:
 | Scan | `scans` | The definition (and, for quick scans, an ad-hoc row) |
 | Pipeline template / run | `pipeline_templates`, `pipeline_steps`, `pipeline_runs`, `step_runs` | The real execution record |
 | Scan session | `scan_sessions` | Written only by `POST /agent/scans`, which no client calls |
-| Scan profile | `scan_profiles` | Only its quality gate is used |
+| Scan profile | `scan_profiles` | Only its quality gate (the pass/fail rule) is used. The API and the console no longer accept or show `tools_config`, `intensity`, `max_concurrent_scans` and `timeout_seconds` (create and update answer 400 if sent, reads omit them). The columns stay and keep their defaults until a later release drops them (expand, then contract) |
 | Workflow | `workflows`, `workflow_*` | Event automation, in-memory goroutines |
 | Scope schedule | `scan_schedules` | Inert by decision (§6.6); removed since (API gone, table dropped by migration 001069) |
 
