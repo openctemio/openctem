@@ -274,6 +274,13 @@ func (s *Service) checkPasswordPathAllowed(ctx context.Context, a *admin.AdminUs
 // use, a fresh TOTP secret to enroll. authMethod records how the first factor
 // was proven and carries over to the verified session.
 func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, authMethod string, client ClientInfo) (*LoginResult, error) {
+	return s.beginSecondFactorBinding(ctx, a, authMethod, client, "", "")
+}
+
+// beginSecondFactorBinding is beginSecondFactor for a first IdP sign-in: the
+// pending session carries the IdP identity (issuer, subject) that is bound
+// only when the second factor succeeds (bindPendingIdP).
+func (s *Service) beginSecondFactorBinding(ctx context.Context, a *admin.AdminUser, authMethod string, client ClientInfo, idpIssuer, idpSubject string) (*LoginResult, error) {
 	creds, err := s.console.GetCredentials(ctx, a.ID())
 	if err != nil && !errors.Is(err, admin.ErrCredentialsNotFound) {
 		return nil, fmt.Errorf("start console session: %w", err)
@@ -287,7 +294,10 @@ func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, aut
 		return nil, fmt.Errorf("start console session: %w", err)
 	}
 
-	pending, err := s.newSession(ctx, a.ID(), false, admin.PendingMFATTL, authMethod, client)
+	pending, err := s.createSession(ctx, &admin.Session{
+		AdminID: a.ID(), MFAVerified: false, AuthMethod: authMethod,
+		PendingIdPIssuer: idpIssuer, PendingIdPSubject: idpSubject,
+	}, admin.PendingMFATTL, client)
 	if err != nil {
 		return nil, err
 	}
@@ -727,23 +737,25 @@ func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, 
 }
 
 func (s *Service) newSession(ctx context.Context, adminID shared.ID, verified bool, ttl time.Duration, authMethod string, client ClientInfo) (string, error) {
+	return s.createSession(ctx, &admin.Session{AdminID: adminID, MFAVerified: verified, AuthMethod: authMethod}, ttl, client)
+}
+
+// createSession stores sess (AdminID, MFAVerified, AuthMethod and any pending
+// IdP binding set by the caller) with a fresh token and returns the token.
+func (s *Service) createSession(ctx context.Context, sess *admin.Session, ttl time.Duration, client ClientInfo) (string, error) {
 	token, hash, err := newToken()
 	if err != nil {
 		return "", err
 	}
 	now := s.now()
-	err = s.console.CreateSession(ctx, &admin.Session{
-		ID:          shared.NewID(),
-		AdminID:     adminID,
-		TokenHash:   hash,
-		MFAVerified: verified,
-		CreatedAt:   now,
-		ExpiresAt:   now.Add(ttl),
-		LastSeenAt:  now,
-		IP:          client.IP,
-		UserAgent:   truncate(client.UserAgent, 512),
-		AuthMethod:  authMethod,
-	})
+	sess.ID = shared.NewID()
+	sess.TokenHash = hash
+	sess.CreatedAt = now
+	sess.ExpiresAt = now.Add(ttl)
+	sess.LastSeenAt = now
+	sess.IP = client.IP
+	sess.UserAgent = truncate(client.UserAgent, 512)
+	err = s.console.CreateSession(ctx, sess)
 	if err != nil {
 		return "", err
 	}

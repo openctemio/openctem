@@ -129,3 +129,104 @@ func TestDryRunRule_MatchesAndCap(t *testing.T) {
 		t.Fatalf("dry run persisted a priority_class (%q) — it must be read-only", *pc)
 	}
 }
+
+// TestDryRunRule_FloorKeepsKEVAboveRule: a draft rule that would put every
+// critical finding at P3 cannot lower a known-exploited one below P1. The
+// dry run reports the floored class and counts it, and reports the tenant's
+// open findings next to the evaluated count.
+func TestDryRunRule_FloorKeepsKEVAboveRule(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB execution check")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	tenantID := seedTestTenant(ctx, t, db)
+	assetID := seedPublicAsset(ctx, t, db, tenantID)
+	kevID := seedFinding(ctx, t, db, tenantID, assetID, "sca", "critical", "new")
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET is_in_kev = TRUE WHERE id = $1`, kevID.String()); err != nil {
+		t.Fatal(err)
+	}
+	seedFinding(ctx, t, db, tenantID, assetID, "sca", "critical", "new")
+
+	classifier := finding.NewPriorityClassificationService(
+		NewFindingRepository(&DB{DB: db}), NewAssetRepository(&DB{DB: db}),
+		fakeEPSSRepo{}, fakeKEVRepo{}, fakeRuleRepo{}, fakeAuditRepo{}, logger.NewNop())
+	draft, err := vulnerability.NewPriorityOverrideRule(tenantID, "dry-run", vulnerability.PriorityP3,
+		[]vulnerability.RuleCondition{{Field: "severity", Operator: "eq", Value: "critical"}}, shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := classifier.DryRunRule(ctx, tenantID, draft, 0, 25)
+	if err != nil {
+		t.Fatalf("DryRunRule: %v", err)
+	}
+	if res.Matched != 2 || res.Floored != 1 || res.OpenFindings != 2 || res.Capped {
+		t.Fatalf("matched=%d floored=%d open=%d capped=%v, want 2/1/2/false", res.Matched, res.Floored, res.OpenFindings, res.Capped)
+	}
+	if res.Distribution["P1"] != 1 || res.Distribution["P3"] != 1 {
+		t.Fatalf("distribution = %v, want one P1 (KEV, floored) and one P3", res.Distribution)
+	}
+	for _, s := range res.Sample {
+		if s.FindingID == kevID.String() && s.WouldBeClass != "P1" {
+			t.Fatalf("KEV finding would be %s under a P3 rule, want P1", s.WouldBeClass)
+		}
+	}
+}
+
+// TestPriorityRules_EqualOrderIsDeterministic: two overlapping active rules
+// with the same evaluation order always come back in creation order, so the
+// same rule wins on every pass. Another tenant's rules are never listed.
+func TestPriorityRules_EqualOrderIsDeterministic(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB execution check")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+	tenantID := seedTestTenant(ctx, t, db)
+	other := seedTestTenant(ctx, t, db)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM priority_override_rules WHERE tenant_id = ANY($1::uuid[])`,
+			"{"+tenantID.String()+","+other.String()+"}")
+	})
+	insert := func(tid shared.ID, name, class, at string) {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO priority_override_rules (tenant_id, name, priority_class, conditions, is_active, evaluation_order, created_at)
+			VALUES ($1, $2, $3, '[{"field":"severity","operator":"eq","value":"critical"}]', TRUE, 50, $4::timestamptz)`,
+			tid.String(), name, class, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Inserted newest first, so heap order would tend to return the newer one.
+	insert(tenantID, "newer", "P3", "2026-02-01T00:00:00Z")
+	insert(tenantID, "older", "P1", "2026-01-01T00:00:00Z")
+	insert(other, "foreign", "P0", "2025-01-01T00:00:00Z")
+
+	repo := NewPriorityRuleRepository(&DB{DB: db})
+	for i := 0; i < 20; i++ {
+		rules, err := repo.ListActiveByTenant(ctx, tenantID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rules) != 2 || rules[0].Name() != "older" || rules[1].Name() != "newer" {
+			names := []string{}
+			for _, r := range rules {
+				names = append(names, r.Name())
+			}
+			t.Fatalf("pass %d: rules %v, want [older newer] (no other tenant's rule)", i, names)
+		}
+	}
+}

@@ -186,16 +186,10 @@ func (s *IntelService) getKEVCatalogCounts(ctx context.Context) (kevCatalogCount
 
 // KEVEscalationResult reports what a KEV reconciliation pass changed.
 //
-// Escalated and Flagged are independent: a non-critical finding whose CVE
-// entered KEV is BOTH escalated (severity→critical) AND flagged
-// (is_in_kev false→true); an already-critical KEV finding is only flagged.
-// Tenants is the distinct set of tenants touched by either change — the
-// caller enqueues one priority reclassify per tenant so is_in_kev/severity
-// actually drive priority_class.
+// Flagged and Unflagged count is_in_kev changes; severity is never changed
+// (KEV feeds the priority classifier's exploitation floor instead). Tenants
+// is the distinct set of tenants touched by either change.
 type KEVEscalationResult struct {
-	// Escalated is the number of findings whose severity was raised to
-	// critical because their CVE is in KEV.
-	Escalated int
 	// Flagged is the number of findings whose is_in_kev was reconciled
 	// from false to true (independent of severity).
 	Flagged int
