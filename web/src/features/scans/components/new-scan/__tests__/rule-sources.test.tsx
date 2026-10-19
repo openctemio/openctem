@@ -61,10 +61,13 @@ describe('Options step: detection rules', () => {
     expect(screen.queryByText('Detection rules')).toBeNull()
   })
 
-  it('hides the checklist for platform rules only', () => {
-    renderStep({ scannerName: 'nuclei', ruleSources: 'platform' })
+  it('keeps the picked templates, disabled, for platform rules only', () => {
+    renderStep({ scannerName: 'nuclei', ruleSources: 'platform', customTemplateIds: ['t1'] })
     expect(screen.getByText('Detection rules')).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: /Exposed panels/ })).toBeNull()
+    const box = screen.getByRole('checkbox', { name: /Exposed panels/ })
+    expect(box).toBeChecked()
+    expect(box).toBeDisabled()
+    expect(screen.getByText(/kept/i)).toBeInTheDocument()
   })
 
   it('ticking a template reports the ids', async () => {

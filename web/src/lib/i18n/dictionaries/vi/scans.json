@@ -2081,6 +2081,7 @@
   "scans.rules.help": "Chọn quy tắc của bên nào mà lượt quét này chạy. Chỉ mẫu của tổ chức cần ít nhất một mẫu và sẽ chờ cảm biến hỗ trợ.",
   "scans.rules.noAccess": "Bạn không có quyền xem các mẫu của tổ chức nên không thể chọn ở đây.",
   "scans.rules.loading": "Đang tải các mẫu...",
+  "scans.rules.platformKept": "Chỉ quy tắc nền tảng: các mẫu đã chọn được giữ lại và sẽ chạy lại khi bạn chọn quy tắc của tổ chức.",
   "scans.rules.empty": "Tổ chức chưa có mẫu đang hoạt động nào thuộc loại này.",
   "scans.rules.manage": "Quản lý mẫu",
   "scans.rules.templates": "Mẫu của tổ chức",

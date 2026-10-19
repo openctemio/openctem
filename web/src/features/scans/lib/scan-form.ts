@@ -257,7 +257,9 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   }
   if (takesRuleSources(form)) {
     if (form.ruleSources) request.rule_sources = form.ruleSources
-    if (form.ruleSources !== 'platform' && form.customTemplateIds.length > 0) {
+    // Kept for platform rules only too (the API sends none to the sensor
+    // then): they run again when the choice changes back.
+    if (form.customTemplateIds.length > 0) {
       request.scanner_config = {
         ...(request.scanner_config ?? {}),
         custom_template_ids: [...form.customTemplateIds],
@@ -373,7 +375,7 @@ export function formDataToUpdateRequest(
   }
   if (takesRuleSources(form)) {
     const config = { ...(request.scanner_config ?? {}) }
-    if (form.ruleSources !== 'platform' && form.customTemplateIds.length > 0) {
+    if (form.customTemplateIds.length > 0) {
       config.custom_template_ids = [...form.customTemplateIds]
     } else {
       delete config.custom_template_ids
