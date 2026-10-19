@@ -281,9 +281,9 @@ func registerVulnerabilityRoutes(
 		// A severity downgrade waiting for approval: approving or rejecting it
 		// is an approval decision (findings:approve, eligibility checked by
 		// the approval policy in the service); the requester withdraws it.
-		r.POST("/{id}/severity-requests/{requestId}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove))
-		r.POST("/{id}/severity-requests/{requestId}/reject", h.RejectSeverityRequest, middleware.Require(permission.FindingsApprove))
-		r.POST("/{id}/severity-requests/{requestId}/cancel", h.CancelSeverityRequest, middleware.Require(permission.FindingsSeverity))
+		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/severity-requests/{request_id}/reject", h.RejectSeverityRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/severity-requests/{request_id}/cancel", h.CancelSeverityRequest, middleware.Require(permission.FindingsSeverity))
 
 		// Triage and verification. Confirming a finding is a status change
 		// (PATCH /{id}/status): one gate per action.

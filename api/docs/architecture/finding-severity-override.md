@@ -61,7 +61,7 @@ refuses any other extension).
 
 ## Requests
 
-`POST /api/v1/findings/{id}/severity-requests/{requestId}/approve` and
+`POST /api/v1/findings/{id}/severity-requests/{request_id}/approve` and
 `/reject` (`findings:approve`), `/cancel` (`findings:severity`, the requester
 only).
 
