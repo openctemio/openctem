@@ -129,6 +129,7 @@ automatic recomputes only tighten:
 | SLA policy shortened | `min(old, now + new days)` |
 | SLA policy lengthened | kept; new findings use the new policy |
 | finding closed | kept as it was when closed |
+| analyst severity downgrade the approval policy allowed | `first_detected_at + SLA(new class)` when that is later: the one explicit extension, never counted from now ([severity override](finding-severity-override.md)) |
 
 A deadline that moves later by itself would hide overdue work, so an
 extension is an explicit decision (a regression or an expired acceptance
