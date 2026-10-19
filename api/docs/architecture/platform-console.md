@@ -207,6 +207,8 @@ Shipped (design: [RFC-022 revision 24](../rfcs/RFC-022-platform-admin-console.md
 | Remove a super admin | an active super admin demoted, deactivated, marked break-glass or removed |
 | Stop requiring security keys | the security-key policy goes from on to off |
 | Remove or relax the administrators' identity provider | removed, switched off, or no longer required |
+| Change the administrators' identity provider or the second factor it is trusted for | a new issuer or client id on an existing provider, or any trusted ACR/AMR value not trusted before (also on a first configuration); the target is the new issuer, client and trusted values |
+| Reset another administrator's console second factor | always (their next sign-in enrolls a new factor) |
 | Open sign-up | the stored sign-up policy opens wider than before |
 | Re-sign an organization's audit chain | always |
 
@@ -227,8 +229,22 @@ actions run on the super admin's own step-up, each recorded as critical
 (`approval.single_admin`) and e-mailed to every administrator; the
 Approvals page explains how to add a second super admin. Once two exist,
 removing either needs the other's approval. If the other super admin is
-unavailable, end their console sessions and reset their console sign-in from
-the console, and change the roster with `bootstrap-admin` on the server.
+unavailable, end their console sessions from the console and change the
+roster with `bootstrap-admin` on the server. Resetting an administrator's
+console second factor needs another super admin too: an administrator who lost
+their authenticator signs in with a recovery code, or the operator re-creates
+the account with `bootstrap-admin -force` on the server.
+
+IdP binding: the first platform IdP sign-in of an unbound administrator (matched
+by verified e-mail) binds the identity only after that administrator proves
+their own console second factor on the pending session; a trusted ACR/AMR
+value skips the console factor only for an identity bound that way. An
+unbound administrator with no console factor yet (never signed in, or reset)
+is refused on the IdP while the password path is open: they enroll on the
+password path first. Only while "require IdP" closes the password path is the
+IdP their sole first factor and the console factor enrolled after it. Whoever
+can mint an IdP token carrying another administrator's e-mail therefore cannot
+sign in as them and approve their own requests.
 
 API: `GET /api/v1/admin/approvals`, `POST /api/v1/admin/approvals`
 (step-up), `POST /api/v1/admin/approvals/{id}/approve` (fresh step-up),
