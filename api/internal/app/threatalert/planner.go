@@ -170,6 +170,16 @@ func (p *Planner) Run(ctx context.Context, budget time.Duration) (Stats, error) 
 	if err := p.baselines(ctx, rs, &st, deadline); err != nil {
 		return st, err
 	}
+	// Items that failed to plan go back to the queue after this loop (not
+	// inside it: a persistent failure would spin until the deadline).
+	var retry []threatalert.QueueItem
+	defer func() {
+		if len(retry) > 0 {
+			if err := p.store.Enqueue(ctx, retry); err != nil {
+				p.logger.Warn("emerging threats not re-queued", "items", len(retry), "error", err)
+			}
+		}
+	}()
 	for p.now().Before(deadline) {
 		items, err := p.store.Dequeue(ctx, queuePage)
 		if err != nil {
@@ -187,6 +197,7 @@ func (p *Planner) Run(ctx context.Context, budget time.Duration) (Stats, error) 
 			}
 			if err := p.plan(ctx, rs, it.TenantID, it.VulnID, false); err != nil {
 				p.logger.Warn("emerging threat not planned", "tenant_id", it.TenantID.String(), "vuln_id", it.VulnID, "error", err)
+				retry = append(retry, it)
 				continue
 			}
 			st.Planned++

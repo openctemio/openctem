@@ -359,6 +359,11 @@ func (r *ThreatAlertRepository) SaveAlert(ctx context.Context, a *threatalert.Al
 	if notified == "" {
 		notified = threatalert.NotifiedNone
 	}
+	// The version the planner read: an update applies only to that version.
+	var readAt sql.NullTime
+	if !a.ID.IsZero() {
+		readAt = sql.NullTime{Time: a.UpdatedAt, Valid: true}
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
@@ -381,12 +386,16 @@ func (r *ThreatAlertRepository) SaveAlert(ctx context.Context, a *threatalert.Al
 			source_at = EXCLUDED.source_at, event_at = EXCLUDED.event_at, notified_level = EXCLUDED.notified_level,
 			notified_tier = EXCLUDED.notified_tier, digest_pending = EXCLUDED.digest_pending,
 			planned_at = now(), resolved_at = EXCLUDED.resolved_at, updated_at = now()
+		WHERE $28::timestamptz IS NULL OR threat_alerts.updated_at = $28::timestamptz
 		RETURNING id, created_at, updated_at`,
 		a.TenantID.String(), a.VulnID, clipStr(a.Title, 200), a.Severity, string(a.Level), string(a.Tier), string(a.State),
 		a.StateReason, a.StateNote, nullTime(a.StateChangedAt), nullTime(a.SuppressedUntil), a.ETS, breakdown,
 		a.InKEV, a.KEVRansomware, epss, a.Confirmed, a.Possible, a.InternetFacing, a.LastEventKind,
 		nullTime(a.SourceAt), nullTime(a.EventAt), notified, a.NotifiedTier, a.DigestPending, a.Baseline,
-		nullTime(a.ResolvedAt)).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
+		nullTime(a.ResolvedAt), readAt).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return threatalert.ErrStale
+	}
 	if err != nil {
 		return fmt.Errorf("save alert: %w", err)
 	}
@@ -643,9 +652,11 @@ func (r *ThreatAlertRepository) DigestSummary(ctx context.Context, tenantID shar
 	if err != nil {
 		return d, fmt.Errorf("digest summary: %w", err)
 	}
+	// The counts of each listed alert are those in scope (a scoped member's
+	// e-mail never counts assets they cannot see).
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.vuln_id, a.title, a.level, a.ets, a.in_kev, a.confirmed_assets, a.possible_assets, a.internet_facing_assets
-		FROM threat_alerts a
+		SELECT a.id, a.vuln_id, a.title, a.level, a.ets, a.in_kev, vc.c, vc.p, vc.i
+		FROM threat_alerts a `+viewerCountsSQL(cond)+`
 		WHERE a.tenant_id = $1 AND a.state IN `+openAlertStates+` AND a.level IN ('immediate', 'digest')
 		  AND (a.digest_pending OR a.notified_at >= $2) AND `+visible+`
 		ORDER BY a.ets DESC, a.vuln_id LIMIT 5`, base...)
