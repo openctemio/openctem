@@ -17,8 +17,9 @@
 - Assignees see their work: the assignee of a finding sees that finding (not
   its asset or other findings) in the findings list, stats, groups, export,
   detail and bulk actions; the assignee of a remediation campaign sees the
-  campaign and the findings it tracks, but changing it still needs every
-  finding in their own scope. Unassigning removes the view at once.
+  campaign and the findings it tracks when someone with full data access
+  created it (otherwise only the findings in their own scope), and changing
+  it still needs every finding in their own scope. Unassigning removes the view at once.
 - Migration `002980` adds `v_asset_owner_scope`, recomputes scope on
   `asset_owners` changes and backfills the scope of existing primary and
   secondary owners set by a person.

@@ -168,8 +168,13 @@ func AssigneeScopeSQL(assetExpr, assigneeExpr string, scope *shared.DataScope, f
 	if scope.Unrestricted || assigneeExpr == "" {
 		return cond, args
 	}
-	return fmt.Sprintf("(%s OR (%s = $%d AND %s))", cond, assigneeExpr, first,
-		NotHiddenSQL(assetExpr, first, first+1)), args
+	// The scope rows are read once into an array (an init plan) so the two
+	// alternatives stay plain column conditions: the planner combines the
+	// asset and assignee indexes (BitmapOr) instead of scanning every row of
+	// the tenant, which "asset IN (subquery) OR assignee = $1" forces.
+	return fmt.Sprintf(
+		"((%s = ANY (ARRAY(SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $%d AND uaa.tenant_id = $%d)) OR %s = $%d) AND %s)",
+		assetExpr, first, first+1, assigneeExpr, first, NotHiddenSQL(assetExpr, first, first+1)), args
 }
 
 // HiddenAssetWhere is the condition "asset ph is hidden from user $userArg

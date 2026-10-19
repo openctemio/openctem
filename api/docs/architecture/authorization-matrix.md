@@ -1440,8 +1440,13 @@ one needs `team:groups:write` on top of `assets:write`/`assets:delete`.
   campaign-membership rule. Dashboards and their facts stay per asset scope.
 - The **assignee of a remediation campaign** (`remediation_campaigns.assigned_to`)
   sees the campaign and the findings it tracks (list, counts, the campaign's
-  findings page), not other findings, and not on hidden assets. Changing the
-  campaign still needs every one of its findings in their own scope.
+  findings page), not other findings, and not on hidden assets. The wider
+  view of the campaign's findings applies only when someone else with full
+  data access created the campaign: its filter is evaluated live, so a
+  campaign a restricted member created (and assigned to themself or a
+  colleague) shows its assignee only the findings in the assignee's own
+  scope. Changing the campaign still needs every one of its findings in
+  their own scope.
 
 What the assignee may do is their role's. The view is computed from the
 assignment on every request, so unassigning removes it at once; assignments

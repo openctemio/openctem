@@ -285,13 +285,34 @@ func (s *RemediationCampaignService) isCampaignAssignee(ctx context.Context, cam
 // campaignViewScope is the scope a campaign's findings are read over: the
 // caller's data scope, except that the campaign's assignee sees every
 // finding of the campaign (the set the campaign tracks, never more) that is
-// not on an asset hidden from them. Assignment grants view, not change:
-// getWritable still checks the caller's own scope.
+// not on an asset hidden from them, when the campaign was created by someone
+// else who sees every asset. Assignment grants view, not change: getWritable
+// still checks the caller's own scope.
+//
+// The creator bound matters because a campaign's filter is evaluated live:
+// a restricted member may create a campaign whose filter matches nothing yet
+// (requireAllInScope admits it) and assign it to themself or a colleague; the
+// findings other teams later get under that filter must not open up to them.
+// Only a creator with full data access can hand out that wider view. A
+// campaign without a creator, or whose creator's access cannot be resolved,
+// widens nothing (fail closed).
 func (s *RemediationCampaignService) campaignViewScope(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) *shared.DataScope {
-	if scope.Restricted() && s.isCampaignAssignee(ctx, campaign) {
-		return &shared.DataScope{TenantID: scope.TenantID, UserID: scope.UserID, Unrestricted: true}
+	if !scope.Restricted() || !s.isCampaignAssignee(ctx, campaign) {
+		return scope
 	}
-	return scope
+	by := campaign.CreatedBy()
+	if by == nil || *by == scope.UserID {
+		return scope
+	}
+	creator, err := s.dataScope.ForUser(ctx, campaign.TenantID(), *by)
+	if err != nil {
+		s.logger.Warn("campaign creator scope failed", "id", campaign.ID().String(), "error", err)
+		return scope
+	}
+	if creator.Restricted() {
+		return scope
+	}
+	return &shared.DataScope{TenantID: scope.TenantID, UserID: scope.UserID, Unrestricted: true}
 }
 
 // campaignFindingFilter is the set of findings a campaign tracks, whatever
