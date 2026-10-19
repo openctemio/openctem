@@ -99,6 +99,11 @@ func (s *VulnerabilityService) ChangeFindingSeverity(ctx context.Context, in Cha
 	if err != nil {
 		return nil, err
 	}
+	// A caller that named the version it saw is refused before anything is
+	// decided or requested when the finding has moved on.
+	if want, ok := vulnerability.ExpectedRowVersion(ctx, f.ID()); ok && f.HasRowVersion() && f.RowVersion() != want {
+		return nil, &vulnerability.FindingConflictError{FindingID: f.ID(), Current: f}
+	}
 	actor, err := shared.IDFromString(in.ActorID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: a severity change needs an authenticated person", shared.ErrValidation)
