@@ -93,7 +93,7 @@ export interface MultiFacetDef {
 
 export interface BoolFacetDef {
   kind: 'bool'
-  filterKey: Extract<keyof InventoryFilters, 'hasOwner' | 'isControlPlane' | 'isInternetAccessible'>
+  filterKey: Extract<keyof InventoryFilters, 'hasOwner' | 'isControlPlane' | 'isInternetFacing'>
   label: string
   /** Label + count for the true / false options. */
   trueLabel: string
@@ -245,11 +245,11 @@ export function buildFacetGroups(
         },
         {
           kind: 'bool',
-          filterKey: 'isInternetAccessible',
-          label: 'Internet reachability',
+          filterKey: 'isInternetFacing',
+          label: 'Internet-facing',
           trueLabel: 'Internet-facing',
-          falseLabel: 'Not reachable',
-          counts: (s) => s.byInternetAccessible,
+          falseLabel: 'Not internet-facing',
+          counts: (s) => s.byInternetFacing,
         },
         {
           kind: 'bool',
@@ -335,8 +335,8 @@ export const QUICK_PRESETS: QuickPreset[] = [
     id: 'internet-facing',
     labelKey: 'assets.views.internetFacing',
     label: 'Internet-facing',
-    apply: { isInternetAccessible: true },
-    isActive: (f) => f.isInternetAccessible === true,
+    apply: { isInternetFacing: true },
+    isActive: (f) => f.isInternetFacing === true,
   },
   {
     id: 'critical-with-findings',

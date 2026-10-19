@@ -1125,5 +1125,6 @@
   "findings.severityRequest.rejectReason": "Reason for rejecting",
   "findings.severityRequest.reject": "Reject",
   "findings.severityRequest.withdraw": "Withdraw",
-  "findings.severityRequest.approve": "Approve"
+  "findings.severityRequest.approve": "Approve",
+  "findings.contextChips.assetGroup": "Asset group"
 }

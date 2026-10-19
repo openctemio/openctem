@@ -733,6 +733,8 @@ export interface FindingApiFilters {
   asset_owner_id?: string
   /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
   asset_owner_unassigned?: boolean
+  /** Findings on the members of an asset group (the group page's links). Sent as `asset_group_id`. */
+  asset_group_id?: string
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */
   sort?: string
   page?: number
