@@ -1008,5 +1008,14 @@
   "assets.technologies.filter.technology": "Công nghệ",
   "assets.technologies.filter.search": "Tìm công nghệ",
   "assets.technologies.filter.none": "Chưa phát hiện công nghệ nào",
-  "assets.technologies.filter.more": "Hiện thêm {count}"
+  "assets.technologies.filter.more": "Hiện thêm {count}",
+  "assets.stats.unavailable": "Không tải được",
+  "assets.groups.bu.none": "Chưa có đơn vị kinh doanh nào.",
+  "assets.groups.bu.create": "Tạo đơn vị",
+  "assets.groups.bu.custom": "Hoặc nhập một đơn vị kinh doanh…",
+  "assets.groups.detail.severityLink": "Mở {count} phát hiện mức {severity} của nhóm này",
+  "assets.groups.detail.severityTitle": "Phát hiện đang mở theo mức độ",
+  "assets.groups.detail.severityDesc": "Cùng các phát hiện được đếm cho nhóm; mỗi dòng mở danh sách tương ứng",
+  "assets.groups.detail.typesTitle": "Tài sản theo loại",
+  "assets.groups.detail.typesDesc": "Các tài sản thành viên của nhóm theo loại"
 }
