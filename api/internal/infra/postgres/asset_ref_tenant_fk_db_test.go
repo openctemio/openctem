@@ -59,9 +59,10 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// 1 from the risk rescore queue (asset_risk_queue),
 	// 1 from CI gate baselines (ci_gate_baselines, RFC-051 §6.2) and
 	// 1 from the finding-priority queue (finding_priority_queue) and
-	// 1 from detected technologies (asset_technologies, RFC-112).
-	if n != 52 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 52 validated", n, allValid.Bool)
+	// 1 from detected technologies (asset_technologies, RFC-112) and
+	// 1 from the assets an emerging-threat alert covers (threat_alert_assets).
+	if n != 53 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 53 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing

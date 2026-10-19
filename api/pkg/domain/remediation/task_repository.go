@@ -93,6 +93,8 @@ type TaskRepository interface {
 	ListEvents(ctx context.Context, tenantID, taskID shared.ID, page pagination.Pagination) (pagination.Result[TaskEvent], error)
 	FindingStatuses(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]string, error)
 	CampaignInTenant(ctx context.Context, tenantID, campaignID shared.ID) (bool, error)
+	// LiveTaskIDsByCampaign lists the campaign's tasks that still take work.
+	LiveTaskIDsByCampaign(ctx context.Context, tenantID, campaignID shared.ID) ([]shared.ID, error)
 	StaleTasksForPlatform(ctx context.Context, limit int) ([]StaleTaskRef, error)
 	MoveMembers(ctx context.Context, m MoveRequest) (*MoveResult, error)
 	SplitTask(ctx context.Context, sp SplitRequest) (shared.ID, *MoveResult, error)

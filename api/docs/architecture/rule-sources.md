@@ -69,7 +69,7 @@ Workflow scans are unchanged: their steps run the platform's rules.
 
 ## Key files
 
-- `api/migrations/003130_scan_rule_sources.*`
+- `api/migrations/003137_scan_rule_sources.*`
 - `api/pkg/domain/scannertemplate/rule_sources.go`
 - `api/internal/app/scan/rule_sources.go`, `trigger.go`, `zones.go`
 - `api/internal/app/command/placement.go` (`missingFeatureReasons`)
