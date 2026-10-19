@@ -151,6 +151,7 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/content-catalog/packages/revoke":            {stepUpRoute, "instance content package"},
 	"POST /api/v1/admin/announcements/":                             {stepUpRoute, "a banner every user sees (phishing channel in a hijacked session)"},
 	"POST /api/v1/admin/announcements/{announcement_id}/cancel":     {stepUpRoute, "ends a banner (can hide a maintenance or incident notice)"},
+	"POST /api/v1/admin/tenants/{tenantId}/dashboard-data/rebuild":  {routine, "recomputes an organization's derived dashboard facts; ops_admin+, once per hour, audited"},
 	"POST /api/v1/admin/threat-intel/sync":                          {routine, "runs a public feed sync; audited"},
 	"PATCH /api/v1/admin/threat-intel/sync/{source}":                {stepUpRoute, "turning a feed off changes every organization's prioritization"},
 	"POST /api/v1/admin/mcp-clients/{id}/block":                     {stepUpRoute, "cuts every organization off an AI client"},

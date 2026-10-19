@@ -105,7 +105,7 @@ compares versions), on every asset or one asset, with an optional expiry.
   (new, confirmed, in progress, fix applied) it opens a pending false-positive
   request by the actor `vex` (it needs one more sign-off than the tier, so the
   person who created the statement cannot complete it alone) and the status
-  stays; `fixed` resolves it with `vex_fixed`; `affected` and
+  stays; `fixed` resolves it with `vex_fixed` (writing a `fixed` statement, by create, edit or import, needs `findings:verify` in addition to `findings:approve`, because it is a verification act; the service refuses without it); `affected` and
   `under_investigation` only annotate. The finding keeps the statement as
   `vex_statement_id` and its `vex_*` columns show the reason. A finding a
   person closed, and a finding from a human source (pentest, manual, bug
@@ -168,7 +168,7 @@ verdicts open findings too. At most 200 rules.
 | Read the inventory, paths, graph, export | `components:read` | scoped |
 | Import an SBOM | `components:write` | target asset in scope |
 | VEX statements (list, read) | `components:read` | asset-bound: asset in scope; product-wide: an in-scope asset uses the package |
-| VEX statements (create, edit, delete, import) | `findings:approve` | asset-bound: asset in scope; product-wide: full data access |
+| VEX statements (create, edit, delete, import) | `findings:approve`; a `fixed` statement also needs `findings:verify` | asset-bound: asset in scope; product-wide: full data access |
 | License policy (read / replace and re-evaluate) | `settings:read` / `settings:write` | config (tenant from the token) |
 
 Module: `components`.
