@@ -1,6 +1,7 @@
 package aitriage
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -96,10 +97,13 @@ func categorizeError(err error) string {
 		return FailRateLimited
 	case has("unauthorized", "401", "invalid api key", "authentication"):
 		return FailAuth
+	// Before quota: "context deadline exceeded" and "Client.Timeout exceeded"
+	// contain "exceeded", and a timeout is retried while quota is not.
+	case errors.Is(err, llm.ErrContextCanceled) || errors.Is(err, context.DeadlineExceeded) ||
+		has("context", "timeout", "deadline"):
+		return FailTimeout
 	case has("quota", "billing", "insufficient", "exceeded"):
 		return FailQuota
-	case errors.Is(err, llm.ErrContextCanceled) || has("context", "timeout", "deadline"):
-		return FailTimeout
 	case has("content_filter", "safety", "blocked"):
 		return FailContentBlocked
 	case errors.Is(err, llm.ErrTokenLimitExceeded) || has("token"):
