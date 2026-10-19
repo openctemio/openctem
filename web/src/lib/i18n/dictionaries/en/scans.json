@@ -1987,5 +1987,7 @@
   "scans.quickPreview.notPreviewed": "{count} more target(s) are not shown in the preview",
   "scans.quickPreview.refused.invalid_target": "This target is not valid. Write a host, an address, a range, or *.example.com.",
   "scans.quickPreview.refused.not_allowed": "You cannot scan this target: it is outside your scope or data access.",
-  "scans.quickPreview.refused.run_refused": "This target cannot be scanned as written. Check it and try again."
+  "scans.quickPreview.refused.run_refused": "This target cannot be scanned as written. Check it and try again.",
+  "scans.approvalSettings.forcedNote": "Your organization chose {chosen}. It applies if the platform administrator stops enforcing {mode}.",
+  "scans.cell.waitingForSensor": "Waiting for a sensor"
 }
