@@ -377,9 +377,7 @@ function ExpectPanel({
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{t('sensors.pair.runOnHost')}</p>
       <Snippet text={pairCommand} label={t('sensors.pair.pairCommand')} />
-      {root && (
-        <p className="text-xs text-muted-foreground">{t('sensors.pair.signingRootNote')}</p>
-      )}
+      {root && <p className="text-xs text-muted-foreground">{t('sensors.pair.signingRootNote')}</p>}
       {expired ? (
         <p role="alert" className="text-sm text-destructive">
           {t('sensors.pair.expired')}
