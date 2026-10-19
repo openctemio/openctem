@@ -150,6 +150,8 @@ type Server struct {
 	// wakeBus fans wakes out across replicas (SetWakeBus); nil: this
 	// replica only.
 	wakeBus WakeBus
+	// presence is told on each keepalive (SetPresence); nil: nobody.
+	presence Presence
 	// done is closed by Shutdown: control streams end so the listeners
 	// can drain (a stream lives for minutes).
 	done     chan struct{}

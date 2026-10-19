@@ -1,9 +1,11 @@
 'use client'
 
-import { AlertCircle, RefreshCw } from 'lucide-react'
+import { AlertCircle, Lock, RefreshCw } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { accessStateOf, errorDetails } from '@/lib/api/access-state'
+import { describePermissionDenied } from '@/lib/api/permission-denied'
 
 interface ErrorStateProps {
   /** What failed to load, e.g. "SAML configuration". Phrased into "Failed to load {title}". */
@@ -22,9 +24,36 @@ interface ErrorStateProps {
  * re-create something that already exists, or to save over a config they never saw.
  *
  * Rendered as the destructive Alert, the one error surface in the style contract.
+ *
+ * A refusal is not a failure: a missing permission says so and who can grant
+ * it, a switched-off module says that, and neither offers a Retry that cannot
+ * help or shows the raw API message.
  */
 export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
   const { t } = useTranslation()
+  const access = accessStateOf(error)
+  if (access === 'no_access' || access === 'module_off') {
+    return (
+      <Alert>
+        <Lock />
+        <AlertTitle>
+          {access === 'no_access'
+            ? t('common.noAccessTo', 'You do not have access to {title}', { title })
+            : t('common.moduleOffFor', '{title} is not enabled for this organization', {
+                title,
+              })}
+        </AlertTitle>
+        <AlertDescription>
+          <p>
+            {access === 'no_access'
+              ? (describePermissionDenied(errorDetails(error)) ??
+                t('common.noAccessHint', 'Ask an organization administrator to grant access.'))
+              : t('common.moduleOffHint', 'Ask an organization administrator to enable it.')}
+          </p>
+        </AlertDescription>
+      </Alert>
+    )
+  }
   return (
     <Alert variant="destructive">
       <AlertCircle />

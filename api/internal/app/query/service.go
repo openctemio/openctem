@@ -37,7 +37,11 @@ type Caller struct {
 	TenantID string
 	UserID   string
 	IsAdmin  bool
-	APIKey   bool
+	// Owner marks a caller who owns the tenant when no request carries
+	// that (a background run as a stored owner); a request's own owner
+	// flag is read from its context.
+	Owner  bool
+	APIKey bool
 	// Has reports the caller's permissions.
 	Has func(permission string) bool
 }
@@ -197,7 +201,7 @@ func (s *Service) principal(ctx context.Context, c Caller) (querylang.Principal,
 		// Private program assets stay hidden from administrators who are
 		// neither owners nor members.
 		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: true,
-			IsOwner: s.dataScope.CallerOf(ctx).IsOwner, APIKey: c.APIKey})
+			IsOwner: c.Owner || s.dataScope.CallerOf(ctx).IsOwner, APIKey: c.APIKey})
 	}
 	if err != nil {
 		return pr, fmt.Errorf("resolve data scope: %w", err)

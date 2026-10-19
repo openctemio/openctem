@@ -21,7 +21,7 @@
 -- "ORG" (case-insensitive). Fails loudly if no such tenant exists.
 --
 -- Usage:
---   go run ./cmd/seed -file migrations/seed/seed_components_demo.sql -db "$DATABASE_URL"
+--   DATABASE_URL=... go run ./cmd/seed -file migrations/seed/seed_components_demo.sql
 --
 -- Cleanup (manual):
 --   DELETE FROM findings           WHERE id::text LIKE 'dcdc3%';

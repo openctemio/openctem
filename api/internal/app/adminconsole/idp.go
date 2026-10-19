@@ -18,8 +18,14 @@ import (
 // Platform identity provider for administrators (RFC-022 revision 4): one
 // OIDC provider, configured by super admins, separate from every
 // organization's identity providers. No administrator is ever created from
-// it: an IdP identity is matched to an existing administrator, by verified
-// email on the first sign-in (then bound) and by (issuer, subject) after that.
+// it: an IdP identity is matched to an existing administrator by (issuer,
+// subject). An unbound identity is matched by verified email, but it is bound
+// only after that administrator proves their own console second factor on the
+// pending session, so whoever can mint an IdP token for an email cannot take
+// over the administrator behind it. A first binding never satisfies the
+// second factor, trusted ACR/AMR values apply to bound identities only, and
+// changing the issuer, the client or the trusted values needs a second super
+// admin's approval (handler).
 
 // Audit actions for the platform IdP.
 const (
@@ -192,6 +198,43 @@ func normalizePlatformIdPInput(in PlatformIdPInput) (PlatformIdPInput, error) {
 	return in, nil
 }
 
+// PlatformIdPChangeApproval reports whether saving in over cur (nil when none
+// is configured) needs a second super admin, and the approval target. It does:
+// for a new issuer or client id on an existing configuration (the bindings of
+// every administrator then point at another provider), and for any trusted
+// ACR/AMR value that is not trusted today (it replaces the console second
+// factor). Removing trusted values tightens and needs none. An invalid input
+// needs none here: saving refuses it.
+func PlatformIdPChangeApproval(cur *admin.PlatformIdP, in PlatformIdPInput) (string, bool) {
+	in, err := normalizePlatformIdPInput(in)
+	if err != nil {
+		return "", false
+	}
+	var curACR, curAMR []string
+	changed := false
+	if cur != nil {
+		curACR, curAMR = cur.TrustedACRValues, cur.TrustedAMRValues
+		changed = in.Issuer != cur.Issuer || in.ClientID != cur.ClientID
+	}
+	if !changed && subsetOf(in.TrustedACRValues, curACR) && subsetOf(in.TrustedAMRValues, curAMR) {
+		return "", false
+	}
+	return admin.PlatformIdPChangeTarget(in.Issuer, in.ClientID, in.TrustedACRValues, in.TrustedAMRValues), true
+}
+
+func subsetOf(vals, of []string) bool {
+	have := make(map[string]bool, len(of))
+	for _, v := range of {
+		have[v] = true
+	}
+	for _, v := range vals {
+		if !have[v] {
+			return false
+		}
+	}
+	return true
+}
+
 // SavePlatformIdP validates, discovers and stores the configuration.
 func (s *Service) SavePlatformIdP(ctx context.Context, actor *admin.AdminUser, in PlatformIdPInput, client ClientInfo) (*admin.PlatformIdP, error) {
 	if s.idps == nil || s.oidc == nil {
@@ -308,7 +351,7 @@ func (s *Service) DeletePlatformIdP(ctx context.Context, actor *admin.AdminUser,
 
 // UnbindIdP removes an administrator's IdP binding (super admin), e.g. when
 // their IdP account was recreated. They are bound again on their next IdP
-// sign-in, by verified email.
+// sign-in, once they confirm it with their own console second factor.
 func (s *Service) UnbindIdP(ctx context.Context, actor *admin.AdminUser, targetID shared.ID, client ClientInfo) error {
 	target, err := s.admins.GetByID(ctx, targetID)
 	if err != nil {
@@ -481,13 +524,39 @@ func (s *Service) CompleteIdPLogin(ctx context.Context, cookieState, state, code
 		return nil, s.failIdP(ctx, idpFailure{reason: "id_token rejected", cause: err}, client)
 	}
 
-	a, err := s.matchAdmin(ctx, p, claims, client)
+	a, bindPending, err := s.matchAdmin(ctx, p, claims, client)
 	if err != nil {
 		return nil, err
 	}
 
 	if !a.IsActive() || a.IsLocked() || !s.accountActive(ctx, a) {
 		return nil, s.failIdP(ctx, idpFailure{reason: "administrator inactive, locked or account suspended", admin: a}, client)
+	}
+
+	if bindPending {
+		// First sign-in of an unbound administrator: the IdP's word (even a
+		// trusted ACR/AMR) is not enough. The identity is bound only after
+		// this administrator proves their own console second factor.
+		//
+		// An administrator with no console factor yet (never signed in, or
+		// reset) would be handed a fresh TOTP secret to enroll here, so
+		// whoever can mint an IdP token for their email would enroll it and
+		// become them. While the password path is open, they enroll on it
+		// first (their own password). Only when "require IdP" closes it is
+		// the IdP the sole first factor and enrollment allowed here.
+		st, err := s.FactorStatus(ctx, a)
+		if err != nil {
+			return nil, fmt.Errorf("start console session: %w", err)
+		}
+		if !st.TOTPEnabled && st.WebAuthnCount == 0 && !p.Enforced() {
+			return nil, s.failIdP(ctx, idpFailure{reason: "unbound administrator without a console second factor: sign in with the console password once to enroll it", admin: a}, client)
+		}
+		second, err := s.beginSecondFactorBinding(ctx, a, admin.AuthMethodIdP, client, p.Issuer, claims.Subject)
+		if err != nil {
+			return nil, err
+		}
+		s.recordNote(ctx, a, ActionIdPLogin, client, "identity provider verified for an unbound administrator; console second factor required before binding")
+		return &IdPLoginResult{Status: second.Status, Second: second, Admin: a}, nil
 	}
 
 	if note, ok := trustedIdPMFA(p, claims); ok && !s.webAuthnOverridesIdPMFA(ctx, a) {
@@ -513,49 +582,73 @@ func (s *Service) CompleteIdPLogin(ctx context.Context, cookieState, state, code
 }
 
 // matchAdmin finds the administrator for the IdP identity: bound (issuer,
-// subject) first; otherwise a first sign-in binds the administrator with the
-// same, verified, email. No administrator is ever created.
-func (s *Service) matchAdmin(ctx context.Context, p *admin.PlatformIdP, claims *oidc.Claims, client ClientInfo) (*admin.AdminUser, error) {
+// subject) first; otherwise the administrator with the same, verified, email,
+// with bindPending set. Nothing is bound here: the binding waits for the
+// administrator's own console second factor (bindPendingIdP). No administrator
+// is ever created.
+func (s *Service) matchAdmin(ctx context.Context, p *admin.PlatformIdP, claims *oidc.Claims, client ClientInfo) (*admin.AdminUser, bool, error) {
 	a, err := s.admins.GetByIdPSubject(ctx, p.Issuer, claims.Subject)
 	if err == nil {
-		return a, nil
+		return a, false, nil
 	}
 	if !admin.IsAdminNotFound(err) {
-		return nil, err
+		return nil, false, err
 	}
 
 	email := strings.TrimSpace(claims.Email)
 	if email == "" || !claims.EmailIsVerified() {
-		return nil, s.failIdP(ctx, idpFailure{reason: "unbound identity without a verified email", email: email}, client)
+		return nil, false, s.failIdP(ctx, idpFailure{reason: "unbound identity without a verified email", email: email}, client)
+	}
+	if claims.Subject == "" {
+		return nil, false, s.failIdP(ctx, idpFailure{reason: "identity without a subject", email: email}, client)
 	}
 	a, err = s.admins.GetByEmail(ctx, email)
 	if err != nil {
 		if admin.IsAdminNotFound(err) {
-			return nil, s.failIdP(ctx, idpFailure{reason: "no administrator for this identity (no JIT creation)", email: email}, client)
+			return nil, false, s.failIdP(ctx, idpFailure{reason: "no administrator for this identity (no JIT creation)", email: email}, client)
 		}
-		return nil, err
+		return nil, false, err
 	}
 	switch {
 	case a.IsBreakGlass():
-		return nil, s.failIdP(ctx, idpFailure{reason: "break-glass administrators cannot sign in through the IdP", admin: a}, client)
+		return nil, false, s.failIdP(ctx, idpFailure{reason: "break-glass administrators cannot sign in through the IdP", admin: a}, client)
 	case a.IdPBound():
-		return nil, s.failIdP(ctx, idpFailure{reason: "administrator is bound to a different IdP identity", admin: a}, client)
+		return nil, false, s.failIdP(ctx, idpFailure{reason: "administrator is bound to a different IdP identity", admin: a}, client)
 	case !a.IsActive():
-		return nil, s.failIdP(ctx, idpFailure{reason: "administrator inactive", admin: a}, client)
+		return nil, false, s.failIdP(ctx, idpFailure{reason: "administrator inactive", admin: a}, client)
 	}
-	if err := s.admins.BindIdP(ctx, a.ID(), p.Issuer, claims.Subject); err != nil {
-		return nil, s.failIdP(ctx, idpFailure{reason: "binding refused", admin: a, cause: err}, client)
+	return a, true, nil
+}
+
+// bindPendingIdP binds the IdP identity a pending session carries, after its
+// administrator proved their console second factor. The identity must still
+// belong to the configured, enabled provider, and the administrator must still
+// be unbound (the repository binds conditionally), so two racing first
+// sign-ins bind at most one identity.
+func (s *Service) bindPendingIdP(ctx context.Context, sess *admin.Session, a *admin.AdminUser, client ClientInfo) error {
+	if sess.PendingIdPSubject == "" {
+		return nil
+	}
+	p, err := s.platformIdP(ctx)
+	if err != nil {
+		return err
+	}
+	if p == nil || !p.Enabled || p.Issuer != sess.PendingIdPIssuer {
+		return s.failIdP(ctx, idpFailure{reason: "identity provider changed before the binding was confirmed", admin: a}, client)
+	}
+	if err := s.admins.BindIdP(ctx, a.ID(), sess.PendingIdPIssuer, sess.PendingIdPSubject); err != nil {
+		return s.failIdP(ctx, idpFailure{reason: "binding refused", admin: a, cause: err}, client)
 	}
 	if s.audit != nil {
 		entry := admin.NewAuditLogBuilder(a, ActionIdPBound).
 			Resource("admin_user", ptr(a.ID()), a.Email()).
 			Context(client.IP, client.UserAgent).
-			Request("", "", map[string]interface{}{"issuer": p.Issuer}).
+			Request("", "", map[string]interface{}{"issuer": p.Issuer, "confirmed_by": "console second factor"}).
 			High().
 			Build()
 		s.writeAudit(ctx, ActionIdPBound, entry)
 	}
-	return s.admins.GetByID(ctx, a.ID())
+	return nil
 }
 
 // trustedIdPMFA reports whether the token proves MFA the configuration trusts.

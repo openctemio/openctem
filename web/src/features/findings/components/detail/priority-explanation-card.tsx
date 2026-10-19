@@ -19,7 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
-import { Gavel, HelpCircle } from 'lucide-react'
+import { Gavel, HelpCircle, UserPen } from 'lucide-react'
 import { PriorityClassBadge } from '../priority-class-badge'
 import {
   useFindingPriorityExplanation,
@@ -55,6 +55,12 @@ function factorChips(
     chips.push({
       key: 'kev',
       label: t('findings.priorityCard.kev', 'Known exploited (KEV)'),
+      strong: true,
+    })
+  if (f.validated_exploitable)
+    chips.push({
+      key: 'validated',
+      label: t('findings.priorityCard.validated', 'Reproduced by validation'),
       strong: true,
     })
   if (f.on_open_threat_path)
@@ -254,6 +260,12 @@ export function PriorityExplanationCard({
                 {explanation.rule_name}
               </Badge>
             )}
+            {explanation.override && (
+              <Badge variant="secondary" className="gap-1">
+                <UserPen className="h-3 w-3" />
+                {t('findings.priorityCard.manualOverride', 'Set manually')}
+              </Badge>
+            )}
             {isPriorityClass(cls) && (
               <PriorityClassSla priorityClass={cls} className="text-muted-foreground text-xs" />
             )}
@@ -261,6 +273,35 @@ export function PriorityExplanationCard({
 
           {explanation.reason && (
             <p className="text-muted-foreground text-sm leading-relaxed">{explanation.reason}</p>
+          )}
+
+          {explanation.override &&
+            explanation.computed_class &&
+            explanation.computed_class !== cls && (
+              <p className="text-muted-foreground text-xs">
+                {t(
+                  'findings.priorityCard.overrideComputed',
+                  'A person set this class{when}. The automatic classification would be {computed}.',
+                  {
+                    computed: explanation.computed_class,
+                    when: explanation.override.at
+                      ? t('findings.priorityCard.overrideOn', ' on {date}', {
+                          date: new Date(explanation.override.at).toLocaleDateString(),
+                        })
+                      : '',
+                  }
+                )}
+              </p>
+            )}
+
+          {explanation.stale && explanation.computed_class && (
+            <p className="text-muted-foreground text-xs">
+              {t(
+                'findings.priorityCard.stale',
+                'A recompute is pending: with the current inputs this finding would be {computed}.',
+                { computed: explanation.computed_class }
+              )}
+            </p>
           )}
 
           {chips.length > 0 && (
@@ -276,6 +317,14 @@ export function PriorityExplanationCard({
           {explanation.score_breakdown && (
             <ScoreBreakdown breakdown={explanation.score_breakdown} />
           )}
+
+          {explanation.model_version ? (
+            <p className="text-muted-foreground text-xs">
+              {t('findings.priorityCard.modelVersion', 'Priority model v{version}', {
+                version: explanation.model_version,
+              })}
+            </p>
+          ) : null}
         </div>
       </div>
     </>
