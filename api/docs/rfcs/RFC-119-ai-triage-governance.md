@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted (2026-10-19). Partly implemented: one AI data-egress policy for MCP and AI triage, failure codes, the retry contract, organization consent with Settings > AI, monthly platform budgets on by default, per-organization fair share of the platform rate limit, one rate-limit unit per finding in bulk. Designed: own-key (BYOK) and self-hosted providers, context enrichment and redaction, a structured result schema, the result card with apply actions, "Triage selected" bulk, the evaluation set |
-| Scope | api (`internal/app/aipolicy`, `internal/app/aitriage`, `internal/infra/llm`, tenant settings `ai`, `/api/v1/tenants/{tenant}/settings/ai`), web (Settings > AI, the AI triage button and result) |
+| Scope | api (`internal/app/aipolicy`, `internal/app/aitriage`, `internal/infra/llm`, tenant settings `ai`, `/api/v1/organization/settings/ai`), web (Settings > AI, the AI triage button and result) |
 | Related | RFC-016 / RFC-062 (MCP and its organization policy, the TLP limit for AI), RFC-008 (token budgets); `docs/architecture/ai-triage.md` |
 
 ## 1. Problem
@@ -41,7 +41,7 @@ language model. Until now:
   and its lead has not turned AI off. It fails closed. MCP and AI triage
   call it; AI triage checks at request time and again in the worker.
 - **Consent**: `settings.ai.enabled_at` / `enabled_by`. The effective mode is
-  `disabled` until set. `GET/PUT /api/v1/tenants/{tenant}/settings/ai`
+  `disabled` until set. `GET/PUT /api/v1/organization/settings/ai`
   (owners and administrators, `settings:write`, a recent sign-in), audited
   as critical (`ai_settings.updated`). The worker re-checks consent, so
   turning it off stops queued jobs. Migration 003140 keeps organizations with
