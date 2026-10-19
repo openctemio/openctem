@@ -1,7 +1,7 @@
 ### Behaviour change: remediation campaigns hold tasks; what a campaign tracked becomes its tasks
 
 - A finding is in at most one active work unit (the primary membership of a remediation task), and a campaign is a
-  program of tasks. Migration `003050_remediation_campaigns_hold_tasks` turns the open findings each running
+  program of tasks. Migration `003061_remediation_campaigns_hold_tasks` turns the open findings each running
   campaign (draft, active, paused, validating) tracks through its finding filter into tasks of that campaign: one
   task per campaign (title = campaign name, owner = the campaign's assignee while still an active member, and its
   team); a task already holding a finding joins the campaign when it has none; a finding claimed by two campaigns
