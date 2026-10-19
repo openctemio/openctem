@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scim"
@@ -58,7 +60,8 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 	ctx := context.Background()
 
 	tenantID := createTestTenant(t, sqlDB, "scimgrp")
-	email := "grpuser@example.com"
+	domain := fmt.Sprintf("scimgrp-%d.example", time.Now().UnixNano())
+	email := "grpuser@" + domain
 	t.Cleanup(func() {
 		cleanupTestData(sqlDB, tenantID)
 		_, _ = sqlDB.Exec("DELETE FROM users WHERE email = $1", email)
@@ -69,6 +72,7 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 	tenantSvc := tenant.NewTenantService(tenantRepo, log)
 	mgr := scimMemberMgr{svc: tenantSvc}
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, mgr, log)
+	prov.SetDomainVerifier(scimVerifiedDomain(t, db, tenantID, domain))
 	groupSvc := scim.NewGroupService(postgres.NewScimGroupRepository(db), tenantRepo, mgr, log)
 
 	// Only the owner's mapping makes the "admin" group grant admin (23b S-H1).
@@ -148,7 +152,8 @@ func TestSCIMGroups_ConfigurableMapping_RealDB(t *testing.T) {
 	ctx := context.Background()
 
 	tenantID := createTestTenant(t, sqlDB, "scimmap")
-	email := "mapuser@example.com"
+	domain := fmt.Sprintf("scimmap-%d.example", time.Now().UnixNano())
+	email := "mapuser@" + domain
 	t.Cleanup(func() {
 		cleanupTestData(sqlDB, tenantID)
 		_, _ = sqlDB.Exec("DELETE FROM users WHERE email = $1", email)
@@ -159,6 +164,7 @@ func TestSCIMGroups_ConfigurableMapping_RealDB(t *testing.T) {
 	tenantSvc := tenant.NewTenantService(tenantRepo, log)
 	mgr := scimMemberMgr{svc: tenantSvc}
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, mgr, log)
+	prov.SetDomainVerifier(scimVerifiedDomain(t, db, tenantID, domain))
 	groupSvc := scim.NewGroupService(postgres.NewScimGroupRepository(db), tenantRepo, mgr, log)
 
 	res, _, err := prov.CreateOrActivate(ctx, tenantID, scim.ProvisionInput{UserName: email, Active: true})

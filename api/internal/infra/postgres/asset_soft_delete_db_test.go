@@ -80,7 +80,7 @@ func TestAssetDelete_SoftDeleteHidesDetachesAndFreesName(t *testing.T) {
 	exec(`UPDATE assets SET parent_id = $1 WHERE id = $2`, victim.String(), child.String())
 	exec(`INSERT INTO asset_groups (id, tenant_id, name) VALUES ($1, $2, 'sd-group')`, group.String(), tenant.String())
 	exec(`INSERT INTO asset_group_members (asset_group_id, asset_id) VALUES ($1, $2), ($1, $3)`, group.String(), victim.String(), keep.String())
-	exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`, user.String(), tenant.String(), victim.String())
+	exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary') ON CONFLICT DO NOTHING`, user.String(), tenant.String(), victim.String())
 	exec(`INSERT INTO asset_access_grants (tenant_id, asset_id, user_id) VALUES ($1, $2, $3)`, tenant.String(), victim.String(), user.String())
 	exec(`INSERT INTO asset_relationships (tenant_id, source_asset_id, target_asset_id, relationship_type) VALUES ($1, $2, $3, 'runs_on')`, tenant.String(), keep.String(), victim.String())
 	exec(`INSERT INTO asset_identifiers (tenant_id, asset_id, kind, value, strong) VALUES ($1, $2, 'ip', '10.99.0.1', false)`, tenant.String(), victim.String())
