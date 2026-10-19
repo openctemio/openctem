@@ -172,6 +172,19 @@ Migration `002916_dashboard_fact_tables`; see [dashboards.md](dashboards.md#fact
     next 24 monthly partitions of `dash_asset_day`, drops those ending before `dash_history_start()`; not executable
     by `PUBLIC`.
 
+## Campaign conversion functions
+
+Migration `remediation_campaigns_hold_tasks` (docs/architecture/remediation-campaigns.md, "Conversion"):
+
+- `remediation_campaign_filter_parse(p_filter jsonb) RETURNS (ok, scoped, fix_key, severities, sources, cve_ids,
+  finding_ids, asset_id, tool_name, search_pattern)` - a legacy campaign `finding_filter` parsed as the API parsed
+  it: `ok` = it parses, `scoped` = it tracks findings (a fix key, a CVE, a finding id, an asset or a tool).
+- `remediation_campaigns_to_tasks(p_report_unchanged boolean) RETURNS integer` - turns the open findings each
+  running campaign tracks into tasks of the campaign (one finding, one campaign; findings already in a task stay),
+  writes the audit rows, task and finding timeline entries and owner notices, and returns how many campaigns it
+  reported. Idempotent. Not called by Go: the migration runs it, the contract step runs it once more and drops both
+  functions.
+
 ## Best Practices
 
 1. **Never add a `finding_count` column** - Keep it calculated dynamically
