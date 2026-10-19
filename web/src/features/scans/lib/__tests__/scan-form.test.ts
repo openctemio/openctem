@@ -4,6 +4,7 @@ import type { ScanConfig } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
 import {
   basicInfoError,
+  optionsError,
   directTargets,
   MAX_DIRECT_TARGETS,
   targetsError,
@@ -554,5 +555,115 @@ describe('Edit: targets and asset groups', () => {
   it('changed asset groups are sent whole', () => {
     expect(edit({ assetGroupIds: ['g1', 'g2'] }).asset_group_ids).toEqual(['g1', 'g2'])
     expect(edit({ assetGroupIds: [] }).asset_group_ids).toEqual([])
+  })
+})
+
+describe('rule sources', () => {
+  const nuclei = (over: Partial<NewScanFormData> = {}) =>
+    form({ scannerName: 'nuclei', ruleSources: '', customTemplateIds: [], ...over })
+
+  it('create: omits rule_sources when inheriting and sends each choice otherwise', () => {
+    expect(formDataToCreateRequest(nuclei())).not.toHaveProperty('rule_sources')
+    for (const choice of ['both', 'platform', 'tenant'] as const) {
+      expect(
+        formDataToCreateRequest(nuclei({ ruleSources: choice, customTemplateIds: ['t1'] }))
+          .rule_sources
+      ).toBe(choice)
+    }
+  })
+
+  it('create: sends custom_template_ids unless the choice is platform', () => {
+    const ids = ['t1', 't2']
+    expect(
+      formDataToCreateRequest(nuclei({ ruleSources: 'tenant', customTemplateIds: ids }))
+        .scanner_config
+    ).toEqual({ custom_template_ids: ids })
+    expect(
+      formDataToCreateRequest(nuclei({ ruleSources: 'both', customTemplateIds: ids }))
+        .scanner_config
+    ).toEqual({ custom_template_ids: ids })
+    expect(
+      formDataToCreateRequest(nuclei({ ruleSources: 'platform', customTemplateIds: ids }))
+        .scanner_config
+    ).toBeUndefined()
+    expect(formDataToCreateRequest(nuclei({ ruleSources: 'both' })).scanner_config).toBeUndefined()
+  })
+
+  it('create: a scanner without templates sends neither', () => {
+    const req = formDataToCreateRequest(
+      form({ scannerName: 'trivy', ruleSources: 'tenant', customTemplateIds: ['t1'] })
+    )
+    expect(req).not.toHaveProperty('rule_sources')
+    expect(req.scanner_config).toBeUndefined()
+  })
+
+  it('tenant without a template is an error; other choices and scanners are not', () => {
+    expect(optionsError(nuclei({ ruleSources: 'tenant' }))).toMatch(/template/)
+    expect(optionsError(nuclei({ ruleSources: 'tenant', customTemplateIds: ['t1'] }))).toBeNull()
+    expect(optionsError(nuclei({ ruleSources: 'both' }))).toBeNull()
+    expect(optionsError(nuclei({ ruleSources: '' }))).toBeNull()
+    expect(optionsError(form({ scannerName: 'trivy', ruleSources: 'tenant' }))).toBeNull()
+    expect(
+      optionsError(form({ mode: 'workflow', scannerName: '', ruleSources: 'tenant' }))
+    ).toBeNull()
+  })
+
+  it('edit: reads rule_sources and the stored template ids', () => {
+    const data = scanConfigToFormData(
+      config({
+        scanner_name: 'semgrep',
+        rule_sources: 'tenant',
+        scanner_config: { custom_template_ids: ['t1', 7, 't2'], severity: 'high' },
+      })
+    )
+    expect(data.ruleSources).toBe('tenant')
+    expect(data.customTemplateIds).toEqual(['t1', 't2'])
+    expect(scanConfigToFormData(config()).ruleSources).toBe('')
+    expect(scanConfigToFormData(config()).customTemplateIds).toEqual([])
+  })
+
+  it('edit: round trips, clears ids and sends "" to inherit', () => {
+    const stored = config({
+      scanner_name: 'nuclei',
+      rule_sources: 'tenant',
+      scanner_config: { custom_template_ids: ['t1'], severity: 'high' },
+    })
+    const opts = { canSetZone: false }
+    const same = formDataToUpdateRequest(scanConfigToFormData(stored), stored, opts)
+    expect(same.rule_sources).toBe('tenant')
+    expect(same.scanner_config).toEqual({ custom_template_ids: ['t1'], severity: 'high' })
+
+    const cleared = formDataToUpdateRequest(
+      { ...scanConfigToFormData(stored), ruleSources: '', customTemplateIds: [] },
+      stored,
+      opts
+    )
+    expect(cleared.rule_sources).toBe('')
+    expect(cleared.scanner_config).toEqual({ severity: 'high' })
+
+    const changed = formDataToUpdateRequest(
+      { ...scanConfigToFormData(stored), ruleSources: 'both', customTemplateIds: ['t2', 't3'] },
+      stored,
+      opts
+    )
+    expect(changed.rule_sources).toBe('both')
+    expect(changed.scanner_config).toEqual({ custom_template_ids: ['t2', 't3'], severity: 'high' })
+    // the stored config is not mutated
+    expect(stored.scanner_config).toEqual({ custom_template_ids: ['t1'], severity: 'high' })
+  })
+
+  it('edit: a scanner without templates keeps scanner_config as stored', () => {
+    const stored = config({ scanner_config: { custom_template_ids: ['x'], severity: 'high' } })
+    const req = formDataToUpdateRequest(scanConfigToFormData(stored), stored, { canSetZone: false })
+    expect(req.scanner_config).toEqual({ custom_template_ids: ['x'], severity: 'high' })
+  })
+
+  it('a Tenable.sc scan is unaffected', () => {
+    const cfg = { integration_id: 'i1', policy_id: 7, repository_id: 5 }
+    const req = formDataToCreateRequest(
+      form({ scannerName: 'tenable_sc', scannerConfig: cfg, ruleSources: 'tenant' })
+    )
+    expect(req).not.toHaveProperty('rule_sources')
+    expect(req.scanner_config).not.toHaveProperty('custom_template_ids')
   })
 })

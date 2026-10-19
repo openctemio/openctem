@@ -142,6 +142,11 @@ export function ScanProfilesSection() {
                 {profile.is_system && (
                   <Badge variant="outline">{t('scans.profiles.badge.system')}</Badge>
                 )}
+                {profile.rule_sources && profile.rule_sources !== 'both' && (
+                  <Badge variant="outline">
+                    {t(`scans.profiles.rules.${profile.rule_sources}`)}
+                  </Badge>
+                )}
               </div>
               {profile.description && (
                 <p
