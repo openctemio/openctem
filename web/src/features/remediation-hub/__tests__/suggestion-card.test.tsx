@@ -61,7 +61,7 @@ describe('SuggestionCard', () => {
   it('shows the fix, its reach, the owner and the risk parts', () => {
     renderCard()
     expect(screen.getByRole('heading', { name: 'Upgrade django to 4.2.30' })).toBeInTheDocument()
-    expect(screen.getByText(/2 findings on 1 assets · risk 6/)).toBeInTheDocument()
+    expect(screen.getByText(/2 findings on 1 asset · 6 risk points/)).toBeInTheDocument()
     expect(screen.getByText(/P1 1 · P2 1/)).toBeInTheDocument()
     expect(screen.getByText(/Hoa N\./)).toBeInTheDocument()
   })

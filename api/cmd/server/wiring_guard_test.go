@@ -162,6 +162,7 @@ var guardedInertSeams = []struct {
 	{".Tenant", "SetOwnershipTransferRepository", "ownership transfer"},
 	{".Module", "SetWSBroadcaster", "module.updated WebSocket push on module toggle"},
 	{".SCIMProvisioning", "SetDomainVerifier", "SCIM attaches existing accounts only on a verified domain"},
+	{".OAuth", "SetClaimGuard", "a social sign-in adopts a provisioned account only when its organizations verified the domain"},
 }
 
 // TestInertWiringSeams_StayWired asserts each previously-dead Set* seam is

@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,11 +21,15 @@ import (
 
 // AssetOwnerHandler handles asset ownership HTTP requests.
 //
-// Being an owner is an assignment (accountability) only: a user owner gains no
-// data access. A group owner is the group's asset assignment, which is the
-// group data-scope path, so adding or removing a group owner also needs
-// team:groups:write. A user's direct access is an explicit access grant
-// (/assets/{id}/access-grants, team:groups:read / team:groups:write).
+// A primary or secondary user owner set here sees the asset and its findings:
+// the ownership puts the asset in that user's data scope
+// (accesscontrol.UserOwnerGrantsScope, docs/architecture/asset-ownership.md).
+// What the owner may do there is still decided by their role. A group owner is
+// the group's asset assignment, so its members see the asset. Both change who
+// can see the asset, so adding, re-typing or removing such an owner also needs
+// team:groups:write (the permission of explicit access grants), and each
+// change is audited as an access grant or revocation. Stakeholder and informed
+// owners grant nothing and need only assets:write.
 type AssetOwnerHandler struct {
 	repo         accesscontrol.Repository
 	assetRepo    asset.Repository
@@ -317,6 +322,19 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	grantsScope := req.UserID != nil && accesscontrol.UserOwnerGrantsScope(ownershipType, accesscontrol.AssignmentSourceManual)
+	if grantsScope && !middleware.HasPermission(r.Context(), permission.GroupsWrite.String()) {
+		apierror.Forbidden("A primary or secondary owner can see the asset and its findings; naming one requires team:groups:write").WriteJSON(w)
+		return
+	}
+	// No self-grant, as for access grants: a member about to leave a group
+	// could otherwise keep its assets by naming themself owner. An
+	// administrator sees every asset anyway.
+	if grantsScope && assignedBy != nil && *assignedBy == *ao.UserID() && !middleware.IsAdmin(r.Context()) {
+		apierror.Forbidden("You cannot make yourself a primary or secondary owner").WriteJSON(w)
+		return
+	}
+
 	if err := h.repo.CreateAssetOwner(r.Context(), ao); err != nil {
 		if errors.Is(err, accesscontrol.ErrAssetOwnerExists) {
 			apierror.Conflict("This owner is already assigned to the asset").WriteJSON(w)
@@ -327,8 +345,15 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A user owner gains no data access (owner decision O1). A group owner
-	// is the group's asset assignment: refresh its members' access.
+	// The asset_owners trigger put a primary or secondary user owner's
+	// asset in their scope in the same statement; record it.
+	if grantsScope {
+		h.auditOwnerAccess(r, auditdom.ActionAssetAccessGranted, parsedAssetID, *ao.UserID(), ownershipType,
+			"Asset access granted by ownership")
+	}
+
+	// A group owner is the group's asset assignment: refresh its members'
+	// access.
 	if req.GroupID != nil {
 		groupID, _ := shared.IDFromString(*req.GroupID)
 		if refreshErr := h.repo.RefreshAccessForAssetAssign(r.Context(), groupID, parsedAssetID, req.OwnershipType); refreshErr != nil {
@@ -394,6 +419,35 @@ func (h *AssetOwnerHandler) UpdateOwner(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// A user owner moving into or out of primary / secondary gains or loses
+	// view of the asset: an access change.
+	var accessChange auditdom.Action
+	if ao.UserID() != nil {
+		source, serr := h.repo.GetAssetOwnerSource(r.Context(), parsedOwnerID)
+		if serr != nil {
+			h.logger.Error("failed to get asset owner source", "error", serr)
+			apierror.InternalError(serr).WriteJSON(w)
+			return
+		}
+		before := accesscontrol.UserOwnerGrantsScope(ao.OwnershipType(), source)
+		after := accesscontrol.UserOwnerGrantsScope(ownershipType, source)
+		switch {
+		case !before && after:
+			accessChange = auditdom.ActionAssetAccessGranted
+		case before && !after:
+			accessChange = auditdom.ActionAssetAccessRevoked
+		}
+	}
+	if accessChange != "" && !middleware.HasPermission(r.Context(), permission.GroupsWrite.String()) {
+		apierror.Forbidden("Changing this owner changes whether they can see the asset; it requires team:groups:write").WriteJSON(w)
+		return
+	}
+	if accessChange == auditdom.ActionAssetAccessGranted && !middleware.IsAdmin(r.Context()) &&
+		ao.UserID().String() == middleware.GetUserID(r.Context()) {
+		apierror.Forbidden("You cannot make yourself a primary or secondary owner").WriteJSON(w)
+		return
+	}
+
 	if err := ao.UpdateOwnershipType(ownershipType); err != nil {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
@@ -403,6 +457,14 @@ func (h *AssetOwnerHandler) UpdateOwner(w http.ResponseWriter, r *http.Request) 
 		h.logger.Error("failed to update asset owner", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
+	}
+
+	if accessChange != "" {
+		msg := "Asset access granted by ownership"
+		if accessChange == auditdom.ActionAssetAccessRevoked {
+			msg = "Asset access from ownership removed"
+		}
+		h.auditOwnerAccess(r, accessChange, ao.AssetID(), *ao.UserID(), ownershipType, msg)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -458,6 +520,12 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	revokesScope := ao.UserID() != nil && accesscontrol.UserOwnerGrantsScope(ao.OwnershipType(), source)
+	if revokesScope && !middleware.HasPermission(r.Context(), permission.GroupsWrite.String()) {
+		apierror.Forbidden("Removing a primary or secondary owner removes their access to the asset; it requires team:groups:write").WriteJSON(w)
+		return
+	}
+
 	if err := h.repo.DeleteAssetOwnerByID(r.Context(), parsedOwnerID); err != nil {
 		if errors.Is(err, accesscontrol.ErrAssetOwnerNotFound) {
 			apierror.NotFound("Asset owner").WriteJSON(w)
@@ -474,8 +542,15 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 		h.clearOwnerRef(r, ao.AssetID())
 	}
 
-	// Removing a user owner changes no access. Removing a group owner removes
-	// the group's assignment: refresh its members' access.
+	// The asset_owners trigger removed the access the ownership gave (unless
+	// a group or a grant still gives it); record it.
+	if revokesScope {
+		h.auditOwnerAccess(r, auditdom.ActionAssetAccessRevoked, ao.AssetID(), *ao.UserID(), ao.OwnershipType(),
+			"Asset access from ownership removed")
+	}
+
+	// Removing a group owner removes the group's assignment: refresh its
+	// members' access.
 	if ao.GroupID() != nil {
 		if refreshErr := h.repo.RefreshAccessForAssetUnassign(r.Context(), *ao.GroupID(), ao.AssetID()); refreshErr != nil {
 			h.logger.Warn("failed to refresh access for group owner remove", "error", refreshErr)
@@ -483,6 +558,31 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// auditOwnerAccess records a change of who can see the asset that comes from
+// ownership (metadata source=ownership).
+func (h *AssetOwnerHandler) auditOwnerAccess(r *http.Request, action auditdom.Action, assetID, userID shared.ID, t accesscontrol.OwnershipType, msg string) {
+	if h.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	event := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeAsset, assetID.String()).
+		WithMessage(msg).
+		WithMetadata("user_id", userID.String()).
+		WithMetadata("source", "ownership").
+		WithMetadata("ownership_type", t.String()).
+		WithSeverity(auditdom.SeverityMedium)
+	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+		h.logger.Warn("failed to audit ownership access change", "error", err)
+	}
 }
 
 // clearOwnerRef empties the asset's owner reference after its derived owner

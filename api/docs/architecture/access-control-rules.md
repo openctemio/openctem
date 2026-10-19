@@ -66,18 +66,21 @@ Automatically assign assets to groups based on asset properties, giving group me
 ### Ownership and access
 
 Scope rules write **group** rows in `asset_owners`; those are a group's asset
-assignment and give the group's members access. A **user** owner row (Owners
-tab, `owner_ref` match) is an assignment only and gives no access (owner
-decision O1, 2026-10-03). A single user's access to a single asset is an
-explicit grant in `asset_access_grants` (`/api/v1/assets/{id}/access-grants`,
-`team:groups:write`). `user_accessible_assets` = group assignments ∪ grants;
+assignment and give the group's members access. A **user** owner row gives
+its user view of the asset when it is `primary` or `secondary` and was set by
+a person (Owners tab); an `owner_ref` match and stakeholder / informed owners
+give none (`v_asset_owner_scope`). A single user's access to a single asset
+is otherwise an explicit grant in `asset_access_grants`
+(`/api/v1/assets/{id}/access-grants`, `team:groups:write`).
+`user_accessible_assets` = group assignments ∪ grants ∪ primary/secondary
+ownership;
 see the data-scope section of [authorization-matrix.md](authorization-matrix.md)
 and [asset-ownership.md](asset-ownership.md).
 
 ### Ownership Types
 
 For a **group** owner (the access columns describe the group's members; a
-user owner gets no access from any type):
+user owner sees the asset only as `primary` or `secondary` set by a person):
 
 | Type | Full Access | View Access | Description |
 |------|------------|-------------|-------------|

@@ -119,6 +119,9 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	}
 	T, M, K, O, U := tenant.String(), merge.String(), keep.String(), other.String(), user.String()
 	exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'merge test')`, U, "merge-"+U+"@example.test")
+	// An active member: as a primary owner they see the asset (and so the
+	// kept one after the merge).
+	exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, U, T)
 
 	// Parents of the referencing rows.
 	ids := map[string]string{}
@@ -147,7 +150,7 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		`INSERT INTO runtime_telemetry_events (tenant_id, event_type, observed_at, endpoint_asset_id) VALUES ($1,'process_start',NOW(),$2)`,
 		`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($2,$4,'primary')`,
 		`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($3,$4,'primary')`, // conflict
-		`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($4,$1,$2)`,
+		`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($4,$1,$2) ON CONFLICT DO NOTHING`,
 		`INSERT INTO asset_coverage (asset_id, tenant_id, capability) VALUES ($2,$1,'scan.ports')`,
 		`INSERT INTO asset_coverage (asset_id, tenant_id, capability) VALUES ($3,$1,'scan.ports')`, // conflict
 		`INSERT INTO asset_services (tenant_id, asset_id, port, protocol) VALUES ($1,$2,8080,'tcp')`,

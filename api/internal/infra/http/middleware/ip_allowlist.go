@@ -20,13 +20,14 @@ type TenantSecurityPolicyProvider interface {
 	SecuritySettings(ctx context.Context, tenantID string) (tenantdom.SecuritySettings, error)
 }
 
-// IPAllowlistGate enforces each organization's Security.IPWhitelist on user
-// sessions and on the organization's `oct_` API keys. It applies to requests
-// authenticated with a user's access token or an `oct_` key, for the
-// organization the request acts on: the organization in the URL
+// IPAllowlistGate enforces each organization's Security.IPWhitelist on every
+// request that acts as an organization member, whatever the credential: a
+// user's access token, an OIDC token, an `oct_` key or an MCP OAuth access
+// token. It applies for the organization the request acts on: the organization in the URL
 // (/tenants/{tenant}/...) when there is one, else the organization the token
 // or key belongs to. Every surface an `oct_` key can reach runs it: the tenant
-// REST API (buildBaseMiddlewares) and the MCP endpoint (mcpMiddlewares).
+// REST API (buildBaseMiddlewares) and the MCP endpoint (mcpMiddlewares), for
+// both of its credentials (`oct_` keys and OAuth access tokens).
 //
 // Deliberately outside the gate (each has its own credential and its caller
 // is not on the organization's network):
@@ -114,16 +115,16 @@ func (g *IPAllowlistGate) Enforce(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		claims := GetLocalClaims(r.Context())
-		var tenantID, subject string
-		switch {
-		case claims != nil:
+		// Keyed on the principal, not the credential: any request acting as
+		// an organization member (session, OIDC token, `oct_` key, MCP OAuth
+		// access token, or a provider added later) is bound by the policy.
+		// Only principals without a user stay outside (sensor keys, the
+		// platform admin acting in an organization with an empty actor).
+		tenantID, subject := GetTenantID(r.Context()), GetUserID(r.Context())
+		if claims := GetLocalClaims(r.Context()); claims != nil {
 			tenantID, subject = claims.TenantID, claims.UserID
-		case IsAPIKeyAuthenticated(r.Context()):
-			// An organization's network policy binds its API keys too.
-			tenantID, subject = GetTenantID(r.Context()), GetUserID(r.Context())
-		default:
-			// Not a user access token or API key (sensor, OIDC provider mode).
+		}
+		if subject == "" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -143,7 +144,8 @@ func (g *IPAllowlistGate) Enforce(next http.Handler) http.Handler {
 		}
 		if !p.IPAllowed(g.clientIP(r)) {
 			g.logger.Info("request blocked by organization IP allowlist",
-				"tenant_id", tenantID, "user_id", subject, "api_key_id", GetAPIKeyID(r.Context()))
+				"tenant_id", tenantID, "user_id", subject, "auth_provider", GetAuthProvider(r.Context()),
+				"api_key_id", GetAPIKeyID(r.Context()))
 			apierror.New(http.StatusForbidden, CodeIPNotAllowed,
 				"Access to this organization from your network is not allowed").WriteJSON(w)
 			return

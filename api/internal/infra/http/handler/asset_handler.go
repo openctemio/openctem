@@ -869,6 +869,19 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 	h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
 		map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
 
+	// A member without full data access sees what they created through a
+	// creator access grant; otherwise the asset would answer 404 to them.
+	if tid, terr := shared.IDFromString(tenantID); terr == nil {
+		g, gerr := h.service.GrantCreatorAccess(r.Context(), tid, a.ID())
+		switch {
+		case gerr != nil:
+			h.logger.Error("failed to grant the creator access to the new asset", "asset_id", a.ID().String(), "error", gerr)
+		case g != nil:
+			h.auditAsset(r, auditdom.ActionAssetAccessGranted, a.ID().String(), a.Name(), "Asset access granted to its creator",
+				map[string]any{"user_id": g.UserID.String(), "grant_id": g.ID.String(), "source": g.Source})
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(toAssetResponse(a))

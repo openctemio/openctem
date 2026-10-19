@@ -388,6 +388,14 @@ type ExecutiveSummary struct {
 	P0Resolved       int `json:"p0_resolved_period"`
 	P1Open           int `json:"p1_open"`
 	P1Resolved       int `json:"p1_resolved_period"`
+	// P2Open and P3Open complete the live open counts by priority class
+	// (P0Open..P3Open), over the same population as FindingsTotal.
+	P2Open int `json:"p2_open"`
+	P3Open int `json:"p3_open"`
+	// Scoped is true when the figures are counted over the viewer's data
+	// scope rather than the whole organization. The stored trend history is
+	// organization-wide, so a scoped viewer has no trend to compare with.
+	Scoped bool `json:"scoped"`
 	// SLACompliancePct is the share of the open findings that carry an SLA and
 	// are not past it ("open within SLA"). Nil when no open finding carries
 	// an SLA: there is nothing to be compliant with, so the figure is "not
