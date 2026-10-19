@@ -264,9 +264,16 @@ func (s *TaskService) checkOwner(ctx context.Context, tenantID shared.ID, user, 
 	return nil
 }
 
+// checkCampaign checks the campaign a new task joins: through the campaign
+// gate when wired (a draft or active campaign the caller may change), so
+// every create path (create, accept, from a query) gets the same check;
+// else that it is a campaign of the tenant.
 func (s *TaskService) checkCampaign(ctx context.Context, tenantID shared.ID, campaignID *shared.ID) error {
 	if campaignID == nil {
 		return nil
+	}
+	if s.campaigns != nil {
+		return s.campaigns.CheckTaskCampaignChange(ctx, tenantID, nil, campaignID)
 	}
 	ok, err := s.repo.CampaignInTenant(ctx, tenantID, *campaignID)
 	if err != nil {
