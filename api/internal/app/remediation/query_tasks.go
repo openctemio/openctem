@@ -618,6 +618,11 @@ func (s *TaskService) autoIncludeOne(ctx context.Context, d remediationdom.DueQu
 // state on the task's query, and the owner (when still a member) is told.
 func (s *TaskService) suspend(ctx context.Context, t *remediationdom.Task, q *remediationdom.TaskQuery, reason remediationdom.AutoReason) error {
 	if err := s.queries.SetAutoState(ctx, t.TenantID, t.ID, remediationdom.AutoStateSuspended, &reason); err != nil {
+		if errors.Is(err, remediationdom.ErrNotAutoMode) {
+			// No longer active (another pass suspended it, or a person paused
+			// it): audited and notified once, by whoever changed it.
+			return nil
+		}
 		return err
 	}
 	actx := auditapp.AuditContext{TenantID: t.TenantID.String()}

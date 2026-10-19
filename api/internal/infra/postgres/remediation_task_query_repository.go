@@ -87,7 +87,9 @@ func (r *RemediationTaskRepository) GetTaskQuery(ctx context.Context, tenantID, 
 }
 
 // SetAutoState changes the auto-mode state of a task's query (auto mode
-// only; a reason is stored with suspended alone).
+// only; a reason is stored with suspended alone). A suspension applies only
+// to an active query, so two concurrent passes (several API replicas)
+// suspend it once: the second answers ErrNotAutoMode.
 func (r *RemediationTaskRepository) SetAutoState(ctx context.Context, tenantID, taskID shared.ID, state remediation.AutoState, reason *remediation.AutoReason) error {
 	var rs any
 	if state == remediation.AutoStateSuspended {
@@ -98,7 +100,8 @@ func (r *RemediationTaskRepository) SetAutoState(ctx context.Context, tenantID, 
 	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE remediation_task_queries SET auto_state = $3, auto_reason = $4, updated_at = now()
-		WHERE tenant_id = $1 AND task_id = $2 AND mode = 'auto'`,
+		WHERE tenant_id = $1 AND task_id = $2 AND mode = 'auto'
+		  AND ($3 <> 'suspended' OR auto_state = 'active')`,
 		tenantID.String(), taskID.String(), string(state), rs)
 	if err != nil {
 		return fmt.Errorf("set task query auto state: %w", err)
