@@ -1506,17 +1506,25 @@ func TestAuthService_Login(t *testing.T) {
 		return h
 	}
 
-	t.Run("account locked", func(t *testing.T) {
+	// A locked account answers the right and the wrong password the same way
+	// (no oracle for a guesser who rotates source addresses), and every
+	// attempt against it counts toward the lockout (research/189 B1a-1).
+	t.Run("account locked: right and wrong password answer the same and both count", func(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthLockedUser(deps.userRepo, "locked@example.com", stateHash(t))
 
-		_, err := svc.Login(context.Background(), auth.LoginInput{
-			Email:    "locked@example.com",
-			Password: "Password123!",
-		})
-
-		if !errors.Is(err, auth.ErrAccountLocked) {
-			t.Errorf("expected ErrAccountLocked, got %v", err)
+		for _, pw := range []string{"Password123!", "wrong-guess"} {
+			before := deps.userRepo.updateCalls
+			_, err := svc.Login(context.Background(), auth.LoginInput{
+				Email:    "locked@example.com",
+				Password: pw,
+			})
+			if !errors.Is(err, auth.ErrInvalidCredentials) {
+				t.Errorf("locked account, password %q: expected ErrInvalidCredentials, got %v", pw, err)
+			}
+			if deps.userRepo.updateCalls == before {
+				t.Errorf("locked account, password %q: the attempt was not counted", pw)
+			}
 		}
 	})
 
@@ -1555,17 +1563,22 @@ func TestAuthService_Login(t *testing.T) {
 		}
 	})
 
-	// Guesses against an already-locked account do not extend the lockout.
-	t.Run("locked account wrong password does not extend lockout", func(t *testing.T) {
+	// A guess against an already-locked account counts, but the lock only
+	// grows at the next run of MaxLoginAttempts failures (backoff), so one
+	// guess does not move it.
+	t.Run("locked account guess counts without moving the lock", func(t *testing.T) {
 		svc, deps := newTestAuthService()
-		seedAuthLockedUser(deps.userRepo, "locked2@example.com", stateHash(t))
-		before := deps.userRepo.updateCalls
+		u := seedAuthLockedUser(deps.userRepo, "locked2@example.com", stateHash(t))
+		lockedUntil := *u.LockedUntil()
 		_, _ = svc.Login(context.Background(), auth.LoginInput{
 			Email:    "locked2@example.com",
 			Password: "WrongPassword!",
 		})
-		if deps.userRepo.updateCalls != before {
-			t.Errorf("expected no user update for a guess against a locked account, got %d", deps.userRepo.updateCalls-before)
+		if u.FailedLoginAttempts() != 6 {
+			t.Errorf("failed attempts = %d, want 6 (the guess during the lock counts)", u.FailedLoginAttempts())
+		}
+		if !u.LockedUntil().Equal(lockedUntil) {
+			t.Errorf("one guess moved the lock from %v to %v", lockedUntil, *u.LockedUntil())
 		}
 	})
 
@@ -3051,7 +3064,7 @@ func TestAuthService_VerifyConsolePassword(t *testing.T) {
 	t.Run("locked account", func(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthLockedUser(deps.userRepo, "locked@example.com", hash)
-		if _, err := svc.VerifyConsolePassword(context.Background(), "locked@example.com", "ValidPassword123", "10.0.0.1", "ua"); !errors.Is(err, auth.ErrAccountLocked) {
+		if _, err := svc.VerifyConsolePassword(context.Background(), "locked@example.com", "ValidPassword123", "10.0.0.1", "ua"); !errors.Is(err, auth.ErrInvalidCredentials) {
 			t.Fatalf("locked, right password: %v", err)
 		}
 		if _, err := svc.VerifyConsolePassword(context.Background(), "locked@example.com", "wrong", "10.0.0.1", "ua"); !errors.Is(err, auth.ErrInvalidCredentials) {
