@@ -88,7 +88,7 @@ export function ClaimConflictStep({
             <Textarea
               id="claim-move-reason"
               value={reason}
-              maxLength={1000}
+              maxLength={500}
               placeholder={t('remediationClaim.conflict.reasonPlaceholder')}
               onChange={(e) => onReason(e.target.value)}
             />

@@ -38,7 +38,7 @@ describe('CreateJiraEpicDialog', () => {
     render(
       <CreateJiraEpicDialog campaign={{ id: 'c1', name: 'Fix Log4j' }} onOpenChange={() => {}} />
     )
-    expect(screen.getByText('Create Jira Epic')).toBeInTheDocument()
+    expect(screen.getByText('Create Jira epic')).toBeInTheDocument()
     expect(screen.getByText('Fix Log4j')).toBeInTheDocument()
   })
 

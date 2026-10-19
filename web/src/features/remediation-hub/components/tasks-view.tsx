@@ -393,10 +393,18 @@ function DraggableTask({
   )
 }
 
-export function TaskCard({ task, owner }: { task: RemediationTask; owner: string }) {
+export function TaskCard({
+  task,
+  owner,
+  className,
+}: {
+  task: RemediationTask
+  owner: string
+  className?: string
+}) {
   const { t } = useTranslation()
   return (
-    <div className="bg-card rounded-md border p-3 text-sm">
+    <div className={cn('bg-card rounded-md border p-3 text-sm', className)}>
       <Link href={`/remediation/tasks/${task.id}`} className="font-medium hover:underline">
         {task.title}
       </Link>
