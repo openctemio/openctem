@@ -184,7 +184,9 @@ The rebaseline also appears in the audit log itself: filter on action
 `admin_audit_logs` (platform administrators' actions) has its own, single
 chain, built differently from the tenant chain: the database computes it
 (migration 002545), so every writer is covered, the API, the console service
-and the `bootstrap-admin` CLI alike.
+and the `bootstrap-admin` CLI alike (it writes its `admin.created`,
+`admin.replaced` and `admin.relinked` entries in the same transaction as the
+change, with `postgres.CreateAdminAuditLogTx`).
 
 | Piece | Where |
 |---|---|
