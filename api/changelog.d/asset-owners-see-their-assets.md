@@ -20,7 +20,7 @@
   campaign and the findings it tracks when someone with full data access
   created it (otherwise only the findings in their own scope), and changing
   it still needs every finding in their own scope. Unassigning removes the view at once.
-- Migration `002980` adds `v_asset_owner_scope`, recomputes scope on
+- Migration `003053` adds `v_asset_owner_scope`, recomputes scope on
   `asset_owners` changes and backfills the scope of existing primary and
   secondary owners set by a person.
 - **Upgrade note:** after the migration, existing primary and secondary user
