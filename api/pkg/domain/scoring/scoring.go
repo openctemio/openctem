@@ -34,7 +34,7 @@ const (
 // background. No migration is needed.
 const (
 	RiskModelVersion     = 2
-	PriorityModelVersion = 1
+	PriorityModelVersion = 2
 )
 
 // ModelVersion returns this build's model version for a kind.
@@ -50,7 +50,7 @@ func ModelSummary(k Kind) string {
 	if k == KindAssetRisk {
 		return "Likelihood and impact asset risk model"
 	}
-	return "Priority classification P0 to P3"
+	return "Priority classification P0 to P3 with the exploitation floor: a known-exploited (KEV) or validated finding is at least P1 after controls, AI triage and tenant rules"
 }
 
 // Kinds lists every kind.

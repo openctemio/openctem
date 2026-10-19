@@ -58,8 +58,18 @@ const sensorOfflineSeverity = "high"
 // (sensor.offline notification, audit and activity events), and it is held
 // while the platform itself is degraded (PlatformHealth).
 type SensorHealthController struct {
-	sensorRepo   sensor.Repository
-	liveness     sensor.LivenessRepository
+	sensorRepo sensor.Repository
+	liveness   sensor.LivenessRepository
+	// store is the liveness store (SetLiveness); mode says how it is used.
+	store sensor.LivenessStore
+	mode  sensor.LivenessMode
+	// leases ends the leases of a sensor convicted offline (SetLeaseExpirer).
+	leases LeaseExpirer
+	// gen is the store generation seen last; storeDown is set while the
+	// store could not be reached; lastFull is the last full sweep.
+	gen          string
+	storeDown    bool
+	lastFull     time.Time
 	auditService *auditapp.AuditService
 	notifier     SensorOfflineNotifier
 	events       SensorOfflineRecorder
@@ -125,6 +135,40 @@ func (c *SensorHealthController) SetEventRecorder(r SensorOfflineRecorder) {
 	c.events = r
 }
 
+// LeaseExpirer ends the leases of the commands a sensor holds, so the
+// job-recovery controller re-queues them on its next pass.
+type LeaseExpirer interface {
+	ExpireLeasesHeldBy(ctx context.Context, sensorID shared.ID) (int64, error)
+}
+
+// SetLeaseExpirer makes an offline conviction end the leases the sensor
+// holds at once, instead of when they run out. Optional.
+func (c *SensorHealthController) SetLeaseExpirer(l LeaseExpirer) { c.leases = l }
+
+// SetLiveness wires the liveness store (SENSOR_LIVENESS_STORE). In shadow
+// mode the controller still judges from Postgres and counts where the store
+// disagrees; in redis mode it judges from the store, every
+// storeSweepInterval over the store's due index and every storeFullSweep
+// over every watched row. postgres (or a nil store) leaves it as before.
+func (c *SensorHealthController) SetLiveness(mode sensor.LivenessMode, store sensor.LivenessStore) {
+	if store == nil {
+		mode = sensor.LivenessPostgres
+	}
+	c.mode, c.store = mode, store
+}
+
+// Liveness store sweep timing (redis mode).
+const (
+	// storeSweepInterval is the tick: the due index makes a tick cheap
+	// (only overdue sensors are read).
+	storeSweepInterval = 5 * time.Second
+	// storeFullSweep: every watched row is judged this often, which also
+	// catches a sensor the store has no entry for.
+	storeFullSweep = time.Minute
+	// storeOverdueLimit bounds the sensors one fast tick reads.
+	storeOverdueLimit = 2000
+)
+
 // Name returns the controller name.
 func (c *SensorHealthController) Name() string {
 	return "sensor-health"
@@ -132,8 +176,16 @@ func (c *SensorHealthController) Name() string {
 
 // Interval returns the reconciliation interval.
 func (c *SensorHealthController) Interval() time.Duration {
+	if c.mode == sensor.LivenessRedis {
+		return storeSweepInterval
+	}
 	return c.config.Interval
 }
+
+// Exclusive: one replica walks the ladder at a time (controller lease). The
+// writes are compare-and-set, so two would be safe, but each would read the
+// whole fleet and the liveness store every tick.
+func (c *SensorHealthController) Exclusive() bool { return true }
 
 // errNoLivenessRepository: the repository cannot list deadlines, so the
 // controller cannot judge anyone. Loud on purpose: a controller that silently
@@ -150,7 +202,10 @@ func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
 		c.logger.Error("cannot check sensor heartbeats", "controller", "sensor-health", "error", errNoLivenessRepository)
 		return 0, errNoLivenessRepository
 	}
-	hold := c.platform.HoldConvictions(c.config.Interval)
+	hold := c.platform.HoldConvictions(c.Interval())
+	if c.mode == sensor.LivenessRedis {
+		return c.reconcileFromStore(ctx, hold)
+	}
 
 	now, candidates, err := c.liveness.ListLivenessCandidates(ctx)
 	if err != nil {
@@ -160,11 +215,24 @@ func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
 		)
 		return 0, err
 	}
+	if c.mode == sensor.LivenessShadow {
+		c.compareShadow(ctx, now, candidates)
+	}
+	return c.apply(ctx, c.judge(now, candidates, nil, hold))
+}
 
+// judge places each candidate on the ladder and groups the steps down.
+// deadlines, when set, is what each candidate is judged by (the store
+// merged in); otherwise its stored deadline.
+func (c *SensorHealthController) judge(now time.Time, candidates []sensor.LivenessCandidate, deadlines map[shared.ID]sensor.HeartbeatDeadline, hold string) map[sensor.SensorHealth][]sensor.LivenessCandidate {
 	moves := map[sensor.SensorHealth][]sensor.LivenessCandidate{}
 	held := 0
 	for _, cand := range candidates {
-		next := sensor.Ladder(now, cand.Deadline).State
+		d := cand.Deadline
+		if dl, ok := deadlines[cand.ID]; ok {
+			d = dl
+		}
+		next := sensor.Ladder(now, d).State
 		if next == sensor.SensorHealthOffline && hold != "" {
 			held++
 			next = sensor.SensorHealthStale
@@ -183,7 +251,12 @@ func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
 			"reason", hold,
 		)
 	}
+	return moves
+}
 
+// apply stores the steps (compare-and-set on the stored last_seen_at) and
+// announces the offline ones.
+func (c *SensorHealthController) apply(ctx context.Context, moves map[sensor.SensorHealth][]sensor.LivenessCandidate) (int, error) {
 	total := 0
 	var firstErr error
 	for _, step := range []sensor.SensorHealth{sensor.SensorHealthLate, sensor.SensorHealthStale, sensor.SensorHealthOffline} {
@@ -212,6 +285,7 @@ func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
 			for _, sensorID := range ids {
 				c.onOffline(ctx, sensorID)
 			}
+			c.unwatch(ctx, moves[step], ids)
 		}
 	}
 	return total, firstErr
@@ -229,6 +303,17 @@ func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
 // notification to. Best-effort — a failure to resolve, log or enqueue must not
 // abort the reconcile.
 func (c *SensorHealthController) onOffline(ctx context.Context, sensorID shared.ID) {
+	if c.leases != nil {
+		// Its running work goes back to the queue on the recovery
+		// controller's next pass, not when the leases run out.
+		if n, err := c.leases.ExpireLeasesHeldBy(ctx, sensorID); err != nil {
+			c.logger.Warn("could not end the leases of a sensor that went offline",
+				"controller", "sensor-health", "sensor_id", sensorID, "error", err)
+		} else if n > 0 {
+			c.logger.Info("ended the leases of a sensor that went offline",
+				"controller", "sensor-health", "sensor_id", sensorID, "commands", n)
+		}
+	}
 	if c.auditService == nil && c.notifier == nil && c.events == nil {
 		return
 	}

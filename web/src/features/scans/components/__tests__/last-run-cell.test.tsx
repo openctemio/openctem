@@ -20,6 +20,23 @@ describe('LastRunCell', () => {
     expect(screen.getByText('42%')).toBeInTheDocument()
   })
 
+  it('reads "Waiting for a sensor", not "Running 0%", while every task is queued', () => {
+    render(
+      <LastRunCell
+        run={{
+          id: 'r3',
+          status: 'running',
+          created_at: new Date().toISOString(),
+          progress: 0,
+          task_summary: { total: 1, queued: 1, running: 0, completed: 0, failed: 0, canceled: 0 },
+        }}
+      />
+    )
+    expect(screen.getByText('Waiting for a sensor')).toBeInTheDocument()
+    expect(screen.queryByText('0%')).toBeNull()
+    expect(screen.queryByText('Running')).toBeNull()
+  })
+
   it('shows a blocked run with the reason on hover', () => {
     render(
       <LastRunCell
