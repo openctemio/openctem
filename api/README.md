@@ -142,7 +142,9 @@ strong secrets and the other production checks. Secrets that still hold
 example-file text (`openssl rand -hex 32`, `<CHANGE_ME...>`) are refused in
 every mode. `server -check-config` reports the first problem without starting
 or connecting to anything (exit 0 = valid). Back the stack up with
-`deploy/backup.sh` (`backup`, `verify`, `restore <dir> --yes`).
+`deploy/backup.sh` (`backup`, `verify`, `restore <dir> --yes`); set `BACKUP_AGE_RECIPIENT` to an age public key to encrypt every backup file
+(`verify` and `restore` then need `BACKUP_AGE_IDENTITY`), otherwise backups are plaintext and the
+script warns.
 
 TLS modes (`OPENCTEM_TLS_MODE`): `internal` (own CA, for LAN/IP installs; the
 root for sensors is exported to `deploy/ca/`), `acme` (Let's Encrypt), `files`

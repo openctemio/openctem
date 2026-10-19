@@ -68,6 +68,10 @@ function checkTitle(check: HealthCheck, state: ReturnType<typeof sensorState>, t
         : m('toolsNone', 'No installed tool')
     case 'error':
       return m('error', 'The sensor reported an error')
+    case 'setup':
+      return m('setup', 'Setup needs attention')
+    case 'posture':
+      return m('posture', 'Runs unhardened')
     default:
       return check.label
   }

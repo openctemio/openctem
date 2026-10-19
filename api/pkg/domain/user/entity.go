@@ -583,11 +583,35 @@ func (u *User) IsPasswordResetTokenValid(token string) bool {
 	return time.Now().Before(*u.passwordResetExpiresAt)
 }
 
-// RecordFailedLogin increments the failed login counter.
+// MaxLockoutDuration caps the backed-off account lockout.
+const MaxLockoutDuration = 24 * time.Hour
+
+// LockoutMaxDoublings bounds the exponent so the doubling cannot overflow.
+const LockoutMaxDoublings = 20
+
+// LockoutAfter returns the lock a failed sign-in starts when it brings the
+// account's failure count to attempts, or 0 when it starts none. Every
+// failure counts, including those made while the account is locked. The
+// maxAttempts-th failure locks for base; each further run of maxAttempts
+// failures locks again for twice the previous lock, up to MaxLockoutDuration.
+// Failures in between keep the current lock. A guesser who rotates source
+// addresses therefore gets at most maxAttempts guesses per lock window, and
+// the windows grow. UserRepository.RecordFailedLogin applies the same rule in
+// one SQL statement.
+func LockoutAfter(attempts, maxAttempts int, base time.Duration) time.Duration {
+	if maxAttempts < 1 || attempts < maxAttempts || (attempts-maxAttempts)%maxAttempts != 0 {
+		return 0
+	}
+	doublings := min((attempts-maxAttempts)/maxAttempts, LockoutMaxDoublings)
+	return min(base*time.Duration(1<<doublings), MaxLockoutDuration)
+}
+
+// RecordFailedLogin increments the failed login counter and locks the account
+// per LockoutAfter.
 func (u *User) RecordFailedLogin(maxAttempts int, lockoutDuration time.Duration) {
 	u.failedLoginAttempts++
-	if u.failedLoginAttempts >= maxAttempts {
-		lockUntil := time.Now().Add(lockoutDuration)
+	if d := LockoutAfter(u.failedLoginAttempts, maxAttempts, lockoutDuration); d > 0 {
+		lockUntil := time.Now().Add(d)
 		u.lockedUntil = &lockUntil
 	}
 	u.updatedAt = time.Now().UTC()

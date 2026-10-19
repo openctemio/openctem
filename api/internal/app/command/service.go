@@ -395,41 +395,10 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		limit = 10
 	}
 	limit = min(limit, 100)
-	cands, err := s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, input.Capabilities, candidateLimit(limit))
+	cands, rules, layers, err := s.claimCandidates(ctx, tenantID, sensorID, input.Capabilities, limit, slots)
 	if err != nil {
 		return nil, err
 	}
-	// Free slots the queue cannot fill: split commands whose hosts are
-	// only partly busy, so their free targets start now (host_split.go).
-	if s.admitHostBusy(ctx, tenantID, &sensorID, input.Capabilities, slots-scanCount(cands)) > 0 {
-		if cands, err = s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, input.Capabilities, candidateLimit(limit)); err != nil {
-			return nil, err
-		}
-	}
-	n := len(cands)
-	cands = s.gateFor(ctx, tenantID, &sensorID, cands).accepted(cands)
-	claimSkipped(skipLocalPolicy, n, len(cands))
-	if len(cands) > limit {
-		cands = cands[:limit]
-	}
-	n = len(cands)
-	cands = capScanCommands(cands, slots)
-	claimSkipped(skipNoSlot, n, len(cands))
-	// The scope may have changed since the jobs were queued: their targets
-	// pass the dispatch gate again before the claim (scope_recheck.go).
-	n = len(cands)
-	cands = s.recheckScope(ctx, tenantID, &sensorID, cands)
-	claimSkipped(skipScopeChanged, n, len(cands))
-	n = len(cands)
-	cands, rates := s.windowHold(ctx, tenantID, cands)
-	claimSkipped(skipWindowHold, n, len(cands))
-	n = len(cands)
-	cands, rules := s.programHold(ctx, tenantID, &sensorID, cands)
-	claimSkipped(skipProgramHold, n, len(cands))
-	n = len(cands)
-	cands, layers := s.settingsHold(ctx, tenantID, &sensorID, cands)
-	claimSkipped(skipToolSettings, n, len(cands))
-	rules = withWindowRates(rules, rates)
 	if len(cands) == 0 {
 		return nil, nil
 	}
@@ -994,4 +963,119 @@ func (s *Service) DeleteCommand(ctx context.Context, tenantID, commandID string)
 	}
 
 	return s.repo.Delete(ctx, tid, cid)
+}
+
+// maxClaimPages bounds the candidate pages one claim reads.
+const maxClaimPages = 3
+
+// PendingPager reads the next page of a sensor's pending commands, without
+// the ones already read (postgres.CommandRepository). Optional: without it a
+// claim reads one page.
+type PendingPager interface {
+	GetPendingForSensorExcluding(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, capabilities []string, limit int, exclude []shared.ID) ([]*commanddom.Command, error)
+}
+
+// claimCandidates picks what the sensor may claim now: the candidates in
+// dispatch order, minus what the checks after the query withhold (the
+// sensor's local policy and grant, the scope re-check, scan windows,
+// program rules, tool settings); then the free scan slots and limit, last.
+//
+// The checks run in Go after the query and record nothing, so withheld jobs
+// come back as the top candidates on every poll. When they fill a page, the
+// claim reads the next one without them (up to maxClaimPages), so a sensor
+// does not idle while work it may run waits behind them (research/191 W-2).
+func (s *Service) claimCandidates(ctx context.Context, tenantID, sensorID shared.ID, caps []string, limit, slots int) ([]*commanddom.Command, map[shared.ID]*bp.JobRules, map[shared.ID]settingsLayers, error) {
+	page := candidateLimit(limit)
+	cands, err := s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, caps, page)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// Free slots the queue cannot fill: split commands whose hosts are
+	// only partly busy, so their free targets start now (host_split.go).
+	if s.admitHostBusy(ctx, tenantID, &sensorID, caps, slots-scanCount(cands)) > 0 {
+		if cands, err = s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, caps, page); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	pager, canPage := s.repo.(PendingPager)
+	var (
+		kept   []*commanddom.Command
+		seen   []shared.ID
+		rules  map[shared.ID]*bp.JobRules
+		layers map[shared.ID]settingsLayers
+	)
+	for p := 0; ; p++ {
+		for _, c := range cands {
+			seen = append(seen, c.ID)
+		}
+		got, r, l := s.holdForSensor(ctx, tenantID, sensorID, cands)
+		kept = append(kept, got...)
+		rules, layers = mergeRules(rules, r), mergeLayers(layers, l)
+		if !canPage || p+1 >= maxClaimPages || len(cands) < page || len(kept) >= limit || scanCount(kept) >= slots {
+			break
+		}
+		claimPaged(claimModePoll)
+		if cands, err = pager.GetPendingForSensorExcluding(ctx, tenantID, &sensorID, caps, page, seen); err != nil {
+			return nil, nil, nil, err
+		}
+		if len(cands) == 0 {
+			break
+		}
+	}
+	n := len(kept)
+	kept = capScanCommands(kept, slots)
+	claimSkipped(skipNoSlot, n, len(kept))
+	if len(kept) > limit {
+		kept = kept[:limit]
+	}
+	return kept, rules, layers, nil
+}
+
+// holdForSensor applies the checks that run after the query to one page of
+// candidates for an organization sensor, in claim order.
+func (s *Service) holdForSensor(ctx context.Context, tenantID, sensorID shared.ID, cands []*commanddom.Command) ([]*commanddom.Command, map[shared.ID]*bp.JobRules, map[shared.ID]settingsLayers) {
+	n := len(cands)
+	cands = s.gateFor(ctx, tenantID, &sensorID, cands).accepted(cands)
+	claimSkipped(skipLocalPolicy, n, len(cands))
+	// The scope may have changed since the jobs were queued: their targets
+	// pass the dispatch gate again before the claim (scope_recheck.go).
+	n = len(cands)
+	cands = s.recheckScope(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipScopeChanged, n, len(cands))
+	n = len(cands)
+	cands, rates := s.windowHold(ctx, tenantID, cands)
+	claimSkipped(skipWindowHold, n, len(cands))
+	n = len(cands)
+	cands, rules := s.programHold(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipProgramHold, n, len(cands))
+	n = len(cands)
+	cands, layers := s.settingsHold(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipToolSettings, n, len(cands))
+	return cands, withWindowRates(rules, rates), layers
+}
+
+func mergeRules(dst, src map[shared.ID]*bp.JobRules) map[shared.ID]*bp.JobRules {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[shared.ID]*bp.JobRules, len(src))
+	}
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func mergeLayers(dst, src map[shared.ID]settingsLayers) map[shared.ID]settingsLayers {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[shared.ID]settingsLayers, len(src))
+	}
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
