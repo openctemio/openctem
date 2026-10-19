@@ -597,6 +597,7 @@ func verifiedClaims(sub, email string) jwtv5.MapClaims {
 
 func TestIdPSignInBindsThenMatchesBySubject(t *testing.T) {
 	b := newBGHarness(t)
+	secret, _ := b.enroll(t) // the console TOTP, enrolled on the password path
 	b.configureIdP(t, nil)
 	ctx := context.Background()
 
@@ -605,14 +606,15 @@ func TestIdPSignInBindsThenMatchesBySubject(t *testing.T) {
 		t.Fatalf("first IdP sign-in: %v", err)
 	}
 	// Default: the console TOTP is still required after the IdP.
-	if res.Status != StatusMFAEnrollment || res.Second == nil || res.SessionToken != "" {
+	if res.Status != StatusMFARequired || res.Second == nil || res.SessionToken != "" || res.Second.Secret != "" {
 		t.Fatalf("expected the TOTP step, got %+v", res)
 	}
 	// Nothing is bound before the administrator's own second factor.
 	if a, _ := b.admins.GetByID(ctx, b.admin.ID()); a.IdPBound() || b.audit.has(ActionIdPBound) {
 		t.Fatal("an IdP identity must not be bound by email alone")
 	}
-	code, _ := totp.Code(res.Second.Secret, b.clock)
+	b.clock = b.clock.Add(31 * time.Second) // the enrollment code's step is spent
+	code, _ := totp.Code(secret, b.clock)
 	token, _, err := b.svc.VerifyMFA(ctx, res.Second.PendingToken, code, client)
 	if err != nil {
 		t.Fatalf("totp after IdP: %v", err)
@@ -672,6 +674,7 @@ func TestIdPSignInRefusals(t *testing.T) {
 
 func TestIdPCallbackStateIsBoundAndSingleUse(t *testing.T) {
 	b := newBGHarness(t)
+	b.enroll(t)
 	b.configureIdP(t, nil)
 	ctx := context.Background()
 
@@ -708,6 +711,7 @@ func TestIdPNonceMismatchIsRefused(t *testing.T) {
 
 func TestTrustedACRSkipsConsoleTOTP(t *testing.T) {
 	b := newBGHarness(t)
+	secret, _ := b.enroll(t)
 	b.configureIdP(t, func(i *PlatformIdPInput) { i.TrustedACRValues = []string{"urn:corp:mfa"} })
 	ctx := context.Background()
 
@@ -722,7 +726,8 @@ func TestTrustedACRSkipsConsoleTOTP(t *testing.T) {
 	if err != nil || res.Status == StatusSignedIn {
 		t.Fatalf("without trusted acr TOTP is required: %v %+v", err, res)
 	}
-	code, _ := totp.Code(res.Second.Secret, b.clock)
+	b.clock = b.clock.Add(31 * time.Second)
+	code, _ := totp.Code(secret, b.clock)
 	if _, _, err := b.svc.VerifyMFA(ctx, res.Second.PendingToken, code, client); err != nil {
 		t.Fatalf("totp: %v", err)
 	}
@@ -740,12 +745,14 @@ func TestTrustedACRSkipsConsoleTOTP(t *testing.T) {
 
 func TestIssuerChangeClearsBindings(t *testing.T) {
 	b := newBGHarness(t)
+	secret, _ := b.enroll(t)
 	b.configureIdP(t, nil)
 	res, err := b.idpSignIn(t, verifiedClaims("sub-ops", "ops@acme.io"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, _ := totp.Code(res.Second.Secret, b.clock)
+	b.clock = b.clock.Add(31 * time.Second)
+	code, _ := totp.Code(secret, b.clock)
 	if _, _, err := b.svc.VerifyMFA(context.Background(), res.Second.PendingToken, code, client); err != nil {
 		t.Fatal(err)
 	}

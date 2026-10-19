@@ -537,6 +537,20 @@ func (s *Service) CompleteIdPLogin(ctx context.Context, cookieState, state, code
 		// First sign-in of an unbound administrator: the IdP's word (even a
 		// trusted ACR/AMR) is not enough. The identity is bound only after
 		// this administrator proves their own console second factor.
+		//
+		// An administrator with no console factor yet (never signed in, or
+		// reset) would be handed a fresh TOTP secret to enroll here, so
+		// whoever can mint an IdP token for their email would enroll it and
+		// become them. While the password path is open, they enroll on it
+		// first (their own password). Only when "require IdP" closes it is
+		// the IdP the sole first factor and enrollment allowed here.
+		st, err := s.FactorStatus(ctx, a)
+		if err != nil {
+			return nil, fmt.Errorf("start console session: %w", err)
+		}
+		if !st.TOTPEnabled && st.WebAuthnCount == 0 && !p.Enforced() {
+			return nil, s.failIdP(ctx, idpFailure{reason: "unbound administrator without a console second factor: sign in with the console password once to enroll it", admin: a}, client)
+		}
 		second, err := s.beginSecondFactorBinding(ctx, a, admin.AuthMethodIdP, client, p.Issuer, claims.Subject)
 		if err != nil {
 			return nil, err

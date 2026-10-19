@@ -238,7 +238,11 @@ the account with `bootstrap-admin -force` on the server.
 IdP binding: the first platform IdP sign-in of an unbound administrator (matched
 by verified e-mail) binds the identity only after that administrator proves
 their own console second factor on the pending session; a trusted ACR/AMR
-value skips the console factor only for an identity bound that way. Whoever
+value skips the console factor only for an identity bound that way. An
+unbound administrator with no console factor yet (never signed in, or reset)
+is refused on the IdP while the password path is open: they enroll on the
+password path first. Only while "require IdP" closes the password path is the
+IdP their sole first factor and the console factor enrolled after it. Whoever
 can mint an IdP token carrying another administrator's e-mail therefore cannot
 sign in as them and approve their own requests.
 
