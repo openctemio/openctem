@@ -26,6 +26,24 @@ scanner backs off when a target throttles or blocks it and never evades. A
 third-party / vendor-risk mode would be a separate decision (RFC-036 §7). If it
 is ever built, it uses only passive public data.
 
+
+## One definition of "internet-facing"
+
+An asset is internet-facing when its exposure is `public` **or** a source
+reported it reachable from the internet (`is_internet_accessible`). Every
+surface uses that one rule, never one column alone: `asset.InternetFacing` /
+`(*Asset).IsInternetFacing` in Go, `asset.InternetFacingSQL(alias)` in SQL, and
+the API field `internet_facing` on an asset (the `internet_facing` list filter
+and the `by_internet_facing` stats facet). The inventory strip and facet, the
+asset drawer, Crown jewels, the attack surface overview
+(`internet_facing_assets`, `critical_internet_facing_assets`), the freshness
+importance rule, program metrics and software matches all read it.
+
+"Newly exposed" is one computation too: the state-history changes that made an
+asset internet-facing (`asset.NewlyExposedHistory`), counted the same way by
+Assets › What changed (`/state-history/counts`) and the attack surface overview
+(`newly_exposed`).
+
 ## 1. Flow
 
 ```

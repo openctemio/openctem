@@ -22,8 +22,6 @@ import type { ColumnDef } from '@tanstack/react-table'
 import {
   ChevronRight,
   ExternalLink,
-  Globe,
-  MinusCircle,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -335,28 +333,6 @@ export function InventoryTable({
         cell: ({ row }) => (
           <ExposureBadge exposure={row.original.exposure} size="sm" showTooltip={false} />
         ),
-      },
-      {
-        id: 'internet',
-        enableSorting: false,
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('assets.inv.col.internet', 'Internet')} />
-        ),
-        cell: ({ row }) => {
-          const v = row.original.isInternetAccessible
-          if (v === undefined) return <span className="text-muted-foreground">—</span>
-          return v ? (
-            <span className="inline-flex items-center gap-1 text-xs text-warning">
-              <Globe className="h-3.5 w-3.5" />
-              {t('assets.inv.facing', 'Facing')}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <MinusCircle className="h-3.5 w-3.5" />
-              {t('assets.properties.no', 'No')}
-            </span>
-          )
-        },
       },
       {
         id: 'owner',
