@@ -2069,5 +2069,7 @@
   "scans.profiles.preset.full.name": "Đánh giá đầy đủ",
   "scans.profiles.preset.full.description": "Không đạt khi có phát hiện nghiêm trọng hoặc hơn 5 phát hiện mức cao.",
   "scans.profiles.preset.compliance.name": "Kiểm toán tuân thủ",
-  "scans.profiles.preset.compliance.description": "Không đạt khi có phát hiện nghiêm trọng hoặc mức cao, hoặc hơn 10 phát hiện mức trung bình."
+  "scans.profiles.preset.compliance.description": "Không đạt khi có phát hiện nghiêm trọng hoặc mức cao, hoặc hơn 10 phát hiện mức trung bình.",
+  "scans.placement.rule_sources_unsupported.text": "Tác vụ chỉ chạy các mẫu của tổ chức, và cảm biến này không báo cáo hỗ trợ nguồn quy tắc.",
+  "scans.placement.rule_sources_unsupported.fix": "Nâng cấp cảm biến lên phiên bản có công cụ quét hỗ trợ nguồn quy tắc."
 }

@@ -309,6 +309,9 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 		}
 	}
 	sp.Reasons = append(sp.Reasons, claimReasons(c)...)
+	if !c.FeaturesOK {
+		sp.Reasons = append(sp.Reasons, missingFeatureReasons(cmd, sn)...)
+	}
 	if len(sp.Reasons) > 0 {
 		return sp, nil
 	}
@@ -348,8 +351,44 @@ func claimReasons(c commanddom.SensorClaim) []string {
 	if !c.CapabilityOK {
 		out = append(out, commanddom.PlacementCapabilityMissing)
 	}
-	if !c.FeaturesOK {
-		// required_features holds only net.confined@1 today.
+	return out
+}
+
+// featurePlacement is the placement code of each feature a command can
+// require (command.PayloadKeyRequiredFeatures).
+var featurePlacement = map[string]string{
+	sensordom.CapabilityNetConfined: commanddom.PlacementNotConfined,
+	sensordom.CapabilityRuleSources: commanddom.PlacementRuleSourcesUnsupported,
+}
+
+// missingFeatureReasons names the features cmd requires that sn did not
+// report (every required one when the sensor is unknown). A feature with
+// no code of its own counts as not confined, the first such feature.
+func missingFeatureReasons(cmd *commanddom.Command, sn *sensordom.Sensor) []string {
+	var p struct {
+		Required []string `json:"required_features"`
+	}
+	if cmd != nil {
+		_ = json.Unmarshal(cmd.Payload, &p)
+	}
+	var reported []string
+	if sn != nil {
+		reported = sn.Reported.Capabilities
+	}
+	var out []string
+	for _, f := range p.Required {
+		if slices.Contains(reported, f) {
+			continue
+		}
+		code, ok := featurePlacement[f]
+		if !ok {
+			code = commanddom.PlacementNotConfined
+		}
+		if !slices.Contains(out, code) {
+			out = append(out, code)
+		}
+	}
+	if len(out) == 0 {
 		out = append(out, commanddom.PlacementNotConfined)
 	}
 	return out

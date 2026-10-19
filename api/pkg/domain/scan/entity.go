@@ -7,6 +7,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -63,6 +64,11 @@ type Scan struct {
 
 	// Profile - links to ScanProfile for tool configs, intensity, quality gates
 	ProfileID *shared.ID
+
+	// RuleSources is which detection rules the scan runs (platform, the
+	// organization's templates, or both); "" inherits the profile's, and
+	// without a profile both run (scannertemplate.EffectiveRuleSources).
+	RuleSources scannertemplate.RuleSources
 
 	// Timeout - max execution time in seconds (default 3600 = 1h, max 86400 = 24h)
 	TimeoutSeconds int
@@ -579,6 +585,18 @@ func (s *Scan) SetScanZone(zoneID *shared.ID) {
 	s.UpdatedAt = time.Now()
 }
 
+// SetRuleSources sets which detection rules the scan runs ("" inherits
+// the profile's). An unknown value is a validation error.
+func (s *Scan) SetRuleSources(v string) error {
+	rs, err := scannertemplate.ParseRuleSources(v)
+	if err != nil {
+		return err
+	}
+	s.RuleSources = rs
+	s.UpdatedAt = time.Now()
+	return nil
+}
+
 // SetProfileID links the scan to a scan profile (for tool configs and quality gates).
 // Pass nil to unlink.
 func (s *Scan) SetProfileID(profileID *shared.ID) {
@@ -850,6 +868,7 @@ func (s *Scan) Clone(newName string) *Scan {
 		SensorPreference:    s.SensorPreference,
 		ScanZoneID:          s.ScanZoneID,
 		ProfileID:           s.ProfileID,
+		RuleSources:         s.RuleSources,
 		TimeoutSeconds:      s.TimeoutSeconds,
 		MaxRetries:          s.MaxRetries,
 		RetryBackoffSeconds: s.RetryBackoffSeconds,

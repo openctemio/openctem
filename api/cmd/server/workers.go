@@ -9,6 +9,10 @@ import (
 	"sync"
 	"time"
 
+	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
+
+	vulneventapp "github.com/openctemio/openctem/api/internal/app/vulnevent"
+
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,6 +42,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
@@ -669,18 +674,26 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
-	// Threat intel — daily EPSS + KEV refresh, a priority recompute for only
-	// the findings whose CVE intel moved, and KEV auto-escalation.
+	// Threat intel — daily EPSS and hourly KEV refresh, a priority
+	// recompute for only the findings whose CVE intel moved, and KEV
+	// auto-escalation. Both report material changes to the vulnerability
+	// event log (RFC-117).
 	var intelQueue controller.IntelChangeQueue
 	if svc.Scoring != nil {
 		intelQueue = svc.Scoring
 	}
-	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
-		svc.ThreatIntel,
-		repos.KEVEscalator,
-		intelQueue,
-		log.With("controller", "threat-intel-refresh"),
-	))
+	var vulnEvents *vulneventapp.Emitter
+	if repos.VulnEvent != nil {
+		vulnEvents = vulneventapp.NewEmitter(repos.VulnEvent, log)
+	}
+	epssRefresh := controller.NewThreatIntelRefreshController(svc.ThreatIntel, intelQueue, log.With("controller", "threat-intel-refresh"))
+	kevRefresh := controller.NewKEVRefreshController(svc.ThreatIntel, repos.KEVEscalator, intelQueue, log.With("controller", "kev-refresh"))
+	if vulnEvents != nil {
+		epssRefresh.SetEventEmitter(vulnEvents)
+		kevRefresh.SetEventEmitter(vulnEvents)
+	}
+	w.ControllerManager.Register(epssRefresh)
+	w.ControllerManager.Register(kevRefresh)
 
 	// Vulnerability bundles (RFC-066 §5.5): verified and imported into the
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
@@ -697,7 +710,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
 			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
 				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
-			w.ControllerManager.Register(controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import")))
+			importCtl := controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
+			if vulnEvents != nil {
+				importCtl.SetEventEmitter(vulnEvents)
+			}
+			w.ControllerManager.Register(importCtl)
 		}
 	}
 
@@ -705,6 +722,33 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// each organization's findings.
 	if svc.VulnMatch != nil {
 		w.ControllerManager.Register(controller.NewVulnMatchController(svc.VulnMatch, log.With("controller", "vuln-match")))
+	}
+
+	// Emerging-threat alerts (RFC-117): events and matched findings to
+	// alerts, immediate messages under the hourly cap and quiet hours, the
+	// daily digest (channels, in-app, the e-mail digest preference).
+	if svc.ThreatAlertPlanner != nil {
+		var mail threatalertapp.Mailer
+		if svc.Email != nil {
+			mail = emergingThreatMailer{email: svc.Email, log: log}
+		}
+		var scopes threatalertapp.ScopeResolver
+		if svc.DataScope != nil {
+			scopes = svc.DataScope
+		}
+		var inApp threatalertapp.InAppNotifier
+		if svc.Notification != nil {
+			inApp = svc.Notification
+		}
+		var ob threatalertapp.Enqueuer
+		if svc.Outbox != nil {
+			ob = svc.Outbox
+		}
+		svc.ThreatAlertPlanner.SetSinks(ob, inApp, repos.MemberLifecycle, scopes, mail, deps.Config.SMTP.BaseURL)
+		if svc.Module != nil {
+			svc.ThreatAlertPlanner.SetModules(middleware.NewModuleGate(svc.Module, time.Minute))
+		}
+		w.ControllerManager.Register(controller.NewThreatAlertPlannerController(svc.ThreatAlertPlanner, log.With("controller", "threat-alert-planner")))
 	}
 
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
@@ -922,8 +966,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "risk-snapshot"),
 	))
 
-	// Remediation progress — periodically refresh campaign finding counts and
-	// auto-complete campaigns whose findings are all resolved.
+	// Remediation progress: complete campaigns whose tasks are done and
+	// reopen completed ones with a live task again.
 	if svc != nil && svc.RemediationCampaign != nil {
 		if svc.Module != nil {
 			svc.RemediationCampaign.SetModuleGuard(svc.Module) // skip tenants with remediation off

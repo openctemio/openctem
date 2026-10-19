@@ -94,6 +94,12 @@ const (
 	// waiting for an approver (muting it opts out of the digest, in-app and
 	// email).
 	TypeFindingApprovalDigest = "finding_approval_digest"
+	// TypeEmergingThreat tells administrators that an urgent emerging-threat
+	// alert affects the organization (RFC-117).
+	TypeEmergingThreat = "emerging_threat"
+	// TypeEmergingThreatDigest is the daily emerging-threat digest (muting
+	// it opts out of the digest, in-app and email).
+	TypeEmergingThreatDigest = "emerging_threat_digest"
 )
 
 // Notification represents an in-app notification.
@@ -302,7 +308,8 @@ func IsValidType(t string) bool {
 		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending,
 		TypeMemberLifecycle, TypeCISecurity, TypeSensorSecurity, TypeScopeChange,
 		TypeScanWindowOverride, TypeScanApproval, TypeAttackSurfaceDigest, TypeCoverageGap,
-		TypeFindingApproval, TypeFindingApprovalDigest, TypeMCPAccessRequest:
+		TypeFindingApproval, TypeFindingApprovalDigest, TypeMCPAccessRequest,
+		TypeEmergingThreat, TypeEmergingThreatDigest:
 		return true
 	}
 	return false
