@@ -1880,6 +1880,19 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: sender address."
+  - name: RELAY_TLS_CERT
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    description: "`openctem-sensor-relay`: path to the relay's server certificate (PEM) presented to sensors. The relay does not start without it. See the sensor relay architecture note."
+  - name: RELAY_TLS_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it."
   - name: BOOTSTRAP_SMTP_FROM_NAME
     component: tool
     group: "Administration tools"

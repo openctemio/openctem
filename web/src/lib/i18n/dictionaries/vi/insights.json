@@ -68,5 +68,6 @@
   "insights.scoringChange.source.platform_model": "mô hình tính điểm mới",
   "insights.scoringChange.source.risk_settings": "cấu hình tính điểm rủi ro",
   "insights.scoringChange.source.priority_rules": "quy tắc ưu tiên",
-  "insights.scoringChange.source.sla_policy": "chính sách SLA"
+  "insights.scoringChange.source.sla_policy": "chính sách SLA",
+  "insights.maturity.subject": "mức độ trưởng thành của chương trình"
 }

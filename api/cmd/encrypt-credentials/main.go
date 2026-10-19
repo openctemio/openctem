@@ -2,11 +2,10 @@
 //
 // Usage:
 //
-//	go run ./cmd/encrypt-credentials -db "postgres://..." -key "your-hex-key"
-//
-// Or using environment variables:
-//
 //	DATABASE_URL="postgres://..." APP_ENCRYPTION_KEY="your-hex-key" go run ./cmd/encrypt-credentials
+//
+// The database URL and the key are read from the environment only: a flag would
+// put the database password or the master key in argv and the shell history.
 package main
 
 import (
@@ -28,29 +27,21 @@ import (
 
 func main() {
 	// Parse flags
-	dbURL := flag.String("db", "", "Database URL (or set DATABASE_URL env)")
-	encryptionKey := flag.String("key", "", "Encryption key in hex (or set APP_ENCRYPTION_KEY env)")
 	keyFormat := flag.String("key-format", "", "Key format: hex, base64, raw (auto-detected if not specified)")
 	dryRun := flag.Bool("dry-run", false, "Show what would be encrypted without making changes")
 	flag.Parse()
 
 	// Get database URL
-	databaseURL := *dbURL
+	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = os.Getenv("DATABASE_URL")
-	}
-	if databaseURL == "" {
-		fmt.Println("Error: Database URL required. Use -db flag or set DATABASE_URL env")
+		fmt.Println("Error: Database URL required. Set DATABASE_URL env")
 		os.Exit(1)
 	}
 
 	// Get encryption key
-	keyStr := *encryptionKey
+	keyStr := os.Getenv("APP_ENCRYPTION_KEY")
 	if keyStr == "" {
-		keyStr = os.Getenv("APP_ENCRYPTION_KEY")
-	}
-	if keyStr == "" {
-		fmt.Println("Error: Encryption key required. Use -key flag or set APP_ENCRYPTION_KEY env")
+		fmt.Println("Error: Encryption key required. Set APP_ENCRYPTION_KEY env")
 		fmt.Println("Generate a key with: openssl rand -hex 32")
 		os.Exit(1)
 	}

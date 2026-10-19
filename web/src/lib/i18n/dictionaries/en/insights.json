@@ -68,5 +68,6 @@
   "insights.scoringChange.source.platform_model": "new scoring model",
   "insights.scoringChange.source.risk_settings": "risk scoring settings",
   "insights.scoringChange.source.priority_rules": "priority rules",
-  "insights.scoringChange.source.sla_policy": "SLA policy"
+  "insights.scoringChange.source.sla_policy": "SLA policy",
+  "insights.maturity.subject": "program maturity"
 }

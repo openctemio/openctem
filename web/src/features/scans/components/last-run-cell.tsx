@@ -23,9 +23,22 @@ export function LastRunCell({
     return <span className="text-sm text-muted-foreground">{t('scans.cell.never')}</span>
   }
   const reason = lastRunReason(run, t)
+  // A run whose every task still waits in the queue is waiting for a sensor,
+  // not "running 0%".
+  const ts = run.task_summary
+  const waiting =
+    (run.status === 'running' || run.status === 'pending') &&
+    !!ts &&
+    ts.total > 0 &&
+    ts.queued === ts.total
   const body = (
     <span className="flex min-w-0 flex-col items-start gap-0.5">
-      <RunStatusBadge status={run.status} progress={run.progress} title={reason} />
+      <RunStatusBadge
+        status={waiting ? 'queued' : run.status}
+        progress={waiting ? undefined : run.progress}
+        label={waiting ? t('scans.cell.waitingForSensor') : undefined}
+        title={reason}
+      />
       <RelativeTime date={run.started_at ?? run.created_at} className="text-xs" />
     </span>
   )

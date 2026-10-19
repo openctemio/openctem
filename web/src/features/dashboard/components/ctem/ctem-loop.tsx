@@ -13,6 +13,7 @@ import {
   STATE_TEXT,
   type CtemState,
 } from '../../lib/ctem-colors'
+import { DRILL } from '../../lib/drill'
 import type {
   ExecutiveSummary,
   ScanCoverage,
@@ -161,7 +162,8 @@ export function CtemLoop({
     {
       index: '03',
       name: 'Prioritize',
-      href: '/findings',
+      // The tile counts open P0 findings: open exactly that list.
+      href: DRILL.p0Open,
       value: (
         <>
           {p0} <Unit>P0</Unit>
@@ -176,7 +178,9 @@ export function CtemLoop({
     {
       index: '04',
       name: 'Validate',
-      href: '/controls',
+      // Validation coverage, the same API the Validation overview headlines
+      // (it used to open Compensating controls, another feature).
+      href: DRILL.validation,
       value: (
         <>
           {valPct.toFixed(0)}
@@ -190,7 +194,8 @@ export function CtemLoop({
     {
       index: '05',
       name: 'Mobilize',
-      href: '/remediation',
+      // The tile counts open findings past their SLA (overdue or exceeded).
+      href: DRILL.slaBreached,
       value: (
         <>
           {slaPct === null ? (
