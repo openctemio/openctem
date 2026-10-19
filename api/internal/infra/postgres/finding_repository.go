@@ -2288,6 +2288,7 @@ func (r *FindingRepository) DeleteByScanID(ctx context.Context, tenantID shared.
 
 // UpdateScanIDBatchByFingerprints updates scan metadata for existing findings by their fingerprints.
 // This preserves user-set status (false_positive, accepted, etc.) while updating scan tracking.
+// A sighting counts one even when its enrichment lost the race to another writer, so concurrent sightings are never dropped from occurrence_count.
 // Returns the count of updated findings.
 func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, toolName string) (int64, error) {
 	if len(fingerprints) == 0 {
@@ -2299,6 +2300,7 @@ func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context,
 	query := `
 		UPDATE findings
 		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(), observation_state = 'present',
+			occurrence_count = occurrence_count + 1,
 			last_seen_tool = COALESCE(NULLIF($4, ''), last_seen_tool)
 		WHERE tenant_id = $2 AND fingerprint = ANY($3)
 	`

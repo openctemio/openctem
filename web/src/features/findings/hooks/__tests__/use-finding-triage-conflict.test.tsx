@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, render, act, fireEvent } from '@testing-library/react'
+import { renderHook, render, act, fireEvent, waitFor } from '@testing-library/react'
 
 import { ApiClientError } from '@/lib/api/error-handler'
 import { useFindingTriage, type FindingTriageTarget } from '../use-finding-triage'
@@ -19,6 +19,7 @@ const invalidate = vi.fn()
 vi.mock('swr', () => ({ mutate: vi.fn() }))
 vi.mock('../../api/use-findings-api', () => ({
   invalidateFindingsCache: () => invalidate(),
+  findingDetailKey: (id: string) => `/api/v1/findings/${id}`,
   useUpdateFindingStatusApi: () => ({ trigger: updateStatus, isMutating: false }),
   useUpdateFindingSeverityApi: () => ({ trigger: updateSeverity, isMutating: false }),
   useAssignFindingApi: () => ({ trigger: vi.fn(), isMutating: false }),
@@ -40,7 +41,10 @@ const target = (over: Partial<FindingTriageTarget> = {}): FindingTriageTarget =>
   ...over,
 })
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  updateSeverity.mockReset()
+})
 
 // A severity change asks for its reason first: pick the severity, answer the
 // reason dialog and confirm.
@@ -48,12 +52,18 @@ async function changeSeverityWithReason(
   result: { current: ReturnType<typeof useFindingTriage> },
   to: 'critical' | 'low'
 ) {
+  const toasts = () =>
+    toast.success.mock.calls.length + toast.info.mock.calls.length + toast.error.mock.calls.length
+  const before = toasts()
   act(() => result.current.changeSeverity(to))
-  const { getByLabelText, getByRole } = render(<>{result.current.dialogs}</>)
+  const { getByLabelText, getByRole, unmount } = render(<>{result.current.dialogs}</>)
   fireEvent.change(getByLabelText(/Reason/), { target: { value: 'because of the evidence' } })
   await act(async () => {
     fireEvent.click(getByRole('button', { name: 'Change severity' }))
   })
+  // The write settles through several awaits; wait for its toast.
+  await waitFor(() => expect(toasts()).toBeGreaterThan(before))
+  unmount()
 }
 
 describe('useFindingTriage — optimistic concurrency', () => {
