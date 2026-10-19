@@ -11,7 +11,7 @@ import (
 // FuzzLint: lint never panics on any file content for any kind, always
 // returns a tier, and never reports a pack with errors as clean.
 func FuzzLint(f *testing.F) {
-	for _, s := range []string{passiveTemplate, oobTemplate, codeTemplate, "rules:\n  - id: x\n    pattern: foo()\n    message: m\n    languages: [go]\n    severity: ERROR\n", "a\nb\n", "{{{", "id: [", "\x00\xff"} {
+	for _, s := range []string{passiveTemplate, oobTemplate, codeTemplate, flowTemplate, workflow("a.yaml", "../b.yaml"), "rules:\n  - id: x\n    pattern: foo()\n    message: m\n    languages: [go]\n    severity: ERROR\n", "a\nb\n", "{{{", "id: [", "\x00\xff"} {
 		f.Add("t.yaml", s)
 	}
 	kinds := []string{dom.KindNucleiTemplates, dom.KindSemgrepRules, dom.KindWordlist, "x-acme/data"}
