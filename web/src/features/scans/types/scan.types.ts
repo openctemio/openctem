@@ -4,7 +4,7 @@
  * Type definitions for scan management
  */
 
-import type { ScanIntensity, ScanTargetOptions } from '@/lib/api/scan-types'
+import type { RuleSources, ScanIntensity, ScanTargetOptions } from '@/lib/api/scan-types'
 import type { Status } from '@/features/shared/types'
 
 // ============================================
@@ -217,6 +217,10 @@ export interface NewScanFormData {
    * scanners take their settings from the scan profile.
    */
   scannerConfig?: Record<string, unknown>
+  /** Which detection rules run; '' = the scan profile's (both without one). */
+  ruleSources: '' | RuleSources
+  /** The organization's scanner templates the scan runs (custom_template_ids). */
+  customTemplateIds: string[]
   sensorPreference: SensorPreference // Platform sensor selection
   profileId?: string // Optional scan profile (drives quality gate evaluation)
 
@@ -247,6 +251,8 @@ export const DEFAULT_NEW_SCAN: NewScanFormData = {
   mode: 'single',
   scannerName: '',
   workflowId: undefined,
+  ruleSources: '',
+  customTemplateIds: [],
   sensorPreference: 'auto',
   profileId: undefined,
   targets: DEFAULT_TARGETS,
