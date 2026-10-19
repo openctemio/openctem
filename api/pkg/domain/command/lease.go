@@ -11,10 +11,11 @@ import (
 )
 
 // Lease lengths. A claim holds DefaultLeaseDuration without renewal. A
-// sensor renews it on every heartbeat that lists the command (and on
-// start), so a live sensor renews several times per lease: the default is
-// above the 90 s after which a silent sensor is marked offline, so a sensor
-// whose heartbeats are only late keeps its work.
+// heartbeat that lists the command renews it once less than
+// LeaseRenewBefore is left, so a live sensor renews at least once per lease
+// with one lost heartbeat to spare: the default is above the 90 s after
+// which a silent sensor is marked offline, so a sensor whose heartbeats are
+// only late keeps its work.
 const (
 	DefaultLeaseDuration = 3 * time.Minute
 	MinLeaseDuration     = time.Minute
@@ -28,6 +29,28 @@ func ClampLeaseDuration(d time.Duration) time.Duration {
 		return DefaultLeaseDuration
 	}
 	return min(max(d, MinLeaseDuration), MaxLeaseDuration)
+}
+
+// leaseRenewMargin is the slack LeaseRenewBefore keeps beyond two
+// heartbeat intervals.
+const leaseRenewMargin = 10 * time.Second
+
+// LeaseRenewBefore is how much of a lease may be left before a heartbeat
+// renews it: max(lease/2, 2 × interval + 10 s), at most the lease.
+//
+// Renewing on every heartbeat wrote every held command row on every beat
+// (a busy sensor beats every few seconds). With this rule a heartbeat that
+// finds more than the threshold left writes nothing, and a lease is still
+// renewed in time even when one heartbeat is lost: a heartbeat that just
+// missed the threshold is followed by one at most 2 × interval later, which
+// still finds more than 10 s left. interval is the heartbeat interval the
+// sensor follows; zero or negative renews on every heartbeat.
+func LeaseRenewBefore(lease, interval time.Duration) time.Duration {
+	lease = ClampLeaseDuration(lease)
+	if interval <= 0 {
+		return lease
+	}
+	return min(lease, max(lease/2, 2*interval+leaseRenewMargin))
 }
 
 // LeaseExpiredMessage is stored on a command the platform took back from a
@@ -87,8 +110,9 @@ type Fence struct {
 // LeaseRenewer extends the leases of the commands a sensor holds.
 type LeaseRenewer interface {
 	// RenewLeases renews the commands in ids that sensorID holds, or all it
-	// holds when all is set.
-	RenewLeases(ctx context.Context, tenantID, sensorID shared.ID, ids []string, all bool) (int64, error)
+	// holds when all is set, whose lease has less than
+	// LeaseRenewBefore(lease, interval) left.
+	RenewLeases(ctx context.Context, tenantID, sensorID shared.ID, ids []string, all bool, interval time.Duration) (int64, error)
 }
 
 // CancelFinder finds, among the commands a sensor says it holds (its
