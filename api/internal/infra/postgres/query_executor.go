@@ -10,6 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/querylang"
 	"github.com/openctemio/openctem/api/pkg/querylang/pgsql"
 )
@@ -136,4 +137,44 @@ func mapQueryErr(err error) error {
 		return querylang.ErrTimeout
 	}
 	return fmt.Errorf("run query: %w", err)
+}
+
+// Match returns the findings a filter-only findings plan selects: the
+// number of matches and the first o.Limit ids (oldest first), in the same
+// READ ONLY transaction, statement timeout and work_mem cap as Run.
+func (e *QueryExecutor) Match(ctx context.Context, p *querylang.Plan, o pgsql.MatchOptions) (*querylang.Matches, error) {
+	st, err := pgsql.RenderMatch(p, o)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := e.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	m := &querylang.Matches{}
+	// Both statements are rendered from constants and placeholders only.
+	if err := tx.QueryRowContext(ctx, st.CountSQL, st.Args...).Scan(&m.Total); err != nil { //nolint:gosec // G202: rendered statement
+		return nil, mapQueryErr(err)
+	}
+	rows, err := tx.QueryContext(ctx, st.IDsSQL, st.Args...) //nolint:gosec // G202: rendered statement
+	if err != nil {
+		return nil, mapQueryErr(err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		if len(m.IDs) >= st.Limit {
+			m.Truncated = true
+			break
+		}
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan match id: %w", err)
+		}
+		m.IDs = append(m.IDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapQueryErr(err)
+	}
+	return m, nil
 }

@@ -83,3 +83,38 @@ type HeartbeatHistoryRepository interface {
 	// before before.
 	DeleteHeartbeatHistoryBefore(ctx context.Context, before time.Time, limit int) (int64, error)
 }
+
+// HeartbeatAggregate is many heartbeats of one sensor in one bucket, summed
+// in memory before one batched write (liveness store mode).
+type HeartbeatAggregate struct {
+	TenantID           shared.ID
+	SensorID           shared.ID
+	BucketStart        time.Time
+	Beats              int64
+	GapBeats           int64
+	SumGapSeconds      float64
+	MaxGapSeconds      float64
+	MaxIntervalSeconds float64
+	MaxLagMillis       int64
+	Failures           int64
+}
+
+// Add folds one sample into the aggregate (same sensor and bucket).
+func (a *HeartbeatAggregate) Add(s HeartbeatSample) {
+	s = s.Clamped()
+	a.Beats++
+	if s.Gap > 0 {
+		a.GapBeats++
+		a.SumGapSeconds += s.Gap.Seconds()
+		a.MaxGapSeconds = max(a.MaxGapSeconds, s.Gap.Seconds())
+	}
+	a.MaxIntervalSeconds = max(a.MaxIntervalSeconds, s.Interval.Seconds())
+	a.MaxLagMillis = max(a.MaxLagMillis, s.LagMillis)
+	a.Failures = min(a.Failures+s.Failures, 1_000_000)
+}
+
+// HeartbeatBatchRecorder writes many aggregates in one statement.
+// Implemented by postgres.SensorHeartbeatHistoryRepository.
+type HeartbeatBatchRecorder interface {
+	RecordHeartbeatBatch(ctx context.Context, rows []HeartbeatAggregate) error
+}

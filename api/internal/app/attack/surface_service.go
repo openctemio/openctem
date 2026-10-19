@@ -17,22 +17,23 @@ import (
 // SurfaceStats represents aggregated attack surface statistics.
 type SurfaceStats struct {
 	// Summary stats
-	TotalAssets       int     `json:"total_assets"`
-	ExposedServices   int     `json:"exposed_services"`
-	CriticalExposures int     `json:"critical_exposures"`
-	RiskScore         float64 `json:"risk_score"`
+	TotalAssets int `json:"total_assets"`
+	// InternetFacingAssets: assets that are internet-facing
+	// (asset.InternetFacing). A population, not a problem count.
+	InternetFacingAssets int `json:"internet_facing_assets"`
+	// CriticalInternetFacingAssets: the same, limited to critical/high
+	// criticality.
+	CriticalInternetFacingAssets int     `json:"critical_internet_facing_assets"`
+	RiskScore                    float64 `json:"risk_score"`
 
-	// Trends over the last 7 days (TrendWindowDays). Each is a count of what
-	// is NEW in the window, never negative, and never a guess:
+	// Trends over the last 7 days (TrendWindowDays), counts never negative:
 	//   - total_assets_change: assets added to the inventory;
-	//   - exposed_services_change: public assets that were added or whose
-	//     exposure level changed (became public) in the window;
-	//   - critical_exposures_change: the same, limited to critical/high.
-	// Removals are not netted out: a deleted asset leaves no row to count.
-	TotalAssetsChange       int `json:"total_assets_change"`
-	ExposedServicesChange   int `json:"exposed_services_change"`
-	CriticalExposuresChange int `json:"critical_exposures_change"`
-	TrendWindowDays         int `json:"trend_window_days"`
+	//   - newly_exposed: "became internet-facing" changes, counted exactly
+	//     like Assets > What changed (asset.NewlyExposedHistory), so both
+	//     pages show the same number.
+	TotalAssetsChange int `json:"total_assets_change"`
+	NewlyExposed      int `json:"newly_exposed"`
+	TrendWindowDays   int `json:"trend_window_days"`
 
 	// Asset breakdown by type with exposed count
 	AssetBreakdown []AssetTypeBreakdown `json:"asset_breakdown"`
@@ -197,46 +198,23 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 		totalAssets = 0
 	}
 
-	// Get exposed services count (exposure = public)
-	exposedServices, err := s.assetRepo.Count(ctx, asset.Filter{
-		TenantID:  &tenantIDStr,
-		Exposures: []asset.Exposure{asset.ExposurePublic},
-	}.WithAttribution(approved).WithDataScope(scope))
-	if err != nil {
-		s.logger.Error("failed to count exposed services", "error", err)
-		exposedServices = 0
-	}
-
-	// Get critical exposures count (exposure = public AND criticality = critical OR high)
-	criticalExposures, err := s.assetRepo.Count(ctx, asset.Filter{
+	// Internet-facing assets (the one definition, asset.InternetFacing).
+	facing := s.countOrZero(ctx, "internet-facing assets", asset.Filter{
+		TenantID: &tenantIDStr,
+	}.WithInternetFacing(true).WithAttribution(approved).WithDataScope(scope))
+	criticalFacing := s.countOrZero(ctx, "critical internet-facing assets", asset.Filter{
 		TenantID:      &tenantIDStr,
-		Exposures:     []asset.Exposure{asset.ExposurePublic},
 		Criticalities: []asset.Criticality{asset.CriticalityCritical, asset.CriticalityHigh},
-	}.WithAttribution(approved).WithDataScope(scope))
-	if err != nil {
-		s.logger.Error("failed to count critical exposures", "error", err)
-		criticalExposures = 0
-	}
+	}.WithInternetFacing(true).WithAttribution(approved).WithDataScope(scope))
 
-	// Trends: what is new in the last 7 days, counted from the inventory
-	// itself (created_at / exposure_changed_at), with the same data scope as
+	// Trends: what is new in the last 7 days, with the same data scope as
 	// the totals above.
 	since := time.Now().UTC().Add(-trendWindow)
 	newAssets := s.countOrZero(ctx, "new assets", asset.Filter{
 		TenantID:     &tenantIDStr,
 		CreatedAfter: &since,
 	}.WithAttribution(approved).WithDataScope(scope))
-	newlyExposed := s.countOrZero(ctx, "newly exposed assets", asset.Filter{
-		TenantID:                      &tenantIDStr,
-		Exposures:                     []asset.Exposure{asset.ExposurePublic},
-		ExposureChangedOrCreatedAfter: &since,
-	}.WithAttribution(approved).WithDataScope(scope))
-	newlyCritical := s.countOrZero(ctx, "newly exposed critical assets", asset.Filter{
-		TenantID:                      &tenantIDStr,
-		Exposures:                     []asset.Exposure{asset.ExposurePublic},
-		Criticalities:                 []asset.Criticality{asset.CriticalityCritical, asset.CriticalityHigh},
-		ExposureChangedOrCreatedAfter: &since,
-	}.WithAttribution(approved).WithDataScope(scope))
+	newlyExposed := s.countNewlyExposed(ctx, tenantID, scope, since)
 
 	// Get assets with risk score for average calculation
 	avgRiskScore := s.calculateAverageRiskScore(ctx, tenantID, scope)
@@ -251,17 +229,16 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	recentChanges := s.getRecentChanges(ctx, tenantID, scope, 5)
 
 	return &SurfaceStats{
-		TotalAssets:             int(totalAssets),
-		ExposedServices:         int(exposedServices),
-		CriticalExposures:       int(criticalExposures),
-		RiskScore:               avgRiskScore,
-		TotalAssetsChange:       newAssets,
-		ExposedServicesChange:   newlyExposed,
-		CriticalExposuresChange: newlyCritical,
-		TrendWindowDays:         int(trendWindow / (24 * time.Hour)),
-		AssetBreakdown:          assetBreakdown,
-		ExposedServicesList:     exposedServicesList,
-		RecentChanges:           recentChanges,
+		TotalAssets:                  int(totalAssets),
+		InternetFacingAssets:         facing,
+		CriticalInternetFacingAssets: criticalFacing,
+		RiskScore:                    avgRiskScore,
+		TotalAssetsChange:            newAssets,
+		NewlyExposed:                 newlyExposed,
+		TrendWindowDays:              int(trendWindow / (24 * time.Hour)),
+		AssetBreakdown:               assetBreakdown,
+		ExposedServicesList:          exposedServicesList,
+		RecentChanges:                recentChanges,
 	}, nil
 }
 
@@ -273,6 +250,22 @@ func (s *SurfaceService) calculateAverageRiskScore(ctx context.Context, tenantID
 		return 0
 	}
 	return avg
+}
+
+// countNewlyExposed counts the "became internet-facing" changes since the
+// given time with the caller's data scope: the same query as the newly
+// exposed view of Assets > What changed. 0 without a state-history store.
+func (s *SurfaceService) countNewlyExposed(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, since time.Time) int {
+	if s.history == nil {
+		return 0
+	}
+	opts := asset.NewlyExposedHistory(asset.ListStateHistoryOptions{From: &since, Scope: scope, Limit: 1})
+	_, total, err := s.history.List(ctx, tenantID, opts)
+	if err != nil {
+		s.logger.Error("failed to count newly exposed assets", "error", err)
+		return 0
+	}
+	return total
 }
 
 // countOrZero counts assets for a stat card; a failed count is logged and
@@ -341,9 +334,8 @@ func (s *SurfaceService) getExposedServicesList(ctx context.Context, tenantID st
 		pagination.NewSortOption(asset.AllowedSortFields()).Parse("-risk_score,-last_seen"),
 	)
 	result, err := s.assetRepo.List(ctx, asset.Filter{
-		TenantID:  &tenantID,
-		Exposures: []asset.Exposure{asset.ExposurePublic},
-	}.WithAttribution(approved).WithDataScope(scope), opts, pagination.Pagination{Page: 1, PerPage: limit})
+		TenantID: &tenantID,
+	}.WithInternetFacing(true).WithAttribution(approved).WithDataScope(scope), opts, pagination.Pagination{Page: 1, PerPage: limit})
 	if err != nil {
 		s.logger.Error("failed to get exposed services", "error", err)
 		return []ExposedService{}

@@ -2,7 +2,9 @@
 
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState } from '@/features/shared'
+import { EmptyState, ErrorState } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
+import { accessStateOf } from '@/lib/api/access-state'
 import { Gauge } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { coverageState, STATE_BAR, STATE_TEXT } from '../../lib/ctem-colors'
@@ -11,15 +13,23 @@ import type { CtemMaturityTrend } from '../../hooks/use-ctem-dashboard'
 interface CtemMaturityCardProps {
   data?: CtemMaturityTrend
   isLoading?: boolean
+  /** The read failed or was refused. */
+  error?: unknown
+  onRetry?: () => void
 }
 
 /**
  * CTEM maturity gauge — module-gated (`ctem_cycles`). Only rendered when the
- * module is enabled; the fetch is skipped otherwise, so this never sees a 403.
+ * module is enabled; the fetch is skipped otherwise. A viewer restricted by
+ * data scope without the grant for organization figures gets a 403: the card
+ * is left out for them instead of claiming "no closed cycles yet".
  * The endpoint returns an object; the score lives at `data.maturity.score`
  * (0-100), with stage coverage and cycle count read from the same sub-object.
  */
-export function CtemMaturityCard({ data, isLoading }: CtemMaturityCardProps) {
+export function CtemMaturityCard({ data, isLoading, error, onRetry }: CtemMaturityCardProps) {
+  const { t } = useTranslation()
+  const access = data ? undefined : accessStateOf(error)
+  if (access === 'no_access' || access === 'module_off') return null
   const score = data?.maturity?.score ?? 0
   const covered = data?.maturity?.ctem_stage_coverage?.covered_count
   const cycles = data?.maturity?.cycles_analyzed ?? data?.cycles_analyzed ?? 0
@@ -34,6 +44,12 @@ export function CtemMaturityCard({ data, isLoading }: CtemMaturityCardProps) {
       <CardContent>
         {isLoading ? (
           <Skeleton className="h-14 w-full" />
+        ) : access === 'failed' ? (
+          <ErrorState
+            title={t('insights.maturity.subject', 'program maturity')}
+            error={error}
+            onRetry={onRetry}
+          />
         ) : cycles === 0 || !data?.maturity ? (
           <EmptyState
             icon={Gauge}
