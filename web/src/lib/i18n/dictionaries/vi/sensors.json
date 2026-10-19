@@ -1363,5 +1363,11 @@
   "sensors.jobSafety.loosen.privateTargets": "Mục tiêu nội bộ có thể đến sensor không có chính sách cục bộ.",
   "sensors.jobSafety.loosen.interactsh": "Job quét có thể dùng callback ngoài băng tới máy chủ bên ngoài.",
   "sensors.jobSafety.loosen.customTemplates": "Job quét có thể mang template tùy chỉnh.",
-  "sensors.jobSafety.loosen.insecureTls": "Công cụ quét có thể chấp nhận chứng chỉ TLS không hợp lệ."
+  "sensors.jobSafety.loosen.insecureTls": "Công cụ quét có thể chấp nhận chứng chỉ TLS không hợp lệ.",
+  "sensors.checks.label.setup": "Thiết lập",
+  "sensors.checks.label.posture": "Tư thế bảo mật",
+  "sensors.checks.setup.text": "Sensor báo các kiểm tra thiết lập cần chú ý. Mở Thiết lập & sức khỏe để xem chi tiết.",
+  "sensors.checks.issue.setup": "Thiết lập cần chú ý",
+  "sensors.checks.issue.posture": "Đang chạy chưa được gia cố",
+  "sensors.health.attention.posture": "chưa gia cố"
 }
