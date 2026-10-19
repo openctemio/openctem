@@ -524,6 +524,11 @@ type SensorConfigConfig struct {
 	// manifest again, so the sensor goes back to full heartbeats.
 	SlimHeartbeat bool
 
+	// AllowUnsignedJobs lets a production API start without SIGNER_SOCKET
+	// (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS): jobs are then not signed.
+	// Development and tests never need it.
+	AllowUnsignedJobs bool
+
 	// SignerSocket is the Unix socket of the job signer (cmd/signer,
 	// RFC-040 §5.6, docs/architecture/job-signing.md): SIGNER_SOCKET.
 	// Empty (the default): jobs are not signed and claims are as before.
@@ -1513,6 +1518,7 @@ func Load() (*Config, error) {
 			KeyRenewBefore:        getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
 			SlimHeartbeat:         getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
 			SignerSocket:          getEnv("SIGNER_SOCKET", ""),
+			AllowUnsignedJobs:     getEnvBool("SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS", false),
 			SignerTimeout:         getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
 			HeartbeatInterval:     getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
 			HeartbeatBusyInterval: getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
@@ -2482,7 +2488,21 @@ func (c *Config) validateProduction() error {
 	if err := c.validateProductionAuth(); err != nil {
 		return err
 	}
-	return nil
+	return c.validateProductionJobSigning()
+}
+
+// validateProductionJobSigning: in production every job a sensor runs is
+// signed by the separate job signer (RFC-040 §5.6; research/191 A-1,
+// owner decision D2). Without SIGNER_SOCKET a compromised API or database
+// could hand any sensor any job, so the API refuses to start, unless the
+// operator accepts that explicitly (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS).
+func (c *Config) validateProductionJobSigning() error {
+	if strings.TrimSpace(c.SensorConfig.SignerSocket) != "" || c.SensorConfig.AllowUnsignedJobs {
+		return nil
+	}
+	return fmt.Errorf("SIGNER_SOCKET must be set in production: sensor jobs are signed by the job signer " +
+		"(the signer service of the default compose file); to run without it set SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS=true " +
+		"(sensors paired from now on refuse to start without a signer)")
 }
 
 // validateProductionAuth validates auth configuration for production.

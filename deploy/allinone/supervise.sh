@@ -146,6 +146,25 @@ stop_all() {
 on_signal() { log "signal received; stopping children"; stop_all TERM; wait; exit 143; }
 trap on_signal TERM INT
 
+# The job signer (docs/architecture/job-signing.md): every job handed to a
+# sensor is signed by it, and a production API refuses to start without it.
+# Its key is created on first start in /data/signer (back up /data). Here it
+# shares the container with the API, so it is a separate process with its
+# own key file but not the separate container and user of the split
+# deployment. An operator's own SIGNER_SOCKET (an external signer) wins;
+# OPENCTEM_SIGNER=off starts none.
+if [ -z "${SIGNER_SOCKET:-}" ] && [ "${OPENCTEM_SIGNER:-on}" = on ]; then
+  mkdir -p /data/signer/keys /data/signer/state /tmp/openctem-signer
+  chmod 0700 /data/signer /data/signer/keys /data/signer/state /tmp/openctem-signer
+  start signer /opt/openctem/api env SIGNER_KEY_FILE=/data/signer/keys/signer.pem SIGNER_GENERATE_KEY=true \
+    SIGNER_STATE_DIR=/data/signer/state SIGNER_SOCKET=/tmp/openctem-signer/signer.sock ./openctem-signer serve
+  for _ in $(seq 1 30); do
+    [ -S /tmp/openctem-signer/signer.sock ] && break
+    sleep 1
+  done
+  [ -S /tmp/openctem-signer/signer.sock ] || { log "the job signer did not start; not starting the API"; stop_all TERM; exit 1; }
+  export SIGNER_SOCKET=/tmp/openctem-signer/signer.sock
+fi
 start api /opt/openctem/api ./server
 start web /opt/openctem/web env PORT=3000 HOSTNAME="$WEB_HOSTNAME" node server-with-ws.mjs
 # The platform console: its own app on :3001, talking to the API's console

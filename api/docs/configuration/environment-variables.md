@@ -304,6 +304,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` | duration | `24h` |  |  | How often reviewed quarantined sensor results older than the retention are deleted. Pending items are never purged. |
 | `SENSOR_RESULT_QUARANTINE_RETENTION` | duration | `720h` |  |  | How long a reviewed quarantined sensor result is kept. |
 | `SENSOR_TRANSPORT_V3` | auto \| off | `auto` |  |  | `auto` serves sensor protocol v3 and picks its bindings itself (HTTPS always, gRPC once the sensor CA loads and its self-probe passes). `off` is the emergency switch: every sensor falls back to v2 at its next call. |
+| `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS` | bool | `false` |  |  | Lets a production API start without `SIGNER_SOCKET`: sensor jobs are then not signed, and sensors paired from then on refuse to start. Development only. |
 | `SIGNER_SOCKET` | path | empty |  |  | Unix socket of the job signer (`cmd/signer`). Set: every job handed to a sensor is signed, and a job the signer refuses is not handed out. Unset: jobs are not signed. |
 | `SIGNER_TIMEOUT` | duration | `2s` |  |  | Timeout of one call to the job signer. |
 
@@ -495,6 +496,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `REKEY_NEW_KEY_FORMAT` | string | empty |  |  | `rekey`: format of `REKEY_NEW_KEY`. Unset: detected. |
 | `REKEY_OLD_KEY` | string | empty |  | yes | `rekey`: the encryption key being retired. |
 | `REKEY_OLD_KEY_FORMAT` | string | empty |  |  | `rekey`: format of `REKEY_OLD_KEY` (`hex`, `base64` or `raw`). Unset: detected. |
+| `SIGNER_GENERATE_KEY` | bool | `false` |  |  | `openctem-signer serve`: `true` creates the signing key on first start when `SIGNER_KEY_FILE` does not exist (never replaces one) and logs its id. The default compose file sets it. |
 | `SIGNER_KEYSET_FILE` | string | empty |  |  | `openctem-signer`: the root-signed keyset the signer serves to sensors. |
 | `SIGNER_KEY_FILE` | string | empty |  |  | `openctem-signer`: the job-signing private key (PEM, mode 0400). |
 | `SIGNER_LEDGER` | string | empty |  |  | `openctem-signer`: scope ledger mode (`enforce`, `audit` or `off`). |
