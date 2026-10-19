@@ -96,19 +96,24 @@ func ComputeMaturity(cycles []CycleMetrics) MaturityBreakdown {
 	resolved := latest.Value(MetricFindingsResolved)
 	churn := latest.Value(MetricPClassChurn)
 	drift := latest.Value(MetricScopeDriftSize)
-	coverage := latest.Value(MetricValidationCoverage)
-	mttr := latest.Value(MetricMTTRHours)
+	coverage, hasCoverage := latest.Lookup(MetricValidationCoverage)
+	mttr, hasMTTR := latest.Lookup(MetricMTTRHours)
 
 	// Each component declares a base weight and whether it is currently
 	// scorable. Inactive components are reported but weighted 0; the active
 	// base weights are renormalized to sum to 1.0 in finalize.
 	var comps []weighted
 
-	// 1. Validation coverage — already a percentage; always scorable.
-	comps = append(comps, weighted{active: true, c: MaturityComponent{
+	// 1. Validation coverage — already a percentage; scorable when the cycle
+	// remediated something (no remediated finding = no sample, excluded).
+	covDetail := "share of remediated findings with validation evidence (%)"
+	if !hasCoverage {
+		covDetail = "no finding remediated this cycle; unscored"
+	}
+	comps = append(comps, weighted{active: hasCoverage, c: MaturityComponent{
 		Name: "validation_coverage", RawValue: coverage, Score: clamp(coverage, 0, 100),
 		Weight: WeightValidationCoverage,
-		Detail: "share of closed findings with validation evidence (%)",
+		Detail: covDetail,
 	}})
 
 	// 2. Resolution throughput — resolved / opened, clamped to 100%; always
@@ -126,14 +131,17 @@ func ComputeMaturity(cycles []CycleMetrics) MaturityBreakdown {
 		Detail: "findings_resolved / findings_opened this cycle",
 	}})
 
-	// 3. MTTR trend — only scorable with a prior cycle to compare against.
-	// Without one there is no direction to measure, so it is excluded rather
-	// than reading a hollow neutral 50.
+	// 3. MTTR trend — only scorable with a prior cycle to compare against,
+	// and only when both cycles remediated something. Without a direction to
+	// measure it is excluded rather than reading a hollow neutral 50, and a
+	// cycle that fixed nothing (no MTTR sample) never reads as a 100% drop.
 	mttrScore := 0.0
 	mttrDetail := "no prior cycle; unscored (excluded until a prior cycle exists)"
 	mttrActive := false
-	if prev != nil {
-		if p := prev.Value(MetricMTTRHours); p > 0 {
+	if !hasMTTR {
+		mttrDetail = "no finding remediated this cycle; unscored"
+	} else if prev != nil {
+		if p, ok := prev.Lookup(MetricMTTRHours); ok && p > 0 {
 			improvement := (p - mttr) / p // >0 means MTTR fell
 			mttrScore = clamp(50+50*improvement, 0, 100)
 			mttrDetail = "MTTR direction vs previous cycle (lower is better)"
