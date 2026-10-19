@@ -3,8 +3,8 @@ package remediation
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -35,7 +35,16 @@ type KeyInput struct {
 	// SolutionText is the scanner's remediation recommendation, the fallback
 	// grouping signal for host/infra findings.
 	SolutionText string
+	// RuleID is the scanner rule that raised the finding. Code and
+	// configuration findings group by solution text only within one rule.
+	RuleID string
 }
+
+// KeyAlgorithmVersion is the version of DeriveKey's rules. A stored key with
+// an older version is derived again (KeyApplier.Backfill) before the
+// suggestion generator trusts it: version 1 grouped any solution text, so
+// unrelated findings with the same boilerplate advice shared one key.
+const KeyAlgorithmVersion = 3
 
 // Key kinds: the part of a key before the first colon.
 const (
@@ -63,8 +72,11 @@ func KeyKind(key string) string {
 //  2. A package with a known fix: "upgrade:<ecosystem>:<name>:<target>",
 //     where target is the nearest fixed version for the installed version.
 //     Two installed versions that the same upgrade fixes share one key.
-//  3. A specific solution text: "sol:<source>:<sha256>", only when the text
-//     names something concrete (a version or an id) and is not generic advice.
+//  3. A specific solution text: "sol:<source>:<sha256>". Only the sentences
+//     that name something concrete (a version or an advisory id) count;
+//     boilerplate ("Apply the suggested fix code.") never forms a group. For
+//     code and configuration sources the rule id is part of the hash, so two
+//     different rules with the same advice never share a fix.
 func DeriveKey(in KeyInput) (key, title string, ok bool) {
 	source := strings.ToLower(strings.TrimSpace(in.Source))
 	if source == string(vulnerability.FindingSourcePentest) {
@@ -89,14 +101,31 @@ func DeriveKey(in KeyInput) (key, title string, ok bool) {
 				clip("Upgrade "+name+" to "+target, maxTitle), true
 		}
 	}
-	if s := normalize(in.SolutionText); specificSolution(s) {
+	if spec, title := SpecificSolution(in.SolutionText); spec != "" {
 		if source == "" {
 			source = "unknown"
 		}
-		sum := sha256.Sum256([]byte(s))
-		return KindSol + ":" + source + ":" + hex.EncodeToString(sum[:]), firstLine(in.SolutionText), true
+		if ruleScopedSources[source] {
+			rule := strings.ToLower(strings.TrimSpace(in.RuleID))
+			if rule == "" {
+				return "", "", false
+			}
+			spec = rule + "\x1f" + spec
+		}
+		sum := sha256.Sum256([]byte(spec))
+		return KindSol + ":" + source + ":" + hex.EncodeToString(sum[:]), clip(title, maxTitle), true
 	}
 	return "", "", false
+}
+
+// ruleScopedSources are sources whose solution text is advice for one rule
+// at one code or configuration location: the same advice under two rules is
+// two different fixes.
+var ruleScopedSources = map[string]bool{
+	string(vulnerability.FindingSourceSAST):  true,
+	string(vulnerability.FindingSourceIaC):   true,
+	string(vulnerability.FindingSourceSARIF): true,
+	string(vulnerability.FindingSourceCSPM):  true,
 }
 
 const maxTitle = 200
@@ -120,34 +149,64 @@ func secretTitle(secretType, fp string) string {
 	return clip("Rotate the leaked "+kind+" secret "+short, maxTitle)
 }
 
-// minSolutionLen is the shortest normalized solution text that may form a
-// group: shorter advice ("Upgrade", "Apply patch") says nothing specific.
+// minSolutionLen is the shortest normalized specific text that may form a
+// group: shorter advice ("Upgrade", "Apply patch 1") says nothing specific.
 const minSolutionLen = 16
 
-// genericSolutions are advice texts that fit any finding; grouping by them
-// would put unrelated findings under one fix.
-var genericSolutions = map[string]bool{
-	"upgrade to the latest version":                 true,
-	"update to the latest version":                  true,
-	"upgrade to the latest version of the package":  true,
-	"apply the latest security patches":             true,
-	"apply the vendor patch":                        true,
-	"apply vendor patches":                          true,
-	"rotate the secret":                             true,
-	"rotate the secret and remove it from the code": true,
-	"remove the secret from the code":               true,
-	"no solution available":                         true,
-	"n/a":                                           true,
+var (
+	urlPattern = regexp.MustCompile(`https?://\S+`)
+	// A version ("2.17.1", "5.15"), a "to/version/v" followed by a number
+	// ("to PHP 8" is not; "version 8" is), or an advisory or patch id.
+	specificToken = regexp.MustCompile(`\d+\.\d+|\b(?:version|v)\s?\d+\b|` +
+		`\b(?:cve-\d{4}-\d{4,}|ghsa(?:-[0-9a-z]{4}){3}|ms\d{2}-\d{3}|kb\d{6,}|rhsa-\d{4}:\d+|usn-\d+-\d+|dsa-\d+(?:-\d+)?|apsb\d{2}-\d{2})\b`)
+	sentenceEnd = regexp.MustCompile(`[.;!?](?:\s+|$)|\n+`)
+)
+
+// SpecificSolution returns the concrete part of a solution text, normalized
+// (the sentences that name a version or an advisory id, in order), and the
+// first such sentence as written, for a title. Both are empty when the text
+// is boilerplate that fits any finding: "Apply the suggested fix code.",
+// "Follow the remediation steps", "Upgrade to the latest version".
+func SpecificSolution(text string) (spec, title string) {
+	sentences := splitSentences(text)
+	parts := make([]string, 0, len(sentences))
+	for _, raw := range sentences {
+		n := normalize(raw)
+		if n == "" || !specificToken.MatchString(urlPattern.ReplaceAllString(n, "")) {
+			continue
+		}
+		if title == "" {
+			title = strings.TrimSpace(raw)
+		}
+		parts = append(parts, n)
+	}
+	spec = strings.Join(parts, " ")
+	if len(spec) < minSolutionLen {
+		return "", ""
+	}
+	return spec, title
 }
 
-// specificSolution reports whether a normalized solution text is concrete
-// enough to group by: long enough, not generic advice, and naming a version
-// or an identifier (it contains a digit).
-func specificSolution(s string) bool {
-	if len(s) < minSolutionLen || genericSolutions[strings.TrimRight(s, ".")] {
-		return false
+// splitSentences cuts a text at sentence ends and line breaks. A dot inside a
+// version ("2.17.1") is not a sentence end: it is not followed by a space.
+func splitSentences(text string) []string {
+	var out []string
+	last := 0
+	for _, m := range sentenceEnd.FindAllStringIndex(text, -1) {
+		// Keep the terminating punctuation with its sentence.
+		end := m[0]
+		if end < len(text) && text[end] != '\n' {
+			end++
+		}
+		if s := strings.TrimSpace(text[last:end]); s != "" {
+			out = append(out, s)
+		}
+		last = m[1]
 	}
-	return strings.IndexFunc(s, unicode.IsDigit) >= 0
+	if s := strings.TrimSpace(text[last:]); s != "" {
+		out = append(out, s)
+	}
+	return out
 }
 
 func isHex(s string) bool {
@@ -163,15 +222,6 @@ func isHex(s string) bool {
 // different renderings of the same fix map to one key.
 func normalize(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(s), " "))
-}
-
-// firstLine returns a compact, single-line title from possibly multi-line text.
-func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
-		s = strings.TrimSpace(s[:i])
-	}
-	return clip(s, maxTitle)
 }
 
 func clip(s string, n int) string {
