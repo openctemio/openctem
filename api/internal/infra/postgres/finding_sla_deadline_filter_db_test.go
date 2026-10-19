@@ -124,3 +124,99 @@ func TestStatsBySpec_SLADeadlineBuckets(t *testing.T) {
 		t.Errorf("restricted over-90 bucket = %d, want 0", got)
 	}
 }
+
+// One breakdown read returns the standing tiles and the past-due age buckets
+// over the caller's findings: the buckets add up to the past-due total, and
+// neither another tenant nor an asset outside the caller's data scope changes
+// any number.
+func TestSLABreakdownWhere_BucketsAddUpAndStayInScope(t *testing.T) {
+	db := openStatsTestDB(t)
+	ctx := context.Background()
+	tenantID := seedTestTenant(ctx, t, db)
+	visible := seedTestAsset(ctx, t, db, tenantID)
+	hidden := seedTestAsset(ctx, t, db, tenantID)
+
+	seed := func(tenant, asset shared.ID, status, sla, sev string, daysPast float64) {
+		t.Helper()
+		id := shared.NewID()
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO findings
+			   (id, tenant_id, asset_id, source, tool_name, message, severity, status, fingerprint, sla_status, sla_deadline)
+			 VALUES ($1, $2, $3, 'sca', 'sla-breakdown', 'probe', $4, $5, $6, $7, NOW() - make_interval(secs => $8))`,
+			id.String(), tenant.String(), asset.String(), sev, status, "sla-d-"+id.String(), sla, daysPast*86400); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	seed(tenantID, visible, "new", "overdue", "critical", 2)
+	seed(tenantID, visible, "confirmed", "exceeded", "high", 6)
+	seed(tenantID, visible, "in_progress", "overdue", "high", 15)
+	seed(tenantID, visible, "new", "exceeded", "low", 45)
+	seed(tenantID, hidden, "new", "overdue", "critical", 120) // outside the restricted caller's scope
+	seed(tenantID, visible, "new", "warning", "medium", -1)
+	seed(tenantID, visible, "new", "on_track", "medium", -5)
+	seed(tenantID, visible, "new", "on_track", "medium", -6)
+	seed(tenantID, visible, "resolved", "overdue", "high", 3) // closed: not in the Open lens
+	other := seedTestTenant(ctx, t, db)
+	seed(other, seedTestAsset(ctx, t, db, other), "new", "overdue", "critical", 3)
+
+	userID := shared.NewID()
+	if _, err := db.ExecContext(ctx, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'sla-breakdown')`,
+		userID.String(), userID.String()+"@sla-breakdown.test"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, userID.String())
+	})
+	if _, err := db.ExecContext(ctx, `INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($1, $2, $3)`,
+		userID.String(), tenantID.String(), visible.String()); err != nil {
+		t.Fatalf("seed access: %v", err)
+	}
+
+	repo := NewFindingRepository(&DB{DB: db})
+	breakdown := func(actor filterspec.Actor) *vulnerability.SLABreakdown {
+		t.Helper()
+		v, _ := url.ParseQuery("state=open")
+		spec, err := filterspec.ParseValues(v, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict})
+		if err != nil {
+			t.Fatal(err)
+		}
+		where, err := filterspec.Compile(spec, vulnerability.FindingFields, actor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := repo.GetSLABreakdownWhere(ctx, where)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	sum := func(b *vulnerability.SLABreakdown) int64 { return b.UpTo7 + b.D8to30 + b.D31to90 + b.Over90 }
+
+	admin, err := filterspec.UserActor(filterspec.UserActorInput{TenantID: tenantID, UserID: shared.NewID(), IsAdmin: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := breakdown(admin)
+	if b.Total != 8 || b.PastDue != 5 || b.DueSoon != 1 || b.OnTrack != 2 {
+		t.Errorf("admin tiles = total %d past %d soon %d ok %d, want 8/5/1/2", b.Total, b.PastDue, b.DueSoon, b.OnTrack)
+	}
+	if b.UpTo7 != 2 || b.D8to30 != 1 || b.D31to90 != 1 || b.Over90 != 1 || sum(b) != b.PastDue {
+		t.Errorf("admin buckets = %d/%d/%d/%d, want 2/1/1/1 adding up to %d", b.UpTo7, b.D8to30, b.D31to90, b.Over90, b.PastDue)
+	}
+	if b.PastDueBySeverity[vulnerability.SeverityCritical] != 2 || b.PastDueBySeverity[vulnerability.SeverityHigh] != 2 {
+		t.Errorf("admin past-due by severity = %v", b.PastDueBySeverity)
+	}
+
+	restricted, err := filterspec.UserActor(filterspec.UserActorInput{
+		TenantID: tenantID, UserID: userID, Scope: &shared.DataScope{TenantID: tenantID, UserID: userID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := breakdown(restricted)
+	if r.PastDue != 4 || r.Over90 != 0 || sum(r) != r.PastDue || r.Total != 7 {
+		t.Errorf("restricted = total %d past %d over90 %d sum %d, want 7/4/0/4 (hidden asset and other tenant excluded)", r.Total, r.PastDue, r.Over90, sum(r))
+	}
+	if r.PastDueBySeverity[vulnerability.SeverityCritical] != 1 {
+		t.Errorf("restricted critical = %d, want 1", r.PastDueBySeverity[vulnerability.SeverityCritical])
+	}
+}
