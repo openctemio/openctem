@@ -83,6 +83,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "dashboard:read",
+		Jobs:       []string{"DashboardFactsController", "DashboardFactReconcileController"},
 	},
 	{
 		ID: ModuleAssets, Slug: "assets", Name: "Assets",
