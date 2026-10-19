@@ -236,7 +236,7 @@ export function FindingDetailDrawer({
                   value={triage.severity}
                   onChange={triage.changeSeverity}
                   loading={triage.severityBusy}
-                  disabled={!canRescore}
+                  disabled={!canRescore || !!detail.pendingSeverityRequest}
                   cvss={detail.cvss}
                   showCheck
                 />

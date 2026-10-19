@@ -88,6 +88,9 @@ type Importer struct {
 	fetchMu            sync.Mutex
 	fetcher            *transfer.Fetcher
 	consumerRegistered bool
+
+	// aliases applies the release's alias dictionary (nil: not applied).
+	aliases software.AliasWriter
 }
 
 // NewImporter creates an importer. It refuses a base URL that is not a
