@@ -482,7 +482,7 @@ index.
 | Failure | Behaviour |
 |---|---|
 | Redis restarted empty, emptied, or a new generation | the controller rebuilds the store from the Postgres checkpoint (a seed never overwrites a newer entry; every seeded deadline is at least the end of the grace) and holds every move for the cold-start grace (2 min, shared through `oc:sl:grace`). No mass offline. |
-| Redis unreachable | heartbeats fall back to Postgres, at most one per sensor per minute and 50 per second per replica (`openctem_sensor_heartbeat_writes_total{kind="fallback"}`, the rest `dropped`); the controller moves nobody until Redis is back, then rebuilds and holds for the grace. |
+| Redis unreachable | heartbeats fall back to Postgres, at most one per sensor per minute and 50 per second per replica (`openctem_sensor_heartbeat_writes_total{kind="fallback"}`, the rest `dropped`), except that a sensor which would reach stale before its next allowed write is written past the replica budget (the controller may still read the store from another replica, so a dropped sensor must not be walked to offline); the controller moves nobody until Redis is back, then rebuilds and holds for the grace. |
 | Failed Postgres write of a change | the digest is forgotten, so the next heartbeat writes again. |
 | Two replicas, one sensor | the script is the single decision point: one change is written once. |
 | Eviction | run Redis with `maxmemory-policy noeviction` (the job queue needs it too) and alert at 80 % of `maxmemory`; about 1 KB per sensor. |
