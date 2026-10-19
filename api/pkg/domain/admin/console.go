@@ -100,6 +100,12 @@ type Session struct {
 	// then (time-boxed elevation); without them, read-only.
 	ElevatedRole  AdminRole
 	ElevatedUntil *time.Time
+	// PendingIdPIssuer and PendingIdPSubject: on a pending session opened by
+	// the first IdP sign-in of an unbound administrator, the IdP identity to
+	// bind once this administrator proves their own console second factor.
+	// Empty otherwise. An IdP identity is never bound by email alone.
+	PendingIdPIssuer  string
+	PendingIdPSubject string
 }
 
 // Elevation bounds.

@@ -179,6 +179,7 @@ remediation_suggestion_runs
 remediation_suggestions
 remediation_task_events
 remediation_task_members
+remediation_task_queries
 remediation_tasks
 report_schedules
 risk_snapshots
