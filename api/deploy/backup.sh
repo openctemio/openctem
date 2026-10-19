@@ -14,15 +14,24 @@
 #   gateway-data.tar.gz  the gateway's certificates and internal CA (TLS mode
 #                        internal: every sensor trusts that CA; losing it means
 #                        re-configuring every sensor)
-#   env                  the .env with every secret (APP_ENCRYPTION_KEY decrypts
-#                        the stored credentials: a database dump without it is
-#                        unusable, and with it the backup is as sensitive as the
-#                        database itself)
+#   signer-keys.tar.gz,  the job-signer volumes, when the signer overlay created them
+#   signer-state.tar.gz  (losing signer-state lets sequence numbers repeat)
+#   env.tar.gz           the .env with every secret, in its own archive
+#                        (APP_ENCRYPTION_KEY decrypts the stored credentials: a
+#                        database dump without it is unusable, and with it the
+#                        backup is as sensitive as the database itself)
 #   VERSION              OPENCTEM_VERSION of the stack that was backed up
 #
+# Encryption: set BACKUP_AGE_RECIPIENT to an age public key (age1...) or to the
+# path of an age recipients file and every file above except VERSION is written
+# as <name>.age; no plaintext copy is left, also after a failed run. Whoever can
+# read the backup directory then still cannot read the data without the private
+# key, which should not live on this host. verify and restore decrypt with
+# BACKUP_AGE_IDENTITY (path of the age identity file). Without a recipient the
+# files are plaintext and the script warns on every run.
+#
 # Backups land on this host. They protect against a bad upgrade or deleted data,
-# not against losing the host: copy $BACKUP_DIR elsewhere, encrypted (for
-# example `age -r <recipient>` or your backup tool's encryption), and run
+# not against losing the host: copy $BACKUP_DIR elsewhere, and run
 # `./backup.sh verify` regularly (monthly at least) to prove a restore works.
 #
 # Settings (environment): BACKUP_DIR (default ./backups), KEEP (number of
@@ -30,7 +39,7 @@
 # reads, default ./backup-status; compose mounts the same variable), METRICS_TEXTFILE_DIR (node-exporter textfile
 # directory; writes openctem_backup.prom for the BackupStale/BackupFailed alerts
 # of deploy/observability), COMPOSE_FILE / COMPOSE_PROJECT_NAME as for docker compose.
-set -euo pipefail
+set -Eeuo pipefail # -E: the ERR trap also fires inside functions (volume_tar)
 umask 077
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,6 +65,32 @@ HELPER_IMAGE="${HELPER_IMAGE:-postgres:17}"
 
 log() { printf '%s backup: %s\n' "$(date -u +%FT%TZ)" "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
+
+warn_plain() { log "WARNING: BACKUP_AGE_RECIPIENT is not set: this backup (database, volumes, CA keys and .env with APP_ENCRYPTION_KEY) is stored in PLAINTEXT. Anyone who can read ${BACKUP_DIR} can read every tenant's data and credentials. Set BACKUP_AGE_RECIPIENT to an age public key." >&2; }
+
+# age wrappers. The recipient is a public key or the path of a recipients file.
+age_encrypt() { # stdin -> stdout
+	if [ -f "$BACKUP_AGE_RECIPIENT" ]; then age -R "$BACKUP_AGE_RECIPIENT"; else age -r "$BACKUP_AGE_RECIPIENT"; fi
+}
+seal() { # seal <file>: encrypt to <file>.age and remove the plaintext (no-op without a recipient)
+	[ -n "${BACKUP_AGE_RECIPIENT:-}" ] || return 0
+	age_encrypt <"$1" >"$1.age"
+	find "$1" -delete
+}
+unseal() { # unseal <base>: plaintext of <base> (or <base>.age) on stdout; use in a pipeline (pipefail)
+	if [ -f "$1.age" ]; then
+		age -d -i "$BACKUP_AGE_IDENTITY" "$1.age"
+	else
+		cat "$1"
+	fi
+}
+have_file() { [ -s "$1" ] || [ -s "$1.age" ]; }
+need_identity() { # need_identity <backup dir>: refuse early when the backup is encrypted
+	if [ -n "$(find "$1" -maxdepth 1 -name '*.age' -print -quit)" ]; then
+		[ -n "${BACKUP_AGE_IDENTITY:-}" ] && [ -f "$BACKUP_AGE_IDENTITY" ] || die "$1 is encrypted: set BACKUP_AGE_IDENTITY to your age identity file"
+		command -v age >/dev/null || die "the age command is not installed"
+	fi
+}
 
 STATUS_DIR="${BACKUP_STATUS_DIR:-${here}/backup-status}"
 
@@ -93,7 +128,12 @@ do_backup() {
 	dir="${BACKUP_DIR}/${ts}"
 	mkdir -p "$dir"
 	chmod 0700 "$BACKUP_DIR" "$dir"
-	trap 'metrics 1; log "FAILED; partial backup left in ${dir}"' ERR
+	# On failure no plaintext may stay behind when encryption is on.
+	trap 'metrics 1; [ -z "${BACKUP_AGE_RECIPIENT:-}" ] || find "$dir" -type f ! -name "*.age" ! -name VERSION -delete; log "FAILED; partial backup left in ${dir}"' ERR
+	if [ -z "${BACKUP_AGE_RECIPIENT:-}" ]; then warn_plain; else
+		command -v age >/dev/null || die "BACKUP_AGE_RECIPIENT is set but the age command is not installed"
+		[ -f "$BACKUP_AGE_RECIPIENT" ] || [[ "$BACKUP_AGE_RECIPIENT" == age1* ]] || die "BACKUP_AGE_RECIPIENT is neither an age public key (age1...) nor an existing recipients file"
+	fi
 
 	log "database ${db_name} -> ${dir}/openctem.dump"
 	dc exec -T postgres pg_dump -U "$db_super" -d "$db_name" -Fc --no-owner >"${dir}/openctem.dump"
@@ -102,8 +142,17 @@ do_backup() {
 	volume_tar api-data "${dir}/api-data.tar.gz"
 	log "volume gateway-data"
 	volume_tar gateway-data "${dir}/gateway-data.tar.gz"
-	[ -f .env ] && cp .env "${dir}/env"
+	for v in signer-keys signer-state; do
+		if docker volume inspect "${project}_${v}" >/dev/null 2>&1; then
+			log "volume ${v}"
+			volume_tar "$v" "${dir}/${v}.tar.gz"
+		fi
+	done
+	if [ -f .env ]; then tar -C "$here" -czf "${dir}/env.tar.gz" .env; fi
 	env_get OPENCTEM_VERSION >"${dir}/VERSION"
+	for f in "${dir}"/*; do
+		case "$f" in */VERSION) ;; *) seal "$f" ;; esac
+	done
 	chmod 0600 "${dir}"/*
 	trap - ERR
 
@@ -126,14 +175,15 @@ count_sql="SELECT format('%s %s', c.relname, (xpath('/row/n/text()', query_to_xm
 
 do_verify() {
 	local dir="${1:-$(newest)}"
-	[ -n "$dir" ] && [ -s "${dir}/openctem.dump" ] || die "no backup found in ${BACKUP_DIR}"
+	[ -n "$dir" ] && have_file "${dir}/openctem.dump" || die "no backup found in ${BACKUP_DIR}"
+	need_identity "$dir"
 	name="openctem-restore-check-$$"
 	log "restoring ${dir}/openctem.dump into a throwaway Postgres (${name})"
 	docker run -d --name "$name" --network none -e POSTGRES_PASSWORD=check -e POSTGRES_DB=check "$HELPER_IMAGE" >/dev/null
 	trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
 	for _ in $(seq 1 60); do docker exec "$name" pg_isready -U postgres -q 2>/dev/null && break; sleep 1; done
 	sleep 2
-	docker exec -i "$name" pg_restore -U postgres -d check --no-owner --no-privileges --exit-on-error <"${dir}/openctem.dump"
+	unseal "${dir}/openctem.dump" | docker exec -i "$name" pg_restore -U postgres -d check --no-owner --no-privileges --exit-on-error
 	docker exec "$name" psql -U postgres -d check -qtAX -c "$count_sql" >"${BACKUP_DIR}/.verify-restored"
 	dc exec -T postgres psql -U "$db_super" -d "$db_name" -qtAX -c "$count_sql" >"${BACKUP_DIR}/.verify-live"
 	local tables
@@ -146,8 +196,11 @@ do_verify() {
 		log "verify OK: ${tables} tables restored; row counts that differ from the running database (changes since the backup):"
 		{ diff "${BACKUP_DIR}/.verify-live" "${BACKUP_DIR}/.verify-restored" || true; } | sed -n 's/^[<>] /  /p' | head -40
 	fi
-	for v in api-data gateway-data; do
-		gzip -t "${dir}/${v}.tar.gz" || die "${v}.tar.gz is corrupt"
+	for v in api-data gateway-data signer-keys signer-state; do
+		if ! have_file "${dir}/${v}.tar.gz"; then
+			case "$v" in api-data | gateway-data) die "${v}.tar.gz is missing" ;; *) continue ;; esac
+		fi
+		unseal "${dir}/${v}.tar.gz" | gzip -t || die "${v}.tar.gz is corrupt"
 	done
 	log "volume archives OK"
 	find "${BACKUP_DIR}/.verify-restored" "${BACKUP_DIR}/.verify-live" -delete
@@ -156,7 +209,8 @@ do_verify() {
 do_restore() {
 	local dir="$1"
 	[ "${2:-}" = "--yes" ] || die "restore replaces the database and volumes of the running stack; rerun with --yes"
-	[ -s "${dir}/openctem.dump" ] || die "${dir} is not a backup"
+	have_file "${dir}/openctem.dump" || die "${dir} is not a backup"
+	need_identity "$dir"
 	if [ -f "${dir}/VERSION" ] && [ "$(cat "${dir}/VERSION")" != "$(env_get OPENCTEM_VERSION)" ]; then
 		log "WARNING: the backup was taken on $(cat "${dir}/VERSION"); the stack runs $(env_get OPENCTEM_VERSION)."
 		log "         Restore with the backup's OPENCTEM_VERSION, then upgrade (migrations run on start)."
@@ -166,13 +220,14 @@ do_restore() {
 	log "restoring the database"
 	dc exec -T postgres psql -U "$db_super" -d postgres -v ON_ERROR_STOP=1 -qX \
 		-c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${db_name}' AND pid <> pg_backend_pid()" >/dev/null
-	dc exec -T postgres pg_restore -U "$db_super" -d "$db_name" --clean --if-exists --no-owner --exit-on-error <"${dir}/openctem.dump"
+	unseal "${dir}/openctem.dump" | dc exec -T postgres pg_restore -U "$db_super" -d "$db_name" --clean --if-exists --no-owner --exit-on-error
 	# The least-privilege roles (db-roles) re-grant on the restored schema.
 	dc up -d --no-deps db-roles >/dev/null
-	for v in api-data gateway-data; do
+	for v in api-data gateway-data signer-keys signer-state; do
+		have_file "${dir}/${v}.tar.gz" || continue
 		log "restoring volume ${v}"
-		docker run --rm -i --network none -v "${project}_${v}:/v" "$HELPER_IMAGE" \
-			sh -c 'find /v -mindepth 1 -delete && tar -C /v -xzf -' <"${dir}/${v}.tar.gz"
+		unseal "${dir}/${v}.tar.gz" | docker run --rm -i --network none -v "${project}_${v}:/v" "$HELPER_IMAGE" \
+			sh -c 'find /v -mindepth 1 -delete && tar -C /v -xzf -'
 	done
 	log "starting the stack"
 	dc up -d
