@@ -148,14 +148,16 @@ func (s *PriorityClassificationService) SetThreatModelOracle(o ThreatModelOracle
 }
 
 // setControlProtection applies a single asset's effective reduction factor to a
-// priority context. A 0 factor is the compensating_controls column default and
-// means "no measured reduction", so it does NOT mark the asset as protected —
-// otherwise a control saved without a factor would silently suppress P1.
+// priority context. Only a measured reduction of at least
+// vulnerability.MinControlReduction marks the asset as protected; a smaller
+// factor (or the column default 0) changes nothing, so a token control cannot
+// move a finding. The lookup already counts only active, tested-pass,
+// unexpired controls.
 //
 // This is the one place the "protected" rule is expressed; both the per-finding
 // and the batch classification paths go through it.
 func setControlProtection(pctx *vulnerability.PriorityContext, reduction float64) {
-	if reduction <= 0 {
+	if reduction < vulnerability.MinControlReduction {
 		return
 	}
 	pctx.IsProtected = true
