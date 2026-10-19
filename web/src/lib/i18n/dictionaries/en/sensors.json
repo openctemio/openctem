@@ -1363,5 +1363,9 @@
   "sensors.jobSafety.loosen.privateTargets": "Private targets may go to sensors without a local policy.",
   "sensors.jobSafety.loosen.interactsh": "Scan jobs may use out-of-band callbacks to an external server.",
   "sensors.jobSafety.loosen.customTemplates": "Scan jobs may carry custom templates.",
-  "sensors.jobSafety.loosen.insecureTls": "Scan tools may accept invalid TLS certificates."
+  "sensors.jobSafety.loosen.insecureTls": "Scan tools may accept invalid TLS certificates.",
+  "sensors.pair.getSensor.title": "Don't have the sensor yet?",
+  "sensors.pair.getSensor.body": "Install the sensor on the host first. It needs only the platform URL (and the platform CA fingerprint if you use a private CA). No key is copied: the sensor makes its own when it pairs.",
+  "sensors.pair.getSensor.pull": "Get the sensor image",
+  "sensors.pair.getSensor.guide": "Open the sensor installation guide"
 }

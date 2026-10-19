@@ -32,16 +32,28 @@ var _ remediation.KeyRepository = (*FindingRemediationKeyRepository)(nil)
 // Upsert records or refreshes a finding's remediation key (idempotent on finding_id).
 func (r *FindingRemediationKeyRepository) Upsert(ctx context.Context, tenantID, findingID shared.ID, key, title string) error {
 	const q = `
-		INSERT INTO finding_remediation_keys (finding_id, tenant_id, remediation_key, title, updated_at)
-		VALUES ($1, $2, $3, $4, NOW())
+		INSERT INTO finding_remediation_keys (finding_id, tenant_id, remediation_key, title, algorithm_version, updated_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
 		ON CONFLICT (finding_id)
 		DO UPDATE SET remediation_key = EXCLUDED.remediation_key,
 		              title = EXCLUDED.title,
+		              algorithm_version = EXCLUDED.algorithm_version,
 		              updated_at = NOW()`
-	if _, err := r.db.ExecContext(ctx, q, findingID.String(), tenantID.String(), key, title); err != nil {
+	if _, err := r.db.ExecContext(ctx, q, findingID.String(), tenantID.String(), key, title, remediation.KeyAlgorithmVersion); err != nil {
 		return fmt.Errorf("upsert remediation key: %w", err)
 	}
 	return nil
+}
+
+// HasStaleKeys reports whether the tenant has a key derived by an older
+// version of the key rules than the current one.
+func (r *FindingRemediationKeyRepository) HasStaleKeys(ctx context.Context, tenantID shared.ID) (bool, error) {
+	var stale bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM finding_remediation_keys
+		WHERE tenant_id = $1 AND algorithm_version < $2)`, tenantID.String(), remediation.KeyAlgorithmVersion).Scan(&stale); err != nil {
+		return false, fmt.Errorf("check stale remediation keys: %w", err)
+	}
+	return stale, nil
 }
 
 // Delete removes a finding's key.
@@ -170,15 +182,29 @@ func (r *FindingRemediationKeyRepository) CountByKeyInScope(ctx context.Context,
 // keySourceSelect reads what a key is derived from: the finding, its package
 // version in the software catalog (a global row or this tenant's private one,
 // never another tenant's), the global CVE catalog entry and the stored key.
+// Fixed versions come from the finding, the feed-written catalog entry and,
+// for a finding without its own (one a person created), this tenant's other
+// findings of the same package version and CVE: a report never writes fixed
+// versions into the shared catalog (global-catalog-trust.md).
 const keySourceSelect = `
 	SELECT f.id, f.source, COALESCE(f.finding_type, ''),
 	       COALESCE(p.purl_type, ''), COALESCE(p.name, ''), COALESCE(sv.raw, ''),
 	       COALESCE(f.metadata->'fixed_versions', '[]'::jsonb)::text,
-	       COALESCE(v.fixed_versions, '{}'::text[]),
+	       COALESCE(v.fixed_versions, '{}'::text[]) || CASE
+	           WHEN f.component_id IS NULL OR f.vulnerability_id IS NULL
+	                OR jsonb_typeof(f.metadata->'fixed_versions') = 'array' THEN '{}'::text[]
+	           ELSE COALESCE((SELECT array_agg(DISTINCT x.v ORDER BY x.v)
+	               FROM (SELECT s.metadata->'fixed_versions' AS fv FROM findings s
+	                     WHERE s.tenant_id = f.tenant_id AND s.component_id = f.component_id
+	                       AND s.vulnerability_id = f.vulnerability_id AND s.id <> f.id
+	                       AND jsonb_typeof(s.metadata->'fixed_versions') = 'array'
+	                     LIMIT 20) sib, jsonb_array_elements_text(sib.fv) AS x(v)), '{}'::text[])
+	       END,
 	       COALESCE(f.type_details->'secret'->>'fingerprint', ''),
 	       COALESCE(f.secret_type, ''),
 	       COALESCE(f.remediation->>'recommendation', ''),
-	       COALESCE(frk.remediation_key, ''), COALESCE(frk.title, ''),
+	       COALESCE(frk.remediation_key, ''), COALESCE(frk.title, ''), COALESCE(frk.algorithm_version, 0),
+	       COALESCE(f.rule_id, ''),
 	       COALESCE(f.metadata->'version_match'->>'product', ''),
 	       COALESCE(f.metadata->'version_match'->>'version', ''),
 	       COALESCE(f.metadata->'version_match'->>'range', '')
@@ -228,7 +254,7 @@ func (r *FindingRemediationKeyRepository) keySources(ctx context.Context, q stri
 		in := &ks.Input
 		if err := rows.Scan(&id, &in.Source, &in.FindingType, &in.Ecosystem, &in.PackageName, &in.InstalledVersion,
 			&metaFixed, &catalogFixed, &in.SecretFingerprint, &in.SecretType, &in.SolutionText,
-			&ks.CurrentKey, &ks.CurrentTitle, &vmProduct, &vmVersion, &vmRange); err != nil {
+			&ks.CurrentKey, &ks.CurrentTitle, &ks.CurrentVersion, &in.RuleID, &vmProduct, &vmVersion, &vmRange); err != nil {
 			return nil, fmt.Errorf("scan remediation key source: %w", err)
 		}
 		if in.Ecosystem != "" {

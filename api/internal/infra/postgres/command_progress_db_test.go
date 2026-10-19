@@ -114,6 +114,12 @@ func TestRecordProgress_ScopedBoundedMonotonic(t *testing.T) {
 		t.Fatalf("growth did not move the clock: %+v", p)
 	}
 
+	// The same progress again writes nothing: a heartbeat repeats it until
+	// the task advances.
+	if n, err := cmds.RecordProgress(ctx, tenant, a, map[string]command.Progress{id.String(): {Done: 3, Total: 4}}); err != nil || n != 0 {
+		t.Fatalf("unchanged progress wrote %d rows (want 0): %v", n, err)
+	}
+
 	// A completed command is not touched.
 	if _, err := sqlDB.ExecContext(ctx, `UPDATE commands SET status = 'completed' WHERE id = $1`, id.String()); err != nil {
 		t.Fatal(err)

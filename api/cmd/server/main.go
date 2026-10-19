@@ -197,9 +197,6 @@ func run() int {
 	defer closeWithLog(redisClient, "redis", log)
 	log.Info("redis connected")
 
-	sensorStateStore := redis.NewSensorStateStore(redisClient, log)
-	log.Info("sensor state store initialized")
-
 	jobNotifier := redis.NewJobNotifier(redisClient, log)
 	if err := jobNotifier.StartListener(ctx); err != nil {
 		log.Error("failed to start job notifier", "error", err)
@@ -231,12 +228,11 @@ func run() int {
 	// Services
 	// ==========================================================================
 	services, err := NewServices(&ServiceDeps{
-		Config:           cfg,
-		Log:              log,
-		DB:               db.DB,
-		Repos:            repos,
-		RedisClient:      redisClient,
-		SensorStateStore: sensorStateStore,
+		Config:      cfg,
+		Log:         log,
+		DB:          db.DB,
+		Repos:       repos,
+		RedisClient: redisClient,
 	})
 	if err != nil {
 		log.Error("failed to initialize services", "error", err)

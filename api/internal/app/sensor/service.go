@@ -1003,6 +1003,9 @@ const maxRenewedCommands = 1000
 // sensor holds. Best effort: a failure is logged; the lease then runs out
 // only if the next heartbeats fail too.
 func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData) {
+	// The interval the sensor follows from now on: a lease is renewed only
+	// once less than commanddom.LeaseRenewBefore of it is left.
+	interval := sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware)
 	ids := data.Running
 	if len(ids) > maxRenewedCommands {
 		ids = ids[:maxRenewedCommands]
@@ -1011,7 +1014,7 @@ func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, da
 		// A shared sensor renews only the shared jobs it lists and holds:
 		// it has no tenant, and an unlisted job's lease runs out.
 		if holds, ok := s.leases.(SharedHoldings); ok {
-			if _, err := holds.RenewSharedLeasesForPlatform(ctx, a.ID, ids); err != nil {
+			if _, err := holds.RenewSharedLeasesForPlatform(ctx, a.ID, ids, interval); err != nil {
 				s.logger.Warn("shared job leases not renewed", "sensor_id", a.ID.String(), "error", err)
 			}
 		}
@@ -1020,7 +1023,7 @@ func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, da
 	if s.leases == nil || a.TenantID == nil {
 		return
 	}
-	if _, err := s.leases.RenewLeases(ctx, *a.TenantID, a.ID, ids, !data.RunningReported); err != nil {
+	if _, err := s.leases.RenewLeases(ctx, *a.TenantID, a.ID, ids, !data.RunningReported, interval); err != nil {
 		s.logger.Warn("command leases not renewed", "sensor_id", a.ID.String(), "error", err)
 	}
 }
@@ -1048,7 +1051,7 @@ func (s *SensorService) recordProgress(ctx context.Context, a *sensordom.Sensor,
 // SharedHoldings is the command store's side of a shared sensor's heartbeat
 // (CommandRepository): the shared jobs it holds, in any organization.
 type SharedHoldings interface {
-	RenewSharedLeasesForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (int64, error)
+	RenewSharedLeasesForPlatform(ctx context.Context, sensorID shared.ID, ids []string, interval time.Duration) (int64, error)
 	SharedCommandsToCancel(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error)
 	SharedCommandsToStopForPlatform(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error)
 	HeldSharedJobsForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (map[shared.ID][]string, error)

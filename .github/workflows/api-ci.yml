@@ -144,6 +144,7 @@ jobs:
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
           bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
           bash api/scripts/dev-tools.test.sh >/dev/null
+          bash api/deploy/backup.test.sh >/dev/null
           case "$EVENT" in
             pull_request) MIGRATION_BELOW_BASE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
             merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
