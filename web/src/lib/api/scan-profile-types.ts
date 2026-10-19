@@ -4,6 +4,8 @@
  * TypeScript types for Scan Profile Management
  */
 
+import type { RuleSources } from './scan-types'
+
 /**
  * Quality Gate configuration for CI/CD pass/fail decisions
  */
@@ -63,6 +65,8 @@ export interface ScanProfile {
   tags: string[]
   metadata: Record<string, unknown>
   quality_gate: QualityGate
+  /** Which detection rules scans of this profile run. */
+  rule_sources: RuleSources
   created_by?: string
   created_at: string
   updated_at: string
@@ -77,6 +81,8 @@ export interface CreateScanProfileRequest {
   tags?: string[]
   is_default?: boolean
   quality_gate?: QualityGate
+  /** Default both. */
+  rule_sources?: RuleSources
 }
 
 /**
@@ -87,6 +93,8 @@ export interface UpdateScanProfileRequest {
   description?: string
   tags?: string[]
   quality_gate?: QualityGate
+  /** Omitted = unchanged. */
+  rule_sources?: RuleSources
 }
 
 /**

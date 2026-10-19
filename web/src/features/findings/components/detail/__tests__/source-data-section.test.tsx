@@ -134,4 +134,41 @@ describe('SourceDataSection', () => {
     expect(container.textContent).not.toContain('/var/lib')
     expect(container.textContent).not.toContain('template_path')
   })
+
+  it('shows the organization template, its version and a link to it', () => {
+    const d = mapFindingSourceData({
+      native: { scheme: 'nuclei', vuln_id: 'tenant:login-panel' },
+      rule: {
+        source: 'tenant',
+        template_id: 't1',
+        template_name: 'login-panel.yaml',
+        template_version: '1.2.0',
+      },
+    })!
+    render(<SourceDataSection data={d} />)
+    expect(screen.getByTestId('source-rule-source').textContent).toBe('Organization template')
+    const link = screen.getByRole('link', { name: 'login-panel.yaml@1.2.0' })
+    expect(link.getAttribute('href')).toBe('/settings/scanning/templates?q=login-panel.yaml')
+  })
+
+  it('says when the organization template was deleted, and marks platform rules', () => {
+    const tenant = mapFindingSourceData({ rule: { source: 'tenant', template_id: 't1' } })!
+    const { unmount } = render(<SourceDataSection data={tenant} />)
+    expect(screen.getByTestId('source-rule-template').textContent).toBe('Template deleted')
+    expect(screen.queryByRole('link')).toBeNull()
+    unmount()
+    const platform = mapFindingSourceData({
+      rule: {
+        source: 'platform',
+        pack: 'nuclei-templates',
+        version: 'v10.4.9',
+        path: 'http/x.yaml',
+      },
+    })!
+    render(<SourceDataSection data={platform} />)
+    expect(screen.getByTestId('source-rule-source').textContent).toBe('Platform rules')
+    expect(screen.getByTestId('source-detection-rule').textContent).toContain(
+      'nuclei-templates@v10.4.9'
+    )
+  })
 })

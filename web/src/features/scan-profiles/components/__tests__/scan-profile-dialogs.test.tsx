@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 const createProfile = vi.fn()
+const updateProfile = vi.fn()
 vi.mock('@/lib/api/scan-profile-hooks', () => ({
   useCreateScanProfile: () => ({ trigger: createProfile, isMutating: false }),
-  useUpdateScanProfile: () => ({ trigger: vi.fn(), isMutating: false }),
+  useUpdateScanProfile: () => ({ trigger: updateProfile, isMutating: false }),
   invalidateScanProfilesCache: vi.fn(),
 }))
 
@@ -38,6 +40,34 @@ describe('scan profile dialogs', () => {
     render(<EditScanProfileDialog open onOpenChange={vi.fn()} profile={profile} />)
     expect(screen.getByText('System profiles cannot be modified.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
+  })
+
+  it('create sends rule_sources (both by default)', async () => {
+    createProfile.mockResolvedValue({})
+    render(<AddScanProfileDialog open onOpenChange={vi.fn()} />)
+    expect(screen.getByText('Detection rules')).toBeInTheDocument()
+    await userEvent.type(screen.getAllByRole('textbox')[0], 'Strict')
+    await userEvent.click(screen.getByRole('button', { name: /^Create/ }))
+    await waitFor(() => expect(createProfile).toHaveBeenCalled())
+    expect(createProfile.mock.calls[0][0]).toMatchObject({ name: 'Strict', rule_sources: 'both' })
+  })
+
+  it('edit sends the profile rule_sources', async () => {
+    updateProfile.mockResolvedValue({})
+    const profile = {
+      id: 'p',
+      name: 'Org rules',
+      is_system: false,
+      rule_sources: 'tenant',
+      quality_gate: createDefaultQualityGate(),
+    } as unknown as ScanProfile
+    render(<EditScanProfileDialog open onOpenChange={vi.fn()} profile={profile} />)
+    expect(screen.getByRole('combobox', { name: 'Detection rules' })).toHaveTextContent(
+      'Organization templates only'
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(updateProfile).toHaveBeenCalled())
+    expect(updateProfile.mock.calls[0][0]).toMatchObject({ rule_sources: 'tenant' })
   })
 
   it('summarizes the rule', () => {

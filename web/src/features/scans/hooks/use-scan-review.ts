@@ -14,7 +14,13 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useScopeCheck } from '@/features/scope'
 import { useDebounce } from '@/hooks/use-debounce'
 import type { NewScanFormData } from '../types'
-import { basicInfoError, directTargets, scheduleError, targetsError } from '../lib/scan-form'
+import {
+  basicInfoError,
+  directTargets,
+  optionsError,
+  scheduleError,
+  targetsError,
+} from '../lib/scan-form'
 import {
   useWorkflowPreview,
   type WorkflowPreviewRequest,
@@ -66,6 +72,7 @@ export function useScanReview(
     for (const problem of [
       basicInfoError(form, t),
       targetsError(form, t),
+      optionsError(form, t),
       scheduleError(form, { requireFuture: true }, t),
     ]) {
       if (problem) {

@@ -28,6 +28,7 @@ import {
 } from '@/features/shared/components/detail-sheet'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import Link from '@/components/link'
 import type { FindingSourceData, FindingSourceScore } from '../../types'
 
 type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
@@ -280,6 +281,32 @@ export function SourceDataSection({
                       .filter(Boolean)
                       .join(' · ')}
                   </span>
+                  {data.rule?.source && (
+                    <Badge variant="outline" className="text-xs" data-testid="source-rule-source">
+                      {data.rule.source === 'tenant'
+                        ? t('findings.sourceData.ruleSourceTenant', 'Organization template')
+                        : t('findings.sourceData.ruleSourcePlatform', 'Platform rules')}
+                    </Badge>
+                  )}
+                  {data.rule?.source === 'tenant' && (
+                    <span
+                      className="block text-xs text-muted-foreground"
+                      data-testid="source-rule-template"
+                    >
+                      {data.rule.template_name ? (
+                        <Link
+                          href={`/settings/scanning/templates?q=${encodeURIComponent(data.rule.template_name)}`}
+                          className="underline-offset-2 hover:underline"
+                        >
+                          {data.rule.template_version
+                            ? `${data.rule.template_name}@${data.rule.template_version}`
+                            : data.rule.template_name}
+                        </Link>
+                      ) : (
+                        t('findings.sourceData.ruleTemplateDeleted', 'Template deleted')
+                      )}
+                    </span>
+                  )}
                   {data.rule?.pack && (
                     <span className="block text-xs text-muted-foreground">
                       {data.rule.version
