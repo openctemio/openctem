@@ -90,7 +90,29 @@ vi.mock('@/lib/api/client', () => ({
       if (failStats) throw new Error('boom')
       const by_severity: Record<string, number> = {}
       for (const r of rows) by_severity[r.severity] = (by_severity[r.severity] ?? 0) + 1
-      return { total: rows.length, by_severity }
+      if (q.get('sla_breakdown') !== 'true') return { total: rows.length, by_severity }
+      const past = rows.filter((r) => ['overdue', 'exceeded'].includes(r.sla_status))
+      const inAge = (lo: number, hi: number) =>
+        past.filter((r) => r.daysPast >= lo && r.daysPast < hi).length
+      const past_due_by_severity: Record<string, number> = {}
+      for (const r of past)
+        past_due_by_severity[r.severity] = (past_due_by_severity[r.severity] ?? 0) + 1
+      return {
+        total: rows.length,
+        by_severity,
+        sla: {
+          past_due: past.length,
+          due_soon: rows.filter((r) => r.sla_status === 'warning').length,
+          on_track: rows.filter((r) => r.sla_status === 'on_track').length,
+          past_due_by_age: {
+            up_to_7: inAge(0, 7),
+            d8_to_30: inAge(7, 30),
+            d31_to_90: inAge(30, 90),
+            over_90: inAge(90, Infinity),
+          },
+          past_due_by_severity,
+        },
+      }
     }
     const page = Number(q.get('page') ?? 1)
     const per = Number(q.get('per_page') ?? 20)
@@ -126,6 +148,17 @@ beforeEach(() => {
 })
 
 describe('SLA compliance page', () => {
+  it('reads every number in one stats request', async () => {
+    const { get } = await import('@/lib/api/client')
+    vi.mocked(get).mockClear()
+    renderPage()
+    await screen.findByText('How long past due')
+    await waitFor(() => expect(screen.getAllByText('130').length).toBeGreaterThan(0))
+    const stats = vi.mocked(get).mock.calls.filter(([u]) => String(u).includes('/findings/stats'))
+    expect(stats).toHaveLength(1)
+    expect(String(stats[0][0])).toContain('sla_breakdown=true')
+  })
+
   it('each tile equals the total of the Findings list it opens, above 100 findings', async () => {
     renderPage()
     const expected: Record<string, number> = {
