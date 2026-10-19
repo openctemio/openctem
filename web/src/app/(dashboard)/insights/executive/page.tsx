@@ -3,6 +3,8 @@
 import { formatEpssScore } from '@/lib/epss'
 import { useState } from 'react'
 import useSWR from 'swr'
+import Link from '@/components/link'
+import { DRILL } from '@/features/dashboard/lib/drill'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -58,6 +60,7 @@ interface TopRisk {
   asset_name: string
   epss_score?: number
   is_in_kev: boolean
+  finding_id?: string
 }
 
 interface ExecutiveSummary {
@@ -115,6 +118,18 @@ const PRIORITY_CLASSES = ['P0', 'P1', 'P2', 'P3']
 // HELPERS
 // ============================================
 
+/** A headline tile that opens the list it counts. */
+function DrillCard({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="block rounded-xl transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </Link>
+  )
+}
+
 function PriorityChip({ value }: { value: string }) {
   const pc = value.toUpperCase()
   if (!PRIORITY_CLASSES.includes(pc)) return <Badge variant="outline">{value}</Badge>
@@ -157,9 +172,18 @@ const TOP_RISK_COLUMNS: ColumnDef<TopRisk>[] = [
     accessorKey: 'title',
     enableSorting: false,
     header: 'Title',
-    cell: ({ row }) => (
-      <span className="block max-w-md truncate text-sm font-medium">{row.original.title}</span>
-    ),
+    // A top risk opens its finding.
+    cell: ({ row }) =>
+      row.original.finding_id ? (
+        <Link
+          href={`/findings/${row.original.finding_id}`}
+          className="block max-w-md truncate text-sm font-medium hover:underline focus-visible:underline"
+        >
+          {row.original.title}
+        </Link>
+      ) : (
+        <span className="block max-w-md truncate text-sm font-medium">{row.original.title}</span>
+      ),
   },
   {
     accessorKey: 'severity',
@@ -304,29 +328,35 @@ export default function ExecutiveSummaryPage() {
               description={summary ? `${summary.findings_new_period} new in period` : undefined}
               icon={CheckCircle2}
             />
-            <StatsCard
-              title={t('dashboardMetrics.executive.sla')}
-              value={formatPercent(summary?.sla_compliance_pct)}
-              description={summary ? `${summary.sla_breached} breached` : undefined}
-              icon={ShieldCheck}
-            />
-            <StatsCard
-              title="P0 open"
-              value={summary?.p0_open ?? 0}
-              valueClassName={summary && summary.p0_open > 0 ? 'text-destructive' : undefined}
-              description={
-                summary ? `${summary.p0_resolved_period} resolved this period` : undefined
-              }
-              icon={ShieldAlert}
-            />
+            <DrillCard href={DRILL.slaBreached}>
+              <StatsCard
+                title={t('dashboardMetrics.executive.sla')}
+                value={formatPercent(summary?.sla_compliance_pct)}
+                description={summary ? `${summary.sla_breached} breached` : undefined}
+                icon={ShieldCheck}
+              />
+            </DrillCard>
+            <DrillCard href={DRILL.p0Open}>
+              <StatsCard
+                title="P0 open"
+                value={summary?.p0_open ?? 0}
+                valueClassName={summary && summary.p0_open > 0 ? 'text-destructive' : undefined}
+                description={
+                  summary ? `${summary.p0_resolved_period} resolved this period` : undefined
+                }
+                icon={ShieldAlert}
+              />
+            </DrillCard>
             {summary && (
               <>
-                <StatsCard
-                  title="P1 open"
-                  value={summary.p1_open}
-                  description={`${summary.p1_resolved_period} resolved this period`}
-                  icon={AlertTriangle}
-                />
+                <DrillCard href={DRILL.p1Open}>
+                  <StatsCard
+                    title="P1 open"
+                    value={summary.p1_open}
+                    description={`${summary.p1_resolved_period} resolved this period`}
+                    icon={AlertTriangle}
+                  />
+                </DrillCard>
                 <StatsCard
                   title={t('dashboardMetrics.hero.crownJewels')}
                   value={summary.crown_jewels_at_risk}

@@ -1,8 +1,10 @@
 'use client'
 
+import Link from '@/components/link'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { DRILL } from '../../lib/drill'
 import { formatRiskScore } from '@/features/shared'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import dynamic from 'next/dynamic'
@@ -125,8 +127,12 @@ export function ExposureHero({
         desc={t('dashboardMetrics.hero.exploitableNow')}
       />
       <CardContent className="flex flex-1 flex-col">
-        {/* Hero number + tiny label */}
-        <div className="flex items-center gap-4">
+        {/* Hero number + tiny label: opens the open P0 list it counts. */}
+        <Link
+          href={DRILL.p0Open}
+          aria-label={t('dashboardMetrics.hero.p0Link', 'Open P0 findings: {n}', { n: p0 })}
+          className="flex w-fit items-center gap-4 rounded hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <span
             className={cn(
               'text-5xl font-semibold leading-none tracking-tight tabular-nums',
@@ -148,7 +154,7 @@ export function ExposureHero({
               {t('dashboardMetrics.hero.exploitableNow')}
             </span>
           </div>
-        </div>
+        </Link>
 
         {/* Compact sub-stats */}
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">

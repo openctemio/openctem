@@ -20,6 +20,8 @@ const maxKeyUseEntries = 50_000
 type keyUseDebouncer struct {
 	mu   sync.Mutex
 	last map[string]time.Time
+	// window is the debounce window; zero is keyUseInterval.
+	window time.Duration
 }
 
 // due reports whether the key use under key should be written at now, and
@@ -28,15 +30,19 @@ type keyUseDebouncer struct {
 func (d *keyUseDebouncer) due(key string, now time.Time) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	window := d.window
+	if window <= 0 {
+		window = keyUseInterval
+	}
 	if d.last == nil {
 		d.last = make(map[string]time.Time)
 	}
-	if t, ok := d.last[key]; ok && now.Sub(t) >= 0 && now.Sub(t) < keyUseInterval {
+	if t, ok := d.last[key]; ok && now.Sub(t) >= 0 && now.Sub(t) < window {
 		return false
 	}
 	if len(d.last) >= maxKeyUseEntries {
 		for k, t := range d.last {
-			if now.Sub(t) >= keyUseInterval {
+			if now.Sub(t) >= window {
 				delete(d.last, k)
 			}
 		}

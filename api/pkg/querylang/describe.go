@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Executor runs plans on one backend. The Postgres executor
@@ -16,6 +18,17 @@ type Executor interface {
 	Explain(ctx context.Context, p *Plan) (Estimate, error)
 	// Run executes the plan and returns at most p.Limit rows.
 	Run(ctx context.Context, p *Plan) (*Result, error)
+}
+
+// Matches is what a match returns: the findings a filter-only query
+// selects, as ids.
+type Matches struct {
+	// Total is the number of matches.
+	Total int
+	// IDs are the first matches, oldest first, at most the limit.
+	IDs []shared.ID
+	// Truncated is set when more matches existed than the limit.
+	Truncated bool
 }
 
 // ErrTimeout is returned by an executor when a query ran out of time.

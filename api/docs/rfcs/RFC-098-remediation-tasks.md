@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab; claim conflicts (409 with per-finding details, skip or audited move) |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab; claim conflicts (409 with per-finding details, skip or audited move); tasks from a query (API: preview, create in snapshot or auto mode, re-run, auto include with suspension; §13) |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -222,6 +222,12 @@ POST  /api/v1/remediation/tasks/{task_id}/splits         split findings into a n
 POST  /api/v1/remediation/tasks/{task_id}/merges         merge tasks of the same fix
 POST  /api/v1/remediation/moves[/preview]                move findings between tasks (or out of any)
 GET   /api/v1/remediation/tasks/{task_id}/timeline
+POST  /api/v1/remediation/tasks/query/preview            preview a task from a query (read-only; §13)
+POST  /api/v1/remediation/tasks/query                    create a task from a query, snapshot or auto (409 FINDINGS_IN_OTHER_TASK)
+GET   /api/v1/remediation/tasks/{task_id}/query          the stored query, mode and auto state
+POST  /api/v1/remediation/tasks/{task_id}/query/{run,preview}  new matches; added only on confirmation
+POST  /api/v1/remediation/tasks/{task_id}/query/auto     pause or resume auto include
+POST  /api/v1/query/from-filters                         a findings list filter as query text
 GET   /api/v1/remediation/suggestions                    list, best first (state, kind, key_kind, min_risk, search, queued)
 GET   /api/v1/remediation/suggestions/stats              open, held back and snoozed counts (the inbox badge)
 POST  /api/v1/remediation/suggestions/run                run the generator now (at most once a minute; 429 otherwise)
@@ -266,7 +272,8 @@ auto-join stay with write. Marking findings fixed will also need `findings:fix_a
   on it. The generator runs as the platform but writes only proposals.
 - **Audit:** `remediation_task.created`, `.updated`, `.members_added`, `.state_changed` (hold, resume, cancel);
   `remediation_task.members_moved`, `.findings_moved` (a resolved claim conflict, one row per source task), `.split`, `.merged`, `.fix_claimed`; `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`, `.accepted`;
-  `remediation_action.auto_join_changed`.
+  `remediation_action.auto_join_changed`; `remediation_task.created_from_query`, `.query_rerun`,
+  `.query_auto_added`, `.query_auto_state_changed` (each with the query text).
 
 ## 12. Rollout
 
@@ -280,3 +287,57 @@ auto-join stay with write. Marking findings fixed will also need `findings:fix_a
 | 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Implemented |
 | 7 | Finding drawer band: the task a finding is tracked in, its state and deadline | Implemented |
 | 8 | My Work tasks tab: my open tasks (mine or my groups), earliest deadline first | Implemented |
+| 9 | Tasks from a query (§13): preview, snapshot and auto modes, re-run, auto include worker | Implemented (console: "New task from query" on Tasks, "Task from filters" on Findings, the task's "Created from a query" panel; "Add findings by query" in the suggestion edit dialog is open) |
+
+## 13. Tasks from a query
+
+A person selects the findings of a task with a custom query (RFC-115) instead of picking them: from the
+findings list ("Create task from these filters": the list filter becomes query text through
+`POST /api/v1/query/from-filters`, one filter in two views), from the suggestion "Edit, then accept"
+dialog ("Add findings by query"), or from a query box on the task create dialog.
+
+**Selection.** Only `findings where ...` qualifies (no pipeline stages). The query runs as the creator: the
+query service resolves the principal on the server (tenant, data scope, the pentest member rule, the
+mandatory exclusions of RFC-115) and the task layer adds two rules of its own: closed findings and pentest
+findings are left out (a pentest finding is fixed through its pentest campaign, and its visibility is
+member-only). The same limits apply as for interactive queries (per-user rate limit, concurrency caps,
+read-only transaction, 5 s statement timeout, `work_mem` cap). A task holds at most 1000 findings from a
+query; more matches answer `400 QUERY_TOO_MANY_MATCHES`: narrow the query, or split the work into several
+tasks under a campaign.
+
+**Preview** (read-only, claims nothing): the number of matches, counts by severity, the top assets and the top
+primary owners of those assets, a sample of 20, the earliest SLA deadline, a suggested assignee (the most
+common primary owner) and the matches other active tasks hold. A conflict shows the holding task's title and
+owner only when the caller may read that task, and `can_move` only when the caller may change it.
+
+**Create.** The task stores the canonical query text and its language version
+(`remediation_task_queries`: text, version, mode, auto state and reason, cap, owner, last run, counters),
+and its members join with source `query`. Matches other active tasks hold answer
+`409 FINDINGS_IN_OTHER_TASK` with `details.conflicts` (the shared shape) unless the request carries
+`"conflicts": {"skip": true}` or `{"move": [...], "move_reason": "..."}`; a move goes through the audited move
+(timeline on both tasks, owners told, SLA kept). The partial unique index on primary membership decides
+concurrent claims: exactly one wins.
+
+**Modes.** *Snapshot* (default) holds the matches at creation. "Re-run" previews the new matches no active
+task holds and adds them only when the person confirms. *Auto* adds new matches by itself, every 15 minutes
+at most, with guardrails: only findings no other active task holds (never taken), up to the task's cap
+(1 to 1000), the owner is told of additions in-app, and a person may pause and resume it.
+
+**Who an auto run acts as.** Always the creator (the stored owner), with their membership, role and
+permissions read again on every run, and their current data scope applied by the query service. The task is
+suspended, audited and shown on the task with the reason, never run ownerless, when:
+the owner left the organization or the account was deleted (`owner_removed`), the owner no longer holds
+`findings:read` and `findings:remediation:write` (`owner_lost_access`), the task closed (`task_closed`), or the
+stored query no longer compiles for the owner (`query_invalid`). A suspended task resumes only once its
+cause is gone.
+
+**Who sees the findings.** Assignees see the task's findings through the assignment view grant (the
+assignment-grants-view work); everyone else sees a task through its findings in their own scope, the rest
+as a count (§11).
+
+**Threat model.** A crafted query cannot widen its scope: the text never carries the principal, the plan
+layer injects every rule, and executors cannot build a plan. A client cannot name another tenant (the caller
+is built from the authenticated request and checked against the tenant). A creator cannot keep reading
+findings after losing access through an auto task: each run re-reads their access and suspends. A task from a
+query cannot silently take a finding from another person's task: conflicts are explicit (skip or audited
+move) and auto mode only adds unclaimed findings. Cost is bounded by the query limits and the 1000 cap.
