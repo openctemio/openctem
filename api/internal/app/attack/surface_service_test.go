@@ -40,43 +40,67 @@ func (f *fakeSurfaceAssets) GetAverageRiskScore(context.Context, shared.ID, *sha
 	return 42, nil
 }
 
-// The trend fields used to be hard-coded 0. They now count what is new in the
-// last 7 days, each from its own filter.
-func TestGetStats_TrendsCountNewInWindow(t *testing.T) {
+// countingHistory answers the newly exposed count and records the options.
+type countingHistory struct {
+	opts  []asset.ListStateHistoryOptions
+	total int
+}
+
+func (h *countingHistory) List(_ context.Context, _ shared.ID, opts asset.ListStateHistoryOptions) ([]*asset.AssetStateChange, int, error) {
+	h.opts = append(h.opts, opts)
+	return nil, h.total, nil
+}
+
+func (h *countingHistory) GetAssetRefs(context.Context, shared.ID, []shared.ID) (map[shared.ID]asset.StateChangeAssetRef, error) {
+	return nil, nil
+}
+
+// The overview counts internet-facing assets with the one definition
+// (asset.InternetFacing, not exposure alone), and newly exposed from the
+// state history exactly like Assets > What changed.
+func TestGetStats_InternetFacingAndNewlyExposedAgreeWithOtherPages(t *testing.T) {
 	before := time.Now().UTC().Add(-trendWindow)
 	repo := &fakeSurfaceAssets{count: func(f asset.Filter) int64 {
+		if len(f.Exposures) > 0 {
+			t.Errorf("a count filtered on exposure alone: %v", f.Exposures)
+		}
 		switch {
 		case f.CreatedAfter != nil:
 			if f.CreatedAfter.Before(before.Add(-time.Minute)) || f.CreatedAfter.After(time.Now().UTC().Add(-trendWindow).Add(time.Minute)) {
 				t.Errorf("CreatedAfter = %v, want about now-7d", f.CreatedAfter)
 			}
 			return 7
-		case f.ExposureChangedOrCreatedAfter != nil && len(f.Criticalities) > 0:
-			return 2
-		case f.ExposureChangedOrCreatedAfter != nil:
-			if !reflect.DeepEqual(f.Exposures, []asset.Exposure{asset.ExposurePublic}) {
-				t.Errorf("newly exposed must filter public, got %v", f.Exposures)
-			}
-			return 3
-		case len(f.Criticalities) > 0:
+		case f.InternetFacing != nil && *f.InternetFacing && len(f.Criticalities) > 0:
 			return 10
-		case len(f.Exposures) > 0:
+		case f.InternetFacing != nil && *f.InternetFacing:
 			return 20
 		default:
 			return 100
 		}
 	}}
+	hist := &countingHistory{total: 3}
 	svc := NewSurfaceService(repo, nil, logger.NewNop())
+	svc.SetStateHistory(hist)
 
 	got, err := svc.GetStats(context.Background(), shared.NewID())
 	if err != nil {
 		t.Fatalf("GetStats: %v", err)
 	}
-	if got.TotalAssets != 100 || got.ExposedServices != 20 || got.CriticalExposures != 10 {
-		t.Fatalf("totals = %d/%d/%d, want 100/20/10", got.TotalAssets, got.ExposedServices, got.CriticalExposures)
+	if got.TotalAssets != 100 || got.InternetFacingAssets != 20 || got.CriticalInternetFacingAssets != 10 {
+		t.Fatalf("totals = %d/%d/%d, want 100/20/10", got.TotalAssets, got.InternetFacingAssets, got.CriticalInternetFacingAssets)
 	}
-	if got.TotalAssetsChange != 7 || got.ExposedServicesChange != 3 || got.CriticalExposuresChange != 2 {
-		t.Fatalf("trends = %d/%d/%d, want 7/3/2", got.TotalAssetsChange, got.ExposedServicesChange, got.CriticalExposuresChange)
+	if got.TotalAssetsChange != 7 || got.NewlyExposed != 3 {
+		t.Fatalf("trends = %d/%d, want 7/3", got.TotalAssetsChange, got.NewlyExposed)
+	}
+	want := asset.NewlyExposedHistory(asset.ListStateHistoryOptions{})
+	var counted bool
+	for _, o := range hist.opts {
+		if reflect.DeepEqual(o.ChangeTypes, want.ChangeTypes) && reflect.DeepEqual(o.NewValues, want.NewValues) && o.From != nil {
+			counted = true
+		}
+	}
+	if !counted {
+		t.Fatalf("newly exposed not counted with asset.NewlyExposedHistory: %+v", hist.opts)
 	}
 	if got.TrendWindowDays != 7 {
 		t.Fatalf("TrendWindowDays = %d, want 7", got.TrendWindowDays)

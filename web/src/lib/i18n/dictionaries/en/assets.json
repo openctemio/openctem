@@ -1005,5 +1005,14 @@
   "assets.technologies.filter.technology": "Technology",
   "assets.technologies.filter.search": "Search technologies",
   "assets.technologies.filter.none": "No technologies detected yet",
-  "assets.technologies.filter.more": "Show {count} more"
+  "assets.technologies.filter.more": "Show {count} more",
+  "assets.stats.unavailable": "Could not load",
+  "assets.groups.bu.none": "No business units yet.",
+  "assets.groups.bu.create": "Create one",
+  "assets.groups.bu.custom": "Or type a business unit…",
+  "assets.groups.detail.severityLink": "Open {count} {severity} findings of this group",
+  "assets.groups.detail.severityTitle": "Open findings by severity",
+  "assets.groups.detail.severityDesc": "The same findings as the group’s count; each row opens them",
+  "assets.groups.detail.typesTitle": "Assets by type",
+  "assets.groups.detail.typesDesc": "The group’s members by asset type"
 }

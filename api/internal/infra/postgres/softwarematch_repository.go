@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -291,7 +293,7 @@ func (r *SoftwareMatchRepository) AssetMatches(ctx context.Context, tenantID, as
 // must filter on the tenant ($1) and uses $2; $3 is the limit.
 func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, limit int, a1, a2 any) ([]softwarematch.Match, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT s.asset_id, (a.exposure = 'public' OR COALESCE(a.is_internet_accessible, false)),
+		SELECT s.asset_id, `+assetdom.InternetFacingSQL("a")+`,
 			s.confidence, s.location, COALESCE(s.port, 0), COALESCE(s.transport, ''), s.evidence,
 			p.id, p.name, p.vendor, v.id, v.raw, v.qualifier,
 			m.cve_id, COALESCE(m.affected_id, 0), m.range_text, m.all_versions, m.adjustment, m.reasons,

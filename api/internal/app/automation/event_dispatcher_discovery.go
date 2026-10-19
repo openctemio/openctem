@@ -32,7 +32,7 @@ func (d *WorkflowEventDispatcher) triggerWorkflow(ctx context.Context, input Tri
 // IsInternetFacing reports whether an asset is reachable from the internet:
 // the scanner said so explicitly, or its exposure level is public.
 func IsInternetFacing(a *asset.Asset) bool {
-	return a.IsInternetAccessible() || a.Exposure() == asset.ExposurePublic
+	return a.IsInternetFacing()
 }
 
 // DispatchAssetsDiscovered fires `asset_discovered` for a batch of assets an

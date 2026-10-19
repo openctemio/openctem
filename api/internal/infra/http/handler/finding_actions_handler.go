@@ -135,6 +135,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
 // @Param  related_to  query  string  false  "related to equals"  Enums(me)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
@@ -290,6 +291,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
 // @Param  related_to  query  string  false  "related to equals"  Enums(me)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
