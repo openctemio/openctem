@@ -2,7 +2,7 @@
  * Options Step
  *
  * Only what most scans need, defaults already right: where the scan runs
- * (the sensor preference) and the scan profile (tool settings, intensity),
+ * (the sensor preference) and the scan profile (the pass/fail rule),
  * with the job size and reliability settings under Advanced.
  */
 
@@ -26,6 +26,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import { maxDurationInput } from '@/features/scans/lib/scan-form'
 import { CommittedNumberInput } from '@/components/ui/committed-number-input'
 import { usePlatformScanning } from '@/lib/api/platform-hooks'
+import { gateSummary } from '@/features/scan-profiles/gate-summary'
 import { useScanProfiles } from '@/lib/api/scan-profile-hooks'
 import type { NewScanFormData, SensorPreference } from '../../types'
 import { SENSOR_PREFERENCE_CONFIG } from '../../types'
@@ -117,7 +118,7 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
           </Select>
           <p className="text-muted-foreground text-xs">
             {chosenProfile
-              ? `${t('scans.options.profileIntensity', undefined, { intensity: chosenProfile.intensity })}${chosenProfile.description ? ` · ${chosenProfile.description}` : ''}`
+              ? `${gateSummary(chosenProfile.quality_gate, t)}${chosenProfile.description ? ` · ${chosenProfile.description}` : ''}`
               : t('scans.options.profileHelp')}
           </p>
         </div>

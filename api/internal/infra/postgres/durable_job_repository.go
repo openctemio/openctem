@@ -65,6 +65,32 @@ func enqueueContextJobsTx(ctx context.Context, tx *sql.Tx, res sql.Result) error
 	return insertDurableJobsTx(ctx, tx, jobs)
 }
 
+// enqueueContextJobsForTx queues the jobs on ctx after a guarded status
+// write over attempted that changed moved: a job about one of the attempted
+// findings only when that finding moved (a finding the guard left alone
+// queues no push), any other job when the write changed a row.
+func enqueueContextJobsForTx(ctx context.Context, tx *sql.Tx, attempted, moved []shared.ID) error {
+	jobs := durablejob.FromContext(ctx)
+	if len(jobs) == 0 || len(moved) == 0 {
+		return nil
+	}
+	tried := make(map[shared.ID]bool, len(attempted))
+	for _, id := range attempted {
+		tried[id] = true
+	}
+	in := make(map[shared.ID]bool, len(moved))
+	for _, id := range moved {
+		in[id] = true
+	}
+	keep := make([]durablejob.Job, 0, len(jobs))
+	for _, j := range jobs {
+		if in[j.SubjectID] || !tried[j.SubjectID] {
+			keep = append(keep, j)
+		}
+	}
+	return insertDurableJobsTx(ctx, tx, keep)
+}
+
 // Claim (see durablejob.Store). A processing job whose lease passed is due
 // again: its worker died before finishing it.
 func (r *DurableJobRepository) Claim(ctx context.Context, kinds []durablejob.Kind, limit int, lease time.Duration) ([]durablejob.Claimed, error) {
