@@ -167,7 +167,6 @@ export {
   runnerEndpoints,
   credentialEndpoints,
   pentestEndpoints,
-  remediationEndpoints,
   analyticsEndpoints,
   reportEndpoints,
   integrationEndpoints,
@@ -252,13 +251,6 @@ export {
   useCredentialStats,
 
   // Remediation hooks
-  useRemediationTasks,
-  useRemediationTask,
-  useRemediationStats,
-  useOverdueTasks,
-  usePriorityTasks,
-  useCreateRemediationTask,
-  useUpdateRemediationTask,
 
   // Pentest hooks
   usePentestCampaigns,

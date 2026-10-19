@@ -28,7 +28,6 @@ export const SECURITY_API_BASE = {
   PENTEST: '/api/v1/pentest',
 
   // Mobilization
-  REMEDIATION: '/api/v1/remediation',
   WORKFLOWS: '/api/v1/workflows',
 
   // Insights
@@ -350,41 +349,6 @@ export const pentestEndpoints = {
 } as const
 
 // ============================================
-// REMEDIATION ENDPOINTS
-// ============================================
-
-export const remediationEndpoints = {
-  list: (
-    filters?: PaginationParams & { status?: string; priority?: string; assignee?: string }
-  ) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${SECURITY_API_BASE.REMEDIATION}${queryString}`
-  },
-
-  get: (taskId: string) => `${SECURITY_API_BASE.REMEDIATION}/${taskId}`,
-
-  create: () => SECURITY_API_BASE.REMEDIATION,
-
-  update: (taskId: string) => `${SECURITY_API_BASE.REMEDIATION}/${taskId}`,
-
-  delete: (taskId: string) => `${SECURITY_API_BASE.REMEDIATION}/${taskId}`,
-
-  // Update task status
-  updateStatus: (taskId: string) => `${SECURITY_API_BASE.REMEDIATION}/${taskId}/status`,
-
-  // Assign task
-  assign: (taskId: string) => `${SECURITY_API_BASE.REMEDIATION}/${taskId}/assign`,
-
-  // Get overdue tasks
-  overdue: () => `${SECURITY_API_BASE.REMEDIATION}/overdue`,
-
-  // Get priority tasks
-  priority: () => `${SECURITY_API_BASE.REMEDIATION}/priority`,
-
-  stats: () => `${SECURITY_API_BASE.REMEDIATION}/stats`,
-} as const
-
-// ============================================
 // ANALYTICS ENDPOINTS
 // ============================================
 
@@ -485,7 +449,6 @@ export const securityEndpoints = {
   runners: runnerEndpoints,
   credentials: credentialEndpoints,
   pentest: pentestEndpoints,
-  remediation: remediationEndpoints,
   analytics: analyticsEndpoints,
   reports: reportEndpoints,
   integrations: integrationEndpoints,

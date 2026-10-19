@@ -37,6 +37,7 @@ tests that cover the console's most user-visible flows.
 | `11-settings-access.spec.ts`                | Settings pages respect permissions                         |
 | `12-settings-reachability.spec.ts`          | Every settings page is reachable                           |
 | `13-validation-reachability.spec.ts`        | Validation pages are reachable                             |
+| `14-remediation-campaigns.spec.ts`          | Remediation campaign list and detail                       |
 | `15-route-protection.spec.ts`               | Signed-out redirects and public routes                     |
 | `16-dialog-layout.spec.ts`                  | Dialog header and actions stay put while the body scrolls  |
 | `18-pentest-finding-editor.spec.ts`         | New pentest finding: evidence, publish, closed campaign    |
