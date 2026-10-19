@@ -127,14 +127,13 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			s.businessContextFor(ctx, tenantID, f.AssetID()))
 	}
 
-	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{f.ID()})
 	// Owner presence only feeds the explanation when the tenant enabled the floor
 	// (matches the live classify path — the reason must not appear when off).
 	var hasOwner map[shared.ID]bool
 	if s.ownershipFloorEnabled(ctx, tenantID) {
 		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(a))
 	}
-	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
+	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), hasOwner)
 	if a != nil {
 		pctx.AttributionUnconfirmed = s.unconfirmedAssets(ctx, tenantID, []shared.ID{a.ID()})[a.ID()]
 	}

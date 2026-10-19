@@ -461,9 +461,9 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AI_TRIAGE_BUDGET_STRICT` | bool | `false` |  |  | With the budget on: refuse triage when the budget store cannot be read (otherwise log and continue). |
 | `AI_TRIAGE_ENABLED` | bool | `false` |  |  | Deprecated and ignored: availability follows the provider keys and the AI triage module. |
 | `AI_TRIAGE_RECOVERY_BATCH_SIZE` | int | `50` |  |  | Jobs recovered per run. |
-| `AI_TRIAGE_RECOVERY_ENABLED` | bool | `true` |  |  | Requeue triage jobs stuck in processing. |
+| `AI_TRIAGE_RECOVERY_ENABLED` | bool | `true` |  |  | Mark triage jobs stuck in pending or processing as failed (stuck_timeout). Transient provider errors are retried by the job queue before that. |
 | `AI_TRIAGE_RECOVERY_INTERVAL` | duration | `5m` |  |  | How often stuck jobs are looked for. |
-| `AI_TRIAGE_RECOVERY_STUCK_DURATION` | duration | `15m` |  |  | Age after which a processing job counts as stuck. |
+| `AI_TRIAGE_RECOVERY_STUCK_DURATION` | duration | `15m` |  |  | Age after which a pending or processing job counts as stuck. |
 | `ANTHROPIC_API_KEY` | string | empty |  | yes | Platform key for the `claude` provider. Any platform key pins the platform AI provider to the environment (the console shows it locked); without one, a super admin sets the provider and key in the console (Settings > AI provider), off by default. |
 | `GEMINI_API_KEY` | string | empty |  | yes | Platform key for the `gemini` provider. |
 | `OPENAI_API_KEY` | string | empty |  | yes | Platform key for the `openai` provider. |

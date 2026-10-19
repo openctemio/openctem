@@ -36,7 +36,7 @@ Model history:
 | Kind | Version | Change |
 |---|---|---|
 | finding priority | 1 | P0 to P3 classification |
-| finding priority | 2 | Exploitation floor: a KEV or validated (reproduced) finding is at least P1 after controls, AI triage and tenant rules; AI triage lowers only P2 to P3; KEV no longer rewrites severity ([priority explainability](priority-explainability.md#platform-floors-priority-model-v2)) |
+| finding priority | 2 | Exploitation floor: a KEV or validated (reproduced) finding is at least P1 after controls and tenant rules; an AI triage verdict never changes the class; KEV no longer rewrites severity ([priority explainability](priority-explainability.md#platform-floors-priority-model-v2)) |
 
 Bumping a constant needs no migration: the start-up registration records the
 new platform row and every open finding is recomputed once, in the
@@ -96,8 +96,8 @@ Rows are written by:
   (`is_reachable`, `reachable_from_count`, EPSS, KEV and the SLA columns) are
   not watched. `PriorityContext` has a guard test that lists every input and
   what requeues it, so a new input without a trigger fails the build;
-- producers: compensating control changes, attribution decisions, AI triage
-  verdicts and the threat-intel refresh (`ControlChangePublisher`).
+- producers: compensating control changes, attribution decisions and the
+  threat-intel refresh (`ControlChangePublisher`).
 
 The **finding-priority** worker (`internal/app/reclassify`, every 10 s) claims
 up to 200 assets per pass, at most 50 of one tenant, so one tenant's large

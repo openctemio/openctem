@@ -2,12 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -96,7 +99,10 @@ type TriageResultResponse struct {
 	Summary                 string  `json:"summary,omitempty"`
 	CreatedAt               string  `json:"created_at"`
 	CompletedAt             string  `json:"completed_at,omitempty"`
-	ErrorMessage            string  `json:"error_message,omitempty"`
+	// ErrorCode is the failure code of a failed triage (internal_error,
+	// ai_policy_restricted, provider_rate_limited, ...); the web UI
+	// translates it. Raw internal error text is never returned.
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 // =============================================================================
@@ -187,7 +193,7 @@ func (h *AITriageHandler) GetTriageResult(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		// "Not found" means no triage has been run yet — return 200 with null data
 		// instead of 404, since the finding exists but just hasn't been triaged.
-		if contains(err.Error(), "not found") {
+		if errors.Is(err, shared.ErrNotFound) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": nil})
@@ -396,7 +402,7 @@ func (h *AITriageHandler) toTriageResponse(r *aitriage.TriageResultResponse) Tri
 		FalsePositiveReason:     r.FalsePositiveReason,
 		Summary:                 r.Summary,
 		CreatedAt:               r.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		ErrorMessage:            r.ErrorMessage,
+		ErrorCode:               r.ErrorCode,
 	}
 	if r.CompletedAt != nil {
 		resp.CompletedAt = r.CompletedAt.Format("2006-01-02T15:04:05Z")
@@ -404,55 +410,49 @@ func (h *AITriageHandler) toTriageResponse(r *aitriage.TriageResultResponse) Tri
 	return resp
 }
 
-func (h *AITriageHandler) handleServiceError(w http.ResponseWriter, err error) {
-	errStr := err.Error()
+// Error codes of the AI triage answers the web UI acts on (it shows the
+// reason and the place to fix it).
+const (
+	// aiErrPlatformNotConfigured: platform AI is not set up (the platform
+	// administrator sets it up in the console).
+	aiErrPlatformNotConfigured apierror.Code = "AI_PLATFORM_NOT_CONFIGURED"
+	// aiErrDisabled: AI triage is off for the organization (an organization
+	// administrator turns it on in Settings > AI).
+	aiErrDisabled apierror.Code = "AI_DISABLED"
+	// aiErrPolicyRestricted: the organization's AI data policy keeps this
+	// finding on the platform (pentest TLP limit, campaign with AI off).
+	aiErrPolicyRestricted apierror.Code = "AI_POLICY_RESTRICTED"
+)
 
-	// Check for common error types and provide actionable messages
+func (h *AITriageHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case contains(errStr, "not found"):
+	case errors.Is(err, aitriage.ErrPlatformAINotSetUp):
+		apierror.New(http.StatusServiceUnavailable, aiErrPlatformNotConfigured,
+			"AI is not set up on this installation. A platform administrator sets up the AI provider in the console.").WriteJSON(w)
+
+	case errors.Is(err, aitriage.ErrAIDisabled):
+		apierror.New(http.StatusForbidden, aiErrDisabled,
+			"AI triage is turned off for this organization. An organization administrator turns it on in Settings > AI.").WriteJSON(w)
+
+	case errors.Is(err, aitriage.ErrPolicyRestricted):
+		apierror.New(http.StatusForbidden, aiErrPolicyRestricted,
+			"Your organization's AI data policy keeps this finding away from AI (pentest campaign above the TLP limit for AI, or AI turned off for the campaign).").WriteJSON(w)
+
+	case errors.Is(err, aitriagedom.ErrDuplicateRequest):
+		apierror.Conflict("A triage request is already in progress for this finding").WriteJSON(w)
+
+	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Triage result").WriteJSON(w)
 
-	case contains(errStr, "validation"):
-		apierror.BadRequest(errStr).WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest("Invalid request").WriteJSON(w)
 
-	case contains(errStr, "forbidden"):
+	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden("You don't have permission to access AI triage for this resource").WriteJSON(w)
-
-	case contains(errStr, "disabled"):
-		apierror.Forbidden("AI triage is disabled for this tenant. Contact your administrator to enable it.").
-			WithDetails(map[string]string{
-				"action": "Enable AI triage in tenant settings",
-			}).WriteJSON(w)
-
-	case contains(errStr, "already in progress"):
-		// Deduplication - return 409 Conflict with helpful message
-		apierror.Conflict("A triage request is already in progress for this finding").
-			WithDetails(map[string]string{
-				"action":   "Wait for the current triage to complete, or check the finding's triage history",
-				"endpoint": "GET /api/v1/findings/{id}/ai-triage",
-			}).WriteJSON(w)
-
-	case contains(errStr, "token limit exceeded"):
-		// Token limit exceeded - return 429 with helpful message
-		apierror.TooManyRequests("Monthly AI token limit exceeded").
-			WithDetails(map[string]string{
-				"action":     "Wait until next month, or ask your administrator to raise the monthly token budget",
-				"suggestion": "Review your token usage in tenant settings",
-			}).WriteJSON(w)
-
-	case contains(errStr, "provider configuration"):
-		// Provider not configured - return 503
-		apierror.ServiceUnavailable("AI service is not properly configured").
-			WithDetails(map[string]string{
-				"action": "Contact your administrator to configure AI settings",
-			}).WriteJSON(w)
 
 	default:
 		h.logger.Error("service error", "error", err)
-		apierror.InternalServerError("AI triage failed. Please try again later.").
-			WithDetails(map[string]string{
-				"action": "If the problem persists, contact support",
-			}).WriteJSON(w)
+		apierror.InternalServerError("AI triage failed. Please try again later.").WriteJSON(w)
 	}
 }
 

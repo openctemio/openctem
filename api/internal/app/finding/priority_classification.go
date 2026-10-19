@@ -53,11 +53,6 @@ type PriorityClassificationService struct {
 	// (legacy behaviour, unsafe on noisy tenants). Classification
 	// itself is NEVER altered by the guard — only the event emission.
 	priorityFloodGuard *PriorityFloodGuard
-	// aiTriage feeds a high-confidence AI "likely false positive" verdict into
-	// classification so it can DE-ESCALATE a finding by one bounded level. The
-	// ONLY signal permitted to lower priority. Optional — nil keeps classification
-	// unchanged (no AI signal → never a downgrade). See priority_ai_triage.go.
-	aiTriage AITriageVerdictLookup
 	// assetOwner reports, per asset, whether an owner is assigned (batch,
 	// tenant-scoped). It backs the CTEM "ownership unknown defaults to P2
 	// minimum" floor: a finding on an unowned asset is never below P2. Optional —
@@ -376,14 +371,13 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	// Build priority context (with attack-path reachability + threat-model
 	// signal, if wired). Both oracle lookups are tenant-scoped and cached.
 	reachable := s.reachableSet(ctx, tenantID)
-	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{finding.ID()})
 	// Owner presence feeds the CTEM ownership floor, but only when the tenant
 	// opted in — otherwise we skip the lookup entirely (no floor, no query).
 	var hasOwner map[shared.ID]bool
 	if s.ownershipFloorEnabled(ctx, tenantID) {
 		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(assetEntity))
 	}
-	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
+	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID), hasOwner)
 	if assetEntity != nil {
 		pctx.AttributionUnconfirmed = s.unconfirmedAssets(ctx, tenantID, []shared.ID{assetEntity.ID()})[assetEntity.ID()]
 	}
@@ -770,7 +764,6 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 	for _, f := range findings {
 		findingIDs = append(findingIDs, f.ID())
 	}
-	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, findingIDs)
 
 	// Attribution of every asset in the batch: one tenant-scoped query.
 	attrAssetIDs := make([]shared.ID, 0, len(assets))
@@ -808,7 +801,7 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		// Business-aligned effective criticality from the preloaded batch map.
 		effCrit, critReason := asset.EffectiveCriticality(a.Criticality(), businessCtx[f.AssetID()])
 
-		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, aiFP, hasOwner)
+		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, hasOwner)
 		pctx.AttributionUnconfirmed = unconfirmed[f.AssetID()]
 		// Same rule as applyControlProtection, fed from the batch map above so
 		// the sweep stays one query for the whole batch instead of per finding.
@@ -849,7 +842,6 @@ func (s *PriorityClassificationService) buildPriorityContext(
 	effCrit asset.Criticality,
 	reachable map[string]bool,
 	threatened map[string]bool,
-	aiFP map[shared.ID]AIFalsePositiveVerdict,
 	hasOwner map[shared.ID]bool,
 ) vulnerability.PriorityContext {
 	ctx := vulnerability.PriorityContext{
@@ -962,15 +954,6 @@ func (s *PriorityClassificationService) buildPriorityContext(
 	unknownExposure := a == nil || a.Exposure() == asset.ExposureUnknown || a.Exposure() == ""
 	ctx.ReachabilityUnknown = unknownExposure && !ctx.IsReachable && !ctx.IsInternetAccessible &&
 		!ctx.IsNetworkAccessible && !ctx.OnOpenThreatPath
-
-	// AI-triage de-escalation signal (keyed by finding, not asset): a
-	// high-confidence "likely false positive" verdict lets the classifier lower
-	// this finding by one bounded level. This is the ONLY input that can reduce
-	// priority; a missing/low-confidence verdict is the zero value → no effect.
-	if v, ok := aiFP[f.ID()]; ok && v.Likely {
-		ctx.AIFalsePositiveLikely = true
-		ctx.AIFalsePositiveLikelihood = v.Likelihood
-	}
 
 	return ctx
 }
