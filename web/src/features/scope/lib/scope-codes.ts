@@ -106,6 +106,11 @@ export const SCOPE_REFUSAL_TEXT = {
     label: 'No scan zone',
     message: 'No scan zone covers this private target.',
   },
+  unresolved: {
+    label: 'Does not resolve',
+    message:
+      'This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.',
+  },
   zone_no_sensor: {
     label: 'Zone has no sensor',
     message: 'The scan zone of this target has no sensors.',

@@ -743,7 +743,11 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 			if reason == "" {
 				reason = "no scan zone covers this target"
 			}
-			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: reason, Code: scopedom.RefusalZoneNone, Resolved: s.revealedAddrs(r)})
+			code := scopedom.RefusalZoneNone
+			if r.Unresolved {
+				code = scopedom.RefusalUnresolved
+			}
+			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: reason, Code: code, Resolved: s.revealedAddrs(r)})
 		case r.Zone != nil && len(r.Zone.SensorIDs) == 0:
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target,
 				Reason: fmt.Sprintf("scan zone %q has no sensors assigned", r.Zone.Name), Code: scopedom.RefusalZoneNoSensor})
