@@ -635,7 +635,7 @@ type SuggestionRepository interface {
 	MarkDigest(ctx context.Context, tenantID shared.ID, at time.Time) error
 	ListSuggestions(ctx context.Context, tenantID shared.ID, f SuggestionFilter, page pagination.Pagination) (pagination.Result[*Suggestion], error)
 	GetSuggestion(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope) (*Suggestion, error)
-	SuggestionMembers(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[TaskMember], error)
+	SuggestionMembers(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[SuggestionMember], error)
 	DecideSuggestion(ctx context.Context, tenantID, id shared.ID, version int, d SuggestionDecision) (*Suggestion, error)
 	CountSuggestions(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (SuggestionCounts, error)
 	AcceptSuggestion(ctx context.Context, plan AcceptPlan) (*AcceptResult, error)
@@ -720,3 +720,43 @@ type AcceptResult struct {
 // ErrNothingToAccept: every finding of the suggestion was removed, closed or
 // skipped.
 var ErrNothingToAccept = fmt.Errorf("%w: no finding is left to accept", shared.ErrValidation)
+
+// SuggestionMember is one finding of a suggestion with what a person needs
+// to judge it: where it is, the rule, the installed version, the scanner's
+// advice and the task that claimed it since the suggestion was made.
+// Scanner text (Recommendation, FixCode) is plain text, capped, with secret
+// shapes redacted by the service.
+type SuggestionMember struct {
+	TaskMember
+	RuleID           string
+	CWEIDs           []string
+	FilePath         string
+	StartLine        int
+	Branch           string
+	NetworkPort      int
+	NetworkTransport string
+	// LocationTargets are the first affected targets a finding without a
+	// file names (a URL, host:port).
+	LocationTargets  []string
+	AssetCriticality string
+	PackageName      string
+	InstalledVersion string
+	Recommendation   string
+	FixCode          string
+	// ActiveTask is the active task the finding is the primary member of,
+	// when one claimed it since the suggestion was made.
+	ActiveTask *TaskRef
+}
+
+// TaskRef names a task.
+type TaskRef struct {
+	ID    shared.ID
+	Title string
+}
+
+// Suggestion member text caps (runes).
+const (
+	MaxMemberRecommendation = 2000
+	MaxMemberFixCode        = 4000
+	MaxMemberTargets        = 5
+)
