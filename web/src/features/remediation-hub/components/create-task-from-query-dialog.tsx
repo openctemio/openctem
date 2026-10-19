@@ -219,7 +219,7 @@ export function CreateTaskFromQueryDialog({
             <Label htmlFor="task-query">{t('remediationQuery.create.queryLabel')}</Label>
             <QueryBox id="task-query" value={query} onChange={setQuery} autoFocus />
             {ignoredFilters && ignoredFilters.length > 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
+              <p className="text-xs text-warning">
                 {t('remediationQuery.create.ignoredFilters', undefined, {
                   filters: ignoredFilters.join(', '),
                 })}
