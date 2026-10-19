@@ -159,7 +159,7 @@ describe('ExposureSection', () => {
     render(
       <ExposureSection
         asset={makeAsset({
-          isInternetAccessible: false,
+          isInternetFacing: false,
           piiDataExposed: true,
           phiDataExposed: false,
         })}

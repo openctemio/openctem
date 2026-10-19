@@ -15,7 +15,8 @@ import type {
   ApiGroupAsset,
   ApiGroupFinding,
 } from '../api'
-import type { GroupAsset, GroupFinding } from '../lib/mock-data'
+import type { GroupAsset, GroupFinding } from '../types'
+import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'
 
 // ============================================
 // API Response -> Frontend Type
@@ -64,59 +65,37 @@ export function transformApiAssetGroup(api: ApiAssetGroup): AssetGroup {
 }
 
 /**
- * Transform API GroupAsset to frontend GroupAsset
- * Note: API may have more asset types than the mock GroupAsset type supports
+ * Transform API GroupAsset to frontend GroupAsset. The type is the stored
+ * asset type as is (subdomain, application, ip_address, ...): the page labels
+ * it from the asset type registry.
  */
 export function transformApiGroupAsset(api: ApiGroupAsset): GroupAsset {
-  // Map API asset types to frontend GroupAsset types
-  const typeMap: Record<string, GroupAsset['type']> = {
-    domain: 'domain',
-    website: 'website',
-    api: 'api',
-    host: 'host',
-    cloud: 'cloud',
-    database: 'database',
-    repository: 'repository',
-    // Map additional types to closest match
-    container: 'cloud',
-    network: 'host',
-    certificate: 'domain',
-    identity: 'host',
-    secret: 'database',
-    other: 'host',
-  }
-
   return {
     id: api.id ?? '',
     name: api.name ?? '',
-    type: typeMap[api.type ?? ''] || 'host',
-    status: (api.status ?? 'active') as GroupAsset['status'],
+    type: api.type || 'unknown',
+    status: api.status ?? 'active',
     riskScore: api.risk_score ?? 0,
     findingCount: api.finding_count ?? 0,
     lastSeen: api.last_seen ?? '',
   }
 }
 
+const OPEN_STATUSES: ReadonlySet<string> = new Set(FINDINGS_OPEN_STATUSES)
+
 /**
- * Transform API GroupFinding to frontend GroupFinding
- * Note: API may have more status types than the mock GroupFinding type supports
+ * Transform API GroupFinding to frontend GroupFinding. The status is kept as
+ * stored; `open` uses the findings' open statuses, the set the group's
+ * finding count counts.
  */
 export function transformApiGroupFinding(api: ApiGroupFinding): GroupFinding {
-  // Map API finding statuses to frontend GroupFinding statuses
-  const statusMap: Record<string, GroupFinding['status']> = {
-    open: 'open',
-    in_progress: 'in_progress',
-    resolved: 'resolved',
-    // Map additional statuses to closest match
-    accepted: 'resolved',
-    false_positive: 'resolved',
-  }
-
+  const status = api.status ?? 'new'
   return {
     id: api.id ?? '',
     title: api.title ?? '',
     severity: (api.severity ?? 'info') as GroupFinding['severity'],
-    status: statusMap[api.status ?? ''] || 'open',
+    status,
+    open: OPEN_STATUSES.has(status) || status === 'open',
     assetName: api.asset_name ?? '',
     discoveredAt: api.discovered_at ?? '',
   }

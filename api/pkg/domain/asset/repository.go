@@ -240,7 +240,7 @@ type AggregateStats struct {
 	ByDataClassification map[string]int
 	ByEnvironment        map[string]int
 	ByProvider           map[string]int
-	ByInternetAccessible map[string]int
+	ByInternetFacing     map[string]int
 	ByHasOwner           map[string]int
 	ByControlPlane       map[string]int
 	ByBusinessUnit       map[string]int
@@ -317,17 +317,17 @@ type Filter struct {
 	AssetGroupIDs []string
 	// OwnerIDs keeps the assets owned by any of these users or groups of
 	// the tenant (asset_owners).
-	OwnerIDs             []string
-	IDs                  []string   // Only these assets (a batch lookup by id; data scope still applies)
-	UnderDomains         []string   // Names equal to or below these DNS names (example.com, *.example.com)
-	InCIDRs              []string   // Address assets (ip_address, host named by an address) inside these ranges
-	HasOwner             *bool      // Filter assets with/without an assigned owner (asset_owners)
-	DataClassifications  []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
-	IsControlPlane       *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
-	IsInternetAccessible *bool      // Filter by the is_internet_accessible column
-	Environments         []string   // Filter by environment (production|staging|development|testing|dr)
-	LastSeenAfter        *time.Time // Filter assets last seen at/after this time (freshness)
-	LastSeenBefore       *time.Time // Filter assets last seen at/before this time (freshness)
+	OwnerIDs            []string
+	IDs                 []string   // Only these assets (a batch lookup by id; data scope still applies)
+	UnderDomains        []string   // Names equal to or below these DNS names (example.com, *.example.com)
+	InCIDRs             []string   // Address assets (ip_address, host named by an address) inside these ranges
+	HasOwner            *bool      // Filter assets with/without an assigned owner (asset_owners)
+	DataClassifications []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
+	IsControlPlane      *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
+	InternetFacing      *bool      // Filter by internet-facing (InternetFacingSQL)
+	Environments        []string   // Filter by environment (production|staging|development|testing|dr)
+	LastSeenAfter       *time.Time // Filter assets last seen at/after this time (freshness)
+	LastSeenBefore      *time.Time // Filter assets last seen at/before this time (freshness)
 	// ExpiresAfter / ExpiresBefore keep the assets whose expiry property
 	// (format expiry: not_after, expires_at) is after / before this time.
 	// An asset without a readable expiry never matches either.
@@ -642,9 +642,9 @@ func (f Filter) WithIsControlPlane(isControlPlane bool) Filter {
 	return f
 }
 
-// WithIsInternetAccessible filters by internet reachability.
-func (f Filter) WithIsInternetAccessible(v bool) Filter {
-	f.IsInternetAccessible = &v
+// WithInternetFacing filters by internet-facing (InternetFacingSQL).
+func (f Filter) WithInternetFacing(v bool) Filter {
+	f.InternetFacing = &v
 	return f
 }
 
@@ -711,7 +711,7 @@ func (f Filter) IsEmpty() bool {
 		f.HasOwner == nil &&
 		len(f.DataClassifications) == 0 &&
 		f.IsControlPlane == nil &&
-		f.IsInternetAccessible == nil &&
+		f.InternetFacing == nil &&
 		len(f.Environments) == 0 &&
 		f.LastSeenAfter == nil &&
 		f.LastSeenBefore == nil &&

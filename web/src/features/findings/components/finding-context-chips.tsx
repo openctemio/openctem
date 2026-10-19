@@ -38,6 +38,8 @@ export interface FindingContextChipsProps {
   ownerId?: string | null
   /** The Unassigned owner group (`asset_owner_id_null=true`). */
   ownerUnassigned?: boolean
+  /** An asset group (`asset_group_id`; shown as an id). */
+  assetGroupId?: string | null
   /** Remove one URL parameter (its `param`); every other filter stays. */
   onRemove: (param: string) => void
   className?: string
@@ -54,7 +56,8 @@ export function hasFindingContextFilters(p: Omit<FindingContextChipsProps, 'onRe
     p.findingType ||
     p.componentId ||
     p.ownerId ||
-    p.ownerUnassigned
+    p.ownerUnassigned ||
+    p.assetGroupId
   )
 }
 
@@ -68,6 +71,7 @@ export function FindingContextChips({
   componentId,
   ownerId,
   ownerUnassigned,
+  assetGroupId,
   onRemove,
   className,
 }: FindingContextChipsProps) {
@@ -161,6 +165,15 @@ export function FindingContextChips({
         label: ownerId,
       })
     }
+    if (assetGroupId) {
+      out.push({
+        param: 'asset_group_id',
+        kind: t('findings.contextChips.assetGroup', 'Asset group'),
+        icon: Boxes,
+        mono: true,
+        label: assetGroupId,
+      })
+    }
     return out
   }, [
     assetId,
@@ -172,6 +185,7 @@ export function FindingContextChips({
     componentId,
     ownerId,
     ownerUnassigned,
+    assetGroupId,
     validAssetId,
     validComponentId,
     assetLoading,

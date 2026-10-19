@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 )
 
 // freshnessImportantSQL is the SQL form of assetfreshness.Importance.Important.
-const freshnessImportantSQL = `(a.criticality IN ('critical', 'high') OR a.is_internet_accessible OR a.exposure = 'public')`
+var freshnessImportantSQL = `(a.criticality IN ('critical', 'high') OR ` + asset.InternetFacingSQL("a") + `)`
 
 // assetFreshnessCondition returns the WHERE condition for a freshness filter
 // value, or "" for none. Every subquery is pinned to the asset's tenant.

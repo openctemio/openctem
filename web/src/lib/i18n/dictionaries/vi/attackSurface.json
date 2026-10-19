@@ -140,5 +140,16 @@
   "attackSurface.decide.addPrefix": "Thêm {prefix}",
   "attackSurface.decide.checkedHeading": "Đã được kiểm tra mức tác động thấp (thêm vào phạm vi để quét đầy đủ)",
   "attackSurface.decide.seenPorts": "Cổng mở đã thấy: {ports}",
-  "attackSurface.decide.otherNames": "Còn có tên {names} (ngoài phạm vi)"
+  "attackSurface.decide.otherNames": "Còn có tên {names} (ngoài phạm vi)",
+  "attackSurface.overview.totalAssets": "Tổng số tài sản",
+  "attackSurface.overview.newInWindow": "{count} mới trong {days} ngày qua",
+  "attackSurface.overview.internetFacing": "Tài sản hướng Internet",
+  "attackSurface.overview.newlyExposed": "{count} mới lộ ra Internet trong {days} ngày qua",
+  "attackSurface.overview.internetFacingInfo": "Tài sản có mức phơi nhiễm công khai hoặc được một nguồn báo là truy cập được từ Internet. Số mới lộ ra đếm cùng các thay đổi như Tài sản › Thay đổi.",
+  "attackSurface.overview.criticalInternetFacing": "Tài sản quan trọng hướng Internet",
+  "attackSurface.overview.criticalInternetFacingInfo": "Tài sản hướng Internet có mức quan trọng nghiêm trọng hoặc cao. Đây là nhóm cần theo dõi, không phải rủi ro đang mở: các điểm phơi nhiễm đang mở được liệt kê bên dưới.",
+  "attackSurface.overview.avgRisk": "Điểm rủi ro trung bình",
+  "attackSurface.overview.of100": "trên 100",
+  "attackSurface.overview.noAssetsToScore": "Chưa có tài sản để chấm điểm",
+  "attackSurface.overview.seeNewlyExposed": "Xem những gì mới hướng Internet trong tuần này"
 }
