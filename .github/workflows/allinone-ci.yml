@@ -116,6 +116,8 @@ jobs:
           bash .github/scripts/smoke-image.sh openctem local/openctem:ci amd64
       - name: Console plan (no console without the gateway)
         run: sh deploy/allinone/console-plan.test.sh
+      - name: Child environments (no secret reaches web, console or gateway)
+        run: bash deploy/allinone/child-env.test.sh
       - name: All-in-one, both gateway modes, against Postgres + Redis
         env:
           SMOKE_NETWORK: host
