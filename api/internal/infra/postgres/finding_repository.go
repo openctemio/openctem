@@ -1456,6 +1456,10 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 		cond, args = dataScopeCond("f.asset_id", filter.DataScope, args)
 		statusFilter += " AND " + cond
 	}
+	if filter.PentestMemberFor != nil {
+		args = append(args, filter.PentestMemberFor.String())
+		statusFilter += " AND " + vulnerability.FindingMemberVisibilitySQL("f", "$1", fmt.Sprintf("$%d::uuid", len(args)))
+	}
 	argN := len(args) + 1
 
 	if len(filter.SeverityIn) > 0 {
@@ -3227,6 +3231,10 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
+	}
+	if filter.PentestMemberFor != nil {
+		args = append(args, filter.PentestMemberFor.String())
+		query += " AND " + vulnerability.FindingMemberVisibilitySQL("findings", "$1", fmt.Sprintf("$%d::uuid", len(args)))
 	}
 
 	return r.queryFindingStats(ctx, query, args)
