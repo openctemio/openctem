@@ -1,4 +1,4 @@
-### Changed: the campaign pages show programmes of remediation tasks
+### Changed: the campaign pages show programs of remediation tasks
 
 - `/remediation/campaigns` lists each campaign with its owner and team, due
   date (late campaigns say "overdue"), status, tasks (with the overdue and
