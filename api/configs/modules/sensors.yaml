@@ -10,5 +10,6 @@
   permission: "sensors:read"
   jobs:
     - SensorHealthController
+    - SensorLegacyKeysController
     - SensorEventRetentionController
     - HeartbeatHistoryRetentionController
