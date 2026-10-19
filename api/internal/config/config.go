@@ -1109,20 +1109,6 @@ type SensorConfig struct {
 	// if no heartbeat is received. Default: 5 minutes.
 	HeartbeatTimeout time.Duration
 
-	// HealthCheckInterval is how often to check for stale sensors.
-	// Default: 1 minute.
-	HealthCheckInterval time.Duration
-
-	// Enabled turns on the legacy sensor health checker (jobs.SensorHealthChecker,
-	// WORKER_HEALTH_CHECK_ENABLED). Default: false. The sensor health controller
-	// (internal/infra/controller/sensor_health.go, RFC-035 §5.6) owns liveness:
-	// it applies the late/stale/offline ladder and holds convictions during its
-	// startup grace and while the platform itself is slow. The legacy checker
-	// knows none of that and sweeps the moment the API starts, so with it on an
-	// API restart convicted every sensor that could not heartbeat while the API
-	// was down. Keep it off unless the health controller is not running.
-	Enabled bool
-
 	// SCMSyncInterval is how often the scheduled SCM repository/branch sync runs.
 	// 0 (default) disables it — repositories are then only imported on demand via
 	// POST /integrations/{id}/import-repositories. Set SCM_SYNC_INTERVAL (e.g. 6h)
@@ -1701,9 +1687,7 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: SensorConfig{
-			Enabled:                           getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
 			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:               getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
 			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
@@ -2692,6 +2676,8 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
 	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
+	{"WORKER_HEALTH_CHECK_ENABLED", "unset it; the sensor health controller owns sensor liveness and the legacy checker was removed"},
+	{"WORKER_HEALTH_CHECK_INTERVAL", "unset it; the sensor health controller owns sensor liveness and the legacy checker was removed"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > Settings > Sign-up)"},
 	{"TENANT_CREATION_MODE", "unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open"},

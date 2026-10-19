@@ -53,6 +53,14 @@ type DomainVerifier interface {
 // created accounts; otherwise any organization could enroll any person by email.
 var ErrExistingAccountNeedsInvite = fmt.Errorf("%w: an account with this email already exists; invite them instead", shared.ErrConflict)
 
+// ErrNewAccountNeedsVerifiedDomain is returned when SCIM asks to provision an
+// email that has no account yet and the organization has not DNS-verified its
+// domain. SCIM creates global accounts, so it may only do that for addresses
+// the organization proved it owns; otherwise any organization (including a
+// self-signed-up one) could pre-create someone else's account and capture
+// their later sign-in. People on other domains join by invitation.
+var ErrNewAccountNeedsVerifiedDomain = fmt.Errorf("%w: the email domain is not a verified domain of this organization; verify the domain or invite the person", shared.ErrValidation)
+
 // ScimUser is the renderer-agnostic projection the HTTP layer wraps into SCIM
 // JSON. Active reflects the tenant membership (suspended → active:false).
 type ScimUser struct {
@@ -88,8 +96,9 @@ type ProvisioningService struct {
 	logger      *logger.Logger
 }
 
-// SetDomainVerifier wires the verified-domain check. Without it an existing
-// account is never attached by SCIM (fail-closed); new accounts are unaffected.
+// SetDomainVerifier wires the verified-domain check. Without it SCIM neither
+// creates an account nor attaches an existing one (fail-closed); it can only
+// reconcile people who are already members.
 func (s *ProvisioningService) SetDomainVerifier(v DomainVerifier) {
 	s.domains = v
 }
@@ -128,7 +137,16 @@ func (s *ProvisioningService) CreateOrActivate(ctx context.Context, tenantID sha
 		name = email
 	}
 
-	u, existed, err := s.findOrCreateUser(ctx, email, name)
+	// Both creating a global account and attaching an existing one need the
+	// organization to own the email domain (DNS proof); an existing member of
+	// this organization is reconciled whatever the domain.
+	verified := s.domainVerified(ctx, tenantID, email)
+	u, existed, err := s.findOrCreateUser(ctx, email, name, verified)
+	if errors.Is(err, ErrNewAccountNeedsVerifiedDomain) {
+		s.logger.Warn("scim provision refused: new account outside a verified domain",
+			"tenant_id", tenantID.String())
+		return ScimUser{}, false, err
+	}
 	if err != nil {
 		return ScimUser{}, false, err
 	}
@@ -146,7 +164,7 @@ func (s *ProvisioningService) CreateOrActivate(ctx context.Context, tenantID sha
 			return ScimUser{}, false, err
 		}
 	case errors.Is(merr, shared.ErrNotFound):
-		if existed && !s.domainVerified(ctx, tenantID, email) {
+		if existed && !verified {
 			s.logger.Warn("scim provision refused: existing account outside a verified domain",
 				"tenant_id", tenantID.String(), "user_id", u.ID().String())
 			return ScimUser{}, false, ErrExistingAccountNeedsInvite
@@ -204,10 +222,14 @@ func (s *ProvisioningService) domainVerified(ctx context.Context, tenantID share
 }
 
 // findOrCreateUser returns the account for email, creating a passwordless one
-// when none exists. existed reports whether the account was already there.
-func (s *ProvisioningService) findOrCreateUser(ctx context.Context, email, name string) (u *userdom.User, existed bool, err error) {
+// when none exists and mayCreate is set (the organization verified the email
+// domain). existed reports whether the account was already there.
+func (s *ProvisioningService) findOrCreateUser(ctx context.Context, email, name string, mayCreate bool) (u *userdom.User, existed bool, err error) {
 	if u, err := s.users.GetByEmail(ctx, email); err == nil && u != nil {
 		return u, true, nil
+	}
+	if !mayCreate {
+		return nil, false, ErrNewAccountNeedsVerifiedDomain
 	}
 	// Create as a local user with no password — the same "invited, not yet
 	// logged in" state the invitation flow uses, so the user can later be
