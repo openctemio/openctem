@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -51,7 +52,7 @@ func authz170Do(t *testing.T, h *dsHarness, user shared.ID, admin bool, perms []
 	return resp.StatusCode, string(out)
 }
 
-// A scoped member (member role holds compensating_controls:write) must not be
+// A scoped member granted compensating_controls:write by a custom role must not be
 // able to attach a compensating control to an asset or finding outside their
 // data scope: the link lowers the priority of findings they cannot see.
 func TestAuthz170F2_CompensatingControlLink_OutOfScope(t *testing.T) {
@@ -102,5 +103,33 @@ func TestAuthz170F2_BusinessService_OutOfScopeWriteAndCount(t *testing.T) {
 	_ = h.db.QueryRow(`SELECT criticality FROM business_services WHERE id=$1`, svc.String()).Scan(&crit)
 	if crit == "critical" {
 		t.Errorf("scoped member raised criticality of a service linking out-of-scope asset B1 (status %d, body %.200s)", status, body)
+	}
+}
+
+// The built-in Member role cannot create, change, test, link or delete a
+// compensating control (backend audit B7-R2): each lowers priorities and SLAs.
+func TestCompensatingControlWrite_MemberRoleRefused(t *testing.T) {
+	h := newDSHarness(t)
+	authz170Mount(t, h)
+	ctrl := shared.NewID()
+	h.exec(`INSERT INTO compensating_controls (id, tenant_id, name, control_type, status, reduction_factor)
+		VALUES ($1, $2, 'ctl', 'segmentation', 'active', 0.9)`, ctrl.String(), h.tenant.String())
+	member := permission.GetPermissionStringsForRole(tenant.RoleMember)
+	base := "/api/v1/compensating-controls/"
+	for _, c := range []struct{ method, path string }{
+		{http.MethodPost, base},
+		{http.MethodPut, base + ctrl.String()},
+		{http.MethodDelete, base + ctrl.String()},
+		{http.MethodPost, base + ctrl.String() + "/test"},
+		{http.MethodPost, base + ctrl.String() + "/assets"},
+		{http.MethodPost, base + ctrl.String() + "/findings"},
+	} {
+		status, body := authz170Do(t, h, h.memberA, false, member, c.method, c.path, map[string]any{})
+		if status != http.StatusForbidden {
+			t.Errorf("member %s %s = %d, want 403 (%.200s)", c.method, c.path, status, body)
+		}
+	}
+	if status, _ := authz170Do(t, h, h.memberA, false, member, http.MethodGet, base+ctrl.String(), nil); status != http.StatusOK {
+		t.Errorf("member read = %d, want 200", status)
 	}
 }
