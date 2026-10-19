@@ -73,7 +73,9 @@ type ConnectorConfig struct {
 	ResponseKey ed25519.PrivateKey
 	// APIURL is the API's base URL on the private network.
 	APIURL string
-	// APIClient calls the API (default: a client with a 2-minute timeout).
+	// APIClient calls the API (default: a client with a 2-minute timeout
+	// that ignores proxy settings in the environment and follows no
+	// redirect).
 	APIClient *http.Client
 	// Concurrency is how many requests are replayed at once (default 8).
 	Concurrency int
@@ -135,7 +137,7 @@ func NewConnector(cfg ConnectorConfig) (*Connector, error) {
 	}
 	c.api = cfg.APIClient
 	if c.api == nil {
-		c.api = &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		c.api = newAPIClient()
 	}
 	c.met = &connectorMetrics{requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "openctem_relay_connector_requests_total",
@@ -145,6 +147,17 @@ func NewConnector(cfg ConnectorConfig) (*Connector, error) {
 		cfg.Registerer.MustRegister(c.met.requests)
 	}
 	return c, nil
+}
+
+// newAPIClient is the default client for the API on the private network.
+// It never uses a proxy from the environment (HTTPS_PROXY, HTTP_PROXY): the
+// requests it carries are the sensors' opened requests, and an egress proxy
+// configured for the host must not see them. It never follows redirects.
+func newAPIClient() *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // the standard library's own type
+	tr.Proxy = nil
+	return &http.Client{Timeout: 2 * time.Minute, Transport: tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
 func connectorTLS(cfg ConnectorConfig, serverName string) *tls.Config {

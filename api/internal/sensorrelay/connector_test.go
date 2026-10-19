@@ -221,3 +221,17 @@ func TestConnectorConfigRefusals(t *testing.T) {
 		}
 	}
 }
+
+// The default API client never sends opened sensor requests through a proxy
+// from the environment.
+func TestConnectorAPIClientIgnoresEnvironmentProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://proxy.invalid:3128")
+	t.Setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
+	tr, ok := newAPIClient().Transport.(*http.Transport)
+	if !ok || tr.Proxy != nil {
+		t.Fatal("the API client must not use a proxy")
+	}
+	if newAPIClient().CheckRedirect == nil {
+		t.Fatal("the API client must not follow redirects")
+	}
+}
