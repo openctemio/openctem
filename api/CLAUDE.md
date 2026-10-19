@@ -338,7 +338,7 @@ exactly three sources:
   (migration `000372`), managed with `team:groups:write` through
   `GET/POST/DELETE /api/v1/assets/{id}/access-grants`.
 - **Ownership:** a `primary` or `secondary` *user* owner set by a person
-  (`v_asset_owner_scope`, migration `002980`) sees the asset; naming one
+  (`v_asset_owner_scope`, migration `003053`) sees the asset; naming one
   needs `team:groups:write`. `owner_ref` matches and stakeholder / informed
   owners grant nothing. Ownership adds no permission (the role decides).
 
