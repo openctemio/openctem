@@ -2034,6 +2034,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			repos.Sensor.SetLivenessOverlay(store)
 		}
 		log.Info("sensor liveness store", "mode", string(mode))
+		if w := redis.EvictionPolicyWarning(context.Background(), deps.RedisClient.Client()); w != "" {
+			log.Warn(w)
+		}
 	}
 	s.Sensor.SetHeartbeatGapObserver(telemetry.SensorHeartbeatMetrics{})
 	// Command leases (RFC-035 D6): a claim holds for SENSOR_COMMAND_LEASE

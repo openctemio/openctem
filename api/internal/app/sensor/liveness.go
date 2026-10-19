@@ -18,6 +18,7 @@ import (
 	"context"
 	"math/rand/v2"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -44,6 +45,9 @@ const (
 	livenessFallbackPerSensor = time.Minute
 	// livenessStoreTimeout bounds one store call on the heartbeat path.
 	livenessStoreTimeout = 300 * time.Millisecond
+	// livenessDegradedEvery bounds how often one replica refreshes the
+	// cross-replica degraded marker.
+	livenessDegradedEvery = 5 * time.Second
 	// maxPendingCheckpoints bounds the checkpoint batch; beyond it the
 	// oldest rows are dropped (the next checkpoint repeats them).
 	maxPendingCheckpoints = 20_000
@@ -82,6 +86,9 @@ type livenessPlane struct {
 	// keyRows debounces the per-key-row usage writes (sensor_api_keys) in
 	// redis mode: once per checkpoint period per sensor and address.
 	keyRows keyUseDebouncer
+
+	// degradedAt (unix nanos) throttles the degraded marker writes.
+	degradedAt atomic.Int64
 
 	stopOnce sync.Once
 	stop     chan struct{}
@@ -167,6 +174,28 @@ func (p *livenessPlane) run(now func() time.Time) {
 		p.flushHistory(ctx, now(), false)
 		cancel()
 	}
+}
+
+// markDegraded tells the other replicas that heartbeat writes are failing
+// here (best effort, off the heartbeat path, at most every
+// livenessDegradedEvery): the health controller then convicts nobody until
+// the marker lapses.
+func (p *livenessPlane) markDegraded(now time.Time) {
+	sig, ok := p.store.(sensordom.LivenessDegradedSignal)
+	if !ok {
+		return
+	}
+	last := p.degradedAt.Load()
+	if now.UnixNano()-last < int64(livenessDegradedEvery) || !p.degradedAt.CompareAndSwap(last, now.UnixNano()) {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), livenessStoreTimeout)
+		defer cancel()
+		if err := sig.MarkDegraded(ctx, sensordom.LivenessDegradedTTL); err != nil {
+			p.log.Debug("cannot set the sensor liveness degraded marker", "error", err)
+		}
+	}()
 }
 
 // enqueueCheckpoint adds a checkpoint row (the latest per sensor wins).
@@ -318,6 +347,7 @@ func (s *SensorService) planHeartbeatWrite(ctx context.Context, a *sensordom.Sen
 		return w // shadow: Postgres decides, every heartbeat is written
 	}
 	if err != nil {
+		p.markDegraded(now)
 		if p.allowFallback(a, now) {
 			w.kind = hbWriteFallback
 			return w
@@ -352,6 +382,7 @@ func (s *SensorService) heartbeatWriteFailed(ctx context.Context, w heartbeatWri
 	if !s.live.redis() {
 		return
 	}
+	s.live.markDegraded(s.now())
 	sctx, cancel := context.WithTimeout(ctx, livenessStoreTimeout)
 	defer cancel()
 	_ = s.live.store.Invalidate(sctx, w.key)
