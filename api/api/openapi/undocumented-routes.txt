@@ -325,8 +325,6 @@ POST /api/v1/relationships/suggestions/{}/approve
 POST /api/v1/relationships/suggestions/{}/dismiss
 POST /api/v1/remediation/campaigns
 POST /api/v1/remediation/campaigns/{}/create-ticket
-POST /api/v1/remediation/campaigns/{}/refresh
-POST /api/v1/remediation/campaigns/{}/resolve
 POST /api/v1/reports/schedules
 POST /api/v1/roles
 POST /api/v1/roles/{}/members/bulk

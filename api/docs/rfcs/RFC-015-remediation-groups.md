@@ -143,7 +143,7 @@ There is no immediate close for a group.
 |---|---|
 | **1** (#288) | `remediation_key` column + derivation at ingest + group query/repo + `GET /remediation-groups` + `POST /remediation-groups/{key}/resolve` (reuses BulkGuard+BulkUpdate) + backfill. Tests incl. DB round-trip. |
 | **2** | UI "Remediations / By solution" view with per-group **Resolve all**; wire the `fix_applied → verified-on-rescan` loop end to end. |
-| **3** (partial) | Unify with Remediation Campaigns — **campaign can now actively resolve its open findings** (`POST /remediation/campaigns/{id}/resolve`, reuses the finding bulk path + abuse guard; was a passive tracker). Remaining: group→campaign/ticket spawn; richer keys (Tenable solution-id, OS advisory id). |
+| **3** (partial) | Unify with Remediation Campaigns — **campaign can now actively resolve its open findings** (`POST /remediation/campaigns/{id}/resolve`, reuses the finding bulk path + abuse guard; was a passive tracker; removed 2026-10 when campaigns became programs of tasks, RFC-098 §9a). Remaining: group→campaign/ticket spawn; richer keys (Tenable solution-id, OS advisory id). |
 
 ## Testing
 
