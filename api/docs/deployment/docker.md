@@ -146,6 +146,53 @@ provider's redirect URI is `<console origin>/login/callback`.
 The all-in-one image runs the console too: publish `-p 8443:8443` (or set
 `OPENCTEM_ADMIN_SITE=host` and `OPENCTEM_ADMIN_HOST`).
 
+### All-in-one image: process isolation
+
+The all-in-one image runs the API, the web console, the platform console and
+the gateway in one container. Started as root (the image default), its
+supervisor (`deploy/allinone/supervise.sh`) only prepares `/data` and starts
+each process under its own uid, with no capabilities and (except the gateway,
+whose Caddy binds 443 through a file capability) `no-new-privileges`:
+
+| process | uid | environment | writable |
+|---|---|---|---|
+| API | 1002 `openctem-api` | everything except the schema owner's credentials | `/data/attachments`, `/data/sensor-ca` |
+| web console | 1001 `nextjs` | its own `NEXT_*`, cookie and legal settings, `BACKEND_API_URL` | its `.next/cache` |
+| platform console | 1003 `openctem-console` | the same, plus `ADMIN_API_URL` | its `.next/cache` |
+| gateway | 1004 `openctem-gateway` | `OPENCTEM_*`, TLS, ACME, proxies | `/data/gateway`, `/data/ca`, `/config` |
+
+The lists are in `deploy/allinone/child-env.sh`. No database password,
+`APP_ENCRYPTION_KEY`, `FINGERPRINT_KEY` or JWT secret reaches the web, console
+or gateway process, and the schema owner's credentials (`DB_MIGRATE_*`,
+`DATABASE_MIGRATE_URL`) reach no process at all: the supervisor runs the
+start-up migrations itself, passes the password to `psql` and `migrate` in
+`PGPASSWORD` (never on a command line, so never in `ps`), and drops it before
+starting anything. A process cannot read another's environment or files. The
+gateway's admin API is a unix socket only its uid can open, not
+`127.0.0.1:2019`.
+
+What stays shared, because every process is in one network namespace: any of
+them can open the API's listeners on loopback, including the console listener
+(`ADMIN_LISTEN_ADDR`), and the API trusts the client address loopback callers
+forward. A compromised web process can therefore reach the console API as if
+from an allowed network; it still needs a platform administrator's session.
+Run the split Compose deployment (or the Helm chart) when that matters,
+always for a multi-tenant service.
+
+Started as a non-root uid (`--user 1001`, or a Kubernetes `runAsNonRoot` policy
+without root), every process runs as that uid and the supervisor logs a
+warning: the environment lists still apply, but one process can read
+another's memory and environment. That mode is one trust domain, fit for
+evaluation and small single-tenant installs only.
+
+**Upgrading** from an image that ran everything as uid 1001: the supervisor
+moves the gateway's storage from `/data/caddy` to `/data/gateway/caddy`
+(certificates, the internal CA the sensors trust, the ACME account) and gives
+each directory its new owner, once. In TLS mode `files`, the certificate and
+key under `/certs` must be readable by uid 1004. To go back to an older image,
+move `/data/gateway/caddy` back to `/data/caddy` and change the owner of
+`/data` to 1001 first.
+
 ### Health page and host operations
 
 The platform console has a read-only **Monitoring > Health** page (platform administrators
