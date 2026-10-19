@@ -218,15 +218,21 @@ export function ProgramHealthView() {
 
   const loading = summaryLoading || mttrLoading || qualityLoading || validationLoading
 
-  const openSeries = useMemo(() => (riskTrend ?? []).map((p) => p.findings_open), [riskTrend])
+  // The stored history, ending at today's live open count (the same figure
+  // as the rest of the page), so the trend never ends on yesterday's snapshot.
+  const openSeries = useMemo(() => {
+    const series = (riskTrend ?? []).map((p) => p.findings_open)
+    if (!summary || summary.scoped) return summary?.scoped ? [] : series
+    return series.length > 0 ? [...series.slice(0, -1), summary.findings_total] : series
+  }, [riskTrend, summary])
   const trendDelta = exposureTrendDelta(openSeries)
 
   const metrics = useMemo<OutcomeMetric[]>(() => {
-    // 1. Most-urgent-class remediation completion (guide "P1 remediated/total").
+    // 1. P0 fixed in the period, of P0 open + fixed.
     const completion = summary
       ? remediationCompletionPct(summary.p0_open, summary.p0_resolved_period)
       : null
-    // 2. Time discovery → remediation for the urgent class (MTTR proxy).
+    // 2. Mean time from discovery to fix for P0 (the API has no P0 median).
     const p0Days = mttr ? hoursToDays(mttr.by_priority_class?.P0) : null
     // 4/5. Regression (re-open / rediscovery).
     const reopenPct = summary?.regression_rate_pct
@@ -252,23 +258,27 @@ export function ProgramHealthView() {
     return [
       {
         id: 'remediation-completion',
-        label: 'P1 remediation completion',
-        measures: 'Urgent-class findings remediated ÷ total in the period',
+        label: t('dashboardMetrics.program.p0Fixed', 'P0 fixed in period'),
+        measures: t(
+          'dashboardMetrics.program.p0FixedMeasures',
+          'P0 findings fixed in the period ÷ (P0 open + P0 fixed)'
+        ),
         display: fmtPct(completion),
         target: '> 90%',
         status: remediationCompletionState(completion),
         source: 'executive-summary (p0_resolved_period ÷ p0_open + p0_resolved_period)',
-        hint: 'P0 here = the guide’s P1 (most-urgent class).',
       },
       {
         id: 'remediation-time',
-        label: 'Time to remediate (P1)',
-        measures: 'Discovery → remediation for the urgent class',
+        label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix · P0'),
+        measures: t(
+          'dashboardMetrics.program.p0MeanTimeMeasures',
+          'Mean time from discovery to fix for P0 findings fixed in the last 90 days'
+        ),
         display: fmtDays(p0Days),
         target: '< 14 days',
         status: remediationTimeState(p0Days),
-        source: 'mttr-analytics by_priority_class.P0 (mean/MTTR proxy for median)',
-        hint: 'Proxy: MTTR (mean), not true median — median not yet exposed by the API.',
+        source: 'mttr-analytics by_priority_class.P0 (mean)',
       },
       {
         id: 'owner-coverage',
@@ -290,8 +300,11 @@ export function ProgramHealthView() {
       },
       {
         id: 'rediscovered',
-        label: 'P1s rediscovered in scope',
-        measures: 'Urgent findings that came back after being fixed',
+        label: t('dashboardMetrics.program.rediscovered', 'Findings back after a fix'),
+        measures: t(
+          'dashboardMetrics.program.rediscoveredMeasures',
+          'Findings that came back after being fixed, in the period'
+        ),
         display: rediscovered === undefined ? null : String(rediscovered),
         target: '→ 0',
         status:
@@ -306,8 +319,11 @@ export function ProgramHealthView() {
       },
       {
         id: 'sla-compliance',
-        label: 'SLA compliance',
-        measures: 'Findings remediated within their SLA window',
+        label: t('dashboardMetrics.executive.sla'),
+        measures: t(
+          'dashboardMetrics.program.slaMeasures',
+          'Open findings with an SLA that are not past it'
+        ),
         display: fmtPct(summary?.sla_compliance_pct),
         target: '≥ 90%',
         status: slaComplianceState(summary?.sla_compliance_pct),
@@ -315,12 +331,16 @@ export function ProgramHealthView() {
       },
       {
         id: 'exposure-trend',
-        label: 'Exposure-count trend',
-        measures: `Open findings over ${period === '365' ? '1y' : `${period}d`} — should fall after ramp-up`,
+        label: t('dashboardMetrics.program.exposureTrend', 'Open findings trend'),
+        measures: t(
+          'dashboardMetrics.program.exposureTrendMeasures',
+          'Open findings now vs {window} ago — should fall after ramp-up',
+          { window: period === '365' ? '1y' : `${period}d` }
+        ),
         display: trendDelta === null ? null : `${trendDelta > 0 ? '+' : ''}${trendDelta} open`,
         target: 'Trending down',
         status: exposureTrendState(trendDelta),
-        source: 'risk-trend (findings_open, first → last)',
+        source: 'risk-trend (findings_open, first) → executive-summary (findings_total, now)',
       },
       {
         id: 'validation-downgrade',
@@ -333,7 +353,7 @@ export function ProgramHealthView() {
         hint: dgHint,
       },
     ]
-  }, [summary, mttr, quality, period, trendDelta, validation])
+  }, [summary, mttr, quality, period, trendDelta, validation, t])
 
   if (!canRead) {
     return (

@@ -440,3 +440,33 @@ func TestSensorKeyUse_ConcurrentOlderUseKeepsNewerAddress_DB(t *testing.T) {
 		t.Fatalf("got %s at %v, want the newer use 198.51.100.9 at %v", ip, at, newer)
 	}
 }
+
+// A key use (poll, upload) is proof of life through last_seen_at, but it
+// never brings a sensor back online: only a heartbeat does, with its
+// deadline, connect event and audit entry. RecordKeyUse used to set
+// health = 'online' on every authenticated request.
+func TestSensorKeyUse_DoesNotChangeHealth_DB(t *testing.T) {
+	h := newActivityHarness(t)
+	tid := h.tenant()
+	ctx := context.Background()
+	id := h.sensorWithKey(tid, crypto.HashTokenPeppered("rda_"+strings.Repeat("5c", 32), testEncryptionKey))
+	repo := postgres.NewSensorRepository(&postgres.DB{DB: h.db})
+
+	for _, health := range []string{"stale", "offline"} {
+		h.exec(`UPDATE sensors SET health = $2, last_seen_at = NOW() - interval '1 hour' WHERE id = $1`, id.String(), health)
+		if _, err := repo.RecordKeyUse(ctx, id, net.ParseIP("198.51.100.20"), time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		var got string
+		var seen time.Time
+		if err := h.db.QueryRowContext(ctx, `SELECT health, last_seen_at FROM sensors WHERE id = $1`, id.String()).Scan(&got, &seen); err != nil {
+			t.Fatal(err)
+		}
+		if got != health {
+			t.Fatalf("a key use moved a %s sensor to %s; only a heartbeat brings it back", health, got)
+		}
+		if time.Since(seen) > time.Minute {
+			t.Fatalf("a key use did not mark the sensor seen: last_seen_at %v", seen)
+		}
+	}
+}
