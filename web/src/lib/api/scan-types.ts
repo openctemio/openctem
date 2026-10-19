@@ -185,8 +185,17 @@ export interface ScanLastRun {
   created_at: string
   started_at?: string
   completed_at?: string
-  /** 0-100 for a live run (finished tasks of all tasks). */
+  /** 0-100 for a live run (finished steps of the steps the run planned). */
   progress?: number
+  /** Chunks inside the steps; no task started while every task is queued. */
+  task_summary?: {
+    total: number
+    queued: number
+    running: number
+    completed: number
+    failed: number
+    canceled: number
+  }
   /** Why a blocked run was refused, and the message of a blocked or failed run. */
   refusal_code?: string
   error_message?: string
