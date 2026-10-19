@@ -89,7 +89,7 @@ jobs:
           scanners: 'vuln,secret,misconfig'
       - name: Upload Trivy scan results
         if: ${{ !cancelled() && hashFiles('trivy-web.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         # The merge queue deletes its temporary gh-readonly-queue branch when a group
         # is rebuilt; an upload still in flight then fails with ref not found. The scan
         # result above already ran; only the upload is tolerated in merge_group.
@@ -105,7 +105,7 @@ jobs:
           npx eslint . --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif
       - name: Upload ESLint results
         if: ${{ !cancelled() && hashFiles('web/eslint-results.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: web/eslint-results.sarif
           category: eslint-web
@@ -172,7 +172,7 @@ jobs:
           output: 'trivy-docker-web.sarif'
           severity: 'CRITICAL,HIGH'
       - name: Upload Trivy Docker scan results
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         # The merge queue deletes its temporary gh-readonly-queue branch when a group
         # is rebuilt; an upload still in flight then fails with ref not found. The scan
         # result above already ran; only the upload is tolerated in merge_group.
