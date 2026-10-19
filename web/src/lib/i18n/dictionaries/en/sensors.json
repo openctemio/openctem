@@ -1364,7 +1364,6 @@
   "sensors.jobSafety.loosen.interactsh": "Scan jobs may use out-of-band callbacks to an external server.",
   "sensors.jobSafety.loosen.customTemplates": "Scan jobs may carry custom templates.",
   "sensors.jobSafety.loosen.insecureTls": "Scan tools may accept invalid TLS certificates.",
-  "sensors.jobSafety.loosen.insecureTls": "Scan tools may accept invalid TLS certificates.",
   "sensors.checks.label.setup": "Setup",
   "sensors.checks.label.posture": "Security posture",
   "sensors.checks.setup.text": "The sensor reports setup checks that need attention. Open Setup & health for the details.",
