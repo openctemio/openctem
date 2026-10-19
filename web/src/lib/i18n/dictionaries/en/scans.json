@@ -1624,6 +1624,8 @@
   "scans.placement.allBusy": "Sensors that can take it: {count}, all busy now. It starts when one frees up.",
   "scans.placement.someCan": "Sensors that can take it: {count} ({busy} busy). It should start shortly.",
   "scans.placement.noSensors": "The organization has no sensor.",
+  "scans.placement.sharedNotUsed": "The shared sensors could take it, but this scan runs on the organization's own sensors only.",
+  "scans.placement.sharedNotAllowed": "The shared sensors are not available to this organization, so it waits for a sensor of its own.",
   "scans.placement.noneCan": "None of the {count} sensors can take it:",
   "scans.placement.truncated": "Only the first sensors by name were checked.",
   "scans.placement.perSensor": "Each sensor ({count})",

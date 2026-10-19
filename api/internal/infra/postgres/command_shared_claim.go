@@ -67,25 +67,47 @@ const sharedTenantBurst = 5
 // GetSharedPendingForSensor returns the shared jobs the shared sensor may
 // claim now, at most limit, in the shared dispatch order: rounds of
 // sharedTenantBurst jobs per organization (each organization's own jobs in
-// class and age order), and within a round priority class (one class up per
-// 30 minutes waited, never into critical), then the organization with the
-// fewest shared jobs in flight, then queue priority and age.
+// class and age order), and within a round the organization with the fewest
+// shared jobs in flight, then priority class (one class up per 30 minutes
+// waited, never into critical), then queue priority and age.
 func (r *CommandRepository) GetSharedPendingForSensor(ctx context.Context, sensorID shared.ID, capabilities []string, limit int) ([]*command.Command, error) {
+	return r.GetSharedPendingForSensorExcluding(ctx, sensorID, capabilities, limit, nil)
+}
+
+// GetSharedPendingForSensorExcluding is GetSharedPendingForSensor without
+// the jobs in exclude (the next page of a shared claim whose first
+// candidates were withheld after the query).
+//
+// Within a round the organization with the fewest shared jobs in flight
+// comes first, before the priority class (fair share before priority,
+// research/191 W-3): an organization's aged jobs no longer outrank another
+// organization's fresh job whatever the load. One job may jump that order:
+// an organization's first job of the round when it is a verification
+// (critical class) job.
+func (r *CommandRepository) GetSharedPendingForSensorExcluding(ctx context.Context, sensorID shared.ID, capabilities []string, limit int, exclude []shared.ID) ([]*command.Command, error) {
 	if limit <= 0 {
 		limit = 1
+	}
+	where := sharedClaimWhere
+	args := []any{sensorID.String(), pq.Array(capabilities), limit}
+	if len(exclude) > 0 {
+		where += " AND commands.id <> ALL($4::uuid[])"
+		args = append(args, pq.Array(commandIDStrings(exclude)))
 	}
 	query := `
 		WITH elig AS (
 			SELECT commands.id AS c_id, commands.tenant_id AS c_tenant, commands.created_at AS c_at,
 			       ` + claimClassSQL + ` AS c_cls
 			FROM commands
-			WHERE ` + sharedClaimWhere + `
+			WHERE ` + where + `
 		), ranked AS (
 			SELECT c_id, c_cls, c_at,
-			       (ROW_NUMBER() OVER (PARTITION BY c_tenant ORDER BY c_cls, c_at, c_id) - 1) / ` + fmt.Sprint(sharedTenantBurst) + ` AS c_round
+			       ROW_NUMBER() OVER (PARTITION BY c_tenant ORDER BY c_cls, c_at, c_id) - 1 AS c_rn
 			FROM elig
 		), cand AS (
-			SELECT c_id, c_cls, c_round FROM ranked
+			SELECT c_id, c_cls, c_rn / ` + fmt.Sprint(sharedTenantBurst) + ` AS c_round,
+			       (c_cls = 1 AND c_rn % ` + fmt.Sprint(sharedTenantBurst) + ` = 0) AS c_jump
+			FROM ranked
 			ORDER BY c_round, c_cls, c_at, c_id
 			LIMIT ` + fmt.Sprint(fairCandidateWindow) + `
 		), load AS (
@@ -97,10 +119,10 @@ func (r *CommandRepository) GetSharedPendingForSensor(ctx context.Context, senso
 		` + r.selectQuery() + `
 		JOIN cand ON cand.c_id = commands.id
 		LEFT JOIN load ON load.l_tenant = commands.tenant_id
-		ORDER BY cand.c_round, cand.c_cls, COALESCE(load.l_n, 0), commands.queue_priority DESC,
+		ORDER BY cand.c_round, cand.c_jump DESC, COALESCE(load.l_n, 0), cand.c_cls, commands.queue_priority DESC,
 		         COALESCE(commands.queued_at, commands.created_at), commands.id
 		LIMIT $3`
-	rows, err := r.db.QueryContext(ctx, query, sensorID.String(), pq.Array(capabilities), limit)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get shared jobs: %w", err)
 	}
