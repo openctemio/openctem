@@ -152,6 +152,11 @@ var stepUpRoutes = []string{
 	"PATCH /api/v1/lifecycles/{id}",
 	"DELETE /api/v1/lifecycles/{id}",
 	"DELETE /api/v1/lifecycle-sub-statuses/{id}",
+	// A priority rule re-classes findings across the tenant, down to the
+	// platform floors (docs/architecture/priority-explainability.md).
+	"POST /api/v1/priority-rules",
+	"PUT /api/v1/priority-rules/{id}",
+	"DELETE /api/v1/priority-rules/{id}",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -222,6 +227,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			registerFindingLifecycleRoutes(router, &handler.FindingLifecycleHandler{}, auth, nil)
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
+			registerPriorityRuleRoutes(router, &handler.PriorityRuleHandler{}, auth, nil, chain())
 			scanH := &handler.ScanHandler{}
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})
 			registerScanRoutes(router, scanH, auth, nil, nil)

@@ -39,7 +39,7 @@ const (
 // findings and emerging-threat alerts within the hour. After a sync it
 // queues a priority recompute for only the open findings whose CVE changed
 // (an EPSS threshold crossed, KEV membership changed), never a whole
-// tenant; the KEV refresh then auto-escalates findings whose CVEs appear in
+// tenant; the KEV refresh then reconciles the is_in_kev flag of findings with
 // the catalog. Both report material changes to the vulnerability event log.
 type ThreatIntelRefreshController struct {
 	service   *threat.IntelService
@@ -98,7 +98,7 @@ func (c *ThreatIntelRefreshController) Interval() time.Duration {
 }
 
 // Reconcile fetches and persists the feed, queues the findings whose intel
-// moved, auto-escalates KEV findings and reports material changes.
+// moved, reconciles KEV flags and reports material changes.
 func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, error) {
 	var r threat.IntelSyncResult
 	if c.feed == intelFeedKEV {
@@ -145,21 +145,21 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 		}
 	}
 
-	// After KEV sync, auto-escalate + flag findings with CVEs in the KEV
-	// catalog. A severity change queues its asset by itself (trigger).
+	// After KEV sync, flag (and unflag) findings by KEV membership. The
+	// affected assets were queued above (EnqueueIntelChanges); severity is
+	// never rewritten, the exploitation floor carries KEV into priority.
 	if sweep && c.escalator != nil {
 		res, err := c.escalator.EscalateKEVFindings(ctx)
 		if err != nil {
 			c.logger.Warn("KEV auto-escalation failed", "error", err)
 			sweepOK = false
-		} else if res.Escalated > 0 || res.Flagged > 0 || res.Unflagged > 0 {
+		} else if res.Flagged > 0 || res.Unflagged > 0 {
 			c.logger.Info("KEV reconciliation completed",
-				"findings_escalated", res.Escalated,
 				"findings_flagged", res.Flagged,
 				"findings_unflagged", res.Unflagged,
 				"tenants_touched", len(res.Tenants),
 			)
-			processed += res.Escalated + res.Flagged + res.Unflagged
+			processed += res.Flagged + res.Unflagged
 		}
 	}
 

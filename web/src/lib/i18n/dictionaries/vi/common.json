@@ -92,5 +92,9 @@
   "common.contextFilters.label": "Bộ lọc ngữ cảnh",
   "common.contextFilters.remove": "Bỏ bộ lọc {kind}",
   "common.contextFilters.removeNamed": "Bỏ bộ lọc {kind}: {label}",
-  "common.dangerZone": "Vùng nguy hiểm"
+  "common.dangerZone": "Vùng nguy hiểm",
+  "common.noAccessTo": "Bạn không có quyền xem {title}",
+  "common.moduleOffFor": "{title} chưa được bật cho tổ chức này",
+  "common.noAccessHint": "Hãy nhờ quản trị viên tổ chức cấp quyền.",
+  "common.moduleOffHint": "Hãy nhờ quản trị viên tổ chức bật tính năng này."
 }
