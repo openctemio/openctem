@@ -23,7 +23,9 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { maxDurationInput } from '@/features/scans/lib/scan-form'
+import { maxDurationInput, optionsError, takesRuleSources } from '@/features/scans/lib/scan-form'
+import { templateTypeForScanner } from '@/features/scans/lib/rule-templates'
+import { RuleSourcesSection } from './rule-sources-section'
 import { CommittedNumberInput } from '@/components/ui/committed-number-input'
 import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { gateSummary } from '@/features/scan-profiles/gate-summary'
@@ -122,6 +124,16 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
               : t('scans.options.profileHelp')}
           </p>
         </div>
+      )}
+
+      {takesRuleSources(data) && (
+        <RuleSourcesSection
+          templateType={templateTypeForScanner(data.scannerName)!}
+          ruleSources={data.ruleSources}
+          customTemplateIds={data.customTemplateIds}
+          onChange={onChange}
+          error={optionsError(data, t)}
+        />
       )}
 
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>

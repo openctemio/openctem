@@ -352,13 +352,18 @@ func recordZonePlan(sc *scan.Scan, plan *zonePlan, runContext map[string]any) er
 // sensor; they are never platform jobs (RFC-023 D14). Unzoned public batches
 // follow the pre-zone platform/tenant rules.
 func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *scanrun.Run, stepRun *scanrun.StepRun, plan *zonePlan, usePlatform bool) error {
-	templates := s.customTemplatesForScan(ctx, sc)
+	rs := ruleSourcesOfRun(run.Context)
+	templates, err := s.customTemplatesFor(ctx, sc, rs)
+	if err != nil {
+		return err
+	}
 	batchContext := batchRunContext(run.Context)
 
 	created := make([]*command.Command, 0, len(plan.Batches))
 	for _, b := range plan.Batches {
 		cfg := batchScannerConfig(sc.ScannerConfig, b.Targets)
 		payloadMap := s.scannerPayload(sc, run, stepRun, cfg, batchContext, b.Targets, templates)
+		withRuleSources(payloadMap, rs)
 		if err := s.attachJobExclusions(ctx, sc.TenantID, payloadMap, b.Targets); err != nil {
 			s.cancelCreated(ctx, created)
 			return err

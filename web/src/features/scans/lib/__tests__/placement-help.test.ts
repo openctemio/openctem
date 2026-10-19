@@ -105,3 +105,14 @@ describe('placementHelp', () => {
     expect(placementHelp('window_closed').href).toBe('/settings/scanning/scan-windows')
   })
 })
+
+describe('rule_sources_unsupported', () => {
+  it('has a fix target and translated help in en and vi', () => {
+    expect(PLACEMENT_FIX.rule_sources_unsupported).toBe('sensors')
+    for (const lang of ['en', 'vi'] as const) {
+      const dict = getDictionary(lang) as Record<string, string>
+      expect(dict['scans.placement.rule_sources_unsupported.text']).toBeTruthy()
+      expect(dict['scans.placement.rule_sources_unsupported.fix']).toBeTruthy()
+    }
+  })
+})

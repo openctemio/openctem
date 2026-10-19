@@ -39,7 +39,9 @@ import {
 } from '../schemas/scan-profile-schema'
 import { useCreateScanProfile, invalidateScanProfilesCache } from '@/lib/api/scan-profile-hooks'
 import { createDefaultQualityGate, type QualityGate } from '@/lib/api/scan-profile-types'
+import type { RuleSources } from '@/lib/api/scan-types'
 import { QualityGateFields } from './quality-gate-fields'
+import { RuleSourcesField } from './rule-sources-field'
 
 interface AddScanProfileDialogProps {
   open: boolean
@@ -50,6 +52,7 @@ interface AddScanProfileDialogProps {
 export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanProfileDialogProps) {
   const { t } = useTranslation()
   const [gate, setGate] = useState<QualityGate>(createDefaultQualityGate())
+  const [ruleSources, setRuleSources] = useState<RuleSources>('both')
 
   const form = useForm<CreateScanProfileFormData>({
     resolver: zodResolver(createScanProfileSchema),
@@ -61,11 +64,12 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
   const reset = () => {
     form.reset()
     setGate(createDefaultQualityGate())
+    setRuleSources('both')
   }
 
   const onSubmit = async (data: CreateScanProfileFormData) => {
     try {
-      await createProfile({ ...data, quality_gate: gate })
+      await createProfile({ ...data, quality_gate: gate, rule_sources: ruleSources })
       toast.success(t('scans.profiles.created', undefined, { name: data.name }))
       await invalidateScanProfilesCache()
       reset()
@@ -132,6 +136,14 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
                 <h4 className="text-sm font-medium">{t('scans.profiles.gate.title')}</h4>
                 <QualityGateFields value={gate} onChange={setGate} idPrefix="add-profile" />
               </div>
+
+              <Separator />
+
+              <RuleSourcesField
+                value={ruleSources}
+                onChange={setRuleSources}
+                idPrefix="add-profile"
+              />
 
               <Separator />
 
