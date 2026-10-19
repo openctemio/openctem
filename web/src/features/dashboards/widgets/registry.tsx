@@ -191,7 +191,8 @@ function OverdueSlaWidget() {
       loading={isLoading}
       error={error}
       tone="danger"
-      href="/findings?sla_status=overdue"
+      // The count is open findings overdue or exceeded: open the same list.
+      href="/findings?state=open&sla_status=overdue,exceeded"
     />
   )
 }
