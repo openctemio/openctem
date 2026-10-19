@@ -332,7 +332,7 @@ func (h *RemediationTaskHandler) GetTaskQuery(w http.ResponseWriter, r *http.Req
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /remediation/tasks/{task_id}/query/rerun/preview [post]
+// @Router       /remediation/tasks/{task_id}/query/preview [post]
 func (h *RemediationTaskHandler) PreviewQueryRerun(w http.ResponseWriter, r *http.Request) {
 	tid, ok := h.tenant(w, r)
 	if !ok {
@@ -361,7 +361,7 @@ func (h *RemediationTaskHandler) PreviewQueryRerun(w http.ResponseWriter, r *htt
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /remediation/tasks/{task_id}/query/rerun [post]
+// @Router       /remediation/tasks/{task_id}/query/run [post]
 func (h *RemediationTaskHandler) RerunQuery(w http.ResponseWriter, r *http.Request) {
 	tid, ok := h.tenant(w, r)
 	if !ok {
