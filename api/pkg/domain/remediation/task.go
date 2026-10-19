@@ -342,18 +342,28 @@ var (
 // an active task: the caller joins that task instead of opening a second one.
 var ErrActiveTaskExists = fmt.Errorf("the action already has an active task: %w", shared.ErrConflict)
 
+// ErrFindingsInOtherTask: some findings are already the primary member of
+// another active task (a finding has one primary task). The error that
+// carries the list is a *FindingsInOtherTaskError (claim.go).
+var ErrFindingsInOtherTask = fmt.Errorf("%w: findings already belong to another remediation task", shared.ErrConflict)
+
 // FindingsInOtherTaskError lists findings that are already the primary
-// member of another active task (a finding has one primary task).
+// member of another active task, one FindingConflict each.
 type FindingsInOtherTaskError struct {
 	FindingIDs []shared.ID
+	Conflicts  []FindingConflict
 }
 
 func (e *FindingsInOtherTaskError) Error() string {
-	return fmt.Sprintf("%d finding(s) already belong to another remediation task; move them instead", len(e.FindingIDs))
+	n := len(e.Conflicts)
+	if n == 0 {
+		n = len(e.FindingIDs)
+	}
+	return fmt.Sprintf("%d finding(s) already belong to another remediation task; skip them or move them", n)
 }
 
-// Unwrap makes the error a conflict.
-func (e *FindingsInOtherTaskError) Unwrap() error { return shared.ErrConflict }
+// Unwrap makes the error ErrFindingsInOtherTask (a conflict).
+func (e *FindingsInOtherTaskError) Unwrap() error { return ErrFindingsInOtherTask }
 
 // AsFindingsInOtherTask unwraps a FindingsInOtherTaskError.
 func AsFindingsInOtherTask(err error) (*FindingsInOtherTaskError, bool) {
