@@ -1,4 +1,4 @@
-### Findings: filter and sort by the SLA due date
+### Added: filter and sort by the SLA due date
 
 - `GET /findings`, `/findings/stats`, `/findings/export` and the saved filters
   take `sla_deadline_gt`, `_gte`, `_lt`, `_lte` (RFC 3339, a date or `-P7D`
