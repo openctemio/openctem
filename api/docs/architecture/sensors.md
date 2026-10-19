@@ -1664,9 +1664,13 @@ hosts must be free in its organization: the same host keys, advisory locks
 and settled-host rule as the organization's own sensors, so a shared job and
 an organization sensor's job never take one host at once.
 
-**Order.** Priority class (one class up per 30 minutes waited, never into
-critical), then the organization with the fewest shared jobs in flight
-(fair share), then queue priority and age.
+**Order.** Rounds of five jobs per organization (each organization's own
+jobs in class and age order), so one organization's deep or old queue never
+fills the candidate window or a poll, and an organization the claim skips
+(not allowed, or at its limit) cannot starve the others. Within a round:
+priority class (one class up per 30 minutes waited, never into critical),
+then the organization with the fewest shared jobs in flight (fair share),
+then queue priority and age.
 
 **Limits.** Each organization's `platform_scans_concurrent` limit, read
 through the entitlement service by key: in the claim transaction, per
