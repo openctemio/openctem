@@ -135,6 +135,9 @@ extension is an explicit decision (a regression or an expired acceptance
 starts a new clock with its own `sla_restarted` entry), never a side effect.
 The ingest upsert and the recompute writer (`SavePriorities`) apply the same
 rule (`LEAST` of the stored and incoming deadline for an open finding).
+`SavePriorities` writes the changed findings of a recompute page in one
+statement (`UPDATE ... FROM (VALUES ...)`, up to 1,000 rows), not one
+statement per finding.
 
 The database enforces it for every writer: the BEFORE UPDATE trigger
 `trg_findings_sla_deadline_guard` (migration `sla_deadline_guard`) keeps the stored deadline (and the SLA
@@ -159,7 +162,9 @@ Saving risk scoring settings in the console opens a review first:
 `POST /tenants/{tenant}/settings/risk-scoring/preview` (team admin,
 `settings:write`) runs a dry run over **every** live asset of the
 organization with the same engine and inputs the asset-risk-score worker uses
-after the change, and nothing is written:
+after the change, and nothing is written. Assets are read in id order, 500
+at a time (`asset.ForEachPage`, keyset paging), so the counts cover every
+asset however large the organization is:
 
 - assets: total, how many scores change (up, down), band moves (from, to,
   count) and the 50 largest changes. Counts cover the whole organization; an
