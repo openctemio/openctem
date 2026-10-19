@@ -126,6 +126,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-115](RFC-115-custom-query-language.md) | Custom query language | Accepted (2026-10-18). |
 | [RFC-116](RFC-116-sensor-relay.md) | Sensor relay and sealed envelopes | Accepted (2026-10-19). |
 | [RFC-117](RFC-117-emerging-threat-alerts.md) | Emerging-threat alerts | In progress (2026-10-19) |
+| [RFC-118](RFC-118-rule-sources.md) | Rule sources for scans | Accepted (2026-10-19). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

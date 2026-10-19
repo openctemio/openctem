@@ -80,6 +80,13 @@ import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
 
+type TFn = ReturnType<typeof useTranslation>['t']
+
+/** The translated name of an actor type; an unknown type shows as the API sent it. */
+function typeLabel(t: TFn, type: ActorType): string {
+  return t(`threatIntel.actors.type.${type}`, ACTOR_TYPE_LABELS[type] ?? type)
+}
+
 function formatDate(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -101,6 +108,7 @@ function splitList(raw: string): string[] {
 }
 
 export function ThreatActorsPanel() {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canRead = can(Permission.ThreatIntelRead)
 
@@ -127,7 +135,9 @@ export function ThreatActorsPanel() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('threatIntel.actors.col.name')} />
+        ),
         cell: ({ row }) => {
           const a = row.original
           return (
@@ -144,16 +154,16 @@ export function ThreatActorsPanel() {
       },
       {
         accessorKey: 'actor_type',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('threatIntel.actors.col.type')} />
+        ),
         cell: ({ row }) => (
-          <Badge variant="secondary">
-            {ACTOR_TYPE_LABELS[row.original.actor_type] ?? row.original.actor_type}
-          </Badge>
+          <Badge variant="secondary">{typeLabel(t, row.original.actor_type)}</Badge>
         ),
       },
       {
         accessorKey: 'motivation',
-        header: 'Motivation',
+        header: t('threatIntel.actors.col.motivation'),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {humanize(row.original.motivation) || '—'}
@@ -162,7 +172,7 @@ export function ThreatActorsPanel() {
       },
       {
         id: 'ttps',
-        header: 'TTPs',
+        header: t('threatIntel.actors.col.ttps'),
         cell: ({ row }) => {
           const n = row.original.ttps?.length ?? 0
           return n > 0 ? (
@@ -174,7 +184,7 @@ export function ThreatActorsPanel() {
       },
       {
         accessorKey: 'mitre_group_id',
-        header: 'MITRE group',
+        header: t('threatIntel.actors.col.mitre'),
         cell: ({ row }) =>
           row.original.mitre_group_id ? (
             <span className="font-mono text-xs">{row.original.mitre_group_id}</span>
@@ -184,7 +194,9 @@ export function ThreatActorsPanel() {
       },
       {
         accessorKey: 'updated_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('threatIntel.actors.col.updated')} />
+        ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {formatDate(row.original.updated_at)}
@@ -196,9 +208,13 @@ export function ThreatActorsPanel() {
         cell: ({ row }) => (
           <DataTableRowActions
             actions={[
-              { label: 'View details', icon: Eye, onClick: () => setSelectedId(row.original.id) },
               {
-                label: 'Delete',
+                label: t('threatIntel.actors.viewDetails'),
+                icon: Eye,
+                onClick: () => setSelectedId(row.original.id),
+              },
+              {
+                label: t('threatIntel.actors.delete'),
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
@@ -210,15 +226,15 @@ export function ThreatActorsPanel() {
         ),
       },
     ],
-    []
+    [t]
   )
 
   if (!canRead) {
     return (
       <EmptyState
         icon={Users}
-        title="No access to threat actors"
-        description="You need the View Threat Intel permission to see the threat actor catalogue."
+        title={t('threatIntel.actors.noAccessTitle')}
+        description={t('threatIntel.actors.noAccessDescription')}
       />
     )
   }
@@ -227,14 +243,14 @@ export function ThreatActorsPanel() {
   // tab of the Threat intelligence page, whose header is the page's only one.
   const typeSelect = (
     <Select value={typeFilter} onValueChange={setTypeFilter}>
-      <SelectTrigger className="h-9 w-40" aria-label="Filter by actor type">
-        <SelectValue placeholder="All types" />
+      <SelectTrigger className="h-9 w-40" aria-label={t('threatIntel.actors.filterType')}>
+        <SelectValue placeholder={t('threatIntel.actors.allTypes')} />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={ALL}>All types</SelectItem>
-        {ACTOR_TYPES.map((t) => (
-          <SelectItem key={t} value={t}>
-            {ACTOR_TYPE_LABELS[t]}
+        <SelectItem value={ALL}>{t('threatIntel.actors.allTypes')}</SelectItem>
+        {ACTOR_TYPES.map((type) => (
+          <SelectItem key={type} value={type}>
+            {typeLabel(t, type)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -252,12 +268,12 @@ export function ThreatActorsPanel() {
       ) : error ? (
         <Alert variant="destructive">
           <AlertCircle />
-          <AlertTitle>Failed to load threat actors</AlertTitle>
+          <AlertTitle>{t('threatIntel.actors.loadFailed')}</AlertTitle>
           <AlertDescription>
-            <p>{getErrorMessage(error, 'Please try again.')}</p>
+            <p>{getErrorMessage(error, t('threatIntel.actors.tryAgain'))}</p>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => mutate()}>
               <RefreshCw className="me-2 h-4 w-4" />
-              Retry
+              {t('threatIntel.actors.retry')}
             </Button>
           </AlertDescription>
         </Alert>
@@ -265,9 +281,9 @@ export function ThreatActorsPanel() {
         <DataTable
           columns={columns}
           data={actors}
-          searchPlaceholder="Search actors…"
-          emptyMessage="No threat actors"
-          emptyDescription="Add an adversary group to start tracking it."
+          searchPlaceholder={t('threatIntel.actors.search')}
+          emptyMessage={t('threatIntel.actors.emptyTitle')}
+          emptyDescription={t('threatIntel.actors.emptyDescription')}
           onRowClick={(row) => setSelectedId(row.id)}
           toolbarEnd={
             <>
@@ -275,7 +291,7 @@ export function ThreatActorsPanel() {
               <Can permission={Permission.ThreatIntelWrite} mode="disable">
                 <Button size="sm" className="h-9" onClick={() => setCreateOpen(true)}>
                   <Plus className="h-4 w-4 sm:me-2" />
-                  <span className="sr-only sm:not-sr-only">Add actor</span>
+                  <span className="sr-only sm:not-sr-only">{t('threatIntel.actors.add')}</span>
                 </Button>
               </Can>
             </>
@@ -323,6 +339,7 @@ export function ThreatActorDetailSheet({
   onOpenChange: (open: boolean) => void
   onDelete: (actor: ThreatActor) => void
 }) {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.ThreatIntelWrite)
   if (!actor) return null
@@ -340,17 +357,17 @@ export function ThreatActorDetailSheet({
   const menu: DetailMenuItem[] = []
   if (actor.mitre_group_id) {
     menu.push({
-      label: 'Copy MITRE ID',
+      label: t('threatIntel.actors.copyMitre'),
       icon: Copy,
       onSelect: () => {
         copyToClipboard(actor.mitre_group_id!)
-        toast.success('MITRE ID copied to clipboard')
+        toast.success(t('threatIntel.actors.mitreCopied'))
       },
     })
   }
   if (canWrite) {
     menu.push({
-      label: 'Delete threat actor',
+      label: t('threatIntel.actors.deleteActor'),
       icon: Trash2,
       destructive: true,
       separatorBefore: menu.length > 0,
@@ -368,7 +385,7 @@ export function ThreatActorDetailSheet({
           badges={
             <>
               <Badge variant="outline" className="text-xs">
-                {ACTOR_TYPE_LABELS[actor.actor_type] ?? actor.actor_type}
+                {typeLabel(t, actor.actor_type)}
               </Badge>
               <Badge
                 variant="outline"
@@ -377,7 +394,9 @@ export function ThreatActorDetailSheet({
                   actor.is_active && 'border-success/30 bg-success/10 text-success'
                 )}
               >
-                {actor.is_active ? 'Active' : 'Inactive'}
+                {actor.is_active
+                  ? t('threatIntel.actors.active')
+                  : t('threatIntel.actors.inactive')}
               </Badge>
               {actor.mitre_group_id && (
                 <Badge variant="outline" className="font-mono text-xs">
@@ -389,7 +408,7 @@ export function ThreatActorDetailSheet({
           meta={[
             actor.country_of_origin,
             actor.motivation ? humanize(actor.motivation) : null,
-            `Updated ${formatDate(actor.updated_at)}`,
+            t('threatIntel.actors.updatedOn', undefined, { date: formatDate(actor.updated_at) }),
           ]}
           menu={menu}
           onClose={() => onOpenChange(false)}
@@ -398,55 +417,63 @@ export function ThreatActorDetailSheet({
     >
       <DetailSections>
         {actor.description && (
-          <DetailSection title="Description">
+          <DetailSection title={t('threatIntel.actors.description')}>
             <p className="text-sm text-muted-foreground">{actor.description}</p>
           </DetailSection>
         )}
 
-        <DetailSection title="Profile">
+        <DetailSection title={t('threatIntel.actors.profile')}>
           <DetailFieldGrid>
             {aliases.length > 0 && (
-              <DetailField label="Aliases" full>
+              <DetailField label={t('threatIntel.actors.aliases')} full>
                 {aliases.join(', ')}
               </DetailField>
             )}
             {actor.motivation && (
-              <DetailField label="Motivation">{humanize(actor.motivation)}</DetailField>
+              <DetailField label={t('threatIntel.actors.motivation')}>
+                {humanize(actor.motivation)}
+              </DetailField>
             )}
             {actor.sophistication && (
-              <DetailField label="Sophistication">{actor.sophistication}</DetailField>
+              <DetailField label={t('threatIntel.actors.sophistication')}>
+                {actor.sophistication}
+              </DetailField>
             )}
             {actor.country_of_origin && (
-              <DetailField label="Country of origin">{actor.country_of_origin}</DetailField>
+              <DetailField label={t('threatIntel.actors.country')}>
+                {actor.country_of_origin}
+              </DetailField>
             )}
             {industries.length > 0 && (
-              <DetailField label="Target industries" full>
+              <DetailField label={t('threatIntel.actors.industries')} full>
                 {industries.join(', ')}
               </DetailField>
             )}
             {regions.length > 0 && (
-              <DetailField label="Target regions" full>
+              <DetailField label={t('threatIntel.actors.regions')} full>
                 {regions.join(', ')}
               </DetailField>
             )}
-            <DetailField label="Updated">{formatDate(actor.updated_at)}</DetailField>
+            <DetailField label={t('threatIntel.actors.col.updated')}>
+              {formatDate(actor.updated_at)}
+            </DetailField>
           </DetailFieldGrid>
         </DetailSection>
 
         {ttps.length > 0 && (
-          <DetailSection title="TTPs" icon={Users} count={ttps.length}>
+          <DetailSection title={t('threatIntel.actors.col.ttps')} icon={Users} count={ttps.length}>
             <ul className="divide-y rounded-lg border">
-              {ttps.map((t, i) => (
+              {ttps.map((ttp, i) => (
                 <li key={i} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
-                  {t.technique_id && (
+                  {ttp.technique_id && (
                     <span className="font-mono text-xs text-muted-foreground">
-                      {t.technique_id}
+                      {ttp.technique_id}
                     </span>
                   )}
-                  <span className="min-w-0 break-words">{t.technique_name || t.tactic}</span>
-                  {t.tactic && t.technique_name && (
+                  <span className="min-w-0 break-words">{ttp.technique_name || ttp.tactic}</span>
+                  {ttp.tactic && ttp.technique_name && (
                     <Badge variant="outline" className="text-xs">
-                      {t.tactic}
+                      {ttp.tactic}
                     </Badge>
                   )}
                 </li>
@@ -456,7 +483,11 @@ export function ThreatActorDetailSheet({
         )}
 
         {references.length > 0 && (
-          <DetailSection title="References" icon={ExternalLink} count={references.length}>
+          <DetailSection
+            title={t('threatIntel.actors.references')}
+            icon={ExternalLink}
+            count={references.length}
+          >
             <ul className="space-y-1.5">
               {references.map((ref, i) => (
                 <li key={i}>
@@ -476,7 +507,7 @@ export function ThreatActorDetailSheet({
         )}
 
         {tags.length > 0 && (
-          <DetailSection title="Tags" count={tags.length}>
+          <DetailSection title={t('threatIntel.actors.tags')} count={tags.length}>
             <div className="flex flex-wrap gap-1">
               {tags.map((tag) => (
                 <Badge key={tag} variant="outline">
@@ -501,6 +532,7 @@ function CreateThreatActorDialog({
   onOpenChange: (open: boolean) => void
   onCreated: () => void
 }) {
+  const { t } = useTranslation()
   const { trigger } = useCreateThreatActor()
   const [submitting, setSubmitting] = useState(false)
   const [name, setName] = useState('')
@@ -525,7 +557,7 @@ function CreateThreatActorDialog({
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      toast.error('Name is required')
+      toast.error(t('threatIntel.actors.nameRequired'))
       return
     }
     const payload: CreateThreatActorInput = {
@@ -541,12 +573,12 @@ function CreateThreatActorDialog({
     setSubmitting(true)
     try {
       await trigger(payload)
-      toast.success(`Threat actor "${payload.name}" added`)
+      toast.success(t('threatIntel.actors.added', undefined, { name: payload.name }))
       reset()
       onOpenChange(false)
       onCreated()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to add threat actor'))
+      toast.error(getErrorMessage(err, t('threatIntel.actors.addFailed')))
     } finally {
       setSubmitting(false)
     }
@@ -556,46 +588,46 @@ function CreateThreatActorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add threat actor</DialogTitle>
-          <DialogDescription>Track a new adversary group for this tenant.</DialogDescription>
+          <DialogTitle>{t('threatIntel.actors.addTitle')}</DialogTitle>
+          <DialogDescription>{t('threatIntel.actors.addDescription')}</DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="ta-name">Name *</Label>
+              <Label htmlFor="ta-name">{t('threatIntel.actors.nameLabel')}</Label>
               <Input
                 id="ta-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. APT29"
+                placeholder={t('threatIntel.actors.namePlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ta-type">Type</Label>
+              <Label htmlFor="ta-type">{t('threatIntel.actors.col.type')}</Label>
               <Select value={actorType} onValueChange={(v) => setActorType(v as ActorType)}>
                 <SelectTrigger id="ta-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ACTOR_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {ACTOR_TYPE_LABELS[t]}
+                  {ACTOR_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {typeLabel(t, type)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ta-aliases">Aliases</Label>
+              <Label htmlFor="ta-aliases">{t('threatIntel.actors.aliases')}</Label>
               <Input
                 id="ta-aliases"
                 value={aliases}
                 onChange={(e) => setAliases(e.target.value)}
-                placeholder="Comma-separated, e.g. Cozy Bear, The Dukes"
+                placeholder={t('threatIntel.actors.aliasesPlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ta-desc">Description</Label>
+              <Label htmlFor="ta-desc">{t('threatIntel.actors.description')}</Label>
               <Textarea
                 id="ta-desc"
                 value={description}
@@ -605,43 +637,43 @@ function CreateThreatActorDialog({
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="ta-motivation">Motivation</Label>
+                <Label htmlFor="ta-motivation">{t('threatIntel.actors.motivation')}</Label>
                 <Input
                   id="ta-motivation"
                   value={motivation}
                   onChange={(e) => setMotivation(e.target.value)}
-                  placeholder="e.g. Espionage"
+                  placeholder={t('threatIntel.actors.motivationPlaceholder')}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ta-country">Country of origin</Label>
+                <Label htmlFor="ta-country">{t('threatIntel.actors.country')}</Label>
                 {/* Stored as a 3-letter code; the API rejects anything longer. */}
                 <Input
                   id="ta-country"
                   value={country}
                   maxLength={3}
-                  placeholder="ISO code, e.g. RU"
+                  placeholder={t('threatIntel.actors.countryPlaceholder')}
                   onChange={(e) => setCountry(e.target.value.toUpperCase())}
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="ta-mitre">MITRE group ID</Label>
+                <Label htmlFor="ta-mitre">{t('threatIntel.actors.mitreId')}</Label>
                 <Input
                   id="ta-mitre"
                   value={mitreId}
                   onChange={(e) => setMitreId(e.target.value)}
-                  placeholder="e.g. G0016"
+                  placeholder={t('threatIntel.actors.mitrePlaceholder')}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ta-tags">Tags</Label>
+                <Label htmlFor="ta-tags">{t('threatIntel.actors.tags')}</Label>
                 <Input
                   id="ta-tags"
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
-                  placeholder="Comma-separated"
+                  placeholder={t('threatIntel.actors.tagsPlaceholder')}
                 />
               </div>
             </div>
@@ -649,11 +681,11 @@ function CreateThreatActorDialog({
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Cancel
+            {t('threatIntel.actors.cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
             {submitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Add actor
+            {t('threatIntel.actors.add')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -680,10 +712,10 @@ function DeleteThreatActorConfirm({
     setDeleting(true)
     try {
       await trigger()
-      toast.success(`Threat actor "${actor.name}" deleted`)
+      toast.success(t('threatIntel.actors.deleted', undefined, { name: actor.name }))
       onDeleted()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete threat actor'))
+      toast.error(getErrorMessage(err, t('threatIntel.actors.deleteFailed')))
     } finally {
       setDeleting(false)
     }
