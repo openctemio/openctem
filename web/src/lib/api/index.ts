@@ -664,7 +664,6 @@ export {
 
 export type {
   ScanProfile,
-  ToolConfig,
   QualityGate,
   QualityGateResult,
   QualityGateBreach,
@@ -674,28 +673,20 @@ export type {
   CreateScanProfileRequest,
   UpdateScanProfileRequest,
   UpdateQualityGateRequest,
-  Intensity,
-  Severity,
-  ScanProfileTool,
   CloneScanProfileRequest,
 } from './scan-profile-types'
 
 export {
-  SCAN_PROFILE_TOOLS,
-  TOOL_DISPLAY_NAMES,
-  INTENSITY_DISPLAY_NAMES,
-  INTENSITY_DESCRIPTIONS,
-  SEVERITY_DISPLAY_NAMES,
   DEFAULT_QUALITY_GATE,
   createDefaultQualityGate,
   isUnlimited,
   // Preset profiles
-  PRESET_PROFILES,
+  PRESET_QUALITY_GATES,
   PRESET_PROFILE_TYPES,
   getPresetProfileRequest,
 } from './scan-profile-types'
 
-export type { PresetProfileType, PresetProfile } from './scan-profile-types'
+export type { PresetProfileType } from './scan-profile-types'
 
 // ============================================
 // SCAN PROFILE ENDPOINTS

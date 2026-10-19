@@ -23,7 +23,10 @@ type KeySource struct {
 	CurrentKey string
 	// CurrentTitle is the stored title ("" when no key).
 	CurrentTitle string
-	Input        KeyInput
+	// CurrentVersion is the key rules version that derived the stored key
+	// (0 when there is none).
+	CurrentVersion int
+	Input          KeyInput
 }
 
 // KeyRepository persists per-finding remediation keys and answers group queries.
@@ -36,6 +39,9 @@ type KeyRepository interface {
 	// Delete removes a finding's key (e.g. when it becomes ungroupable). Deleting
 	// the finding itself CASCADE-removes the row.
 	Delete(ctx context.Context, tenantID, findingID shared.ID) error
+
+	// HasStaleKeys reports a key derived by an older KeyAlgorithmVersion.
+	HasStaleKeys(ctx context.Context, tenantID shared.ID) (bool, error)
 
 	// KeySources reads the signals a key is derived from for the tenant's
 	// findings with these ids, with their current key ("" when none). Ids of

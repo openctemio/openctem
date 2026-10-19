@@ -21,6 +21,7 @@ type mockKeyRepo struct {
 
 func (m *mockKeyRepo) Upsert(_ context.Context, _, _ shared.ID, _, _ string) error { return nil }
 func (m *mockKeyRepo) Delete(_ context.Context, _, _ shared.ID) error              { return nil }
+func (m *mockKeyRepo) HasStaleKeys(_ context.Context, _ shared.ID) (bool, error)   { return false, nil }
 func (m *mockKeyRepo) KeySources(_ context.Context, _ shared.ID, _ []shared.ID) ([]remediationdom.KeySource, error) {
 	return nil, nil
 }
