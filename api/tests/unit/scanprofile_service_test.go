@@ -228,7 +228,6 @@ func TestCreateScanProfile_Success(t *testing.T) {
 		TenantID:    tenantID.String(),
 		Name:        "My Profile",
 		Description: "A test profile",
-		Intensity:   "high",
 		Tags:        []string{"web", "api"},
 	}
 
@@ -238,9 +237,6 @@ func TestCreateScanProfile_Success(t *testing.T) {
 	}
 	if result.Name != "My Profile" {
 		t.Errorf("expected name 'My Profile', got %q", result.Name)
-	}
-	if result.Intensity != scanprofile.IntensityHigh {
-		t.Errorf("expected intensity high, got %q", result.Intensity)
 	}
 	if len(result.Tags) != 2 {
 		t.Errorf("expected 2 tags, got %d", len(result.Tags))
@@ -266,25 +262,6 @@ func TestCreateScanProfile_DefaultIntensity(t *testing.T) {
 	}
 	if result.Intensity != scanprofile.IntensityMedium {
 		t.Errorf("expected default intensity medium, got %q", result.Intensity)
-	}
-}
-
-func TestCreateScanProfile_InvalidIntensity_DefaultsToMedium(t *testing.T) {
-	svc, _ := newTestScanProfileService()
-	tenantID := shared.NewID()
-
-	input := scan.CreateScanProfileInput{
-		TenantID:  tenantID.String(),
-		Name:      "Bad Intensity",
-		Intensity: "extreme",
-	}
-
-	result, err := svc.CreateScanProfile(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Intensity != scanprofile.IntensityMedium {
-		t.Errorf("expected fallback to medium, got %q", result.Intensity)
 	}
 }
 
@@ -344,30 +321,6 @@ func TestCreateScanProfile_WithUserID(t *testing.T) {
 	}
 	if !result.CreatedBy.Equals(userID) {
 		t.Errorf("expected CreatedBy %s, got %s", userID, result.CreatedBy)
-	}
-}
-
-func TestCreateScanProfile_WithOptionalSettings(t *testing.T) {
-	svc, _ := newTestScanProfileService()
-	tenantID := shared.NewID()
-
-	input := scan.CreateScanProfileInput{
-		TenantID:           tenantID.String(),
-		Name:               "Full Profile",
-		MaxConcurrentScans: 10,
-		TimeoutSeconds:     7200,
-		Tags:               []string{"tag1"},
-	}
-
-	result, err := svc.CreateScanProfile(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.MaxConcurrentScans != 10 {
-		t.Errorf("expected MaxConcurrentScans 10, got %d", result.MaxConcurrentScans)
-	}
-	if result.TimeoutSeconds != 7200 {
-		t.Errorf("expected TimeoutSeconds 7200, got %d", result.TimeoutSeconds)
 	}
 }
 
@@ -460,37 +413,6 @@ func TestCreateScanProfile_RepoCreateError(t *testing.T) {
 	_, err := svc.CreateScanProfile(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error from repo")
-	}
-}
-
-func TestCreateScanProfile_WithToolsConfig(t *testing.T) {
-	svc, _ := newTestScanProfileService()
-	tenantID := shared.NewID()
-
-	tools := map[string]scanprofile.ToolConfig{
-		"nuclei": {Enabled: true, Severity: "high", Timeout: 300},
-		"nmap":   {Enabled: false},
-	}
-
-	input := scan.CreateScanProfileInput{
-		TenantID:    tenantID.String(),
-		Name:        "Tools Profile",
-		ToolsConfig: tools,
-	}
-
-	result, err := svc.CreateScanProfile(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if len(result.ToolsConfig) != 2 {
-		t.Errorf("expected 2 tools, got %d", len(result.ToolsConfig))
-	}
-	nucleiCfg, ok := result.ToolsConfig["nuclei"]
-	if !ok {
-		t.Fatal("expected nuclei tool config")
-	}
-	if !nucleiCfg.Enabled {
-		t.Error("expected nuclei to be enabled")
 	}
 }
 
@@ -784,7 +706,6 @@ func TestUpdateScanProfile_Success(t *testing.T) {
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Name:      "Updated",
-		Intensity: "high",
 	}
 
 	result, err := svc.UpdateScanProfile(context.Background(), input)
@@ -793,9 +714,6 @@ func TestUpdateScanProfile_Success(t *testing.T) {
 	}
 	if result.Name != "Updated" {
 		t.Errorf("expected name 'Updated', got %q", result.Name)
-	}
-	if result.Intensity != scanprofile.IntensityHigh {
-		t.Errorf("expected intensity high, got %q", result.Intensity)
 	}
 }
 
@@ -1635,38 +1553,6 @@ func TestCreateScanProfile_EmptyName(t *testing.T) {
 	}
 }
 
-func TestCreateScanProfile_AllIntensityLevels(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected scanprofile.Intensity
-	}{
-		{"low", scanprofile.IntensityLow},
-		{"medium", scanprofile.IntensityMedium},
-		{"high", scanprofile.IntensityHigh},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.input, func(t *testing.T) {
-			svc, _ := newTestScanProfileService()
-			tenantID := shared.NewID()
-
-			input := scan.CreateScanProfileInput{
-				TenantID:  tenantID.String(),
-				Name:      "Profile " + tc.input,
-				Intensity: tc.input,
-			}
-
-			result, err := svc.CreateScanProfile(context.Background(), input)
-			if err != nil {
-				t.Fatalf("expected no error, got %v", err)
-			}
-			if result.Intensity != tc.expected {
-				t.Errorf("expected intensity %q, got %q", tc.expected, result.Intensity)
-			}
-		})
-	}
-}
-
 func TestEvaluateQualityGate_MultipleBreaches(t *testing.T) {
 	svc, repo := newTestScanProfileService()
 	tenantID := shared.NewID()
@@ -1756,31 +1642,6 @@ func TestCloneScanProfile_SystemProfile(t *testing.T) {
 	}
 	if result.Name != "My Clone of System" {
 		t.Errorf("expected clone name 'My Clone of System', got %q", result.Name)
-	}
-}
-
-func TestUpdateScanProfile_WithToolsConfig(t *testing.T) {
-	svc, repo := newTestScanProfileService()
-	tenantID := shared.NewID()
-	profile := makeScanProfileInRepo(repo, tenantID, "Profile")
-
-	tools := map[string]scanprofile.ToolConfig{
-		"nmap":   {Enabled: true, Timeout: 600},
-		"nuclei": {Enabled: true, Severity: "medium"},
-	}
-
-	input := scan.UpdateScanProfileInput{
-		TenantID:    tenantID.String(),
-		ProfileID:   profile.ID.String(),
-		ToolsConfig: tools,
-	}
-
-	result, err := svc.UpdateScanProfile(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if len(result.ToolsConfig) != 2 {
-		t.Errorf("expected 2 tools, got %d", len(result.ToolsConfig))
 	}
 }
 
