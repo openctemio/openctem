@@ -399,6 +399,120 @@ class, the tenant with the fewest platform jobs in flight goes first
 (migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
+## Heartbeat soft state
+
+A heartbeat used to rewrite the wide `sensors` row (about 40 columns, an
+update that is never HOT because it moves indexed columns), upsert the
+heartbeat history and rewrite every held command's lease. The liveness store
+keeps what changes on every heartbeat in Redis instead, and Postgres gets
+state changes and a batched checkpoint (research/191 §4A).
+`SENSOR_LIVENESS_STORE` picks the mode:
+
+| Mode | Heartbeat writes | Health controller |
+|---|---|---|
+| `postgres` | every heartbeat updates the row, as before | judges from Postgres every 30 s |
+| `shadow` (default) | as `postgres`, and Redis records every heartbeat too | judges from Postgres; counts each sensor whose step from Redis differs in `openctem_sensor_liveness_disagreements_total{postgres,store}` |
+| `redis` | Redis records every heartbeat; Postgres gets it only when it changes something | judges from Redis merged with Postgres, every 5 s |
+
+Switch a live install to `redis` after a week of zero disagreements; switch
+back to `postgres` at any time (Postgres holds a checkpoint at most 10
+minutes old, and the controller's grace covers the gap).
+
+**Keys** (`internal/infra/redis/sensor_liveness.go`). `oc:sl:{tenant}:{sensor}`
+(hash: last seen, due, interval, state digest, address, key use, last
+checkpoint, verdict flag; expires after 3 × the longest offline distance,
+garbage collection only), `oc:sl:due` (sorted set of `{tenant}:{sensor}` by
+due time), `oc:sl:gen` (generation), `oc:sl:grace` and `oc:sl:degraded` (below). A shared sensor's
+tenant part is `instance`. Every key is built on the server from the
+authenticated principal (the mTLS identity or the signed request's key row);
+nothing a sensor sends names a key. Every time comes from Redis's own clock
+(`TIME`), so replicas share one clock and a sensor's clock never matters.
+
+**Heartbeat** (`internal/app/sensor/liveness.go`). One Lua script records
+the heartbeat atomically and answers whether Postgres must hear about it:
+
+- **changed**: the digest of what the row stores besides liveness and load
+  (`HeartbeatStateDigest`: version, addresses, protocol, the capability and
+  local policy reports, build, config digest, process start, slot totals
+  and whether every slot is taken) moved, there was no entry, or the health
+  controller judged the sensor since its last heartbeat. Also when the row
+  is not `online` (a late, stale or offline sensor comes back). The
+  heartbeat is written to Postgres at once, as before (events, audit).
+- **checkpoint**: nothing changed, but the last checkpoint is older than 10
+  minutes (±10 % jitter). The heartbeat's liveness and load (last seen, due,
+  interval, metrics, load report, outbox, control) join the replica's
+  checkpoint batch, written every 5 s or at 500 rows in one statement over
+  arrays (`CheckpointLiveness`: no bind-parameter limit; only an active
+  sensor of the named tenant; never moves `last_seen_at` back, so two
+  replicas flushing out of order are harmless).
+- otherwise nothing reaches Postgres.
+
+Heartbeat history is summed in memory per sensor and bucket and written
+every 5 minutes (and when a bucket closes), additively, so two replicas
+both count. A key use (poll, upload) touches the entry; Postgres records it
+only for a new address (the `key_ip_changed` event) or a sensor without an
+entry. Each keepalive of a v3 control stream touches the entry too: an open
+stream is proof of life. Leases are renewed only below
+`command.LeaseRenewBefore` ("Command leases").
+
+Every read of a sensor (`GetByID`, `GetByTenantAndID`, `List`) overlays the
+entry on the row: the later of the two last-seen times and deadlines wins,
+so the Sensors page, `heartbeat_state` and events see the live deadline.
+Dispatch keeps reading `health`, which every transition writes. Dispatch
+reads the sensor's reported free slots only while the load report is
+fresh; between checkpoints it relies on the server-side count of held
+commands (the report could only lower it), and a change in whether every
+slot is taken is a state change written at once.
+
+**Health controller** (`internal/infra/controller/sensor_health_store.go`,
+one replica at a time under a controller lease). Every 5 s it reads the
+sensors the due index has past their deadline (and every minute every
+watched row, which also catches a sensor Redis has no entry for), merges
+the store's deadline with Postgres's (the later wins: a heartbeat that fell
+back to Postgres counts) and walks the same `Ladder`. Before a step down it
+records the verdict in the entry only while the entry is unchanged: a
+heartbeat that landed since wins, and one that lands after it is written to
+Postgres. The Postgres write keeps its compare-and-set on `last_seen_at`. An
+offline conviction ends the sensor's leases at once (the recovery
+controller re-queues the work on its next pass) and drops it from the due
+index.
+
+**Failures.**
+
+| Failure | Behaviour |
+|---|---|
+| Redis restarted empty, emptied, or a new generation | the controller rebuilds the store from the Postgres checkpoint (a seed never overwrites a newer entry; every seeded deadline is at least the end of the grace) and holds every move for the cold-start grace (2 min, shared through `oc:sl:grace`). No mass offline. |
+| Redis unreachable | heartbeats fall back to Postgres, at most one per sensor per minute and 50 per second per replica (`openctem_sensor_heartbeat_writes_total{kind="fallback"}`, the rest `dropped`), except that a sensor which would reach stale before its next allowed write is written past the replica budget (the controller may still read the store from another replica, so a dropped sensor must not be walked to offline); the controller moves nobody until Redis is back, then rebuilds and holds for the grace. |
+| Failed Postgres write of a change | the digest is forgotten, so the next heartbeat writes again, and the replica sets `oc:sl:degraded`. |
+| A replica cannot record heartbeats (store or Postgres write failing) | it sets `oc:sl:degraded` for 60 s (refreshed at most every 5 s while the failures last). The health controller, on whichever replica it runs, moves nobody down the ladder while the marker is set, and also holds when the marker cannot be read: sensors that heartbeated to the failing replica look silent from elsewhere. |
+| Redis `maxmemory-policy` is not `noeviction` | the API logs a warning at start (liveness entries are the only copy of a steady sensor's deadline; eviction makes healthy sensors look silent). Where `CONFIG` is disabled the check is skipped. |
+| Two replicas, one sensor | the script is the single decision point: one change is written once. |
+| Eviction | run Redis with `maxmemory-policy noeviction` (the job queue needs it too) and alert at 80 % of `maxmemory`; about 1 KB per sensor. |
+
+**Interval.** The platform decides it: every advice gets ±10 % jitter, the
+idle interval stretches once the live fleet (the due index) would exceed
+50 heartbeats per second per replica, inside the safe maximum
+`min(offline distance / 2, lease / 3)`, and the busy interval is advised
+only to a sensor that has free slots and no gRPC control stream (the stream
+wakes it).
+
+**Measured** (`TestHeartbeatWriteCost`, 500 sensors, 30 % busy with two
+running commands, 5,000 heartbeats on Postgres 17): before this work 2.6
+row writes and 2,720 WAL bytes per heartbeat; `postgres` mode now 2.0 and
+2,102 (leases renewed only when needed); `redis` mode 0.1 and 88 (the
+history batch; a steady sensor adds one checkpoint row per 10 minutes).
+
+**Metrics**: `openctem_sensor_heartbeat_writes_total{kind}` (full,
+checkpoint, none, fallback, dropped),
+`openctem_sensor_liveness_disagreements_total{postgres,store}`,
+`openctem_sensor_liveness_store_errors_total{op}`,
+`openctem_sensor_liveness_rebuilds_total`.
+
+**Not yet**: a sensor-plane Redis user of its own (documented in
+`docs/redis-production-guide.md`, used once the sensor plane runs as its
+own process), slim v3 heartbeats sent only on change, leases in Redis and a
+narrow `sensor_liveness` table (both at their scale triggers, research/182).
+
 ## Shared sensor enrollment
 
 A shared sensor is enrolled with a **single-use instance enrollment token**
@@ -1671,9 +1785,24 @@ an organization sensor's job never take one host at once.
 jobs in class and age order), so one organization's deep or old queue never
 fills the candidate window or a poll, and an organization the claim skips
 (not allowed, or at its limit) cannot starve the others. Within a round:
-priority class (one class up per 30 minutes waited, never into critical),
-then the organization with the fewest shared jobs in flight (fair share),
-then queue priority and age.
+the organization with the fewest shared jobs in flight (fair share before
+priority, research/191 W-3), then priority class (one class up per 30
+minutes waited, never into critical), then queue priority and age. One job
+per organization and round may jump the fair-share order: its first job of
+the round when it is a verification (critical) job.
+
+**Withheld candidates.** The checks after the query (grant, local policy,
+scope re-check, scan windows, program rules, tool settings, the
+organization's shared access) record nothing, so withheld jobs come back
+first on every poll. When they fill a whole candidate page, the claim reads
+the next page without them, up to three pages (`command_claim_pages_total`),
+and applies the free-slot cap last; the same holds for an organization
+sensor's claim (research/191 W-2).
+
+**Routing auto.** A run step under routing `auto` goes to the shared fleet
+when no sensor of the organization can run the tool at all (none online
+with it) and the organization may use shared sensors now; an organization
+whose capable sensors are only busy keeps the work (research/191 W-1).
 
 **Limits.** Each organization's `platform_scans_concurrent` limit, read
 through the entitlement service by key: in the claim transaction, per

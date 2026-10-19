@@ -88,6 +88,8 @@
   "admin.confirm.reasonHint": "At least {min} characters. Kept in the administrator audit log.",
   "admin.confirm.reasonPlaceholder": "Ticket or request and why, e.g. \"Support case 4411: owner left the company\"",
   "admin.confirm.roleRefused": "Your console role cannot do this. Ask a super admin.",
+  "admin.cp.storedNotDelivered": "Stored, not delivered",
+  "admin.cp.notDelivered": "Not active yet: sensors do not download content packs. A stored pack is not used by any scan, and revoking one stops nothing. Custom templates still travel inside each scan job.",
   "admin.cp.ackSecrets": "I checked every file listed above: these are not real credentials (or must ship as is). Store the pack anyway.",
   "admin.cp.active": "Active",
   "admin.cp.add": "Add pack",

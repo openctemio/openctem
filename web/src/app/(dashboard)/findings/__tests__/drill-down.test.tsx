@@ -98,8 +98,8 @@ vi.mock('@/features/findings/components/mark-fixed-dialog', () => ({ MarkFixedDi
 vi.mock('@/features/findings/components/create-ticket-dialog', () => ({
   CreateTicketDialog: () => null,
 }))
-vi.mock('@/features/remediation/components/link-findings-dialog', () => ({
-  LinkFindingsToRemediationDialog: () => null,
+vi.mock('@/features/remediation-hub/components/add-findings-to-task-dialog', () => ({
+  AddFindingsToTaskDialog: () => null,
 }))
 vi.mock('@/features/findings', async (orig) => ({
   ...(await orig<typeof import('@/features/findings')>()),

@@ -713,6 +713,10 @@ export interface FindingApiFilters {
   /** SLA status filter — sent as `sla_status` (comma-separated). Backend accepts
    *  on_track | warning | overdue | exceeded | not_applicable. */
   sla_statuses?: string[]
+  /** SLA due date bounds, sent as `sla_deadline_gt` / `sla_deadline_lte`: RFC 3339, a date, or a
+   *  duration back from now such as `-P7D`. With `sla_statuses` they bucket breaches by age. */
+  sla_deadline_gt?: string
+  sla_deadline_lte?: string
   epss_min?: number
   /** Restrict to a specific set of finding IDs (e.g. a remediation task's linked findings). */
   finding_ids?: string[]

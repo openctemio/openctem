@@ -1,9 +1,13 @@
 package routes
 
 import (
+	"time"
+
+	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // registerRemediationCampaignRoutes registers remediation campaign routes.
@@ -43,12 +47,26 @@ func registerRemediationTaskRoutes(
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	moduleGate Middleware,
+	log *logger.Logger,
 ) {
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	// Task queries run custom queries: the same per-user rate limit as
+	// /api/v1/query, on top of the query service's concurrency caps.
+	queryLimiter := middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled: true, RequestsPerSec: queryRPS, Burst: queryBurst, CleanupInterval: time.Minute,
+	}, log)
+	runsQuery := middleware.RequireAll(permission.RemediationWrite, permission.FindingsRead)
 
 	router.Group("/api/v1/remediation/tasks", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.RemediationRead))
 		r.POST("/", h.Create, middleware.Require(permission.RemediationWrite))
+		// Tasks from a query: the query runs as the caller (their scope).
+		r.POST("/query/preview", h.PreviewQueryTask, runsQuery, queryLimiter.UserMiddleware())
+		r.POST("/query", h.CreateQueryTask, runsQuery, queryLimiter.UserMiddleware())
+		r.GET("/{task_id}/query", h.GetTaskQuery, middleware.Require(permission.RemediationRead))
+		r.POST("/{task_id}/query/preview", h.PreviewQueryRerun, runsQuery, queryLimiter.UserMiddleware())
+		r.POST("/{task_id}/query/run", h.RerunQuery, runsQuery, queryLimiter.UserMiddleware())
+		r.POST("/{task_id}/query/auto", h.SetQueryAutoState, middleware.Require(permission.RemediationWrite))
 		r.GET("/{task_id}", h.Get, middleware.Require(permission.RemediationRead))
 		r.PATCH("/{task_id}", h.Update, middleware.Require(permission.RemediationWrite))
 		r.GET("/{task_id}/members", h.ListMembers, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))

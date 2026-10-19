@@ -821,7 +821,7 @@ func Register(
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationTask != nil {
-		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation), log)
 	}
 	if h.RemediationSuggest != nil {
 		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
@@ -1191,7 +1191,7 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	if ssoEnforcementMiddleware != nil {
 		middlewares = append(middlewares, ssoEnforcementMiddleware)
 	}
-	// Organization IP allowlist for user sessions and API keys (no-op for sensors).
+	// Organization IP allowlist for every user principal: sessions, API keys, MCP OAuth and OIDC tokens (no-op for sensors).
 	if ipAllowlistMiddleware != nil {
 		middlewares = append(middlewares, ipAllowlistMiddleware)
 	}
@@ -1278,7 +1278,8 @@ var organizationAccessMiddleware Middleware //nolint:gochecknoglobals // set onc
 var organizationGate tenant.AccessGate //nolint:gochecknoglobals // set once during init
 
 // ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
-// user sessions. Set once during Register; nil disables it (tests).
+// every principal acting as an organization member (session, OIDC token,
+// `oct_` key, MCP OAuth token). Set once during Register; nil disables it (tests).
 var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
 // stepUpChecker answers RequireRecentAuth (step-up re-authentication,

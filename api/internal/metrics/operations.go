@@ -96,6 +96,52 @@ var (
 		},
 		[]string{"kind"},
 	)
+
+	// SensorHeartbeatWritesTotal counts what a heartbeat wrote to Postgres
+	// (docs/architecture/sensors.md, "Heartbeat soft state"), by kind: full
+	// (the heartbeat changed something or brought the sensor online),
+	// checkpoint (queued for the batched checkpoint), none (only the
+	// liveness store), fallback (store unreachable, written to Postgres
+	// under the fallback limit), dropped (store unreachable and over the
+	// fallback limit).
+	SensorHeartbeatWritesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_sensor_heartbeat_writes_total",
+			Help: "Sensor heartbeat Postgres writes, by kind (full, checkpoint, none, fallback, dropped)",
+		},
+		[]string{"kind"},
+	)
+
+	// SensorLivenessDisagreementsTotal counts sensors whose ladder step from
+	// the liveness store differs from the one from Postgres (shadow mode),
+	// by the two steps. Zero for a week on a live install is the condition
+	// to switch SENSOR_LIVENESS_STORE to redis.
+	SensorLivenessDisagreementsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_sensor_liveness_disagreements_total",
+			Help: "Sensors whose liveness verdict from the store differs from Postgres (shadow mode), by postgres and store step",
+		},
+		[]string{"postgres", "store"},
+	)
+
+	// SensorLivenessStoreErrorsTotal counts failed liveness store calls, by
+	// operation (beat, touch, overdue, snapshots, generation, checkpoint).
+	SensorLivenessStoreErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_sensor_liveness_store_errors_total",
+			Help: "Failed sensor liveness store operations, by operation",
+		},
+		[]string{"op"},
+	)
+
+	// SensorLivenessRebuildsTotal counts liveness store rebuilds from the
+	// Postgres checkpoint (store emptied, restarted or back after an outage).
+	SensorLivenessRebuildsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "openctem_sensor_liveness_rebuilds_total",
+			Help: "Sensor liveness store rebuilds from the Postgres checkpoint",
+		},
+	)
 )
 
 // RecordPanic counts one recovered panic. where must be a constant from
