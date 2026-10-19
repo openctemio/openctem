@@ -69,7 +69,7 @@ type ObjectSource interface {
 	Finding(ctx context.Context, tenantID, findingID shared.ID) (*vulnerability.Finding, error)
 	Asset(ctx context.Context, tenantID, assetID shared.ID) (*AssetInfo, error)
 	User(ctx context.Context, tenantID, userID shared.ID) (*UserInfo, error)
-	Task(ctx context.Context, tenantID, taskID shared.ID) (*remediation.Campaign, error)
+	Task(ctx context.Context, tenantID, taskID shared.ID) (*remediation.Task, error)
 	TaskMembers(ctx context.Context, tenantID, taskID shared.ID, limit int) ([]*vulnerability.Finding, int64, error)
 }
 
@@ -619,7 +619,7 @@ func (s *Service) values(ctx context.Context, kind ticketmapdom.ObjectKind, tena
 		}
 		return FindingValues(f, asset, user, s.webBase), findingState(f), nil
 	}
-	c, err := s.objects.Task(ctx, tenantID, objectID)
+	task, err := s.objects.Task(ctx, tenantID, objectID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -653,10 +653,10 @@ func (s *Service) values(ctx context.Context, kind ticketmapdom.ObjectKind, tena
 		}
 	}
 	var user *UserInfo
-	if a := c.AssignedTo(); a != nil {
+	if a := task.AssigneeUserID; a != nil {
 		user, _ = s.objects.User(ctx, tenantID, *a)
 	}
-	v := TaskValues(c, visible, total, user, s.webBase)
+	v := TaskValues(task, visible, total, user, s.webBase)
 	if restricted {
 		// The stored counts are organization-wide: a restricted caller gets
 		// the count of what they can see and no organization progress.
@@ -664,7 +664,7 @@ func (s *Service) values(ctx context.Context, kind ticketmapdom.ObjectKind, tena
 		delete(v, "task.resolved_count")
 		delete(v, "task.progress")
 	}
-	return v, TaskStateOf(c), nil
+	return v, TaskStateOf(task), nil
 }
 
 func findingState(f *vulnerability.Finding) string {

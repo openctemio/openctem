@@ -50,6 +50,7 @@ type TaskService struct {
 	guard      TaskBulkGuard
 	moves      TaskMoveNotifier
 	exceptions TaskExceptionRequester
+	campaigns  TaskCampaignGate
 	logger     *logger.Logger
 
 	// Tasks from a query (query_tasks.go).
@@ -59,6 +60,17 @@ type TaskService struct {
 	queryNotifier QueryTaskNotifier
 	modules       ModuleGuard
 }
+
+// TaskCampaignGate decides whether the caller may move a task out of one
+// campaign and into another (nil = no campaign): both must be campaigns the
+// caller may change, and the target must take tasks. The campaign service
+// implements it.
+type TaskCampaignGate interface {
+	CheckTaskCampaignChange(ctx context.Context, tenantID shared.ID, from, to *shared.ID) error
+}
+
+// SetCampaignGate wires the campaign side of a task's campaign change.
+func (s *TaskService) SetCampaignGate(g TaskCampaignGate) { s.campaigns = g }
 
 // NewTaskService creates the service. Without SetAssigneeChecker naming an
 // owner is refused (fail closed).
@@ -139,7 +151,7 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 	if err := s.checkOwner(ctx, in.TenantID, in.AssigneeUserID, in.AssigneeGroupID); err != nil {
 		return nil, err
 	}
-	if err := s.checkCampaign(ctx, in.TenantID, in.CampaignID); err != nil {
+	if err := s.checkCampaignChange(ctx, in.TenantID, nil, in.CampaignID); err != nil {
 		return nil, err
 	}
 
@@ -259,9 +271,16 @@ func (s *TaskService) checkOwner(ctx context.Context, tenantID shared.ID, user, 
 	return nil
 }
 
+// checkCampaign checks the campaign a new task joins: through the campaign
+// gate when wired (a draft or active campaign the caller may change), so
+// every create path (create, accept, from a query) gets the same check;
+// else that it is a campaign of the tenant.
 func (s *TaskService) checkCampaign(ctx context.Context, tenantID shared.ID, campaignID *shared.ID) error {
 	if campaignID == nil {
 		return nil
+	}
+	if s.campaigns != nil {
+		return s.campaigns.CheckTaskCampaignChange(ctx, tenantID, nil, campaignID)
 	}
 	ok, err := s.repo.CampaignInTenant(ctx, tenantID, *campaignID)
 	if err != nil {
@@ -271,6 +290,16 @@ func (s *TaskService) checkCampaign(ctx context.Context, tenantID shared.ID, cam
 		return ErrTaskCampaignNotFound
 	}
 	return nil
+}
+
+// checkCampaignChange checks a task's move between campaigns: through the
+// campaign gate when wired (the caller must be able to change both campaigns),
+// else that the target is a campaign of the tenant.
+func (s *TaskService) checkCampaignChange(ctx context.Context, tenantID shared.ID, from, to *shared.ID) error {
+	if s.campaigns != nil {
+		return s.campaigns.CheckTaskCampaignChange(ctx, tenantID, from, to)
+	}
+	return s.checkCampaign(ctx, tenantID, to)
 }
 
 // GetTask returns a task as the caller may see it: a restricted caller sees
@@ -532,8 +561,8 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 		changes.Set("manual_deadline", timeStr(before.ManualDeadline), timeStr(*in.Deadline))
 		data["manual_deadline"] = timeStr(*in.Deadline)
 	}
-	if in.CampaignID != nil {
-		if err := s.checkCampaign(ctx, in.TenantID, *in.CampaignID); err != nil {
+	if in.CampaignID != nil && idStr(*in.CampaignID) != idStr(before.CampaignID) {
+		if err := s.checkCampaignChange(ctx, in.TenantID, before.CampaignID, *in.CampaignID); err != nil {
 			return nil, err
 		}
 		ch.CampaignID = in.CampaignID
