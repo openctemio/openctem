@@ -216,6 +216,10 @@ func (s *Server) Subscribe(ctx context.Context, _ *connect.Request[sensorv3.Subs
 			if err := out.Send(&sensorv3.SubscribeResponse{Status: last.GetStatus(), Keepalive: true}); err != nil {
 				return err
 			}
+			if s.presence != nil {
+				// The identity is the stream's authenticated principal.
+				s.presence.TouchPresence(ctx, id.Sensor.TenantID, id.Sensor.ID)
+			}
 		case <-recheck.C:
 			if err := refresh(false); err != nil {
 				return err
