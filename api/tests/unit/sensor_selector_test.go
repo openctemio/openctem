@@ -141,7 +141,7 @@ func makeSensorSelSensor(name string, currentJobs, maxJobs int) *sensor.Sensor {
 // not use them in SelectSensor / CheckSensorAvailability.
 func newSensorSelSelector(repo *sensorSelMockSensorRepo) *sensorapp.SensorSelector {
 	log := logger.NewNop()
-	return sensorapp.NewSensorSelector(repo, nil, nil, log)
+	return sensorapp.NewSensorSelector(repo, nil, log)
 }
 
 // =============================================================================
