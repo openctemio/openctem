@@ -361,7 +361,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
             <span className="text-muted-foreground">
               {t('remediationHub.detail.owner', undefined, { owner })}
             </span>
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground" title={t('remediationHub.risk.explain')}>
               {t('remediationHub.detail.risk', undefined, { risk: task.counts.risk_points })}
             </span>
           </div>

@@ -52,3 +52,28 @@ describe('i18n translate', () => {
     }
   })
 })
+
+describe('i18n plurals', () => {
+  const dict = {
+    a: '{n, plural, one {# finding} other {# findings}}',
+    b: '{f, plural, =0 {No findings} one {# finding} other {# findings}} on {a, plural, one {# asset} other {# assets}}',
+    c: '{n, plural, other {# mục}}',
+  }
+  it('picks one and other', () => {
+    expect(translate(dict, 'a', undefined, { n: 1 })).toBe('1 finding')
+    expect(translate(dict, 'a', undefined, { n: 5 })).toBe('5 findings')
+    expect(translate(dict, 'a', undefined, { n: 0 })).toBe('0 findings')
+  })
+  it('handles =0 and several blocks in one string', () => {
+    expect(translate(dict, 'b', undefined, { f: 1, a: 1 })).toBe('1 finding on 1 asset')
+    expect(translate(dict, 'b', undefined, { f: 5, a: 2 })).toBe('5 findings on 2 assets')
+    expect(translate(dict, 'b', undefined, { f: 0, a: 3 })).toBe('No findings on 3 assets')
+  })
+  it('a language with only other never says one', () => {
+    expect(translate(dict, 'c', undefined, { n: 1 })).toBe('1 mục')
+  })
+  it('groups thousands and leaves a block with a missing number alone', () => {
+    expect(translate(dict, 'a', undefined, { n: 1234 })).toBe('1,234 findings')
+    expect(translate(dict, 'a')).toContain('plural')
+  })
+})
