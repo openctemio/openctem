@@ -261,7 +261,7 @@ path a keyed campaign can take.
 
 ## Conversion
 
-A campaign is becoming a programme of remediation tasks (`remediation_tasks.campaign_id`); it stops holding
+A campaign is becoming a program of remediation tasks (`remediation_tasks.campaign_id`); it stops holding
 findings. Migration `remediation_campaigns_hold_tasks` turns what each running campaign (draft, active, paused,
 validating) tracks into tasks, with the filter evaluated exactly as above:
 
