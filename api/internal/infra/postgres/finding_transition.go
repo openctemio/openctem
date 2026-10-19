@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -116,7 +117,8 @@ func clearFindingTransition(ctx context.Context, tx *sql.Tx) error {
 func (db *DB) execStatusWrite(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	t, platform := vulnerability.StatusTransitionFrom(ctx)
 	person := vulnerability.IsPersonMove(ctx)
-	if !platform && !person {
+	jobs := len(durablejob.FromContext(ctx)) > 0
+	if !platform && !person && !jobs {
 		return db.ExecContext(ctx, query, args...)
 	}
 	var res sql.Result
@@ -132,8 +134,11 @@ func (db *DB) execStatusWrite(ctx context.Context, query string, args ...any) (s
 			}
 		}
 		var err error
-		res, err = tx.ExecContext(ctx, query, args...)
-		return err
+		if res, err = tx.ExecContext(ctx, query, args...); err != nil {
+			return err
+		}
+		// Ticket status sync queued with the status it pushes.
+		return enqueueContextJobsTx(ctx, tx, res)
 	})
 	return res, err
 }
