@@ -60,7 +60,7 @@ export default function SlaCompliancePage() {
     { onError: () => undefined }
   )
 
-  const pastDueTotal = sla.tiles.pastDue.data?.total ?? 0
+  const pastDueTotal = sla.tiles.pastDue ?? 0
   const failed = Boolean(sla.error || list.error)
 
   const tileText: Record<ComplianceTile, { label: string; hint: string }> = {
@@ -84,12 +84,11 @@ export default function SlaCompliancePage() {
 
   const items: MetricStripItem[] = (['pastDue', 'dueSoon', 'onTrack', 'open'] as const).map(
     (tile) => {
-      const q = sla.tiles[tile]
       return {
         key: tile,
         label: tileText[tile].label,
         // A failed read is "—", never a 0 that looks like good news.
-        value: q.data ? q.data.total : '—',
+        value: sla.tiles[tile] ?? '—',
         hint: tileText[tile].hint,
         tone: tile === 'pastDue' ? 'danger' : tile === 'dueSoon' ? 'warning' : 'default',
         onClick: () => router.push(findingsHref(tileFilter(tile))),
@@ -257,7 +256,7 @@ export default function SlaCompliancePage() {
                   <div key={key} className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">{agingLabel[key]}</span>
                     <span className="text-sm font-medium tabular-nums">
-                      {sla.aging[key].data ? sla.aging[key].data.total : '—'}
+                      {sla.aging[key] ?? '—'}
                     </span>
                   </div>
                 ))}
