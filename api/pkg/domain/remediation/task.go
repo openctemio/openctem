@@ -415,6 +415,7 @@ type TaskFilter struct {
 	ActionID   *shared.ID
 	ActionKind string
 	CampaignID *shared.ID
+	NoCampaign bool       // tasks in no campaign
 	FindingID  *shared.ID // tasks the finding is an active member of
 	// Overdue keeps tasks whose deadline has passed. Combine it with States
 	// to count the open ones; a task without a deadline is never overdue.

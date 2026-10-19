@@ -2,14 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"html"
-	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -32,18 +28,7 @@ func (m rosterChangeMailer) NotifyRosterChange(_ context.Context, c adminconsole
 			"alert", adminconsole.AlertRosterChange)
 		return nil
 	}
-	name := m.appName
-	if name == "" {
-		name = brand.DefaultName
-	}
-	oneLine := strings.NewReplacer("\r", "", "\n", "")
-	who := oneLine.Replace(c.ActorEmail)
-	subject := fmt.Sprintf("[%s] Administrator change by %s", name, who)
-	body := fmt.Sprintf(`<p><strong>%s</strong> %s in the %s admin console.</p>
-<ul><li>Time: %s</li><li>IP address: %s</li></ul>
-<p>Every change to the administrators, their sign-in or the console sign-in policy is sent to all administrators. If you did not expect this one, treat it as an incident: review the admin activity log and end the administrator's sessions.</p>`,
-		html.EscapeString(who), html.EscapeString(oneLine.Replace(c.Summary)), html.EscapeString(name),
-		html.EscapeString(c.At.UTC().Format(time.RFC1123)), html.EscapeString(c.IP))
+	subject, body := adminconsole.RosterChangeEmail(m.appName, c)
 
 	// Never hold up the change on SMTP.
 	recipients := append([]string(nil), c.Recipients...)

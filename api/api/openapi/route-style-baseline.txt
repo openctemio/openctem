@@ -191,7 +191,6 @@ R5 POST /api/v1/relationships/suggestions/approve-all
 R5 POST /api/v1/relationships/suggestions/approve-batch
 R5 POST /api/v1/relationships/suggestions/generate
 R5 POST /api/v1/relationships/suggestions/{id}/dismiss
-R5 POST /api/v1/remediation/campaigns/{id}/refresh
 R5 POST /api/v1/scanner-templates/validate
 R5 POST /api/v1/scan-profiles/{id}/clone
 R5 POST /api/v1/scan-profiles/{id}/evaluate-quality-gate

@@ -2,8 +2,12 @@ package adminconsole
 
 import (
 	"context"
+	"fmt"
+	"html"
+	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 )
 
@@ -39,6 +43,31 @@ type RosterChange struct {
 	At         time.Time
 	// Recipients are the other active administrators' emails.
 	Recipients []string
+	// Via says where the change was made, completing "<actor> <summary> ...";
+	// empty means the admin console. The bootstrap-admin command sets it.
+	Via string
+}
+
+// RosterChangeEmail renders the notice's subject and HTML body. Every value
+// from the change is put on one line and HTML-escaped.
+func RosterChangeEmail(appName string, c RosterChange) (subject, body string) {
+	name := appName
+	if name == "" {
+		name = brand.DefaultName
+	}
+	oneLine := strings.NewReplacer("\r", "", "\n", "")
+	who := oneLine.Replace(c.ActorEmail)
+	via := oneLine.Replace(c.Via)
+	if via == "" {
+		via = "in the " + name + " admin console"
+	}
+	subject = fmt.Sprintf("[%s] Administrator change by %s", name, who)
+	body = fmt.Sprintf(`<p><strong>%s</strong> %s %s.</p>
+<ul><li>Time: %s</li><li>IP address: %s</li></ul>
+<p>Every change to the administrators, their sign-in or the console sign-in policy is sent to all administrators. If you did not expect this one, treat it as an incident: review the admin activity log and end the administrator's sessions.</p>`,
+		html.EscapeString(who), html.EscapeString(oneLine.Replace(c.Summary)), html.EscapeString(via),
+		html.EscapeString(c.At.UTC().Format(time.RFC1123)), html.EscapeString(oneLine.Replace(c.IP)))
+	return subject, body
 }
 
 // RosterChangeNotifier delivers the notice. Implementations must not block the
