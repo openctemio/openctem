@@ -9,6 +9,8 @@ import (
 	"time"
 
 	proxyproto "github.com/pires/go-proxyproto"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // EnableMTLS prepares the gRPC binding (Start starts it).
@@ -54,6 +56,16 @@ type WakeBus interface {
 
 // SetWakeBus wires the cross-replica wake bus Start starts.
 func (s *Server) SetWakeBus(b WakeBus) { s.wakeBus = b }
+
+// Presence records that a sensor's control stream is open, on each
+// keepalive: an open stream is proof of life for the liveness store.
+type Presence interface {
+	TouchPresence(ctx context.Context, tenantID *shared.ID, sensorID shared.ID)
+}
+
+// SetPresence makes every keepalive of a control stream count as proof of
+// life (optional; nil records nothing).
+func (s *Server) SetPresence(p Presence) { s.presence = p }
 
 // Start starts the cross-replica wake bus (when set) and the gRPC binding
 // (when EnableMTLS prepared it). Without the bus each replica wakes only its

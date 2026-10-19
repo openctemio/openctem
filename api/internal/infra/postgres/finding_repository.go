@@ -3743,7 +3743,8 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			conditions = append(conditions, "FALSE")
 		} else {
 			// argIndex not incremented — this is the last block that consumes it.
-			cond, scopeArgs := dataScopeCondAt("asset_id", &shared.DataScope{TenantID: *filter.TenantID,
+			// The assignee of a finding sees it too (filterspec.AssigneeScopeSQL).
+			cond, scopeArgs := filterspec.AssigneeScopeSQL("asset_id", "assigned_to", &shared.DataScope{TenantID: *filter.TenantID,
 				UserID: *filter.DataScopeUserID, Unrestricted: filter.DataScopeUnrestricted}, argIndex)
 			args = append(args, scopeArgs...)
 			conditions = append(conditions, cond)
