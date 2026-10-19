@@ -205,6 +205,22 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		return nil, err
 	}
 
+	// Which rules a single-scanner run uses (rule_sources.go): resolved
+	// once, before the opt-in check, so a platform-only run is not refused
+	// for templates it does not send. The value in the run context is this
+	// one, never a caller's.
+	if input.Context == nil {
+		input.Context = map[string]any{}
+	}
+	delete(input.Context, RunContextKeyRuleSources)
+	if sc.ScanType == scan.ScanTypeSingle {
+		rs, err := s.applyRuleSourcesAtTrigger(ctx, sc)
+		if err != nil {
+			return nil, err
+		}
+		input.Context[RunContextKeyRuleSources] = string(rs)
+	}
+
 	// The organization's sensor opt-ins (research/25 D3): interactsh is
 	// removed for this run, custom templates refuse the trigger.
 	optInWarning, err := s.applyOptInsAtTrigger(ctx, sc)
@@ -777,8 +793,13 @@ type EmbeddedTemplate struct {
 // (`scan_run_id`, `step_key`, `scan_run_step_id`); `run_id` is kept because the
 // sensor SDK reads it.
 func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *scanrun.Run, stepRun *scanrun.StepRun, targets []string, usePlatform bool) error {
-	templates := s.customTemplatesForScan(ctx, sc)
+	rs := ruleSourcesOfRun(run.Context)
+	templates, err := s.customTemplatesFor(ctx, sc, rs)
+	if err != nil {
+		return err
+	}
 	payloadMap := s.scannerPayload(sc, run, stepRun, sc.ScannerConfig, run.Context, targets, templates)
+	withRuleSources(payloadMap, rs)
 	if err := s.attachJobExclusions(ctx, sc.TenantID, payloadMap, targets); err != nil {
 		return err
 	}
@@ -900,23 +921,6 @@ func withoutTargetKeys(cfg map[string]any) map[string]any {
 	return out
 }
 
-// customTemplatesForScan resolves the scan's custom templates once per run.
-// A failure is logged and the scan proceeds without them.
-func (s *Service) customTemplatesForScan(ctx context.Context, sc *scan.Scan) []EmbeddedTemplate {
-	templates, err := s.resolveCustomTemplates(ctx, sc)
-	if err != nil {
-		s.logger.Warn("failed to resolve custom templates, proceeding without them",
-			"error", err, "scan_id", sc.ID.String())
-		return nil
-	}
-	if len(templates) > 0 {
-		s.logger.Info("embedded custom templates in scan command",
-			"scan_id", sc.ID.String(),
-			"template_count", len(templates))
-	}
-	return templates
-}
-
 // resolveCustomTemplates resolves custom templates from scanner_config.
 // Uses lazy sync: checks if template sources need sync and syncs them on-demand.
 func (s *Service) resolveCustomTemplates(ctx context.Context, sc *scan.Scan) ([]EmbeddedTemplate, error) {
@@ -949,19 +953,17 @@ func (s *Service) resolveCustomTemplates(ctx context.Context, sc *scan.Scan) ([]
 		return nil, nil
 	}
 
-	// Convert to shared.ID
+	// Convert to shared.ID: an id that is not one is a template that
+	// cannot be found (fail closed, never skipped).
 	ids := make([]shared.ID, 0, len(templateIDs))
+	var missing, unusable []string
 	for _, idStr := range templateIDs {
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
-			s.logger.Warn("invalid template ID in scanner_config", "template_id", idStr, "error", err)
+			missing = append(missing, idStr)
 			continue
 		}
 		ids = append(ids, id)
-	}
-
-	if len(ids) == 0 {
-		return nil, nil
 	}
 
 	// Lazy sync: Check if any template sources need sync before fetching templates
@@ -972,21 +974,32 @@ func (s *Service) resolveCustomTemplates(ctx context.Context, sc *scan.Scan) ([]
 			"error", err)
 	}
 
-	// Fetch templates from database
+	// Fetch templates from database, in the scan's organization only: an id
+	// of another organization's template is simply not found.
 	templates, err := s.scannerTemplateRepo.ListByIDs(ctx, sc.TenantID, ids)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch templates: %w", err)
+	}
+	found := make(map[string]bool, len(templates))
+	for _, tpl := range templates {
+		found[tpl.ID.String()] = true
+	}
+	for _, id := range ids {
+		if !found[id.String()] {
+			missing = append(missing, id.String())
+		}
 	}
 
 	// Convert to embedded format
 	embedded := make([]EmbeddedTemplate, 0, len(templates))
 	for _, tpl := range templates {
-		// Only include active templates
+		// Only active templates run; a named one that is not is an error.
+		if !tpl.TenantID.Equals(sc.TenantID) {
+			missing = append(missing, tpl.ID.String())
+			continue
+		}
 		if !tpl.Status.IsUsable() {
-			s.logger.Warn("skipping non-active template",
-				"template_id", tpl.ID.String(),
-				"template_name", tpl.Name,
-				"status", string(tpl.Status))
+			unusable = append(unusable, tpl.Name)
 			continue
 		}
 
@@ -997,6 +1010,9 @@ func (s *Service) resolveCustomTemplates(ctx context.Context, sc *scan.Scan) ([]
 			Content:      base64.StdEncoding.EncodeToString(tpl.Content), // Base64 encode for safe JSON transport
 			ContentHash:  tpl.ContentHash,
 		})
+	}
+	if len(missing) > 0 || len(unusable) > 0 {
+		return nil, unresolvedTemplatesError(missing, unusable)
 	}
 
 	return embedded, nil
