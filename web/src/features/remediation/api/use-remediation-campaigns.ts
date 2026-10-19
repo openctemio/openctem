@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Remediation campaigns: programmes of remediation tasks under one owner and
+ * Remediation campaigns: programs of remediation tasks under one owner and
  * one due date (api/docs/rfcs/RFC-098-remediation-tasks.md). A campaign holds
  * tasks, never findings; its numbers come from its tasks, counted on the
  * server within the caller's data scope.
@@ -84,6 +84,8 @@ export interface CampaignPage {
   page: number
   per_page: number
   total_pages?: number
+  /** Campaigns the caller may see per status, with the same priority and search. */
+  status_counts?: Record<CampaignStatus, number>
 }
 
 export const CAMPAIGNS = '/api/v1/remediation/campaigns'
@@ -113,22 +115,20 @@ export function useRemediationCampaigns(f: CampaignListFilters, enabled = true) 
 }
 
 /**
- * Totals per status for the filter chips: one page-of-one request per status,
- * so the counts are the server's, never one page counted in the browser.
+ * Totals per status for the filter chips, from the server's status_counts
+ * (same search), never one page counted in the browser.
  */
 export function useCampaignStatusCounts(search: string, enabled = true) {
   const key = enabled ? ['campaign-status-counts', search.trim()] : null
   return useSWR<Record<CampaignStatus | 'all', number>>(
     key,
     async () => {
-      const totals = await Promise.all(
-        [undefined, ...CAMPAIGN_STATUSES].map((status) =>
-          get<CampaignPage>(campaignListUrl({ status, search, perPage: 1 })).then((r) => r.total)
-        )
-      )
-      const [all, ...rest] = totals
-      const out = { all } as Record<CampaignStatus | 'all', number>
-      CAMPAIGN_STATUSES.forEach((s, i) => (out[s] = rest[i]))
+      const page = await get<CampaignPage>(campaignListUrl({ search, perPage: 1 }))
+      const out = { all: 0 } as Record<CampaignStatus | 'all', number>
+      for (const s of CAMPAIGN_STATUSES) {
+        out[s] = page.status_counts?.[s] ?? 0
+        out.all += out[s]
+      }
       return out
     },
     { keepPreviousData: true }

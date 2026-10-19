@@ -1,5 +1,5 @@
 /**
- * The campaign list and detail on the task-programme contract: status labels
+ * The campaign list and detail on the task-program contract: status labels
  * from the one registry (a draft reads "Draft"), overdue as text, hidden tasks
  * as a count, a named findings progress bar, the buttons each status allows,
  * and the read-only state when the caller may not change the campaign.
