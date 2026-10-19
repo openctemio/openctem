@@ -276,3 +276,23 @@ func wireSelfApprovalTOTP(svc *Services) {
 			notEnrolled: suppression.ErrSelfApprovalNeedsTOTP, badCode: suppression.ErrSelfApprovalBadCode})
 	}
 }
+
+// emergingThreatMailer e-mails the emerging-threat digest through the
+// organization's SMTP (or the system's), asynchronously.
+type emergingThreatMailer struct {
+	email *auth.EmailService
+	log   *logger.Logger
+}
+
+func (m emergingThreatMailer) SendEmergingThreatMail(_ context.Context, tenantID string, to []string, subject, htmlBody string) {
+	if m.email == nil || len(to) == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := m.email.SendReport(ctx, tenantID, to, subject, htmlBody); err != nil {
+			m.log.Warn("emerging threat digest email failed", "error", logger.SanitizeError(err))
+		}
+	}()
+}

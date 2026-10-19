@@ -11,6 +11,7 @@ import (
 	"time"
 
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
+	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
@@ -321,50 +322,6 @@ func (r taskIssueReader) OpenMemberIDs(ctx context.Context, tenantID, taskID sha
 	return ids, nil
 }
 
-// campaignKeyResolver serves campaigns scoped to a remediation-group key (a
-// solution family): progress from the side-table rollup, resolution via the
-// same guarded group-resolve path as the standalone "resolve group" action.
-// Kept here so exposure needn't import the remediation group service or the
-// key repository.
-type campaignKeyResolver struct {
-	keys  *postgres.FindingRemediationKeyRepository
-	group *remediation.GroupService
-}
-
-func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, int64, error) {
-	closed := vulnerability.ClosedFindingStatuses()
-	closedStrs := make([]string, len(closed))
-	for i, s := range closed {
-		closedStrs[i] = string(s)
-	}
-	return a.keys.CountByKeyInScope(ctx, tenantID, key, closedStrs, scope)
-}
-
-func (a campaignKeyResolver) CountVerifiedByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, error) {
-	_, verified, err := a.keys.CountByKeyInScope(ctx, tenantID, key, []string{string(vulnerability.FindingStatusResolved)}, scope)
-	return verified, err
-}
-
-func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (*exposure.CampaignResolveResult, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, err
-	}
-	res, err := a.group.ResolveGroup(ctx, tid, remediation.ResolveGroupInput{
-		Key:                   key,
-		Status:                in.Status,
-		Resolution:            in.Resolution,
-		ActorID:               in.ActorID,
-		HasVerifyPermission:   in.HasVerifyPermission,
-		HasFixApplyPermission: in.HasFixApplyPermission,
-		OperatorApproved:      in.Approved,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return remediation.CampaignResolveResult(res), nil
-}
-
 // httpDataScopeCaller reads the acting user and the admin decision from the
 // HTTP auth context for the Layer 2 data-scope enforcer.
 func httpDataScopeCaller(ctx context.Context) datascope.Caller {
@@ -655,7 +612,11 @@ type Services struct {
 	FindingActions  *finding.FindingActionsService
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
-	CTEMID          *ctemidapp.Service
+	// ThreatAlertPlanner plans and delivers emerging-threat alerts (RFC-117).
+	ThreatAlertPlanner *threatalertapp.Planner
+	// ThreatAlerts is the emerging-threat alert API.
+	ThreatAlerts *threatalertapp.Service
+	CTEMID       *ctemidapp.Service
 	// VersionCheck is the release feed check (RFC-105); never nil with a database.
 	VersionCheck *versioncheck.Service
 	CertMonitor  *certmonitorapp.Service
@@ -1227,8 +1188,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One remediation-group key applier for every path that creates findings
 	// (scan ingest, CVE matching, manual, license policy).
 	remediationKeys := remediation.NewKeyApplier(repos.FindingRemediationKey, log)
-	remediationKeys.SetAuditWriter(repos.Audit)
-	remediationKeys.SetBackfillActor("remediation key rules upgrade")
 	s.LicensePolicy = licapp.NewService(repos.LicensePolicy, repos.Finding, repos.Tenant, log)
 	s.LicensePolicy.SetRemediationKeyApplier(remediationKeys)
 	s.SBOMImport.SetLicenseEvaluator(s.LicensePolicy)
@@ -1719,24 +1678,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
-	// Wire the finding counter so campaign progress (finding_count/resolved_count/
-	// progress) is computed from live finding data instead of staying at zero.
-	s.RemediationCampaign.SetFindingCounter(repos.Finding)
-	s.RemediationCampaign.SetFindingLister(repos.Finding)
-	// A restricted reader sees progress over their own findings (L-18).
+	// A campaign holds tasks: what a restricted caller sees and may change of
+	// it follows their data scope over its tasks' findings.
 	s.RemediationCampaign.SetDataScope(s.DataScope)
-	// Creates, edits, status changes and deletes go to audit_logs.
+	// Creates, edits, task adds and removals, status changes and deletes go
+	// to audit_logs.
 	s.RemediationCampaign.SetAuditLogger(s.Audit)
 	s.RemediationCampaign.SetAssigneeChecker(repos.AccessControl) // a campaign owner must be an active member (21b C2)
-	// Phase 3: let a campaign actively resolve its open findings (reuses the
-	// finding bulk path + abuse guard).
-	s.RemediationCampaign.SetFindingResolver(remediation.NewCampaignFilterResolver(s.Vulnerability, s.BulkGuard))
 	// Remediation tasks (RFC-098): who fixes an action and by when; state,
 	// deadline and counters derived from the member findings.
 	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
 	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Campaign <-> task: the campaign checks every task it takes; a task's
+	// own campaign change goes through the campaign's write check.
+	s.RemediationCampaign.SetTasks(s.RemediationTask.CampaignTasks())
+	s.RemediationTask.SetCampaignGate(s.RemediationCampaign)
 	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
 	// own findings, proof-of-fix queued) behind the abuse guard.
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
@@ -1881,10 +1839,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// integration's own Jira site; previews load objects through the caller's
 	// data scope.
 	if repos.TicketMapping != nil {
-		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User, campaigns: repos.RemediationCampaign}
-		if s.RemediationCampaign != nil {
-			objects.members = s.RemediationCampaign
-		}
+		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User,
+			tasks: s.RemediationTask, taskRepo: repos.RemediationTask}
 		s.TicketMapping = appticketmap.NewService(repos.TicketMapping, infrajira.NewMappingTrackerResolver(jiraResolver),
 			ticketMappingScope{e: s.DataScope}, objects, cfg.SMTP.BaseURL, log)
 		// Published profiles drive issue creation and status moves for their
@@ -1897,7 +1853,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.RemediationCampaign != nil {
 		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
 		// Inbound: a Jira webhook moving the campaign's epic to Done marks the
-		// campaign's findings fixed (a fix claim; verification closes them).
+		// campaign's live tasks fixed (a fix claim per finding; verification
+		// closes them).
 		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
@@ -1944,9 +1901,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// PriorityClassification setters because s.Outbox does not exist yet at
 	// that point. The publisher itself filters to escalations only (see its
 	// doc comment) so ingest does not double-notify alongside "new_finding".
-	s.PriorityClassification.SetChangePublisher(
-		finding.NewOutboxPriorityChangePublisher(s.Outbox, log),
-	)
+	priorityPublisher := finding.NewOutboxPriorityChangePublisher(s.Outbox, log)
+	if repos.ThreatAlert != nil {
+		// A KEV addition on an alerted CVE is announced once, by the alert.
+		priorityPublisher.SetAlertCoverage(repos.ThreatAlert)
+	}
+	s.PriorityClassification.SetChangePublisher(priorityPublisher)
 	// A recompute caused by a scoring change sends one summary per change
 	// instead of one escalation per finding (docs/architecture/scoring-versions.md).
 	if s.Reclassifier != nil {
@@ -2214,6 +2174,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
+	// Emerging-threat alerts (RFC-117): matched findings are announced by
+	// their alert. The delivery sinks are wired with the workers.
+	if repos.ThreatAlert != nil {
+		s.ThreatAlertPlanner = threatalertapp.NewPlanner(repos.ThreatAlert, repos.Tenant, log)
+		s.VulnMatch.SetAlertQueue(s.ThreatAlertPlanner)
+		s.ThreatAlerts = threatalertapp.NewService(repos.ThreatAlert, s.Audit, log)
+	}
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
@@ -2745,14 +2712,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		postgres.NewAnnouncingExposureRepository(reconDB, postgres.NewEASMAlerter(reconDB)), repos.ExposureStateHistory, log))
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 	s.RemediationGroup.SetDataScope(s.DataScope)
-
-	// A remediation campaign can be scoped to a group key (solution family): its
-	// progress + resolve then run off the side-table / group-resolve path rather
-	// than a generic finding filter. Wired here (not at campaign construction)
-	// because it needs the group service built above.
-	if s.RemediationCampaign != nil {
-		s.RemediationCampaign.SetKeyResolver(campaignKeyResolver{keys: repos.FindingRemediationKey, group: s.RemediationGroup})
-	}
 
 	// Wire engine and finding repo to assignment rule service for TestRule
 	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)

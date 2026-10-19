@@ -373,6 +373,7 @@
   "findings.sourceData.fixType": "Fix type",
   "findings.sourceData.patchPublished": "Patch published",
   "findings.sourceData.advisories": "Advisories",
+  "findings.sourceData.detectionRule": "Detection rule",
   "findings.sourceData.rawRecord": "Raw record",
   "findings.sourceData.otherFields": "Other source fields ({count})",
   "findings.priorityCard.kev": "Known exploited (KEV)",

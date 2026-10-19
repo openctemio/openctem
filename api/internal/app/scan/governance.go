@@ -15,6 +15,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -86,6 +87,18 @@ func (s *Service) GovernanceSubjectOf(ctx context.Context, sc *scan.Scan) (scang
 		SensorPreference:  string(sc.SensorPreference),
 		Tags:              append([]string(nil), sc.Tags...),
 		RunOnTenantRunner: sc.RunOnTenantRunner,
+	}
+	// The rule sources a run would use (the scan's, else its profile's), so
+	// neither a scan edit nor a profile edit widens an approved scan to the
+	// organization's templates (or narrows it) without a new approval. Both,
+	// what every scan ran before rule sources existed, is left out so
+	// existing approvals keep matching.
+	rs, err := s.effectiveRuleSources(ctx, sc)
+	if err != nil {
+		return scangov.Definition{}, scangov.Facts{}, err
+	}
+	if rs != scannertemplate.RuleSourcesBoth {
+		def.RuleSources = string(rs)
 	}
 	if o := sc.TargetOptions; o != (scan.TargetOptions{}) {
 		def.TargetOptions = map[string]any{"cidr_mode": string(o.CIDRMode), "seen_within_days": o.SeenWithinDays, "include_stale": o.IncludeStale}

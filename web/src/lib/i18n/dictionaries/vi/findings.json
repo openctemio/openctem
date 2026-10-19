@@ -373,6 +373,7 @@
   "findings.sourceData.fixType": "Loại bản sửa",
   "findings.sourceData.patchPublished": "Ngày phát hành bản vá",
   "findings.sourceData.advisories": "Cảnh báo bảo mật",
+  "findings.sourceData.detectionRule": "Quy tắc phát hiện",
   "findings.sourceData.rawRecord": "Bản ghi gốc",
   "findings.sourceData.otherFields": "Trường nguồn khác ({count})",
   "findings.priorityCard.kev": "Đã bị khai thác (KEV)",

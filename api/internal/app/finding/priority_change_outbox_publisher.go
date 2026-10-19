@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -44,8 +45,21 @@ type OutboxEnqueuer interface {
 // escalations and nothing else.
 type OutboxPriorityChangePublisher struct {
 	outbox OutboxEnqueuer
+	alerts AlertCoverage
 	logger *logger.Logger
 }
+
+// AlertCoverage reports whether an open emerging-threat alert of a CVE in
+// KEV covers the finding (*postgres.ThreatAlertRepository). Such an alert
+// is the one message for a KEV addition, so the per-finding escalation is
+// not sent (docs/rfcs/RFC-117-emerging-threat-alerts.md §3.3).
+type AlertCoverage interface {
+	CoveredByAlert(ctx context.Context, tenantID, findingID shared.ID) (bool, error)
+}
+
+// SetAlertCoverage wires the emerging-threat alert check (nil: every
+// escalation is sent).
+func (p *OutboxPriorityChangePublisher) SetAlertCoverage(a AlertCoverage) { p.alerts = a }
 
 // NewOutboxPriorityChangePublisher wires the publisher to the notification
 // outbox. A nil enqueuer yields a publisher whose Publish is a no-op, so the
@@ -67,6 +81,18 @@ func (p *OutboxPriorityChangePublisher) Publish(ctx context.Context, ev Priority
 	}
 	if !isEscalation(ev.PreviousClass, ev.NewClass) {
 		return nil
+	}
+
+	if p.alerts != nil {
+		covered, err := p.alerts.CoveredByAlert(ctx, ev.TenantID, ev.FindingID)
+		if err != nil {
+			// Unsure: send it (one message too many beats a missed one).
+			p.logger.Warn("emerging-threat coverage check failed; sending the escalation", "error", err)
+		} else if covered {
+			p.logger.Debug("priority escalation announced by its emerging-threat alert",
+				"tenant_id", ev.TenantID.String(), "finding_id", ev.FindingID.String())
+			return nil
+		}
 	}
 
 	previous := string(*ev.PreviousClass)

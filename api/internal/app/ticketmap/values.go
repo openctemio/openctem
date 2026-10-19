@@ -52,7 +52,7 @@ func FindingValues(f *vulnerability.Finding, asset *AssetInfo, assignee *UserInf
 	if cve := strings.TrimSpace(f.CVEID()); cve != "" {
 		v["finding.cve_ids"] = ticketmapdom.List(cve)
 	}
-	if p := f.FilePath(); p != "" {
+	if p := vulnerability.DisplayPath(f.FilePath()); p != "" {
 		v["finding.file_path"] = ticketmapdom.Text(p)
 		loc := p
 		if f.StartLine() > 0 {
@@ -94,61 +94,86 @@ func FindingValues(f *vulnerability.Finding, asset *AssetInfo, assignee *UserInf
 const maxTableRows = 200
 
 // TaskValues flattens a remediation task and its (already scope-filtered)
-// member findings into mapping values.
-func TaskValues(c *remediation.Campaign, members []*vulnerability.Finding, totalMembers int64, assignee *UserInfo, webBase string) ticketmapdom.Values {
+// member findings into mapping values. The task's priority is its most
+// severe open finding's severity.
+func TaskValues(t *remediation.Task, members []*vulnerability.Finding, totalMembers int64, assignee *UserInfo, webBase string) ticketmapdom.Values {
 	base := strings.TrimRight(webBase, "/")
-	v := ticketmapdom.Values{
-		"task.id":             ticketmapdom.Text(c.ID().String()),
-		"task.title":          ticketmapdom.Text(c.Name()),
-		"task.url":            ticketmapdom.Text(base + "/remediation/" + c.ID().String()),
-		"task.priority":       ticketmapdom.Text(string(c.Priority())),
-		"task.status":         ticketmapdom.Text(string(c.Status())),
-		"task.finding_count":  ticketmapdom.Number(float64(c.FindingCount())),
-		"task.resolved_count": ticketmapdom.Number(float64(c.ResolvedCount())),
-		"task.progress":       ticketmapdom.Number(c.Progress()),
-		"task.tags":           ticketmapdom.List(c.Tags()...),
+	closed := t.Counts.Closed
+	progress := 0.0
+	if t.Counts.Total > 0 {
+		progress = float64(closed) / float64(t.Counts.Total) * 100
 	}
-	if d := strings.TrimSpace(c.Description()); d != "" {
+	v := ticketmapdom.Values{
+		"task.id":             ticketmapdom.Text(t.ID.String()),
+		"task.title":          ticketmapdom.Text(t.Title),
+		"task.url":            ticketmapdom.Text(base + "/remediation/tasks/" + t.ID.String()),
+		"task.status":         ticketmapdom.Text(string(t.State)),
+		"task.finding_count":  ticketmapdom.Number(float64(t.Counts.Total)),
+		"task.resolved_count": ticketmapdom.Number(float64(closed)),
+		"task.progress":       ticketmapdom.Number(progress),
+	}
+	if p := taskPriority(members); p != "" {
+		v["task.priority"] = ticketmapdom.Text(p)
+	}
+	if d := strings.TrimSpace(t.Description); d != "" {
 		v["task.description"] = ticketmapdom.Text(d)
 	}
-	if d := c.DueDate(); d != nil {
-		v["task.due_date"] = ticketmapdom.Date(*d)
+	if t.Deadline != nil {
+		v["task.due_date"] = ticketmapdom.Date(*t.Deadline)
 	}
 	if assignee != nil {
 		v["task.assignee"] = ticketmapdom.UserValue(ticketmapdom.UserRef{ID: assignee.ID, Email: assignee.Email, Name: assignee.Name})
 	}
-	t := &ticketmapdom.Table{Header: []string{"Finding", "Severity", "Status", "Location", "Link"}}
+	tbl := &ticketmapdom.Table{Header: []string{"Finding", "Severity", "Status", "Location", "Link"}}
 	for i, f := range members {
 		if i >= maxTableRows {
 			break
 		}
-		loc := f.FilePath()
+		loc := vulnerability.DisplayPath(f.FilePath())
 		if loc != "" && f.StartLine() > 0 {
 			loc = fmt.Sprintf("%s:%d", loc, f.StartLine())
 		}
-		t.Rows = append(t.Rows, []string{findingTitle(f), string(f.Severity()), string(f.Status()), loc, base + "/findings/" + f.ID().String()})
+		tbl.Rows = append(tbl.Rows, []string{findingTitle(f), string(f.Severity()), string(f.Status()), loc, base + "/findings/" + f.ID().String()})
 	}
-	if more := int(totalMembers) - len(t.Rows); more > 0 {
-		t.More = more
+	if more := int(totalMembers) - len(tbl.Rows); more > 0 {
+		tbl.More = more
 	}
-	v["task.findings_table"] = ticketmapdom.Value{Table: t}
+	v["task.findings_table"] = ticketmapdom.Value{Table: tbl}
 	return v
 }
 
-// TaskStateOf maps today's remediation campaign status (and its member
-// counts) to the task state a status map uses.
-func TaskStateOf(c *remediation.Campaign) string {
-	switch c.Status() {
-	case remediation.CampaignStatusCompleted:
-		return ticketmapdom.TaskDone
-	case remediation.CampaignStatusCanceled:
-		return ticketmapdom.TaskArchived
-	case remediation.CampaignStatusPaused:
-		return ticketmapdom.TaskBlocked
-	case remediation.CampaignStatusValidating:
-		return ticketmapdom.TaskVerifying
+// taskPriority is the most severe severity among the open members, mapped
+// onto critical, high, medium, low ("" when none is open).
+func taskPriority(members []*vulnerability.Finding) string {
+	rank := map[vulnerability.Severity]int{
+		vulnerability.SeverityCritical: 4, vulnerability.SeverityHigh: 3,
+		vulnerability.SeverityMedium: 2, vulnerability.SeverityLow: 1,
 	}
-	if c.ResolvedCount() > 0 || c.Progress() > 0 {
+	best := 0
+	for _, f := range members {
+		if f.Status().IsClosed() {
+			continue
+		}
+		if r := rank[f.Severity()]; r > best {
+			best = r
+		}
+	}
+	return [...]string{"", "low", "medium", "high", "critical"}[best]
+}
+
+// TaskStateOf maps a remediation task's state to the task state a status map
+// uses.
+func TaskStateOf(t *remediation.Task) string {
+	switch t.State {
+	case remediation.TaskStateDone, remediation.TaskStateClosedUnverified:
+		return ticketmapdom.TaskDone
+	case remediation.TaskStateCanceled, remediation.TaskStateArchived:
+		return ticketmapdom.TaskArchived
+	case remediation.TaskStateOnHold:
+		return ticketmapdom.TaskBlocked
+	case remediation.TaskStateVerifying:
+		return ticketmapdom.TaskVerifying
+	case remediation.TaskStateInProgress:
 		return ticketmapdom.TaskInProgress
 	}
 	return ticketmapdom.TaskOpen

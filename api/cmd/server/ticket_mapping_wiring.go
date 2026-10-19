@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
@@ -12,20 +13,16 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// campaignMemberLister lists a remediation task's members through the
-// caller's data scope (implemented by the remediation campaign service).
-type campaignMemberLister interface {
-	ListCampaignFindings(ctx context.Context, tenantID, campaignID string, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error)
-}
-
 // ticketMappingObjects loads the objects a mapping preview renders. Every
-// read is tenant-scoped; task members come through the caller's data scope.
+// read is tenant-scoped; a task is read through the caller's data scope (a
+// restricted caller sees it only with a finding in scope) and its members are
+// filtered by scope again in the mapping service.
 type ticketMappingObjects struct {
-	findings  *postgres.FindingRepository
-	assets    *postgres.AssetRepository
-	users     *postgres.UserRepository
-	campaigns *postgres.RemediationCampaignRepository
-	members   campaignMemberLister
+	findings *postgres.FindingRepository
+	assets   *postgres.AssetRepository
+	users    *postgres.UserRepository
+	tasks    *remediationapp.TaskService
+	taskRepo *postgres.RemediationTaskRepository
 }
 
 var _ appticketmap.ObjectSource = ticketMappingObjects{}
@@ -50,19 +47,25 @@ func (o ticketMappingObjects) User(ctx context.Context, _ shared.ID, id shared.I
 	return &appticketmap.UserInfo{ID: id.String(), Email: u.Email(), Name: u.Name()}, nil
 }
 
-func (o ticketMappingObjects) Task(ctx context.Context, tenantID, id shared.ID) (*remediation.Campaign, error) {
-	return o.campaigns.GetByID(ctx, tenantID, id)
+func (o ticketMappingObjects) Task(ctx context.Context, tenantID, id shared.ID) (*remediation.Task, error) {
+	return o.tasks.GetTask(ctx, tenantID, id)
 }
 
 func (o ticketMappingObjects) TaskMembers(ctx context.Context, tenantID, id shared.ID, limit int) ([]*vulnerability.Finding, int64, error) {
-	if o.members == nil {
-		return nil, 0, nil
-	}
-	res, err := o.members.ListCampaignFindings(ctx, tenantID.String(), id.String(), pagination.New(1, limit))
+	res, err := o.taskRepo.ListMembers(ctx, tenantID, id,
+		remediation.MemberFilter{Role: remediation.MemberRolePrimary}, pagination.New(1, limit))
 	if err != nil {
 		return nil, 0, err
 	}
-	return res.Data, res.Total, nil
+	ids := make([]shared.ID, 0, len(res.Data))
+	for _, m := range res.Data {
+		ids = append(ids, m.FindingID)
+	}
+	findings, err := o.findings.GetByIDs(ctx, tenantID, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	return findings, res.Total, nil
 }
 
 // ticketMappingScope adapts the data-scope enforcer to the mapping service.
