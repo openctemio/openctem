@@ -2,9 +2,9 @@ package postgres
 
 // Explicit per-user data-scope grants (asset_access_grants, migration 000372).
 //
-// Being an asset owner is an assignment only; it does not change what the
-// owner can see. A user's data scope (user_accessible_assets) is the assets
-// of their active groups plus these grants. Each write updates
+// A user's data scope (user_accessible_assets) is the assets of their active
+// groups, these grants and the assets they are a primary or secondary owner
+// of (set by a person; v_asset_owner_scope). Each write updates
 // user_accessible_assets in the same transaction, through the SQL functions
 // refresh_access_for_grant_add / refresh_access_for_grant_remove.
 //
@@ -93,8 +93,23 @@ func (r *AccessControlRepository) ListAssetAccessGrants(ctx context.Context, ten
 	return out, nil
 }
 
+// Sources of asset_access_grants rows written by the API.
+const (
+	accessGrantSourceManual  = "manual"
+	accessGrantSourceCreator = "creator"
+)
+
 // CreateAssetAccessGrant implements accesscontrol.Repository.
 func (r *AccessControlRepository) CreateAssetAccessGrant(ctx context.Context, tenantID, assetID, userID shared.ID, grantedBy *shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return r.createAssetAccessGrant(ctx, tenantID, assetID, userID, grantedBy, accessGrantSourceManual)
+}
+
+// CreateCreatorAccessGrant implements accesscontrol.Repository.
+func (r *AccessControlRepository) CreateCreatorAccessGrant(ctx context.Context, tenantID, assetID, userID shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return r.createAssetAccessGrant(ctx, tenantID, assetID, userID, &userID, accessGrantSourceCreator)
+}
+
+func (r *AccessControlRepository) createAssetAccessGrant(ctx context.Context, tenantID, assetID, userID shared.ID, grantedBy *shared.ID, source string) (*accesscontrol.AssetAccessGrant, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin access grant: %w", err)
@@ -111,12 +126,12 @@ func (r *AccessControlRepository) CreateAssetAccessGrant(ctx context.Context, te
 	var id string
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO asset_access_grants (tenant_id, asset_id, user_id, source, granted_by)
-		SELECT a.tenant_id, a.id, tm.user_id, 'manual', $4::uuid
+		SELECT a.tenant_id, a.id, tm.user_id, $5, $4::uuid
 		FROM assets a
 		JOIN tenant_members tm ON tm.tenant_id = a.tenant_id AND tm.user_id = $3::uuid AND tm.status = 'active'
 		WHERE a.id = $2 AND a.tenant_id = $1 AND a.deleted_at IS NULL
 		RETURNING id::text`,
-		tenantID.String(), assetID.String(), userID.String(), by).Scan(&id)
+		tenantID.String(), assetID.String(), userID.String(), by, source).Scan(&id)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return nil, accesscontrol.ErrAccessGrantExists
