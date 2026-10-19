@@ -45,8 +45,9 @@ call() {
 
 log "organization and owner"
 # Capture the output even when bootstrap-admin fails, so its error is printed.
-setup=$(docker run --rm --network "$NETWORK" "${ADMIN_IMAGE:?set ADMIN_IMAGE}" \
-  -db="$DATABASE_URL" \
+# The output is captured, so -print-secrets; the URL goes in the environment.
+setup=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL "${ADMIN_IMAGE:?set ADMIN_IMAGE}" \
+  -print-secrets \
   -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
   -org-name="E2E Org $RUN" -org-slug="$SLUG" -org-owner-email="$EMAIL" 2>&1) || {
   log "bootstrap-admin failed:"

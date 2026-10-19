@@ -46,7 +46,7 @@ func ticketDescription(f *vulnerability.Finding) string {
 	fmt.Fprintf(&b, "*Finding:* %s\n*Severity:* %s\n*Status:* %s\n",
 		inline(f.Title()), inline(string(f.Severity())), inline(string(f.Status())))
 	if f.FilePath() != "" {
-		fmt.Fprintf(&b, "*Location:* %s:%d\n", inline(f.FilePath()), f.StartLine())
+		fmt.Fprintf(&b, "*Location:* %s:%d\n", inline(vulnerability.DisplayPath(f.FilePath())), f.StartLine())
 	}
 
 	if isSecretFinding(f) {
