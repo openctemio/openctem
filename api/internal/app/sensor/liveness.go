@@ -248,13 +248,33 @@ func (p *livenessPlane) flushHistory(ctx context.Context, now time.Time, all boo
 	}
 }
 
-// allowFallback reports whether a heartbeat of sensorID may be written to
-// Postgres while the store is unreachable.
-func (p *livenessPlane) allowFallback(sensorID shared.ID, now time.Time) bool {
-	if !p.fallbackLast.due(sensorID.String(), now) {
+// allowFallback reports whether a heartbeat of a may be written to Postgres
+// while the store is unreachable: at most once per sensor per
+// livenessFallbackPerSensor, and within the replica's budget unless the
+// sensor would otherwise reach stale before its next allowed write.
+//
+// The budget alone is not fail safe: the controller may still read the
+// store (another replica, or reads succeed while writes fail) and judges by
+// the later of the store's and Postgres's deadlines, so a sensor whose beats
+// are all dropped here would be walked to stale and offline, its jobs
+// released and re-run elsewhere. The per-sensor bound keeps the bypass below
+// the Postgres-mode write rate.
+func (p *livenessPlane) allowFallback(a *sensordom.Sensor, now time.Time) bool {
+	if !p.fallbackLast.due(a.ID.String(), now) {
 		return false
 	}
-	return p.fallbackAll.AllowN(now, 1)
+	return p.fallbackAll.AllowN(now, 1) || fallbackUrgent(a, now)
+}
+
+// fallbackUrgent reports whether a, as last read (Postgres row with the
+// store's entry overlaid when it could be read), reaches stale before its
+// next allowed fallback write.
+func fallbackUrgent(a *sensordom.Sensor, now time.Time) bool {
+	pos := sensordom.Ladder(now, a.HeartbeatDeadline())
+	if pos.State != sensordom.SensorHealthOnline && pos.State != sensordom.SensorHealthLate {
+		return true
+	}
+	return !now.Add(livenessFallbackPerSensor + sensordom.LadderGraceFloor).Before(pos.StaleAt)
 }
 
 // checkpointEvery is one heartbeat's checkpoint period: ±10 % jitter so a
@@ -298,7 +318,7 @@ func (s *SensorService) planHeartbeatWrite(ctx context.Context, a *sensordom.Sen
 		return w // shadow: Postgres decides, every heartbeat is written
 	}
 	if err != nil {
-		if p.allowFallback(a.ID, now) {
+		if p.allowFallback(a, now) {
 			w.kind = hbWriteFallback
 			return w
 		}
