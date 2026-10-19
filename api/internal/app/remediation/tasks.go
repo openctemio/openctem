@@ -116,6 +116,8 @@ type CreateTaskInput struct {
 	AssigneeGroupID *shared.ID
 	CampaignID      *shared.ID
 	Deadline        *time.Time
+	// Conflicts resolves findings of another active task.
+	Conflicts remediationdom.ConflictResolution
 }
 
 // CreateTask creates a task with its findings as primary members.
@@ -168,18 +170,24 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 			Title: title, Origin: remediationdom.ActionOriginManual, CreatedBy: in.ActorID,
 		}
 	}
-	if err := s.repo.CreateTask(ctx, rec); err != nil {
+	if rec.Conflicts, err = s.prepareConflicts(ctx, in.TenantID, members, in.Conflicts, true, nil); err != nil {
 		return nil, err
+	}
+	if err := s.repo.CreateTask(ctx, rec); err != nil {
+		return nil, s.describeConflicts(ctx, in.TenantID, err, true)
 	}
 	task, err := s.repo.GetTask(ctx, in.TenantID, taskID)
 	if err != nil {
 		return nil, err
 	}
+	s.recordClaimMoves(ctx, actx, in.TenantID, rec.Claimed, in.ActorID)
+	members = rec.Members
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskCreated, auditdom.ResourceTypeRemediationTask, taskID.String()).
 		WithResourceName(title).
 		WithMessage(fmt.Sprintf("Remediation task %q created with %d finding(s)", title, len(members))).
 		WithMetadata("findings", len(members)).WithMetadata("related", len(related)).
-		WithMetadata("action_id", task.ActionID.String()))
+		WithMetadata("action_id", task.ActionID.String()).
+		WithMetadata("skipped", len(rec.Claimed.Skipped)))
 	return task, nil
 }
 
@@ -403,6 +411,8 @@ type AddMembersInput struct {
 	Version    int
 	FindingIDs []shared.ID
 	Role       remediationdom.MemberRole
+	// Conflicts resolves primary findings of another active task.
+	Conflicts remediationdom.ConflictResolution
 }
 
 // AddMembers adds findings to a task, as primary or related members.
@@ -434,10 +444,19 @@ func (s *TaskService) AddMembers(ctx context.Context, in AddMembersInput, actx a
 	if err := s.checkFindings(ctx, in.TenantID, ids, primary); err != nil {
 		return nil, err
 	}
-	t, err := s.repo.AddMembers(ctx, in.TenantID, in.TaskID, in.Version, ids, role, remediationdom.JoinSourceManual, in.ActorID)
-	if err != nil {
-		return nil, err
+	req := remediationdom.AddMembersRequest{TenantID: in.TenantID, TaskID: in.TaskID, ExpectedVersion: in.Version, FindingIDs: ids,
+		Role: role, Source: remediationdom.JoinSourceManual, ActorID: in.ActorID}
+	if role == remediationdom.MemberRolePrimary {
+		var err error
+		if req.Conflicts, err = s.prepareConflicts(ctx, in.TenantID, ids, in.Conflicts, true, &in.TaskID); err != nil {
+			return nil, err
+		}
 	}
+	t, rep, err := s.repo.AddMembers(ctx, req)
+	if err != nil {
+		return nil, s.describeConflicts(ctx, in.TenantID, err, true)
+	}
+	s.recordClaimMoves(ctx, actx, in.TenantID, *rep, in.ActorID)
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskMembersAdded, auditdom.ResourceTypeRemediationTask, t.ID.String()).
 		WithResourceName(t.Title).
 		WithMessage(fmt.Sprintf("%d finding(s) added to remediation task %q as %s", len(ids), t.Title, role)).
