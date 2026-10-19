@@ -180,3 +180,76 @@ func assertMetric(t *testing.T, set map[string]float64, key string, want float64
 		t.Errorf("metric %s = %.4f, want %.4f", key, got, want)
 	}
 }
+
+// TestCTEMCycleMetrics_DispositionsAreNotFixes: a cycle whose only closures
+// are a false positive and an accepted risk remediated nothing. MTTR and
+// validation coverage have no sample (left out, so a charter criterion on
+// MTTR reads not_measurable instead of passing with 0 h), and nothing counts
+// as resolved. Cross-tenant: another tenant's real fix in the same window
+// is not counted.
+func TestCTEMCycleMetrics_DispositionsAreNotFixes(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB-backed metrics test")
+	}
+	raw, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer raw.Close()
+	ctx := context.Background()
+	if err := raw.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	tenantID := seedTestTenant(ctx, t, raw)
+	assetID := seedTestAsset(ctx, t, raw, tenantID)
+	otherTenant := seedTestTenant(ctx, t, raw)
+	otherAsset := seedTestAsset(ctx, t, raw, otherTenant)
+
+	base := time.Now().UTC().Truncate(time.Second)
+	var cycleID string
+	if err := raw.QueryRowContext(ctx,
+		`INSERT INTO ctem_cycles (tenant_id, name, status, created_by, activated_at, closed_at)
+		 VALUES ($1, 'dispositions only', 'closed', $2, $3, $4) RETURNING id`,
+		tenantID.String(), shared.NewID().String(), base.Add(-10*24*time.Hour), base,
+	).Scan(&cycleID); err != nil {
+		t.Fatalf("seed cycle: %v", err)
+	}
+	insert := func(tenant, asset shared.ID, tag, status string) {
+		if _, err := raw.ExecContext(ctx,
+			`INSERT INTO findings
+			   (tenant_id, asset_id, source, tool_name, message, severity, status, fingerprint, created_at, resolved_at)
+			 VALUES ($1,$2,'sast','tool','msg','high',$3,$4,$5,$6)`,
+			tenant.String(), asset.String(), status, "fp-disp-"+cycleID[:8]+"-"+tag,
+			base.Add(-9*24*time.Hour), base.Add(-8*24*time.Hour),
+		); err != nil {
+			t.Fatalf("seed finding %s: %v", tag, err)
+		}
+	}
+	insert(tenantID, assetID, "fp", "false_positive")
+	insert(tenantID, assetID, "acc", "accepted")
+	insert(otherTenant, otherAsset, "other-fixed", "resolved")
+
+	cid, err := shared.IDFromString(cycleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := NewCTEMCycleMetricsRepository(&DB{DB: raw}).Compute(ctx, tenantID, cid)
+	if err != nil {
+		t.Fatalf("compute: %v", err)
+	}
+	if v, ok := set[ctemcycle.MetricMTTRHours]; ok {
+		t.Fatalf("mttr_hours = %v, want no value (nothing remediated)", v)
+	}
+	if v, ok := set[ctemcycle.MetricValidationCoverage]; ok {
+		t.Fatalf("validation_coverage = %v, want no value (nothing remediated)", v)
+	}
+	assertMetric(t, set, ctemcycle.MetricFindingsResolved, 0)
+	assertMetric(t, set, ctemcycle.MetricFindingsOpened, 2)
+
+	ev := ctemcycle.EvaluateCriterion(ctemcycle.CharterSuccessCriterion{Name: "fix fast", Metric: "MTTR", Target: "< 72h"}, set)
+	if ev.Outcome != ctemcycle.CriterionNotMeasurable {
+		t.Fatalf("MTTR criterion outcome = %s, want not_measurable", ev.Outcome)
+	}
+}

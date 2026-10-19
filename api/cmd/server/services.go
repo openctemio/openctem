@@ -1246,6 +1246,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
@@ -1278,6 +1279,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// resolves) queues a proof-of-fix re-check per finding, like the
 	// dedicated fix-applied action.
 	s.Vulnerability.SetProofOfFixQueuer(s.FindingActions.QueueProofOfFix)
+	// One path for the side effects of a status change (finding actions, VEX).
+	s.FindingActions.SetStatusEffects(s.Vulnerability)
+	s.VEX.SetStatusEffects(s.Vulnerability)
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
