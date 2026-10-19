@@ -333,6 +333,7 @@ export const Permission = {
   // ===========================================
   ReportsRead: 'reports:read',
   ReportsWrite: 'reports:write',
+  ReportsManage: 'reports:manage',
 
   // ===========================================
   // THREAT INTELLIGENCE MODULE
@@ -790,6 +791,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   // Reports
   [Permission.ReportsRead]: 'View Reports',
   [Permission.ReportsWrite]: 'Create Reports',
+  [Permission.ReportsManage]: 'Manage Report Schedules',
 
   // Threat Intel
   [Permission.ThreatIntelRead]: 'View Threat Intel',
@@ -989,6 +991,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     // Reports
     Permission.ReportsRead,
     Permission.ReportsWrite,
+    Permission.ReportsManage,
     // Threat Intel
     Permission.ThreatIntelRead,
     Permission.ThreatIntelWrite,
@@ -1157,6 +1160,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     // Reports
     Permission.ReportsRead,
     Permission.ReportsWrite,
+    Permission.ReportsManage,
     // Threat Intel
     Permission.ThreatIntelRead,
     Permission.ThreatIntelWrite,
