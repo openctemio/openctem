@@ -1182,7 +1182,16 @@ export interface FindingSourceData {
   }
   sourceExtra: [string, string][]
   /** The detection rule (template) as the content pack names it; never a sensor path. */
-  rule?: { pack?: string; version?: string; path?: string }
+  rule?: {
+    pack?: string
+    version?: string
+    path?: string
+    /** platform | tenant (the organization's own rules) */
+    source?: 'platform' | 'tenant'
+    template_id?: string
+    template_name?: string
+    template_version?: string
+  }
   locationKey?: string
 }
 
