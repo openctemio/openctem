@@ -70,7 +70,7 @@ function serve(settings: Record<string, unknown>, createdBy = 'someone-else') {
     if (url === '/api/v1/scope/targets/e1')
       return {
         id: 'e1',
-        pattern: '*.vndirect.com.vn',
+        pattern: '*.example.com',
         status: 'pending',
         created_by: { id: createdBy },
         approvals: [],
@@ -85,7 +85,7 @@ async function addEntry(status: string, settings: Record<string, unknown>, onOpe
   api.post.mockRejectedValueOnce(conflict('entry', status))
   const user = userEvent.setup()
   wrap(<ScopeEntryDialog open onOpenChange={onOpenChange} />)
-  await user.type(await screen.findByLabelText('What'), '*.vndirect.com.vn')
+  await user.type(await screen.findByLabelText('What'), '*.example.com')
   await user.click(screen.getByRole('button', { name: 'Add to scope' }))
   const notice = await screen.findByTestId('scope-existing')
   return { user, notice, onOpenChange }
@@ -120,7 +120,7 @@ describe('ScopeEntryDialog on a duplicate', () => {
   it('pending, Strict: says it waits for approval; another approver may approve it', async () => {
     const { user, notice, onOpenChange } = await addEntry('pending', strict)
     expect(notice).toHaveTextContent(
-      '*.vndirect.com.vn is already in your scope list and is waiting for approval.'
+      '*.example.com is already in your scope list and is waiting for approval.'
     )
     expect(screen.getByRole('link', { name: 'Open approvals' })).toHaveAttribute(
       'href',
@@ -139,7 +139,7 @@ describe('ScopeEntryDialog on a duplicate', () => {
     api.post.mockRejectedValueOnce(conflict('entry', 'pending'))
     const user = userEvent.setup()
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
-    await user.type(await screen.findByLabelText('What'), '*.vndirect.com.vn')
+    await user.type(await screen.findByLabelText('What'), '*.example.com')
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     await screen.findByTestId('scope-existing')
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/api/v1/scope/targets/e1'))
@@ -185,7 +185,7 @@ describe('ScopeEntryDialog on a duplicate', () => {
     ).toBeNull()
     expect(screen.getByRole('link', { name: 'Show it' })).toHaveAttribute(
       'href',
-      '/scope?tab=in&q=*.vndirect.com.vn&status=rejected'
+      '/scope?tab=in&q=*.example.com&status=rejected'
     )
   })
 
@@ -196,7 +196,7 @@ describe('ScopeEntryDialog on a duplicate', () => {
     const onOpenChange = vi.fn()
     const user = userEvent.setup()
     wrap(<ScopeEntryDialog open onOpenChange={onOpenChange} onShowExisting={show} />)
-    await user.type(await screen.findByLabelText('What'), '*.vndirect.com.vn')
+    await user.type(await screen.findByLabelText('What'), '*.example.com')
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     expect(await screen.findByTestId('scope-existing')).toHaveTextContent('is already in scope.')
     await user.click(screen.getByRole('button', { name: 'Show it' }))
