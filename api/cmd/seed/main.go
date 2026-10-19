@@ -15,7 +15,6 @@ import (
 
 func main() {
 	// Parse flags
-	dbURL := flag.String("db", "", "Database URL (or set DATABASE_URL env)")
 	seedFile := flag.String("file", "migrations/seed/seed_data.sql", "Path to seed SQL file")
 	clean := flag.Bool("clean", false, "Clean existing data before seeding (destructive, needs -yes)")
 	yes := flag.Bool("yes", false, "Confirm -clean")
@@ -26,13 +25,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Get database URL
-	databaseURL := *dbURL
+	// The database URL (with its password) comes from the environment only: a
+	// flag would put it in argv and the shell history.
+	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = os.Getenv("DATABASE_URL")
-	}
-	if databaseURL == "" {
-		fmt.Println("Error: Database URL required. Use -db flag or set DATABASE_URL env")
+		fmt.Println("Error: Database URL required. Set DATABASE_URL env")
 		os.Exit(1)
 	}
 
