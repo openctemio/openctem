@@ -308,6 +308,7 @@ var optionalServiceSetters = map[string]string{
 	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
 	"PermVersion.Set":                   "cache operation, not a seam",
 	"Role.SetUserRoles":                 "request operation, called by the role handler",
+	"RemediationTask.SetQueryAutoState": "request operation, called by the task query handler",
 	"SCIMGroups.SetRoleMappings":        "request operation, called by the SCIM token handler",
 	"SCIMProvisioning.SetActive":        "SCIM PATCH operation, not a seam",
 	"ScanProfile.SetDefaultScanProfile": "request operation, called by the scan profile handler",

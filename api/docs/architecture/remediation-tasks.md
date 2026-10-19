@@ -61,7 +61,7 @@ manual states (on hold, canceled).
 | `GET /api/v1/remediation/tasks/{task_id}/timeline` | `findings:remediation:read` |
 | `POST /api/v1/remediation/tasks/query/preview`, `POST /api/v1/remediation/tasks/query` | `findings:remediation:write` + `findings:read`, query rate limit |
 | `GET /api/v1/remediation/tasks/{task_id}/query` | `findings:remediation:read` |
-| `POST /api/v1/remediation/tasks/{task_id}/query/rerun[/preview]` | `findings:remediation:write` + `findings:read`, query rate limit |
+| `POST /api/v1/remediation/tasks/{task_id}/query/{run,preview}` | `findings:remediation:write` + `findings:read`, query rate limit |
 | `POST /api/v1/remediation/tasks/{task_id}/query/auto` | `findings:remediation:write` |
 
 All routes are in the `remediation` module. `assignee=me` lists tasks assigned to the caller or to one of their
