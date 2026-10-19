@@ -8,7 +8,7 @@
   tasks in no campaign.
 - Lifecycle: draft, active, completed, canceled. Completing needs every task closed and one done; the progress controller
   completes an active campaign whose tasks are done and reopens a completed one when a task is live again. `paused` and
-  `validating` campaigns become active (migration `003062`, audited).
+  `validating` campaigns become active (migration `003115`, audited).
 - Data scope: a restricted member sees a campaign they created or own, or one with a task holding a finding in their
   scope (other tasks are a count), and changes it only when every task of it is in their scope; a task moves between
   campaigns only when they may change both. The campaign's due date bounds its tasks' deadlines while it is draft or
@@ -22,7 +22,7 @@
 - `GET /api/v1/remediation/campaigns/{id}/findings`, `POST .../{id}/resolve`, `POST .../{id}/refresh`, the
   `finding_filter`, `finding_count`, `resolved_count`, `verified_count`, `progress` and `risk_*` fields, and the
   remediation key backfill's campaign retargeting (the `refingerprint -remediation-keys` report no longer lists
-  campaigns). Migration `003062_remediation_campaigns_drop_finding_filter` converts the campaigns created since
+  campaigns). Migration `003115_remediation_campaigns_drop_finding_filter` converts the campaigns created since
   `003061` and drops the columns.
 - **Upgrade note:** destructive migration (column drop): stop the API during the deploy, since the previous release
   reads the dropped columns. Its down brings the columns back empty.

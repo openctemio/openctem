@@ -64,7 +64,7 @@ func newCampaignTasksHarness(t *testing.T) *campaignTasksHarness {
 	tasks.SetCampaignGate(svc)
 	router := infrahttp.NewChiRouter()
 	registerRemediationCampaignRoutes(router, handler.NewRemediationCampaignHandler(svc, log), Middleware(ds.dsAuth), nil, passthrough)
-	registerRemediationTaskRoutes(router, handler.NewRemediationTaskHandler(tasks, log), nil, Middleware(ds.dsAuth), nil, passthrough)
+	registerRemediationTaskRoutes(router, handler.NewRemediationTaskHandler(tasks, log), nil, Middleware(ds.dsAuth), nil, passthrough, log)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
 
