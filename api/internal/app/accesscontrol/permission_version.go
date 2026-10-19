@@ -2,7 +2,9 @@ package accesscontrol
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/redis"
@@ -94,6 +96,25 @@ func (s *PermissionVersionService) GetChecked(ctx context.Context, tenantID, use
 		return 1, false
 	}
 	return val, true
+}
+
+// Current returns the stored version, 0 when the user has none yet, and an
+// error when Redis cannot answer. Unlike Get it never invents a version, so a
+// caller can tell "no version" from "version 1" (INCR on a missing key
+// returns 1).
+func (s *PermissionVersionService) Current(ctx context.Context, tenantID, userID string) (int, error) {
+	val, err := s.redisClient.Get(ctx, s.buildKey(tenantID, userID))
+	if errors.Is(err, redis.ErrKeyNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	v, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("permission version %q: %w", val, err)
+	}
+	return v, nil
 }
 
 // Increment atomically increments the permission version for a user.
