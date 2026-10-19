@@ -1183,18 +1183,6 @@ vars:
     type: bool
     default: "true"
     description: "Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats."
-  - name: WORKER_HEALTH_CHECK_ENABLED
-    component: api
-    group: "Sensors"
-    type: bool
-    default: "false"
-    description: "Legacy sensor health checker. Keep it off: the sensor health controller owns liveness and the legacy checker marks every sensor offline right after an API restart."
-  - name: WORKER_HEALTH_CHECK_INTERVAL
-    component: api
-    group: "Sensors"
-    type: duration
-    default: "1m"
-    description: "Interval of the legacy checker."
   - name: WORKER_HEARTBEAT_TIMEOUT
     component: api
     group: "Sensors"

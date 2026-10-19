@@ -7,7 +7,7 @@ import (
 )
 
 // Several repository sweeps are deliberately GLOBAL — RecoverStuckJobs,
-// ExpireOldPlatformJobs, MarkStaleAsOffline and the recover_stuck_* SQL
+// ExpireOldPlatformJobs, MarkStaleSensorsOffline and the recover_stuck_* SQL
 // functions all operate across every tenant, because that is what a background
 // reaper does.
 //
