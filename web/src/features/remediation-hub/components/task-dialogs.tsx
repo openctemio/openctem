@@ -9,13 +9,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Dialog,
   DialogBody,
   DialogContent,
@@ -26,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import type { MarkFixedResult, RemediationTask } from '../api/types'
 import { useOwnerNames } from '../api/use-owner-names'
+import { OwnerCombobox, type OwnerValue } from './owner-combobox'
 
 export function MarkFixedDialog({
   task,
@@ -107,8 +101,6 @@ export function MarkFixedDialog({
   )
 }
 
-const KEEP = '__keep__'
-
 export function SplitDialog({
   task,
   count,
@@ -131,13 +123,11 @@ export function SplitDialog({
   const { t } = useTranslation()
   const owners = useOwnerNames()
   const [title, setTitle] = useState('')
-  const [user, setUser] = useState(KEEP)
-  const [group, setGroup] = useState(KEEP)
+  const [owner, setOwner] = useState<OwnerValue | null>(null)
   useEffect(() => {
     if (open) {
       setTitle(task.title)
-      setUser(KEEP)
-      setGroup(KEEP)
+      setOwner(null)
     }
   }, [open, task.title])
   return (
@@ -157,33 +147,21 @@ export function SplitDialog({
               onChange={(e) => setTitle(e.target.value)}
             />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Select value={user} onValueChange={setUser}>
-              <SelectTrigger aria-label={t('remediationHub.accept.user')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={KEEP}>{t('remediationHub.split.keepOwner')}</SelectItem>
-                {owners.users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={group} onValueChange={setGroup}>
-              <SelectTrigger aria-label={t('remediationHub.accept.group')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={KEEP}>{t('remediationHub.split.keepGroup')}</SelectItem>
-                {owners.groups.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="space-y-1">
+            <Label htmlFor="split-owner">{t('remediationHub.split.owner')}</Label>
+            <OwnerCombobox
+              id="split-owner"
+              label={t('remediationHub.split.owner')}
+              value={owner ?? { userId: task.assignee_user_id, groupId: task.assignee_group_id }}
+              suggested={{ userId: task.assignee_user_id, groupId: task.assignee_group_id }}
+              suggestedLabel={t('remediationHub.split.current')}
+              onChange={setOwner}
+              users={owners.users}
+              groups={owners.groups}
+              usersState={owners.usersState}
+              groupsState={owners.groupsState}
+            />
+            <p className="text-muted-foreground text-xs">{t('remediationHub.split.keepOwner')}</p>
           </div>
         </DialogBody>
         <DialogFooter>
@@ -195,8 +173,8 @@ export function SplitDialog({
             onClick={() =>
               onConfirm({
                 title: title.trim(),
-                ...(user !== KEEP ? { assignee_user_id: user } : {}),
-                ...(group !== KEEP ? { assignee_group_id: group } : {}),
+                ...(owner?.userId ? { assignee_user_id: owner.userId } : {}),
+                ...(owner?.groupId ? { assignee_group_id: owner.groupId } : {}),
               })
             }
           >
