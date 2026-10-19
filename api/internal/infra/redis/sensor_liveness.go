@@ -38,6 +38,8 @@ const (
 	livenessDueKey   = "oc:sl:due"
 	livenessGenKey   = "oc:sl:gen"
 	livenessGraceKey = "oc:sl:grace"
+	// livenessDegradedKey is the cross-replica "heartbeat writes failing" marker.
+	livenessDegradedKey = "oc:sl:degraded"
 )
 
 // livenessNowLua is the store's clock in milliseconds.
@@ -123,7 +125,10 @@ type SensorLivenessStore struct {
 	rdb redislib.UniversalClient
 }
 
-var _ sensor.LivenessStore = (*SensorLivenessStore)(nil)
+var (
+	_ sensor.LivenessStore          = (*SensorLivenessStore)(nil)
+	_ sensor.LivenessDegradedSignal = (*SensorLivenessStore)(nil)
+)
 
 // NewSensorLivenessStore builds the store on rdb.
 func NewSensorLivenessStore(rdb redislib.UniversalClient) *SensorLivenessStore {
@@ -376,6 +381,40 @@ func (s *SensorLivenessStore) InGrace(ctx context.Context) (bool, error) {
 		return false, unavailable("grace", err)
 	}
 	return n > 0, nil
+}
+
+// MarkDegraded sets the cross-replica degraded marker for ttl.
+func (s *SensorLivenessStore) MarkDegraded(ctx context.Context, ttl time.Duration) error {
+	if err := s.rdb.Set(ctx, livenessDegradedKey, "1", ttl).Err(); err != nil {
+		return unavailable("degraded", err)
+	}
+	return nil
+}
+
+// Degraded reports whether any replica marked heartbeat writes as failing.
+func (s *SensorLivenessStore) Degraded(ctx context.Context) (bool, error) {
+	n, err := s.rdb.Exists(ctx, livenessDegradedKey).Result()
+	if err != nil {
+		return false, unavailable("degraded", err)
+	}
+	return n > 0, nil
+}
+
+// EvictionPolicyWarning reads the server's maxmemory-policy and returns a
+// warning when keys can be evicted: the liveness entries are the only copy
+// of a steady sensor's deadline, so an evicting policy turns memory pressure
+// into sensors that look silent. "" means fine or not readable (CONFIG is
+// often disabled on managed Redis).
+func EvictionPolicyWarning(ctx context.Context, rdb redislib.UniversalClient) string {
+	res, err := rdb.ConfigGet(ctx, "maxmemory-policy").Result()
+	if err != nil {
+		return ""
+	}
+	policy := res["maxmemory-policy"]
+	if policy == "" || policy == "noeviction" {
+		return ""
+	}
+	return "redis maxmemory-policy is " + policy + ", not noeviction: under memory pressure Redis may evict sensor liveness entries, so healthy sensors can look silent; set maxmemory-policy noeviction"
 }
 
 // Watched counts the due index.

@@ -179,6 +179,23 @@ type LivenessSeed struct {
 // LivenessStore keeps heartbeat soft state. Implemented by
 // redis.SensorLivenessStore. Every method fails with an error wrapping
 // ErrLivenessStoreUnavailable when the store cannot be reached.
+// LivenessDegradedTTL is how long one failed heartbeat write holds the
+// health controller's convictions (see LivenessDegradedSignal).
+const LivenessDegradedTTL = time.Minute
+
+// LivenessDegradedSignal is the cross-replica "heartbeat writes are
+// failing" marker. A replica that cannot record heartbeats (store or
+// Postgres write failing) sets it; the health controller, which may run on
+// another replica that reads the store fine, convicts nobody while it is
+// set, because sensors that heartbeated to the failing replica look silent.
+// The store implements it next to LivenessStore.
+type LivenessDegradedSignal interface {
+	// MarkDegraded sets the marker for ttl (setting it again extends it).
+	MarkDegraded(ctx context.Context, ttl time.Duration) error
+	// Degraded reports whether the marker is set.
+	Degraded(ctx context.Context) (bool, error)
+}
+
 type LivenessStore interface {
 	// Beat records a heartbeat (one atomic step on the store's clock).
 	Beat(ctx context.Context, b LivenessBeat) (LivenessBeatResult, error)
