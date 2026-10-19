@@ -48,8 +48,10 @@
 # layer4 module (deploy/gateway/Dockerfile). Default off (sensors/off.wrappers).
 # =============================================================================
 {
-	# Admin API stays inside the container (the healthcheck uses it).
-	admin 127.0.0.1:2019
+	# Admin API stays inside the container (the healthcheck uses it). The
+	# all-in-one image, where every process shares one network namespace, sets
+	# OPENCTEM_CADDY_ADMIN to a unix socket only the gateway's uid can open.
+	admin {$OPENCTEM_CADDY_ADMIN:127.0.0.1:2019}
 
 	# Runtime log: plain text, not JSON, so `docker logs` is readable.
 	log default {
