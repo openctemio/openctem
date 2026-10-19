@@ -46,6 +46,16 @@ interface MfaStepProps {
 // password login helps.
 const RESTART_PATTERN = /sign in again|enter your password again|expired/i
 
+/**
+ * A completed second factor: the session was issued, or the only memberships
+ * left are organizations waiting for deletion that the user owns (the login
+ * form then offers to cancel the deletion). Both only happen after the API
+ * accepted the second factor.
+ */
+function isCompleted(result: LoginResult): boolean {
+  return result.success || (result.pendingDeletion?.length ?? 0) > 0
+}
+
 export function MfaStep({ purpose, onDone, onCancel }: MfaStepProps) {
   return purpose === 'enroll' ? (
     <EnrollStep onDone={onDone} onCancel={onCancel} />
@@ -88,7 +98,7 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
     setError(null)
     startTransition(async () => {
       const result = await verifyMfaAction(useRecovery ? { recoveryCode: value } : { code: value })
-      if (result.success) {
+      if (isCompleted(result)) {
         onDone(result)
         return
       }
@@ -273,7 +283,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
           onClick={() =>
             startTransition(async () => {
               const result = await finishMfaEnrollmentAction()
-              if (result.success) {
+              if (isCompleted(result)) {
                 onDone(result)
               } else {
                 onCancel(result.error)
