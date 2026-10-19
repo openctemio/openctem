@@ -117,7 +117,8 @@ export function ScopeExclusionsTable({
   const { data, isLoading } = useScopeExclusionsApi({
     search: query.search || undefined,
     exclusion_type: kind ? storedTypesFor(kind, 'exclusions') : undefined,
-    status: OUT_STATUSES.join(','),
+    // The strip's "Exclusions in effect" opens this list with status=active.
+    status: query.status && query.status !== 'all' ? query.status : OUT_STATUSES.join(','),
     page: query.page,
     per_page: query.perPage,
   })

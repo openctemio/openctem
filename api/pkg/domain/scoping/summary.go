@@ -75,11 +75,13 @@ type AssetSummary struct {
 	InBusinessUnit int `json:"in_business_unit"`
 }
 
-// BoundarySummary counts scope targets and exclusions (the totals GET
-// /scope/stats reports).
+// BoundarySummary counts the scope entries and exclusions in effect (status
+// active: the same numbers as the Scope page's "In effect" metrics), and the
+// entries still waiting for approval, which authorize nothing yet.
 type BoundarySummary struct {
-	Targets    int `json:"targets"`
-	Exclusions int `json:"exclusions"`
+	Targets        int `json:"targets"`
+	TargetsWaiting int `json:"targets_waiting"`
+	Exclusions     int `json:"exclusions"`
 }
 
 // ThreatModelSummary counts threat models and the crown jewels one is scoped to.

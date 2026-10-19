@@ -33,6 +33,7 @@ import {
   FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BusinessUnitField } from '../business-unit-field'
 import type { CreateGroupFormData } from './types'
 import type { Environment, Criticality } from '@/features/shared/types'
 
@@ -118,19 +119,6 @@ const CRITICALITIES: {
     bgColor:
       'border-slate-200 bg-slate-50/50 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/20 dark:hover:bg-slate-900/40',
   },
-]
-
-const SUGGESTED_BUSINESS_UNITS = [
-  'Technology & Engineering',
-  'Platform Engineering',
-  'Infrastructure & Operations',
-  'Digital Commerce',
-  'Finance',
-  'Human Resources',
-  'Sales & Marketing',
-  'Customer Support',
-  'Legal & Compliance',
-  'Research & Development',
 ]
 
 const SUGGESTED_TAGS = [
@@ -354,29 +342,10 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                   <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                   Business Unit
                 </Label>
-                <div className="flex flex-wrap gap-2">
-                  {SUGGESTED_BUSINESS_UNITS.slice(0, 6).map((bu) => (
-                    <Badge
-                      key={bu}
-                      variant={data.businessUnit === bu ? 'default' : 'outline'}
-                      className={cn(
-                        'cursor-pointer transition-colors',
-                        data.businessUnit === bu ? '' : 'hover:bg-muted'
-                      )}
-                      onClick={() => onChange({ businessUnit: data.businessUnit === bu ? '' : bu })}
-                    >
-                      {bu}
-                    </Badge>
-                  ))}
-                </div>
-                <Input
-                  id="businessUnit"
-                  placeholder="Or enter custom business unit..."
-                  value={
-                    SUGGESTED_BUSINESS_UNITS.includes(data.businessUnit) ? '' : data.businessUnit
-                  }
-                  onChange={(e) => onChange({ businessUnit: e.target.value })}
-                  className="mt-2"
+                <BusinessUnitField
+                  value={data.businessUnit}
+                  onChange={(businessUnit) => onChange({ businessUnit })}
+                  max={6}
                 />
               </div>
 

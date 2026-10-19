@@ -15,7 +15,9 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { RemediationSuggestion } from '../api/types'
 import { useOwnerNames } from '../api/use-owner-names'
-import { fixSteps, riskPartsList } from '../lib/hub'
+import { fixSteps } from '../lib/hub'
+import { basisFactors, confidenceBand } from '../lib/suggestion-detail'
+import { RiskPoints } from './risk-points'
 import { FixStepsBlock } from './fix-steps'
 
 export interface SuggestionCardProps {
@@ -31,6 +33,8 @@ export interface SuggestionCardProps {
   onDismiss: () => void
   onSnooze: () => void
   onFocus?: () => void
+  /** Opens the detail panel. */
+  onOpen?: () => void
   explainOpen?: boolean
   onToggleExplain?: () => void
 }
@@ -49,6 +53,7 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
       onDismiss,
       onSnooze,
       onFocus,
+      onOpen,
       explainOpen,
       onToggleExplain,
     },
@@ -59,7 +64,7 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
     const [localOpen, setLocalOpen] = useState(false)
     const open = explainOpen ?? localOpen
     const toggle = onToggleExplain ?? (() => setLocalOpen((v) => !v))
-    const parts = riskPartsList(s)
+    const band = confidenceBand(s.confidence)
     const blocked = s.hidden_members > 0
     const steps = fixSteps(s.fix_spec, s.action_key)
 
@@ -105,26 +110,41 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
                   {t('remediationHub.suggestions.urgent')}
                 </Badge>
               )}
-              {s.confidence < 1 && (
-                <span title={t('remediationHub.suggestions.confidenceHint')}>
-                  {t('remediationHub.suggestions.confidence', undefined, {
-                    pct: Math.round(s.confidence * 100),
-                  })}
-                </span>
-              )}
+              <span
+                title={t(`remediationHub.confidence.${band}`, undefined, {
+                  pct: Math.round(s.confidence * 100),
+                })}
+              >
+                {t(`remediationHub.confidenceShort.${band}`, undefined, {
+                  pct: Math.round(s.confidence * 100),
+                })}
+              </span>
             </div>
-            <h3 className="mt-1 text-base font-semibold break-words">{s.title}</h3>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {t('remediationHub.suggestions.covers', undefined, {
-                findings: s.member_count,
-                assets: s.risk_parts?.assets ?? 0,
-                risk: s.risk_points,
-              })}
-              {parts.length > 0 && (
-                <span className="ms-2">
-                  ({parts.map((p) => `${p.label} ${p.count}`).join(' · ')})
-                </span>
+            <h3 className="mt-1 text-base font-semibold break-words">
+              {onOpen ? (
+                <button
+                  type="button"
+                  className="hover:underline focus-visible:underline text-start"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onOpen()
+                  }}
+                  aria-keyshortcuts="Enter"
+                >
+                  {s.title}
+                </button>
+              ) : (
+                s.title
               )}
+            </h3>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {t('remediationHub.suggestions.findingsCount', undefined, { n: s.member_count })}
+              {' · '}
+              {t('remediationHub.suggestions.assetsCount', undefined, {
+                n: s.risk_parts?.assets ?? 0,
+              })}
+              {' · '}
+              <RiskPoints suggestion={s} />
             </p>
             {s.partitions.length > 0 && (
               <ul
@@ -203,6 +223,11 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
                 </Button>
               </>
             )}
+            {onOpen && (
+              <Button size="sm" variant="outline" onClick={onOpen} aria-keyshortcuts="Enter">
+                {t('remediationHub.actions.details')}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -226,15 +251,23 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
             data-testid="suggestion-explain"
           >
             <p>{t(`remediationHub.explain.${s.key_kind}`, t('remediationHub.explain.other'))}</p>
-            <p className="text-muted-foreground text-xs break-all">
-              {t('remediationHub.explain.key', undefined, { key: s.action_key })}
-            </p>
-            <p className="text-muted-foreground text-xs">
-              {t('remediationHub.explain.algorithm', undefined, {
-                algorithm: s.algorithm,
-                version: s.algorithm_version,
-              })}
-            </p>
+            <ul className="list-disc space-y-1 ps-5">
+              {basisFactors(s).map((f) => (
+                <li key={f}>{t(`remediationHub.basis.${f}`)}</li>
+              ))}
+            </ul>
+            <details className="text-muted-foreground text-xs">
+              <summary className="cursor-pointer">{t('remediationHub.panel.technical')}</summary>
+              <p className="mt-1 break-all">
+                {t('remediationHub.explain.key', undefined, { key: s.action_key })}
+              </p>
+              <p>
+                {t('remediationHub.explain.algorithm', undefined, {
+                  algorithm: s.algorithm,
+                  version: s.algorithm_version,
+                })}
+              </p>
+            </details>
             {s.kind !== 'new_group' && (
               <p className="text-muted-foreground text-xs">
                 {t(`remediationHub.explain.kind.${s.kind}`)}
