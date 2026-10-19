@@ -56,14 +56,19 @@ type Repository interface {
 	// ('manual', 'scope_rule' or 'owner_ref').
 	GetAssetOwnerSource(ctx context.Context, id shared.ID) (string, error)
 
-	// Explicit per-user data-scope grants (asset_access_grants). Being an
-	// owner does not grant access; a user's data scope is their groups' assets
-	// plus these grants. Every method is tenant-scoped and keeps
-	// user_accessible_assets in step in the same transaction.
+	// Explicit per-user data-scope grants (asset_access_grants). A user's
+	// data scope is their groups' assets, these grants and the assets they
+	// are a primary or secondary owner of (UserOwnerGrantsScope). Every
+	// method is tenant-scoped and keeps user_accessible_assets in step in the
+	// same transaction.
 	ListAssetAccessGrants(ctx context.Context, tenantID, assetID shared.ID) ([]*AssetAccessGrant, error)
 	// CreateAssetAccessGrant grants the user (a member of the tenant) access
 	// to the tenant's asset. ErrAccessGrantExists when it already exists.
 	CreateAssetAccessGrant(ctx context.Context, tenantID, assetID, userID shared.ID, grantedBy *shared.ID) (*AssetAccessGrant, error)
+	// CreateCreatorAccessGrant grants the member who just created the asset
+	// access to it (source 'creator', granted by themselves). Same checks as
+	// CreateAssetAccessGrant.
+	CreateCreatorAccessGrant(ctx context.Context, tenantID, assetID, userID shared.ID) (*AssetAccessGrant, error)
 	// DeleteAssetAccessGrant revokes the grant and returns it. The user keeps
 	// the asset only if a group still gives access. ErrAccessGrantNotFound
 	// when the grant is not on this asset of this tenant.

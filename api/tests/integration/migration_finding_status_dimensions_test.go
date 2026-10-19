@@ -21,6 +21,10 @@ const dimMigUser = "99999999-9999-4999-8999-999999999999"
 func TestMigrationFindingStatusDimensions(t *testing.T) {
 	const dir = "../../migrations"
 	db := testdb.PrivateDatabase(t, "migdims", dir)
+	// The migration rewrites the legacy campaign finding_filter column, which
+	// the contract migration later drops: restore it first.
+	drop := testdb.MigrationVersion(t, dir, "remediation_campaigns_drop_finding_filter")
+	testdb.Migrate(t, db, dir, drop, drop, true)
 	// Three steps: the column, the row moves and filter rewrite, VALIDATE.
 	mig := testdb.MigrationVersion(t, dir, "finding_status_dimensions_column")
 	validate := testdb.MigrationVersion(t, dir, "finding_status_dimensions_validate")

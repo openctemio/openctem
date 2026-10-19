@@ -234,12 +234,13 @@ func (h *RemediationSuggestionHandler) Get(w http.ResponseWriter, r *http.Reques
 
 // Members lists a suggestion's findings the caller may see.
 // @Summary      List a remediation suggestion's findings
+// @Description  The findings in the caller's data scope (the suggestion's hidden_members counts the others), riskiest first, with location (file_path and start_line, or network_port and location_targets), rule, CWE ids, asset criticality, package and installed version, the scanner's recommendation and fix_code (plain text, capped, secret shapes redacted; never for a secret finding) and active_task when a task claimed the finding since the suggestion was made.
 // @Tags         Remediation
 // @Produce      json
 // @Param        id             path   string  true   "Suggestion ID"
 // @Param        page           query  int     false  "Page number" default(1)
 // @Param        per_page       query  int     false  "Items per page" default(50)
-// @Success      200  {object}  pagination.Result[RemediationTaskMemberResponse]
+// @Success      200  {object}  pagination.Result[RemediationSuggestionMemberResponse]
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /remediation/suggestions/{id}/members [get]
@@ -261,13 +262,62 @@ func (h *RemediationSuggestionHandler) Members(w http.ResponseWriter, r *http.Re
 		h.handleError(w, err)
 		return
 	}
-	out := make([]RemediationTaskMemberResponse, 0, len(res.Data))
+	out := make([]RemediationSuggestionMemberResponse, 0, len(res.Data))
 	for _, m := range res.Data {
-		out = append(out, RemediationTaskMemberResponse{FindingID: m.FindingID.String(), Title: m.Title, Severity: m.Severity,
-			Status: m.Status, PriorityClass: m.PriorityClass, AssetID: optIDStr(m.AssetID), AssetName: m.AssetName,
-			SLADeadline: m.SLADeadline})
+		out = append(out, toSuggestionMemberResp(m))
 	}
 	writeJSON(w, http.StatusOK, pagination.NewResult(out, res.Total, page))
+}
+
+// RemediationSuggestionMemberResponse is one finding of a suggestion with
+// what a person needs to judge it. recommendation and fix_code are scanner
+// text: plain text, capped, secret shapes redacted (a secret finding never
+// carries fix_code). active_task is set when an active task claimed the
+// finding since the suggestion was made.
+type RemediationSuggestionMemberResponse struct {
+	RemediationTaskMemberResponse
+	RuleID           string                      `json:"rule_id,omitempty"`
+	CWEIDs           []string                    `json:"cwe_ids"`
+	FilePath         string                      `json:"file_path,omitempty"`
+	StartLine        int                         `json:"start_line,omitempty"`
+	Branch           string                      `json:"first_detected_branch,omitempty"`
+	NetworkPort      int                         `json:"network_port,omitempty"`
+	NetworkTransport string                      `json:"network_transport,omitempty"`
+	LocationTargets  []string                    `json:"location_targets"`
+	AssetCriticality string                      `json:"asset_criticality,omitempty"`
+	PackageName      string                      `json:"package_name,omitempty"`
+	InstalledVersion string                      `json:"installed_version,omitempty"`
+	Recommendation   string                      `json:"recommendation,omitempty"`
+	FixCode          string                      `json:"fix_code,omitempty"`
+	ActiveTask       *RemediationTaskRefResponse `json:"active_task"`
+}
+
+// RemediationTaskRefResponse names a task.
+type RemediationTaskRefResponse struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+func toSuggestionMemberResp(m remediation.SuggestionMember) RemediationSuggestionMemberResponse {
+	out := RemediationSuggestionMemberResponse{
+		RemediationTaskMemberResponse: RemediationTaskMemberResponse{FindingID: m.FindingID.String(), Title: m.Title,
+			Severity: m.Severity, Status: m.Status, PriorityClass: m.PriorityClass, AssetID: optIDStr(m.AssetID),
+			AssetName: m.AssetName, SLADeadline: m.SLADeadline},
+		RuleID: m.RuleID, CWEIDs: m.CWEIDs, FilePath: m.FilePath, StartLine: m.StartLine, Branch: m.Branch,
+		NetworkPort: m.NetworkPort, NetworkTransport: m.NetworkTransport, LocationTargets: m.LocationTargets,
+		AssetCriticality: m.AssetCriticality, PackageName: m.PackageName, InstalledVersion: m.InstalledVersion,
+		Recommendation: m.Recommendation, FixCode: m.FixCode,
+	}
+	if out.CWEIDs == nil {
+		out.CWEIDs = []string{}
+	}
+	if out.LocationTargets == nil {
+		out.LocationTargets = []string{}
+	}
+	if m.ActiveTask != nil {
+		out.ActiveTask = &RemediationTaskRefResponse{ID: m.ActiveTask.ID.String(), Title: m.ActiveTask.Title}
+	}
+	return out
 }
 
 // DismissRemediationSuggestionRequest dismisses a suggestion.

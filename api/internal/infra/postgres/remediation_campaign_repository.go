@@ -211,7 +211,7 @@ func (r *RemediationCampaignRepository) List(ctx context.Context, filter remedia
 		return pagination.Result[*remediation.Campaign]{}, fmt.Errorf("failed to list campaigns: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	items := make([]*remediation.Campaign, 0, page.PerPage)
+	items := make([]*remediation.Campaign, 0)
 	for rows.Next() {
 		c, err := r.scanCampaign(rows.Scan)
 		if err != nil {
