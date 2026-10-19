@@ -339,7 +339,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         // The organization's consent to AI triage (api: GET/PUT
-        // /tenants/{tenant}/settings/ai, owners and administrators; the PUT
+        // /organization/settings/ai, owners and administrators; the PUT
         // needs a recent sign-in). Nothing goes to an AI provider until it is on.
         id: 'ai',
         title: 'AI',
