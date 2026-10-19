@@ -56,6 +56,8 @@ type ScanConfigExport struct {
 	// Profile and timeout
 	ProfileID      string `json:"profile_id,omitempty"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+	// RuleSources is the scan's own rule sources ("" inherits the profile's).
+	RuleSources string `json:"rule_sources,omitempty"`
 
 	// Retry config
 	MaxRetries          int `json:"max_retries,omitempty"`
@@ -108,6 +110,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 		ScheduleRunAt:       sc.ScheduleRunAt,
 		RunOnTenantRunner:   sc.RunOnTenantRunner,
 		SensorPreference:    string(sc.SensorPreference),
+		RuleSources:         string(sc.RuleSources),
 		TimeoutSeconds:      sc.TimeoutSeconds,
 		MaxRetries:          sc.MaxRetries,
 		RetryBackoffSeconds: sc.RetryBackoffSeconds,
@@ -250,6 +253,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TenantRunner:        export.RunOnTenantRunner,
 		SensorPreference:    export.SensorPreference,
 		ProfileID:           export.ProfileID,
+		RuleSources:         export.RuleSources,
 		TimeoutSeconds:      export.TimeoutSeconds,
 		MaxRetries:          export.MaxRetries,
 		RetryBackoffSeconds: export.RetryBackoffSeconds,

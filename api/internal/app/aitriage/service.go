@@ -1362,7 +1362,7 @@ func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) (strin
 	fmt.Fprintf(&b, "- **Source**: %s (%s)\n", field(string(f.Source())), field(f.ToolName()))
 
 	if f.FilePath() != "" {
-		fmt.Fprintf(&b, "- **File**: %s:%d\n", field(f.FilePath()), f.StartLine())
+		fmt.Fprintf(&b, "- **File**: %s:%d\n", field(vulnerability.DisplayPath(f.FilePath())), f.StartLine())
 	}
 
 	if f.Snippet() != "" {

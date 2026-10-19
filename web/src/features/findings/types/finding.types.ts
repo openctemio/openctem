@@ -1183,6 +1183,8 @@ export interface FindingSourceData {
     asOf?: string
   }
   sourceExtra: [string, string][]
+  /** The detection rule (template) as the content pack names it; never a sensor path. */
+  rule?: { pack?: string; version?: string; path?: string }
   locationKey?: string
 }
 

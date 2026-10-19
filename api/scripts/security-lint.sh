@@ -131,6 +131,13 @@ check_http_client() {
         # or a request), usually on private addresses that SafeHTTPClient
         # refuses. No proxy, no redirects, bounded timeout.
         'api/pkg/httpsec/internal_probe.go'
+        # Sensor relay connector (RFC-116): two fixed destinations from the
+        # operator's environment, never a tenant or a request. The relay
+        # client dials CONNECTOR_RELAY_URL over TLS 1.3 with a client
+        # certificate and the relay's pinned public key. The API client reaches
+        # CONNECTOR_API_URL on the private network, which SafeHTTPClient
+        # refuses; it uses no proxy and follows no redirects.
+        'api/internal/sensorrelay/connector.go'
     )
 
     local hits

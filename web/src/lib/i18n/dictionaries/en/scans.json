@@ -2069,5 +2069,7 @@
   "scans.profiles.preset.full.name": "Full assessment",
   "scans.profiles.preset.full.description": "Fails on any critical finding and on more than 5 high findings.",
   "scans.profiles.preset.compliance.name": "Compliance audit",
-  "scans.profiles.preset.compliance.description": "Fails on any critical or high finding and on more than 10 medium findings."
+  "scans.profiles.preset.compliance.description": "Fails on any critical or high finding and on more than 10 medium findings.",
+  "scans.placement.rule_sources_unsupported.text": "The task runs only the organization's templates, and this sensor does not report support for rule sources.",
+  "scans.placement.rule_sources_unsupported.fix": "Upgrade the sensor to a version whose scanners honor rule sources."
 }

@@ -267,3 +267,40 @@ func TestPriorityEscalationEventType_IsSelectable(t *testing.T) {
 		t.Fatalf("ValidateEventTypes rejects the escalation event type: %v", invalid)
 	}
 }
+
+type fakeAlertCoverage struct {
+	covered bool
+	err     error
+}
+
+func (f fakeAlertCoverage) CoveredByAlert(context.Context, shared.ID, shared.ID) (bool, error) {
+	return f.covered, f.err
+}
+
+// A KEV addition on a CVE an emerging-threat alert covers is announced once,
+// by the alert, not once per finding (RFC-117 §3.3); when the check fails,
+// the escalation is sent.
+func TestOutboxPublisher_CoveredByAlert_Suppressed(t *testing.T) {
+	ev := PriorityChangeEvent{TenantID: shared.NewID(), FindingID: shared.NewID(),
+		PreviousClass: classPtr(vulnerability.PriorityP3), NewClass: vulnerability.PriorityP0, Reason: "CVE newly listed in KEV"}
+	for _, c := range []struct {
+		name string
+		cov  fakeAlertCoverage
+		want int
+	}{
+		{"covered", fakeAlertCoverage{covered: true}, 0},
+		{"not covered", fakeAlertCoverage{}, 1},
+		{"check failed", fakeAlertCoverage{err: errors.New("db down")}, 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p, q := newOutboxPub()
+			p.SetAlertCoverage(c.cov)
+			if err := p.Publish(context.Background(), ev); err != nil {
+				t.Fatal(err)
+			}
+			if len(q.calls) != c.want {
+				t.Fatalf("enqueued %d, want %d", len(q.calls), c.want)
+			}
+		})
+	}
+}

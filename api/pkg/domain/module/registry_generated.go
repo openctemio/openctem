@@ -105,7 +105,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController", "VulnFeedImportController"},
+		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -311,7 +311,8 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "threat intel enriches findings"},
 		},
-		Routes: []string{"/api/v1/threat-actors"},
+		Routes: []string{"/api/v1/threat-actors", "/api/v1/emerging-threats"},
+		Jobs:   []string{"ThreatAlertPlannerController"},
 	},
 	{
 		ID: ModuleExposures, Slug: "exposures", Name: "Exposures",

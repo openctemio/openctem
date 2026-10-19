@@ -338,7 +338,7 @@ install does, with `bootstrap-admin`: a platform administrator, and the first
 organization with you as its owner:
 
 ```bash
-SMTP_BASE_URL=http://localhost:3000 GOWORK=off go run ./cmd/bootstrap-admin -db "$DATABASE_URL" \
+SMTP_BASE_URL=http://localhost:3000 GOWORK=off go run ./cmd/bootstrap-admin \
   -email admin@example.com -no-backup \
   -org-name "Dev" -org-slug dev -org-owner-email you@example.com
 ```

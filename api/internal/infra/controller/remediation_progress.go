@@ -14,10 +14,10 @@ type campaignProgressReconciler interface {
 	ReconcileProgress(ctx context.Context) (int, error)
 }
 
-// RemediationProgressController periodically refreshes finding counts for every
-// non-terminal remediation campaign and auto-completes any whose findings are
-// all resolved. Without it, campaign progress would only update when a campaign
-// is fetched individually — list views and auto-complete would lag reality.
+// RemediationProgressController periodically completes the active
+// remediation campaigns whose tasks are all done and reopens the completed
+// ones with a live task again. A campaign's counts are derived from its tasks
+// on every read; only its status needs this pass.
 type RemediationProgressController struct {
 	svc      campaignProgressReconciler
 	interval time.Duration
