@@ -30,10 +30,7 @@ export function useSlaCompliance() {
     open: q.data?.total,
   }
   const aging = Object.fromEntries(
-    (Object.keys(AGE_FIELD) as AgingBucketKey[]).map((k) => [
-      k,
-      sla?.past_due_by_age[AGE_FIELD[k]],
-    ])
+    (Object.keys(AGE_FIELD) as AgingBucketKey[]).map((k) => [k, sla?.past_due_by_age[AGE_FIELD[k]]])
   ) as Record<AgingBucketKey, number | undefined>
 
   return {
