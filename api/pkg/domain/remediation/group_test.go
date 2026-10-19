@@ -93,3 +93,65 @@ func TestDeriveKey_NoSlash(t *testing.T) {
 		}
 	}
 }
+
+// Boilerplate advice never forms a group: findings of different
+// vulnerabilities that a scanner gave the same generic text stay apart.
+func TestDeriveKey_BoilerplateNeverGroups(t *testing.T) {
+	for _, text := range []string{
+		"Apply the suggested fix code.",
+		"Follow the remediation steps on each finding.",
+		"Upgrade to the latest version.",
+		"Apply the suggested fix code.\nSee https://example.com/docs/v2/1234 for details.",
+		"Review the code. Validate all input. Use parameterized queries.",
+	} {
+		for _, src := range []string{"sast", "dast", "va", "manual"} {
+			if key, _, ok := DeriveKey(KeyInput{Source: src, RuleID: "r1", SolutionText: text}); ok {
+				t.Errorf("source %s text %q formed key %q", src, text, key)
+			}
+		}
+	}
+}
+
+func TestDeriveKey_SpecificSentencesOnly(t *testing.T) {
+	a, ta, okA := DeriveKey(KeyInput{Source: "va", SolutionText: "Upgrade Jenkins to 2.442 or later."})
+	b, _, okB := DeriveKey(KeyInput{Source: "va", SolutionText: "Upgrade Jenkins to 2.442 or later.\nRestart the service afterwards."})
+	if !okA || !okB || a != b {
+		t.Fatalf("boilerplate around one specific fix must not split the group: %q vs %q", a, b)
+	}
+	if ta != "Upgrade Jenkins to 2.442 or later." {
+		t.Fatalf("title = %q", ta)
+	}
+	// The title is the specific sentence, not the boilerplate before it.
+	_, tt, ok := DeriveKey(KeyInput{Source: "va", SolutionText: "Apply the vendor patch. Install MS17-010 on every host."})
+	if !ok || tt != "Install MS17-010 on every host." {
+		t.Fatalf("title = %q ok=%v", tt, ok)
+	}
+	// Advisory ids count as specific.
+	for _, s := range []string{"Apply the MS17-010 security update.", "Install KB5034441 from the catalog", "Apply RHSA-2024:1234 errata now"} {
+		if _, _, ok := DeriveKey(KeyInput{Source: "va", SolutionText: s}); !ok {
+			t.Errorf("%q should be specific", s)
+		}
+	}
+	// A bare number is not a version.
+	if _, _, ok := DeriveKey(KeyInput{Source: "va", SolutionText: "Close port 8080 on the firewall"}); ok {
+		t.Error("a port number is not a fix identity")
+	}
+}
+
+func TestDeriveKey_RuleScopedForCode(t *testing.T) {
+	text := "Use bcrypt 4.0.1 or later for password hashing"
+	a, _, okA := DeriveKey(KeyInput{Source: "sast", RuleID: "go.weak-hash", SolutionText: text})
+	b, _, okB := DeriveKey(KeyInput{Source: "sast", RuleID: "go.missing-user", SolutionText: text})
+	if !okA || !okB || a == b {
+		t.Fatalf("two code rules must not share a fix: %q %q", a, b)
+	}
+	if _, _, ok := DeriveKey(KeyInput{Source: "sast", SolutionText: text}); ok {
+		t.Fatal("a code finding without a rule id gets no solution key")
+	}
+	// Host findings group across rules (one patch, many plugins).
+	x, _, _ := DeriveKey(KeyInput{Source: "va", RuleID: "p1", SolutionText: "Upgrade OpenSSL to 3.0.7"})
+	y, _, _ := DeriveKey(KeyInput{Source: "va", RuleID: "p2", SolutionText: "Upgrade OpenSSL to 3.0.7"})
+	if x != y {
+		t.Fatal("host findings with the same specific fix group across plugins")
+	}
+}

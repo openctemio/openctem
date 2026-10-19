@@ -363,6 +363,12 @@ export interface ApiFinding {
   priority_class_reason?: string
   priority_class_override?: boolean
   is_reachable?: boolean // reachable from attack entry points
+
+  // Severity provenance: severity is the effective value; source_severity is
+  // what the tools reported, severity_override the analyst's decision.
+  source_severity?: Severity
+  severity_override?: ApiSeverityOverride
+  pending_severity_request?: ApiSeverityRequest
   reachable_from_count?: number
   is_internet_accessible?: boolean // the finding's asset is reachable from the internet
   verified_at?: string
@@ -597,9 +603,35 @@ export interface UpdateFindingStatusInput {
 }
 
 export interface UpdateFindingSeverityInput {
-  severity: Severity
-  cvss_score?: number
-  cvss_vector?: string
+  /** The new effective severity; omitted with restore. */
+  severity?: Severity
+  /** End the analyst override: the reported severity applies. */
+  restore?: boolean
+  /** Why the severity changes (required, at most 1000 characters). */
+  reason: string
+}
+
+/** An analyst's override of a finding's severity. */
+export interface ApiSeverityOverride {
+  reason: string
+  overridden_by?: string
+  overridden_at: string
+}
+
+/** A severity downgrade waiting for the approval the organization's policy asks for. */
+export interface ApiSeverityRequest {
+  id: string
+  requested_severity: Severity
+  previous_severity: Severity
+  restore: boolean
+  reason: string
+  requested_by?: string
+  status: string
+  tier: string
+  required_approvals: number
+  approvals_collected: number
+  decide_by: string
+  created_at: string
 }
 
 export interface AssignFindingInput {
