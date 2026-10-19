@@ -199,25 +199,6 @@ export function useRecentActivity(tenantId: string | null) {
   }
 }
 
-// ─── MTTR Metrics ───
-
-interface MTTRMetrics {
-  [severity: string]: number // hours
-}
-
-export function useMTTRMetrics(tenantId: string | null) {
-  const { can } = usePermissions()
-  const hasPerm = can(Permission.DashboardRead)
-
-  // Keyed by the URL: a tenant switch drops every cached answer
-  // (tenant-provider), so the key needs no tenant part.
-  return useSWR<MTTRMetrics>(
-    tenantId && hasPerm ? '/api/v1/dashboard/mttr' : null,
-    (url: string) => get<MTTRMetrics>(url),
-    { revalidateOnFocus: false, dedupingInterval: 30000 }
-  )
-}
-
 // ─── Risk Velocity ───
 
 export interface RiskVelocityPoint {
@@ -231,7 +212,8 @@ export function useRiskVelocity(tenantId: string | null, weeks = 12) {
   const { can } = usePermissions()
   const hasPerm = can(Permission.DashboardRead)
 
-  // Keyed by the URL — see useMTTRMetrics.
+  // Keyed by the URL: a tenant switch drops every cached answer
+  // (tenant-provider), so the key needs no tenant part.
   return useSWR<RiskVelocityPoint[]>(
     tenantId && hasPerm ? `/api/v1/dashboard/velocity?weeks=${weeks}` : null,
     (url: string) => get<RiskVelocityPoint[]>(url),
