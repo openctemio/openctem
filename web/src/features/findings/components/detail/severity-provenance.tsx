@@ -99,7 +99,7 @@ export function SeverityProvenance({ finding, canRescore, onRestore }: SeverityP
       {pending && (
         <div
           role="status"
-          className="rounded-md border border-amber-300/60 bg-amber-50 p-2 text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-100"
+          className="rounded-md border border-warning/40 bg-warning/10 p-2 text-foreground"
         >
           <p className="font-medium">
             {pending.restore
