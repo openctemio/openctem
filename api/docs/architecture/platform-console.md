@@ -229,6 +229,15 @@ Approvals page explains how to add a second super admin. Once two exist,
 removing either needs the other's approval. If the other super admin is
 unavailable, end their console sessions and reset their console sign-in from
 the console, and change the roster with `bootstrap-admin` on the server.
+That command is not a silent side door: every administrator it creates,
+replaces (`-force`, `-force-backup`) or links (`-link`) is written in the same
+transaction as a high-severity entry in the administrators' audit log
+(`admin.created`, `admin.replaced`, `admin.relinked`; actor `bootstrap-admin`,
+with the OS user and host), and every other active administrator gets the
+roster-change e-mail. `-force` replaces only the named administrator, keeps
+its role unless `-role` is given, refuses to bring back an inactive one
+without `-role`, refuses to leave no active super admin, and asks for the
+email to be typed back (or `-yes`).
 
 API: `GET /api/v1/admin/approvals`, `POST /api/v1/admin/approvals`
 (step-up), `POST /api/v1/admin/approvals/{id}/approve` (fresh step-up),
