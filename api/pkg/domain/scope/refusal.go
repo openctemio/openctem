@@ -32,10 +32,14 @@ const (
 	RefusalProofRequired = "proof_required"
 	// RefusalProgramPlatform: only bug-bounty program entries cover the
 	// target, and platform sensors never probe those (RFC-065 §8).
-	RefusalProgramPlatform    = "program_platform"
-	RefusalOutOfDataScope     = "out_of_data_scope"
-	RefusalNotAnAsset         = "not_an_asset"
-	RefusalZoneNone           = "zone_none"
+	RefusalProgramPlatform = "program_platform"
+	RefusalOutOfDataScope  = "out_of_data_scope"
+	RefusalNotAnAsset      = "not_an_asset"
+	RefusalZoneNone        = "zone_none"
+	// RefusalUnresolved: a hostname with no DNS answer from the platform. It
+	// cannot be routed to a scan zone, so it is refused on its own, apart
+	// from a private address no zone covers.
+	RefusalUnresolved         = "unresolved"
 	RefusalZoneNoSensor       = "zone_no_sensor"
 	RefusalZoneSensorMismatch = "zone_sensor_mismatch"
 	// RefusalConstrained: only port- or path-limited entries cover the
@@ -136,6 +140,7 @@ var RefusalMessages = map[string]string{
 	RefusalOutOfDataScope:     "This asset is outside your data scope.",
 	RefusalNotAnAsset:         "You may scan only assets in your data scope.",
 	RefusalZoneNone:           "No scan zone covers this private target.",
+	RefusalUnresolved:         "This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.",
 	RefusalZoneNoSensor:       "The scan zone of this target has no sensors.",
 	RefusalZoneSensorMismatch: "The chosen sensor is not in this target's scan zone.",
 	RefusalConstrained:        "The scope entries covering this target are limited to some ports or a path, and this job could reach others.",
