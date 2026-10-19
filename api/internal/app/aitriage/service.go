@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -24,83 +25,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// categorizeError returns a user-friendly error message based on the error type.
-// SECURITY: This function maps internal errors to safe external messages.
-//
-//nolint:cyclop // Switch/case for error categorization is naturally branchy.
-func categorizeError(err error) string {
-	if err == nil {
-		return "Unknown error occurred"
-	}
-
-	errStr := err.Error()
-	errLower := strings.ToLower(errStr)
-
-	// Rate limiting
-	if errors.Is(err, llm.ErrRateLimited) || strings.Contains(errLower, "rate limit") || strings.Contains(errLower, "429") {
-		return "AI service is temporarily busy. Please try again in a few minutes."
-	}
-
-	// Authentication/Authorization errors
-	if strings.Contains(errLower, "unauthorized") || strings.Contains(errLower, "401") ||
-		strings.Contains(errLower, "invalid api key") || strings.Contains(errLower, "authentication") {
-		return "AI service authentication failed. Please contact your administrator."
-	}
-
-	// Quota/Billing errors
-	if strings.Contains(errLower, "quota") || strings.Contains(errLower, "billing") ||
-		strings.Contains(errLower, "insufficient") || strings.Contains(errLower, "exceeded") {
-		return "AI service quota exceeded. Please check your subscription or try again later."
-	}
-
-	// Context/timeout errors
-	if errors.Is(err, llm.ErrContextCanceled) || strings.Contains(errLower, "context") ||
-		strings.Contains(errLower, "timeout") || strings.Contains(errLower, "deadline") {
-		return "AI analysis timed out. Please try again with a simpler finding."
-	}
-
-	// Model/Content errors
-	if strings.Contains(errLower, "content_filter") || strings.Contains(errLower, "safety") ||
-		strings.Contains(errLower, "blocked") {
-		return "AI analysis was blocked by content filters. Finding may contain sensitive content."
-	}
-
-	// Token limit errors
-	if errors.Is(err, llm.ErrTokenLimitExceeded) || strings.Contains(errLower, "token") {
-		return "Finding is too large for AI analysis. Try a finding with less content."
-	}
-
-	// Server errors
-	if strings.Contains(errLower, "500") || strings.Contains(errLower, "502") ||
-		strings.Contains(errLower, "503") || strings.Contains(errLower, "server error") {
-		return "AI service is temporarily unavailable. Please try again later."
-	}
-
-	// Invalid response
-	if errors.Is(err, llm.ErrInvalidResponse) || strings.Contains(errLower, "parse") ||
-		strings.Contains(errLower, "invalid response") {
-		return "AI returned an invalid response. Please try again."
-	}
-
-	// Configuration errors (admin should fix)
-	if errors.Is(err, llm.ErrProviderNotConfigured) || strings.Contains(errLower, "not configured") {
-		return "AI service is not properly configured. Please contact your administrator."
-	}
-
-	// Default fallback
-	return "AI analysis failed. Please try again later."
-}
-
-// aitriageFPReclassifyThreshold is the false-positive-likelihood at or above
-// which a completed triage triggers an immediate priority reclassify (so the
-// de-escalation can take effect). It intentionally mirrors
-// finding.AITriageFPThreshold — the value the classifier itself uses to decide a
-// high-confidence false positive — but is duplicated here to avoid an import
-// cycle (internal/app/finding already imports this package). Keep the two in
-// sync: below the threshold the classifier would not de-escalate, so sweeping the
-// asset would be wasted work.
-const aitriageFPReclassifyThreshold = 0.8
-
 // AITriageJobEnqueuer defines the interface for enqueueing AI triage jobs.
 type AITriageJobEnqueuer interface {
 	EnqueueAITriage(ctx context.Context, resultID, tenantID, findingID string, delay time.Duration) error
@@ -111,17 +35,6 @@ type AITriageJobEnqueuer interface {
 type WorkflowEventDispatcherInterface interface {
 	DispatchAITriageCompleted(ctx context.Context, tenantID, findingID, triageID shared.ID, triageData map[string]any)
 	DispatchAITriageFailed(ctx context.Context, tenantID, findingID, triageID shared.ID, errorMessage string)
-}
-
-// PriorityReclassifyEnqueuer enqueues a priority reclassification for a finding's
-// asset after AI triage completes. This is what lets a high-confidence "likely
-// false positive" verdict take effect: the reclassify re-derives the finding's
-// priority_class, and the classifier de-escalates it by one bounded level. Errors
-// are swallowed by the implementation — a failed enqueue must not fail the triage
-// (the verdict still applies on the next scheduled sweep). Optional — nil means
-// no immediate reclassify.
-type PriorityReclassifyEnqueuer interface {
-	EnqueueForAsset(ctx context.Context, tenantID, assetID shared.ID)
 }
 
 // FalsePositiveProposer records an AI false-positive proposal as a pending
@@ -167,12 +80,12 @@ type AITriageService struct {
 	tenantRepo         tenant.Repository
 	activitySvc        *activity.FindingActivityService
 	auditSvc           *auditapp.AuditService
-	llmFactory         *llm.Factory
+	llmFactory         ProviderFactory
+	egress             *aipolicy.Egress // the organization's AI data-egress policy; nil refuses pentest findings
 	jobEnqueuer        AITriageJobEnqueuer
 	workflowDispatcher WorkflowEventDispatcherInterface
-	triageBroadcaster  TriageBroadcaster          // For real-time WebSocket updates
-	reclassifyEnqueuer PriorityReclassifyEnqueuer // enqueues priority reclassify on triage completion
-	fpProposer         FalsePositiveProposer      // records confident false-positive verdicts as pending approvals
+	triageBroadcaster  TriageBroadcaster     // For real-time WebSocket updates
+	fpProposer         FalsePositiveProposer // records confident false-positive verdicts as pending approvals
 	platformCfg        config.AITriageConfig
 	logger             *logger.Logger
 	outputValidator    *TriageOutputValidator
@@ -216,6 +129,32 @@ func NewAITriageService(
 	}
 }
 
+// ProviderFactory builds the LLM provider for a tenant (*llm.Factory).
+type ProviderFactory interface {
+	CreateProviderForTenant(tenantID string, aiSettings tenant.AISettings) (llm.Provider, error)
+}
+
+// SetEgressPolicy wires the organization's AI data-egress policy, shared
+// with MCP: a pentest finding of a campaign above the organization's TLP
+// limit for AI, or with AI assistants off, is never sent to the model.
+// Without it every pentest finding is refused.
+func (s *AITriageService) SetEgressPolicy(e *aipolicy.Egress) { s.egress = e }
+
+// checkEgress applies the egress policy to a finding: nil, ErrPolicyRestricted
+// (the policy refuses), or a read error (callers fail closed).
+func (s *AITriageService) checkEgress(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding) error {
+	err := s.egress.CheckFinding(ctx, tenantID, f)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, aipolicy.ErrRestricted) {
+		s.logger.Info("AI triage refused by the organization's AI data policy",
+			"tenant_id", tenantID.String(), "finding_id", f.ID().String(), "reason", err.Error())
+		return fmt.Errorf("%w: %s", ErrPolicyRestricted, err.Error())
+	}
+	return fmt.Errorf("check the AI data policy: %w", err)
+}
+
 // AITriageModuleGuard reports the modules a tenant has off
 // (*module.ModuleService).
 type AITriageModuleGuard interface {
@@ -249,7 +188,7 @@ func (s *AITriageService) platformReady(ctx context.Context, mode tenant.AIMode)
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: platform AI is not set up on this installation; use the organization's own AI key, or ask the platform administrator", shared.ErrForbidden)
+	return ErrPlatformAINotSetUp
 }
 
 // platformOn reports whether platform AI is available: AI_TRIAGE_ENABLED
@@ -293,15 +232,6 @@ func (s *AITriageService) SetTriageBroadcaster(broadcaster TriageBroadcaster) {
 	s.triageBroadcaster = broadcaster
 }
 
-// SetReclassifyEnqueuer wires the enqueuer that triggers a priority
-// reclassification for a finding's asset when its triage completes, so a
-// high-confidence false-positive verdict can de-escalate the finding's priority.
-// Optional — nil means no immediate reclassify (the verdict still applies on the
-// next scheduled sweep).
-func (s *AITriageService) SetReclassifyEnqueuer(e PriorityReclassifyEnqueuer) {
-	s.reclassifyEnqueuer = e
-}
-
 // =============================================================================
 // Triage Request/Response Types
 // =============================================================================
@@ -336,7 +266,9 @@ type TriageResultResponse struct {
 	Summary                 string     `json:"summary,omitempty"`
 	CreatedAt               time.Time  `json:"created_at"`
 	CompletedAt             *time.Time `json:"completed_at,omitempty"`
-	ErrorMessage            string     `json:"error_message,omitempty"`
+	// ErrorCode is the failure code of a failed triage (see errors.go); the
+	// web UI translates it. Never raw internal error text.
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 // =============================================================================
@@ -365,16 +297,21 @@ func (s *AITriageService) RequestTriage(ctx context.Context, req TriageRequest) 
 
 	aiSettings := t.TypedSettings().AI
 	if aiSettings.Mode == tenant.AIModeDisabled {
-		return nil, fmt.Errorf("%w: AI is disabled for this tenant", shared.ErrForbidden)
+		return nil, ErrAIDisabled
 	}
 	if err := s.platformReady(ctx, aiSettings.Mode); err != nil {
 		return nil, err
 	}
 
 	// Verify finding exists and belongs to tenant
-	_, err = s.findingRepo.GetByID(ctx, tenantID, findingID)
+	f, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finding: %w", err)
+	}
+	// The organization's AI data policy (shared with MCP), before anything is
+	// queued; the worker checks it again before the call.
+	if err := s.checkEgress(ctx, tenantID, f); err != nil {
+		return nil, err
 	}
 
 	// DEDUPLICATION: Check if there's already a pending/processing triage for this finding
@@ -412,7 +349,7 @@ func (s *AITriageService) RequestTriage(ctx context.Context, req TriageRequest) 
 	if err := s.enqueueTriageJob(ctx, result.ID(), tenantID, findingID, 0); err != nil {
 		s.logger.Error("failed to enqueue triage job", "error", err, "result_id", result.ID().String())
 		// Mark as failed since we couldn't enqueue
-		_ = result.MarkFailed("failed to enqueue job: " + err.Error())
+		_ = result.MarkFailed(FailEnqueue)
 		_ = s.triageRepo.Update(ctx, result)
 		return nil, fmt.Errorf("failed to enqueue triage job: %w", err)
 	}
@@ -483,6 +420,15 @@ func (s *AITriageService) enqueueTriageJob(ctx context.Context, resultID, tenant
 // ProcessTriage processes a triage job. Called by the worker.
 // Uses AcquireTriageSlot for atomic token limit check and status update.
 // This prevents race conditions when multiple workers process jobs concurrently.
+//
+// Retry contract: a transient failure (provider rate limit, timeout or 5xx,
+// budget service or database unavailable) puts the row back to pending and
+// returns an error the queue retries, while the queue has attempts left
+// (aitriagedom.WithRetriesLeft). Only the last attempt, or a permanent
+// failure, marks the row failed; that error wraps aitriagedom.ErrTriageFailed
+// so the queue does not retry it.
+//
+//nolint:cyclop,gocyclo // one linear pipeline: slot, policy, provider, budget, call, validate, record
 func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID, findingID shared.ID) error {
 	s.logger.Debug("processing triage", "result_id", resultID.String())
 
@@ -507,11 +453,21 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			// Audit log: token limit exceeded
 			s.logTokenLimitExceeded(ctx, tenantID.String(), resultID.String(), findingID.String(),
 				ctx2.TokensUsedMonth, ctx2.MonthlyTokenLimit)
-			return s.failTriage(ctx, ctx2.Result, "Monthly token limit exceeded")
+			return s.failTriage(ctx, ctx2.Result, FailTokenLimit)
 		}
 		return fmt.Errorf("failed to acquire triage slot: %w", err)
 	}
 	result := triageCtx.Result
+
+	// fail ends this attempt with a failure code: a transient code with
+	// attempts left releases the row for the queue's retry, anything else
+	// fails the triage.
+	fail := func(code string) error {
+		if transientFailures[code] && aitriagedom.RetriesLeft(ctx) {
+			return s.releaseForRetry(ctx, result, code)
+		}
+		return s.failTriage(ctx, result, code)
+	}
 
 	// Broadcast real-time WebSocket event for triage started
 	if s.triageBroadcaster != nil {
@@ -534,7 +490,22 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// Get finding
 	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
 	if err != nil {
-		return s.failTriage(ctx, result, "failed to get finding: "+err.Error())
+		if errors.Is(err, shared.ErrNotFound) {
+			return s.failTriage(ctx, result, FailFindingNotAvailable)
+		}
+		s.logger.Error("AI triage: failed to read the finding", "error", err, "result_id", resultID.String())
+		return fail(FailInternal)
+	}
+
+	// SECURITY: the organization's AI data policy, checked again right before
+	// anything is sent (the campaign's TLP or AI switch may have changed since
+	// the request, and auto-triage and workflows reach this point too).
+	if err := s.checkEgress(ctx, tenantID, finding); err != nil {
+		if errors.Is(err, ErrPolicyRestricted) {
+			return s.failTriage(ctx, result, FailPolicyRestricted)
+		}
+		s.logger.Error("AI triage: AI data policy check failed", "error", err, "result_id", resultID.String())
+		return fail(FailInternal)
 	}
 
 	// Create LLM provider. Passing the tenant scopes the AI_RATE_LIMIT_RPM
@@ -542,9 +513,9 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// each BYOK tenant gets its own.
 	provider, err := s.llmFactory.CreateProviderForTenant(tenantID.String(), aiSettings)
 	if err != nil {
-		// SECURITY: Log detailed error internally, return generic message to prevent info disclosure
+		// SECURITY: Log detailed error internally, store a fixed code
 		s.logger.Error("failed to create LLM provider", "error", err, "result_id", resultID.String())
-		return s.failTriage(ctx, result, "AI provider configuration error")
+		return s.failTriage(ctx, result, FailNotConfigured)
 	}
 
 	// Build prompt with sanitization for prompt injection protection
@@ -556,9 +527,8 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 
 	// BUDGET (RFC-008): pre-check before the LLM call. When the
 	// service is wired with cfg.Enabled=false this short-circuits
-	// and no-ops, preserving the "flag off = zero behaviour change"
-	// rollout requirement. When enabled, ErrBudgetExceeded fails
-	// the triage with an explicit audit trail.
+	// and no-ops. When enabled, ErrBudgetExceeded fails the triage
+	// with an explicit audit trail.
 	if s.budget != nil {
 		// Best-effort prompt-token estimate: the provider-side count
 		// is more accurate but we don't have it until after the call.
@@ -568,12 +538,12 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			if errors.Is(err, ErrBudgetExceeded) {
 				s.logTriageBudgetExhausted(ctx, tenantID.String(), resultID.String(), findingID.String())
 				metrics.AITriageBudgetExhaustedTotal.WithLabelValues().Inc()
-				return s.failTriage(ctx, result, "monthly AI token budget exhausted")
+				return s.failTriage(ctx, result, FailBudgetExhausted)
 			}
-			// ErrBudgetUnavailable (only returned when strict=true) —
-			// treat as a transient failure; triage retry loop picks
-			// it up.
-			return s.failTriage(ctx, result, "budget service unavailable: "+err.Error())
+			// ErrBudgetUnavailable (only returned when strict=true):
+			// transient, the queue retries.
+			s.logger.Error("AI triage: budget service unavailable", "error", err, "result_id", resultID.String())
+			return fail(FailBudgetUnavailable)
 		}
 	}
 
@@ -590,14 +560,14 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		JSONMode:     true,
 	})
 	if err != nil {
-		// SECURITY: Log detailed error internally, return user-friendly categorized message
+		// SECURITY: Log detailed error internally, store a fixed code
 		s.logger.Error("LLM call failed",
 			"error", err,
 			"result_id", resultID.String(),
 			"provider", provider.Name(),
 			"model", provider.Model(),
 		)
-		return s.failTriage(ctx, result, categorizeError(err))
+		return fail(categorizeError(err))
 	}
 
 	// Check for empty or truncated response
@@ -609,7 +579,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			"prompt_tokens", llmResp.PromptTokens,
 			"completion_tokens", llmResp.CompletionTokens,
 		)
-		return s.failTriage(ctx, result, "AI returned empty response")
+		return s.failTriage(ctx, result, FailEmptyResponse)
 	}
 
 	// Check if response was truncated (max_tokens reached)
@@ -627,7 +597,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// Validate and sanitize LLM output
 	analysis, err := s.outputValidator.ValidateAndSanitize(llmResp.Content)
 	if err != nil {
-		// SECURITY: Log detailed error internally, return generic message
+		// SECURITY: Log detailed error internally, store a fixed code.
 		// Log first 500 chars of content for debugging (truncate for safety)
 		contentPreview := llmResp.Content
 		if len(contentPreview) > 500 {
@@ -640,7 +610,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			"content_length", len(llmResp.Content),
 			"content_preview", contentPreview,
 		)
-		return s.failTriage(ctx, result, "AI response validation failed")
+		return s.failTriage(ctx, result, FailInvalidResponse)
 	}
 
 	if injectionSuspected {
@@ -687,16 +657,17 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		}
 	}
 
-	// Mark completed
+	// Mark completed. A save failure after the call is final: the tokens are
+	// spent, and a retry would pay for the same analysis again.
 	if err := result.MarkCompleted(*analysis); err != nil {
-		return s.failTriage(ctx, result, "failed to mark completed: "+err.Error())
+		s.logger.Error("AI triage: failed to mark completed", "error", err, "result_id", resultID.String())
+		return s.failTriage(ctx, result, FailInternal)
 	}
 	if err := s.triageRepo.Update(ctx, result); err != nil {
 		// Move the row out of 'processing' (set by AcquireTriageSlot) — otherwise
-		// it is stuck there with tokens already spent, and a retry that requires
-		// pending/processing may be rejected. Mirrors the MarkCompleted-failure
-		// branch above, which also fails the triage rather than returning raw.
-		return s.failTriage(ctx, result, "failed to save triage result: "+err.Error())
+		// it is stuck there with tokens already spent.
+		s.logger.Error("AI triage: failed to save the result", "error", err, "result_id", resultID.String())
+		return s.failTriage(ctx, result, FailInternal)
 	}
 
 	// SECURITY: when the validator couldn't fit the LLM output into
@@ -730,13 +701,14 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			ActorID:      nil,
 			ActorType:    string(vulnerability.ActorTypeAI),
 			Changes: map[string]interface{}{
-				"triage_result_id":  result.ID().String(),
-				"severity":          analysis.SeverityAssessment,
-				"risk_score":        analysis.RiskScore,
-				"priority_rank":     analysis.PriorityRank,
-				"ai_risk_level":     s.getRiskLevel(analysis.RiskScore),
-				"ai_confidence":     s.getConfidence(analysis.FalsePositiveLikelihood),
-				"ai_recommendation": analysis.Summary,
+				"triage_result_id":          result.ID().String(),
+				"severity":                  analysis.SeverityAssessment,
+				"risk_score":                analysis.RiskScore,
+				"priority_rank":             analysis.PriorityRank,
+				"ai_risk_level":             s.getRiskLevel(analysis.RiskScore),
+				"ai_confidence":             s.getConfidence(analysis.FalsePositiveLikelihood),
+				"false_positive_likelihood": analysis.FalsePositiveLikelihood,
+				"ai_recommendation":         analysis.Summary,
 			},
 			Source: string(vulnerability.SourceAuto),
 		})
@@ -745,23 +717,11 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		}
 	}
 
-	// Trigger a priority reclassification for the finding's asset so a
-	// high-confidence "likely false positive" verdict can DE-ESCALATE this
-	// finding's priority_class (the classifier reads the persisted triage result
-	// and lowers it one bounded level). Enqueued only for completed results whose
-	// likelihood clears the de-escalation threshold — a low-confidence verdict
-	// changes nothing, so there is no point sweeping the asset. Fire-and-forget:
-	// the enqueuer swallows errors; the verdict also applies on the next sweep.
-	if s.reclassifyEnqueuer != nil &&
-		analysis.FalsePositiveLikelihood >= aitriageFPReclassifyThreshold &&
-		!finding.AssetID().IsZero() {
-		s.reclassifyEnqueuer.EnqueueForAsset(ctx, tenantID, finding.AssetID())
-	}
-
 	// A confident verdict on a medium or low finding becomes a PENDING
 	// false-positive request for a person (the proposer enforces severity and
 	// idempotency). A result that needed review (coerced output or prompt
-	// injection markers in the finding) proposes nothing.
+	// injection markers in the finding) proposes nothing. The verdict never
+	// changes the finding's priority on its own.
 	s.proposeFalsePositive(ctx, tenantID, findingID, analysis)
 
 	s.logger.Info("triage completed",
@@ -816,13 +776,32 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	return nil
 }
 
-// failTriage marks a triage job as failed and updates the repository.
-func (s *AITriageService) failTriage(ctx context.Context, result *aitriagedom.TriageResult, errMsg string) error {
-	s.logger.Error("triage failed", "result_id", result.ID().String(), "error", errMsg)
-	_ = result.MarkFailed(errMsg)
+// releaseForRetry puts a row the worker holds back to pending after a
+// transient failure, so the queue's next attempt can acquire it again, and
+// returns the error that makes the queue retry. Nothing is audited or
+// broadcast: the triage is still running as far as anyone can tell.
+func (s *AITriageService) releaseForRetry(ctx context.Context, result *aitriagedom.TriageResult, code string) error {
+	s.logger.Warn("AI triage attempt failed; the queue retries it",
+		"result_id", result.ID().String(), "code", code)
+	if err := result.ReleaseForRetry(); err != nil {
+		return s.failTriage(ctx, result, code)
+	}
+	if err := s.triageRepo.Update(ctx, result); err != nil {
+		s.logger.Error("AI triage: failed to release the row for a retry", "error", err, "result_id", result.ID().String())
+		return s.failTriage(ctx, result, code)
+	}
+	return fmt.Errorf("%w: %s", aitriagedom.ErrTriageRetry, code)
+}
+
+// failTriage marks a triage job as failed with a failure code (never raw
+// error text) and returns an error the queue does not retry.
+func (s *AITriageService) failTriage(ctx context.Context, result *aitriagedom.TriageResult, code string) error {
+	code = PublicFailureCode(code)
+	s.logger.Error("triage failed", "result_id", result.ID().String(), "code", code)
+	_ = result.MarkFailed(code)
 
 	// Audit log: triage failed
-	s.logTriageFailed(ctx, result.TenantID().String(), result.ID().String(), result.FindingID().String(), errMsg)
+	s.logTriageFailed(ctx, result.TenantID().String(), result.ID().String(), result.FindingID().String(), code)
 
 	if err := s.triageRepo.Update(ctx, result); err != nil {
 		s.logger.Error("failed to update failed triage", "error", err)
@@ -839,7 +818,7 @@ func (s *AITriageService) failTriage(ctx context.Context, result *aitriagedom.Tr
 			Changes: map[string]interface{}{
 				"triage_result_id": result.ID().String(),
 				"status":           "failed",
-				"error_message":    errMsg,
+				"error_code":       code,
 			},
 			Source: string(vulnerability.SourceAuto),
 		})
@@ -850,7 +829,7 @@ func (s *AITriageService) failTriage(ctx context.Context, result *aitriagedom.Tr
 
 	// Dispatch workflow event for AI triage failure
 	if s.workflowDispatcher != nil {
-		s.workflowDispatcher.DispatchAITriageFailed(ctx, result.TenantID(), result.FindingID(), result.ID(), errMsg)
+		s.workflowDispatcher.DispatchAITriageFailed(ctx, result.TenantID(), result.FindingID(), result.ID(), code)
 	}
 
 	// Broadcast real-time WebSocket event for triage failure
@@ -859,17 +838,17 @@ func (s *AITriageService) failTriage(ctx context.Context, result *aitriagedom.Tr
 		event := map[string]any{
 			"type": "triage_failed",
 			"triage": map[string]any{
-				"id":            result.ID().String(),
-				"finding_id":    result.FindingID().String(),
-				"tenant_id":     result.TenantID().String(),
-				"status":        "failed",
-				"error_message": errMsg,
+				"id":         result.ID().String(),
+				"finding_id": result.FindingID().String(),
+				"tenant_id":  result.TenantID().String(),
+				"status":     "failed",
+				"error_code": code,
 			},
 		}
 		s.triageBroadcaster.BroadcastTriage(channel, event, result.TenantID().String())
 	}
 
-	return fmt.Errorf("triage failed: %s", errMsg)
+	return fmt.Errorf("%w: %s", aitriagedom.ErrTriageFailed, code)
 }
 
 // =============================================================================
@@ -994,7 +973,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 
 	aiSettings := t.TypedSettings().AI
 	if aiSettings.Mode == tenant.AIModeDisabled {
-		return nil, fmt.Errorf("%w: AI is disabled for this tenant", shared.ErrForbidden)
+		return nil, ErrAIDisabled
 	}
 	if err := s.platformReady(ctx, aiSettings.Mode); err != nil {
 		return nil, err
@@ -1069,6 +1048,25 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 			continue
 		}
 
+		// The organization's AI data policy, per finding.
+		if f, err := s.findingRepo.GetByID(ctx, tenantID, findingID); err != nil {
+			job.Status = "failed"
+			job.Error = "finding not found"
+			response.Jobs = append(response.Jobs, job)
+			response.Failed++
+			continue
+		} else if err := s.checkEgress(ctx, tenantID, f); err != nil {
+			job.Status = "failed"
+			job.Error = FailPolicyRestricted
+			if !errors.Is(err, ErrPolicyRestricted) {
+				s.logger.Error("bulk triage: AI data policy check failed", "finding_id", findingIDStr, "error", err)
+				job.Error = FailInternal
+			}
+			response.Jobs = append(response.Jobs, job)
+			response.Failed++
+			continue
+		}
+
 		// Create triage result
 		result, err := aitriagedom.NewTriageResult(tenantID, findingID, aitriagedom.TriageTypeBulk, userID)
 		if err != nil {
@@ -1091,7 +1089,8 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		if err := s.enqueueTriageJob(ctx, result.ID(), tenantID, findingID, 0); err != nil {
 			job.Status = "failed"
 			job.Error = "failed to enqueue job"
-			_ = result.MarkFailed("failed to enqueue job: " + err.Error())
+			s.logger.Error("bulk triage: enqueue failed", "result_id", result.ID().String(), "error", err)
+			_ = result.MarkFailed(FailEnqueue)
 			_ = s.triageRepo.Update(ctx, result)
 			response.Jobs = append(response.Jobs, job)
 			response.Failed++
@@ -1167,6 +1166,19 @@ func (s *AITriageService) EnqueueAutoTriage(ctx context.Context, tenantID, findi
 	aiSettings := s.extractAISettings(t.Settings())
 	delay := time.Duration(aiSettings.AutoTriageDelaySeconds) * time.Second
 
+	// The organization's AI data policy: a restricted finding is simply not
+	// auto-triaged (no job, no row).
+	f, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return err
+	}
+	if err := s.checkEgress(ctx, tenantID, f); err != nil {
+		if errors.Is(err, ErrPolicyRestricted) {
+			return nil
+		}
+		return err
+	}
+
 	// Create triage result
 	result, err := aitriagedom.NewTriageResult(tenantID, findingID, aitriagedom.TriageTypeAuto, nil)
 	if err != nil {
@@ -1201,7 +1213,7 @@ func (s *AITriageService) toTriageResultResponse(r *aitriagedom.TriageResult) *T
 		Summary:                 r.AnalysisSummary(),
 		CreatedAt:               r.CreatedAt(),
 		CompletedAt:             r.CompletedAt(),
-		ErrorMessage:            r.ErrorMessage(),
+		ErrorCode:               PublicFailureCode(r.ErrorMessage()),
 	}
 }
 
@@ -1388,22 +1400,14 @@ func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) (strin
 }
 
 // applyInjectionGuard makes an analysis produced from content that tried to
-// manipulate the model advisory only. The model's numbers are data, but one of
-// them drives automation without a human: a false-positive likelihood at or
-// above aitriageFPReclassifyThreshold de-escalates the finding's priority class
-// on the next reclassification. A finding whose own text attempted injection
-// must not be able to buy that, so the stored likelihood is capped just below
-// the threshold and the result is flagged for review (ValidationWarnings make
-// NeedsReview true, are audited, and reach workflows as needs_review=true).
-// A person can still mark the finding a false positive.
+// manipulate the model advisory only: the warning makes NeedsReview true, so
+// the result is audited as needing review, reaches workflows with
+// needs_review=true (side-effect workflows skip it) and never becomes a
+// false-positive proposal. A person can still mark the finding a false
+// positive.
 func applyInjectionGuard(analysis *aitriagedom.TriageAnalysis) {
 	analysis.ValidationWarnings = append(analysis.ValidationWarnings,
-		"finding content contained prompt-injection markers; analysis is advisory only and cannot auto-de-escalate priority")
-	if analysis.FalsePositiveLikelihood >= aitriageFPReclassifyThreshold {
-		analysis.ValidationWarnings = append(analysis.ValidationWarnings,
-			fmt.Sprintf("false_positive_likelihood %.2f capped below the auto-de-escalation threshold", analysis.FalsePositiveLikelihood))
-		analysis.FalsePositiveLikelihood = injectionCappedFPLikelihood
-	}
+		"finding content contained prompt-injection markers; analysis is advisory only")
 }
 
 // =============================================================================
@@ -1620,7 +1624,7 @@ func (s *AITriageService) RecoverStuckJobs(ctx context.Context, input RecoverStu
 	s.logger.Info("found stuck jobs", "count", len(stuckJobs))
 
 	// Mark each stuck job as failed
-	errorMsg := fmt.Sprintf("Job stuck in queue for more than %s - marked as failed by recovery job", input.StuckDuration.String())
+	errorMsg := FailStuck
 
 	for _, job := range stuckJobs {
 		updated, err := s.triageRepo.MarkStuckAsFailed(ctx, job.TenantID(), job.ID(), errorMsg)
@@ -1648,11 +1652,11 @@ func (s *AITriageService) RecoverStuckJobs(ctx context.Context, input RecoverStu
 				event := map[string]any{
 					"type": "triage_failed",
 					"triage": map[string]any{
-						"id":            job.ID().String(),
-						"finding_id":    job.FindingID().String(),
-						"tenant_id":     job.TenantID().String(),
-						"status":        "failed",
-						"error_message": errorMsg,
+						"id":         job.ID().String(),
+						"finding_id": job.FindingID().String(),
+						"tenant_id":  job.TenantID().String(),
+						"status":     "failed",
+						"error_code": errorMsg,
 					},
 				}
 				s.triageBroadcaster.BroadcastTriage(channel, event, job.TenantID().String())
