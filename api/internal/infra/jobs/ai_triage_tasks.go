@@ -3,12 +3,14 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/hibiken/asynq"
 
+	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -19,6 +21,11 @@ import (
 const (
 	// TypeAITriage is the task type for AI triage processing.
 	TypeAITriage = "ai:triage"
+
+	// aiTriageMaxRetry is how often the queue retries a transient failure.
+	aiTriageMaxRetry = 3
+	// aiTriageTaskTimeout bounds one attempt.
+	aiTriageTaskTimeout = 4 * time.Minute
 )
 
 // =============================================================================
@@ -44,8 +51,11 @@ func NewAITriageTask(payload AITriagePayload, delay time.Duration) (*asynq.Task,
 	}
 
 	opts := []asynq.Option{
-		asynq.MaxRetry(3),
-		asynq.Timeout(2 * time.Minute),
+		asynq.MaxRetry(aiTriageMaxRetry),
+		// Longer than one provider call with its own retries (three tries of
+		// AI_TIMEOUT_SECONDS plus backoff), so the queue does not cancel an
+		// attempt the provider client is still retrying.
+		asynq.Timeout(aiTriageTaskTimeout),
 		asynq.Queue("ai_triage"),
 	}
 
@@ -117,13 +127,21 @@ func (h *AITriageTaskHandler) HandleTriage(ctx context.Context, t *asynq.Task) e
 		return fmt.Errorf("invalid finding_id: %w", err)
 	}
 
-	// Process triage
+	// Process triage. The service retries transient failures through the
+	// queue while attempts are left, and fails the row on the last one.
+	retried, _ := asynq.GetRetryCount(ctx)
+	maxRetry, ok := asynq.GetMaxRetry(ctx)
+	ctx = aitriagedom.WithRetriesLeft(ctx, ok && retried < maxRetry)
 	if err := h.processor.ProcessTriage(ctx, resultID, tenantID, findingID); err != nil {
 		h.log.Error("failed to process AI triage",
 			"error", err,
 			"result_id", payload.ResultID,
 			"finding_id", payload.FindingID,
 		)
+		if errors.Is(err, aitriagedom.ErrTriageFailed) {
+			// Final: the row is failed; another attempt would find it so.
+			return fmt.Errorf("%w: %w", err, asynq.SkipRetry)
+		}
 		return err
 	}
 
