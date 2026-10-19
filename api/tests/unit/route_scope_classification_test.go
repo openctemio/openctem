@@ -201,6 +201,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/remediation":                      {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope (RFC-098)"},
 	"/api/v1/organization/dashboards":          {classConfig, "organization dashboard layouts, no asset data (docs/architecture/dashboards.md): dashboards:org:view plus the dashboard's audience to read, dashboards:org:manage to change"},
 	"/api/v1/organization/settings/dashboards": {classConfig, "organization dashboard defaults (default refresh schedule, refresh floor)"},
+	"/api/v1/dashboard-data":                   {classConfig, "owner/admin only: status of the organization's derived dashboard facts (times and counts, no rows) and the once-per-hour rebuild request"},
 	"/api/v1/dashboard":                        {classScoped, "counts, velocity, data quality, process metrics and the executive summary follow the viewer (countScope, D6); the risk-trend history and the program metrics are organization-wide and a restricted viewer needs dashboards:org:view (empty / 403 otherwise)"},
 
 	// --- separate ------------------------------------------------------------------
