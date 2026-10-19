@@ -7,7 +7,7 @@
 - The query runs as the creator with their data scope, the pentest member rule and the mandatory query
   exclusions; closed and pentest findings are left out. Matches held by another active task answer
   `409 FINDINGS_IN_OTHER_TASK` unless the request skips or moves them.
-- Snapshot mode (default) keeps the matches at creation; re-run (`/{task_id}/query/rerun[/preview]`) adds new
+- Snapshot mode (default) keeps the matches at creation; re-run (`/{task_id}/query/run`, `/{task_id}/query/preview`) adds new
   matches on confirmation. Auto mode adds new unclaimed matches up to a cap as the creator with their current
   access, tells them in-app, can be paused, and suspends itself when the creator leaves, loses access or the
   task closes.

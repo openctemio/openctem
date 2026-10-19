@@ -325,8 +325,11 @@ At the default 30 s idle interval a silent sensor is late 40 s after its last
 heartbeat, stale at 100 s and offline at 120 s; a busy sensor (5 s) is stale
 after 25 s and offline after 95 s; one told to back off (45 s) is offline
 after 180 s. The health controller (`internal/infra/controller/sensor_health.go`,
-every 30 s) writes the steps; only a request moves a sensor back to
-`online`. Dispatch, zone routing and tool availability take `health IN
+every 30 s) writes the steps; only a heartbeat moves a sensor back to
+`online`. Other authenticated requests (a poll, an upload) move
+`last_seen_at` only, which the ladder already counts; they never change
+`health` themselves (research/191 H-2: they used to set `online` without a
+deadline, connect event or audit entry). Dispatch, zone routing and tool availability take `health IN
 ('online', 'late')`; `ReleasePendingFromUnavailableSensors` unpins work held
 by `stale` and `offline` sensors. A heartbeat from a `late` or `stale` sensor
 is not a reconnect (no `sensor.connected` audit row).
@@ -1765,8 +1768,17 @@ A sensor holds every command it claims under a **lease** (migration 000260:
   idle interval ("Fleet health"), so a sensor whose heartbeats are only late
   keeps its work.
 - **Renewal.**
-  - Every accepted heartbeat (v1 and v2) renews the leases of the commands
-    the sensor lists in `running`.
+  - An accepted heartbeat renews the leases of the commands the sensor lists
+    in `running` once less than `max(lease / 2, 2 × interval + 10 s)` (at most
+    the lease) is left, where `interval` is the heartbeat interval the sensor
+    follows (`command.LeaseRenewBefore`). A heartbeat that finds more left
+    writes nothing: a busy sensor beating every 5 s renews about every 90 s
+    instead of on every beat, and one lost heartbeat still never lets a lease
+    run out (the next beat, at most two intervals later, finds at least 10 s
+    left).
+  - Progress (`progress`) is written only when it moved (done, records,
+    output bytes or CPU time grew, the total changed, or hosts were
+    released); a heartbeat that repeats the same progress writes no row.
   - An SDK that sends the load report (`queue`) always lists what it holds,
     leaving the list out when it holds nothing.
   - A sensor that sends no load report has every command it holds renewed:

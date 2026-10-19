@@ -85,6 +85,11 @@ Algorithms propose; a person with permission accepts.
   fingerprint, specific solution text), then KB/OS package, base image, IaC module/control and rule+file as
   their data arrives. Owner partitioning by the asset's primary owner (the RACI owner model) and a default
   queue.
+- **Confidence, with its basis:** an exact package target or secret value is 1.0 (`same_package_target`,
+  `same_secret_value`). A specific solution text starts at 0.6 (`same_specific_solution_text`), plus 0.2 when
+  every member comes from one scanner rule (`same_rule`) and 0.1 when every member is the same vulnerability
+  (`same_finding_title`). The factors met are stored in `fix_spec.basis` (with up to five `fix_spec.rule_ids`)
+  so the console explains the number in words; suggestions below 0.6 are not shown.
 - **Ranking:** risk reduced, then member count, then the earliest SLA deadline.
 - **Lifecycle:** `proposed` → `accepted` | `dismissed` (reason required) | `snoozed` (until a date) |
   `superseded` | `expired`. Identity is a fingerprint of kind, key, target and owner; a dismissed suggestion
@@ -220,7 +225,7 @@ GET   /api/v1/remediation/tasks/{task_id}/timeline
 POST  /api/v1/remediation/tasks/query/preview            preview a task from a query (read-only; §13)
 POST  /api/v1/remediation/tasks/query                    create a task from a query, snapshot or auto (409 FINDINGS_IN_OTHER_TASK)
 GET   /api/v1/remediation/tasks/{task_id}/query          the stored query, mode and auto state
-POST  /api/v1/remediation/tasks/{task_id}/query/rerun[/preview]  new matches; added only on confirmation
+POST  /api/v1/remediation/tasks/{task_id}/query/{run,preview}  new matches; added only on confirmation
 POST  /api/v1/remediation/tasks/{task_id}/query/auto     pause or resume auto include
 POST  /api/v1/query/from-filters                         a findings list filter as query text
 GET   /api/v1/remediation/suggestions                    list, best first (state, kind, key_kind, min_risk, search, queued)
