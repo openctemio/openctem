@@ -135,9 +135,8 @@ export interface QuerySchemaField {
 export const taskQueryApi = {
   preview: (query: string) => post<QueryTaskPreview>(`${TASKS}/query/preview`, { query }),
   create: (body: CreateQueryTaskBody) => post<CreateQueryTaskResult>(`${TASKS}/query`, body),
-  previewRerun: (taskId: string) =>
-    post<QueryRerunPreview>(`${TASKS}/${taskId}/query/rerun/preview`, {}),
-  rerun: (taskId: string) => post<QueryRerunResult>(`${TASKS}/${taskId}/query/rerun`, {}),
+  previewRerun: (taskId: string) => post<QueryRerunPreview>(`${TASKS}/${taskId}/query/preview`, {}),
+  rerun: (taskId: string) => post<QueryRerunResult>(`${TASKS}/${taskId}/query/run`, {}),
   setAuto: (taskId: string, paused: boolean) =>
     post<TaskQuery>(`${TASKS}/${taskId}/query/auto`, { paused }),
   explain: (query: string) => post<QueryExplanation>('/api/v1/query/explain', { query }),
