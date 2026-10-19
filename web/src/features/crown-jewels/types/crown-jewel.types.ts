@@ -38,7 +38,7 @@ export interface CrownJewel {
   businessImpactScore?: number // 0-100
   findingSeverity?: Record<SeverityLevel, number>
   exposure?: string // reachability: "internet" | "internal" | "unknown"
-  isInternetAccessible?: boolean
+  isInternetFacing?: boolean
   criticality?: string // a CriticalityLevel (none = Not rated)
   piiExposed?: boolean
   phiExposed?: boolean

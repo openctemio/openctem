@@ -1344,17 +1344,17 @@ type ListAssetsInput struct {
 	UnderDomains []string `validate:"max=10,dive,fqdn"`
 	// InCIDRs keeps the address assets inside these ranges (the scan
 	// wizard's preview of an inventory-mode CIDR target, RFC-068).
-	InCIDRs              []string `validate:"max=10,dive,cidr"`
-	HasOwner             *bool    // Assets with/without an assigned owner
-	DataClassifications  []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
-	IsControlPlane       *bool    // Asset is a control-plane dependency
-	IsInternetAccessible *bool    // Asset is internet-reachable
-	Environments         []string `validate:"max=5,dive,oneof=production staging development testing dr"`
-	Providers            []string `validate:"max=20,dive,max=50"`
-	LastSeenAfter        *time.Time
-	LastSeenBefore       *time.Time
-	ExpiresAfter         *time.Time
-	ExpiresBefore        *time.Time
+	InCIDRs             []string `validate:"max=10,dive,cidr"`
+	HasOwner            *bool    // Assets with/without an assigned owner
+	DataClassifications []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
+	IsControlPlane      *bool    // Asset is a control-plane dependency
+	InternetFacing      *bool    // Asset is internet-facing (asset.InternetFacing)
+	Environments        []string `validate:"max=5,dive,oneof=production staging development testing dr"`
+	Providers           []string `validate:"max=20,dive,max=50"`
+	LastSeenAfter       *time.Time
+	LastSeenBefore      *time.Time
+	ExpiresAfter        *time.Time
+	ExpiresBefore       *time.Time
 	// Attribution: attribution states (confirmed, needs_review, candidate,
 	// dependency, monitor_only, rejected) or the aliases unknown, unconfirmed
 	// and approved (RFC-036). Validated by attribution.ParseFilter.
@@ -1567,8 +1567,8 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	if input.IsControlPlane != nil {
 		filter = filter.WithIsControlPlane(*input.IsControlPlane)
 	}
-	if input.IsInternetAccessible != nil {
-		filter = filter.WithIsInternetAccessible(*input.IsInternetAccessible)
+	if input.InternetFacing != nil {
+		filter = filter.WithInternetFacing(*input.InternetFacing)
 	}
 	if len(input.Environments) > 0 {
 		filter = filter.WithEnvironments(input.Environments...)
