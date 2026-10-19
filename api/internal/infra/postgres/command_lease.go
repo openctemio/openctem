@@ -30,12 +30,20 @@ func (r *CommandRepository) leaseSeconds() float64 {
 	return r.lease.Seconds()
 }
 
+// renewBeforeSeconds is LeaseRenewBefore for this repository's lease, in
+// seconds, for make_interval.
+func (r *CommandRepository) renewBeforeSeconds(interval time.Duration) float64 {
+	return command.LeaseRenewBefore(time.Duration(r.leaseSeconds()*float64(time.Second)), interval).Seconds()
+}
+
 // RenewLeases extends the leases of the commands sensorID holds: those in
 // ids, or every one it holds when all is set (a sensor that does not report
 // what it runs). Only claimed or running commands still held by the sensor
 // are touched; anything re-queued or claimed by another sensor is left
-// alone. Returns the number of leases renewed.
-func (r *CommandRepository) RenewLeases(ctx context.Context, tenantID, sensorID shared.ID, ids []string, all bool) (int64, error) {
+// alone. A lease with more than command.LeaseRenewBefore(lease, interval)
+// left is not written (interval is the heartbeat interval the sensor
+// follows). Returns the number of leases renewed.
+func (r *CommandRepository) RenewLeases(ctx context.Context, tenantID, sensorID shared.ID, ids []string, all bool, interval time.Duration) (int64, error) {
 	if !all && len(ids) == 0 {
 		return 0, nil
 	}
@@ -44,8 +52,10 @@ func (r *CommandRepository) RenewLeases(ctx context.Context, tenantID, sensorID 
 		SET lease_expires_at = NOW() + make_interval(secs => $3)
 		WHERE tenant_id = $1 AND sensor_id = $2
 		  AND status IN ('acknowledged', 'running')
-		  AND ($4::boolean OR id::text = ANY($5::text[]))`
-	res, err := r.db.ExecContext(ctx, query, tenantID.String(), sensorID.String(), r.leaseSeconds(), all, pq.Array(ids))
+		  AND ($4::boolean OR id::text = ANY($5::text[]))
+		  AND (lease_expires_at IS NULL OR lease_expires_at < NOW() + make_interval(secs => $6))`
+	res, err := r.db.ExecContext(ctx, query, tenantID.String(), sensorID.String(), r.leaseSeconds(), all, pq.Array(ids),
+		r.renewBeforeSeconds(interval))
 	if err != nil {
 		return 0, fmt.Errorf("failed to renew command leases: %w", err)
 	}

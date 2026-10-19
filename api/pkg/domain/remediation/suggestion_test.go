@@ -1,6 +1,7 @@
 package remediation
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -178,5 +179,54 @@ func TestFixSpecForKey(t *testing.T) {
 	}
 	if FixSpecForKey("rotate:secret:0123456789abcdef")["secret_fingerprint_prefix"] != "01234567" {
 		t.Fatal("only a fingerprint prefix is shown")
+	}
+}
+
+func TestConfidence_Honest(t *testing.T) {
+	c := func(rule, title string) Candidate { return Candidate{RuleID: rule, FindingTitle: title} }
+	cases := []struct {
+		name  string
+		key   string
+		cs    []Candidate
+		want  float64
+		basis []string
+	}{
+		{"upgrade is exact", "upgrade:npm:lodash:4.17.21", []Candidate{c("a", "x"), c("b", "y")}, 1, []string{BasisSamePackageTarget}},
+		{"rotate is exact", "rotate:secret:ab", nil, 1, []string{BasisSameSecretValue}},
+		{"text only", "sol:va:h", []Candidate{c("p1", "Jenkins RCE"), c("p2", "Jenkins XSS")}, 0.6, []string{BasisSameSolutionText}},
+		{"one rule", "sol:va:h", []Candidate{c("p1", "Jenkins RCE"), c("P1", "Jenkins XSS")}, 0.8, []string{BasisSameSolutionText, BasisSameRule}},
+		{"one rule one title", "sol:va:h", []Candidate{c("p1", "Jenkins RCE"), c("p1", "jenkins rce")}, 0.9,
+			[]string{BasisSameSolutionText, BasisSameRule, BasisSameFindingTitle}},
+		{"missing rules do not count as one", "sol:dast:h", []Candidate{c("", "A"), c("", "A")}, 0.7, []string{BasisSameSolutionText, BasisSameFindingTitle}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, basis := Confidence(tc.key, tc.cs)
+			if got != tc.want || strings.Join(basis, ",") != strings.Join(tc.basis, ",") {
+				t.Fatalf("Confidence = %v %v, want %v %v", got, basis, tc.want, tc.basis)
+			}
+		})
+	}
+}
+
+func TestBuildSuggestions_BasisInFixSpec(t *testing.T) {
+	tenant := shared.NewID()
+	cs := []Candidate{
+		{FindingID: shared.NewID(), Key: "sol:va:h", Title: "Upgrade Jenkins to 2.442 or later.", RuleID: "p1", FindingTitle: "Jenkins RCE", PriorityClass: "P1", RiskPoints: 4},
+		{FindingID: shared.NewID(), Key: "sol:va:h", Title: "Upgrade Jenkins to 2.442 or later.", RuleID: "p2", FindingTitle: "Jenkins XSS", PriorityClass: "P2", RiskPoints: 3},
+	}
+	ss := BuildSuggestions(tenant, cs, nil, nil)
+	if len(ss) != 1 {
+		t.Fatalf("want 1 suggestion, got %d", len(ss))
+	}
+	s := ss[0]
+	if s.Confidence != 0.6 {
+		t.Fatalf("confidence %v", s.Confidence)
+	}
+	if b, _ := s.FixSpec["basis"].([]string); len(b) != 1 || b[0] != BasisSameSolutionText {
+		t.Fatalf("basis %v", s.FixSpec["basis"])
+	}
+	if r, _ := s.FixSpec["rule_ids"].([]string); strings.Join(r, ",") != "p1,p2" {
+		t.Fatalf("rule_ids %v", s.FixSpec["rule_ids"])
 	}
 }
