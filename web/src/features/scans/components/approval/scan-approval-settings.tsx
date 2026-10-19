@@ -78,7 +78,11 @@ export function ScanApprovalSettings() {
   }
   if (isLoading || !data) return <Skeleton className="h-96 w-full" />
 
-  const canMode = isOwner()
+  // The platform can enforce a mode over the organization's choice. The radios
+  // then show the mode in force, read-only, and the organization's own choice
+  // is a note: a selected value must be the value that applies.
+  const forced = data.source === 'platform'
+  const canMode = isOwner() && !forced
   const canRules = isOwner() || isAdmin()
   const modeText: Record<ScanApprovalMode, { label: string; hint: string }> = {
     off: {
@@ -167,7 +171,7 @@ export function ScanApprovalSettings() {
         </CardHeader>
         <CardContent className="space-y-4">
           <RadioGroup
-            value={choice}
+            value={forced ? data.mode : choice}
             onValueChange={(v) => setChoice(v as ScanApprovalMode)}
             disabled={!canMode}
             aria-label={t('scans.approvalSettings.title', 'Scan approval')}
@@ -187,7 +191,16 @@ export function ScanApprovalSettings() {
               </div>
             ))}
           </RadioGroup>
-          {canMode ? (
+          {forced && (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'scans.approvalSettings.forcedNote',
+                'Your organization chose {chosen}. It applies if the platform administrator stops enforcing {mode}.',
+                { chosen: modeText[data.organization_mode].label, mode: modeText[data.mode].label }
+              )}
+            </p>
+          )}
+          {forced ? null : canMode ? (
             <div className="flex justify-end">
               <Button
                 disabled={choice === data.organization_mode || busy}
