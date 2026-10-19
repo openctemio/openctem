@@ -267,7 +267,9 @@ func (h *CTEMCycleHandler) allowOrgMetrics(w http.ResponseWriter, r *http.Reques
 		return false
 	}
 	if !ok {
-		apierror.Forbidden("cycle metrics cover the whole organization: they need the dashboards:org:view permission or full data access").WriteJSON(w)
+		apierror.Forbidden("cycle metrics cover the whole organization: they need the dashboards:org:view permission or full data access").
+			WithDetails(middleware.PermissionDeniedDetails{AnyOf: orgFiguresPermissions()}).
+			WriteJSON(w)
 		return false
 	}
 	return true
