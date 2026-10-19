@@ -54,8 +54,30 @@ export function translate(
   // The brand variables default to the OpenCTEM brand; I18nProvider passes
   // the instance brand (src/context/i18n-provider.tsx).
   const all = { product: DEFAULT_BRAND.name, productShort: DEFAULT_BRAND.shortName, ...vars }
+  str = applyPlurals(str, all)
   for (const [name, value] of Object.entries(all)) {
     str = str.split(`{${name}}`).join(String(value))
   }
   return str
+}
+
+// ICU plural blocks: `{n, plural, one {# finding} other {# findings}}`.
+// Branches are `=N` or a CLDR category (zero one two few many other); `#` is
+// the number. Branch text holds no braces. Vietnamese has only `other`, so one
+// rule set (English) selects correctly for both shipped catalogs.
+const PLURAL_BLOCK = /\{(\w+),\s*plural,((?:\s*(?:=\d+|\w+)\s*\{[^{}]*\})+)\s*\}/g
+const PLURAL_BRANCH = /(=\d+|\w+)\s*\{([^{}]*)\}/g
+const pluralRules = new Intl.PluralRules('en')
+
+function applyPlurals(str: string, vars: TranslateVars): string {
+  if (!str.includes('plural,')) return str
+  return str.replace(PLURAL_BLOCK, (whole, name: string, branches: string) => {
+    const raw = vars[name]
+    const n = Number(raw)
+    if (raw === undefined || Number.isNaN(n)) return whole
+    const byKey = new Map<string, string>()
+    for (const m of branches.matchAll(PLURAL_BRANCH)) byKey.set(m[1], m[2])
+    const text = byKey.get(`=${n}`) ?? byKey.get(pluralRules.select(n)) ?? byKey.get('other') ?? ''
+    return text.split('#').join(n.toLocaleString('en-US'))
+  })
 }

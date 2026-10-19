@@ -54,6 +54,9 @@ type AcceptInput struct {
 	// AsOwner: the caller has no remediation write access and accepts as
 	// the asset owner (owner_accept.go).
 	AsOwner bool
+	// Conflicts resolves findings another active task took since the
+	// suggestion was made (zero value: refuse with 409).
+	Conflicts remediationdom.ConflictResolution
 }
 
 // ErrAutoJoinNeedsFullScope: the auto-join rule acts on findings the caller
@@ -107,9 +110,18 @@ func (s *SuggestionService) Accept(ctx context.Context, in AcceptInput, actx aud
 	if err != nil {
 		return nil, err
 	}
+	if plan.Conflicts, err = s.prepareConflicts(ctx, in.TenantID, plan, in); err != nil {
+		return nil, err
+	}
 	res, err := s.repo.AcceptSuggestion(ctx, plan)
 	if err != nil {
+		if s.tasks != nil {
+			return nil, s.tasks.describeConflicts(ctx, in.TenantID, err, !in.AsOwner)
+		}
 		return nil, err
+	}
+	if s.tasks != nil {
+		s.tasks.recordClaimMoves(ctx, actx, in.TenantID, res.Claim, in.ActorID)
 	}
 	if in.AutoJoin && sg.Kind != remediationdom.SuggestionNewGroup {
 		if _, err := s.repo.SetAutoJoin(ctx, in.TenantID, res.ActionID, true, in.ActorID); err != nil {
@@ -118,13 +130,29 @@ func (s *SuggestionService) Accept(ctx context.Context, in AcceptInput, actx aud
 	}
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationSuggestionAccepted, auditdom.ResourceTypeRemediationSuggestion, sg.ID.String()).
 		WithResourceName(title).
-		WithMessage(fmt.Sprintf("Remediation suggestion %q accepted: %d task(s) created, %d finding(s) joined, %d removed, %d left out", title,
-			len(res.TaskIDs), res.Joined, len(excluded), len(res.Dropped))).
+		WithMessage(fmt.Sprintf("Remediation suggestion %q accepted: %d task(s) created, %d finding(s) joined, %d removed, %d closed, %d skipped, %d moved", title,
+			len(res.TaskIDs), res.Joined, len(excluded), len(res.Dropped), len(res.Skipped), res.Moved)).
 		WithMetadata("kind", string(sg.Kind)).WithMetadata("action_id", res.ActionID.String()).
 		WithMetadata("tasks", len(res.TaskIDs)).WithMetadata("removed", len(excluded)).
 		WithMetadata("edited", in.Title != nil || len(excluded) > 0 || len(in.Owners) > 0 || in.Deadline != nil).
-		WithMetadata("auto_join", in.AutoJoin).WithMetadata("as_owner", in.AsOwner))
+		WithMetadata("auto_join", in.AutoJoin).WithMetadata("as_owner", in.AsOwner).
+		WithMetadata("skipped", len(res.Skipped)).WithMetadata("moved", res.Moved))
 	return res, nil
+}
+
+// prepareConflicts checks the accept's conflict resolution against the
+// findings the plan claims. Without the task service no move is cleared.
+func (s *SuggestionService) prepareConflicts(ctx context.Context, tenantID shared.ID, plan remediationdom.AcceptPlan, in AcceptInput) (remediationdom.ConflictResolution, error) {
+	ids := append([]shared.ID{}, plan.JoinIDs...)
+	for _, t := range plan.Tasks {
+		ids = append(ids, t.FindingIDs...)
+	}
+	if s.tasks == nil {
+		res, err := in.Conflicts.Normalize(ids)
+		res.MovableFrom = nil
+		return res, err
+	}
+	return s.tasks.prepareConflicts(ctx, tenantID, ids, in.Conflicts, !in.AsOwner, plan.TargetTaskID)
 }
 
 // acceptOwners returns each partition's owner, with the person's changes,

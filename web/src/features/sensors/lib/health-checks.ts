@@ -3,6 +3,8 @@ import type { ScanZone } from '@/lib/api/scan-zone-types'
 
 import { dispatchTools, hasReportedTools } from './capabilities'
 import { contentCheckSummary, msg } from './content'
+import { configHealthNeedsAttention } from './config-report'
+import { postureIssues } from './posture'
 import { formatDurationShort, keyExpiry, type Tr } from './format'
 import {
   isOneShotSensor,
@@ -41,6 +43,8 @@ export interface HealthCheck {
     | 'zone'
     | 'protocol'
     | 'error'
+    | 'setup'
+    | 'posture'
   label: string
   /** A stable reason where the issue title needs to tell two apart. */
   code?: 'tools_not_reported'
@@ -541,6 +545,31 @@ export function sensorHealthChecks(
       })
       checks.push({ key: 'zone', label: L.zone, status: 'ok', text: parts.join('; ') })
     }
+  }
+
+  // The sensor's own setup checks and its security posture: the same facts
+  // the Setup & health tab and the fleet's Needs attention count show, so the
+  // Overview never says "all passing" while they are flagged.
+  if (configHealthNeedsAttention(sensor.config_health)) {
+    checks.push({
+      key: 'setup',
+      label: msg(tr, 'sensors.checks.label.setup', 'Setup'),
+      status: sensor.config_health === 'attention' ? 'warning' : 'critical',
+      text: msg(
+        tr,
+        'sensors.checks.setup.text',
+        'The sensor reports setup checks that need attention. Open Setup & health for the details.'
+      ),
+    })
+  }
+  const unhardened = postureIssues(sensor)
+  if (unhardened.length > 0) {
+    checks.push({
+      key: 'posture',
+      label: msg(tr, 'sensors.checks.label.posture', 'Security posture'),
+      status: 'warning',
+      text: unhardened.map((i) => msg(tr, i.labelKey, i.label)).join(', '),
+    })
   }
 
   // An error the sensor reported
