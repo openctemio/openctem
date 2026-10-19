@@ -24,8 +24,8 @@ Response:
 }
 ```
 
-The epic body is rendered from the campaign: description + progress
-(`resolved/total`, percentage) + due date. Labels: `openctem`,
+The epic body is rendered from the campaign: description + progress derived
+from its tasks (task count, closed of all findings, percentage) + due date. Labels: `openctem`,
 `remediation-campaign`.
 
 ## Design
@@ -100,17 +100,17 @@ follow-up.
 
 The reverse direction. A Jira webhook that moves a campaign's linked epic to a
 done state (`Done`/`Resolved`/`Closed`/`Complete`/`Completed`) is a **fix
-claim** for the campaign's findings, not a completion.
+claim** for the campaign's live tasks, not a completion.
 
 - `HandleJiraWebhook` asks `CampaignEpicSink.HandleEpicStatusChange` first; a
   campaign epic is handled there and never treated as a finding ticket.
 - `RemediationCampaignService.HandleEpicStatusChange`: reverse lookup
   (`CampaignTicketRepository.GetByIssueKey`) → done-status guard →
-  `ResolveCampaignFindings` (the campaign "mark fixed": legal steps to
-  `fix_applied`, proof of fix per finding) with the Jira integration as the
-  recorded actor. The campaign stays as it is: it completes when its findings
-  are verified closed. Findings the rules refuse are commented back on the
-  epic, once per window.
+  task-level mark fixed of every live task of the campaign
+  (`TaskService.MarkFixed`: legal steps to `fix_applied`, proof of fix per
+  finding) as the platform. The campaign stays as it is: it completes when its
+  tasks are done. Findings the rules refuse are commented back on the epic,
+  once per window.
 - Loop-safe: no campaign status changes, so no outbound epic transition fires.
 
 Together with the outbound path, **campaign↔epic sync is now bidirectional** —
