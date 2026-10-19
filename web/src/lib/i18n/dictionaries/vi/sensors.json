@@ -1363,5 +1363,9 @@
   "sensors.jobSafety.loosen.privateTargets": "Mục tiêu nội bộ có thể đến sensor không có chính sách cục bộ.",
   "sensors.jobSafety.loosen.interactsh": "Job quét có thể dùng callback ngoài băng tới máy chủ bên ngoài.",
   "sensors.jobSafety.loosen.customTemplates": "Job quét có thể mang template tùy chỉnh.",
-  "sensors.jobSafety.loosen.insecureTls": "Công cụ quét có thể chấp nhận chứng chỉ TLS không hợp lệ."
+  "sensors.jobSafety.loosen.insecureTls": "Công cụ quét có thể chấp nhận chứng chỉ TLS không hợp lệ.",
+  "sensors.pair.getSensor.title": "Chưa có sensor?",
+  "sensors.pair.getSensor.body": "Hãy cài sensor lên máy chủ trước. Sensor chỉ cần URL của nền tảng (và dấu vân tay CA của nền tảng nếu bạn dùng CA riêng). Không cần sao chép khóa: sensor tự tạo khóa khi ghép cặp.",
+  "sensors.pair.getSensor.pull": "Lấy image của sensor",
+  "sensors.pair.getSensor.guide": "Mở hướng dẫn cài đặt sensor"
 }
