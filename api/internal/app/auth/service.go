@@ -1624,7 +1624,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 // VerifyEmail verifies a user's email with the verification token.
 func (s *AuthService) VerifyEmail(ctx context.Context, token string) error {
 	// Tokens are stored hashed at rest; look up by hash of the raw token.
-	u, err := s.userRepo.GetByEmailVerificationToken(ctx, crypto.HashToken(token))
+	u, err := s.lookupByTokenWithPaddedFallback(token, func(h string) (*userdom.User, error) {
+		return s.userRepo.GetByEmailVerificationToken(ctx, h)
+	})
 	if err != nil {
 		// The repository reports an unknown/expired token as
 		// userdom.ErrInvalidVerificationToken (not ErrNotFound); both are a 400.
@@ -1722,7 +1724,9 @@ type ResetPasswordInput struct {
 // ResetPassword resets a user's password using the reset token.
 func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInput) error {
 	// Tokens are stored hashed at rest; look up by hash of the raw token.
-	u, err := s.userRepo.GetByPasswordResetToken(ctx, crypto.HashToken(input.Token))
+	u, err := s.lookupByTokenWithPaddedFallback(input.Token, func(h string) (*userdom.User, error) {
+		return s.userRepo.GetByPasswordResetToken(ctx, h)
+	})
 	if err != nil {
 		// The repository reports an unknown, used or expired token as
 		// userdom.ErrInvalidPasswordResetToken (not ErrNotFound). Both must be a
@@ -2482,4 +2486,21 @@ func recordLoginFailure(err error) {
 		reason = "suspended"
 	}
 	metrics.LoginFailuresTotal.WithLabelValues(reason).Inc()
+}
+
+// lookupByTokenWithPaddedFallback looks a user up by the hash of an emailed
+// token. New tokens are unpadded base64url; tokens issued earlier were padded
+// and mail clients may have stripped the trailing "=", so a miss retries once
+// with the "=" restored.
+func (s *AuthService) lookupByTokenWithPaddedFallback(token string, get func(hash string) (*userdom.User, error)) (*userdom.User, error) {
+	u, err := get(crypto.HashToken(token))
+	if err == nil {
+		return u, nil
+	}
+	if padded, ok := crypto.PaddedTokenVariant(token); ok {
+		if u2, err2 := get(crypto.HashToken(padded)); err2 == nil {
+			return u2, nil
+		}
+	}
+	return nil, err
 }
