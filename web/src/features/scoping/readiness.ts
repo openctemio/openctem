@@ -92,9 +92,13 @@ export function readinessRows(s: ScopingSummary): ReadinessRow[] {
     },
     {
       key: 'boundary',
-      label: 'Boundary set (targets and exclusions)',
+      label: 'Boundary in effect (scope entries and exclusions)',
       ready: s.boundary.targets > 0,
-      value: `${plural(s.boundary.targets, 'target')} · ${plural(s.boundary.exclusions, 'exclusion')}`,
+      value:
+        `${plural(s.boundary.targets, 'entry', 'entries')} in effect · ${plural(s.boundary.exclusions, 'exclusion')}` +
+        (s.boundary.targets_waiting > 0
+          ? ` · ${s.boundary.targets_waiting} waiting for approval`
+          : ''),
       href: '/scope',
       action: 'Open',
       module: 'scope_config',

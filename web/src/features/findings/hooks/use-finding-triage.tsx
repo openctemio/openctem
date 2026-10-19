@@ -10,7 +10,7 @@
  * Render `dialogs` once next to the controls.
  */
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { Severity } from '@/features/shared/types'
@@ -46,6 +46,7 @@ import {
 } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
 import { FINDINGS_CLOSED_STATUSES } from '@/features/findings/lib/list-defaults'
+import { isFindingChanged } from '@/features/findings/lib/finding-conflict'
 
 export interface FindingTriageTarget {
   id: string
@@ -56,6 +57,8 @@ export interface FindingTriageTarget {
   maxAcceptanceDays?: number
   /** The organization's sub-status inside the status. */
   subStatusId?: string
+  /** Version of the finding shown; writes are refused when it moved on. */
+  rowVersion?: number
   /** The severity the tools reported (the restore target of an override). */
   sourceSeverity?: string
 }
@@ -108,6 +111,29 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     )
   }, [finding.id, finding.assignee])
 
+  // The version the person decided on: sent as If-Match so a write never
+  // overwrites a change someone else made since the finding was loaded. It
+  // follows the loaded finding and each write's response.
+  const rowVersion = useRef<number | undefined>(finding.rowVersion)
+  useEffect(() => {
+    rowVersion.current = finding.rowVersion
+  }, [finding.id, finding.rowVersion])
+  const wrote = (updated?: { row_version?: number } | null) => {
+    if (updated && typeof updated.row_version === 'number') rowVersion.current = updated.row_version
+  }
+  // Someone else changed the finding: reload it and say so (nothing written).
+  const changedMeanwhile = async (error: unknown): Promise<boolean> => {
+    if (!isFindingChanged(error)) return false
+    toast.info(
+      t(
+        'findings.conflict.changed',
+        'Someone else changed this finding. It has been reloaded; check it and try again.'
+      )
+    )
+    await invalidateFindingsCache()
+    return true
+  }
+
   const { trigger: updateStatus, isMutating: statusBusy } = useUpdateFindingStatusApi(finding.id)
   const { trigger: updateSeverity, isMutating: severityBusy } = useUpdateFindingSeverityApi(
     finding.id
@@ -150,12 +176,14 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     setSubStatusId(toSub)
     try {
       const updated = await updateStatus({
+        rowVersion: rowVersion.current,
         status: next,
         resolution: input?.note ?? note,
         ...(toSub ? { sub_status_id: toSub } : {}),
         ...(input?.fields ? { fields: input.fields } : {}),
       })
       setSubStatusId(updated?.sub_status_id)
+      wrote(updated)
       opts.onStatusChange?.(next)
       await invalidateFindingsCache()
       // No Undo on a closing move (resolve): reverting it is a reopen, which
@@ -178,6 +206,7 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     } catch (error) {
       setStatus(previous)
       setSubStatusId(previousSub)
+      if (await changedMeanwhile(error)) return
       toast.error(
         getErrorMessage(error, t('findings.triage.statusFailed', 'Failed to update status'))
       )
@@ -192,8 +221,11 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   const submitSeverity = async (target: { to: string; restore: boolean }, reason: string) => {
     try {
       const updated = await updateSeverity(
-        target.restore ? { restore: true, reason } : { severity: target.to as Severity, reason }
+        target.restore
+          ? { restore: true, reason, rowVersion: rowVersion.current }
+          : { severity: target.to as Severity, reason, rowVersion: rowVersion.current }
       )
+      wrote(updated)
       setSeverityTarget(null)
       if (updated) {
         await mutateSWR(
@@ -235,6 +267,7 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
         })
       )
     } catch (error) {
+      if (await changedMeanwhile(error)) return
       toast.error(
         getErrorMessage(error, t('findings.triage.severityFailed', 'Failed to update severity'))
       )
@@ -256,8 +289,8 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     const previous = assignee ?? null
     setAssignee(next ?? undefined)
     try {
-      if (next) await assignUser({ user_id: next.id })
-      else await unassignUser()
+      if (next) wrote(await assignUser({ user_id: next.id, rowVersion: rowVersion.current }))
+      else wrote(await unassignUser({ rowVersion: rowVersion.current }))
       opts.onAssigneeChange?.(next)
       await invalidateFindingsCache()
       toast.success(
@@ -276,6 +309,7 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       )
     } catch (error) {
       setAssignee(previous ?? undefined)
+      if (await changedMeanwhile(error)) return
       toast.error(
         getErrorMessage(
           error,

@@ -14,14 +14,14 @@ func TestFilter_IsEmpty_CTEMDimensions(t *testing.T) {
 	}
 
 	cases := map[string]Filter{
-		"business_unit_ids":      NewFilter().WithBusinessUnitIDs("bu"),
-		"has_owner":              NewFilter().WithHasOwner(true),
-		"data_classifications":   NewFilter().WithDataClassifications("secret"),
-		"is_control_plane":       NewFilter().WithIsControlPlane(true),
-		"is_internet_accessible": NewFilter().WithIsInternetAccessible(true),
-		"environments":           NewFilter().WithEnvironments("production"),
-		"last_seen_after":        NewFilter().WithLastSeenAfter(time.Now()),
-		"last_seen_before":       NewFilter().WithLastSeenBefore(time.Now()),
+		"business_unit_ids":    NewFilter().WithBusinessUnitIDs("bu"),
+		"has_owner":            NewFilter().WithHasOwner(true),
+		"data_classifications": NewFilter().WithDataClassifications("secret"),
+		"is_control_plane":     NewFilter().WithIsControlPlane(true),
+		"internet_facing":      NewFilter().WithInternetFacing(true),
+		"environments":         NewFilter().WithEnvironments("production"),
+		"last_seen_after":      NewFilter().WithLastSeenAfter(time.Now()),
+		"last_seen_before":     NewFilter().WithLastSeenBefore(time.Now()),
 	}
 	for name, f := range cases {
 		if f.IsEmpty() {

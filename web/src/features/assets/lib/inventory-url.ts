@@ -38,7 +38,7 @@ export type InventoryFilters = Pick<
   | 'businessUnitIds'
   | 'hasOwner'
   | 'isControlPlane'
-  | 'isInternetAccessible'
+  | 'isInternetFacing'
   | 'isCrownJewel'
   | 'programAssets'
   | 'freshness'
@@ -96,7 +96,7 @@ const ARRAY_PARAMS = {
 const BOOL_PARAMS = {
   hasOwner: 'has_owner',
   isControlPlane: 'is_control_plane',
-  isInternetAccessible: 'is_internet_accessible',
+  isInternetFacing: 'internet_facing',
   isCrownJewel: 'is_crown_jewel',
   hasFindings: 'has_findings',
 } as const

@@ -57,9 +57,9 @@ func TestBuildWhereClause_CTEMDimensions(t *testing.T) {
 			wantContains: []string{"NOT EXISTS (SELECT 1 FROM asset_relationships ar"},
 		},
 		{
-			name:         "internet accessible",
-			filter:       asset.NewFilter().WithIsInternetAccessible(true),
-			wantContains: []string{"a.is_internet_accessible = $"},
+			name:         "internet facing",
+			filter:       asset.NewFilter().WithInternetFacing(true),
+			wantContains: []string{asset.InternetFacingSQL("a") + " = $"},
 			wantArg:      true,
 		},
 		{
