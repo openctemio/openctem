@@ -2170,7 +2170,13 @@ vars:
     group: "Gateway"
     type: string
     default: "/data"
-    description: "Caddy storage: certificates, ACME account, internal CA. Keep it on a volume."
+    description: "Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. The all-in-one image uses `/data/gateway` (it moves an older `/data/caddy` there on start)."
+  - name: OPENCTEM_CADDY_ADMIN
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "127.0.0.1:2019"
+    description: "Address of Caddy's admin API. The all-in-one image sets a unix socket only the gateway's uid can open (`unix/<dir>/admin.sock|0600`), because every process there shares one network namespace."
   - name: OPENCTEM_API_UPSTREAM
     component: gateway
     group: "Gateway"

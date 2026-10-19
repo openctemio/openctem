@@ -49,9 +49,9 @@ func (t *fakeRotationTasks) CreateTask(_ context.Context, rec *remediation.NewTa
 	return nil
 }
 
-func (t *fakeRotationTasks) AddMembers(_ context.Context, _, taskID shared.ID, _ int, ids []shared.ID, _ remediation.MemberRole, _ remediation.JoinSource, _ *shared.ID) (*remediation.Task, error) {
-	t.joined[taskID] = append(t.joined[taskID], ids...)
-	return nil, nil
+func (t *fakeRotationTasks) AddMembers(_ context.Context, req remediation.AddMembersRequest) (*remediation.Task, *remediation.ClaimReport, error) {
+	t.joined[req.TaskID] = append(t.joined[req.TaskID], req.FindingIDs...)
+	return nil, nil, nil
 }
 
 func secretFinding(rule, fp string, valid *bool) cirun.RunFinding {

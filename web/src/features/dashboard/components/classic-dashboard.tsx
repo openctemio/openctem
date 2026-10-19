@@ -38,7 +38,7 @@ import {
   severityChartData,
 } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
-import { actionableTotal, severityCounts } from '@/lib/severity'
+import { severityCounts } from '@/lib/severity'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { INFORMATIONAL_LABEL, SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
@@ -515,11 +515,19 @@ export function ClassicDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                    {/* Informational findings are counted beside the total, not in it. */}
+                    {/* "Open findings" is the open list (state=open), informational
+                        included, the same figure as every other surface. */}
                     <QuickStat
                       label={t('dashboardMetrics.classic.openFindings')}
-                      value={actionableTotal(severityCounts(stats.findings.bySeverity))}
-                      subtext={`+${severityCounts(stats.findings.bySeverity).info} informational · Avg CVSS: ${stats.findings.averageCvss.toFixed(1)}`}
+                      value={stats.findings.total}
+                      subtext={t(
+                        'dashboardMetrics.classic.openFindingsSub',
+                        'incl. {info} informational · Avg CVSS: {cvss}',
+                        {
+                          info: severityCounts(stats.findings.bySeverity).info,
+                          cvss: stats.findings.averageCvss.toFixed(1),
+                        }
+                      )}
                     />
                     <QuickStat
                       label={t('dashboardMetrics.classic.openCritical')}
