@@ -83,13 +83,17 @@ func NewPriorityRuleRepository(db *DB) *PriorityRuleRepository {
 	return &PriorityRuleRepository{db: db}
 }
 
+// ListActiveByTenant returns the tenant's active rules in evaluation order:
+// highest evaluation_order first, ties broken by creation time then id, so
+// two overlapping rules with the same order always pick the same winner
+// (the class of a finding never flips between passes).
 func (r *PriorityRuleRepository) ListActiveByTenant(ctx context.Context, tenantID shared.ID) ([]*vulnerability.PriorityOverrideRule, error) {
 	query := `
-		SELECT id, tenant_id, name, description, priority_class, conditions,
+		SELECT id, tenant_id, name, COALESCE(description, ''), priority_class, conditions,
 			is_active, evaluation_order, created_by, updated_by, created_at, updated_at
 		FROM priority_override_rules
 		WHERE tenant_id = $1 AND is_active = true
-		ORDER BY evaluation_order DESC
+		ORDER BY evaluation_order DESC, created_at, id
 	`
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {
