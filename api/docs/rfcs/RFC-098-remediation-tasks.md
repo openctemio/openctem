@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab; claim conflicts (409 with per-finding details, skip or audited move) |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -113,10 +113,36 @@ Algorithms propose; a person with permission accepts.
    cap falls back to suggestions.
 
 Each accept is one transaction: the suggestion is locked at the version the person saw (409 when it changed),
-its findings are locked and re-checked, and findings that closed or joined another task since are left out and
-listed (`dropped`). Removed findings go to `remediation_key_exclusions`. Bulk accept takes up to 50
+its findings are claimed (§6.1): findings that closed since are left out and listed (`dropped`); findings that
+joined another active task since refuse the accept unless the request skips or moves them. Removed findings go to `remediation_key_exclusions`. Bulk accept takes up to 50
 suggestions and 5000 findings, each on its own. Turning auto-join on needs a caller with access to every asset
 (the rule acts on findings they may not see); `upgrade` and `rotate` keys only (also a table CHECK).
+
+### 6.1 Claim conflicts
+
+A finding is the primary member of at most one active task (`ux_remediation_task_members_primary`). Every path
+that adds primary members (accepting a suggestion, creating a task, adding members) claims the findings in its
+transaction: the tasks to move out of are locked in id order, then the findings in id order; each finding is
+closed (an accept drops it and lists it), free, or taken by another active task. A taken finding refuses the
+whole request with 409:
+
+```
+{"code": "FINDINGS_IN_OTHER_TASK", "message": "...", "details": {"conflicts": [
+  {"finding_id": "...", "finding_title": "...", "task_id": "...", "task_title": "..." | null,
+   "assignee_user_id": "..." | null, "assignee_group_id": "..." | null, "can_move": true | false}]}}
+```
+
+`task_title` and the assignee are null when the caller cannot read the holding task (they learn only that the
+finding is taken). `can_move` is true when the caller holds `findings:remediation:write` and may change the
+holding task (it is visible and none of its findings is outside their scope). The request resolves conflicts
+with one field, the same on every path: `"conflicts": {"skip": true}` leaves every taken finding out (listed
+in `skipped` on an accept), and `"conflicts": {"move": [ids], "move_reason": "..."}` moves the named findings
+and skips the others. A move needs a reason (at most 500 characters) and write access to every holding task
+(403 otherwise); it ends the source membership (`left_reason = 'moved'`, history kept), writes a timeline entry
+on the finding and on both tasks, recomputes the source (archived when emptied), keeps the finding's SLA, writes
+one `remediation_task.findings_moved` audit row per source task and tells the trackers of both tasks. Related
+links carry no status and are never a conflict. Of two concurrent claims of one finding exactly one wins (the
+finding rows are locked; the unique index is the backstop) and the other answers 409.
 
 ## 7. Moves, split, merge, detach
 
@@ -179,11 +205,11 @@ before the next pass.
 
 ```
 GET   /api/v1/remediation/tasks                          list (state, assignee=me, group, action, campaign, finding, search, sort)
-POST  /api/v1/remediation/tasks                          create from findings (409 FINDINGS_IN_OTHER_TASK)
+POST  /api/v1/remediation/tasks                          create from findings (409 FINDINGS_IN_OTHER_TASK unless conflicts resolves it, §6.1)
 GET   /api/v1/remediation/tasks/{task_id}
 PATCH /api/v1/remediation/tasks/{task_id}                title, description, owner, deadline, campaign, hold/resume/cancel; version required
 GET   /api/v1/remediation/tasks/{task_id}/members
-POST  /api/v1/remediation/tasks/{task_id}/members        add primary or related findings; version required
+POST  /api/v1/remediation/tasks/{task_id}/members        add primary or related findings; version required; conflicts (§6.1)
 POST  /api/v1/remediation/tasks/{task_id}/resolve        mark fixed: each open finding claimed fixed and re-checked
 GET   /api/v1/remediation/tasks/{task_id}/ticket-links   the task's tracker issue links
 POST  /api/v1/remediation/tasks/{task_id}/ticket-links   create the task's Jira issue (409 when it has one)
@@ -199,7 +225,7 @@ PATCH /api/v1/remediation/suggestions/{id}               snooze (snoozed_until, 
 GET   /api/v1/remediation/suggestions/{id}/members
 POST  /api/v1/remediation/suggestions/{id}/reject        dismiss with a reason; version required
 POST  /api/v1/remediation/suggestions/{id}/reopen        undo a dismissal or a snooze
-POST  /api/v1/remediation/suggestions/{id}/approve       accept, optionally edited (title, removed findings, owners, deadline, auto_join)
+POST  /api/v1/remediation/suggestions/{id}/approve       accept, optionally edited (title, removed findings, owners, deadline, auto_join); conflicts (§6.1)
 POST  /api/v1/remediation/suggestions/approve            accept several as they are
 GET   /api/v1/remediation/actions/{id}
 PATCH /api/v1/remediation/actions/{id}                   auto_join on or off
@@ -227,11 +253,14 @@ auto-join stay with write. Marking findings fixed will also need `findings:fix_a
   bulk path with its permission, note and abuse guard; closing comes only from per-member verification.
 - **Concurrency:** every change carries the task `version`; the task row and the finding rows are locked in a
   fixed order; the background recompute locks the tasks it writes.
+- **Claim conflicts (§6.1):** the 409 names the holding task's title and owner only to a caller who can read
+  it; moving needs write access to the holding task, checked before the transaction and again inside it (a
+  finding that changed task since is refused, not moved); another tenant's finding is not found.
 - **Suggestions:** a restricted member sees a suggestion only through its findings in their scope; the ids
   and owner partitions of the others are not returned (`hidden_members` counts them), and they may not decide
   on it. The generator runs as the platform but writes only proposals.
 - **Audit:** `remediation_task.created`, `.updated`, `.members_added`, `.state_changed` (hold, resume, cancel);
-  `remediation_task.members_moved`, `.split`, `.merged`, `.fix_claimed`; `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`, `.accepted`;
+  `remediation_task.members_moved`, `.findings_moved` (a resolved claim conflict, one row per source task), `.split`, `.merged`, `.fix_claimed`; `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`, `.accepted`;
   `remediation_action.auto_join_changed`.
 
 ## 12. Rollout

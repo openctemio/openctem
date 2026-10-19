@@ -446,6 +446,9 @@ type ApproveRemediationSuggestionRequest struct {
 	Owners            []RemediationSuggestionOwnerInput `json:"owners,omitempty"`
 	Deadline          string                            `json:"deadline,omitempty"`
 	AutoJoin          bool                              `json:"auto_join,omitempty"`
+	// Conflicts resolves findings another active task took since the
+	// suggestion was made.
+	Conflicts *RemediationConflictsInput `json:"conflicts,omitempty"`
 }
 
 // RemediationSuggestionOwnerInput names another owner for one partition.
@@ -461,12 +464,21 @@ type RemediationAcceptResponse struct {
 	ActionID     string   `json:"action_id"`
 	TaskIDs      []string `json:"task_ids"`
 	Joined       int      `json:"joined"`
-	Dropped      []string `json:"dropped"`
+	// Dropped are findings that closed since the suggestion was made.
+	Dropped []string `json:"dropped"`
+	// Skipped are findings of another active task left out as asked.
+	Skipped []string `json:"skipped"`
+	// Moved counts findings moved out of another task as asked.
+	Moved int `json:"moved"`
 }
 
 func toAcceptResp(r *remediation.AcceptResult) RemediationAcceptResponse {
 	out := RemediationAcceptResponse{SuggestionID: r.SuggestionID.String(), ActionID: r.ActionID.String(),
-		TaskIDs: make([]string, 0, len(r.TaskIDs)), Joined: r.Joined, Dropped: make([]string, 0, len(r.Dropped))}
+		TaskIDs: make([]string, 0, len(r.TaskIDs)), Joined: r.Joined, Dropped: make([]string, 0, len(r.Dropped)),
+		Skipped: make([]string, 0, len(r.Skipped)), Moved: r.Moved}
+	for _, id := range r.Skipped {
+		out.Skipped = append(out.Skipped, id.String())
+	}
 	for _, id := range r.TaskIDs {
 		out.TaskIDs = append(out.TaskIDs, id.String())
 	}
@@ -478,7 +490,7 @@ func toAcceptResp(r *remediation.AcceptResult) RemediationAcceptResponse {
 
 // Approve accepts a suggestion.
 // @Summary      Accept (approve) a remediation suggestion
-// @Description  Creates what the suggestion proposes: a new group creates the action and one task per owner; a join adds the findings to the owner's task; a task route creates a task under the existing action. Optional edits: title, findings to remove (remembered for this fix), other owners per partition, a deadline (it only tightens), and the auto-join rule (exact keys only, needs access to every asset). Findings that closed or joined another task since are left out and listed in dropped. A member without findings:remediation:write may accept, as it is, a join into their own task or a task route to them when every finding is on an asset they own.
+// @Description  Creates what the suggestion proposes: a new group creates the action and one task per owner; a join adds the findings to the owner's task; a task route creates a task under the existing action. Optional edits: title, findings to remove (remembered for this fix), other owners per partition, a deadline (it only tightens), and the auto-join rule (exact keys only, needs access to every asset). Findings that closed since are left out and listed in dropped. Findings another active task took since answer 409 FINDINGS_IN_OTHER_TASK with details.conflicts unless conflicts says to skip them (listed in skipped) or move named ones (needs write access to the holding task, else 403; counted in moved). A member without findings:remediation:write may accept, as it is, a join into their own task or a task route to them when every finding is on an asset they own.
 // @Tags         Remediation
 // @Accept       json
 // @Produce      json
@@ -511,6 +523,10 @@ func (h *RemediationSuggestionHandler) Approve(w http.ResponseWriter, r *http.Re
 	in.AsOwner = !middleware.HasPermission(r.Context(), permission.RemediationWrite.String())
 	var err error
 	if in.Exclude, err = parseIDList("exclude_finding_ids", req.ExcludeFindingIDs); err != nil {
+		h.handleError(w, err)
+		return
+	}
+	if in.Conflicts, err = parseConflicts(req.Conflicts); err != nil {
 		h.handleError(w, err)
 		return
 	}
