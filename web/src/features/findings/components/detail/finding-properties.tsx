@@ -25,6 +25,7 @@ import type { FindingTriage } from '../../hooks/use-finding-triage'
 import { StatusSelect } from '../status-select'
 import { FindingTicketLinks } from './finding-ticket-links'
 import { SeveritySelect } from '../severity-select'
+import { SeverityProvenance } from './severity-provenance'
 import { useCanMutate } from '@/lib/permissions'
 import { AssigneeSelect } from '../assignee-select'
 import { PriorityClassBadge } from '../priority-class-badge'
@@ -183,9 +184,14 @@ export function FindingProperties({
               value={triage.severity}
               onChange={triage.changeSeverity}
               loading={triage.severityBusy}
-              disabled={locked || !canRescore}
+              disabled={locked || !canRescore || !!finding.pendingSeverityRequest}
               cvss={finding.cvss}
               showIcon={false}
+            />
+            <SeverityProvenance
+              finding={finding}
+              canRescore={!locked && canRescore}
+              onRestore={triage.restoreSeverity}
             />
           </Row>
         </>

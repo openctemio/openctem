@@ -448,7 +448,7 @@ func TestDataScope_ByIDWrites_OutOfScopeIs404AndUnchanged(t *testing.T) {
 		body         any
 	}{
 		{http.MethodPatch, fb + "/status", map[string]any{"status": "in_progress"}},
-		{http.MethodPatch, fb + "/severity", map[string]any{"severity": "low"}},
+		{http.MethodPatch, fb + "/severity", map[string]any{"severity": "low", "reason": "probe"}},
 		{http.MethodPatch, fb + "/triage", map[string]any{"reason": "x"}},
 		{http.MethodPut, fb + "/tags", map[string]any{"tags": []string{"pwned"}}},
 		{http.MethodPost, fb + "/assign", map[string]any{"user_id": h.memberA.String()}},
@@ -483,13 +483,14 @@ func TestDataScope_ByIDWrites_OutOfScopeIs404AndUnchanged(t *testing.T) {
 		t.Errorf("exposure B changed by an out-of-scope member: state=%s", expState)
 	}
 
-	// The same member can still change their own group's finding.
+	// The same member can still change their own group's finding (an
+	// upgrade: a downgrade may wait for approval).
 	if status, body := h.do(h.memberA, false, http.MethodPatch, "/api/v1/findings/"+h.findingA.String()+"/severity",
-		map[string]any{"severity": "low"}); status != http.StatusOK {
+		map[string]any{"severity": "critical", "reason": "in-scope change"}); status != http.StatusOK {
 		t.Errorf("memberA PATCH in-scope severity = %d, want 200 (body %.200s)", status, body)
 	}
 	// And an admin can change group B's.
-	if status, body := h.do(h.owner, true, http.MethodPatch, fb+"/severity", map[string]any{"severity": "medium"}); status != http.StatusOK {
+	if status, body := h.do(h.owner, true, http.MethodPatch, fb+"/severity", map[string]any{"severity": "critical", "reason": "admin change"}); status != http.StatusOK {
 		t.Errorf("owner PATCH FB severity = %d, want 200 (body %.200s)", status, body)
 	}
 }
