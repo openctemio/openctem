@@ -1374,9 +1374,6 @@ func (c *EncryptionConfig) IsConfigured() bool {
 // This is the platform-level configuration. Tenant-specific settings
 // are stored in tenant.Settings.AI.
 type AITriageConfig struct {
-	// Enabled controls whether AI triage feature is available platform-wide.
-	Enabled bool
-
 	// Platform AI Provider Configuration
 	// Used when tenants choose "platform" mode (don't provide their own keys)
 	PlatformProvider string // "claude", "openai", or "gemini"
@@ -1386,9 +1383,13 @@ type AITriageConfig struct {
 	GeminiAPIKey     string // Platform's Google Gemini API key
 
 	// Rate Limiting
-	RateLimitRPM   int // Rate limit per minute
-	TimeoutSeconds int // Timeout for AI API calls
-	MaxTokens      int // Max tokens per request
+	RateLimitRPM int // Rate limit per minute, per provider key
+	// RateLimitTenantRPM is each organization's share of the platform key's
+	// allowance: a bucket per organization in front of the shared one, so
+	// one organization cannot starve the others. 0 turns it off.
+	RateLimitTenantRPM int
+	TimeoutSeconds     int // Timeout for AI API calls
+	MaxTokens          int // Max tokens per request
 
 	// LLM Parameters
 	Temperature float64 // Temperature for LLM (0.0-1.0, lower = more deterministic)
@@ -1404,10 +1405,8 @@ type AITriageConfig struct {
 	RecoveryStuckDuration time.Duration // How long before a job is considered stuck (default: 15 minutes)
 	RecoveryBatchSize     int           // Max jobs to recover per run (default: 50)
 
-	// Per-tenant LLM token budget (RFC-008 Phase 1).
-	// BudgetEnabled defaults to false — the budget service is wired
-	// but Check() returns nil so no tenant is blocked. Flip to true
-	// per RFC-008 Phase 2 rollout after backfill + dashboards ship.
+	// Per-tenant monthly LLM token budget for platform AI (RFC-008). On by
+	// default: the platform's key is a shared cost.
 	BudgetEnabled bool
 	// BudgetStrict controls the fail-mode when the budget repo is
 	// unreachable. In production (strict=true) a repo outage blocks
@@ -1415,18 +1414,28 @@ type AITriageConfig struct {
 	// staging (strict=false) we log and proceed. Defaults to false
 	// to match "flag off = zero behaviour change" on first deploy.
 	BudgetStrict bool
-	// BudgetDefaultTokensPerMonth is the fallback ceiling applied when
-	// a tenant has no row in ai_triage_budgets for the current month
-	// AND no per-plan override. 0 = unlimited (back-compat). A paying
-	// SaaS deployment typically sets this at plan-onboarding time,
-	// not here.
+	// BudgetDefaultTokensPerMonth is the ceiling of a month's budget row
+	// when it is created (one row per organization and month). 0 =
+	// unlimited.
 	BudgetDefaultTokensPerMonth int64
 }
 
-// IsConfigured returns true if AI triage is properly configured.
-// This checks if at least one LLM provider API key is set.
-// Note: The Enabled field is deprecated - feature availability is now controlled
-// by the module's is_active field in the database.
+// TenantShareRPM is an organization's share of the platform allowance per
+// minute: AI_RATE_LIMIT_TENANT_RPM, never above AI_RATE_LIMIT_RPM. 0: off.
+func (c *AITriageConfig) TenantShareRPM() int {
+	if c.RateLimitTenantRPM <= 0 {
+		return 0
+	}
+	if c.RateLimitRPM > 0 && c.RateLimitTenantRPM > c.RateLimitRPM {
+		return c.RateLimitRPM
+	}
+	return c.RateLimitTenantRPM
+}
+
+// IsConfigured reports whether an environment provider key is set: such a
+// key makes platform AI available and pins the provider (the console's
+// platform AI applies otherwise). Each organization still turns AI triage on
+// itself.
 func (c *AITriageConfig) IsConfigured() bool {
 	// Need at least one provider API key configured
 	return c.AnthropicAPIKey != "" || c.OpenAIAPIKey != "" || c.GeminiAPIKey != ""
@@ -1832,13 +1841,13 @@ func Load() (*Config, error) {
 			BatchSize:     getEnvInt("ADMIN_AUDIT_RETENTION_BATCH_SIZE", 10000),
 		},
 		AITriage: AITriageConfig{
-			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),
 			PlatformProvider:            getEnv("AI_PLATFORM_PROVIDER", "claude"),
 			PlatformModel:               getEnv("AI_PLATFORM_MODEL", "claude-sonnet-4-20250514"),
 			AnthropicAPIKey:             getEnv("ANTHROPIC_API_KEY", ""),
 			OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 			GeminiAPIKey:                getEnv("GEMINI_API_KEY", ""),
 			RateLimitRPM:                getEnvInt("AI_RATE_LIMIT_RPM", 60),
+			RateLimitTenantRPM:          getEnvInt("AI_RATE_LIMIT_TENANT_RPM", 20),
 			TimeoutSeconds:              getEnvInt("AI_TIMEOUT_SECONDS", 30),
 			MaxTokens:                   getEnvInt("AI_MAX_TOKENS", 4096),
 			Temperature:                 getEnvFloat("AI_TEMPERATURE", 0.1),
@@ -1849,10 +1858,9 @@ func Load() (*Config, error) {
 			RecoveryInterval:            getEnvDuration("AI_TRIAGE_RECOVERY_INTERVAL", 5*time.Minute),
 			RecoveryStuckDuration:       getEnvDuration("AI_TRIAGE_RECOVERY_STUCK_DURATION", 15*time.Minute),
 			RecoveryBatchSize:           getEnvInt("AI_TRIAGE_RECOVERY_BATCH_SIZE", 50),
-			// RFC-008 Phase 1: budget service wired but OFF by default.
-			BudgetEnabled:               getEnvBool("AI_TRIAGE_BUDGET_ENABLED", false),
+			BudgetEnabled:               getEnvBool("AI_TRIAGE_BUDGET_ENABLED", true),
 			BudgetStrict:                getEnvBool("AI_TRIAGE_BUDGET_STRICT", false),
-			BudgetDefaultTokensPerMonth: int64(getEnvInt("AI_TRIAGE_BUDGET_DEFAULT_TOKENS", 0)),
+			BudgetDefaultTokensPerMonth: int64(getEnvInt("AI_TRIAGE_BUDGET_DEFAULT_TOKENS", 2000000)),
 		},
 	}
 
@@ -2689,6 +2697,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"WORKER_HEALTH_CHECK_ENABLED", "unset it; the sensor health controller owns sensor liveness and the legacy checker was removed"},
 	{"WORKER_HEALTH_CHECK_INTERVAL", "unset it; the sensor health controller owns sensor liveness and the legacy checker was removed"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
+	{"AI_TRIAGE_ENABLED", "unset it; a provider key (environment or console) makes platform AI available, and each organization turns AI triage on in Settings > AI"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > Settings > Sign-up)"},
 	{"TENANT_CREATION_MODE", "unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open"},
 	// The platform SMTP server is set in the admin console (RFC-079).

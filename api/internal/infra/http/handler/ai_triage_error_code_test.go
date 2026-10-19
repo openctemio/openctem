@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -41,5 +46,29 @@ func TestAITriageHandler_ErrorCodes(t *testing.T) {
 		if strings.Contains(rec.Body.String(), "10.0.0.5") || strings.Contains(rec.Body.String(), "campaign_tlp") {
 			t.Errorf("%v: internal detail leaked: %s", tc.err, rec.Body.String())
 		}
+	}
+}
+
+// A bulk request counts each finding toward the tenant's AI triage rate
+// limit: past the allowance it is refused before anything is queued.
+func TestAITriageHandler_BulkCountsEachFinding(t *testing.T) {
+	svc := aitriage.NewAITriageService(nil, nil, nil, nil, nil, config.AITriageConfig{}, logger.NewNop())
+	h := NewAITriageHandler(svc, logger.NewNop())
+	var asked int
+	h.SetBulkAllowance(func(tenantID string, n int) bool {
+		asked = n
+		return n <= 4
+	})
+	ids := make([]string, 12)
+	for i := range ids {
+		ids[i] = shared.NewID().String()
+	}
+	body, _ := json.Marshal(map[string]any{"finding_ids": ids})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/ai-triage/bulk", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, shared.NewID().String()))
+	rec := httptest.NewRecorder()
+	h.RequestBulkTriage(rec, req)
+	if rec.Code != http.StatusTooManyRequests || asked != 11 {
+		t.Fatalf("status=%d asked=%d, want 429 after asking for 11 more units", rec.Code, asked)
 	}
 }

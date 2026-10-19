@@ -134,9 +134,10 @@ How each applies without a restart:
   and the webhook. The address is treated as a credential (only its host is
   shown); delivery never follows the address into a log or error.
 - AI provider: the AI client reads the console provider per request when no
-  environment key is set; AI triage is always available for organizations
-  that bring their own key, and platform mode is refused with a clear message
-  until a provider is on.
+  environment key is set; platform mode is refused with a clear message
+  (`AI_PLATFORM_NOT_CONFIGURED`) until a provider is on. A provider sends
+  nothing by itself: each organization turns AI triage on in Settings > AI
+  ([AI triage](ai-triage.md)).
 
 ## Installer settings
 

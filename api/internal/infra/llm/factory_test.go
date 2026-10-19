@@ -21,7 +21,6 @@ func TestFactory_CreateProvider(t *testing.T) {
 		{
 			name: "platform mode with claude",
 			platformConfig: config.AITriageConfig{
-				Enabled:          true,
 				PlatformProvider: "claude",
 				AnthropicAPIKey:  "test-key",
 			},
@@ -34,7 +33,6 @@ func TestFactory_CreateProvider(t *testing.T) {
 		{
 			name: "platform mode with openai",
 			platformConfig: config.AITriageConfig{
-				Enabled:          true,
 				PlatformProvider: "openai",
 				OpenAIAPIKey:     "test-key",
 			},
@@ -45,10 +43,8 @@ func TestFactory_CreateProvider(t *testing.T) {
 			wantErr:      false,
 		},
 		{
-			name: "byok mode with claude",
-			platformConfig: config.AITriageConfig{
-				Enabled: true,
-			},
+			name:           "byok mode with claude",
+			platformConfig: config.AITriageConfig{},
 			aiSettings: tenant.AISettings{
 				Mode:     tenant.AIModeBYOK,
 				Provider: tenant.LLMProviderClaude,
@@ -58,10 +54,8 @@ func TestFactory_CreateProvider(t *testing.T) {
 			wantErr:      false,
 		},
 		{
-			name: "byok mode with openai",
-			platformConfig: config.AITriageConfig{
-				Enabled: true,
-			},
+			name:           "byok mode with openai",
+			platformConfig: config.AITriageConfig{},
 			aiSettings: tenant.AISettings{
 				Mode:     tenant.AIModeBYOK,
 				Provider: tenant.LLMProviderOpenAI,
@@ -71,10 +65,8 @@ func TestFactory_CreateProvider(t *testing.T) {
 			wantErr:      false,
 		},
 		{
-			name: "disabled mode",
-			platformConfig: config.AITriageConfig{
-				Enabled: true,
-			},
+			name:           "disabled mode",
+			platformConfig: config.AITriageConfig{},
 			aiSettings: tenant.AISettings{
 				Mode: tenant.AIModeDisabled,
 			},
@@ -82,21 +74,17 @@ func TestFactory_CreateProvider(t *testing.T) {
 			errContains: "disabled",
 		},
 		{
-			name: "platform not enabled",
-			platformConfig: config.AITriageConfig{
-				Enabled: false,
-			},
+			name:           "platform without a key",
+			platformConfig: config.AITriageConfig{},
 			aiSettings: tenant.AISettings{
 				Mode: tenant.AIModePlatform,
 			},
 			wantErr:     true,
-			errContains: "not enabled",
+			errContains: "not configured",
 		},
 		{
-			name: "byok without API key",
-			platformConfig: config.AITriageConfig{
-				Enabled: true,
-			},
+			name:           "byok without API key",
+			platformConfig: config.AITriageConfig{},
 			aiSettings: tenant.AISettings{
 				Mode:     tenant.AIModeBYOK,
 				Provider: tenant.LLMProviderClaude,
@@ -108,7 +96,6 @@ func TestFactory_CreateProvider(t *testing.T) {
 		{
 			name: "empty mode defaults to platform",
 			platformConfig: config.AITriageConfig{
-				Enabled:          true,
 				PlatformProvider: "claude",
 				AnthropicAPIKey:  "test-key",
 			},
@@ -121,7 +108,6 @@ func TestFactory_CreateProvider(t *testing.T) {
 		{
 			name: "platform claude without API key",
 			platformConfig: config.AITriageConfig{
-				Enabled:          true,
 				PlatformProvider: "claude",
 				AnthropicAPIKey:  "", // missing
 			},
@@ -134,7 +120,6 @@ func TestFactory_CreateProvider(t *testing.T) {
 		{
 			name: "platform openai without API key",
 			platformConfig: config.AITriageConfig{
-				Enabled:          true,
 				PlatformProvider: "openai",
 				OpenAIAPIKey:     "", // missing
 			},
@@ -176,7 +161,6 @@ func TestFactory_IsPlatformEnabled(t *testing.T) {
 		{
 			name: "enabled with claude key",
 			platformConfig: config.AITriageConfig{
-				Enabled:          true,
 				PlatformProvider: "claude",
 				AnthropicAPIKey:  "test-key",
 			},
@@ -185,26 +169,22 @@ func TestFactory_IsPlatformEnabled(t *testing.T) {
 		{
 			name: "enabled with openai key",
 			platformConfig: config.AITriageConfig{
-				Enabled:          true,
 				PlatformProvider: "openai",
 				OpenAIAPIKey:     "test-key",
 			},
 			want: true,
 		},
 		{
-			name: "disabled",
+			name: "a key is enough",
 			platformConfig: config.AITriageConfig{
-				Enabled:         false,
 				AnthropicAPIKey: "test-key",
 			},
-			want: false,
+			want: true,
 		},
 		{
-			name: "enabled but no keys",
-			platformConfig: config.AITriageConfig{
-				Enabled: true,
-			},
-			want: false,
+			name:           "enabled but no keys",
+			platformConfig: config.AITriageConfig{},
+			want:           false,
 		},
 	}
 
@@ -217,9 +197,7 @@ func TestFactory_IsPlatformEnabled(t *testing.T) {
 }
 
 func TestFactory_CreateProvider_WithModelOverride(t *testing.T) {
-	factory := NewFactory(config.AITriageConfig{
-		Enabled: true,
-	})
+	factory := NewFactory(config.AITriageConfig{})
 
 	t.Run("BYOK claude with model override", func(t *testing.T) {
 		provider, err := factory.CreateProvider(tenant.AISettings{

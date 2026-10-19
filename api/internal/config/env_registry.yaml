@@ -1776,6 +1776,12 @@ vars:
     type: int
     default: "60"
     description: "Completions per minute per API key. `0` or less turns the cap off."
+  - name: AI_RATE_LIMIT_TENANT_RPM
+    component: api
+    group: "AI triage"
+    type: int
+    default: "20"
+    description: "Each organization's share of the platform key's completions per minute (a bucket per organization in front of `AI_RATE_LIMIT_RPM`), so one organization cannot starve the others. `0` turns it off. Organizations with their own key have their own allowance."
   - name: AI_TEMPERATURE
     component: api
     group: "AI triage"
@@ -1792,26 +1798,20 @@ vars:
     component: api
     group: "AI triage"
     type: int
-    default: "0"
-    description: "Monthly token budget of an organization without its own."
+    default: "2000000"
+    description: "Monthly platform AI token budget of an organization, set on its month's budget row when the row is created. `0` means unlimited."
   - name: AI_TRIAGE_BUDGET_ENABLED
     component: api
     group: "AI triage"
     type: bool
-    default: "false"
-    description: "Enforce the per-organization monthly token budget."
+    default: "true"
+    description: "Enforce the per-organization monthly token budget for platform AI (organizations with their own key are not counted)."
   - name: AI_TRIAGE_BUDGET_STRICT
     component: api
     group: "AI triage"
     type: bool
     default: "false"
     description: "With the budget on: refuse triage when the budget store cannot be read (otherwise log and continue)."
-  - name: AI_TRIAGE_ENABLED
-    component: api
-    group: "AI triage"
-    type: bool
-    default: "false"
-    description: "Deprecated and ignored: availability follows the provider keys and the AI triage module."
   - name: AI_TRIAGE_RECOVERY_BATCH_SIZE
     component: api
     group: "AI triage"

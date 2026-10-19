@@ -464,6 +464,8 @@ func registerAITriageRoutes(
 	postMiddlewares = append(postMiddlewares, tenantMiddlewares...)
 	if rateLimiter != nil {
 		postMiddlewares = append(postMiddlewares, rateLimiter.RequestMiddleware())
+		// A bulk request spends one unit per finding, not one per request.
+		h.SetBulkAllowance(rateLimiter.AllowExtra)
 	}
 
 	// AI triage routes - tenant from JWT token
@@ -495,7 +497,7 @@ func registerAITriageRoutes(
 	})
 	router.POST("/api/v1/findings/ai-triage/bulk", h.RequestBulkTriage,
 		append(append([]Middleware{bulkTriageDeprecated}, postMiddlewares...),
-			middleware.RequireAll(permission.FindingsWrite, permission.AITriageTrigger))...)
+			middleware.RequireAll(permission.FindingsWrite, permission.FindingsBulkUpdate, permission.AITriageTrigger))...)
 
 	// AI triage config endpoint - returns current AI mode, provider, model
 	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig,
