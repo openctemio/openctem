@@ -700,8 +700,8 @@ export const assetEndpoints = {
     `${API_BASE.ASSETS}/${assetId}/owners/${ownerId}`,
 
   /**
-   * Explicit per-user data-scope grants. Being an owner gives no access;
-   * groups and these grants do (team:groups:read / team:groups:write).
+   * Explicit per-user data-scope grants: with groups and primary / secondary
+   * ownership, who sees the asset (team:groups:read / team:groups:write).
    */
   listAccessGrants: (assetId: string) => `${API_BASE.ASSETS}/${assetId}/access-grants`,
   createAccessGrant: (assetId: string) => `${API_BASE.ASSETS}/${assetId}/access-grants`,
