@@ -21,7 +21,7 @@ func TestBuildFilterWhere_VisibilityRules(t *testing.T) {
 	for _, want := range []string{
 		"f.cve_id = ANY($2)",
 		"f.pentest_campaign_id IN (\n\t\t\tSELECT campaign_id FROM pentest_campaign_members WHERE user_id = $3 AND tenant_id = $4",
-		"f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $5 AND uaa.tenant_id = $6)",
+		"f.asset_id = ANY (ARRAY(SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $5 AND uaa.tenant_id = $6)) OR f.assigned_to = $5",
 	} {
 		if !strings.Contains(where, want) {
 			t.Errorf("where missing %q:\n%s", want, where)
@@ -39,7 +39,7 @@ func TestBuildFilterWhere_VisibilityRules(t *testing.T) {
 	bare := vulnerability.NewFindingFilter().WithDataScopeUserID(uid)
 	bare.TenantID = &tid
 	if where, _ := buildFilterWhere(bare, 2); strings.Contains(where, "NOT EXISTS (SELECT 1 FROM user_accessible_assets") ||
-		!strings.Contains(where, "f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $2 AND uaa.tenant_id = $3)") {
+		!strings.Contains(where, "f.asset_id = ANY (ARRAY(SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $2 AND uaa.tenant_id = $3)) OR f.assigned_to = $2") {
 		t.Errorf("bare user scope must be strict:\n%s", where)
 	}
 

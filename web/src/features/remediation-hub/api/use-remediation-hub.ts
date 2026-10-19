@@ -33,6 +33,8 @@ const SUGGESTIONS = '/api/v1/remediation/suggestions'
 export interface TaskListFilters {
   states?: TaskState[]
   mine?: boolean
+  /** Only tasks whose deadline has passed (counted on the server). */
+  overdue?: boolean
   search?: string
   sort?: 'deadline' | 'risk' | 'updated' | 'created'
   findingId?: string
@@ -45,6 +47,7 @@ export function taskListUrl(f: TaskListFilters): string {
   const p = new URLSearchParams()
   if (f.states?.length) p.set('state', f.states.join(','))
   if (f.mine) p.set('assignee', 'me')
+  if (f.overdue) p.set('overdue', 'true')
   if (f.search?.trim()) p.set('search', f.search.trim())
   if (f.sort) p.set('sort', f.sort)
   if (f.findingId) p.set('finding_id', f.findingId)

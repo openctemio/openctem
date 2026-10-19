@@ -5,6 +5,12 @@ This page describes what is built: the pack store for tenant uploads (phase K2)
 and delivery to sensors by digest (part of K3). Composition in steps and pin at
 run start (K4) and the other sources (K5) come later.
 
+> **Not active yet (research/191 C-1).** No sensor syncs packs and no job
+> references one, so a stored pack is not used by any scan and revoking it
+> stops nothing; custom templates still travel inside each scan job. The
+> console shows packs as "Stored, not delivered" with a notice until sensor
+> delivery (RFC-061 K3 on the sensor side, research/191 WP10) ships.
+
 ## Model
 
 | Table | Key | What |

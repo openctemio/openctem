@@ -26,6 +26,11 @@ func TestRemediationOwnerAccept(t *testing.T) {
 	r.exec(`DELETE FROM asset_owners WHERE asset_id = $1`, r.assetA.String())
 	r.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'manual')`,
 		r.assetA.String(), r.member.String())
+	// The member's view of assetA comes from an explicit grant, so it stays
+	// when the ownership is demoted below (ownership alone would take the
+	// view with it).
+	r.exec(`INSERT INTO asset_access_grants (tenant_id, asset_id, user_id) VALUES ($1, $2, $3)`,
+		r.tenant.String(), r.assetA.String(), r.member.String())
 	asOwner := func(sg *remediation.Suggestion, edit func(*remediationapp.AcceptInput)) (*remediation.AcceptResult, error) {
 		in := remediationapp.AcceptInput{TenantID: r.tenant, ID: sg.ID, Version: sg.Version, ActorID: &r.member, AsOwner: true}
 		if edit != nil {
