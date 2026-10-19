@@ -668,7 +668,7 @@ var Registry = []Definition{
 		Category:    "settings", DisplayOrder: 61, Release: ReleaseStatusReleased,
 		Core:       true,
 		Permission: "sensors:read",
-		Jobs:       []string{"SensorHealthController", "SensorEventRetentionController", "HeartbeatHistoryRetentionController"},
+		Jobs:       []string{"SensorHealthController", "SensorLegacyKeysController", "SensorEventRetentionController", "HeartbeatHistoryRetentionController"},
 	},
 	{
 		ID: ModuleTeam, Slug: "team", Name: "Team",

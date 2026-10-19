@@ -37,7 +37,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Validation (legacy) | 4 | `validation:read/write`, `pentest:read/write` |
 | Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-087) |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
-| Reports | 2 | `reports:read/write` |
+| Reports | 3 | `reports:read/write`, `reports:manage` |
 | Content catalog | 3 | `content:read`, `content:install`, `content:publish` (RFC-099) |
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
@@ -1844,8 +1844,23 @@ organization**, or an address in one of its **`Security.AllowedDomains`**
   on with them.
 - The scheduler re-checks every recipient at send time and skips the ones no
   longer allowed (logged); with nobody left it sends nothing (`no_recipients`).
-- Create, activate and delete are audited (`report_schedule.*`, with the
-  recipients on create).
+- Create, activate, pause and delete are audited (`report_schedule.*`, with
+  the recipients, and the creator when someone else changes it).
+
+### Report schedule ownership
+
+`reports:write` creates a schedule; only its **creator** or a holder of
+**`reports:manage`** (owner and admin by default) may pause, resume
+(`PATCH /reports/schedules/{id}/toggle`) or delete it. Anyone else gets 403;
+another organization's schedule is 404. A schedule without a recorded creator
+is managed only through `reports:manage`.
+
+Recipient addresses are personal data: `GET /reports/schedules` and
+`GET /reports/schedules/{id}` return `recipients` only to the creator and
+`reports:manage` holders, and an empty list with `recipient_count` to every
+other `reports:read` holder. Each row carries `created_by`, `created_by_name`
+(a display name, never an email) and `can_manage`, which the web uses to show
+or hide the toggle and delete actions.
 - The report body is still tenant-wide; rendering under the creator's scope is
   part of P1-4 (D6).
 ### Scheduled reports render under their creator's scope

@@ -106,7 +106,7 @@ func TestReportRecipients_MembersOrAllowedDomains_DB(t *testing.T) {
 	if err := repo.Create(ctx, legacy); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.ToggleSchedule(ctx, tenant, legacy.ID().String(), true); !errors.Is(err, reportschedule.ErrRecipientNotAllowed) {
+	if _, err := svc.ToggleSchedule(ctx, tenant, legacy.ID().String(), true, module.ReportScheduleActor{CanManageAll: true}); !errors.Is(err, reportschedule.ErrRecipientNotAllowed) {
 		t.Errorf("activating a legacy external schedule: err = %v, want refused", err)
 	}
 }
