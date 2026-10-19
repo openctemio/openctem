@@ -21,13 +21,13 @@ const { RefusalGroups, GROUP_EXAMPLES } = await import('../refusal-groups')
 const { RoutingNote } = await import('../review-step')
 
 const proof = (i: number) => ({
-  target: `h${i}.vndirect.com.vn`,
+  target: `h${i}.example.com`,
   allowed: false,
   code: 'proof_required',
   fixes: [{ action: 'use_tenant_sensor' }],
 })
 const zone = (i: number) => ({
-  target: `int${i}.vndirect.com.vn`,
+  target: `int${i}.example.com`,
   allowed: false,
   code: 'zone_none',
   resolved: [`10.0.0.${i}`],

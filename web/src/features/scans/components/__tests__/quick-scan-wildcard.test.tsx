@@ -68,9 +68,9 @@ describe('QuickScanDialog wildcard targets', () => {
       target_count: 1,
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
-    await fill('*.pti.com.vn')
+    await fill('*.example.net')
     await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
-    expect(quickScan).toHaveBeenCalledWith({ targets: ['*.pti.com.vn'], scanner_name: 'nuclei' })
+    expect(quickScan).toHaveBeenCalledWith({ targets: ['*.example.net'], scanner_name: 'nuclei' })
   })
 
   it('words a refused wildcard in user terms, not the server text', async () => {
@@ -93,25 +93,25 @@ describe('QuickScanDialog wildcard targets', () => {
     previewPost.mockResolvedValue({
       targets: [
         {
-          target: '*.pti.com.vn',
+          target: '*.example.net',
           kind: 'wildcard',
           known: 12,
           in_scope: 9,
           skipped: [{ reason: 'excluded', count: 3 }],
-          excluded_rules: ['vpn.pti.com.vn'],
-          sample: ['pti.com.vn', 'api.pti.com.vn'],
+          excluded_rules: ['vpn.example.net'],
+          sample: ['example.net', 'api.example.net'],
         },
       ],
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
-    await fill('*.pti.com.vn')
+    await fill('*.example.net')
     expect(await screen.findByText('12 known assets match')).toBeInTheDocument()
     expect(screen.getByText('9 will be scanned')).toBeInTheDocument()
     expect(screen.getByText('3 left out by exclusions or the deny list')).toBeInTheDocument()
-    expect(screen.getByText('Examples: pti.com.vn, api.pti.com.vn')).toBeInTheDocument()
+    expect(screen.getByText('Examples: example.net, api.example.net')).toBeInTheDocument()
     expect(previewPost).toHaveBeenCalledWith(
       expect.stringContaining('/quick/preview'),
-      expect.objectContaining({ targets: ['*.pti.com.vn'], scanner_name: 'nuclei' })
+      expect.objectContaining({ targets: ['*.example.net'], scanner_name: 'nuclei' })
     )
   })
 
@@ -125,25 +125,25 @@ describe('QuickScanDialog wildcard targets', () => {
     previewPost.mockResolvedValue({
       targets: [
         {
-          target: '*.new.pti.com.vn',
+          target: '*.new.example.net',
           kind: 'wildcard',
           known: 0,
           in_scope: 1,
-          discovery: { tool: 'subfinder', root: 'new.pti.com.vn' },
+          discovery: { tool: 'subfinder', root: 'new.example.net' },
         },
       ],
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
-    await fill('*.new.pti.com.vn')
+    await fill('*.new.example.net')
     await userEvent.click(
       await screen.findByRole(
         'button',
-        { name: /Run discovery on new.pti.com.vn/ },
+        { name: /Run discovery on new.example.net/ },
         { timeout: 3000 }
       )
     )
     expect(quickScan).toHaveBeenCalledWith({
-      targets: ['new.pti.com.vn'],
+      targets: ['new.example.net'],
       scanner_name: 'subfinder',
     })
   })
