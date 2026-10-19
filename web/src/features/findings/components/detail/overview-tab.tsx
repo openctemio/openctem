@@ -152,7 +152,9 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
 
       {finding.toolName === VERSION_MATCH_TOOL && <VersionMatchPanel metadata={finding.metadata} />}
 
-      {finding.sourceData && <SourceDataSection data={finding.sourceData} ruleName={finding.ruleName} />}
+      {finding.sourceData && (
+        <SourceDataSection data={finding.sourceData} ruleName={finding.ruleName} />
+      )}
 
       {extraAssets.length > 0 && (
         <DetailSection
