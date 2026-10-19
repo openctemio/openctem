@@ -170,11 +170,24 @@ func (r *FindingRemediationKeyRepository) CountByKeyInScope(ctx context.Context,
 // keySourceSelect reads what a key is derived from: the finding, its package
 // version in the software catalog (a global row or this tenant's private one,
 // never another tenant's), the global CVE catalog entry and the stored key.
+// Fixed versions come from the finding, the feed-written catalog entry and,
+// for a finding without its own (one a person created), this tenant's other
+// findings of the same package version and CVE: a report never writes fixed
+// versions into the shared catalog (global-catalog-trust.md).
 const keySourceSelect = `
 	SELECT f.id, f.source, COALESCE(f.finding_type, ''),
 	       COALESCE(p.purl_type, ''), COALESCE(p.name, ''), COALESCE(sv.raw, ''),
 	       COALESCE(f.metadata->'fixed_versions', '[]'::jsonb)::text,
-	       COALESCE(v.fixed_versions, '{}'::text[]),
+	       COALESCE(v.fixed_versions, '{}'::text[]) || CASE
+	           WHEN f.component_id IS NULL OR f.vulnerability_id IS NULL
+	                OR jsonb_typeof(f.metadata->'fixed_versions') = 'array' THEN '{}'::text[]
+	           ELSE COALESCE((SELECT array_agg(DISTINCT x.v ORDER BY x.v)
+	               FROM (SELECT s.metadata->'fixed_versions' AS fv FROM findings s
+	                     WHERE s.tenant_id = f.tenant_id AND s.component_id = f.component_id
+	                       AND s.vulnerability_id = f.vulnerability_id AND s.id <> f.id
+	                       AND jsonb_typeof(s.metadata->'fixed_versions') = 'array'
+	                     LIMIT 20) sib, jsonb_array_elements_text(sib.fv) AS x(v)), '{}'::text[])
+	       END,
 	       COALESCE(f.type_details->'secret'->>'fingerprint', ''),
 	       COALESCE(f.secret_type, ''),
 	       COALESCE(f.remediation->>'recommendation', ''),
