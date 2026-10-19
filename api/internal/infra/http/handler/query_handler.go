@@ -41,7 +41,7 @@ func queryCaller(r *http.Request) queryapp.Caller {
 	ctx := r.Context()
 	return queryapp.Caller{
 		TenantID: middleware.MustGetTenantID(ctx), UserID: middleware.GetUserID(ctx),
-		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.IsAPIKeyAuthenticated(ctx),
+		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.IsDelegatedCredential(ctx),
 		Has: func(p string) bool { return middleware.HasPermission(ctx, p) },
 	}
 }
