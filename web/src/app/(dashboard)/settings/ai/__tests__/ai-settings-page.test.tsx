@@ -46,7 +46,7 @@ describe('Settings > AI', () => {
     expect(update).not.toHaveBeenCalled()
     expect(screen.getByText('Turn on AI triage?')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Turn on' }))
-    await waitFor(() => expect(update).toHaveBeenCalledWith('t1', true))
+    await waitFor(() => expect(update).toHaveBeenCalledWith(true))
   })
 
   it('turns it off at once', async () => {
@@ -55,7 +55,7 @@ describe('Settings > AI', () => {
     update.mockResolvedValue({ enabled: false })
     render(<AISettingsPage />)
     await userEvent.click(screen.getByRole('switch'))
-    await waitFor(() => expect(update).toHaveBeenCalledWith('t1', false))
+    await waitFor(() => expect(update).toHaveBeenCalledWith(false))
   })
 
   it('says when the upgrade kept it on', () => {

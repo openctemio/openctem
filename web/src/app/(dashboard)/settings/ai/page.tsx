@@ -29,8 +29,8 @@ import { useCanMutate } from '@/lib/permissions'
 export default function AISettingsPage() {
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
-  const canEdit = useCanMutate('PUT /api/v1/tenants/{tenant}/settings/ai')
-  const settings = useAISettings(currentTenant?.id, true)
+  const canEdit = useCanMutate('PUT /api/v1/organization/settings/ai')
+  const settings = useAISettings(true)
   const config = useAIConfig()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -44,7 +44,7 @@ export default function AISettingsPage() {
     if (!currentTenant) return
     setSaving(true)
     try {
-      const next = await updateAISettings(currentTenant.id, on)
+      const next = await updateAISettings(on)
       await settings.mutate(next, { revalidate: false })
       await config.mutate()
       toast.success(
