@@ -55,7 +55,7 @@ func saveSeverityDecision(ctx context.Context, x severityExecer, f *vulnerabilit
 	}
 	// A caller that named the version it saw (an API If-Match) is refused
 	// when the row moved on; the write also bumps the version (migration
-	// 002995), which the finding carries back to the caller.
+	// 003055), which the finding carries back to the caller.
 	var wantVersion sql.NullInt64
 	if want, ok := vulnerability.ExpectedRowVersion(ctx, f.ID()); ok {
 		wantVersion = sql.NullInt64{Int64: want, Valid: true}
