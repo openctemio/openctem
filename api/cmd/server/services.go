@@ -1245,6 +1245,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
