@@ -413,5 +413,20 @@
   "org.sso.title": "Đăng nhập một lần (SSO)",
   "org.sso.noticeText": "Đăng nhập một lần (SAML hoặc OIDC), cùng các tên miền đã xác minh, được thiết lập cho tổ chức của bạn trong bảng điều khiển quản trị nền tảng. Để thêm hoặc thay đổi, hãy liên hệ quản trị viên nền tảng.",
   "org.danger.scheduled": "Tổ chức \"{name}\" sẽ bị xóa vào {date}.",
-  "org.danger.scheduledHint": "Tổ chức đã đóng với mọi người. Chủ sở hữu có thể hủy việc xóa từ trang đăng nhập trước thời điểm đó."
+  "org.danger.scheduledHint": "Tổ chức đã đóng với mọi người. Chủ sở hữu có thể hủy việc xóa từ trang đăng nhập trước thời điểm đó.",
+  "org.general.tab.dashboardData": "Dữ liệu dashboard",
+  "org.dashboardData.title": "Dữ liệu dashboard",
+  "org.dashboardData.description": "Số liệu dashboard được tính từ dữ liệu lưu sẵn theo từng tài sản, cập nhật theo mọi thay đổi và được kiểm tra mỗi đêm. Hãy dựng lại nếu dashboard hiển thị sai.",
+  "org.dashboardData.requested": "Đã yêu cầu dựng lại. Dashboard sẽ cập nhật khi hoàn tất.",
+  "org.dashboardData.tooSoon": "Chỉ có thể dựng lại dữ liệu dashboard mỗi giờ một lần.",
+  "org.dashboardData.failed": "Không thể yêu cầu dựng lại.",
+  "org.dashboardData.loadFailed": "Không tải được trạng thái dữ liệu dashboard",
+  "org.dashboardData.notBuilt": "Chưa được dựng: lần dựng đầu tiên đang chạy nền.",
+  "org.dashboardData.running": "Đang dựng lại.",
+  "org.dashboardData.pending": "Đã yêu cầu dựng lại; sẽ bắt đầu trong vài phút.",
+  "org.dashboardData.upToDate": "Được cập nhật tự động.",
+  "org.dashboardData.lastRebuilt": "Lần dựng lại toàn bộ gần nhất",
+  "org.dashboardData.pendingChanges": "Thay đổi đang chờ",
+  "org.dashboardData.rebuild": "Dựng lại dữ liệu dashboard",
+  "org.dashboardData.nextAt": "Có thể dựng lại lần tiếp theo lúc {time}"
 }

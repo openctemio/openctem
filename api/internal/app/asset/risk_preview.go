@@ -10,7 +10,6 @@ import (
 
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // riskPreviewPage is how many assets one preview step scores.
@@ -58,21 +57,16 @@ func (s *AssetService) PreviewRiskImpact(ctx context.Context, tenantID shared.ID
 	current := s.getScoringConfig(ctx, tenantID)
 	engine := assetdom.NewRiskScoringEngine(*newConfig)
 	filter := assetdom.NewFilter().WithTenantID(tenantID.String())
-	opts := assetdom.NewListOptions().WithSort(pagination.NewSortOption(assetdom.AllowedSortFields()).Parse("created_at"))
 
 	out := &RiskImpact{BandChanges: []RiskBandChange{}, TopChanges: []RiskImpactAsset{}}
 	bands := map[[2]string]int{}
 	var changed []RiskImpactAsset
-	for pageNum := 1; ; pageNum++ {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		res, err := s.repo.List(ctx, filter, opts, pagination.New(pageNum, riskPreviewPage))
-		if err != nil {
-			return nil, fmt.Errorf("list assets for preview: %w", err)
-		}
-		inputs := s.riskInputsMap(ctx, tenantID, res.Data)
-		for _, a := range res.Data {
+	// Every live asset, paged by id: the List page size is capped (100), so
+	// asking for riskPreviewPage and stopping at a short page read only the
+	// first 100 assets.
+	err := assetdom.ForEachPage(ctx, s.repo, filter, riskPreviewPage, func(page []*assetdom.Asset) error {
+		inputs := s.riskInputsMap(ctx, tenantID, page)
+		for _, a := range page {
 			out.TotalAssets++
 			oldScore := a.RiskScore()
 			newScore := engine.CalculateScoreWithInputs(a, inputs[a.ID()])
@@ -95,9 +89,10 @@ func (s *AssetService) PreviewRiskImpact(ctx context.Context, tenantID shared.ID
 				CurrentScore: oldScore, NewScore: newScore, CurrentLevel: oldLevel, NewLevel: newLevel,
 			})
 		}
-		if len(res.Data) < riskPreviewPage {
-			break
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list assets for preview: %w", err)
 	}
 	for k, n := range bands {
 		out.BandChanges = append(out.BandChanges, RiskBandChange{From: k[0], To: k[1], Count: n})
