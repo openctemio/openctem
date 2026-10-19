@@ -7,7 +7,10 @@ package bootstrapadmin
 // every row verifies, 1 when one does not, 2 on a usage or connection error.
 //
 //	docker compose run --rm admin-cli verify-audit
-//	./bootstrap-admin verify-audit -db=$DATABASE_URL [-json]
+//	DATABASE_URL=... ./bootstrap-admin verify-audit [-json]
+//
+// The database URL comes from the environment (DATABASE_URL or DB_*). The -db
+// flag is for tests only: a password on the command line shows in ps.
 
 import (
 	"context"
@@ -26,14 +29,14 @@ import (
 func runVerifyAudit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("verify-audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	dbURL := fs.String("db", "", "Database URL (or set DATABASE_URL env)")
+	dbURL := fs.String("db", "", "Database URL. Testing only: the password then shows in ps; use DATABASE_URL or DB_* env")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	url := firstNonEmpty(*dbURL, os.Getenv("DATABASE_URL"), databaseURLFromParts())
 	if url == "" {
-		fmt.Fprintln(stderr, "verify-audit: database URL required (-db, DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME)")
+		fmt.Fprintln(stderr, "verify-audit: database URL required (DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME)")
 		return 2
 	}
 	db, err := sql.Open("postgres", url)
