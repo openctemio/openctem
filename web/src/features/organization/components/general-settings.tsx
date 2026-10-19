@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from '@/components/link'
-import { Building, Lock, Upload, UserCog } from 'lucide-react'
+import { Building, LayoutDashboard, Lock, Upload, UserCog } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { DangerZone, DangerZoneItem, PageHeader, SettingsSaveBar } from '@/features/shared'
@@ -32,11 +32,12 @@ import {
   planHasChanges,
   type GeneralSettingsValues,
 } from '../lib/general-save-plan'
+import { DashboardDataCard } from './dashboard-data-card'
 import { DeleteOrganizationItem } from './delete-organization'
 import { SettingsLoadError, SettingsLoading } from './settings-load-state'
 import { StorageConfigCard } from './storage-config-card'
 
-const GENERAL_TABS = ['general', 'storage'] as const
+const GENERAL_TABS = ['general', 'storage', 'dashboard-data'] as const
 
 const EMPTY_GENERAL: GeneralSettingsValues = {
   timezone: 'UTC',
@@ -92,6 +93,8 @@ export function GeneralSettings() {
   const { currentTenant, updateCurrentTenant, refreshTenants } = useTenant()
   const tenantId = currentTenant?.id
   const { isOwner } = usePermissions()
+  // Owners and administrators only (the API's gate on the status and rebuild routes).
+  const canSeeDashboardData = useCanMutate('POST /api/v1/dashboard-data/rebuild')
   const owner = isOwner()
 
   // Controls follow the API route gates (permission + role), so a custom
@@ -228,6 +231,12 @@ export function GeneralSettings() {
             <Upload className="me-2 h-4 w-4" aria-hidden />
             {t('org.general.tab.storage', 'File storage')}
           </TabsTrigger>
+          {canSeeDashboardData && (
+            <TabsTrigger value="dashboard-data">
+              <LayoutDashboard className="me-2 h-4 w-4" aria-hidden />
+              {t('org.general.tab.dashboardData', 'Dashboard data')}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="general" className="mt-5 space-y-5">
@@ -408,6 +417,12 @@ export function GeneralSettings() {
         <TabsContent value="storage" className="mt-5 space-y-5">
           <StorageConfigCard />
         </TabsContent>
+
+        {canSeeDashboardData && (
+          <TabsContent value="dashboard-data" className="mt-5 space-y-5">
+            <DashboardDataCard />
+          </TabsContent>
+        )}
       </Tabs>
     </Main>
   )

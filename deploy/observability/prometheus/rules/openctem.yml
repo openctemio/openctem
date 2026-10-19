@@ -255,6 +255,23 @@ groups:
           description: Their results were not imported after every retry.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#ingestjobsdead
 
+      - alert: DashboardFactsLagging
+        expr: max(openctem_dashboard_fact_queue_oldest_seconds) > 600
+        for: 15m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: A dashboard data change has waited {{ $value | humanizeDuration }}
+          description: The dashboard-facts controller is not keeping up (stopped, failing, or a write storm); dashboards show older numbers.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#dashboardfactslagging
+
+      - alert: DashboardFactsDrift
+        expr: sum(increase(openctem_dashboard_fact_drift_rows_total[1d])) > 0
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} dashboard fact row(s) corrected without a change mark'
+          description: A rebuild or the nightly reconciliation found dashboard facts that no write had marked. The numbers are fixed; the cause is a bug.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#dashboardfactsdrift
+
       - alert: OutboxLagging
         expr: max(openctem_outbox_oldest_pending_seconds) > 900
         for: 10m
