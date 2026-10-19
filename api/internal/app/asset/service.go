@@ -548,6 +548,34 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	return a, nil
 }
 
+// GrantCreatorAccess gives the request's caller view of an asset they just
+// created when their data scope would otherwise hide it (a member without
+// full data access): an explicit access grant with source 'creator'. Callers
+// who see every asset get nothing (nil), and so do requests without a user
+// (an organization API key, ingest). The asset must be new: CreateAsset
+// refuses a duplicate instead of merging, so the grant never opens an
+// existing asset. Docs: docs/architecture/asset-ownership.md.
+func (s *AssetService) GrantCreatorAccess(ctx context.Context, tenantID, assetID shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	if s.dataScope == nil || s.accessControlRepo == nil {
+		return nil, nil
+	}
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve creator scope: %w", err)
+	}
+	if !scope.Restricted() || scope.UserID.IsZero() {
+		return nil, nil
+	}
+	g, err := s.accessControlRepo.CreateCreatorAccessGrant(ctx, tenantID, assetID, scope.UserID)
+	if err != nil {
+		if errors.Is(err, accesscontrol.ErrAccessGrantExists) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("grant creator access: %w", err)
+	}
+	return g, nil
+}
+
 // promoteKnownProperties extracts well-known fields from Properties JSONB into their
 // proper columns on CreateAssetInput. This allows collectors to send everything in
 // properties (e.g., {"sub_type": "firewall", "vendor": "Cisco"}) and the system

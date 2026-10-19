@@ -92,6 +92,18 @@ type PickerOption =
   | { kind: 'user'; id: string; label: string; sublabel?: string }
   | { kind: 'group'; id: string; label: string; sublabel?: string }
 
+/** Ownership types whose user owner sees the asset (when set by a person). */
+const VIEW_GRANTING_TYPES: ReadonlySet<string> = new Set(['primary', 'secondary'])
+
+/**
+ * A primary or secondary user owner set by a person sees the asset, so
+ * naming, re-typing or removing one changes who can see it: the API asks for
+ * team:groups:write (docs: api/docs/architecture/asset-ownership.md).
+ */
+function ownerGrantsView(o: AssetOwner): boolean {
+  return !!o.userId && VIEW_GRANTING_TYPES.has(o.ownershipType) && o.assignmentSource === 'manual'
+}
+
 interface AssetOwnersTabProps {
   assetId: string
 }
@@ -254,7 +266,8 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
   // visible). Now both kinds are listed in a single picker, grouped into
   // "Users" and "Groups" sections.
   const [selectedOption, setSelectedOption] = useState<PickerOption | null>(null)
-  const [addOwnershipType, setAddOwnershipType] = useState<OwnershipType>('primary')
+  const defaultAddType: OwnershipType = canAssignGroups ? 'primary' : 'stakeholder'
+  const [addOwnershipType, setAddOwnershipType] = useState<OwnershipType>(defaultAddType)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
 
@@ -394,7 +407,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
 
   const resetAddForm = () => {
     setSelectedOption(null)
-    setAddOwnershipType('primary')
+    setAddOwnershipType(defaultAddType)
   }
 
   const handleAdd = async () => {
@@ -607,8 +620,10 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 <OwnerCard
                   key={owner.id}
                   owner={owner}
-                  canEdit={canEdit}
-                  canDelete={canDelete && (!owner.groupId || canAssignGroups)}
+                  canEdit={canEdit && (!ownerGrantsView(owner) || canAssignGroups)}
+                  canDelete={
+                    canDelete && ((!owner.groupId && !ownerGrantsView(owner)) || canAssignGroups)
+                  }
                   onEdit={onEditClick}
                   onRemove={setRemoveOwnerTarget}
                 />
@@ -849,7 +864,11 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                   <SelectContent>
                     {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
                       ([value, label]) => (
-                        <SelectItem key={value} value={value}>
+                        <SelectItem
+                          key={value}
+                          value={value}
+                          disabled={!canAssignGroups && VIEW_GRANTING_TYPES.has(value)}
+                        >
                           {label}
                         </SelectItem>
                       )
@@ -859,6 +878,14 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 <p className="text-xs text-muted-foreground">
                   {OWNERSHIP_TYPE_DESCRIPTIONS[addOwnershipType]}
                 </p>
+                {!canAssignGroups && (
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'assets.ownersTab.viewTypesNeedGroups',
+                      'Primary and secondary owners can see the asset, so naming one needs permission to manage groups.'
+                    )}
+                  </p>
+                )}
               </div>
             </div>
           </DialogBody>
@@ -910,7 +937,16 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 </SelectTrigger>
                 <SelectContent>
                   {Object.entries(OWNERSHIP_TYPE_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
+                    <SelectItem
+                      key={value}
+                      value={value}
+                      disabled={
+                        !canAssignGroups &&
+                        !!editOwner?.userId &&
+                        editOwner.assignmentSource === 'manual' &&
+                        VIEW_GRANTING_TYPES.has(value)
+                      }
+                    >
                       {label}
                     </SelectItem>
                   ))}
