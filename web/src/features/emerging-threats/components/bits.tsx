@@ -146,10 +146,16 @@ export function useEventDetail() {
         const date = str(d.date_added) ?? str(d.kev_date_added)
         return date ? t('emergingThreats.eventDetail.kev', undefined, { date }) : null
       }
-      case 'ranges_added':
+      case 'published':
+      case 'ranges_added': {
+        const n = typeof d.products === 'number' ? d.products : null
+        return n ? t('emergingThreats.eventDetail.products', undefined, { count: String(n) }) : null
+      }
       case 'ranges_widened': {
-        const product = str(d.product)
-        return product ? t('emergingThreats.eventDetail.product', undefined, { product }) : null
+        const n = typeof d.products_added === 'number' ? d.products_added : 0
+        return n > 0
+          ? t('emergingThreats.eventDetail.productsAdded', undefined, { count: String(n) })
+          : t('emergingThreats.eventDetail.moreRanges')
       }
       default:
         return null
