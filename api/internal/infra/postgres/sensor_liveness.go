@@ -78,9 +78,9 @@ func (r *SensorRepository) ListLivenessCandidates(ctx context.Context) (time.Tim
 	return r.scanLivenessCandidates(ctx, rows)
 }
 
-// ListLivenessCandidatesByID is ListLivenessCandidates restricted to ids
+// ListLivenessCandidatesByIDForPlatform is ListLivenessCandidates restricted to ids
 // (the health controller's fast path over the liveness store's due index).
-func (r *SensorRepository) ListLivenessCandidatesByID(ctx context.Context, ids []shared.ID) (time.Time, []sensor.LivenessCandidate, error) {
+func (r *SensorRepository) ListLivenessCandidatesByIDForPlatform(ctx context.Context, ids []shared.ID) (time.Time, []sensor.LivenessCandidate, error) {
 	strs := make([]string, len(ids))
 	for i, id := range ids {
 		strs[i] = id.String()
