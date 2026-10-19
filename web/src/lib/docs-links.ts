@@ -27,6 +27,7 @@ export const DOCS = {
     scannerContent: 'https://docs.openctem.io/scanning/tools/#scanner-content',
   },
   sensors: {
+    install: 'https://docs.openctem.io/install/',
     transportPlatform: 'https://docs.openctem.io/sensors/transport/#what-the-platform-offers',
   },
   pentest: {
