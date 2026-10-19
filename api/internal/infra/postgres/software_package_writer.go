@@ -49,8 +49,9 @@ type pkgQueryer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-// resolveProducts returns the product per identity: the tenant's own row,
-// else the global row, else a new tenant-private row.
+// resolveProducts returns the product per identity: the global product a
+// global package alias names (the feed's alias dictionary), else the
+// tenant's own row, else the global row, else a new tenant-private row.
 func resolvePackageProducts(ctx context.Context, q pkgQueryer, tenantID shared.ID,
 	ids []pkgIdentity, names map[pkgIdentity]string) (map[pkgIdentity]pkgProduct, int, error) {
 	out := make(map[pkgIdentity]pkgProduct, len(ids))
@@ -87,6 +88,9 @@ func resolvePackageProducts(ctx context.Context, q pkgQueryer, tenantID shared.I
 		return rows.Err()
 	}
 	if err := load(); err != nil {
+		return nil, 0, err
+	}
+	if err := resolvePackageAliases(ctx, q, ids, out); err != nil {
 		return nil, 0, err
 	}
 	missT, missNS, missN, missDisplay := []string{}, []string{}, []string{}, []string{}
@@ -452,4 +456,34 @@ func pqTextArrayLiteral(items []string) string {
 		return s
 	}
 	return "{}"
+}
+
+// resolvePackageAliases sets the identities a global purl alias names to
+// that product. A global alias wins over a tenant's own row, so a package
+// the dictionary maps to a public product is matched against its ranges;
+// a tenant cannot shadow it.
+func resolvePackageAliases(ctx context.Context, q pkgQueryer, ids []pkgIdentity, out map[pkgIdentity]pkgProduct) error {
+	values := make([]string, len(ids))
+	byValue := make(map[string][]pkgIdentity, len(ids))
+	for i, id := range ids {
+		values[i] = software.PURLAliasValue(id.typ, id.ns, id.name)
+		byValue[values[i]] = append(byValue[values[i]], id)
+	}
+	rows, err := q.QueryContext(ctx, `
+		SELECT a.value, a.product_id FROM software_product_aliases a
+		WHERE a.tenant_id IS NULL AND a.kind = 'purl' AND a.value = ANY($1)`, pq.Array(values))
+	if err != nil {
+		return fmt.Errorf("resolve package aliases: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var value, pid string
+		if err := rows.Scan(&value, &pid); err != nil {
+			return fmt.Errorf("resolve package aliases: %w", err)
+		}
+		for _, id := range byValue[value] {
+			out[id] = pkgProduct{id: pid, global: true}
+		}
+	}
+	return rows.Err()
 }

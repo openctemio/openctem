@@ -137,6 +137,11 @@ func TestScoringIntel_StoredEPSSFeedsTheCIGate(t *testing.T) {
 	if _, err := fx.db.Exec(`INSERT INTO epss_scores (cve_id, epss_score, percentile, score_date) VALUES ($1, 0.4, 0.93, CURRENT_DATE)`, cve); err != nil {
 		t.Fatal(err)
 	}
+	// Setting the CVE queues the asset (a classifier input); the test is about
+	// the refresh, so start from an empty queue without running the worker.
+	if _, err := fx.db.Exec(`DELETE FROM finding_priority_queue WHERE asset_id IN ($1, $2)`, aid.String(), baid.String()); err != nil {
+		t.Fatal(err)
+	}
 
 	ci := postgres.NewCIRunRepository(&postgres.DB{DB: fx.db})
 	thr := 0.3

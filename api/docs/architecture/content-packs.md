@@ -29,12 +29,18 @@ Code: `pkg/domain/contentpack` (archive, signing) and `internal/app/contentpack`
 
    | Kind | Lint | Tier |
    |---|---|---|
-   | `nuclei-templates` | Every YAML file goes through the custom-template validator. The `code`, `javascript`, `headless` and `file` protocols, self-contained templates and unsafe regexes are errors. Other files are data. | T2 for interactsh, `flow`, race requests, more than 25 threads, PUT/PATCH/DELETE, or POST with a body. T1 for dns/network/tcp/ssl/websocket/whois, payloads or workflows. Otherwise T0. |
+   | `nuclei-templates` | Every YAML file goes through the custom-template validator (one YAML document per file). Code-class blocks are errors: `code`, `javascript`, `flow` (JavaScript run by the engine), `headless` and `file`. So are self-contained templates, unsafe regexes and more than 10,000 estimated requests per target. Workflow `template:` references and payload list files must name files of the same pack by a relative path that stays inside it; workflow `tags:` selectors are errors. A workflow that runs a refused template, or that loops, is refused with it. Other files are data. | Computed from the parsed document, never from author declarations (see below). T2 for out-of-band callbacks, state-changing requests (PUT/PATCH/DELETE, POST with a body), race requests, more than 25 threads or a non-numeric `threads`, fuzzing rules, and more than 500 estimated requests per target. T1 for dns/network/tcp/ssl/websocket/whois or payloads. A workflow takes the highest tier of what it runs, and at least T1. Otherwise T0. |
    | `semgrep-rules` | Every YAML file goes through the rules validator. | T0 |
    | `wordlist` | UTF-8 text with no NUL. Each line is at most 4096 bytes, and a pack holds at most 10 million lines. | T0 |
    | `x-<namespace>/<kind>` | Archive rules only. A warning says the kind has no linter. | T1 |
 
    A lint error refuses the pack with 422 `CONTENT_LINT_FAILED`; the lint report is in `details`.
+
+   **Capability analysis** (`internal/app/template/capabilities.go`) runs on the decoded document, so block YAML, flow YAML, JSON, escaped, padded or differently cased keys and YAML merge keys all count the same. A key is matched with Unicode case folding, the way the engine matches JSON field names.
+   - Out-of-band callbacks are found in every key and string value: the `interactsh` placeholder and matcher parts in any spelling (case, spaces, helper calls that split the word), and public callback domains. Text in YAML comments does not count.
+   - `threads` and `race_count` are read as integers, floats or numeric strings. A templated value counts as unknown, which makes the template T2.
+   - The estimated requests per target come from the structure: paths plus raw requests, times the payload combinations, times the race count. Payload combinations are the product of the lists for `clusterbomb` and the longest list otherwise; a payload file counts its non-empty lines. Declared counts such as `info.metadata.max-request` are ignored.
+   - A single custom template (Settings > Scanning > Templates) is validated the same way but references nothing: `workflows` and payload files are errors there, because the engine would resolve them against its own template directory.
 4. **Credential scan.** Every UTF-8 file is checked for well-known credential shapes (`evidence.CredentialShapes`: private keys, cloud and forge tokens, JWTs). The report records only the kind and path, never the value.
    - A hit refuses the pack with 422 `CONTENT_SECRETS_FOUND`.
    - The pack is stored only when the uploader sends `acknowledge_secrets=true`. That is recorded in the lint report and audited at high severity.
@@ -74,11 +80,12 @@ No tenant statement touches these tables. The archives live in the `platform-con
 
 **Upstream lint.** A file that fails lint is left out of the pack and listed as a warning (`lint.excluded` counts them). The release as a whole is not refused, and sensors never receive the left-out files. Left out:
 
-- the `code`, `javascript`, `headless` and `file` protocols;
+- the code-class blocks `code`, `javascript`, `flow`, `headless` and `file`;
 - self-contained templates;
 - unsafe regexes;
+- templates above the request limit, and payload files that are not in the release;
 - YAML files that are not templates (CI files, profiles);
-- workflows.
+- workflows that reference a file outside the release, select by tag, or run a left-out template.
 
 Attack payloads in a template's requests (`/etc/passwd`, shell fragments) are what detection templates send to their targets. The custom-template text check refuses them; for upstream packs they make the template T2 instead.
 
