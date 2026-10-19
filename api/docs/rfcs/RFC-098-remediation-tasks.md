@@ -287,7 +287,7 @@ auto-join stay with write. Marking findings fixed will also need `findings:fix_a
 | 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Implemented |
 | 7 | Finding drawer band: the task a finding is tracked in, its state and deadline | Implemented |
 | 8 | My Work tasks tab: my open tasks (mine or my groups), earliest deadline first | Implemented |
-| 9 | Tasks from a query (§13): preview, snapshot and auto modes, re-run, auto include worker | API implemented; console in progress |
+| 9 | Tasks from a query (§13): preview, snapshot and auto modes, re-run, auto include worker | Implemented (console: "New task from query" on Tasks, "Task from filters" on Findings, the task's "Created from a query" panel; "Add findings by query" in the suggestion edit dialog is open) |
 
 ## 13. Tasks from a query
 

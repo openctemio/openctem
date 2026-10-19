@@ -32,34 +32,40 @@ func (s *stubAIVerdictLookup) GetFalsePositiveVerdicts(_ context.Context, _ shar
 	return out, nil
 }
 
-// A high-confidence verdict flows into the PriorityContext and de-escalates a
-// finding that would otherwise be P1 (critical + reachable) down to P2.
+// A high-confidence verdict flows into the PriorityContext. It lowers a P2
+// finding (critical, isolated asset) to P3, and never lowers a P1 finding
+// (critical + reachable): the verdict reads attacker-influenced scanner
+// output, so urgent work keeps its class with a review note.
 func TestBuildPriorityContext_AIFalsePositiveDeescalates(t *testing.T) {
 	f := newTestFinding(t)
-	f.SetIsInKEV(false) // critical + reachable but not KEV → P1, not P0
-	a := newTestAsset(t, asset.ExposurePublic)
-
+	f.SetIsInKEV(false) // not KEV: no exploitation floor
 	verdict := map[shared.ID]AIFalsePositiveVerdict{
 		f.ID(): {Likely: true, Likelihood: 0.9},
 	}
-
 	svc := newReachabilitySvc()
-	ctx := svc.buildPriorityContext(f, a, "", nil, nil, verdict, nil)
+
+	isolated := newTestAsset(t, asset.ExposureIsolated)
+	ctx := svc.buildPriorityContext(f, isolated, "", nil, nil, verdict, nil)
 	if !ctx.AIFalsePositiveLikely || ctx.AIFalsePositiveLikelihood != 0.9 {
 		t.Fatalf("expected AI FP signal set on context, got likely=%v likelihood=%v",
 			ctx.AIFalsePositiveLikely, ctx.AIFalsePositiveLikelihood)
 	}
-	if got := vulnerability.ClassifyPriority(ctx); got.Class != vulnerability.PriorityP2 {
-		t.Fatalf("high-confidence AI FP should de-escalate P1→P2, got %s (%s)", got.Class, got.Reason)
+	if got := vulnerability.ClassifyPriority(ctx); got.Class != vulnerability.PriorityP3 {
+		t.Fatalf("high-confidence AI FP should de-escalate P2→P3, got %s (%s)", got.Class, got.Reason)
 	}
 
-	// Without a verdict the same finding stays P1.
-	noVerdict := svc.buildPriorityContext(f, a, "", nil, nil, nil, nil)
+	public := newTestAsset(t, asset.ExposurePublic)
+	if got := vulnerability.ClassifyPriority(svc.buildPriorityContext(f, public, "", nil, nil, verdict, nil)); got.Class != vulnerability.PriorityP1 {
+		t.Fatalf("AI FP must not lower a P1 finding, got %s (%s)", got.Class, got.Reason)
+	}
+
+	// Without a verdict the isolated finding stays P2.
+	noVerdict := svc.buildPriorityContext(f, isolated, "", nil, nil, nil, nil)
 	if noVerdict.AIFalsePositiveLikely {
 		t.Fatal("no verdict must leave AIFalsePositiveLikely false")
 	}
-	if got := vulnerability.ClassifyPriority(noVerdict); got.Class != vulnerability.PriorityP1 {
-		t.Fatalf("without AI verdict finding should stay P1, got %s", got.Class)
+	if got := vulnerability.ClassifyPriority(noVerdict); got.Class != vulnerability.PriorityP2 {
+		t.Fatalf("without AI verdict finding should stay P2, got %s", got.Class)
 	}
 }
 

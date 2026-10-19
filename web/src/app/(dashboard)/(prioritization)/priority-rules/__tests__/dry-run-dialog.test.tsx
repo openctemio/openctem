@@ -42,7 +42,9 @@ const rule: DryRunRule = {
 function result(overrides: Partial<DryRunResult> = {}): DryRunResult {
   return {
     evaluated: 340,
+    open_findings: 340,
     matched: 12,
+    floored: 0,
     capped: false,
     cap: 50,
     sample: [
@@ -82,15 +84,27 @@ describe('DryRunDialog', () => {
     // Matched count (7) is the prominent number in the impact block.
     expect(await screen.findByText('7')).toBeInTheDocument()
     // "of 340 findings would be reclassified…" — copy is split across nodes.
-    expect(screen.getByText(/of/)).toHaveTextContent('340')
+    expect(screen.getByText(/would be reclassified/)).toHaveTextContent('340')
+    // Below the cap the counts cover the whole organization.
+    expect(screen.getByText(/All 340 open findings/)).toBeInTheDocument()
   })
 
-  test('shows a "showing first N of M (capped)" note when the sample is capped', async () => {
+  test('says how many matches a platform floor keeps at P1 or above', async () => {
+    mockPost.mockResolvedValue(result({ matched: 7, floored: 3 }))
+    render(<DryRunDialog open onOpenChange={() => {}} rule={rule} />)
+
+    const note = await screen.findByText(/stay at P1 or above/)
+    expect(note).toHaveTextContent('3')
+  })
+
+  test('labels a capped run as a sample and notes the shown sample size', async () => {
     mockPost.mockResolvedValue(
       result({
         matched: 200,
+        evaluated: 20000,
+        open_findings: 54321,
         capped: true,
-        cap: 50,
+        cap: 20000,
         sample: Array.from({ length: 50 }, (_, i) => ({
           finding_id: `f${i}`,
           title: `Finding ${i}`,
@@ -102,10 +116,11 @@ describe('DryRunDialog', () => {
     )
     render(<DryRunDialog open onOpenChange={() => {}} rule={rule} />)
 
-    const note = await screen.findByText(/Showing first/)
-    expect(note).toHaveTextContent('50')
-    expect(note).toHaveTextContent('200')
-    expect(note).toHaveTextContent(/capped/i)
+    const sampled = await screen.findByText(/^Sample:/)
+    expect(sampled).toHaveTextContent('20000')
+    expect(sampled).toHaveTextContent('54321')
+    const note = screen.getByText(/Showing 50 of 200 matches/)
+    expect(note).toBeInTheDocument()
   })
 
   test('renders sample rows with title, severity and current→would-be classes', async () => {

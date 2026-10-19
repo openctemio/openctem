@@ -22,6 +22,9 @@ type sensorSelMockSensorRepo struct {
 	// Return values for FindAvailableWithCapacity
 	availableSensors []*sensor.Sensor
 	availableErr     error
+	// capableSensors is what FindByCapabilities returns (any health).
+	capableSensors []*sensor.Sensor
+	capableErr     error
 
 	// Capture args from FindAvailableWithCapacity calls
 	lastTenantID     shared.ID
@@ -78,7 +81,7 @@ func (m *sensorSelMockSensorRepo) IncrementStats(_ context.Context, _ shared.ID,
 	return nil
 }
 func (m *sensorSelMockSensorRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
-	return nil, nil
+	return m.capableSensors, m.capableErr
 }
 func (m *sensorSelMockSensorRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
@@ -270,6 +273,42 @@ func TestSensorSelSelectSensor_NoSensors_AllowQueue(t *testing.T) {
 	}
 	if result.Message == "" {
 		t.Error("expected a non-empty message in queued result")
+	}
+}
+
+// A capable sensor that is not online (restart) keeps the work on the
+// organization; with no capable sensor in any state it is still not busy.
+func TestSensorSelSelectSensor_CapableButOffline_TenantBusy(t *testing.T) {
+	t.Parallel()
+
+	repo := newSensorSelMockSensorRepo()
+	repo.availableSensors = []*sensor.Sensor{}
+	repo.capableSensors = []*sensor.Sensor{{ID: shared.NewID()}}
+	sel := newSensorSelSelector(repo)
+
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
+		TenantID: shared.NewID(), Mode: sensorapp.SelectTenantOnly, AllowQueue: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Queued || !result.TenantBusy || result.Sensor != nil {
+		t.Fatalf("capable offline sensor must keep the step on the organization: %+v", result)
+	}
+
+	repo.capableSensors = nil
+	result, err = sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
+		TenantID: shared.NewID(), Mode: sensorapp.SelectTenantOnly, AllowQueue: true,
+	})
+	if err != nil || result.TenantBusy {
+		t.Fatalf("no capable sensor at all must not be TenantBusy: %+v %v", result, err)
+	}
+
+	repo.capableErr = errors.New("db down")
+	if _, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
+		TenantID: shared.NewID(), Mode: sensorapp.SelectTenantOnly, AllowQueue: true,
+	}); err == nil {
+		t.Fatal("a failed lookup must not read as no sensor (would route to the shared fleet)")
 	}
 }
 
