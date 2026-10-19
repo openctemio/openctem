@@ -33,6 +33,8 @@ type CreateScanProfileInput struct {
 	Tags        []string                 `json:"tags" validate:"max=20,dive,max=50"`
 	IsDefault   bool                     `json:"is_default"`
 	QualityGate *scanprofile.QualityGate `json:"quality_gate"`
+	// RuleSources: both (default when empty), platform or tenant.
+	RuleSources string `json:"rule_sources"`
 }
 
 // CreateScanProfile creates a new scan profile.
@@ -73,6 +75,9 @@ func (s *ScanProfileService) CreateScanProfile(ctx context.Context, input Create
 	}
 	if input.QualityGate != nil {
 		profile.QualityGate = *input.QualityGate
+	}
+	if err := profile.SetRuleSources(input.RuleSources); err != nil {
+		return nil, err
 	}
 
 	// Handle default flag
@@ -197,6 +202,8 @@ type UpdateScanProfileInput struct {
 	Description string                   `json:"description" validate:"max=500"`
 	Tags        []string                 `json:"tags" validate:"max=20,dive,max=50"`
 	QualityGate *scanprofile.QualityGate `json:"quality_gate"`
+	// RuleSources: nil = unchanged.
+	RuleSources *string `json:"rule_sources"`
 }
 
 // UpdateScanProfile updates an existing scan profile.
@@ -234,6 +241,11 @@ func (s *ScanProfileService) UpdateScanProfile(ctx context.Context, input Update
 	// Update quality gate if provided
 	if input.QualityGate != nil {
 		if err := profile.UpdateQualityGate(*input.QualityGate); err != nil {
+			return nil, err
+		}
+	}
+	if input.RuleSources != nil {
+		if err := profile.SetRuleSources(*input.RuleSources); err != nil {
 			return nil, err
 		}
 	}

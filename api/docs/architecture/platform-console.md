@@ -234,6 +234,15 @@ roster with `bootstrap-admin` on the server. Resetting an administrator's
 console second factor needs another super admin too: an administrator who lost
 their authenticator signs in with a recovery code, or the operator re-creates
 the account with `bootstrap-admin -force` on the server.
+That command is not a silent side door: every administrator it creates,
+replaces (`-force`, `-force-backup`) or links (`-link`) is written in the same
+transaction as a high-severity entry in the administrators' audit log
+(`admin.created`, `admin.replaced`, `admin.relinked`; actor `bootstrap-admin`,
+with the OS user and host), and every other active administrator gets the
+roster-change e-mail. `-force` replaces only the named administrator, keeps
+its role unless `-role` is given, refuses to bring back an inactive one
+without `-role`, refuses to leave no active super admin, and asks for the
+email to be typed back (or `-yes`).
 
 IdP binding: the first platform IdP sign-in of an unbound administrator (matched
 by verified e-mail) binds the identity only after that administrator proves

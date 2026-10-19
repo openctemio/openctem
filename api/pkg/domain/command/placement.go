@@ -69,6 +69,11 @@ const (
 	// PlacementNotConfined: the command needs network confinement
 	// (PayloadKeyRequiredFeatures) and the sensor did not report it.
 	PlacementNotConfined = "not_confined"
+	// PlacementRuleSourcesUnsupported: the command runs only the
+	// organization's templates and the sensor did not report that its
+	// scanners honor rule sources (an older sensor would also run the
+	// platform's rules).
+	PlacementRuleSourcesUnsupported = "rule_sources_unsupported"
 	// PlacementGrantPrefix prefixes a refusal by the sensor's grant:
 	// "grant_" + the grant dimension (job_types, zones, tools, tier, ...).
 	PlacementGrantPrefix = "grant_"
@@ -94,7 +99,7 @@ const (
 )
 
 // PayloadKeyRequiredFeatures lists what a sensor must enforce to take the
-// command (today only sensor.CapabilityNetConfined): matched against the
+// command (sensor.CapabilityNetConfined, sensor.CapabilityRuleSources): matched against the
 // capabilities the sensor itself reported, never against an
 // administrator's list. Kept apart from the signed job's statement fields.
 const PayloadKeyRequiredFeatures = "required_features"

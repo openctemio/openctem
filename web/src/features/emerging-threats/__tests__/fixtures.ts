@@ -1,0 +1,72 @@
+import type { EmergingThreatAsset, EmergingThreatDetail, EmergingThreatSummary } from '../types'
+
+export const summary = (over: Partial<EmergingThreatSummary> = {}): EmergingThreatSummary => ({
+  id: 'a1',
+  vuln_id: 'CVE-2026-1000',
+  title: 'Remote code execution in Widget',
+  severity: 'critical',
+  level: 'immediate',
+  tier: 'confirmed',
+  state: 'new',
+  ets: 82,
+  in_kev: true,
+  kev_ransomware: true,
+  epss: 0.5,
+  confirmed_assets: 3,
+  possible_assets: 2,
+  internet_facing_assets: 1,
+  last_event_kind: 'kev_added',
+  event_at: '2026-10-18T10:00:00Z',
+  source_at: null,
+  created_at: '2026-10-17T10:00:00Z',
+  updated_at: '2026-10-18T10:00:00Z',
+  ...over,
+})
+
+export const asset = (over: Partial<EmergingThreatAsset> = {}): EmergingThreatAsset => ({
+  asset_id: 'as1',
+  asset_name: 'web-01',
+  asset_type: 'host',
+  tier: 'confirmed',
+  confidence: 90,
+  internet_facing: true,
+  criticality: 'high',
+  product: 'widget',
+  version_seen: '1.2.3',
+  finding_id: 'f1',
+  finding_status: 'new',
+  task_id: '',
+  ...over,
+})
+
+export const detail = (over: Partial<EmergingThreatDetail> = {}): EmergingThreatDetail => ({
+  ...summary(),
+  ets_breakdown: {
+    exploitation: 40,
+    severity: 20,
+    exposure: 15,
+    freshness: 7,
+    confidence: 1,
+    total: 82,
+  },
+  recommended_action: 'patch_now',
+  description: 'A <b>bad</b> bug',
+  cvss_score: 9.8,
+  published_at: '2026-10-16T00:00:00Z',
+  kev_date_added: '2026-10-18',
+  state_reason: '',
+  state_note: '',
+  state_changed_at: null,
+  suppressed_until: null,
+  can_suppress: true,
+  assets: [asset()],
+  timeline: [
+    {
+      kind: 'severity_up',
+      at: '2026-10-18T09:00:00Z',
+      source_at: null,
+      detail: { from: 'high', to: 'critical' },
+    },
+  ],
+  ...over,
+})

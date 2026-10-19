@@ -9,6 +9,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { RunStatusBadge } from '@/features/shared/components/run-status-badge'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
+import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
 import {
   RefreshCw,
   Check,
@@ -34,19 +36,21 @@ interface SyncStatusManagerProps {
 const sourceConfig: Record<
   ThreatIntelSource,
   {
+    /** Proper noun of the feed, not translated. */
     name: string
-    description: string
+    /** i18n key of the one-line description. */
+    descriptionKey: string
     icon: typeof TrendingUp
   }
 > = {
   epss: {
     name: 'EPSS',
-    description: 'Exploit Prediction Scoring System — daily exploitation probability scores',
+    descriptionKey: 'threatIntel.sync.epssDescription',
     icon: TrendingUp,
   },
   kev: {
     name: 'CISA KEV',
-    description: "Known Exploited Vulnerabilities — CISA's actively exploited CVE catalog",
+    descriptionKey: 'threatIntel.sync.kevDescription',
     icon: AlertOctagon,
   },
 }
@@ -55,23 +59,22 @@ const sourceConfig: Record<
  * Sync Status Manager - Control panel for threat intel data sync
  */
 export function SyncStatusManager({ statuses, onRefresh, className }: SyncStatusManagerProps) {
+  const { t } = useTranslation()
   // One card, one row per source (divided) — not a bordered box per source
   // nested inside the card. No refresh button here: the page header has one.
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle>Data sync</CardTitle>
-        <CardDescription>
-          Turn each threat-intelligence feed on or off, or sync it now.
-        </CardDescription>
+        <CardTitle>{t('threatIntel.sync.title')}</CardTitle>
+        <CardDescription>{t('threatIntel.sync.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {statuses.length === 0 ? (
           <EmptyState
             card={false}
             icon={Clock}
-            title="No sync sources"
-            description="No threat-intelligence feeds are configured for sync."
+            title={t('threatIntel.sync.emptyTitle')}
+            description={t('threatIntel.sync.emptyDescription')}
           />
         ) : (
           <div className="divide-y">
@@ -91,6 +94,8 @@ interface SyncStatusRowProps {
 }
 
 function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
+  const { t, locale } = useTranslation()
+  const dateLocale = dateFnsLocaleFor(locale)
   const [isToggling, setIsToggling] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
 
@@ -101,13 +106,25 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
     setIsToggling(true)
     try {
       await setSyncEnabled(status.source, !status.enabled)
-      toast.success(`${config.name} sync ${!status.enabled ? 'enabled' : 'disabled'}`)
+      toast.success(
+        t(
+          status.enabled ? 'threatIntel.sync.disabledToast' : 'threatIntel.sync.enabledToast',
+          undefined,
+          {
+            name: config.name,
+          }
+        )
+      )
       onUpdate?.()
     } catch (error) {
       toast.error(
         getErrorMessage(
           error,
-          `Failed to ${!status.enabled ? 'enable' : 'disable'} ${config.name} sync`
+          t(
+            status.enabled ? 'threatIntel.sync.disableFailed' : 'threatIntel.sync.enableFailed',
+            undefined,
+            { name: config.name }
+          )
         )
       )
       console.error(error)
@@ -120,10 +137,15 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
     setIsSyncing(true)
     try {
       await triggerSync(status.source)
-      toast.success(`${config.name} sync triggered`)
+      toast.success(t('threatIntel.sync.triggeredToast', undefined, { name: config.name }))
       onUpdate?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to trigger ${config.name} sync`))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('threatIntel.sync.triggerFailed', undefined, { name: config.name })
+        )
+      )
       console.error(error)
     } finally {
       setIsSyncing(false)
@@ -140,7 +162,7 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
           <h3 className="text-sm font-semibold">{config.name}</h3>
           <SyncStatusBadge status={status.last_sync_status} />
         </div>
-        <p className="text-sm text-muted-foreground">{config.description}</p>
+        <p className="text-sm text-muted-foreground">{t(config.descriptionKey)}</p>
 
         {/* Sync details */}
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -148,16 +170,30 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
             <div className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
               <span>
-                Last sync: {formatDistanceToNow(new Date(status.last_sync_at), { addSuffix: true })}
+                {t('threatIntel.sync.lastSync', undefined, {
+                  time: formatDistanceToNow(new Date(status.last_sync_at), {
+                    addSuffix: true,
+                    locale: dateLocale,
+                  }),
+                })}
               </span>
             </div>
           )}
           {status.records_synced > 0 && (
-            <span>{status.records_synced.toLocaleString()} records</span>
+            <span>
+              {t('threatIntel.sync.records', undefined, {
+                n: status.records_synced.toLocaleString(),
+              })}
+            </span>
           )}
           {status.next_sync_at && (
             <span>
-              Next: {formatDistanceToNow(new Date(status.next_sync_at), { addSuffix: true })}
+              {t('threatIntel.sync.next', undefined, {
+                time: formatDistanceToNow(new Date(status.next_sync_at), {
+                  addSuffix: true,
+                  locale: dateLocale,
+                }),
+              })}
             </span>
           )}
         </div>
@@ -184,15 +220,15 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
           ) : (
             <RefreshCw className="me-2 h-4 w-4" />
           )}
-          Sync now
+          {t('threatIntel.sync.syncNow')}
         </Button>
 
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
-            {status.enabled ? 'Enabled' : 'Disabled'}
+            {status.enabled ? t('threatIntel.sync.enabled') : t('threatIntel.sync.disabled')}
           </span>
           <Switch
-            aria-label={`${config.name} sync enabled`}
+            aria-label={t('threatIntel.sync.enabledAria', undefined, { name: config.name })}
             checked={status.enabled}
             onCheckedChange={handleToggleEnabled}
             disabled={isToggling}
@@ -204,8 +240,9 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
 }
 
 function SyncStatusBadge({ status }: { status: SyncStatus['last_sync_status'] }) {
+  const { t } = useTranslation()
   // The canonical run-status badge covers every state but "never".
-  if (status === 'never') return <Badge variant="secondary">Never synced</Badge>
+  if (status === 'never') return <Badge variant="secondary">{t('threatIntel.sync.never')}</Badge>
   return <RunStatusBadge status={status === 'success' ? 'completed' : status} />
 }
 
@@ -218,12 +255,13 @@ interface CompactSyncStatusProps {
  * Compact Sync Status - Minimal display for dashboard headers
  */
 export function CompactSyncStatus({ statuses, className }: CompactSyncStatusProps) {
+  const { t, locale } = useTranslation()
   // Handle empty statuses
   if (!statuses || statuses.length === 0) {
     return (
       <div className={cn('flex items-center gap-2 text-sm', className)}>
         <Clock className="h-4 w-4 text-muted-foreground" />
-        <span className="text-muted-foreground">No sync data</span>
+        <span className="text-muted-foreground">{t('threatIntel.sync.noData')}</span>
       </div>
     )
   }
@@ -234,15 +272,15 @@ export function CompactSyncStatus({ statuses, className }: CompactSyncStatusProp
   // Only a failure is coloured; healthy and pending read as quiet status text.
   let statusIcon = Check
   let statusColor = 'text-muted-foreground'
-  let statusLabel = 'All syncs healthy'
+  let statusLabel = t('threatIntel.sync.allHealthy')
 
   if (anyFailed) {
     statusIcon = X
     statusColor = 'text-destructive'
-    statusLabel = 'Sync failed'
+    statusLabel = t('threatIntel.sync.failed')
   } else if (anyPending) {
     statusIcon = Clock
-    statusLabel = 'Sync pending'
+    statusLabel = t('threatIntel.sync.pending')
   }
 
   const StatusIcon = statusIcon
@@ -253,7 +291,12 @@ export function CompactSyncStatus({ statuses, className }: CompactSyncStatusProp
       <span className="text-muted-foreground">{statusLabel}</span>
       {statuses[0].last_sync_at && (
         <span className="text-xs text-muted-foreground">
-          ({formatDistanceToNow(new Date(statuses[0].last_sync_at), { addSuffix: true })})
+          (
+          {formatDistanceToNow(new Date(statuses[0].last_sync_at), {
+            addSuffix: true,
+            locale: dateFnsLocaleFor(locale),
+          })}
+          )
         </span>
       )}
     </div>
