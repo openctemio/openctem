@@ -349,6 +349,42 @@ func TestThreatAlerts_DB(t *testing.T) {
 	if a, _ := repo.AlertByVuln(ctx, C, "CVE-2098-0010"); a.State != threatalert.StateResolved || a.StateReason != threatalert.ReasonFixed {
 		t.Fatalf("fixed: %s %s", a.State, a.StateReason)
 	}
+	// --- 10. A triage decision made while the planner plans is kept -------
+	stale, err := repo.AlertByVuln(ctx, A, "CVE-2098-0001")
+	if err != nil || stale == nil {
+		t.Fatalf("alert: %v %v", stale, err)
+	}
+	if _, err := svc.ChangeState(ctx, A, nil, stale.ID, threatalertapp.StateChange{State: threatalert.StateNotAffected,
+		Reason: threatalert.ReasonFeatureNotUsed, Actor: user}, auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	stale.State = threatalert.StateNew // the planner's copy, read before the decision
+	if err := repo.SaveAlert(ctx, stale, nil); !errors.Is(err, threatalert.ErrStale) {
+		t.Fatalf("a stale planner write: %v, want ErrStale", err)
+	}
+	if a, _ := repo.AlertByVuln(ctx, A, "CVE-2098-0001"); a.State != threatalert.StateNotAffected || a.StateReason != threatalert.ReasonFeatureNotUsed {
+		t.Fatalf("the triage decision was overwritten: %s %s", a.State, a.StateReason)
+	}
+
+	// --- 11. A scoped member's digest counts only assets in scope ---------
+	mustExec(t, db, `UPDATE threat_alerts SET state = 'new', digest_pending = true WHERE tenant_id = $1 AND vuln_id = 'CVE-2098-0001'`, A.String())
+	dg, err := repo.DigestSummary(ctx, A, clock.Add(-24*time.Hour), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, it := range dg.Top {
+		if it.VulnID == "CVE-2098-0001" {
+			found = true
+			if it.Confirmed != 1 || it.InternetFacing != 0 {
+				t.Fatalf("scoped digest counts assets out of scope: %+v", it)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("scoped digest misses the in-scope alert: %+v", dg.Top)
+	}
+
 	var orphan sql.NullString
 	_ = db.QueryRow(`SELECT tenant_id::text FROM threat_alert_assets WHERE tenant_id NOT IN ($1, $2, $3, $4) LIMIT 1`,
 		A.String(), B.String(), C.String(), D.String()).Scan(&orphan)

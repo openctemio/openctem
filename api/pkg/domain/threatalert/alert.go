@@ -127,6 +127,9 @@ var (
 	// ErrOutOfScope: the alert has assets outside the caller's data scope,
 	// so the caller may not suppress it.
 	ErrOutOfScope = fmt.Errorf("%w: the alert has assets outside your data scope", shared.ErrConflict)
+	// ErrStale: the alert changed (a triage decision) after the planner
+	// read it; the planner plans it again from the stored alert.
+	ErrStale = fmt.Errorf("%w: the emerging-threat alert changed since it was read", shared.ErrConflict)
 )
 
 // ValidateTransition checks a person's triage decision.
