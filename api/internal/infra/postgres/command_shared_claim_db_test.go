@@ -134,14 +134,26 @@ func TestSharedClaim_FairShareAcrossOrganizations(t *testing.T) {
 	busyHigh := seedSharedJob(ctx, t, db, busy, sharedJobSeed{tool: tool, platform: true, priority: "high"})
 
 	got := offered(ctx, t, repo, sensor, nil, busyNext, quietNext, busyHigh)
-	want := []shared.ID{busyHigh, quietNext, busyNext}
+	// Fair share before priority (research/191 W-3): the organization with
+	// fewer shared jobs in flight first, then the class within it.
+	want := []shared.ID{quietNext, busyHigh, busyNext}
 	if len(got) != len(want) {
 		t.Fatalf("offered %v, want %v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("offered %v, want %v (a higher class first, then the organization with fewer shared jobs in flight)", got, want)
+			t.Fatalf("offered %v, want %v (the organization with fewer shared jobs in flight first, then the higher class)", got, want)
 		}
+	}
+
+	// A verification (critical) job may jump the fair-share order, one per
+	// organization and round: busy's first critical job comes first, its
+	// second one does not.
+	crit1 := seedSharedJob(ctx, t, db, busy, sharedJobSeed{tool: tool, platform: true, priority: "critical"})
+	crit2 := seedSharedJob(ctx, t, db, busy, sharedJobSeed{tool: tool, platform: true, priority: "critical"})
+	got = offered(ctx, t, repo, sensor, nil, crit1, crit2, quietNext)
+	if len(got) != 3 || got[0] != crit1 || got[1] != quietNext || got[2] != crit2 {
+		t.Fatalf("offered %v, want [%s %s %s] (one critical job jumps, the next waits its turn)", got, crit1, quietNext, crit2)
 	}
 }
 

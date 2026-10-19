@@ -344,3 +344,46 @@ func TestFeatureGate_EveryClaimPath(t *testing.T) {
 		t.Fatalf("claim by id by the confined sensor: %v err %v", ok, err)
 	}
 }
+
+// research/191 W-1: a task no sensor of the organization may take says
+// whether the shared fleet was an option, so a run does not wait in silence
+// until its timeout; a task one of them may take says nothing about it.
+func TestPlacement_SaysWhyTheSharedFleetWasNotUsed(t *testing.T) {
+	f := newPlacementFixture(t)
+	// No sensor of the organization has this tool.
+	nobody := createPayloadCommand(f.ctx, t, f.repo, f.tenant, nil, map[string]any{"scanner": "subfinder", "targets": []string{"example.com"}})
+	for _, tc := range []struct {
+		name   string
+		policy commandapp.SharedAccessPolicy
+		want   string
+	}{
+		{"no policy", nil, commandapp.SharedFleetNotAllowed},
+		{"refused", func(context.Context, shared.ID) (bool, string) { return false, "opted out" }, commandapp.SharedFleetNotAllowed},
+		{"allowed", func(context.Context, shared.ID) (bool, string) { return true, "" }, commandapp.SharedFleetNotUsed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := []commandapp.Option{commandapp.WithSensorLookup(f.sensRep)}
+			if tc.policy != nil {
+				opts = append(opts, commandapp.WithSharedAccess(tc.policy))
+			}
+			svc := commandapp.NewService(f.repo, logger.NewNop(), opts...)
+			p, err := svc.ExplainPlacement(f.ctx, f.tenant, nobody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Eligible != 0 || p.SharedFleet != tc.want {
+				t.Fatalf("eligible %d, shared fleet %q, want %q", p.Eligible, p.SharedFleet, tc.want)
+			}
+			if tc.name == "refused" && p.SharedFleetReason != "opted out" {
+				t.Fatalf("reason %q", p.SharedFleetReason)
+			}
+		})
+	}
+	p, err := f.svc.ExplainPlacement(f.ctx, f.tenant, f.cmds["unzoned"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Eligible == 0 || p.SharedFleet != "" {
+		t.Fatalf("a task the organization can run: eligible %d, shared fleet %q", p.Eligible, p.SharedFleet)
+	}
+}
