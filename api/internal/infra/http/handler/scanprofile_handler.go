@@ -48,27 +48,25 @@ func NewScanProfileHandler(service *scan.ScanProfileService, v *validator.Valida
 	}
 }
 
-// ToolConfigRequest represents tool configuration in request.
-type ToolConfigRequest struct {
-	Enabled  bool           `json:"enabled"`
-	Severity string         `json:"severity,omitempty"`
-	Timeout  int            `json:"timeout,omitempty"`
-	Options  map[string]any `json:"options,omitempty"`
-	// Removed fields, read only to refuse them: a profile never selected
-	// templates (dispatch takes custom templates from the scan), so a
-	// request that sets them is told so instead of being ignored.
-	RemovedTemplateMode      json.RawMessage `json:"template_mode,omitempty" swaggerignore:"true"`
-	RemovedCustomTemplateIDs json.RawMessage `json:"custom_template_ids,omitempty" swaggerignore:"true"`
+// removedProfileFields holds the settings a scan profile no longer carries.
+// They are read only to refuse them: a profile is the quality gate (the
+// pass/fail rule) and nothing else, because dispatch never applied these
+// fields. A client that still sends one is told so instead of being ignored.
+type removedProfileFields struct {
+	ToolsConfig        json.RawMessage `json:"tools_config,omitempty" swaggerignore:"true"`
+	Intensity          json.RawMessage `json:"intensity,omitempty" swaggerignore:"true"`
+	MaxConcurrentScans json.RawMessage `json:"max_concurrent_scans,omitempty" swaggerignore:"true"`
+	TimeoutSeconds     json.RawMessage `json:"timeout_seconds,omitempty" swaggerignore:"true"`
 }
 
-// errProfileTemplateFields is the answer to a request that sets a removed
-// template field.
-const errProfileTemplateFields = "tools_config: template_mode and custom_template_ids are not supported: a scan profile does not select templates; choose custom templates on the scan (scanner_config.custom_template_ids)"
+// errProfileRemovedFields is the answer to a request that sets a removed field.
+const errProfileRemovedFields = "a scan profile is only a quality gate (pass/fail rule): tools_config, intensity, max_concurrent_scans and timeout_seconds are not supported; choose intensity and tools on the scan or its workflow"
 
-// hasRemovedTemplateFields reports a tool config that sets a removed field.
-func hasRemovedTemplateFields(cfg map[string]ToolConfigRequest) bool {
-	for _, v := range cfg {
-		if len(v.RemovedTemplateMode) > 0 || len(v.RemovedCustomTemplateIDs) > 0 {
+// removed reports whether the request sets any removed field (a JSON null
+// counts as not set).
+func (r removedProfileFields) removed() bool {
+	for _, v := range []json.RawMessage{r.ToolsConfig, r.Intensity, r.MaxConcurrentScans, r.TimeoutSeconds} {
+		if len(v) > 0 && string(v) != "null" {
 			return true
 		}
 	}
@@ -90,27 +88,21 @@ type QualityGateRequest struct {
 
 // CreateScanProfileRequest represents the request body for creating a scan profile.
 type CreateScanProfileRequest struct {
-	Name               string                       `json:"name" validate:"required,min=1,max=100"`
-	Description        string                       `json:"description" validate:"max=500"`
-	ToolsConfig        map[string]ToolConfigRequest `json:"tools_config"`
-	Intensity          string                       `json:"intensity" validate:"omitempty,oneof=low medium high"`
-	MaxConcurrentScans int                          `json:"max_concurrent_scans" validate:"omitempty,min=1,max=100"`
-	TimeoutSeconds     int                          `json:"timeout_seconds" validate:"omitempty,min=60,max=86400"`
-	Tags               []string                     `json:"tags" validate:"max=20,dive,max=50"`
-	IsDefault          bool                         `json:"is_default"`
-	QualityGate        *QualityGateRequest          `json:"quality_gate,omitempty"`
+	Name        string `json:"name" validate:"required,min=1,max=100"`
+	Description string `json:"description" validate:"max=500"`
+	removedProfileFields
+	Tags        []string            `json:"tags" validate:"max=20,dive,max=50"`
+	IsDefault   bool                `json:"is_default"`
+	QualityGate *QualityGateRequest `json:"quality_gate,omitempty"`
 }
 
 // UpdateScanProfileRequest represents the request body for updating a scan profile.
 type UpdateScanProfileRequest struct {
-	Name               string                       `json:"name" validate:"omitempty,min=1,max=100"`
-	Description        string                       `json:"description" validate:"max=500"`
-	ToolsConfig        map[string]ToolConfigRequest `json:"tools_config"`
-	Intensity          string                       `json:"intensity" validate:"omitempty,oneof=low medium high"`
-	MaxConcurrentScans int                          `json:"max_concurrent_scans" validate:"omitempty,min=1,max=100"`
-	TimeoutSeconds     int                          `json:"timeout_seconds" validate:"omitempty,min=60,max=86400"`
-	Tags               []string                     `json:"tags" validate:"max=20,dive,max=50"`
-	QualityGate        *QualityGateRequest          `json:"quality_gate,omitempty"`
+	Name        string `json:"name" validate:"omitempty,min=1,max=100"`
+	Description string `json:"description" validate:"max=500"`
+	removedProfileFields
+	Tags        []string            `json:"tags" validate:"max=20,dive,max=50"`
+	QualityGate *QualityGateRequest `json:"quality_gate,omitempty"`
 }
 
 // UpdateQualityGateRequest represents the request body for updating quality gate.
@@ -180,30 +172,18 @@ type QualityGateResponse struct {
 
 // ScanProfileResponse represents the response for a scan profile.
 type ScanProfileResponse struct {
-	ID                 string                        `json:"id"`
-	TenantID           string                        `json:"tenant_id"`
-	Name               string                        `json:"name"`
-	Description        string                        `json:"description,omitempty"`
-	IsDefault          bool                          `json:"is_default"`
-	IsSystem           bool                          `json:"is_system"`
-	ToolsConfig        map[string]ToolConfigResponse `json:"tools_config"`
-	Intensity          string                        `json:"intensity"`
-	MaxConcurrentScans int                           `json:"max_concurrent_scans"`
-	TimeoutSeconds     int                           `json:"timeout_seconds"`
-	Tags               []string                      `json:"tags"`
-	Metadata           map[string]any                `json:"metadata,omitempty"`
-	QualityGate        QualityGateResponse           `json:"quality_gate"`
-	CreatedBy          *string                       `json:"created_by,omitempty"`
-	CreatedAt          string                        `json:"created_at"`
-	UpdatedAt          string                        `json:"updated_at"`
-}
-
-// ToolConfigResponse represents tool configuration in response.
-type ToolConfigResponse struct {
-	Enabled  bool           `json:"enabled"`
-	Severity string         `json:"severity,omitempty"`
-	Timeout  int            `json:"timeout,omitempty"`
-	Options  map[string]any `json:"options,omitempty"`
+	ID          string              `json:"id"`
+	TenantID    string              `json:"tenant_id"`
+	Name        string              `json:"name"`
+	Description string              `json:"description,omitempty"`
+	IsDefault   bool                `json:"is_default"`
+	IsSystem    bool                `json:"is_system"`
+	Tags        []string            `json:"tags"`
+	Metadata    map[string]any      `json:"metadata,omitempty"`
+	QualityGate QualityGateResponse `json:"quality_gate"`
+	CreatedBy   *string             `json:"created_by,omitempty"`
+	CreatedAt   string              `json:"created_at"`
+	UpdatedAt   string              `json:"updated_at"`
 }
 
 // Create handles POST /api/v1/scan-profiles
@@ -225,8 +205,8 @@ func (h *ScanProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	if hasRemovedTemplateFields(req.ToolsConfig) {
-		apierror.BadRequest(errProfileTemplateFields).WriteJSON(w)
+	if req.removed() {
+		apierror.BadRequest(errProfileRemovedFields).WriteJSON(w)
 		return
 	}
 
@@ -239,17 +219,13 @@ func (h *ScanProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
 	input := scan.CreateScanProfileInput{
-		TenantID:           tenantID,
-		UserID:             userID,
-		Name:               req.Name,
-		Description:        req.Description,
-		ToolsConfig:        toToolsConfigDomain(req.ToolsConfig),
-		Intensity:          req.Intensity,
-		MaxConcurrentScans: req.MaxConcurrentScans,
-		TimeoutSeconds:     req.TimeoutSeconds,
-		Tags:               req.Tags,
-		IsDefault:          req.IsDefault,
-		QualityGate:        toQualityGateDomain(req.QualityGate),
+		TenantID:    tenantID,
+		UserID:      userID,
+		Name:        req.Name,
+		Description: req.Description,
+		Tags:        req.Tags,
+		IsDefault:   req.IsDefault,
+		QualityGate: toQualityGateDomain(req.QualityGate),
 	}
 
 	profile, err := h.service.CreateScanProfile(r.Context(), input)
@@ -415,8 +391,8 @@ func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	if hasRemovedTemplateFields(req.ToolsConfig) {
-		apierror.BadRequest(errProfileTemplateFields).WriteJSON(w)
+	if req.removed() {
+		apierror.BadRequest(errProfileRemovedFields).WriteJSON(w)
 		return
 	}
 
@@ -426,16 +402,12 @@ func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scan.UpdateScanProfileInput{
-		TenantID:           tenantID,
-		ProfileID:          profileID,
-		Name:               req.Name,
-		Description:        req.Description,
-		ToolsConfig:        toToolsConfigDomain(req.ToolsConfig),
-		Intensity:          req.Intensity,
-		MaxConcurrentScans: req.MaxConcurrentScans,
-		TimeoutSeconds:     req.TimeoutSeconds,
-		Tags:               req.Tags,
-		QualityGate:        toQualityGateDomain(req.QualityGate),
+		TenantID:    tenantID,
+		ProfileID:   profileID,
+		Name:        req.Name,
+		Description: req.Description,
+		Tags:        req.Tags,
+		QualityGate: toQualityGateDomain(req.QualityGate),
 	}
 
 	profile, err := h.service.UpdateScanProfile(r.Context(), input)
@@ -692,21 +664,17 @@ func toQualityGateResultResponse(result *scanprofile.QualityGateResult) *Quality
 // toScanProfileResponse converts a scan profile entity to response.
 func toScanProfileResponse(p *scanprofile.ScanProfile) *ScanProfileResponse {
 	resp := &ScanProfileResponse{
-		ID:                 p.ID.String(),
-		TenantID:           p.TenantID.String(),
-		Name:               p.Name,
-		Description:        p.Description,
-		IsDefault:          p.IsDefault,
-		IsSystem:           p.IsSystem,
-		ToolsConfig:        toToolsConfigResponse(p.ToolsConfig),
-		Intensity:          string(p.Intensity),
-		MaxConcurrentScans: p.MaxConcurrentScans,
-		TimeoutSeconds:     p.TimeoutSeconds,
-		Tags:               p.Tags,
-		Metadata:           p.Metadata,
-		QualityGate:        toQualityGateResponse(p.QualityGate),
-		CreatedAt:          p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:          p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:          p.ID.String(),
+		TenantID:    p.TenantID.String(),
+		Name:        p.Name,
+		Description: p.Description,
+		IsDefault:   p.IsDefault,
+		IsSystem:    p.IsSystem,
+		Tags:        p.Tags,
+		Metadata:    p.Metadata,
+		QualityGate: toQualityGateResponse(p.QualityGate),
+		CreatedAt:   p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:   p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
 	if p.CreatedBy != nil {
@@ -718,47 +686,7 @@ func toScanProfileResponse(p *scanprofile.ScanProfile) *ScanProfileResponse {
 		resp.Tags = []string{}
 	}
 
-	if resp.ToolsConfig == nil {
-		resp.ToolsConfig = make(map[string]ToolConfigResponse)
-	}
-
 	return resp
-}
-
-// toToolsConfigResponse converts domain ToolsConfig to response format.
-func toToolsConfigResponse(config map[string]scanprofile.ToolConfig) map[string]ToolConfigResponse {
-	if config == nil {
-		return make(map[string]ToolConfigResponse)
-	}
-
-	result := make(map[string]ToolConfigResponse, len(config))
-	for k, v := range config {
-		result[k] = ToolConfigResponse{
-			Enabled:  v.Enabled,
-			Severity: v.Severity,
-			Timeout:  v.Timeout,
-			Options:  v.Options,
-		}
-	}
-	return result
-}
-
-// toToolsConfigDomain converts request ToolsConfig to domain format.
-func toToolsConfigDomain(config map[string]ToolConfigRequest) map[string]scanprofile.ToolConfig {
-	if config == nil {
-		return nil
-	}
-
-	result := make(map[string]scanprofile.ToolConfig, len(config))
-	for k, v := range config {
-		result[k] = scanprofile.ToolConfig{
-			Enabled:  v.Enabled,
-			Severity: v.Severity,
-			Timeout:  v.Timeout,
-			Options:  v.Options,
-		}
-	}
-	return result
 }
 
 // toQualityGateDomain converts request QualityGate to domain format.
