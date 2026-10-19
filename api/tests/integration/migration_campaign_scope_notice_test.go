@@ -22,7 +22,10 @@ import (
 )
 
 func TestMigrationCampaignScopeNotice_ListsUnscopedCampaigns(t *testing.T) {
-	dsn := testdb.URL()
+	// The private database is created and used through the admin connection
+	// (the least-privilege app role may not write tenants), so the notice
+	// connection is built on it as well.
+	dsn := testdb.AdminURL()
 	if dsn == "" {
 		testdb.Skipf(t, "DATABASE_URL not set")
 	}
