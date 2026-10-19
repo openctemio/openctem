@@ -200,7 +200,10 @@ func TestCampaignFilter_StatusOnlyIsNotScope(t *testing.T) {
 // changes only the findings in their data scope.
 func TestCampaignResolve_NeedsFixApplyAndStaysInScope(t *testing.T) {
 	h := newCampaignFilterHarness(t)
-	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id IN ($1, $3)`, h.findingA.String(), h.memberA.String(), h.findingB.String())
+	// FA is memberA's; FB (out of memberA's scope) is someone else's: an
+	// assignee would see, and so could work, the finding assigned to them.
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = $1`, h.findingA.String(), h.memberA.String())
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = $1`, h.findingB.String(), h.owner.String())
 	id := h.storedCampaign(`{"severity": "high", "tool_name": "ds-tool"}`)
 	path := "/api/v1/remediation/campaigns/" + id + "/resolve"
 
