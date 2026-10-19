@@ -212,7 +212,7 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 | `/remediation/suggestions` | the inbox: cards with the fix, reach, risk parts, proposed owners and "Why?" (key, algorithm, fix steps); accept, edit then accept, dismiss with a reason (undo), snooze 7 days (undo), bulk accept; keyboard j/k, a, e, d, s, x, ? |
 | `/remediation/tasks` | views (all open, mine, verifying, on hold, closed, all), search and sort; a server-paged table or a board by state where only "on hold" moves by drag |
 | `/remediation/tasks/{id}` | header (state, deadline and its source, owner, risk left), fix steps with the command to copy, progress, findings grouped by asset in a windowed list that loads as it scrolls, select and Move to… (palette with the server's compatibility warnings) or drag onto a task of the same fix, Split, Mark fixed, Request exception (or the pending exception), hold/resume/cancel, timeline; every move offers Undo |
-| `/remediation/campaigns` | the campaigns (formerly the page at `/remediation`) |
+| `/remediation/campaigns` | the campaigns: programs of tasks (remediation-campaigns.md) |
 
 Strings are in the `remediationHub` dictionary (en, vi). Write actions show only with
 `findings:remediation:write` (Mark fixed also `findings:fix_apply`); the API stays the authority. A member with only

@@ -86,6 +86,10 @@ var assetMergeRefs = []mergeRef{
 	// same location is dropped.
 	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
+	// Emerging-threat alert assets (RFC-117): the kept asset's row in an
+	// alert wins; the next plan recomputes the alert from the kept asset.
+	{table: "threat_alert_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"alert_id"}}}},
 	// Detected technologies (RFC-112): the kept asset's row for a name wins.
 	{table: "asset_technologies", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"name_key"}}}},

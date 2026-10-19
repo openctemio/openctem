@@ -57,6 +57,8 @@ type Settings struct {
 	FindingApprovals FindingApprovalSettings `json:"finding_approvals,omitempty"`
 	// Dashboards are the dashboard defaults (docs/architecture/dashboards.md).
 	Dashboards DashboardSettings `json:"dashboards,omitempty"`
+	// EmergingThreats is the emerging-threat alert policy (RFC-117).
+	EmergingThreats EmergingThreatSettings `json:"emerging_threats,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of
@@ -837,6 +839,9 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.LicensePolicy.Normalize(); err != nil {
 		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
+	if err := s.EmergingThreats.Validate(); err != nil {
+		return err
 	}
 	if err := s.VulnMatching.Validate(); err != nil {
 		return fmt.Errorf("vuln_matching settings: %w", err)

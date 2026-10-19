@@ -223,6 +223,9 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter) (string, []any)
 	if f.CampaignID != nil {
 		conds = append(conds, "t.campaign_id = "+next(f.CampaignID.String()))
 	}
+	if f.NoCampaign {
+		conds = append(conds, "t.campaign_id IS NULL")
+	}
 	if f.FindingID != nil {
 		conds = append(conds, "EXISTS (SELECT 1 FROM remediation_task_members fm WHERE fm.tenant_id = t.tenant_id AND fm.task_id = t.id AND fm.left_at IS NULL AND fm.finding_id = "+next(f.FindingID.String())+")")
 	}
@@ -818,6 +821,7 @@ func readDerivationInputs(ctx context.Context, tx *sql.Tx, tenantID shared.ID, t
 		       t.state, t.closed_at
 		FROM remediation_tasks t
 		LEFT JOIN remediation_campaigns c ON c.id = t.campaign_id AND c.tenant_id = t.tenant_id
+		     AND c.status IN ('draft', 'active')
 		WHERE t.tenant_id = $1 AND t.id = ANY($2::uuid[])
 		ORDER BY t.id
 		FOR UPDATE OF t`,
@@ -1045,6 +1049,26 @@ func (r *RemediationTaskRepository) ListEvents(ctx context.Context, tenantID, ta
 		return pagination.Result[remediation.TaskEvent]{}, fmt.Errorf("list task events: %w", err)
 	}
 	return pagination.NewResult(out, total, page), nil
+}
+
+// LiveTaskIDsByCampaign lists the campaign's tasks that still take work.
+func (r *RemediationTaskRepository) LiveTaskIDsByCampaign(ctx context.Context, tenantID, campaignID shared.ID) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM remediation_tasks
+		WHERE tenant_id = $1 AND campaign_id = $2 AND state IN ('open', 'in_progress', 'verifying', 'on_hold')
+		ORDER BY id`, tenantID.String(), campaignID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list campaign tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("list campaign tasks: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // CampaignInTenant reports whether a remediation campaign belongs to the
