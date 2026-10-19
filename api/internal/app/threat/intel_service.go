@@ -222,7 +222,10 @@ type IntelSyncResult struct {
 	Source        string
 	RecordsSynced int
 	DurationMs    int64
-	Error         error
+	// NotModified: the source answered 304 to the conditional request, so
+	// nothing was rewritten.
+	NotModified bool
+	Error       error
 }
 
 // SyncAll syncs all enabled threat intel sources.
@@ -344,8 +347,19 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 
 	s.logger.Info("starting KEV sync")
 
-	// Fetch and parse KEV data
-	entries, err := s.fetchKEVData(ctx)
+	// Fetch and parse KEV data. The request is conditional (the hourly
+	// refresh downloads the catalog only when it changed).
+	meta := status.Metadata()
+	entries, validators, err := s.fetchKEVData(ctx, readKEVValidators(meta))
+	if errors.Is(err, errKEVNotModified) {
+		result.NotModified = true
+		result.DurationMs = time.Since(startTime).Milliseconds()
+		status.MarkSyncSuccess(0, int(result.DurationMs))
+		if uerr := s.repo.SyncStatus().Update(ctx, status); uerr != nil {
+			s.logger.Error("failed to update sync status", "error", uerr)
+		}
+		return result
+	}
 	if err != nil {
 		result.Error = err
 		status.MarkSyncFailed(err.Error())
@@ -379,7 +393,9 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	result.RecordsSynced = len(entries)
 	result.DurationMs = duration.Milliseconds()
 
-	// Mark sync as successful
+	// Mark sync as successful; keep the validators for the next request.
+	meta[kevValidatorsKey] = validators
+	status.SetMetadata(meta)
 	status.MarkSyncSuccess(len(entries), int(duration.Milliseconds()))
 	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
 		s.logger.Error("failed to update sync status", "error", err)
@@ -568,45 +584,105 @@ func parseEPSSCSV(r io.Reader) ([]*threatintel.EPSSScore, error) {
 // the primary is unreachable (e.g. the cisa.gov WAF 403s the egress IP) so the
 // KEV signal — a top exploit input to prioritization — stays fresh. Both
 // endpoints serve identical schema.
-func (s *IntelService) fetchKEVData(ctx context.Context) ([]*threatintel.KEVEntry, error) {
+func (s *IntelService) fetchKEVData(ctx context.Context, prev map[string]kevValidator) ([]*threatintel.KEVEntry, map[string]kevValidator, error) {
 	var lastErr error
 	for _, u := range []string{kevURL, kevMirrorURL} {
-		entries, err := s.fetchKEVFrom(ctx, u)
+		entries, v, err := s.fetchKEVFrom(ctx, u, prev[u])
+		if errors.Is(err, errKEVNotModified) {
+			return nil, prev, err
+		}
 		if err != nil {
 			lastErr = err
 			s.logger.Warn("KEV source unreachable; trying fallback", "url", u, "error", err)
 			continue
 		}
-		return entries, nil
+		next := map[string]kevValidator{u: v}
+		return entries, next, nil
 	}
-	return nil, lastErr
+	return nil, prev, lastErr
 }
 
-// fetchKEVFrom fetches and parses the KEV catalog JSON from a single URL.
-func (s *IntelService) fetchKEVFrom(ctx context.Context, url string) ([]*threatintel.KEVEntry, error) {
+// errKEVNotModified: the KEV source answered 304 to a conditional request.
+var errKEVNotModified = errors.New("kev catalog not modified")
+
+// kevValidatorsKey is the sync status metadata key holding the validators
+// of the last KEV response, per URL.
+const kevValidatorsKey = "validators"
+
+// kevValidator is what a conditional request repeats: the response's
+// ETag and Last-Modified.
+type kevValidator struct {
+	ETag         string `json:"etag,omitempty"`
+	LastModified string `json:"last_modified,omitempty"`
+}
+
+// readKEVValidators reads the stored validators (any shape a JSON round
+// trip produces); unknown or oversized values are ignored.
+func readKEVValidators(meta map[string]any) map[string]kevValidator {
+	out := map[string]kevValidator{}
+	var raw map[string]any
+	switch v := meta[kevValidatorsKey].(type) {
+	case map[string]any:
+		raw = v
+	case map[string]kevValidator:
+		return v
+	}
+	for u, x := range raw {
+		m, ok := x.(map[string]any)
+		if !ok || (u != kevURL && u != kevMirrorURL) {
+			continue
+		}
+		et, _ := m["etag"].(string)
+		lm, _ := m["last_modified"].(string)
+		if len(et) > 256 || len(lm) > 64 {
+			continue
+		}
+		out[u] = kevValidator{ETag: et, LastModified: lm}
+	}
+	return out
+}
+
+// fetchKEVFrom fetches and parses the KEV catalog JSON from a single URL,
+// conditionally when validators of an earlier response are known.
+func (s *IntelService) fetchKEVFrom(ctx context.Context, url string, prev kevValidator) ([]*threatintel.KEVEntry, kevValidator, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, prev, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("User-Agent", "OpenCTEM/1.0 (https://github.com/openctemio)")
+	if prev.ETag != "" {
+		req.Header.Set("If-None-Match", prev.ETag)
+	}
+	if prev.LastModified != "" {
+		req.Header.Set("If-Modified-Since", prev.LastModified)
+	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch KEV data: %w", err)
+		return nil, prev, fmt.Errorf("failed to fetch KEV data: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotModified && (prev.ETag != "" || prev.LastModified != "") {
+		return nil, prev, errKEVNotModified
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, prev, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	// Parse JSON (bounded to guard against an oversized upstream body)
 	var kevCatalog kevCatalogResponse
 	if err := json.NewDecoder(httpsec.NewLimitedReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
-		return nil, fmt.Errorf("failed to parse KEV JSON: %w", err)
+		return nil, prev, fmt.Errorf("failed to parse KEV JSON: %w", err)
 	}
-
-	return kevEntriesFromCatalog(kevCatalog), nil
+	next := kevValidator{ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified")}
+	if len(next.ETag) > 256 {
+		next.ETag = ""
+	}
+	if len(next.LastModified) > 64 {
+		next.LastModified = ""
+	}
+	return kevEntriesFromCatalog(kevCatalog), next, nil
 }
 
 // kevEntriesFromCatalog converts a decoded KEV catalog into domain entities.

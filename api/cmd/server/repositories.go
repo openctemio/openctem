@@ -27,6 +27,7 @@ type Repositories struct {
 	WebEndpoint             *postgres.WebEndpointRepository             // Web surface: endpoints under origin assets (RFC-056)
 	Software                *postgres.SoftwareRepository                // Software catalog and asset links (RFC-066)
 	CVECorpus               *postgres.CVECorpusRepository               // CVE corpus for inventory matching (RFC-066)
+	VulnEvent               *postgres.VulnEventRepository               // material vulnerability changes (RFC-117)
 	SoftwareMatch           *postgres.SoftwareMatchRepository           // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources   *postgres.AssetAttributeSourceRepository    // Per-source asset attribute values (RFC-069)
 	AssetFreshness          *postgres.AssetFreshnessRepository          // Last observation per attribute class (RFC-075)
@@ -380,6 +381,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		WebEndpoint:             postgres.NewWebEndpointRepository(db),
 		Software:                postgres.NewSoftwareRepository(db),
 		CVECorpus:               postgres.NewCVECorpusRepository(db),
+		VulnEvent:               postgres.NewVulnEventRepository(db),
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),

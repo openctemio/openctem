@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	vulneventapp "github.com/openctemio/openctem/api/internal/app/vulnevent"
+
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -663,18 +665,26 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
-	// Threat intel — daily EPSS + KEV refresh, a priority recompute for only
-	// the findings whose CVE intel moved, and KEV auto-escalation.
+	// Threat intel — daily EPSS and hourly KEV refresh, a priority
+	// recompute for only the findings whose CVE intel moved, and KEV
+	// auto-escalation. Both report material changes to the vulnerability
+	// event log (RFC-117).
 	var intelQueue controller.IntelChangeQueue
 	if svc.Scoring != nil {
 		intelQueue = svc.Scoring
 	}
-	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
-		svc.ThreatIntel,
-		repos.KEVEscalator,
-		intelQueue,
-		log.With("controller", "threat-intel-refresh"),
-	))
+	var vulnEvents *vulneventapp.Emitter
+	if repos.VulnEvent != nil {
+		vulnEvents = vulneventapp.NewEmitter(repos.VulnEvent, log)
+	}
+	epssRefresh := controller.NewThreatIntelRefreshController(svc.ThreatIntel, intelQueue, log.With("controller", "threat-intel-refresh"))
+	kevRefresh := controller.NewKEVRefreshController(svc.ThreatIntel, repos.KEVEscalator, intelQueue, log.With("controller", "kev-refresh"))
+	if vulnEvents != nil {
+		epssRefresh.SetEventEmitter(vulnEvents)
+		kevRefresh.SetEventEmitter(vulnEvents)
+	}
+	w.ControllerManager.Register(epssRefresh)
+	w.ControllerManager.Register(kevRefresh)
 
 	// Vulnerability bundles (RFC-066 §5.5): verified and imported into the
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
@@ -691,7 +701,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
 			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
 				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
-			w.ControllerManager.Register(controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import")))
+			importCtl := controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
+			if vulnEvents != nil {
+				importCtl.SetEventEmitter(vulnEvents)
+			}
+			w.ControllerManager.Register(importCtl)
 		}
 	}
 
