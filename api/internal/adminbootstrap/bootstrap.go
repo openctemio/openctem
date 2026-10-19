@@ -515,7 +515,7 @@ func reportChange(out io.Writer, c adminChange) {
 			// Migration 000227 deactivated every administrator without a
 			// sign-in account; linking is the operator's explicit request to
 			// use it again.
-			fmt.Fprintln(out, "  Status:   inactive -> active (it had been deactivated when admin API keys were removed)")
+			fmt.Fprintln(out, "  Status:   reactivated, inactive -> active (it had been deactivated when admin API keys were removed)")
 		}
 	default:
 		verb := "created"

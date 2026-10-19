@@ -130,7 +130,7 @@ func Main() {
 
 // runBootstrap is the admin-creating command (everything but the
 // subcommands). It returns the exit code.
-func runBootstrap(args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runBootstrap(args []string, getEnv func(string) string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("bootstrap-admin", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dbURL := fs.String("db", "", "Database URL. Testing only: the password then shows in ps and the shell history; use DATABASE_URL or DB_* env")
@@ -173,27 +173,27 @@ func runBootstrap(args []string, getenv func(string) string, stdin io.Reader, st
 	log := logger.New(logger.Config{Level: "warn", Format: "text", Output: stderr})
 
 	opts := adminbootstrap.Options{
-		Email:       firstNonEmpty(*email, getenv("ADMIN_EMAIL")),
-		Name:        firstNonEmpty(*name, getenv("ADMIN_NAME")),
+		Email:       firstNonEmpty(*email, getEnv("ADMIN_EMAIL")),
+		Name:        firstNonEmpty(*name, getEnv("ADMIN_NAME")),
 		Role:        *role,
-		BackupEmail: firstNonEmpty(*backupEmail, getenv("ADMIN_BACKUP_EMAIL")),
-		BackupName:  firstNonEmpty(*backupName, getenv("ADMIN_BACKUP_NAME")),
+		BackupEmail: firstNonEmpty(*backupEmail, getEnv("ADMIN_BACKUP_EMAIL")),
+		BackupName:  firstNonEmpty(*backupName, getEnv("ADMIN_BACKUP_NAME")),
 		NoBackup:    *noBackup,
 		Force:       *force,
 		ForceBackup: *forceBackup,
 		Yes:         *yes,
 		LinkOnly:    *linkOnly,
-		Actor:       commandActor(getenv),
+		Actor:       commandActor(getEnv),
 
-		OrgName:       firstNonEmpty(*orgName, getenv("ORG_NAME")),
-		OrgSlug:       firstNonEmpty(*orgSlug, getenv("ORG_SLUG")),
-		OrgOwnerEmail: firstNonEmpty(*orgOwnerEmail, getenv("ORG_OWNER_EMAIL")),
-		OrgOwnerName:  firstNonEmpty(*orgOwnerName, getenv("ORG_OWNER_NAME")),
+		OrgName:       firstNonEmpty(*orgName, getEnv("ORG_NAME")),
+		OrgSlug:       firstNonEmpty(*orgSlug, getEnv("ORG_SLUG")),
+		OrgOwnerEmail: firstNonEmpty(*orgOwnerEmail, getEnv("ORG_OWNER_EMAIL")),
+		OrgOwnerName:  firstNonEmpty(*orgOwnerName, getEnv("ORG_OWNER_NAME")),
 		// The printed link uses the UI origin the server would put in the
 		// email; without one it prints a <ui-url> placeholder.
-		UIBaseURL: firstNonEmpty(getenv("SMTP_BASE_URL"), getenv("APP_URL")),
+		UIBaseURL: firstNonEmpty(getEnv("SMTP_BASE_URL"), getEnv("APP_URL")),
 		// The console has its own site; its origin is printed when known.
-		AdminPublicURL: getenv("ADMIN_PUBLIC_URL"),
+		AdminPublicURL: getEnv("ADMIN_PUBLIC_URL"),
 		Logger:         log,
 	}
 	if isTerminal(stdin) {
@@ -202,7 +202,7 @@ func runBootstrap(args []string, getenv func(string) string, stdin io.Reader, st
 	if err := opts.Normalize(); err != nil {
 		return fail("%v", err)
 	}
-	databaseURL := firstNonEmpty(*dbURL, getenv("DATABASE_URL"), databaseURLFrom(getenv))
+	databaseURL := firstNonEmpty(*dbURL, getEnv("DATABASE_URL"), databaseURLFrom(getEnv))
 	if databaseURL == "" {
 		return fail("Database URL required: set DATABASE_URL, or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME env vars")
 	}
@@ -221,13 +221,13 @@ func runBootstrap(args []string, getenv func(string) string, stdin io.Reader, st
 	// Long enough for the operator to type a confirmation.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	mailer, err := setupMailer(ctx, db, getenv, stdout, log)
+	mailer, err := setupMailer(ctx, db, getEnv, stdout, log)
 	if err != nil {
 		return fail("%v", err)
 	}
 	if mailer != nil {
 		opts.OrgSetupMailer = mailer
-		opts.Notifier = rosterMailer{email: mailer, appName: firstNonEmpty(getenv("BRAND_NAME"), brand.DefaultName)}
+		opts.Notifier = rosterMailer{email: mailer, appName: firstNonEmpty(getEnv("BRAND_NAME"), brand.DefaultName)}
 	}
 
 	if err := adminbootstrap.Run(ctx, db, opts, stdout); err != nil {
@@ -264,8 +264,8 @@ func typedConfirmation(stdin io.Reader, prompt io.Writer) func(string) bool {
 // commandActor names who ran the command for the audit entry: the account
 // that invoked sudo, else the login user, else the process's own user; and
 // the host (in a container, its host name).
-func commandActor(getenv func(string) string) adminbootstrap.Actor {
-	who := firstNonEmpty(getenv("SUDO_USER"), getenv("USER"), getenv("LOGNAME"))
+func commandActor(getEnv func(string) string) adminbootstrap.Actor {
+	who := firstNonEmpty(getEnv("SUDO_USER"), getEnv("USER"), getEnv("LOGNAME"))
 	if who == "" {
 		if u, err := user.Current(); err == nil {
 			who = u.Username
@@ -299,18 +299,18 @@ func (m rosterMailer) NotifyRosterChange(ctx context.Context, c adminconsole.Ros
 // _FROM_NAME, _STARTTLS) stores those settings first, when none are stored,
 // encrypted with APP_ENCRYPTION_KEY. Without e-mail it returns nil, and the
 // link is printed instead.
-func setupMailer(ctx context.Context, db *sql.DB, getenv func(string) string, out io.Writer, log *logger.Logger) (*authapp.EmailService, error) {
-	key := getenv("APP_ENCRYPTION_KEY")
+func setupMailer(ctx context.Context, db *sql.DB, getEnv func(string) string, out io.Writer, log *logger.Logger) (*authapp.EmailService, error) {
+	key := getEnv("APP_ENCRYPTION_KEY")
 	if key == "" {
 		return nil, nil
 	}
-	enc, err := crypto.NewCipherFromKey(key, getenv("APP_ENCRYPTION_KEY_FORMAT"))
+	enc, err := crypto.NewCipherFromKey(key, getEnv("APP_ENCRYPTION_KEY_FORMAT"))
 	if err != nil {
 		return nil, errors.New("APP_ENCRYPTION_KEY is not a valid key")
 	}
 	svc := platformemail.NewService(postgres.NewPlatformSettingRepository(&postgres.DB{DB: db}), enc, nil, log)
-	if host := getenv("BOOTSTRAP_SMTP_HOST"); host != "" {
-		port, err := strconv.Atoi(firstNonEmpty(getenv("BOOTSTRAP_SMTP_PORT"), "587"))
+	if host := getEnv("BOOTSTRAP_SMTP_HOST"); host != "" {
+		port, err := strconv.Atoi(firstNonEmpty(getEnv("BOOTSTRAP_SMTP_PORT"), "587"))
 		if err != nil {
 			return nil, errors.New("BOOTSTRAP_SMTP_PORT is not a number")
 		}
@@ -318,10 +318,10 @@ func setupMailer(ctx context.Context, db *sql.DB, getenv func(string) string, ou
 		if p, ok := os.LookupEnv("BOOTSTRAP_SMTP_PASSWORD"); ok {
 			password = &p
 		}
-		startTLS := getenv("BOOTSTRAP_SMTP_STARTTLS") != "false"
+		startTLS := getEnv("BOOTSTRAP_SMTP_STARTTLS") != "false"
 		created, err := svc.Seed(ctx, platformemail.Input{
-			Host: host, Port: port, Username: getenv("BOOTSTRAP_SMTP_USER"), Password: password,
-			From: getenv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(getenv("BOOTSTRAP_SMTP_FROM_NAME"), getenv("BRAND_NAME"), brand.DefaultName), StartTLS: startTLS,
+			Host: host, Port: port, Username: getEnv("BOOTSTRAP_SMTP_USER"), Password: password,
+			From: getEnv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(getEnv("BOOTSTRAP_SMTP_FROM_NAME"), getEnv("BRAND_NAME"), brand.DefaultName), StartTLS: startTLS,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("BOOTSTRAP_SMTP_*: %w", err)
@@ -332,7 +332,7 @@ func setupMailer(ctx context.Context, db *sql.DB, getenv func(string) string, ou
 			fmt.Fprintln(out, "Platform e-mail settings already stored; BOOTSTRAP_SMTP_* ignored.")
 		}
 	}
-	mailer := authapp.NewEmailService(svc.Sender(), config.SMTPFromEnv(), firstNonEmpty(getenv("BRAND_NAME"), brand.DefaultName), log)
+	mailer := authapp.NewEmailService(svc.Sender(), config.SMTPFromEnv(), firstNonEmpty(getEnv("BRAND_NAME"), brand.DefaultName), log)
 	if !mailer.IsConfigured() {
 		return nil, nil
 	}
@@ -344,26 +344,26 @@ func setupMailer(ctx context.Context, db *sql.DB, getenv func(string) string, ou
 // or % in it reaches the server as written.
 func databaseURLFromParts() string { return databaseURLFrom(os.Getenv) }
 
-func databaseURLFrom(getenv func(string) string) string {
-	dbHost := getenv("DB_HOST")
-	dbUser := getenv("DB_USER")
-	dbPassword := getenv("DB_PASSWORD")
+func databaseURLFrom(getEnv func(string) string) string {
+	dbHost := getEnv("DB_HOST")
+	dbUser := getEnv("DB_USER")
+	dbPassword := getEnv("DB_PASSWORD")
 	// With a separate console role the app role cannot write admin_users, and
 	// the console role itself cannot create or delete the sign-in account in
 	// users, so the CLI connects as the schema owner (DB_MIGRATE_USER).
-	if u := getenv("DB_MIGRATE_USER"); u != "" {
-		dbUser, dbPassword = u, getenv("DB_MIGRATE_PASSWORD")
+	if u := getEnv("DB_MIGRATE_USER"); u != "" {
+		dbUser, dbPassword = u, getEnv("DB_MIGRATE_PASSWORD")
 	}
-	dbName := getenv("DB_NAME")
+	dbName := getEnv("DB_NAME")
 	if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
 		return ""
 	}
 	u := url.URL{
 		Scheme:   "postgres",
 		User:     url.UserPassword(dbUser, dbPassword),
-		Host:     net.JoinHostPort(dbHost, firstNonEmpty(getenv("DB_PORT"), "5432")),
+		Host:     net.JoinHostPort(dbHost, firstNonEmpty(getEnv("DB_PORT"), "5432")),
 		Path:     "/" + dbName,
-		RawQuery: url.Values{"sslmode": {firstNonEmpty(getenv("DB_SSLMODE"), "disable")}}.Encode(),
+		RawQuery: url.Values{"sslmode": {firstNonEmpty(getEnv("DB_SSLMODE"), "disable")}}.Encode(),
 	}
 	return u.String()
 }

@@ -484,6 +484,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
+| `SUDO_USER` | string | empty |  |  | `bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`). |
 | `ADMIN_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the first platform administrator (or `-email`). |
 | `ADMIN_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the first platform administrator. |
 | `DATABASE_URL` | string | built from `DB_*` |  |  | Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset. A password in it must be percent-encoded (`@` is `%40`, `:` is `%3A`, `/` is `%2F`, `%` is `%25`); the URL built from `DB_*` is encoded for you. |

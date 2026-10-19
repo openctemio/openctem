@@ -10,11 +10,11 @@ import (
 // prints no one-time credential: it refuses before it touches the database.
 func TestNoSecretsWithoutTerminal(t *testing.T) {
 	env := map[string]string{"DATABASE_URL": "postgres://u@127.0.0.1:1/none?sslmode=disable&connect_timeout=1"}
-	getenv := func(k string) string { return env[k] }
+	getEnv := func(k string) string { return env[k] }
 	args := []string{"-email=admin@example.com", "-backup-email=bg@example.com"}
 
 	var stdout, stderr bytes.Buffer
-	code := runBootstrap(args, getenv, strings.NewReader(""), &stdout, &stderr)
+	code := runBootstrap(args, getEnv, strings.NewReader(""), &stdout, &stderr)
 	if code == 0 {
 		t.Fatal("ran without a terminal and without -print-secrets")
 	}
@@ -28,7 +28,7 @@ func TestNoSecretsWithoutTerminal(t *testing.T) {
 	// -print-secrets opts in: the run goes on to the database (unreachable here).
 	stdout.Reset()
 	stderr.Reset()
-	code = runBootstrap(append(args, "-print-secrets"), getenv, strings.NewReader(""), &stdout, &stderr)
+	code = runBootstrap(append(args, "-print-secrets"), getEnv, strings.NewReader(""), &stdout, &stderr)
 	if code == 0 || !strings.Contains(stderr.String(), "database") {
 		t.Fatalf("with -print-secrets: code %d, stderr %q", code, stderr.String())
 	}
