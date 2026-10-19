@@ -20,17 +20,19 @@ type LastRun struct {
 	Tasks *scanrun.TaskSummary
 }
 
-// Progress is how far a live run is, 0-100: finished tasks of all tasks, or
-// finished steps of all steps before tasks exist.
+// Progress is how far a live run is, 0-100, in one unit: finished steps of
+// the steps the run planned (the same figure the scan page and the run drawer
+// show). Tasks are chunks inside a step and only stand in until the run has
+// planned its steps.
 func (l LastRun) Progress() int {
+	if l.Run != nil && l.Run.TotalSteps > 0 {
+		return min(100, l.Run.GetProgress())
+	}
 	if l.Tasks != nil && l.Tasks.Total > 0 {
 		done := l.Tasks.Completed + l.Tasks.Failed + l.Tasks.Canceled
 		return min(100, done*100/l.Tasks.Total)
 	}
-	if l.Run == nil {
-		return 0
-	}
-	return min(100, l.Run.GetProgress())
+	return 0
 }
 
 // runBatchReader reads runs by id for one tenant
