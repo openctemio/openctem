@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -125,6 +127,7 @@ func newSCIMTestEnv() *scimTestEnv {
 	users := &scimUserStore{byEmail: map[string]*userdom.User{}, byID: map[shared.ID]*userdom.User{}}
 	members := &scimMemberStore{byUser: map[shared.ID]*tenantdom.Membership{}}
 	prov := scimapp.NewProvisioningService(users, members, members, logger.NewNop())
+	prov.SetDomainVerifier(scimStaticDomains{"example.com": true})
 	tenantID := shared.NewID()
 	return &scimTestEnv{
 		handler:  NewSCIMHandler(prov, logger.NewNop()),
@@ -186,6 +189,33 @@ func TestSCIM_CreateUser_201(t *testing.T) {
 	}
 	if resp["userName"] != "new@example.com" {
 		t.Errorf("userName = %v", resp["userName"])
+	}
+}
+
+// scimStaticDomains is a fixed verified-domain set for the handler tests.
+type scimStaticDomains map[string]bool
+
+func (d scimStaticDomains) IsVerifiedDomain(_ context.Context, _, domain string) (bool, error) {
+	return d[domain], nil
+}
+
+// A new account on a domain the organization has not verified is refused with
+// a SCIM invalidValue error that says why, and nothing is created.
+func TestSCIM_CreateUser_UnverifiedDomain_400(t *testing.T) {
+	e := newSCIMTestEnv()
+	body, _ := json.Marshal(map[string]any{"userName": "victim@unverified.example", "active": true})
+	w := e.serve(t, e.handler.CreateUser, http.MethodPost, "/scim/v2/Users", body, "", false)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["scimType"] != "invalidValue" || !strings.Contains(fmt.Sprint(resp["detail"]), "not a verified domain") {
+		t.Fatalf("want invalidValue naming the unverified domain, got %v", resp)
+	}
+	if len(e.users.byEmail) != 0 || len(e.members.byUser) != 0 {
+		t.Fatal("a refused create must not write an account or a membership")
 	}
 }
 
