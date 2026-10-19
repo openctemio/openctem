@@ -47,6 +47,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -547,7 +548,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
-		ReportSchedule:         newReportScheduleHandler(svc, log),
+		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
@@ -1567,9 +1568,10 @@ func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Servi
 
 // newReportScheduleHandler builds the report schedule handler with its audit
 // trail.
-func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
+func newReportScheduleHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
 	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
 	h.SetAuditService(svc.Audit)
+	h.SetCreatorNames(tenantapp.NewUserDisplayNames(repos.User))
 	return h
 }
 

@@ -23,6 +23,7 @@ type KeyApplier struct {
 	repo   remediationdom.KeyRepository
 	logger *logger.Logger
 	audit  AuditWriter
+	actor  string
 }
 
 // AuditWriter records an audit entry (the audit log repository).
@@ -32,6 +33,10 @@ type AuditWriter interface {
 
 // SetAuditWriter records an audit entry per campaign the backfill retargets.
 func (a *KeyApplier) SetAuditWriter(w AuditWriter) { a.audit = w }
+
+// SetBackfillActor names who runs the backfill in its audit entries (the
+// command line by default; the server's automatic re-derivation otherwise).
+func (a *KeyApplier) SetBackfillActor(actor string) { a.actor = actor }
 
 // backfillActor names the backfill as the actor of its audit entries.
 const backfillActor = "refingerprint -remediation-keys"
@@ -120,6 +125,11 @@ func (c *KeyChanges) add(o *KeyChanges) {
 	}
 }
 
+// HasStaleKeys reports a key of the tenant derived by older key rules.
+func (a *KeyApplier) HasStaleKeys(ctx context.Context, tenantID shared.ID) (bool, error) {
+	return a.repo.HasStaleKeys(ctx, tenantID)
+}
+
 // ApplyBatch keys the given persisted findings (their ids are read back from
 // the database, so the in-memory copy does not need the package details).
 func (a *KeyApplier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error {
@@ -183,7 +193,7 @@ func (a *KeyApplier) apply(ctx context.Context, tenantID shared.ID, sources []re
 			if write {
 				werr = a.repo.Delete(ctx, tenantID, src.FindingID)
 			}
-		case src.CurrentKey == key && src.CurrentTitle == title:
+		case src.CurrentKey == key && src.CurrentTitle == title && src.CurrentVersion >= remediationdom.KeyAlgorithmVersion:
 			ch.Unchanged++
 			continue
 		default:
@@ -333,6 +343,13 @@ func (a *KeyApplier) Tenants(ctx context.Context) ([]shared.ID, error) {
 	return a.repo.TenantsWithFindings(ctx)
 }
 
+func (a *KeyApplier) backfillActor() string {
+	if a.actor != "" {
+		return a.actor
+	}
+	return backfillActor
+}
+
 // auditRetarget records one campaign the backfill moved to a new key.
 func (a *KeyApplier) auditRetarget(ctx context.Context, tenantID shared.ID, ref remediationdom.CampaignKeyRef, newKey string, findings int) error {
 	if a.audit == nil {
@@ -346,7 +363,7 @@ func (a *KeyApplier) auditRetarget(ctx context.Context, tenantID shared.ID, ref 
 	ch := auditdom.NewChanges()
 	ch.Before["remediation_key"] = ref.Key
 	ch.After["remediation_key"] = newKey
-	entry.WithTenantID(tenantID).WithActorUserAgent(backfillActor).WithResourceName(ref.Name).WithChanges(ch).
+	entry.WithTenantID(tenantID).WithActorUserAgent(a.backfillActor()).WithResourceName(ref.Name).WithChanges(ch).
 		WithMessage(fmt.Sprintf("Remediation key backfill moved the campaign from %s to %s (%d findings)", ref.Key, newKey, findings)).
 		WithMetadata("source", "remediation_key_backfill")
 	if err := a.audit.Create(ctx, entry); err != nil {
