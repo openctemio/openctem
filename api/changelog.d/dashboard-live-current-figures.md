@@ -1,0 +1,9 @@
+### Fixed: dashboard "current" figures are live and in the viewer's scope; failures and unmeasurable figures are no longer zeros
+
+- The CTEM view's priority bars read the last stored snapshot (organization-wide and a day old) as "current": a member restricted to some assets always saw P0–P3 = 0 next to their own open findings, and an owner saw 5 P0 beside the live 1. They now show live open counts in the viewer's scope, each opening its findings list; the P0 line and the Program health open-findings trend end at the live count; a scoped viewer sees "Trend not available for your scope".
+- `GET /dashboard/executive-summary` adds `p2_open`, `p3_open` and `scoped`.
+- `GET /findings/stats` returned `open_count` 45 and `by_state.open` 47 in one response. `open_count` is now the open lens (the findings list's `state=open`: `fix_applied` included, unpublished pentest drafts excluded); the scheduled report e-mail uses it, so it matches the web.
+- A failed read showed confident zeros ("0 P0", "0 %"); dashboard cards, custom dashboard widgets and the Executive page now show an error with Retry. Scan coverage with no scannable asset, validation with nothing to validate, approval time with no approval decided and MTTR with nothing fixed show "—".
+- Time to remediate on the Classic view averaged the per-severity means (9d) while the Executive page showed the API's overall (7.8d); both now read the same figure.
+- Program health labels say what they measure: "P0 fixed in period", "Mean time to fix · P0", "Open within SLA", "Findings back after a fix"; stale hints removed.
+- "Fix next" ordered by a bare number (EPSS × 100), putting P1 rows above the only P0 and scoring a leaked key at 0. Findings are now ordered by priority class (API order within a class), exposure chains after; EPSS is a reason chip.

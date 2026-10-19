@@ -226,10 +226,13 @@ cut.
 - **Offboarding**: a user-scoped key stops authenticating the moment its owner's
   membership is suspended or removed.
 - **Network policy**: the organization IP allowlist (`security.ip_whitelist`)
-  runs right after key auth, exactly as for the same key on the REST API: a key
-  used from outside the listed networks gets `403 IP_NOT_ALLOWED` on both. The
-  chain is `[Origin check, 401 challenge, per-IP rate limit, key auth, IP
-  allowlist]` (`routes/mcp.go`).
+  runs right after credential auth, for both MCP credentials (an `oct_` key
+  and an OAuth access token) exactly as on the REST API: a credential used from
+  outside the listed networks gets `403 IP_NOT_ALLOWED`. The gate keys on the
+  principal (an organization member), not the credential type, so OIDC tokens
+  and any later credential are bound too; only principals without a user
+  (sensor keys) stay outside it. The chain is `[Origin check, 401 challenge,
+  per-IP rate limit, credential auth, IP allowlist]` (`routes/mcp.go`).
 - **Rate limit**: a per-IP limiter runs before auth, and a per-credential budget
   after it. The budget's burst is capped at 60 requests (the hourly rate is
   unchanged), so a hijacked assistant cannot spend a whole hour in one burst. Generic list tools clamp to ≤100 rows, pentest lists to ≤50 per page.
