@@ -60,6 +60,8 @@ func TestGetStats_OverviewAgreesWithTheOpenTab(t *testing.T) {
 		got, want int64
 	}{
 		{"by_state.open", open, 5},
+		// One definition of "open": the scheduled report and the list agree.
+		{"open_count == by_state.open", stats.OpenCount, open},
 		{"by_state.all", stats.ByState[vulnerability.FindingLensAll], 9},
 		{"sum(open_by_severity) == by_state.open", openSum, open},
 		{"open_by_severity.critical", stats.OpenBySeverity[vulnerability.SeverityCritical], 2},

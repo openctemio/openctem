@@ -120,6 +120,7 @@ func seedActiveMember(t *testing.T, users *fakeUserStore, members *memberStore, 
 
 func TestProvision_NewUser_CreatesUserAndMembership(t *testing.T) {
 	svc, users, members := newProvisioning()
+	svc.SetDomainVerifier(staticVerifier{"example.com": true})
 	tenantID := shared.NewID()
 
 	res, created, err := svc.CreateOrActivate(context.Background(), tenantID, ProvisionInput{
@@ -314,6 +315,7 @@ func TestProvision_List_CountZeroReturnsNoResources(t *testing.T) {
 
 func TestProvision_CreateInactive(t *testing.T) {
 	svc, _, members := newProvisioning()
+	svc.SetDomainVerifier(staticVerifier{"example.com": true})
 	tenantID := shared.NewID()
 	active := false
 
@@ -397,5 +399,53 @@ func TestProvision_ExistingAccountOnVerifiedDomain_Attached(t *testing.T) {
 	}
 	if !created || members.byUser[u.ID()] == nil {
 		t.Fatal("expected the existing account to be attached on a verified domain")
+	}
+}
+
+// SCIM must not create a new global account for an email whose domain the
+// organization has not DNS-verified: otherwise any organization could squat
+// someone else's address (a passwordless account their later social sign-in
+// would adopt, landing them in the squatter's organization).
+func TestProvision_NewAccountOutsideVerifiedDomain_Refused(t *testing.T) {
+	for name, verifier := range map[string]DomainVerifier{
+		"no verifier":         nil,
+		"domain not verified": staticVerifier{"attacker.io": true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, users, members := newProvisioning()
+			svc.SetDomainVerifier(verifier)
+
+			_, created, err := svc.CreateOrActivate(context.Background(), shared.NewID(), ProvisionInput{
+				UserName: "victim@unverified.example", Active: true,
+			})
+			if !errors.Is(err, ErrNewAccountNeedsVerifiedDomain) || !errors.Is(err, shared.ErrValidation) {
+				t.Fatalf("expected ErrNewAccountNeedsVerifiedDomain, got %v", err)
+			}
+			if created {
+				t.Error("a refused provision must not report created")
+			}
+			if len(users.byEmail) != 0 {
+				t.Fatalf("no account may be created for an unverified domain, got %d", len(users.byEmail))
+			}
+			if len(members.byUser) != 0 {
+				t.Fatal("no membership may be created for a refused provision")
+			}
+		})
+	}
+}
+
+// Control: on a verified domain a new person is created and added.
+func TestProvision_NewAccountOnVerifiedDomain_Created(t *testing.T) {
+	svc, users, members := newProvisioning()
+	svc.SetDomainVerifier(staticVerifier{"corp.example": true})
+
+	_, created, err := svc.CreateOrActivate(context.Background(), shared.NewID(), ProvisionInput{
+		UserName: "new@corp.example", Active: true,
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if !created || users.byEmail["new@corp.example"] == nil || len(members.byUser) != 1 {
+		t.Fatal("expected the account and its membership on a verified domain")
 	}
 }

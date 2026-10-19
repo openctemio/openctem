@@ -212,3 +212,21 @@ export interface MarkFixedResult {
   rows: { finding_id: string; outcome: string; reason: string }[]
   task: RemediationTask
 }
+
+/**
+ * A finding the request wanted that is already the primary finding of
+ * another active task (409 FINDINGS_IN_OTHER_TASK). task_title and the
+ * assignee are null when the caller cannot read that task.
+ */
+export interface FindingConflict {
+  finding_id: string
+  finding_title: string
+  task_id: string
+  task_title: string | null
+  assignee_user_id: string | null
+  assignee_group_id: string | null
+  can_move: boolean
+}
+
+/** How a retried request resolves claim conflicts: skip all, or move some. */
+export type ConflictResolution = { skip: true } | { move: string[]; move_reason: string }

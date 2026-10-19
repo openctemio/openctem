@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Copy, Download, Search } from 'lucide-react'
+import { Copy, Download, Info, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ContentChannelResponse, PlatformContentPackResponse } from '@/lib/api/generated'
 import { Main } from '@/components/layout'
@@ -127,7 +127,9 @@ export default function ContentPacksPage() {
           row.original.status === 'revoked' ? (
             <Badge variant="destructive">{t('admin.cp.revoked', 'Revoked')}</Badge>
           ) : (
-            <Badge variant="secondary">{t('admin.cp.active', 'Active')}</Badge>
+            <Badge variant="secondary">
+              {t('admin.cp.storedNotDelivered', 'Stored, not delivered')}
+            </Badge>
           ),
       },
       {
@@ -152,6 +154,20 @@ export default function ContentPacksPage() {
       >
         {canWrite && <AddContentPackDialog onAdded={refresh} />}
       </PageHeader>
+
+      {/* research/191 C-1: no sensor downloads packs yet; say so rather than show them as active. */}
+      <div
+        role="status"
+        className="mt-5 flex gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+      >
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+        <p>
+          {t(
+            'admin.cp.notDelivered',
+            'Not active yet: sensors do not download content packs. A stored pack is not used by any scan, and revoking one stops nothing. Custom templates still travel inside each scan job.'
+          )}
+        </p>
+      </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -333,7 +349,9 @@ export default function ContentPacksPage() {
               (opened.status === 'revoked' ? (
                 <Badge variant="destructive">{t('admin.cp.revoked', 'Revoked')}</Badge>
               ) : (
-                <Badge variant="secondary">{t('admin.cp.active', 'Active')}</Badge>
+                <Badge variant="secondary">
+                  {t('admin.cp.storedNotDelivered', 'Stored, not delivered')}
+                </Badge>
               ))
             }
             meta={opened ? [opened.kind, `tier ${opened.tier}`] : []}

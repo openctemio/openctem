@@ -182,3 +182,25 @@ func TestSensorHealth_Dispatchable(t *testing.T) {
 		}
 	}
 }
+
+// A far-future stored deadline (clock jump, restore, bad write) must not keep
+// a silent sensor online: the deadline is capped at last_seen + the longest
+// interval the protocol allows.
+func TestLadder_FarFutureDeadlineIsCapped(t *testing.T) {
+	seen := at(-6 * time.Hour)
+	far := at(30 * 24 * time.Hour)
+	pos := Ladder(testNow, HeartbeatDeadline{LastSeenAt: seen, DueAt: far, Interval: 30 * time.Second})
+	if pos.State != SensorHealthOffline {
+		t.Fatalf("a sensor silent for 6h is %s, want offline", pos.State)
+	}
+	if want := seen.Add(MaxHeartbeatInterval); !pos.Due.Equal(want) {
+		t.Fatalf("due %v, want capped at %v", pos.Due, want)
+	}
+
+	// A sensor inside the cap keeps its stored deadline.
+	due := at(-10 * time.Second).Add(MaxHeartbeatInterval)
+	pos = Ladder(testNow, HeartbeatDeadline{LastSeenAt: at(-10 * time.Second), DueAt: &due, Interval: MaxHeartbeatInterval})
+	if pos.State != SensorHealthOnline || !pos.Due.Equal(due) {
+		t.Fatalf("on-time sensor: state %s due %v", pos.State, pos.Due)
+	}
+}
