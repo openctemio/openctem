@@ -3620,3 +3620,68 @@ func memberKindFilter(v string) string {
 		return ""
 	}
 }
+
+// GetEmergingThreatSettings handles GET /api/v1/organization/settings/emerging-threats.
+// @Summary      Get emerging-threat alert settings
+// @Description  The organization's emerging-threat alert policy with its defaults filled (RFC-117): thresholds, digest hour (organization time), quiet hours, whether possibly affected assets may page and whether external messages name assets.
+// @Tags         Tenants
+// @Produce      json
+// @Success      200     {object}  tenant.EmergingThreatSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/emerging-threats [get]
+func (h *TenantHandler) GetEmergingThreatSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	es, err := h.service.GetEmergingThreatSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionEmergingThreats)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(es)
+}
+
+// UpdateEmergingThreatSettings handles PUT /api/v1/organization/settings/emerging-threats.
+// @Summary      Update emerging-threat alert settings
+// @Description  Turns emerging-threat alerts on or off and sets the immediate threshold (60-90), the digest threshold (20-60), the digest hour (0-23), quiet hours and their override score (70-100), whether possibly affected assets may page, and whether external messages name up to five assets (off by default). Audited.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body    body      tenant.EmergingThreatSettings  true  "Emerging-threat alert settings"
+// @Success      200     {object}  tenant.EmergingThreatSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/emerging-threats [put]
+func (h *TenantHandler) UpdateEmergingThreatSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10))
+	decoder.DisallowUnknownFields()
+	var req tenant.EmergingThreatSettings
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+	es, err := h.service.UpdateEmergingThreatSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionEmergingThreats)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(es)
+}

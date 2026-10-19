@@ -421,5 +421,7 @@
   "settings.desc.security-overview": "A score and checklist of what to fix first in your organization.",
   "settings.securityCard.counts": "{risks} risks · {warns} warnings",
   "settings.securityCard.allGood": "Nothing needs attention right now.",
-  "settings.securityCard.open": "Open the security overview"
+  "settings.securityCard.open": "Open the security overview",
+  "settings.item.emerging-threats": "Emerging threats",
+  "settings.desc.emerging-threats": "When new or newly exploited CVEs alert you, and how."
 }

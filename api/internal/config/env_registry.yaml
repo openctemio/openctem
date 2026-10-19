@@ -1893,6 +1893,56 @@ vars:
     required: yes
     secret: true
     description: "`openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it."
+  - name: CONNECTOR_RELAY_URL
+    component: tool
+    group: "Administration tools"
+    type: url
+    required: yes
+    description: "`openctem-sensor-relay connector`: https URL of the sensor relay the connector takes requests from."
+  - name: CONNECTOR_RELAY_PIN
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`openctem-sensor-relay connector`: hex SHA-256 of the relay's public key. When set, the relay's certificate is accepted only if its key matches."
+  - name: CONNECTOR_TLS_CERT
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    description: "`openctem-sensor-relay connector`: path to the connector's client certificate (PEM), pinned on the relay."
+  - name: CONNECTOR_TLS_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: path to the private key (PEM) of `CONNECTOR_TLS_CERT`."
+  - name: CONNECTOR_REALM
+    component: tool
+    group: "Administration tools"
+    type: string
+    required: yes
+    description: "`openctem-sensor-relay connector`: the realm whose requests the connector takes."
+  - name: CONNECTOR_INGEST_KEYS
+    component: tool
+    group: "Administration tools"
+    type: list
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: comma-separated paths of the ingest private key files that open the sensors' sealed requests."
+  - name: CONNECTOR_RESPONSE_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: path to the Ed25519 key that signs the responses."
+  - name: CONNECTOR_API_URL
+    component: tool
+    group: "Administration tools"
+    type: url
+    required: yes
+    description: "`openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to."
   - name: BOOTSTRAP_SMTP_FROM_NAME
     component: tool
     group: "Administration tools"
@@ -1913,6 +1963,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: display name of the backup administrator."
+  - name: SUDO_USER
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`)."
   - name: ADMIN_EMAIL
     component: tool
     group: "Administration tools"

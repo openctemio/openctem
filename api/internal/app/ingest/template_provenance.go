@@ -56,7 +56,16 @@ func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.T
 	}
 	p := vulnerability.TemplateProvenance{}
 	p.TemplateDigest, _ = f.Properties["template_digest"].(string)
-	p.TemplatePath, _ = f.Properties["template_path"].(string)
+	if raw, _ := f.Properties["template_path"].(string); raw != "" {
+		// A sensor may report the file on its own disk: keep the path
+		// inside the template pack only. Any other absolute path (a
+		// temporary directory, a workspace) names no pack template and is
+		// dropped, not stored as its tail.
+		switch n := vulnerability.NormalizeTemplatePath(raw); n.Kind {
+		case vulnerability.SensorPathTemplate, vulnerability.SensorPathRelative:
+			p.TemplatePath = n.Rel
+		}
+	}
 	p.TemplatesVersion, p.TemplatesDigest = reportTemplateRelease(tool)
 	return p.Sanitize()
 }
