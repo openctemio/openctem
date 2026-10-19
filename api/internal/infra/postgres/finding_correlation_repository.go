@@ -283,7 +283,8 @@ func (r *FindingCorrelationRepository) link(ctx context.Context, tenant string, 
 	}
 	// The group counts once, at its worst severity.
 	if severityRank(mSev) > severityRank(pSev) {
-		if _, err := tx.ExecContext(ctx, `UPDATE findings SET severity = $3, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
+		//nolint:gosec // G202: reportedSeveritySetSQL is fixed SQL; values are placeholders
+		if _, err := tx.ExecContext(ctx, `UPDATE findings SET `+reportedSeveritySetSQL("", "$3::varchar")+`, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
 			tenant, l.PrimaryID, mSev); err != nil {
 			return err
 		}
@@ -374,12 +375,14 @@ func (r *FindingCorrelationRepository) release(ctx context.Context, tenant, memb
 	// The primary's severity: its own from before, or a remaining member's
 	// if worse.
 	if priorSev.Valid {
-		if _, err := tx.ExecContext(ctx, `UPDATE findings p SET severity = (
+		//nolint:gosec // G202: reportedSeveritySetSQL is fixed SQL; values are placeholders
+		if _, err := tx.ExecContext(ctx, `WITH worst AS (
 				SELECT s FROM (SELECT $3::varchar AS s UNION ALL
 					SELECT m.severity FROM finding_correlations c JOIN findings m ON m.id = c.member_id AND m.tenant_id = c.tenant_id
 					WHERE c.tenant_id = $1 AND c.primary_id = $2 AND c.state = 'active' AND c.tier = 'auto') x
 				ORDER BY CASE lower(s) WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'info' THEN 1 ELSE 0 END DESC
-				LIMIT 1), updated_at = NOW()
+				LIMIT 1)
+			UPDATE findings p SET `+reportedSeveritySetSQL("p.", "(SELECT s FROM worst)")+`, updated_at = NOW()
 			WHERE p.tenant_id = $1 AND p.id = $2`, tenant, primary, priorSev.String); err != nil {
 			return false, err
 		}

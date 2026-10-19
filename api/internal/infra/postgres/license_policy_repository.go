@@ -271,7 +271,8 @@ func (r *LicensePolicyRepository) SetFindingSeverity(ctx context.Context, tenant
 	if len(ids) == 0 {
 		return nil
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE findings SET severity = $3, updated_at = NOW()
+	//nolint:gosec // G202: reportedSeveritySetSQL is fixed SQL; values are placeholders
+	_, err := r.db.ExecContext(ctx, `UPDATE findings SET `+reportedSeveritySetSQL("", "$3::varchar")+`, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND tool_name = `+licenseToolName,
 		tenantID.String(), pq.Array(vexIDStrings(ids)), severity)
 	if err != nil {

@@ -81,6 +81,9 @@ type Transfer struct {
 // WithChunks enables v2 bundles; without it only v1 bundles are read.
 func (im *Importer) WithChunks(store ChunkStore, t Transfer) *Importer {
 	im.chunks, im.transfer = store, t
+	if w, ok := store.(software.AliasWriter); ok {
+		im.aliases = w
+	}
 	return im
 }
 
@@ -324,13 +327,18 @@ func (im *Importer) runV2(ctx context.Context, cur state) (Result, error) {
 	}
 	res.Sequence = out.Sequence
 	if out.UpToDate {
+		im.syncAliases(ctx, f, out.Sequence, cur.KeySetVersion)
 		return res, nil
 	}
 	res.Ran, res.Kind, res.CVEs, res.Ranges = true, out.Kind, a.cves, a.ranges
 	m := summary{Sequence: out.Sequence, KeySetVersion: a.keySetVersion, CreatedAt: a.createdAt, Kind: out.Kind, Sources: a.sources}
 	im.logger.Info("vulnerability bundle chunks applied", "format", "v2", "sequence", out.Sequence, "chunks", out.ChunksApplied,
 		"resumed", out.Resumed, "ranges_removed", a.finish.RangesRemoved, "withdrawn", a.finish.Withdrawn, "cves_changed", a.finish.Changed)
-	return res, im.finish(ctx, m, res)
+	if err := im.finish(ctx, m, res); err != nil {
+		return res, err
+	}
+	im.syncAliases(ctx, f, out.Sequence, a.keySetVersion)
+	return res, nil
 }
 
 // registerConsumer registers the consumer's counters once.

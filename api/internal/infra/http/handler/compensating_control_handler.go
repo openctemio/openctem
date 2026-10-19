@@ -12,10 +12,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/compensatingcontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -37,6 +39,42 @@ type CompensatingControlHandler struct {
 	// restricted caller may only link, change or delete what they can see.
 	// Nil leaves the links tenant-wide.
 	dataScope *datascope.Enforcer
+	// audit records every change, test and link: an effective control
+	// lowers the priority and SLA of the findings it covers.
+	audit *auditapp.AuditService
+}
+
+// SetAuditService wires the audit log for control changes.
+func (h *CompensatingControlHandler) SetAuditService(a *auditapp.AuditService) { h.audit = a }
+
+// controlView loads a control as recorded in audit diffs (nil when missing).
+func (h *CompensatingControlHandler) controlView(ctx context.Context, tenantID, id string) *CompensatingControlResponse {
+	c, err := scanControl(h.db.QueryRowContext(ctx,
+		`SELECT `+controlColumns+` FROM compensating_controls WHERE tenant_id = $1 AND id = $2`, tenantID, id))
+	if err != nil {
+		return nil
+	}
+	return &c
+}
+
+func (h *CompensatingControlHandler) auditControl(r *http.Request, action auditdom.Action, id string,
+	before, after *CompensatingControlResponse, message string, metadata map[string]any,
+) {
+	name := ""
+	var b, a any
+	if before != nil {
+		name, b = before.Name, before
+	}
+	if after != nil {
+		name, a = after.Name, after
+	}
+	ev := auditapp.NewChangeEvent(action, auditdom.ResourceTypeCompensatingControl, id, b, a).
+		WithResourceName(name).
+		WithMessage(message)
+	for k, v := range metadata {
+		ev = ev.WithMetadata(k, v)
+	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r), ev)
 }
 
 // WithDataScope applies the caller's data scope to link, update, delete and
@@ -210,8 +248,29 @@ func validateCompensatingControl(req *CreateCompensatingControlRequest) *apierro
 			"reduction_factor must be a fraction greater than 0 and at most 1 " +
 				"(e.g. 0.3 for a 30% risk reduction)")
 	}
+	// Every control carries a review date: it stops lowering priorities
+	// then, until someone re-tests it and sets a new one. Create defaults
+	// it (DefaultControlReviewPeriod), update keeps the stored one.
+	if req.ExpiresAt == nil {
+		return nil
+	}
+	now := time.Now()
+	if !req.ExpiresAt.After(now) {
+		return apierror.BadRequest("expires_at must be in the future")
+	}
+	if req.ExpiresAt.After(now.Add(MaxControlReviewPeriod)) {
+		return apierror.BadRequest(fmt.Sprintf("expires_at must be within %d days", int(MaxControlReviewPeriod.Hours()/24)))
+	}
 	return nil
 }
+
+// MaxControlReviewPeriod is the longest a control may go before its review
+// date (expires_at); DefaultControlReviewPeriod is the review date a control
+// created without one gets.
+const (
+	MaxControlReviewPeriod     = 366 * 24 * time.Hour
+	DefaultControlReviewPeriod = 90 * 24 * time.Hour
+)
 
 // controlColumns is the column list every read of a compensating control uses,
 // in the order scanControl expects.
@@ -354,6 +413,10 @@ func (h *CompensatingControlHandler) Create(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if req.ExpiresAt == nil {
+		review := time.Now().Add(DefaultControlReviewPeriod).UTC()
+		req.ExpiresAt = &review
+	}
 	c, err := scanControl(h.db.QueryRowContext(r.Context(),
 		`INSERT INTO compensating_controls
 		        (tenant_id, name, description, control_type, status, reduction_factor, expires_at, created_by)
@@ -367,6 +430,7 @@ func (h *CompensatingControlHandler) Create(w http.ResponseWriter, r *http.Reque
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	h.auditControl(r, auditdom.ActionCompensatingControlCreated, c.ID, nil, &c, "Compensating control created", nil)
 
 	writeJSON(w, http.StatusCreated, c)
 }
@@ -388,12 +452,13 @@ func (h *CompensatingControlHandler) Update(w http.ResponseWriter, r *http.Reque
 	if !h.requireActOnLinks(w, r, tenantID, id) {
 		return
 	}
+	before := h.controlView(r.Context(), tenantID, id)
 
 	c, err := scanControl(h.db.QueryRowContext(r.Context(),
 		`UPDATE compensating_controls
 		    SET name = $3, description = $4, control_type = $5,
 		        status = COALESCE(NULLIF($6,''), status),
-		        reduction_factor = $7, expires_at = $8, updated_at = NOW()
+		        reduction_factor = $7, expires_at = COALESCE($8, expires_at), updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2
 		 RETURNING `+controlColumns,
 		tenantID, id, req.Name, req.Description, req.ControlType,
@@ -408,6 +473,7 @@ func (h *CompensatingControlHandler) Update(w http.ResponseWriter, r *http.Reque
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	h.auditControl(r, auditdom.ActionCompensatingControlUpdated, id, before, &c, "Compensating control updated", nil)
 
 	// B2: protection may have changed (status/reduction_factor) → sweep.
 	if tid, ok := middleware.GetTenantIDFromContext(r.Context()); ok {
@@ -428,6 +494,7 @@ func (h *CompensatingControlHandler) Delete(w http.ResponseWriter, r *http.Reque
 	// B2: capture the protected asset set BEFORE the cascade delete
 	// drops the link rows. Without this we'd have nothing to sweep.
 	protectedAssetIDs := h.loadControlAssetIDs(r.Context(), id)
+	before := h.controlView(r.Context(), tenantID, id)
 
 	res, err := h.db.ExecContext(r.Context(),
 		"DELETE FROM compensating_controls WHERE tenant_id = $1 AND id = $2",
@@ -443,6 +510,8 @@ func (h *CompensatingControlHandler) Delete(w http.ResponseWriter, r *http.Reque
 		apierror.NotFound("compensating control not found").WriteJSON(w)
 		return
 	}
+	h.auditControl(r, auditdom.ActionCompensatingControlDeleted, id, before, nil, "Compensating control deleted",
+		map[string]any{"asset_count": len(protectedAssetIDs)})
 
 	// Protection removed → findings may reclassify upwards.
 	if len(protectedAssetIDs) > 0 && h.publisher != nil {
@@ -566,6 +635,7 @@ func (h *CompensatingControlHandler) RecordTest(w http.ResponseWriter, r *http.R
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	h.auditControl(r, auditdom.ActionCompensatingControlTested, id, nil, &c, "Compensating control test recorded: "+req.TestResult, nil)
 
 	// B2: test result changed the effective protection → sweep.
 	if tid, ok := middleware.GetTenantIDFromContext(r.Context()); ok {
@@ -635,6 +705,9 @@ func (h *CompensatingControlHandler) LinkAssets(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
+
+	h.auditControl(r, auditdom.ActionCompensatingControlAssetsLinked, id, nil, nil, "Assets linked to a compensating control",
+		map[string]any{"asset_ids": req.AssetIDs})
 
 	// B2: new assets came under protection → sweep them so findings
 	// on those assets may reclassify down.
@@ -708,6 +781,8 @@ func (h *CompensatingControlHandler) LinkFindings(w http.ResponseWriter, r *http
 			return
 		}
 	}
+	h.auditControl(r, auditdom.ActionCompensatingControlFindingsLinked, id, nil, nil, "Findings linked to a compensating control",
+		map[string]any{"finding_ids": req.FindingIDs})
 
 	w.WriteHeader(http.StatusNoContent)
 }
