@@ -278,6 +278,12 @@ func registerVulnerabilityRoutes(
 		// who fixes a finding need not be able to lower its severity.
 		r.PATCH("/{id}/classify", h.ClassifyFinding, middleware.Require(permission.FindingsSeverity), handler.FindingIfMatch)
 		r.PATCH("/{id}/severity", h.UpdateFindingSeverity, middleware.Require(permission.FindingsSeverity), handler.FindingIfMatch)
+		// A severity downgrade waiting for approval: approving or rejecting it
+		// is an approval decision (findings:approve, eligibility checked by
+		// the approval policy in the service); the requester withdraws it.
+		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/severity-requests/{request_id}/reject", h.RejectSeverityRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/severity-requests/{request_id}/cancel", h.CancelSeverityRequest, middleware.Require(permission.FindingsSeverity))
 
 		// Triage and verification. Confirming a finding is a status change
 		// (PATCH /{id}/status): one gate per action.

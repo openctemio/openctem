@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, render, act, fireEvent } from '@testing-library/react'
 
 import { ApiClientError } from '@/lib/api/error-handler'
 import { useFindingTriage, type FindingTriageTarget } from '../use-finding-triage'
@@ -16,6 +16,7 @@ import { useFindingTriage, type FindingTriageTarget } from '../use-finding-triag
 const updateStatus = vi.fn()
 const updateSeverity = vi.fn()
 const invalidate = vi.fn()
+vi.mock('swr', () => ({ mutate: vi.fn() }))
 vi.mock('../../api/use-findings-api', () => ({
   invalidateFindingsCache: () => invalidate(),
   useUpdateFindingStatusApi: () => ({ trigger: updateStatus, isMutating: false }),
@@ -41,6 +42,20 @@ const target = (over: Partial<FindingTriageTarget> = {}): FindingTriageTarget =>
 
 beforeEach(() => vi.clearAllMocks())
 
+// A severity change asks for its reason first: pick the severity, answer the
+// reason dialog and confirm.
+async function changeSeverityWithReason(
+  result: { current: ReturnType<typeof useFindingTriage> },
+  to: 'critical' | 'low'
+) {
+  act(() => result.current.changeSeverity(to))
+  const { getByLabelText, getByRole } = render(<>{result.current.dialogs}</>)
+  fireEvent.change(getByLabelText(/Reason/), { target: { value: 'because of the evidence' } })
+  await act(async () => {
+    fireEvent.click(getByRole('button', { name: 'Change severity' }))
+  })
+}
+
 describe('useFindingTriage — optimistic concurrency', () => {
   it('sends the version shown, then the version the write returned', async () => {
     updateSeverity
@@ -48,26 +63,28 @@ describe('useFindingTriage — optimistic concurrency', () => {
       .mockResolvedValueOnce({ row_version: 9 })
     const { result } = renderHook(() => useFindingTriage(target()))
 
-    await act(async () => {
-      await result.current.changeSeverity('critical')
+    await changeSeverityWithReason(result, 'critical')
+    expect(updateSeverity).toHaveBeenLastCalledWith({
+      severity: 'critical',
+      reason: 'because of the evidence',
+      rowVersion: 7,
     })
-    expect(updateSeverity).toHaveBeenLastCalledWith({ severity: 'critical', rowVersion: 7 })
 
-    await act(async () => {
-      await result.current.changeSeverity('low')
+    await changeSeverityWithReason(result, 'low')
+    expect(updateSeverity).toHaveBeenLastCalledWith({
+      severity: 'low',
+      reason: 'because of the evidence',
+      rowVersion: 8,
     })
-    expect(updateSeverity).toHaveBeenLastCalledWith({ severity: 'low', rowVersion: 8 })
   })
 
-  it('on FINDING_CHANGED reverts, reloads the finding and says so', async () => {
+  it('on FINDING_CHANGED keeps the severity, reloads the finding and says so', async () => {
     updateSeverity.mockRejectedValueOnce(
       new ApiClientError('changed', 'FINDING_CHANGED', 409, { row_version: 9 })
     )
     const { result } = renderHook(() => useFindingTriage(target()))
 
-    await act(async () => {
-      await result.current.changeSeverity('critical')
-    })
+    await changeSeverityWithReason(result, 'critical')
     expect(result.current.severity).toBe('high')
     expect(invalidate).toHaveBeenCalled()
     expect(toast.info).toHaveBeenCalledTimes(1)
@@ -78,9 +95,7 @@ describe('useFindingTriage — optimistic concurrency', () => {
     updateSeverity.mockRejectedValueOnce(new ApiClientError('boom', 'INTERNAL_ERROR', 500))
     const { result } = renderHook(() => useFindingTriage(target()))
 
-    await act(async () => {
-      await result.current.changeSeverity('critical')
-    })
+    await changeSeverityWithReason(result, 'critical')
     expect(toast.error).toHaveBeenCalledTimes(1)
     expect(toast.info).not.toHaveBeenCalled()
   })
