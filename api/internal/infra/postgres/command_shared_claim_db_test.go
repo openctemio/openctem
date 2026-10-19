@@ -397,3 +397,57 @@ func TestSharedClaim_QueueLimitCountsFromRequeue(t *testing.T) {
 		t.Fatalf("expired stale=%v requeued=%v; want only the job that waited 60 minutes since it was queued", found[stale], found[requeued])
 	}
 }
+
+// One organization's deep, old shared queue (more jobs than the candidate
+// window) never hides another organization's job: the poll offers rounds of a
+// few jobs per organization, so the newer job of the quiet organization is in
+// the first poll, and is claimed even when the deep organization is at its
+// in-flight limit.
+func TestSharedClaim_DeepQueueDoesNotStarveOtherOrganizations(t *testing.T) {
+	db := openPlatformJobDB(t)
+	ctx := context.Background()
+	repo := NewCommandRepository(&DB{DB: db})
+	tool := uniqueTool()
+	sensor := seedSharedSensor(ctx, t, db, sharedSensorSeed{tools: []string{tool}})
+	deep, quiet := seedTestTenant(ctx, t, db), seedTestTenant(ctx, t, db)
+
+	// deep: fairCandidateWindow+100 pending shared jobs, an hour old.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO commands (id, tenant_id, type, priority, payload, status, is_platform_job, queued_at, created_at)
+		SELECT gen_random_uuid(), $1, 'scan', 'normal', jsonb_build_object('scanner', $2::text), 'pending', TRUE,
+		       NOW() - interval '1 hour', NOW() - interval '1 hour' - make_interval(secs => g)
+		FROM generate_series(1, $3::int) g`, deep.String(), tool, fairCandidateWindow+100); err != nil {
+		t.Fatalf("seed deep queue: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM commands WHERE tenant_id = $1`, deep.String())
+	})
+	quietJob := seedSharedJob(ctx, t, db, quiet, sharedJobSeed{tool: tool, platform: true})
+
+	cands, err := repo.GetSharedPendingForSensor(ctx, sensor, nil, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range cands {
+		if c.ID == quietJob {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a poll of 20 did not offer the quiet organization's job behind %d older jobs of another organization", fairCandidateWindow+100)
+	}
+
+	// deep at its in-flight limit (0): the quiet organization's job is still claimed.
+	ids := make([]shared.ID, len(cands))
+	for i, c := range cands {
+		ids[i] = c.ID
+	}
+	claimed, err := repo.ClaimManyShared(ctx, sensor, nil, ids, map[shared.ID]int{deep: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 || claimed[0] != quietJob {
+		t.Fatalf("claimed %v, want only the quiet organization's job %s", claimed, quietJob)
+	}
+}

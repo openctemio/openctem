@@ -1944,5 +1944,19 @@
   "admin.ai.providerName.claude": "Anthropic Claude",
   "admin.ai.providerName.openai": "OpenAI",
   "admin.ai.providerName.gemini": "Google Gemini",
-  "admin.region.placeholder": "eu-central"
+  "admin.region.placeholder": "eu-central",
+  "admin.org.dashboardData.title": "Dashboard data",
+  "admin.org.dashboardData.requested": "Rebuild requested.",
+  "admin.org.dashboardData.tooSoon": "Dashboard data can be rebuilt once per hour.",
+  "admin.org.dashboardData.failed": "Could not request a rebuild.",
+  "admin.org.dashboardData.description": "Stored per-asset data behind the organization dashboards, kept current from every change and reconciled every night.",
+  "admin.org.dashboardData.lastRebuilt": "Last full run",
+  "admin.org.dashboardData.lastDrift": "Drift corrected",
+  "admin.org.dashboardData.pendingChanges": "Changes waiting",
+  "admin.org.dashboardData.state": "State",
+  "admin.org.dashboardData.running": "Running",
+  "admin.org.dashboardData.pending": "Requested",
+  "admin.org.dashboardData.idle": "Idle",
+  "admin.org.dashboardData.rebuild": "Rebuild dashboard data",
+  "admin.org.dashboardData.nextAt": "Next rebuild possible at {time}"
 }

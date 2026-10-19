@@ -10,7 +10,6 @@ import {
   ClipboardCheck,
   Check,
   AlertTriangle,
-  ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -27,7 +26,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { useTranslation } from '@/context/i18n-provider'
 
 import {
   useCreateScanProfile,
@@ -35,13 +34,10 @@ import {
   invalidateScanProfilesCache,
 } from '@/lib/api/scan-profile-hooks'
 import {
-  PRESET_PROFILES,
   PRESET_PROFILE_TYPES,
+  PRESET_QUALITY_GATES,
   getPresetProfileRequest,
   type PresetProfileType,
-  INTENSITY_DISPLAY_NAMES,
-  TOOL_DISPLAY_NAMES,
-  type ScanProfileTool,
 } from '@/lib/api/scan-profile-types'
 
 interface AddPresetDialogProps {
@@ -64,6 +60,8 @@ const PRESET_COLORS: Record<PresetProfileType, string> = {
 }
 
 export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
+  const { t } = useTranslation()
+  const presetName = (type: PresetProfileType) => t(`scans.profiles.preset.${type}.name`)
   const [selectedPreset, setSelectedPreset] = useState<PresetProfileType | null>(null)
   const { trigger: createProfile, isMutating } = useCreateScanProfile()
   const { data: existingProfiles } = useScanProfiles({ per_page: 100 })
@@ -75,31 +73,33 @@ export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
 
   // Check if selected preset name already exists
   const isDuplicateName = selectedPreset
-    ? existingNames.has(PRESET_PROFILES[selectedPreset].name.toLowerCase())
+    ? existingNames.has(presetName(selectedPreset).toLowerCase())
     : false
 
   const handleCreate = async () => {
     if (!selectedPreset) return
 
-    const presetName = PRESET_PROFILES[selectedPreset].name
+    const name = presetName(selectedPreset)
 
     // Check for duplicate name before creating
     if (isDuplicateName) {
-      toast.error(
-        `A profile named "${presetName}" already exists. Please delete or rename the existing profile first.`
-      )
+      toast.error(t('scans.profiles.preset.exists', undefined, { name }))
       return
     }
 
     try {
-      const request = getPresetProfileRequest(selectedPreset)
+      const request = getPresetProfileRequest(
+        selectedPreset,
+        name,
+        t(`scans.profiles.preset.${selectedPreset}.description`)
+      )
       await createProfile(request)
-      toast.success(`Preset profile "${presetName}" created successfully`)
+      toast.success(t('scans.profiles.created', undefined, { name }))
       await invalidateScanProfilesCache()
       onOpenChange(false)
       setSelectedPreset(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to create preset profile'))
+      toast.error(getErrorMessage(err, t('scans.profiles.createFailed')))
     }
   }
 
@@ -114,22 +114,16 @@ export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Add Preset Profile</DialogTitle>
-          <DialogDescription>
-            Choose a preset profile to quickly create a scan configuration optimized for common use
-            cases.
-          </DialogDescription>
+          <DialogTitle>{t('scans.profiles.preset.title')}</DialogTitle>
+          <DialogDescription>{t('scans.profiles.preset.desc')}</DialogDescription>
         </DialogHeader>
 
         <DialogBody>
           <div className="grid gap-3 py-4 md:grid-cols-2">
             {PRESET_PROFILE_TYPES.map((type) => {
-              const preset = PRESET_PROFILES[type]
+              const gate = PRESET_QUALITY_GATES[type]
               const isSelected = selectedPreset === type
-              const enabledTools = Object.values(preset.tools_config).filter(
-                (t) => t.enabled
-              ).length
-              const nameExists = existingNames.has(preset.name.toLowerCase())
+              const nameExists = existingNames.has(presetName(type).toLowerCase())
 
               return (
                 <Card
@@ -147,7 +141,9 @@ export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
                       {nameExists ? (
                         <div className="flex items-center gap-1 text-warning">
                           <AlertTriangle className="h-4 w-4" />
-                          <span className="text-[10px]">Exists</span>
+                          <span className="text-[10px]">
+                            {t('scans.profiles.preset.existsBadge')}
+                          </span>
                         </div>
                       ) : isSelected ? (
                         <div className="rounded-full bg-primary p-1">
@@ -155,50 +151,15 @@ export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
                         </div>
                       ) : null}
                     </div>
-                    <CardTitle className="text-base">{preset.name}</CardTitle>
-                    <CardDescription className="text-xs">{preset.description}</CardDescription>
+                    <CardTitle className="text-base">{presetName(type)}</CardTitle>
+                    <CardDescription className="text-xs">
+                      {t(`scans.profiles.preset.${type}.description`)}
+                    </CardDescription>
                   </CardHeader>
-                  <CardContent className="pt-0 space-y-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      <Badge variant="outline" className="text-xs">
-                        {INTENSITY_DISPLAY_NAMES[preset.intensity]}
-                      </Badge>
-                      <Badge variant="secondary" className="text-xs">
-                        {enabledTools} tools
-                      </Badge>
-                      <Badge variant="secondary" className="text-xs">
-                        {Math.floor(preset.timeout_seconds / 60)}m timeout
-                      </Badge>
-                      {preset.quality_gate.enabled && (
-                        <Badge variant="secondary" className="text-xs">
-                          Quality Gate
-                        </Badge>
-                      )}
-                    </div>
-                    <Collapsible>
-                      <CollapsibleTrigger
-                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ChevronDown className="h-3 w-3 transition-transform duration-200 [&[data-state=open]>svg]:rotate-180" />
-                        View tools
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="pt-1.5">
-                        <div className="flex flex-wrap gap-1">
-                          {Object.entries(preset.tools_config)
-                            .filter(([, config]) => config.enabled)
-                            .map(([tool]) => (
-                              <Badge
-                                key={tool}
-                                variant="outline"
-                                className="text-[10px] py-0 px-1.5 font-normal"
-                              >
-                                {TOOL_DISPLAY_NAMES[tool as ScanProfileTool] || tool}
-                              </Badge>
-                            ))}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
+                  <CardContent className="pt-0">
+                    <Badge variant={gate.enabled ? 'secondary' : 'outline'} className="text-xs">
+                      {gate.enabled ? t('scans.profiles.rule.on') : t('scans.profiles.rule.off')}
+                    </Badge>
                   </CardContent>
                 </Card>
               )
@@ -209,19 +170,20 @@ export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
         <DialogFooter className="flex-col sm:flex-row">
           {isDuplicateName && (
             <p className="text-amber-500 text-xs flex items-center gap-1 me-auto">
-              <AlertTriangle className="h-3 w-3" />A profile with this name already exists
+              <AlertTriangle className="h-3 w-3" />
+              {t('scans.profiles.preset.duplicate')}
             </p>
           )}
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleCreate}
               disabled={!selectedPreset || isMutating || isDuplicateName}
             >
               {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Create Profile
+              {t('scans.profiles.create')}
             </Button>
           </div>
         </DialogFooter>

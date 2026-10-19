@@ -72,6 +72,12 @@ person overrode the class, the decision fields report that override
 2. Build the `PriorityContext` (severity, EPSS, KEV, reachability, asset
    criticality/exposure/crown-jewel).
 3. Apply compensating-control reduction (`is_protected` / `control_reduction_pct`).
+   A control counts only when it is active, has a passing test, its review
+   date (`expires_at`, at most 366 days ahead, 90 days when a control is created without one; an update cannot clear it) has not passed, and
+   its reduction is at least 0.25. It then lowers the class by at most one
+   level, never raises it, and never takes a CISA KEV finding below P1; the
+   reason names the step ("lowered one level to P2 (was P1): compensating
+   control, 40% reduction").
 4. Evaluate tenant **override rules** first (first match wins → `source: "rule"`,
    `rule_name`); otherwise the default `ClassifyPriority` (`source: "auto"`).
    Rules are evaluated by `evaluation_order` (highest first), ties broken by

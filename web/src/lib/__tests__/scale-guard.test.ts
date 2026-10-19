@@ -68,10 +68,6 @@ const NOT_A_SCALE = new Map<string, string>([
     'EASM exposure severity includes none (chk_exposures_severity); typed by ExposureSeverity',
   ],
   [
-    'features/scan-profiles/schemas/scan-profile-schema.ts|info,low,medium,high,critical',
-    'a scan tool minimum-severity threshold (the tool flag), least severe first by design',
-  ],
-  [
     'app/(dashboard)/settings/audit-log/page.tsx|info,low,medium,high,critical',
     'audit event severity (audit_logs.severity), a separate scale from finding severity',
   ],
