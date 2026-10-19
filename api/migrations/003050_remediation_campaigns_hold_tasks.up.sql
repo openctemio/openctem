@@ -50,6 +50,7 @@
 -- remediation_campaigns); writes one task per converted campaign and one
 -- member and one finding timeline row per moved finding. remediation_campaigns
 -- itself is not changed: finding_filter stays until the contract step drops it.
+-- expand-contract-ok: nothing is dropped; the only DROP TABLE removes the conversion's own session temp tables (rcm_*)
 
 CREATE OR REPLACE FUNCTION remediation_campaign_filter_parse(
     p_filter jsonb,
