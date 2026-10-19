@@ -264,13 +264,13 @@ describe('request and approval rules', () => {
 describe('ScopeEntryDialog: duration follows the policy', () => {
   it('a T2 entry defaults to the longest allowed expiry; Permanent is disabled with who can change it', async () => {
     api.get.mockResolvedValue({ ...settings, t2_max_days: 30, t2_permanent_allowed: false })
-    api.post.mockResolvedValue({ pattern: '*.vndirect.com.vn', status: 'pending' })
+    api.post.mockResolvedValue({ pattern: '*.example.com', status: 'pending' })
     const user = userEvent.setup()
     wrap(
       <ScopeEntryDialog
         open
         onOpenChange={() => {}}
-        draft={{ target_type: 'domain', pattern: '*.vndirect.com.vn', tier: 't2' }}
+        draft={{ target_type: 'domain', pattern: '*.example.com', tier: 't2' }}
       />
     )
     const thirty = await screen.findByRole('radio', { name: '30 days' })
@@ -290,7 +290,7 @@ describe('ScopeEntryDialog: duration follows the policy', () => {
       expect(api.post).toHaveBeenCalledWith(
         '/api/v1/scope/targets',
         expect.objectContaining({
-          pattern: '*.vndirect.com.vn',
+          pattern: '*.example.com',
           max_tier: 't2',
           expires_in_days: 30,
         })

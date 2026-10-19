@@ -46,6 +46,13 @@ expect "denied co-author trailer fails" 1 "$d" "$bad" "Co-authored-by trailer"
 d="$(repo)"; commit "$d" me@example.org me@example.org "one"; commit "$d" "z${bad}" "z${bad}" "two"
 expect "comma list, any entry matches" 1 "$d" "@other.example, ${bad}" "(author, committer)"
 
+d="$(repo)"; commit "$d" me@example.org me@example.org "clean"
+rng="main~$(($(git -C "$d" rev-list --count main) - 1))..main"
+for v in "" $'\n , '; do
+  rc=0; (cd "$d" && REQUIRE_DENYLIST=true COMMIT_EMAIL_DENYLIST="$v" bash "$script" "$rng" >/dev/null 2>&1) || rc=$?
+  if [[ "$rc" -eq 1 ]]; then echo "ok:   required: unset/empty list fails closed"; pass=$((pass + 1)); else echo "FAIL: required list missing (exit $rc)"; failed=$((failed + 1)); fi
+done
+
 out="$(COMMIT_EMAIL_DENYLIST="$bad" bash "$script" "" 2>&1)"
 if [[ "$out" == *"skipped"* ]]; then echo "ok:   no range skips"; pass=$((pass + 1)); else echo "FAIL: no range skips"; failed=$((failed + 1)); fi
 

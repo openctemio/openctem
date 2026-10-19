@@ -1566,10 +1566,10 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
-	// Internet reachability filter.
-	if filter.IsInternetAccessible != nil {
-		conditions = append(conditions, fmt.Sprintf("a.is_internet_accessible = $%d", argIndex))
-		args = append(args, *filter.IsInternetAccessible)
+	// Internet-facing filter (the one definition, asset.InternetFacingSQL).
+	if filter.InternetFacing != nil {
+		conditions = append(conditions, fmt.Sprintf("%s = $%d", asset.InternetFacingSQL("a"), argIndex))
+		args = append(args, *filter.InternetFacing)
 		argIndex++
 	}
 
@@ -2359,7 +2359,7 @@ func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID sh
 		SELECT
 			a.asset_type,
 			COUNT(*) AS total,
-			COUNT(*) FILTER (WHERE a.exposure = 'public') AS exposed
+			COUNT(*) FILTER (WHERE ` + asset.InternetFacingSQL("a") + `) AS exposed
 		FROM assets a
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1` + scopeSQL + `
 		GROUP BY a.asset_type
@@ -2462,7 +2462,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 		ByDataClassification: make(map[string]int),
 		ByEnvironment:        make(map[string]int),
 		ByProvider:           make(map[string]int),
-		ByInternetAccessible: make(map[string]int),
+		ByInternetFacing:     make(map[string]int),
 		ByHasOwner:           make(map[string]int),
 		ByControlPlane:       make(map[string]int),
 		ByBusinessUnit:       make(map[string]int),
@@ -2482,7 +2482,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	query := fmt.Sprintf(`
 WITH filtered AS (
   SELECT a.id, a.asset_type, a.sub_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score, a.properties,
-         a.is_internet_accessible, a.data_classification, a.environment, a.provider, a.tenant_id
+         `+asset.InternetFacingSQL("a")+` AS internet_facing, a.data_classification, a.environment, a.provider, a.tenant_id
   FROM assets a
   %s
 ),
@@ -2517,7 +2517,7 @@ SELECT category, key, value FROM (
   UNION ALL
   SELECT 'exposure',              exposure,                            COUNT(*)::float8 FROM filtered GROUP BY exposure
   UNION ALL
-  SELECT 'internet_accessible',   CASE WHEN is_internet_accessible THEN 'true' ELSE 'false' END, COUNT(*)::float8 FROM filtered GROUP BY 2
+  SELECT 'internet_facing',       CASE WHEN internet_facing THEN 'true' ELSE 'false' END, COUNT(*)::float8 FROM filtered GROUP BY 2
   UNION ALL
   SELECT 'data_classification',   COALESCE(data_classification, 'unset'), COUNT(*)::float8 FROM filtered GROUP BY 2
   UNION ALL
@@ -2619,8 +2619,8 @@ SELECT category, key, value FROM (
 			stats.ByScope[key] = int(value)
 		case "exposure":
 			stats.ByExposure[key] = int(value)
-		case "internet_accessible":
-			stats.ByInternetAccessible[key] = int(value)
+		case "internet_facing":
+			stats.ByInternetFacing[key] = int(value)
 		case "data_classification":
 			stats.ByDataClassification[key] = int(value)
 		case "environment":
