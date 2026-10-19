@@ -1125,5 +1125,6 @@
   "findings.severityRequest.rejectReason": "Lý do từ chối",
   "findings.severityRequest.reject": "Từ chối",
   "findings.severityRequest.withdraw": "Rút lại",
-  "findings.severityRequest.approve": "Phê duyệt"
+  "findings.severityRequest.approve": "Phê duyệt",
+  "findings.contextChips.assetGroup": "Nhóm tài sản"
 }
