@@ -86,10 +86,11 @@ connect over TLS 1.3 with a client certificate:
 | `GET /v1/connector/up?wait=s` | connector | long-poll the realm's queue: a framed batch with each envelope's sensor id |
 | `POST /v1/connector/down/{sensor}` | connector | queue one envelope for a sensor of its realm |
 
-Quotas (defaults): 64 envelopes and 64 MiB per mailbox, 2 GiB in total,
+Quotas (defaults): 64 envelopes and 64 MiB per mailbox, 2 GiB in total, 512 MiB per realm,
 10 requests/s burst 20 per sensor, 2 open polls per sensor, envelope ≤
 16 MiB + 64 KiB, waits ≤ 25 s, TTL 10 min. Over a quota: 429 with
-Retry-After. Nothing is written to disk; a restart loses in-flight envelopes,
+Retry-After, decided from the announced Content-Length before the body is
+read (a body of unknown length counts as a full envelope). Nothing is written to disk; a restart loses in-flight envelopes,
 and both sides retry (the outbox makes results at-least-once; the platform
 deduplicates by report id). Logs and metrics carry directions, outcomes,
 counts and sizes, never envelope bytes, paths or ids as metric labels.
