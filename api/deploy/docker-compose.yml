@@ -479,7 +479,7 @@ services:
   # (`-h` lists every flag.) It is not started by `up`.
   bootstrap-admin:
     profiles: [tools]
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.10.1}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.11.0}}
     entrypoint: ["/app/bootstrap-admin"]
     environment:
       DB_HOST: ${DB_HOST:-postgres}
