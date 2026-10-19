@@ -92,6 +92,9 @@ var findingMergeKeptRefs = map[string]string{
 	// A suspended decision is the history of the finding it was made on.
 	"finding_decision_suspensions.finding_id": "kept on the tombstone; history of that finding",
 	"finding_decision_reviews.finding_id":     "kept on the tombstone; a review flag of that finding's decision",
+	// A severity request was made on that finding's severity; a pending one
+	// on the tombstone can no longer apply (the tombstone is closed).
+	"finding_severity_requests.finding_id": "kept on the tombstone; a severity request on that finding",
 	// A remediation task membership is the task's history of that finding:
 	// the tombstone closes (duplicate) inside its task; the survivor keeps
 	// its own task, or is proposed for one.
