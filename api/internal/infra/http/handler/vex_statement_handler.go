@@ -13,6 +13,7 @@ import (
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	vexdom "github.com/openctemio/openctem/api/pkg/domain/vex"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -228,7 +229,7 @@ func (h *VEXStatementHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/v1/vex-statements
 // @Summary      Create a VEX statement
-// @Description  States the exploitability of a vulnerability in a package (every version, listed versions or a range), for one asset or every asset. not_affected requests a false positive for the open findings it covers (a pending approval; the status does not change until approvers decide), fixed resolves them; affected and under_investigation annotate. Applies to findings reported later too. Human-sourced findings (pentest, manual, bug bounty, red team) are never closed. A statement for every asset needs access to every asset.
+// @Description  States the exploitability of a vulnerability in a package (every version, listed versions or a range), for one asset or every asset. not_affected requests a false positive for the open findings it covers (a pending approval; the status does not change until approvers decide), fixed resolves them (and needs findings:verify as well); affected and under_investigation annotate. Applies to findings reported later too. Human-sourced findings (pentest, manual, bug bounty, red team) are never closed. A statement for every asset needs access to every asset.
 // @Tags         VEX
 // @Accept       json
 // @Produce      json
@@ -255,6 +256,7 @@ func (h *VEXStatementHandler) Create(w http.ResponseWriter, r *http.Request) {
 		VulnID: req.VulnID, ProductID: req.ProductID, PURL: req.PURL, AssetID: req.AssetID, Versions: req.Versions,
 		VersionRange: req.VersionRange, Status: req.Status, Justification: req.Justification,
 		ImpactStatement: req.ImpactStatement, ActionStatement: req.ActionStatement, ExpiresAt: req.ExpiresAt,
+		CanVerify: middleware.HasPermission(r.Context(), permission.FindingsVerify.String()),
 	}, configAuditContext(r))
 	if err != nil && st == nil {
 		h.handleError(w, err)
@@ -268,7 +270,7 @@ func (h *VEXStatementHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Update handles PATCH /api/v1/vex-statements/{id}
 // @Summary      Edit a VEX statement
-// @Description  Edits the status, justification, statements, versions or expiry and re-applies the statement: findings it no longer closes reopen. The vulnerability, package and asset are fixed.
+// @Description  Making a statement fixed, or widening a fixed one, needs findings:verify. Edits the status, justification, statements, versions or expiry and re-applies the statement: findings it no longer closes reopen. The vulnerability, package and asset are fixed.
 // @Tags         VEX
 // @Accept       json
 // @Produce      json
@@ -295,6 +297,7 @@ func (h *VEXStatementHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Versions: req.Versions, VersionRange: req.VersionRange, Status: req.Status, Justification: req.Justification,
 		ImpactStatement: req.ImpactStatement, ActionStatement: req.ActionStatement, ExpiresAt: req.ExpiresAt,
 		ClearExpiry: req.ClearExpiry,
+		CanVerify:   middleware.HasPermission(r.Context(), permission.FindingsVerify.String()),
 	}, configAuditContext(r))
 	if err != nil && st == nil {
 		h.handleError(w, err)
@@ -333,7 +336,7 @@ func (h *VEXStatementHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // Import handles POST /api/v1/vex-statements/import
 // @Summary      Import a VEX document
-// @Description  Reads an OpenVEX, CSAF VEX or CycloneDX VEX document (JSON, at most 5 MB, at most 5000 statements) and stores its statements for one asset (asset_id) or every asset, then applies them. dry_run=true returns the preview and writes nothing. Statements whose package is not in the inventory, and statements about components inside a product without a target asset, are reported as skipped. A statement written in the organization is never overwritten.
+// @Description  A document with any fixed statement needs findings:verify (403, nothing written). Reads an OpenVEX, CSAF VEX or CycloneDX VEX document (JSON, at most 5 MB, at most 5000 statements) and stores its statements for one asset (asset_id) or every asset, then applies them. dry_run=true returns the preview and writes nothing. Statements whose package is not in the inventory, and statements about components inside a product without a target asset, are reported as skipped. A statement written in the organization is never overwritten.
 // @Tags         VEX
 // @Accept       json
 // @Produce      json
@@ -353,7 +356,8 @@ func (h *VEXStatementHandler) Import(w http.ResponseWriter, r *http.Request) {
 	}
 	body := http.MaxBytesReader(w, r.Body, vexapp.MaxDocumentBytes+1)
 	res, err := h.service.Import(r.Context(), tenantID, r.URL.Query().Get("asset_id"), body,
-		r.URL.Query().Get("dry_run") == "true", configAuditContext(r))
+		r.URL.Query().Get("dry_run") == "true", middleware.HasPermission(r.Context(), permission.FindingsVerify.String()),
+		configAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return

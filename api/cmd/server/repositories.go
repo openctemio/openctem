@@ -36,6 +36,7 @@ type Repositories struct {
 	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository        // Names that resolve only through a wildcard (RFC-088 A4)
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
+	DashboardFacts          *postgres.DashboardFactsRepository          // Dashboard fact layer upkeep
 	APISpec                 *postgres.APISpecRepository                 // API descriptions of web origins (RFC-056)
 	AssetStateHistory       *postgres.AssetStateHistoryRepository       // CTEM: State change audit log
 	AssetRelationship       *postgres.AssetRelationshipRepository       // CTEM: Asset topology graph
@@ -387,6 +388,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
+		DashboardFacts:          postgres.NewDashboardFactsRepository(db),
 		APISpec:                 postgres.NewAPISpecRepository(db),
 		AssetStateHistory:       postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:       postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
