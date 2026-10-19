@@ -18,7 +18,7 @@ import type { ScanZone, ScanZonePreviewRequest } from '@/lib/api/scan-zone-types
 import type { NewScanFormData } from '../../types'
 import { enTranslate, type Translate } from '../../lib/translate'
 import { SENSOR_PREFERENCE_CONFIG } from '../../types'
-import { onceRunAt } from '../../lib/scan-form'
+import { onceRunAt, takesRuleSources } from '../../lib/scan-form'
 import { schedulePreviewRequestFromForm } from '../../lib/schedule-preview'
 import { viewerTimeZone } from '../../lib/zoned-time'
 import { parsePastedTargets } from '../../lib/target-format'
@@ -281,6 +281,20 @@ export function ReviewStep({
             </span>
           )}
         </Row>
+        {takesRuleSources(data) && (
+          <Row title={t('scans.review.rowRules')} step="options" onEdit={onEdit}>
+            {t(`scans.rules.review.${data.ruleSources || 'inherit'}`)}
+            {data.ruleSources !== 'platform' && data.customTemplateIds.length > 0 && (
+              <span className="text-muted-foreground">
+                {' '}
+                ·{' '}
+                {t('scans.rules.review.templates', undefined, {
+                  count: data.customTemplateIds.length,
+                })}
+              </span>
+            )}
+          </Row>
+        )}
         <Row title={t('scans.review.rowWhen')} step="schedule" onEdit={onEdit}>
           {scheduleSummary(data, t)}
           {!data.schedule.runImmediately && !data.schedule.saveOnly && (

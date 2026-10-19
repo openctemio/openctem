@@ -548,7 +548,16 @@ export interface ApiFindingSourceData {
     as_of?: string
   }
   source_extra?: Record<string, string>
-  rule?: { pack?: string; version?: string; path?: string }
+  rule?: {
+    pack?: string
+    version?: string
+    path?: string
+    /** platform | tenant (the organization's own rules) */
+    source?: 'platform' | 'tenant'
+    template_id?: string
+    template_name?: string
+    template_version?: string
+  }
   location_key?: string
 }
 
