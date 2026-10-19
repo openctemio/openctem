@@ -3982,8 +3982,8 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
 const enrichColumnsPerRow = 75
 
-// enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
-// 1000 rows × 50 columns = 50,000 params (safely under limit).
+// enrichBatchChunkSize caps rows per batch UPDATE; forEachStatementChunk lowers
+// it to what fits under PostgreSQL's bind-parameter limit (65535/75 = 873).
 const enrichBatchChunkSize = 1000
 
 // enrichColumnDef defines a column name and its PostgreSQL type for VALUES clause casting.
@@ -4132,31 +4132,25 @@ func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenan
 	defer func() { _ = tx.Rollback() }()
 
 	var totalEnriched int64
-	for i := 0; i < len(allArgs); i += enrichBatchChunkSize {
-		end := i + enrichBatchChunkSize
-		if end > len(allArgs) {
-			end = len(allArgs)
-		}
-		chunk := allArgs[i:end]
-
-		query := buildBatchEnrichQuery(len(chunk))
-
-		// Flatten chunk args into a single slice
-		capNeeded64 := uint64(len(chunk)) * uint64(enrichColumnsPerRow)
-		if capNeeded64 > uint64(int(^uint(0)>>1)) {
-			return totalEnriched, fmt.Errorf("enrichment batch too large")
-		}
-		flatArgs := make([]interface{}, 0, int(capNeeded64))
+	err = forEachStatementChunk(len(allArgs), enrichColumnsPerRow, 0, enrichBatchChunkSize, func(start, end int) error {
+		chunk := allArgs[start:end]
+		flatArgs := make([]interface{}, 0, len(chunk)*enrichColumnsPerRow)
 		for _, row := range chunk {
 			flatArgs = append(flatArgs, row...)
 		}
-
-		result, execErr := tx.ExecContext(ctx, query, flatArgs...)
+		result, execErr := tx.ExecContext(ctx, buildBatchEnrichQuery(len(chunk)), flatArgs...)
 		if execErr != nil {
-			return totalEnriched, fmt.Errorf("failed to batch update enriched findings: %w", execErr)
+			return fmt.Errorf("failed to batch update enriched findings: %w", execErr)
 		}
-		affected, _ := result.RowsAffected()
+		affected, raErr := result.RowsAffected()
+		if raErr != nil {
+			return fmt.Errorf("enriched findings row count: %w", raErr)
+		}
 		totalEnriched += affected
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
 
 	if err := tx.Commit(); err != nil {

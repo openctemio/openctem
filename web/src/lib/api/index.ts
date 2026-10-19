@@ -676,7 +676,6 @@ export type {
   UpdateQualityGateRequest,
   Intensity,
   Severity,
-  TemplateMode,
   ScanProfileTool,
   CloneScanProfileRequest,
 } from './scan-profile-types'
@@ -690,8 +689,6 @@ export {
   DEFAULT_QUALITY_GATE,
   createDefaultQualityGate,
   isUnlimited,
-  TEMPLATE_MODE_DISPLAY_NAMES,
-  TEMPLATE_MODE_DESCRIPTIONS,
   // Preset profiles
   PRESET_PROFILES,
   PRESET_PROFILE_TYPES,
