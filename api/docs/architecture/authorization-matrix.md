@@ -42,6 +42,8 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
+
+> **Compensating controls.** An effective control lowers the priority and SLA of every finding on the assets it covers, so `ctem:compensating_controls:write` (create, update, delete, record a test, link assets or findings) is held by owners, admins and roles granted it explicitly (the program-lead template); the built-in Member role reads controls only (migration `002950`). Every write is audited (High; findings links Medium).
 | **Total** | **166** | |
 
 > There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and

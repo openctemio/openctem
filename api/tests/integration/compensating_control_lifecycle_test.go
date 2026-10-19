@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -134,7 +135,7 @@ func TestCompensatingControlHandlerLifecycle(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.Create(w, controlRequest("POST", "/api/v1/compensating-controls/",
 		`{"name":"WAF Rate Limiting","description":"blocks the exploit path",`+
-			`"control_type":"runtime","reduction_factor":0.3}`, tenant, ""))
+			`"control_type":"runtime","reduction_factor":0.3,"expires_at":"`+time.Now().Add(90*24*time.Hour).UTC().Format(time.RFC3339)+`"}`, tenant, ""))
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("valid create: status = %d, want 201; body: %s", w.Code, w.Body.String())
@@ -172,9 +173,24 @@ func TestCompensatingControlHandlerLifecycle(t *testing.T) {
 		t.Fatalf("link assets: status = %d, want 204; body: %s", w.Code, w.Body.String())
 	}
 
-	// The lookup the priority classifier consumes now returns the factor.
+	// Untested, the control reduces nothing yet.
 	lookup := postgres.NewCompensatingControlLookupRepo(db)
 	eff, err := lookup.GetEffectiveForAssets(context.Background(), tenant, []shared.ID{assetID})
+	if err != nil {
+		t.Fatalf("GetEffectiveForAssets: %v", err)
+	}
+	if eff[assetID] != 0 {
+		t.Fatalf("an untested control reduces %v, want 0", eff[assetID])
+	}
+	w = httptest.NewRecorder()
+	h.RecordTest(w, controlRequest("POST", "/api/v1/compensating-controls/"+created.ID+"/test",
+		`{"test_result":"pass","test_evidence":"exploit blocked"}`, tenant, created.ID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("record test: status = %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Tested, the lookup the priority classifier consumes returns the factor.
+	eff, err = lookup.GetEffectiveForAssets(context.Background(), tenant, []shared.ID{assetID})
 	if err != nil {
 		t.Fatalf("GetEffectiveForAssets: %v", err)
 	}
