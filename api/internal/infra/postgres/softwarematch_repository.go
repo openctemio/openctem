@@ -542,8 +542,9 @@ func (r *SoftwareMatchRepository) updateFindings(ctx context.Context, t findingT
 }
 
 // EnsureDefinitions (see softwarematch.Store): a CVE nobody reported yet
-// gets its global catalog row from the corpus (origin nvd); an existing row
-// is left as it is.
+// gets its global catalog row from the corpus (origin nvd); an identity stub
+// a report created is filled from the corpus; any other existing row is left
+// as it is.
 func (r *SoftwareMatchRepository) EnsureDefinitions(ctx context.Context, cves []softwarematch.CVEInfo) (map[string]shared.ID, error) {
 	out := map[string]shared.ID{}
 	if len(cves) == 0 {
@@ -558,8 +559,7 @@ func (r *SoftwareMatchRepository) EnsureDefinitions(ctx context.Context, cves []
 			cvss_score, cvss_vector, cvss_version, published_at, modified_at, origin,
 			epss_score, epss_percentile, cisa_kev_date_added, cisa_kev_due_date, exploit_available)
 		SELECT c.cve_id, c.cve_id, 'CVE', 'vulnerability', LEFT(c.cve_id, 500), c.description,
-			CASE WHEN c.severity IN ('critical', 'high', 'medium', 'low') THEN c.severity
-			     WHEN c.severity = 'none' THEN 'info' ELSE 'unknown' END,
+			`+corpusSeveritySQL+`,
 			c.cvss_score, c.cvss_vector, c.cvss_version, c.published_at, c.last_modified_at, 'nvd',
 			e.epss_score, e.percentile, k.date_added::timestamptz, k.due_date::timestamptz, (k.cve_id IS NOT NULL)
 		FROM cve_records c
@@ -567,6 +567,9 @@ func (r *SoftwareMatchRepository) EnsureDefinitions(ctx context.Context, cves []
 		LEFT JOIN kev_catalog k ON k.cve_id = c.cve_id
 		WHERE c.cve_id = ANY($1)
 		ON CONFLICT (cve_id) DO NOTHING`, pq.Array(ids)); err != nil {
+		return nil, fmt.Errorf("ensure definitions: %w", err)
+	}
+	if _, err := fillCatalogStubsFromCorpus(ctx, r.db, ids); err != nil {
 		return nil, fmt.Errorf("ensure definitions: %w", err)
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT id, cve_id FROM vulnerabilities WHERE cve_id = ANY($1) AND tenant_id IS NULL`, pq.Array(ids))

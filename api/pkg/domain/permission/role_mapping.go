@@ -79,7 +79,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
 		// Reports
-		ReportsRead, ReportsWrite,
+		ReportsRead, ReportsWrite, ReportsManage,
 		// Threat Intel
 		ThreatIntelRead, ThreatIntelWrite,
 		// AI Triage
@@ -160,7 +160,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
 		// Reports
-		ReportsRead, ReportsWrite,
+		ReportsRead, ReportsWrite, ReportsManage,
 		// Threat Intel
 		ThreatIntelRead, ThreatIntelWrite,
 		// AI Triage
@@ -250,11 +250,12 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ThreatIntelRead,
 		// AI Triage
 		AITriageRead, AITriageTrigger,
-		// CTEM — Members can read/write cycles/controls but cannot manage rules
+		// CTEM — Members can read/write cycles but cannot manage rules or
+		// compensating controls (a control lowers priorities and SLAs)
 		CTEMCyclesRead, CTEMCyclesWrite,
 		AttackerProfilesRead,
 		BusinessServicesRead, BusinessServicesWrite,
-		CompensatingControlsRead, CompensatingControlsWrite,
+		CompensatingControlsRead,
 		VerificationChecklistsRead, VerificationChecklistsWrite,
 	},
 

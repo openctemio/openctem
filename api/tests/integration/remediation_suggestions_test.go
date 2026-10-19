@@ -72,8 +72,8 @@ func (r *rsRig) keyed(asset shared.ID, key, class string) shared.ID {
 	if class != "" {
 		r.exec(`UPDATE findings SET priority_class = $2 WHERE id = $1`, id.String(), class)
 	}
-	r.exec(`INSERT INTO finding_remediation_keys (finding_id, tenant_id, remediation_key, title) VALUES ($1, $2, $3, $4)`,
-		id.String(), r.tenant.String(), key, "Upgrade django to 4.2.30")
+	r.exec(`INSERT INTO finding_remediation_keys (finding_id, tenant_id, remediation_key, title, algorithm_version) VALUES ($1, $2, $3, $4, $5)`,
+		id.String(), r.tenant.String(), key, "Upgrade django to 4.2.30", remediation.KeyAlgorithmVersion)
 	return id
 }
 

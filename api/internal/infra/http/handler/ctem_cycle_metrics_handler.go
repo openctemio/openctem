@@ -107,10 +107,12 @@ func (h *CTEMCycleHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 
 // trendSeriesPoint is one (cycle, value) sample in a metric's series.
 type trendSeriesPoint struct {
-	CycleID  string  `json:"cycle_id"`
-	Name     string  `json:"name"`
-	ClosedAt string  `json:"closed_at"`
-	Value    float64 `json:"value"`
+	CycleID  string `json:"cycle_id"`
+	Name     string `json:"name"`
+	ClosedAt string `json:"closed_at"`
+	// Value is null when the cycle has no sample for the metric (MTTR or
+	// validation coverage of a cycle that remediated nothing).
+	Value *float64 `json:"value"`
 }
 
 // MetricsTrend returns, across the tenant's closed cycles, each metric's
@@ -155,7 +157,7 @@ func (h *CTEMCycleHandler) MetricsTrend(w http.ResponseWriter, r *http.Request) 
 				CycleID:  c.CycleID.String(),
 				Name:     c.Name,
 				ClosedAt: closedAt,
-				Value:    c.Value(key),
+				Value:    metricValue(c, key),
 			})
 		}
 		summaries = append(summaries, map[string]any{
@@ -304,4 +306,12 @@ func (h *CTEMCycleHandler) withVisibleEvaluation(ctx context.Context, tenantID s
 	}
 	c.CharterEvaluation = nil
 	return c
+}
+
+// metricValue is the cycle's value for key, or nil when it has none.
+func metricValue(c ctemcycle.CycleMetrics, key string) *float64 {
+	if v, ok := c.Lookup(key); ok {
+		return &v
+	}
+	return nil
 }
