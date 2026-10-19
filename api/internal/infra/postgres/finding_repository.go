@@ -2129,7 +2129,8 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 // closure reason (its default when empty), and an open status clears both,
 // so a reopened or dispositioned finding never keeps a stale "fixed" claim.
 func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) error {
-	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, nil)
+	_, err := r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, nil)
+	return err
 }
 
 var _ vulnerability.FixClaimBatchWriter = (*FindingRepository)(nil)
@@ -2148,6 +2149,22 @@ func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID 
 	if len(from) == 0 {
 		return fmt.Errorf("%w: no source status given", shared.ErrValidation)
 	}
+	_, err := r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, from)
+	return err
+}
+
+var _ vulnerability.StatusMoveWriter = (*FindingRepository)(nil)
+
+// MoveStatusBatch is UpdateStatusBatchFrom (from empty: every lifecycle
+// predecessor of status) that returns the findings the write moved, so the
+// caller runs the side effects of a status change only for those.
+func (r *FindingRepository) MoveStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, from []vulnerability.FindingStatus, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) ([]shared.ID, error) {
+	allowed := vulnerability.UserFromStatuses(status)
+	for _, f := range from {
+		if !slices.Contains(allowed, f) {
+			return nil, fmt.Errorf("%w: %s is not a predecessor of %s", shared.ErrValidation, f, status)
+		}
+	}
 	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, from)
 }
 
@@ -2155,23 +2172,26 @@ func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID 
 // acceptance in the same statement. Leaving accepted later clears the end
 // (database trigger trg_findings_clear_acceptance_expiry).
 func (r *FindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, until time.Time, acceptedBy *shared.ID, reason vulnerability.ClosureReason) error {
-	return r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy,
+	_, err := r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy,
 		vulnerability.Closure{Reason: reason}, &until, nil)
+	return err
 }
 
-func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) error {
+// updateStatusBatch runs the guarded status write and returns the ids of the
+// findings it moved.
+func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) ([]shared.ID, error) {
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
 	query, args, err := statusWriteSQL(tenantID, ids, status, resolution, resolvedBy, closure, acceptanceEnd, from)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := r.db.execStatusWrite(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to update findings status: %w", err)
+	moved, err := r.db.queryStatusWriteIDs(ctx, ids, query+" RETURNING id", args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update findings status: %w", err)
 	}
-
-	return nil
+	return moved, nil
 }
 
 // statusWriteSQL builds the status write of updateStatusBatch, so a caller
