@@ -11,6 +11,7 @@ import type {
   AITriageResult,
   AIConfig,
   AIMode,
+  AIUnavailableReason,
   RequestTriageInput,
   RequestTriageResponse,
   TriageHistoryResponse,
@@ -77,7 +78,7 @@ function transformTriageResult(api: ApiTriageResult): AITriageResult {
     completionTokens: api.completion_tokens,
     createdAt: api.created_at,
     completedAt: api.completed_at,
-    errorMessage: api.error_message,
+    errorCode: api.error_code,
   }
 }
 
@@ -229,7 +230,7 @@ export function getTriageCacheKey(findingId: string): string {
 // AI CONFIG HOOK
 // ============================================
 
-const AI_CONFIG_ENDPOINT = '/api/v1/findings/ai-triage/config'
+export const AI_CONFIG_ENDPOINT = '/api/v1/findings/ai-triage/config'
 
 /**
  * Transform API AI config to domain type
@@ -240,6 +241,7 @@ function transformAIConfig(api: ApiAIConfigResponse): AIConfig {
     provider: api.provider,
     model: api.model,
     isEnabled: api.is_enabled,
+    reason: (api.reason || undefined) as AIUnavailableReason | undefined,
     autoTriageEnabled: api.auto_triage_enabled,
     autoTriageSeverities: api.auto_triage_severities,
     monthlyTokenLimit: api.monthly_token_limit,
