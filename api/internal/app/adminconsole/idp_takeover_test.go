@@ -157,3 +157,33 @@ func TestPlatformIdPChangeApproval(t *testing.T) {
 		t.Fatal("different trusted values must give different targets")
 	}
 }
+
+// An administrator with no console factor yet (never signed in, or reset) must
+// not be enrolled through an unbound IdP identity while the password path is
+// open: whoever mints an IdP token for their email would enroll the TOTP and
+// become them. Only when "require IdP" closes the password path is the IdP
+// the sole first factor and enrollment allowed there.
+func TestIdPFirstSignInOfUnenrolledAdminCannotEnroll(t *testing.T) {
+	b := newBGHarness(t)
+	ctx := context.Background()
+	victim, _ := b.addAdmin(t, "c@acme.io", admin.AdminRoleSuperAdmin, false)
+	b.configureIdP(t, nil)
+
+	if _, err := b.idpSignIn(t, verifiedClaims("sub-attacker", "c@acme.io")); !errors.Is(err, admin.ErrIdPSignInFailed) {
+		t.Fatalf("an unenrolled administrator must not be enrolled through the IdP: %v", err)
+	}
+	if creds, err := b.console.GetCredentials(ctx, victim.ID()); err == nil && creds.MFASecretEncrypted != "" {
+		t.Fatal("no TOTP secret may be issued for the unenrolled administrator")
+	}
+	if a, _ := b.admins.GetByID(ctx, victim.ID()); a.IdPBound() {
+		t.Fatal("must stay unbound")
+	}
+
+	// With the password path closed, the IdP is the only first factor.
+	b.addAdmin(t, "bg@acme.io", admin.AdminRoleSuperAdmin, true)
+	b.configureIdP(t, func(i *PlatformIdPInput) { i.RequireIdP = true })
+	res, err := b.idpSignIn(t, verifiedClaims("sub-c", "c@acme.io"))
+	if err != nil || res.Status != StatusMFAEnrollment {
+		t.Fatalf("require-IdP: enrollment through the IdP expected: %v %+v", err, res)
+	}
+}
