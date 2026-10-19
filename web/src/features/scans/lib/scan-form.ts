@@ -27,6 +27,7 @@ import {
   readTenableScanConfig,
   tenableScanConfigToApi,
 } from '@/features/integrations/lib/tenable-sc'
+import { templateTypeForScanner } from './rule-templates'
 import { apiTargetOptions, isWildcardTarget, toWildcards } from './dynamic-targets'
 
 /** The scan has no schedule: it runs now, or is saved to start by hand. */
@@ -76,6 +77,29 @@ export function basicInfoError(form: NewScanFormData, t: Translate = enTranslate
   }
   if (form.mode === 'workflow' && !form.workflowId) return t('scans.err.workflow')
   return null
+}
+
+/** The wizard asks for rule sources only for a single, template-driven scanner. */
+export function takesRuleSources(form: Pick<NewScanFormData, 'mode' | 'scannerName'>): boolean {
+  return form.mode === 'single' && templateTypeForScanner(form.scannerName) !== null
+}
+
+/** First problem with the Options step, or null: tenant-only needs a template. */
+export function optionsError(form: NewScanFormData, t: Translate = enTranslate): string | null {
+  if (
+    takesRuleSources(form) &&
+    form.ruleSources === 'tenant' &&
+    form.customTemplateIds.length === 0
+  ) {
+    return t('scans.err.tenantNoTemplates')
+  }
+  return null
+}
+
+/** custom_template_ids of a stored scanner_config, ignoring anything but strings. */
+function storedTemplateIds(config?: Record<string, unknown>): string[] {
+  const ids = config?.custom_template_ids
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
 }
 
 /** The instant of a once schedule's run, or null when its date/time is incomplete. */
@@ -231,6 +255,17 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
     request.scanner_config = tenableScanConfigToApi(readTenableScanConfig(form.scannerConfig))
   }
+  if (takesRuleSources(form)) {
+    if (form.ruleSources) request.rule_sources = form.ruleSources
+    // Kept for platform rules only too (the API sends none to the sensor
+    // then): they run again when the choice changes back.
+    if (form.customTemplateIds.length > 0) {
+      request.scanner_config = {
+        ...(request.scanner_config ?? {}),
+        custom_template_ids: [...form.customTemplateIds],
+      }
+    }
+  }
 
   applySchedule(form, request)
   return request
@@ -280,6 +315,8 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
     mode: config.scan_type === 'workflow' ? 'workflow' : 'single',
     scannerName: config.scanner_name ?? '',
     scannerConfig: config.scanner_config ? { ...config.scanner_config } : undefined,
+    ruleSources: config.rule_sources ?? '',
+    customTemplateIds: storedTemplateIds(config.scanner_config),
     workflowId: config.scan_workflow_id,
     sensorPreference: config.sensor_preference || 'auto',
     targets: {
@@ -314,7 +351,8 @@ function sameTargets(a: string[], b: string[]): boolean {
  * The scanner sent is the one the form holds, which starts as the
  * configuration's own: saving no longer resets it to nuclei. scanner_config
  * is sent back as stored (the API replaces the whole map, and restores values
- * it showed masked), never with wizard-only keys added.
+ * it showed masked); the only key the wizard writes is custom_template_ids,
+ * with the rule sources it belongs to.
  */
 export function formDataToUpdateRequest(
   form: NewScanFormData,
@@ -332,6 +370,17 @@ export function formDataToUpdateRequest(
     max_retries: form.maxRetries,
     retry_backoff_seconds: form.retryBackoffSeconds,
     sensor_preference: toApiSensorPreference(form.sensorPreference),
+    // '' = inherit the scan profile's.
+    rule_sources: form.ruleSources,
+  }
+  if (takesRuleSources(form)) {
+    const config = { ...(request.scanner_config ?? {}) }
+    if (form.customTemplateIds.length > 0) {
+      config.custom_template_ids = [...form.customTemplateIds]
+    } else {
+      delete config.custom_template_ids
+    }
+    request.scanner_config = config
   }
   // A stored cron or RRULE schedule is left out (unchanged): sending it as
   // a frequency would replace it, or be refused for a missing day.
