@@ -5,7 +5,12 @@
 #    read from the CUSTOMER_DENYLIST environment variable (a repository
 #    secret, so the list itself is never committed). Unset or empty (forks,
 #    Dependabot, before the secret exists): this part passes with a notice.
-# 2. The live LAN (192.168.8.0/24) outside test files: a plain pattern.
+# 2. The live LAN (192.168.8.0/24) anywhere, test files included: a plain pattern.
+#
+# Fail closed: when REQUIRE_DENYLIST=true (set by CI on the main repository,
+# where the secret is available) a missing or empty CUSTOMER_DENYLIST fails
+# the check instead of skipping it. Forks and Dependabot runs cannot read
+# secrets and leave it unset, so they skip with a notice.
 #
 # Output names only file:line, never the matched text, and withholds a path
 # that itself contains a denied string. Never run this with `set -x`: the
@@ -17,21 +22,23 @@ set +x
 
 status=0
 
-# --- 2. live LAN address outside tests --------------------------------------
+# --- 2. live LAN address --------------------------------------
 lan_re='192\.168\.8\.[0-9]{1,3}'
 lan_hits="$(git grep -I -n -E "$lan_re" -- . \
-  ':(exclude)*_test.go' ':(exclude)*.test.ts' ':(exclude)*.test.tsx' \
-  ':(exclude)**/__tests__/**' ':(exclude)**/testdata/**' \
   ':(exclude).github/scripts/check-customer-identifiers*' |
   awk -F: '{print $1 ":" $2}' || true)"
 if [[ -n "$lan_hits" ]]; then
-  echo "::error::The live LAN address range appears outside test files. Use an RFC 5737 address (192.0.2.x, 198.51.100.x, 203.0.113.x) or a generic private one:"
+  echo "::error::The live LAN address range appears in a tracked file. Use an RFC 5737 address (192.0.2.x, 198.51.100.x, 203.0.113.x) or a generic private one:"
   printf "%s\n" "$lan_hits" | sed "s/^/  /"
   status=1
 fi
 
 # --- 1. customer identifiers -------------------------------------------------
 if [[ -z "${CUSTOMER_DENYLIST:-}" ]]; then
+  if [[ "${REQUIRE_DENYLIST:-}" == "true" ]]; then
+    echo "::error::CUSTOMER_DENYLIST is not set on a repository that requires it. Add the CUSTOMER_DENYLIST secret (newline-separated names); until then this check cannot run and fails closed."
+    exit 1
+  fi
   echo "::notice::CUSTOMER_DENYLIST is not set; the customer-identifier check was skipped."
   exit "$status"
 fi
@@ -43,6 +50,10 @@ chmod 600 "$patterns"
 printf '%s\n' "$CUSTOMER_DENYLIST" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' |
   grep -v '^$' > "$patterns" || true
 if [[ ! -s "$patterns" ]]; then
+  if [[ "${REQUIRE_DENYLIST:-}" == "true" ]]; then
+    echo "::error::CUSTOMER_DENYLIST holds no patterns on a repository that requires it; failing closed."
+    exit 1
+  fi
   echo "::notice::CUSTOMER_DENYLIST holds no patterns; the customer-identifier check was skipped."
   exit "$status"
 fi

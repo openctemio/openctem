@@ -701,8 +701,8 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 
 		// Method 2: compute domain level from name structure
 		// A root domain has exactly 1 label before the effective TLD
-		// e.g., "ipa.com.vn" = root (1 label "ipa" before "com.vn")
-		//        "sub.ipa.com.vn" = subdomain (2 labels before "com.vn")
+		// e.g., "example.com.vn" = root (1 label "example" before "com.vn")
+		//        "sub.example.com.vn" = subdomain (2 labels before "com.vn")
 		if input.Type == "domain" && isLikelySubdomain(cleanName) {
 			input.Type = "subdomain"
 		}
@@ -772,7 +772,7 @@ func isLikelySubdomain(name string) bool {
 	// Check if last 2 parts form a known SLD
 	last2 := strings.Join(parts[len(parts)-2:], ".")
 	if knownSLDs[last2] {
-		// For .com.vn: "ipa.com.vn" = 3 parts = root; "sub.ipa.com.vn" = 4 parts = subdomain
+		// For .com.vn: "example.com.vn" = 3 parts = root; "sub.example.com.vn" = 4 parts = subdomain
 		return len(parts) > 3
 	}
 
