@@ -1215,6 +1215,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One remediation-group key applier for every path that creates findings
 	// (scan ingest, CVE matching, manual, license policy).
 	remediationKeys := remediation.NewKeyApplier(repos.FindingRemediationKey, log)
+	remediationKeys.SetAuditWriter(repos.Audit)
+	remediationKeys.SetBackfillActor("remediation key rules upgrade")
 	s.LicensePolicy = licapp.NewService(repos.LicensePolicy, repos.Finding, repos.Tenant, log)
 	s.LicensePolicy.SetRemediationKeyApplier(remediationKeys)
 	s.SBOMImport.SetLicenseEvaluator(s.LicensePolicy)
@@ -1739,6 +1741,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.RemediationSuggest.SetTasks(s.RemediationTask)
+	// Keys derived by older key rules are derived again before a run uses them.
+	s.RemediationSuggest.SetKeyRederiver(remediationKeys)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
