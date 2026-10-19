@@ -1183,7 +1183,7 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	}
 	// Optimistic concurrency: a copy read from storage only lands while the
 	// row is still at the version it was read at (every UPDATE bumps it,
-	// migration 003102), so a stale copy never puts back what another writer
+	// migration 003113), so a stale copy never puts back what another writer
 	// changed. A caller that named the version it saw (an API If-Match) is
 	// refused when this copy is not at that version.
 	if want, ok := vulnerability.ExpectedRowVersion(ctx, finding.ID()); ok &&
