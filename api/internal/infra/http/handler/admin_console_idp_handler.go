@@ -231,7 +231,7 @@ func (h *AdminConsoleHandler) GetPlatformIdP(w http.ResponseWriter, r *http.Requ
 
 // PutPlatformIdP handles PUT /api/v1/admin/platform-idp (super admin).
 // @Summary Configure the administrators' identity provider
-// @Description Creates or updates the platform-level OIDC provider. The issuer's discovery document is fetched (https only, SSRF-guarded) and must report the same issuer. The client secret is stored encrypted; leave it empty to keep the stored one. Changing the issuer removes every administrator's IdP binding. require_idp needs an active break-glass super admin. Audited.
+// @Description Creates or updates the platform-level OIDC provider. The issuer's discovery document is fetched (https only, SSRF-guarded) and must report the same issuer. The client secret is stored encrypted; leave it empty to keep the stored one. Changing the issuer removes every administrator's IdP binding. A new issuer or client id, or a newly trusted ACR/AMR value, needs another super admin's approval (428 SECOND_APPROVAL_REQUIRED), as do switching the provider off and no longer requiring it. require_idp needs an active break-glass super admin. Audited.
 // @Tags Admin Platform IdP
 // @Accept json
 // @Produce json
@@ -239,6 +239,7 @@ func (h *AdminConsoleHandler) GetPlatformIdP(w http.ResponseWriter, r *http.Requ
 // @Success 200 {object} PlatformIdPResponse
 // @Failure 400 {object} apierror.Error "Invalid configuration or discovery failed"
 // @Failure 409 {object} apierror.Error "require_idp without a break-glass super admin"
+// @Failure 428 {object} apierror.Error "Another super admin must approve this change first"
 // @Security BearerAuth
 // @Router /admin/platform-idp [put]
 func (h *AdminConsoleHandler) PutPlatformIdP(w http.ResponseWriter, r *http.Request) {
@@ -248,35 +249,58 @@ func (h *AdminConsoleHandler) PutPlatformIdP(w http.ResponseWriter, r *http.Requ
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	// Switching the identity provider off, or no longer requiring it, opens
-	// the password path again: a second super admin approves.
-	var grant *adminapproval.Grant
-	if cur, err := h.svc.GetPlatformIdP(r.Context()); err == nil && cur != nil {
-		target := ""
-		switch {
-		case cur.Enabled && !req.Enabled:
-			target = "disable"
-		case cur.RequireIdP && !req.RequireIdP:
-			target = "require_idp_off"
-		}
-		if target != "" {
-			var ok bool
-			if grant, ok = requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalPlatformIdPRemove, target, h.logger); !ok {
-				return
-			}
-		}
-	} else if err != nil && !errors.Is(err, admin.ErrPlatformIdPNotConfigured) {
+	in := adminconsole.PlatformIdPInput{
+		Enabled: req.Enabled, DisplayName: req.DisplayName, Issuer: req.Issuer, ClientID: req.ClientID,
+		ClientSecret: req.ClientSecret, RedirectURI: req.RedirectURI, Scopes: req.Scopes,
+		RequireIdP: req.RequireIdP, TrustedACRValues: req.TrustedACRValues, TrustedAMRValues: req.TrustedAMRValues,
+	}
+	cur, err := h.svc.GetPlatformIdP(r.Context())
+	switch {
+	case errors.Is(err, admin.ErrPlatformIdPNotConfigured):
+		cur = nil
+	case err != nil:
 		h.logger.Error("read platform idp", "error", sanitizeLogField(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	p, err := h.svc.SavePlatformIdP(r.Context(), actor, adminconsole.PlatformIdPInput{
-		Enabled: req.Enabled, DisplayName: req.DisplayName, Issuer: req.Issuer, ClientID: req.ClientID,
-		ClientSecret: req.ClientSecret, RedirectURI: req.RedirectURI, Scopes: req.Scopes,
-		RequireIdP: req.RequireIdP, TrustedACRValues: req.TrustedACRValues, TrustedAMRValues: req.TrustedAMRValues,
-	}, clientInfo(r))
+	// Two changes need a second super admin. Switching the identity provider
+	// off, or no longer requiring it, opens the password path again. A new
+	// issuer or client, or a newly trusted ACR/AMR value, decides who signs
+	// in as which administrator and whether the console second factor is
+	// asked at all.
+	grants := make([]*adminapproval.Grant, 0, 2)
+	release := func() {
+		for _, g := range grants {
+			releaseSecondApproval(r, h.approvals, actor, g)
+		}
+	}
+	type approvalNeed struct {
+		action admin.ApprovalAction
+		target string
+	}
+	var needs []approvalNeed
+	if cur != nil {
+		switch {
+		case cur.Enabled && !req.Enabled:
+			needs = append(needs, approvalNeed{admin.ApprovalPlatformIdPRemove, "disable"})
+		case cur.RequireIdP && !req.RequireIdP:
+			needs = append(needs, approvalNeed{admin.ApprovalPlatformIdPRemove, "require_idp_off"})
+		}
+	}
+	if target, ok := adminconsole.PlatformIdPChangeApproval(cur, in); ok {
+		needs = append(needs, approvalNeed{admin.ApprovalPlatformIdPChange, target})
+	}
+	for _, n := range needs {
+		g, ok := requireSecondApproval(w, r, h.approvals, actor, n.action, n.target, h.logger)
+		if !ok {
+			release()
+			return
+		}
+		grants = append(grants, g)
+	}
+	p, err := h.svc.SavePlatformIdP(r.Context(), actor, in, clientInfo(r))
 	if err != nil {
-		releaseSecondApproval(r, h.approvals, actor, grant)
+		release()
 		switch {
 		case shared.IsValidation(err):
 			apierror.BadRequest(sanitizeLogField(validationMessage(err))).WriteJSON(w)

@@ -245,7 +245,12 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 	// interval just advised (RFC-035 §5.6); a v2 sensor always follows it.
 	var hints sensor.HeartbeatHints
 	if h.ingest.doorbell != nil {
-		hints = h.ingest.doorbell.Ring(r.Context(), sensorapp.DoorbellRequest{Identity: id, Aware: true})
+		protocol, binding, _ := heartbeatTransport(r.Context(), &req)
+		hints = h.ingest.doorbell.Ring(r.Context(), sensorapp.DoorbellRequest{
+			Identity: id, Aware: true,
+			NoFreeSlots: req.Capacity != nil && req.Capacity.SlotsTotal > 0 && req.Capacity.SlotsFree <= 0,
+			Streaming:   protocol == 3 && binding == sensor.BindingGRPC,
+		})
 	}
 	if !id.Paused {
 		data := heartbeatData(r, &req, 2)

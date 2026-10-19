@@ -31,7 +31,9 @@ export interface ScopingSummary {
   business_services: { total: number; with_assets: number }
   business_units: { total: number }
   assets: { total: number; in_business_unit: number }
-  boundary: { targets: number; exclusions: number }
+  /** In effect (status active), the Scope page's metrics; targets_waiting
+   * are entries waiting for approval, which authorize nothing yet. */
+  boundary: { targets: number; targets_waiting: number; exclusions: number }
   attacker_profiles: { total: number }
   threat_models: { total: number; crown_jewels_covered: number }
   cycles: { total: number }
