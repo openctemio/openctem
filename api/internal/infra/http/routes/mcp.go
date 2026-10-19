@@ -51,11 +51,12 @@ func registerMCPRoutes(router Router, h *handler.MCPHandler, rateLimit, apiKeyAu
 // Resource Metadata is. A per-IP rate limiter runs before auth so an
 // unauthenticated junk-token flood can't drive the key lookups.
 //
-// The organization IP allowlist binds an `oct_` key on MCP exactly as on the
-// REST API (buildBaseMiddlewares): a key leaked outside the organization's
+// The organization IP allowlist binds both MCP credentials (an `oct_` key and
+// an OAuth access token) exactly as the REST API binds a session or key
+// (buildBaseMiddlewares): a credential leaked outside the organization's
 // network must not keep reading findings, assets and pentest data through
 // MCP after REST refuses it (23b S-H2). It runs after apiKeyAuth, which puts
-// the key's tenant in the context, and reads the client IP through
+// the credential's tenant and user in the context, and reads the client IP through
 // pkg/httpsec (trusted-proxy aware), never a raw header. nil (tests without a
 // tenant repository) leaves it out, as on every other chain.
 func mcpMiddlewares(rateLimit, apiKeyAuth Middleware, d *MCPDiscovery) []Middleware {
