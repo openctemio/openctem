@@ -382,7 +382,16 @@ func (s *VulnerabilityService) readEvidenceNote(ctx context.Context, tenantID sh
 // preserving any existing steps. Returns the updated step list.
 //
 // Load-existing → append → persist the whole slice (never wipes prior steps).
+// It re-reads the finding and applies the change again while the write
+// loses an optimistic-concurrency race (vulnerability.RetryOnFindingConflict).
 func (s *VulnerabilityService) AddRemediationStep(ctx context.Context, findingID, tenantID, step string) ([]string, error) {
+	return vulnerability.RetryOnFindingConflict(ctx, func() ([]string, error) {
+		return s.addRemediationStep(ctx, findingID, tenantID, step)
+	})
+}
+
+// addRemediationStep is one attempt of AddRemediationStep.
+func (s *VulnerabilityService) addRemediationStep(ctx context.Context, findingID, tenantID, step string) ([]string, error) {
 	trimmed := strings.TrimSpace(step)
 	if trimmed == "" {
 		return nil, fmt.Errorf("%w: step is required", shared.ErrValidation)

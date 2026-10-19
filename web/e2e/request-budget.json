@@ -12,6 +12,7 @@
     "/insights/program-health": 8,
     "/attack-surface/external": 7,
     "/validation": 8,
+    "/remediation": 7,
     "/scans": 7,
     "/settings/members": 8,
     "/settings/scanning/scan-windows": 7,

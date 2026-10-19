@@ -242,7 +242,7 @@ export function ExposureSection({ asset, isControlPlane }: ExposureSectionProps)
     >
       <DetailFieldGrid>
         <DetailField label={t('assets.overview2.internetFacing', 'Internet-facing')}>
-          {yesNo(asset.isInternetAccessible, t)}
+          {yesNo(asset.isInternetFacing, t)}
         </DetailField>
         <DetailField label={t('assets.overview2.networkExposure', 'Network exposure')}>
           {asset.exposure ? humanize(asset.exposure) : undefined}
