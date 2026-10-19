@@ -197,7 +197,7 @@
   "settings.desc.risk-scoring": "Cách tính trọng số điểm rủi ro của tài sản.",
   "settings.desc.roles": "Vai trò tùy chỉnh và các quyền đi kèm.",
   "settings.desc.scan-approval": "Lượt quét nào cần người phê duyệt trước khi chạy: mặc định tắt.",
-  "settings.desc.scan-profiles": "Cấu hình quét dùng lại: công cụ, cường độ và thời lượng.",
+  "settings.desc.scan-profiles": "Quy tắc đạt/không đạt dùng lại cho kết quả quét.",
   "settings.desc.scan-windows": "Khi nào được quét những mục tiêu nào: khung giờ kiểm thử và khung cấm quét.",
   "settings.desc.scanner-content": "Mức độ cập nhật bắt buộc của cơ sở dữ liệu lỗ hổng, mẫu và quy tắc.",
   "settings.desc.scanner-templates": "Mẫu Nuclei, Semgrep và Betterleaks tùy chỉnh.",

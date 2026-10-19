@@ -9,3 +9,6 @@
   core: true
   user_facing: true
   permission: "dashboard:read"
+  jobs:
+    - DashboardFactsController
+    - DashboardFactReconcileController
