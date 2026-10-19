@@ -932,6 +932,10 @@ func (m *mockAccessControlRepo) CreateAssetAccessGrant(_ context.Context, _, _, 
 	return nil, nil
 }
 
+func (m *mockAccessControlRepo) CreateCreatorAccessGrant(_ context.Context, _, _, _ shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return nil, nil
+}
+
 func (m *mockAccessControlRepo) DeleteAssetAccessGrant(_ context.Context, _, _, _ shared.ID) (*accesscontrol.AssetAccessGrant, error) {
 	return nil, accesscontrol.ErrAccessGrantNotFound
 }

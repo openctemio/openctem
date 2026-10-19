@@ -115,7 +115,7 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 	// An Unscoped registry (tenant configuration) has no asset to scope by;
 	// its registry records why.
 	if actor.Restricted() && reg.ScopeAssetSQL != "" {
-		cond, args := ScopeSQL(reg.ScopeAssetSQL, actor.scope, c.next)
+		cond, args := AssigneeScopeSQL(reg.ScopeAssetSQL, reg.ScopeAssigneeSQL, actor.scope, c.next)
 		parts = append(parts, cond)
 		c.args = append(c.args, args...)
 		c.next += len(args)
@@ -155,6 +155,21 @@ func ScopeSQL(assetExpr string, scope *shared.DataScope, first int) (string, []a
 	return fmt.Sprintf(
 		"(%s IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $%d AND uaa.tenant_id = $%d) AND %s)",
 		assetExpr, first, first+1, notHidden), args
+}
+
+// AssigneeScopeSQL is ScopeSQL for a row a person can be assigned (a
+// finding): a restricted caller also sees the rows assigned to them
+// (assigneeExpr = the caller), and only those, still never on an asset hidden
+// from them. Being the assignee grants view of the assigned row, not of its
+// asset or the asset's other rows (docs/architecture/authorization-matrix.md,
+// "Data scope"). An empty assigneeExpr is ScopeSQL.
+func AssigneeScopeSQL(assetExpr, assigneeExpr string, scope *shared.DataScope, first int) (string, []any) {
+	cond, args := ScopeSQL(assetExpr, scope, first)
+	if scope.Unrestricted || assigneeExpr == "" {
+		return cond, args
+	}
+	return fmt.Sprintf("(%s OR (%s = $%d AND %s))", cond, assigneeExpr, first,
+		NotHiddenSQL(assetExpr, first, first+1)), args
 }
 
 // HiddenAssetWhere is the condition "asset ph is hidden from user $userArg
