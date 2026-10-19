@@ -259,6 +259,26 @@ deliberate — an unknown `remediation_key` would otherwise map to a tenant-only
 `FindingFilter` and resolve every finding in the tenant. The key path is the only
 path a keyed campaign can take.
 
+## Conversion
+
+A campaign is becoming a program of remediation tasks (`remediation_tasks.campaign_id`); it stops holding
+findings. Migration `remediation_campaigns_hold_tasks` turns what each running campaign (draft, active, paused,
+validating) tracks into tasks, with the filter evaluated exactly as above:
+
+- only open findings move (not closed ones, not unpublished pentest drafts or findings in review);
+- a finding tracked by two campaigns goes to the campaign furthest along (active or validating, then paused, then
+  draft), then the oldest;
+- a finding already the primary member of a task does not move: a live task without a campaign joins the
+  campaign, a task of another campaign keeps it and the claim is recorded as a conflict;
+- the other findings become one task of the campaign (manual action, title = campaign name, owner = the campaign's
+  assignee while an active member, and its team; no manual deadline: the campaign's due date bounds its tasks);
+- report: an audit row per campaign (`remediation_campaign.migrated`), a timeline entry on each task that joined a
+  campaign or kept a claim, a `remediation_task_changed` entry on each moved finding, one notice to the owners and
+  admins, and a summary in the migration output.
+
+The conversion is the function `remediation_campaigns_to_tasks` (idempotent), so the API change that stops
+reading `finding_filter` runs it once more for campaigns created in between and then drops it.
+
 ## Planned (not yet shipped)
 
 - **Bidirectional Jira sync for campaigns** — push a campaign to a Jira epic and
