@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2, Timer } from 'lucide-react'
@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
+import { useListParams } from '@/hooks/use-list-params'
 import { formatRelative } from '@/lib/format-date'
 import { SEVERITY_DOT_COLORS, SEVERITY_ORDER, type SeverityLevel } from '@/lib/severity-colors'
 
@@ -42,7 +43,10 @@ export default function SlaCompliancePage() {
   const { t } = useTranslation()
   const router = useRouter()
   const sla = useSlaCompliance()
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
+  const { pagination, setPagination } = useListParams({
+    pageSizes: PAGE_SIZES,
+    defaultPageSize: 20,
+  })
 
   // The breached list is a server page over the same filter as the Past due tile.
   const list = useFindingsApi(
