@@ -1363,5 +1363,11 @@
   "sensors.jobSafety.loosen.privateTargets": "Private targets may go to sensors without a local policy.",
   "sensors.jobSafety.loosen.interactsh": "Scan jobs may use out-of-band callbacks to an external server.",
   "sensors.jobSafety.loosen.customTemplates": "Scan jobs may carry custom templates.",
-  "sensors.jobSafety.loosen.insecureTls": "Scan tools may accept invalid TLS certificates."
+  "sensors.jobSafety.loosen.insecureTls": "Scan tools may accept invalid TLS certificates.",
+  "sensors.checks.label.setup": "Setup",
+  "sensors.checks.label.posture": "Security posture",
+  "sensors.checks.setup.text": "The sensor reports setup checks that need attention. Open Setup & health for the details.",
+  "sensors.checks.issue.setup": "Setup needs attention",
+  "sensors.checks.issue.posture": "Runs unhardened",
+  "sensors.health.attention.posture": "unhardened"
 }
