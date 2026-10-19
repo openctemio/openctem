@@ -97,8 +97,9 @@ func boundReleasedKeys(keys []string) []string {
 // within a claim. last_progress_at moves only when a signal moves: done,
 // records or output bytes grow, or the CPU time grows by command.CPUMoveMs
 // since it last counted; a task that moves again is no longer asked to
-// stop. Entries for commands the sensor does not hold are ignored. Returns
-// the rows updated.
+// stop. Entries for commands the sensor does not hold are ignored, and so
+// are entries where nothing moved (no row is written). Returns the rows
+// updated.
 func (r *CommandRepository) RecordProgress(ctx context.Context, tenantID, sensorID shared.ID, progress map[string]command.Progress) (int64, error) {
 	if len(progress) == 0 {
 		return 0, nil
@@ -173,7 +174,12 @@ func (r *CommandRepository) RecordProgress(ctx context.Context, tenantID, sensor
 				  AND c.status IN ('acknowledged', 'running')
 			) m
 		) n
-		WHERE c.id = n.id`,
+		WHERE c.id = n.id
+		  -- Nothing moved: no write (a heartbeat repeats the same progress
+		  -- until the task advances).
+		  AND (n.moved OR c.progress_total IS DISTINCT FROM n.total
+		       OR c.last_progress_at IS NULL OR c.progress_cpu_mark IS NULL
+		       OR $10::jsonb ? c.id::text)`,
 		tenantID.String(), sensorID.String(), pq.Array(ids), pq.Array(done), pq.Array(total),
 		pq.Array(records), pq.Array(outBytes), pq.Array(cpu), command.CPUMoveMs, string(releasedJSON))
 	if err != nil {
