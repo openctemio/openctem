@@ -604,6 +604,9 @@ type mockAuthRefreshTokenRepo struct {
 	revokeByUserErr    error
 	deleteExpiredErr   error
 
+	// lostSpendRace: another request spent the token between read and update.
+	lostSpendRace bool
+
 	// Result overrides
 	deleteExpiredResult int64
 
@@ -669,6 +672,28 @@ func (m *mockAuthRefreshTokenRepo) Update(_ context.Context, _ *session.RefreshT
 		return m.updateErr
 	}
 	return nil
+}
+
+// MarkUsedIfUnused mirrors the conditional update: it spends a stored token
+// only when it is unused and not revoked. lostSpendRace makes it report that a
+// concurrent request spent the token first.
+func (m *mockAuthRefreshTokenRepo) MarkUsedIfUnused(_ context.Context, id shared.ID) (bool, error) {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	if m.lostSpendRace {
+		return false, nil
+	}
+	for _, t := range m.tokens {
+		if t.ID() == id {
+			if t.IsUsed() || t.IsRevoked() {
+				return false, nil
+			}
+			return true, nil
+		}
+	}
+	return true, nil
 }
 
 func (m *mockAuthRefreshTokenRepo) Delete(_ context.Context, _ shared.ID) error {
