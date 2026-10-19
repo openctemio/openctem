@@ -86,6 +86,7 @@ func (s *Service) GovernanceSubjectOf(ctx context.Context, sc *scan.Scan) (scang
 		SensorPreference:  string(sc.SensorPreference),
 		Tags:              append([]string(nil), sc.Tags...),
 		RunOnTenantRunner: sc.RunOnTenantRunner,
+		RuleSources:       string(sc.RuleSources),
 	}
 	if o := sc.TargetOptions; o != (scan.TargetOptions{}) {
 		def.TargetOptions = map[string]any{"cidr_mode": string(o.CIDRMode), "seen_within_days": o.SeenWithinDays, "include_stale": o.IncludeStale}

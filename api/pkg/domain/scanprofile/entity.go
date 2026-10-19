@@ -5,6 +5,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -196,9 +197,12 @@ type ScanProfile struct {
 	Tags               []string
 	Metadata           map[string]any
 	QualityGate        QualityGate // Quality gate thresholds for CI/CD pass/fail
-	CreatedBy          *shared.ID
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// RuleSources is which detection rules the profile's scans run unless a
+	// scan sets its own (default both; docs/architecture/rule-sources.md).
+	RuleSources scannertemplate.RuleSources
+	CreatedBy   *shared.ID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // NewScanProfile creates a new ScanProfile entity.
@@ -241,6 +245,7 @@ func NewScanProfile(
 		Tags:               []string{},
 		Metadata:           make(map[string]any),
 		QualityGate:        NewQualityGate(),
+		RuleSources:        scannertemplate.RuleSourcesBoth,
 		CreatedBy:          createdBy,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -300,6 +305,24 @@ func (p *ScanProfile) UpdateQualityGate(gate QualityGate) error {
 		return shared.NewDomainError("FORBIDDEN", "system profiles cannot be modified", shared.ErrForbidden)
 	}
 	p.QualityGate = gate
+	p.UpdatedAt = time.Now()
+	return nil
+}
+
+// SetRuleSources sets which detection rules the profile's scans run; ""
+// is both. System profiles cannot be modified.
+func (p *ScanProfile) SetRuleSources(v string) error {
+	if p.IsSystem {
+		return shared.NewDomainError("FORBIDDEN", "system profiles cannot be modified", shared.ErrForbidden)
+	}
+	rs, err := scannertemplate.ParseRuleSources(v)
+	if err != nil {
+		return err
+	}
+	if rs == "" {
+		rs = scannertemplate.RuleSourcesBoth
+	}
+	p.RuleSources = rs
 	p.UpdatedAt = time.Now()
 	return nil
 }
@@ -411,6 +434,7 @@ func (p *ScanProfile) Clone(newName string, createdBy *shared.ID) (*ScanProfile,
 		Tags:               tags,
 		Metadata:           metadata,
 		QualityGate:        p.QualityGate, // Copy quality gate settings
+		RuleSources:        p.RuleSources,
 		CreatedBy:          createdBy,
 		CreatedAt:          now,
 		UpdatedAt:          now,
