@@ -96,10 +96,12 @@ export function CtemDashboard() {
   // Maturity is module-gated — skip the fetch entirely when disabled so it 403s nothing.
   const ctemCyclesEnabled = useModuleEnabled('ctem_cycles')
   const attackSurfaceEnabled = useModuleEnabled('attack_surface')
-  const { data: maturity, isLoading: maturityLoading } = useCtemMaturityTrend(
-    tenantId,
-    ctemCyclesEnabled
-  )
+  const {
+    data: maturity,
+    isLoading: maturityLoading,
+    error: maturityError,
+    mutate: retryMaturity,
+  } = useCtemMaturityTrend(tenantId, ctemCyclesEnabled)
 
   // Retained analyst charts
   const { stats, isLoading: statsLoading } = useDashboardStats(tenantId)
@@ -193,7 +195,12 @@ export function CtemDashboard() {
 
       {ctemCyclesEnabled && (
         <section className="mb-6">
-          <CtemMaturityCard data={maturity} isLoading={maturityLoading} />
+          <CtemMaturityCard
+            data={maturity}
+            isLoading={maturityLoading}
+            error={maturityError}
+            onRetry={() => void retryMaturity()}
+          />
         </section>
       )}
 

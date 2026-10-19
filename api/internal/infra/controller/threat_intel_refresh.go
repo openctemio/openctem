@@ -24,8 +24,8 @@ type IntelChangeQueue interface {
 // catalog. Runs every 24 hours. Fetches the latest data from FIRST.org (EPSS)
 // and CISA (KEV) through ThreatIntelService.SyncAll, then queues a priority
 // recompute for only the open findings whose CVE changed (an EPSS threshold
-// crossed, KEV membership changed), never a whole tenant, and auto-escalates
-// findings whose CVEs appear in the KEV catalog.
+// crossed, KEV membership changed), never a whole tenant, and reconciles the
+// is_in_kev flag of findings with the KEV catalog.
 type ThreatIntelRefreshController struct {
 	service   *threat.IntelService
 	escalator threat.KEVEscalator
@@ -46,7 +46,7 @@ func (c *ThreatIntelRefreshController) Name() string { return "threat-intel-refr
 func (c *ThreatIntelRefreshController) Interval() time.Duration { return 24 * time.Hour }
 
 // Reconcile fetches and persists the latest EPSS + KEV data, queues the
-// findings whose intel moved, then auto-escalates KEV findings.
+// findings whose intel moved, then reconciles KEV flags on findings.
 func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, error) {
 	results := c.service.SyncAll(ctx)
 
@@ -83,20 +83,20 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 		}
 	}
 
-	// After KEV sync, auto-escalate + flag findings with CVEs in the KEV
-	// catalog. A severity change queues its asset by itself (trigger).
+	// After KEV sync, flag (and unflag) findings by KEV membership. The
+	// affected assets were queued above (EnqueueIntelChanges); severity is
+	// never rewritten, the exploitation floor carries KEV into priority.
 	if c.escalator != nil {
 		res, err := c.escalator.EscalateKEVFindings(ctx)
 		if err != nil {
 			c.logger.Warn("KEV auto-escalation failed", "error", err)
-		} else if res.Escalated > 0 || res.Flagged > 0 || res.Unflagged > 0 {
+		} else if res.Flagged > 0 || res.Unflagged > 0 {
 			c.logger.Info("KEV reconciliation completed",
-				"findings_escalated", res.Escalated,
 				"findings_flagged", res.Flagged,
 				"findings_unflagged", res.Unflagged,
 				"tenants_touched", len(res.Tenants),
 			)
-			processed += res.Escalated + res.Flagged + res.Unflagged
+			processed += res.Flagged + res.Unflagged
 		}
 	}
 
