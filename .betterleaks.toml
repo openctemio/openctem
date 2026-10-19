@@ -5,8 +5,8 @@
 # Use the default rules as a base
 useDefault = true
 
-[allowlist]
-description = "Allowlist for OpenCTEM API"
+[[allowlists]]
+description = "Test fixtures, templates, generated trees and visible placeholders"
 paths = [
     # Test files with fake credentials
     '''.*_test\.go$''',
@@ -15,8 +15,6 @@ paths = [
     '''.*\.test\.tsx?$''',
     '''.*/__tests__/.*''',
     '''.*/mock-data/.*''',
-    # Documentation
-    '''.*\.md$''',
     # Example/template files
     '''.*\.example$''',
     '''.*\.sample$''',
@@ -24,17 +22,37 @@ paths = [
     '''vendor/.*''',
     '''node_modules/.*''',
     '''\.git/.*''',
-    # Development scripts (contains placeholder credentials for local dev)
-    '''scripts/.*''',
-    '''api/scripts/.*''',
-    '''.*/scripts/.*''',
+]
+
+# The generic, keyword-driven rules (a word like "password" next to a string)
+# fire on UI copy, identifiers, schema text and documented local logins. They stay on everywhere except
+# these paths, where such words are vocabulary rather than values. Provider
+# rules (cloud and VCS tokens, private keys, OpenCTEM keys) apply to every path.
+[[allowlists]]
+description = "Generic keyword rules on UI copy, source identifiers and schema text"
+targetRules = ["generic-password", "generic-api-key", "generic-credential-uri", "curl-auth-header", "redis-connection-string", "postgresql-connection-string"]
+paths = [
+    '''web/src/.*''',
+    '''api/internal/.*''',
+    '''api/pkg/.*''',
+    '''api/migrations/.*''',
+    '''api/Dockerfile.*''',
+    '''.*\.betterleaks\.toml$''',
+    '''.*\.github/workflows/.*\.ya?ml$''',
+    '''api/deploy/docker-compose.*\.yml$''',
+    '''api/tests/integration/.*''',
+    # Docs and dev scripts show placeholder logins for local setups.
+    '''.*\.md$''',
+    '''(^|.*/)scripts/.*''',
 ]
 
 # Regexes for allowed secrets (e.g., placeholder values)
 regexes = [
     # Common placeholder patterns
     '''(?i)your[-_]?(api[-_]?key|secret|token|password)''',
-    '''(?i)(example|sample|test|fake|dummy|placeholder)''',
+    # A value that is visibly a placeholder: the word stands alone or is
+    # delimited by - _ . (not a substring of a longer random token).
+    '''(?i)(^|[-_.])(example|sample|test|fake|dummy|placeholder)([-_.]|$)''',
     '''xxx+''',
     '''000+''',
     '''changeme''',
