@@ -13,9 +13,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
+	"math/rand/v2"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -140,6 +142,85 @@ type Doorbell struct {
 	now    func() time.Time
 	grants GrantSource
 	keyset func() string
+	// fleet is the live fleet size (SetFleetSize); nil: unknown.
+	fleet *fleetSize
+	// jitter is the fraction ±jitter applied to every advised interval
+	// (0: none).
+	jitter float64
+	rnd    func() float64
+}
+
+// heartbeatBudgetPerSecond is the heartbeats per second per API replica
+// the platform plans for (RFC-074 D3): the idle interval stretches once the
+// live fleet would exceed it.
+const heartbeatBudgetPerSecond = 50
+
+// fleetCacheTTL is how long a fleet count is reused.
+const fleetCacheTTL = 30 * time.Second
+
+// fleetSize caches the live fleet size and the replica count.
+type fleetSize struct {
+	count    func(ctx context.Context) (int64, error)
+	replicas func() int
+	mu       sync.Mutex
+	n        int64
+	at       time.Time
+}
+
+func (f *fleetSize) get(ctx context.Context, now time.Time) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.at.IsZero() && now.Sub(f.at) < fleetCacheTTL {
+		return f.n
+	}
+	f.at = now
+	cctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	if n, err := f.count(cctx); err == nil {
+		f.n = n
+	}
+	return f.n
+}
+
+// SetFleetSize makes the idle interval follow the fleet size: at least
+// fleet / (heartbeatBudgetPerSecond × replicas) seconds, inside the safe
+// bounds (the platform decides; RFC-074). count is the live fleet (the
+// liveness store's due index); replicas the API replicas serving sensors
+// (nil: one).
+func (d *Doorbell) SetFleetSize(count func(ctx context.Context) (int64, error), replicas func() int) {
+	if count == nil {
+		d.fleet = nil
+		return
+	}
+	d.fleet = &fleetSize{count: count, replicas: replicas}
+}
+
+// SetJitter spreads every advised interval by ±fraction (bounded to
+// [0, 0.5]); the result still never exceeds MaxInterval.
+func (d *Doorbell) SetJitter(fraction float64) {
+	d.jitter = min(max(fraction, 0), 0.5)
+	if d.rnd == nil {
+		d.rnd = rand.Float64
+	}
+}
+
+// idleInterval is the advised idle interval: the configured one, stretched
+// when the fleet would exceed the heartbeat budget.
+func (d *Doorbell) idleInterval(ctx context.Context) time.Duration {
+	idle := d.cfg.IdleInterval
+	if d.fleet == nil {
+		return idle
+	}
+	replicas := 1
+	if d.fleet.replicas != nil {
+		replicas = max(d.fleet.replicas(), 1)
+	}
+	n := d.fleet.get(ctx, d.now())
+	if n <= 0 {
+		return idle
+	}
+	need := time.Duration(float64(n) / float64(heartbeatBudgetPerSecond*replicas) * float64(time.Second))
+	return max(idle, need)
 }
 
 // GrantSource reads a sensor's grant: the doorbell rings a gated action
@@ -187,6 +268,13 @@ type DoorbellRequest struct {
 	// error (pause for a disabled sensor); a sensor that did not ask sees
 	// exactly the v1 response unless there is news (work or an action).
 	Aware bool
+	// NoFreeSlots is true when the heartbeat's load report says every slot
+	// is taken: waiting work is no reason to ring again soon.
+	NoFreeSlots bool
+	// Streaming is true when the heartbeat came over the gRPC binding,
+	// whose control stream wakes the sensor when work arrives: waiting work
+	// is no reason to poll faster.
+	Streaming bool
 }
 
 // Ring returns the hints for one heartbeat. It never fails: when the query
@@ -197,7 +285,7 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 	if a == nil {
 		return h
 	}
-	idle := d.seconds(d.cfg.IdleInterval)
+	idle := d.seconds(d.idleInterval(ctx))
 
 	if req.Identity.Paused {
 		// Nothing else is computed for a paused sensor: it may take no work.
@@ -227,9 +315,11 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 		h.PendingJobs = work.Count
 		zones = work.ZoneFingerprint
 		switch {
-		case work.Count > 0, work.RecentlyCanceled > 0:
-			// Work waiting, or a command it claimed was canceled and it may
-			// still be running it: ring again soon.
+		case work.RecentlyCanceled > 0,
+			work.Count > 0 && !req.NoFreeSlots && !req.Streaming:
+			// A command it claimed was canceled and it may still be
+			// running it, or work is waiting that it has room for and no
+			// stream would wake it for: ring again soon.
 			interval = d.seconds(d.cfg.BusyInterval)
 		case elapsed >= d.cfg.SlowQuery:
 			// The platform is under load: back off as far as is safe.
@@ -245,11 +335,20 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 			keyset = d.keyset()
 		}
 		h.ConfigVersion = ConfigVersion(a, req.Identity.KeyExpiresAt, zones, keyset)
-		h.NextHeartbeatSeconds = interval
+		h.NextHeartbeatSeconds = d.jittered(interval)
 	} else if interval != idle {
-		h.NextHeartbeatSeconds = interval
+		h.NextHeartbeatSeconds = d.jittered(interval)
 	}
 	return h
+}
+
+// jittered spreads an advised interval by ±jitter, inside [Min, Max].
+func (d *Doorbell) jittered(seconds int) int {
+	if d.jitter <= 0 || d.rnd == nil || seconds <= 0 {
+		return seconds
+	}
+	f := float64(seconds) * (1 + d.jitter*(2*d.rnd()-1))
+	return d.seconds(time.Duration(f * float64(time.Second)))
 }
 
 // seconds converts an interval to whole seconds inside [Min, Max].
