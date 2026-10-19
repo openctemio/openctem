@@ -2481,18 +2481,17 @@ func toAISettingsResponse(ai *tenant.AISettings) AISettingsResponse {
 	return AISettingsResponse{Enabled: ai.OptedIn(), EnabledAt: ai.EnabledAt, EnabledBy: ai.EnabledBy}
 }
 
-// GetAISettings handles GET /api/v1/tenants/{tenant}/settings/ai
+// GetAISettings handles GET /api/v1/organization/settings/ai
 // @Summary      Read the organization's AI triage consent
 // @Description  Whether an administrator turned AI triage on for the organization, when and by whom. Until then no finding content is sent to an AI provider. Owners and administrators.
 // @Tags         Tenants
 // @Produce      json
 // @Security     BearerAuth
-// @Param        tenant path string true "Tenant ID or slug"
 // @Success      200  {object}  AISettingsResponse
-// @Router       /tenants/{tenant}/settings/ai [get]
+// @Router       /organization/settings/ai [get]
 func (h *TenantHandler) GetAISettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
@@ -2505,22 +2504,21 @@ func (h *TenantHandler) GetAISettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toAISettingsResponse(ai))
 }
 
-// UpdateAISettings handles PUT /api/v1/tenants/{tenant}/settings/ai
+// UpdateAISettings handles PUT /api/v1/organization/settings/ai
 // @Summary      Turn AI triage on or off for the organization
 // @Description  Turning it on is the organization's consent to send finding content (within its AI data policy) to the AI provider the platform or the organization configured. Owners and administrators; needs a recent sign-in; audited as critical.
 // @Tags         Tenants
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        tenant path string true "Tenant ID or slug"
 // @Param        body body UpdateAISettingsRequest true "Consent"
 // @Success      200  {object}  AISettingsResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error
-// @Router       /tenants/{tenant}/settings/ai [put]
+// @Router       /organization/settings/ai [put]
 func (h *TenantHandler) UpdateAISettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
