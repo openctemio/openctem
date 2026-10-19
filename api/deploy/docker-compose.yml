@@ -339,6 +339,16 @@ services:
       # gateway's console site (empty = private networks).
       ADMIN_LISTEN_ADDR: ${OPENCTEM_NET_PREFIX:-172.30.80}.12:8081
       ADMIN_ALLOWED_CIDRS: ${OPENCTEM_ADMIN_ALLOWED_CIDRS:-}
+      # The console's public origin (setup.sh writes it from the console
+      # address): its WebAuthn relying party. Empty it defaults to APP_URL's
+      # origin, and registering a security key in the console then fails with
+      # "Error validating origin".
+      ADMIN_PUBLIC_URL: ${OPENCTEM_ADMIN_PUBLIC_URL:-}
+      # Health page (console > Monitoring > Health): the web and gateway
+      # health URLs inside the stack, and the status file backup.sh writes.
+      SYSTEM_WEB_HEALTH_URL: ${SYSTEM_WEB_HEALTH_URL:-http://web:3000/api/health}
+      SYSTEM_GATEWAY_HEALTH_URL: ${SYSTEM_GATEWAY_HEALTH_URL:-http://gateway:2020/health}
+      SYSTEM_BACKUP_STATUS_FILE: ${SYSTEM_BACKUP_STATUS_FILE:-/backup-status/openctem_backup.prom}
       # Only the gateway, the web UI and the console may assert a client address
       # (X-Real-IP / X-Forwarded-For). Anything else is recorded as its own
       # TCP peer, so a client cannot choose the IP in the audit log.
@@ -435,6 +445,9 @@ services:
       # ./data/attachments under /app). The root filesystem is read-only, so
       # without this volume every upload fails. Back it up with the database.
       - api-data:/app/data
+      # backup.sh writes its status file here (BACKUP_STATUS_DIR); the Health
+      # page reads the time of the last successful backup from it.
+      - ${BACKUP_STATUS_DIR:-./backup-status}:/backup-status:ro
       # The system temp directory, on disk: uploaded archives (finding imports
       # up to 110 MB) and form files are spooled here, and feed bundles and the
       # feed cache are staged here. A small in-memory tmpfs fills up and counts
@@ -449,6 +462,49 @@ services:
       resources:
         limits:
           memory: ${API_MEMORY_LIMIT:-2g}
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # First administrator and organization (one-off, profile "tools")
+  # ---------------------------------------------------------------------------
+  # bootstrap-admin creates the sign-in account in `users`, which only the
+  # schema owner (DB_MIGRATE_USER) may do; the running API has DB_USER (DML
+  # only) and must not be handed the owner's credentials. So it runs as its
+  # own throwaway container, with the owner credentials from .env:
+  #
+  #   docker compose run --rm bootstrap-admin -email=admin@example.com \
+  #     -backup-email=breakglass@example.com \
+  #     -org-name="Example Corp" -org-owner-email=owner@example.com
+  #
+  # (`-h` lists every flag.) It is not started by `up`.
+  bootstrap-admin:
+    profiles: [tools]
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.10.1}}
+    entrypoint: ["/app/bootstrap-admin"]
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-openctem}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # The schema owner. With the single-role layout (DB_MIGRATE_USER unset)
+      # the tool uses DB_USER.
+      DB_MIGRATE_USER: ${DB_MIGRATE_USER:-}
+      DB_MIGRATE_PASSWORD: ${DB_MIGRATE_PASSWORD:-}
+      DB_NAME: ${DB_NAME:-openctem}
+      DB_SSLMODE: ${DB_SSLMODE:-require}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required (openssl rand -hex 32)}
+      # The owner's set-password link points at the public address.
+      APP_URL: ${OPENCTEM_PUBLIC_URL:-https://${OPENCTEM_HOSTNAME}}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - openctem
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
