@@ -54,7 +54,7 @@ export function CampaignList() {
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
   })
-  const { data: counts } = useCampaignStatusCounts(search)
+  const counts = useCampaignStatusCounts(data)
   const rows = useMemo(() => data?.data ?? [], [data])
 
   const columns = useMemo<ColumnDef<RemediationCampaign>[]>(

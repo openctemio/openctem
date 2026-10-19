@@ -9,7 +9,7 @@
 
 import useSWR, { useSWRConfig } from 'swr'
 import useSWRMutation from 'swr/mutation'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { get, post, patch, del } from '@/lib/api/client'
 
 export type CampaignStatus = 'draft' | 'active' | 'completed' | 'canceled'
@@ -115,40 +115,32 @@ export function useRemediationCampaigns(f: CampaignListFilters, enabled = true) 
 }
 
 /**
- * Totals per status for the filter chips, from the server's status_counts
- * (same search), never one page counted in the browser.
+ * Totals per status for the filter chips, from the list response's own
+ * status_counts (same search and priority, whatever status is selected), so
+ * the chips cost no request of their own and never count one page in the
+ * browser.
  */
-export function useCampaignStatusCounts(search: string, enabled = true) {
-  const key = enabled ? ['campaign-status-counts', search.trim()] : null
-  return useSWR<Record<CampaignStatus | 'all', number>>(
-    key,
-    async () => {
-      const page = await get<CampaignPage>(campaignListUrl({ search, perPage: 1 }))
-      const out = { all: 0 } as Record<CampaignStatus | 'all', number>
-      for (const s of CAMPAIGN_STATUSES) {
-        out[s] = page.status_counts?.[s] ?? 0
-        out.all += out[s]
-      }
-      return out
-    },
-    { keepPreviousData: true }
-  )
+export function useCampaignStatusCounts(page: CampaignPage | undefined) {
+  return useMemo(() => {
+    if (!page) return undefined
+    const out = { all: 0 } as Record<CampaignStatus | 'all', number>
+    for (const s of CAMPAIGN_STATUSES) {
+      out[s] = page.status_counts?.[s] ?? 0
+      out.all += out[s]
+    }
+    return out
+  }, [page])
 }
 
 export function useRemediationCampaign(id: string | undefined) {
   return useSWR<RemediationCampaign>(id ? `${CAMPAIGNS}/${id}` : null, get)
 }
 
-/** Revalidates every cached campaign list, count and record. */
+/** Revalidates every cached campaign list and record. */
 export function useRevalidateCampaigns() {
   const { mutate } = useSWRConfig()
   return useCallback(
-    () =>
-      mutate(
-        (key) =>
-          (typeof key === 'string' && key.startsWith(CAMPAIGNS)) ||
-          (Array.isArray(key) && key[0] === 'campaign-status-counts')
-      ),
+    () => mutate((key) => typeof key === 'string' && key.startsWith(CAMPAIGNS)),
     [mutate]
   )
 }
