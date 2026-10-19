@@ -22,8 +22,10 @@ template or rule pack), the **organization's own scanner templates**, or
   A scan with `tenant` must name custom templates
   (`scanner_config.custom_template_ids`), or the save is refused
   (`RULE_SOURCES_NO_TEMPLATES`).
-- The scan's value is part of its approval definition (RFC-073), so changing
-  it needs a new approval when a rule holds the scan.
+- The effective value (the scan's, else its profile's) is part of the
+  approval definition (RFC-073), left out when it is `both`, so changing it
+  on the scan or on its profile needs a new approval when a rule holds the
+  scan.
 
 Effective value of a run: the scan's own, else its profile's, else `both`
 (`scannertemplate.EffectiveRuleSources`). A profile that no longer exists

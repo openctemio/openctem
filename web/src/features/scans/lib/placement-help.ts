@@ -69,6 +69,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   tool_missing: 'sensors',
   capability_missing: 'sensors',
   not_confined: 'sensors',
+  rule_sources_unsupported: 'sensors',
   grant: 'sensors',
   intensity: 'workflows',
   policy_unavailable: 'sensors',

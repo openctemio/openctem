@@ -2,7 +2,7 @@
 
 - A scan and a scan profile choose which detection rules run: `both` (default), `platform` or `tenant` (`rule_sources` on `POST/PUT /api/v1/scans` and `/api/v1/scan-profiles`). A scan without its own setting inherits its profile's. Migration `003130` adds `scan_profiles.rule_sources` (default `both`) and `scans.rule_sources` (NULL = inherit); no backfill.
 - Every scan command carries the run's `rule_sources`. A tenant-only command is claimable only by a sensor that reports `rule.sources@1`; the placement view names `rule_sources_unsupported` for others. A platform-only run sends no custom templates.
-- A scan's rule sources are part of its approval definition.
+- The rule sources a run uses (the scan's, else its profile's) are part of the scan's approval definition, so a profile edit cannot widen an approved scan to the organization's templates; `both` is left out, so existing approvals keep matching.
 
 ### Behaviour change: custom templates that cannot be resolved fail the run
 
