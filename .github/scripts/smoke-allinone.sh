@@ -83,7 +83,9 @@ if echo "$listen" | grep -E ':2019 '; then echo "the gateway's admin API listens
 echo "  ok    gateway admin API not on TCP"
 # Process isolation: each process under its own uid, and only its own
 # environment (supervise.sh, child-env.sh).
-procs=$(docker exec "$name-on" sh -c 'for p in /proc/[0-9]*; do u=$(awk "/^Uid:/{print \$2}" $p/status 2>/dev/null) && echo "${p#/proc/} $u $(cat $p/comm 2>/dev/null)"; done')
+# Zombies are skipped: the gateway's entrypoint leaves a short-lived sh that
+# Caddy (its parent after exec) never reaps, and a zombie has no environment.
+procs=$(docker exec "$name-on" sh -c 'for p in /proc/[0-9]*; do u=$(awk "/^Uid:/{print \$2}" $p/status 2>/dev/null) && ! grep -q "^State:.Z" $p/status 2>/dev/null && echo "${p#/proc/} $u $(cat $p/comm 2>/dev/null)"; done')
 # api 1002, web 1001, console 1003, gateway 1004 (Node may rename its
 # process, so only the uid is matched there).
 echo "$procs" | grep -q " 1002 server\$" || { echo "the API does not run as uid 1002; got:" >&2; echo "$procs" >&2; exit 1; }
@@ -92,11 +94,12 @@ for uid in 1001 1003 1004; do
 done
 echo "  ok    api, web, console and gateway each run under their own uid"
 api_pid=$(echo "$procs" | awk '$2==1002 && $3=="server"{print $1; exit}')
-# environ_of <uid> <pid>: only the owner uid may read a process's environment
-# (root in the container has no CAP_SYS_PTRACE). An unreadable one fails the
-# test instead of passing it as "empty".
+# environ_of <uid> <pid>: a process's environment, read with CAP_SYS_PTRACE
+# (--privileged): Caddy carries a file capability, which makes its process
+# non-dumpable, so not even its own uid can read /proc/<pid>/environ. An
+# unreadable one fails the test instead of passing it as "empty".
 environ_of() {
-  local e; e=$(docker exec -u "$1" "$name-on" sh -c "tr '\\0' '\\n' </proc/$2/environ")
+  local e; e=$(docker exec --privileged -u 0 "$name-on" sh -c "tr '\\0' '\\n' </proc/$2/environ")
   echo "$e" | grep -q '^PATH=' || { echo "cannot read the environment of pid $2 as uid $1" >&2; exit 1; }
   echo "$e"
 }
