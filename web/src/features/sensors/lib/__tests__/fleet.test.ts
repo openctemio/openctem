@@ -111,6 +111,28 @@ describe('summarizeFleet', () => {
     expect(s.jobSlots).toBe(13)
   })
 
+  it('counts a sensor with setup warnings or an unhardened posture as needing attention', () => {
+    const s = summarizeFleet(
+      [
+        sensor({ config_health: 'attention' }),
+        sensor({
+          posture: {
+            local_policy: 'absent_legacy',
+            platform_pin: 'none',
+            network_enforced: null,
+            unhardened: ['policy_none'],
+          },
+        }),
+        sensor(),
+      ],
+      NOW,
+      undefined,
+      channel
+    )
+    expect(s.needsAttention).toBe(2)
+    expect(s.attentionKinds).toEqual(['preflight', 'posture'])
+  })
+
   it('needs attention: enabled sensors not connected, with a health reason or below the minimum', () => {
     const s = summarizeFleet(fleet(), NOW, undefined, channel)
     // dmz (outbox backlog), k8s-scanner-b (stale) and branch-hn-01 (offline,

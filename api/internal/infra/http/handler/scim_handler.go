@@ -358,6 +358,9 @@ func (h *SCIMHandler) writeProvisionError(w http.ResponseWriter, err error) {
 		h.scimError(w, http.StatusForbidden, "", LimitMessage(lim))
 	case errors.Is(err, shared.ErrNotFound):
 		h.scimError(w, http.StatusNotFound, "", "user not found")
+	case errors.Is(err, scim.ErrNewAccountNeedsVerifiedDomain):
+		h.scimError(w, http.StatusBadRequest, "invalidValue",
+			"the email domain is not a verified domain of this organization; verify the domain or invite the person")
 	case errors.Is(err, shared.ErrValidation):
 		h.scimError(w, http.StatusBadRequest, "invalidValue", "invalid request")
 	case errors.Is(err, shared.ErrConflict):

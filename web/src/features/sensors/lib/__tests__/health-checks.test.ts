@@ -324,4 +324,24 @@ describe('sensorHealthChecks', () => {
     )
     expect(byReason.sdk).toMatchObject({ status: 'critical', text })
   })
+
+  it('flags setup warnings and an unhardened posture, so the Overview never says all passing', () => {
+    const c = byKey(
+      sensorHealthChecks(
+        sensor({
+          config_health: 'attention',
+          posture: {
+            local_policy: 'absent_legacy',
+            platform_pin: 'none',
+            network_enforced: null,
+            unhardened: ['policy_none'],
+          },
+        }),
+        ctx
+      )
+    )
+    expect(c.setup).toMatchObject({ status: 'warning' })
+    expect(c.posture).toMatchObject({ status: 'warning', text: 'No local policy' })
+    expect(byKey(sensorHealthChecks(sensor({ config_health: 'ok' }), ctx)).setup).toBeUndefined()
+  })
 })
