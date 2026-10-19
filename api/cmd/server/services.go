@@ -10,8 +10,8 @@ import (
 	"net"
 	"time"
 
-	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
+	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
