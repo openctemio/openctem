@@ -523,6 +523,10 @@ type SensorConfigConfig struct {
 	// answers say omit_inventory false and a slim heartbeat is asked for the
 	// manifest again, so the sensor goes back to full heartbeats.
 	SlimHeartbeat bool
+	// LivenessStore is where heartbeat liveness lives
+	// (SENSOR_LIVENESS_STORE: postgres, shadow or redis; default shadow).
+	// See docs/architecture/sensors.md, "Heartbeat soft state".
+	LivenessStore string
 
 	// AllowUnsignedJobs lets a production API start without SIGNER_SOCKET
 	// (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS): jobs are then not signed.
@@ -1114,20 +1118,6 @@ type SensorConfig struct {
 	// if no heartbeat is received. Default: 5 minutes.
 	HeartbeatTimeout time.Duration
 
-	// HealthCheckInterval is how often to check for stale sensors.
-	// Default: 1 minute.
-	HealthCheckInterval time.Duration
-
-	// Enabled turns on the legacy sensor health checker (jobs.SensorHealthChecker,
-	// WORKER_HEALTH_CHECK_ENABLED). Default: false. The sensor health controller
-	// (internal/infra/controller/sensor_health.go, RFC-035 §5.6) owns liveness:
-	// it applies the late/stale/offline ladder and holds convictions during its
-	// startup grace and while the platform itself is slow. The legacy checker
-	// knows none of that and sweeps the moment the API starts, so with it on an
-	// API restart convicted every sensor that could not heartbeat while the API
-	// was down. Keep it off unless the health controller is not running.
-	Enabled bool
-
 	// SCMSyncInterval is how often the scheduled SCM repository/branch sync runs.
 	// 0 (default) disables it — repositories are then only imported on demand via
 	// POST /integrations/{id}/import-repositories. Set SCM_SYNC_INTERVAL (e.g. 6h)
@@ -1517,6 +1507,7 @@ func Load() (*Config, error) {
 
 			KeyRenewBefore:        getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
 			SlimHeartbeat:         getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
+			LivenessStore:         getEnv("SENSOR_LIVENESS_STORE", "shadow"),
 			SignerSocket:          getEnv("SIGNER_SOCKET", ""),
 			AllowUnsignedJobs:     getEnvBool("SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS", false),
 			SignerTimeout:         getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
@@ -1707,9 +1698,7 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: SensorConfig{
-			Enabled:                           getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
 			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:               getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
 			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
@@ -1938,6 +1927,11 @@ func (c *Config) Validate() error {
 	}
 	if err := c.InternalAPI.validate(); err != nil {
 		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(c.SensorConfig.LivenessStore)) {
+	case "", "postgres", "shadow", "redis":
+	default:
+		return fmt.Errorf("SENSOR_LIVENESS_STORE=%q must be postgres, shadow or redis", c.SensorConfig.LivenessStore)
 	}
 	if err := validateAccountPortalURL(c.AccountPortalURL); err != nil {
 		return err
@@ -2712,6 +2706,8 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
 	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
+	{"WORKER_HEALTH_CHECK_ENABLED", "unset it; the sensor health controller owns sensor liveness and the legacy checker was removed"},
+	{"WORKER_HEALTH_CHECK_INTERVAL", "unset it; the sensor health controller owns sensor liveness and the legacy checker was removed"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > Settings > Sign-up)"},
 	{"TENANT_CREATION_MODE", "unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open"},

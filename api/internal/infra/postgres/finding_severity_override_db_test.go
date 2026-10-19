@@ -379,3 +379,42 @@ func TestSeverityOverride_IsolationNegatives(t *testing.T) {
 		t.Errorf("finding changed by a refused caller: severity=%s", got.Severity())
 	}
 }
+
+// TestSeverityChange_IfMatchRowVersion: a severity change that names a stale
+// row version is refused as a finding conflict and writes nothing; one that
+// names the current version lands and carries the new version back, so the
+// next write by the same caller is not refused.
+func TestSeverityChange_IfMatchRowVersion(t *testing.T) {
+	fx := newSevFixture(t)
+	ctx := context.Background()
+	f := fx.create(t, "low")
+	cur := fx.load(t, f.ID())
+	in := func(sev string) finding.ChangeSeverityInput {
+		return finding.ChangeSeverityInput{
+			TenantID: fx.tenant.String(), FindingID: f.ID().String(), ActorID: fx.analyst.String(),
+			Severity: sev, Reason: "version guard probe",
+		}
+	}
+
+	stale := vulnerability.WithExpectedRowVersion(ctx, f.ID(), cur.RowVersion()-1)
+	if _, err := fx.svc("", "").ChangeFindingSeverity(stale, in("critical")); !vulnerability.IsFindingConflict(err) {
+		t.Fatalf("stale version: err = %v, want a finding conflict", err)
+	}
+	if got := fx.load(t, f.ID()); got.Severity() != vulnerability.SeverityLow || got.RowVersion() != cur.RowVersion() {
+		t.Fatalf("a refused change wrote: severity=%s version=%d", got.Severity(), got.RowVersion())
+	}
+
+	fresh := vulnerability.WithExpectedRowVersion(ctx, f.ID(), cur.RowVersion())
+	res, err := fx.svc("", "").ChangeFindingSeverity(fresh, in("critical"))
+	if err != nil {
+		t.Fatalf("current version: %v", err)
+	}
+	stored := fx.load(t, f.ID())
+	if res.Finding.RowVersion() != stored.RowVersion() || stored.RowVersion() <= cur.RowVersion() {
+		t.Fatalf("version not carried back: response=%d stored=%d before=%d", res.Finding.RowVersion(), stored.RowVersion(), cur.RowVersion())
+	}
+	next := vulnerability.WithExpectedRowVersion(ctx, f.ID(), res.Finding.RowVersion())
+	if _, err := fx.svc("", "").ChangeFindingSeverity(next, in("high")); err != nil {
+		t.Fatalf("follow-up with the returned version: %v", err)
+	}
+}

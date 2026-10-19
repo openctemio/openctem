@@ -51,3 +51,6 @@ __pycache__/
 
 # Runtime data written by a local API (sensor CA key, attachments, feeds). Never commit.
 /data/
+
+# Local editor/agent permission files (machine-specific paths)
+**/.claude/settings.local.json

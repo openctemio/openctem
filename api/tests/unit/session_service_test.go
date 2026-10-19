@@ -226,6 +226,13 @@ func (m *mockRefreshTokenRepo) Update(_ context.Context, _ *session.RefreshToken
 	return nil
 }
 
+func (m *mockRefreshTokenRepo) MarkUsedIfUnused(_ context.Context, _ shared.ID) (bool, error) {
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	return true, nil
+}
+
 func (m *mockRefreshTokenRepo) Delete(_ context.Context, _ shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr

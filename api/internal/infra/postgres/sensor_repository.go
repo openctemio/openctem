@@ -22,6 +22,9 @@ import (
 // SensorRepository implements sensor.Repository using PostgreSQL.
 type SensorRepository struct {
 	db *DB
+	// liveness overlays the heartbeat soft state on rows read (redis mode;
+	// nil otherwise). See SetLivenessOverlay.
+	liveness sensor.LivenessStore
 	tokenPepper
 	limitChecks // sensors (the organization's own; shared sensors never count)
 }
@@ -151,7 +154,7 @@ func (r *SensorRepository) CountByTenant(ctx context.Context, tenantID shared.ID
 func (r *SensorRepository) GetByID(ctx context.Context, id shared.ID) (*sensor.Sensor, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanSensor(row)
+	return r.overlayOne(ctx)(r.scanSensor(row))
 }
 
 // GetByTenantAndID retrieves one of the tenant's own sensors by ID. A shared
@@ -160,7 +163,7 @@ func (r *SensorRepository) GetByID(ctx context.Context, id shared.ID) (*sensor.S
 func (r *SensorRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sensor.Sensor, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2 AND scope = 'organization'"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
-	return r.scanSensor(row)
+	return r.overlayOne(ctx)(r.scanSensor(row))
 }
 
 // GetByAPIKeyHash retrieves a sensor by API key hash.
@@ -214,6 +217,7 @@ func (r *SensorRepository) List(ctx context.Context, filter sensor.Filter, page 
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
+	r.overlayLiveness(ctx, sensors)
 
 	return pagination.NewResult(sensors, total, page), nil
 }
@@ -337,7 +341,10 @@ func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) err
 }
 
 // RecordKeyUse marks the sensor seen and records the client address of the
-// key use (sensor.KeyUseRecorder). The address and its time only move
+// key use (sensor.KeyUseRecorder). It never changes health: only a
+// heartbeat brings a sensor back online, with its deadline, connect event
+// and audit entry (pkg/domain/sensor/liveness.go). A poll or an upload is
+// proof of life through last_seen_at, which the ladder already counts. The address and its time only move
 // forward: key uses are recorded asynchronously and can arrive out of order,
 // and an older observation must not overwrite a newer address.
 //
@@ -355,7 +362,6 @@ func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip ne
 		)
 		UPDATE sensors s
 		SET last_seen_at = NOW(),
-		    health = 'online',
 		    updated_at = NOW(),
 		    api_key_last_used_at = GREATEST(s.api_key_last_used_at, $3),
 		    api_key_last_used_ip = CASE
@@ -807,27 +813,6 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 	}
 
 	return sensors, nil
-}
-
-// MarkStaleAsOffline is the worker's backstop (jobs.SensorHealthChecker,
-// WORKER_HEARTBEAT_TIMEOUT): it marks offline the sensors still stored
-// online that the heartbeat ladder (pkg/domain/sensor/liveness.go) puts past
-// its offline step and that were last seen more than timeout ago. In normal
-// operation the health controller has moved such a sensor to late and stale
-// long before, so this only acts when the controller does not run. It never
-// convicts a sensor the controller holds at stale while the platform is slow.
-// Note: This updates Health (automatic), not Status (admin-controlled).
-//
-// A NULL last_seen_at counts as stale. It means "online but never once
-// heartbeated", which the app cannot produce, but a fixture, a restore or a
-// manual UPDATE can, and such a row was previously unreachable by this sweep
-// forever.
-func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.Duration) (int64, error) {
-	ids, err := r.convictOffline(ctx, []sensor.SensorHealth{sensor.SensorHealthOnline}, timeout)
-	if err != nil {
-		return 0, fmt.Errorf("failed to mark stale sensors as offline: %w", err)
-	}
-	return int64(len(ids)), nil
 }
 
 // CountLegacyKeySensors counts the non-revoked sensors whose effective key
@@ -1430,7 +1415,9 @@ func (r *SensorRepository) UpdateOfflineTimestamp(ctx context.Context, id shared
 // (ListLivenessCandidates / ApplyLiveness); this is the same offline step in
 // one call.
 //
-// NULL last_seen_at counts as stale — see MarkStaleAsOffline for why.
+// A NULL last_seen_at counts as stale. It means "online but never once
+// heartbeated", which the app cannot produce, but a fixture, a restore or a
+// manual UPDATE can.
 func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, minAge time.Duration) ([]shared.ID, error) {
 	ids, err := r.convictOffline(ctx, liveHealths, minAge)
 	if err != nil {

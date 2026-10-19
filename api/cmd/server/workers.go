@@ -81,7 +81,6 @@ var controllerMetrics = sync.OnceValue(func() controller.Metrics {
 // Workers holds all background worker instances.
 type Workers struct {
 	JobWorker                 *jobs.Worker
-	SensorHealthChecker       *jobs.SensorHealthChecker
 	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
 	ScanScheduler             *scan.ScanScheduler
 	CommandExpirationChecker  *command.ExpirationChecker
@@ -247,15 +246,6 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		return nil, err
 	}
 
-	// Initialize sensor health checker if worker is enabled
-	if cfg.Worker.Enabled {
-		w.SensorHealthChecker = jobs.NewSensorHealthChecker(repos.Sensor, &cfg.Worker, log)
-		log.Info("sensor health checker initialized",
-			"heartbeat_timeout", cfg.Worker.HeartbeatTimeout,
-			"check_interval", cfg.Worker.HealthCheckInterval,
-		)
-	}
-
 	// Initialize AI triage recovery job if AI triage service is available
 	if svc.AITriage != nil && cfg.AITriage.RecoveryEnabled {
 		w.AITriageRecoveryJob = jobs.NewAITriageRecoveryJob(svc.AITriage, &cfg.AITriage, log)
@@ -355,7 +345,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// No offline conviction while the platform itself is degraded (RFC-035
 	// D3): just started, stalled, or slow to handle heartbeats.
 	sensorHealth.SetPlatformHealth(svc.SensorPlatformHealth)
+	// Judges from the liveness store in redis mode, compares in shadow mode.
+	if svc.Sensor != nil {
+		sensorHealth.SetLiveness(svc.Sensor.LivenessMode(), svc.Sensor.LivenessStore())
+	}
+	// An offline conviction ends the sensor's leases at once.
+	sensorHealth.SetLeaseExpirer(repos.Command)
 	w.ControllerManager.Register(sensorHealth)
+	// How many sensors still use a legacy rda_ key (a gauge and a log line
+	// when it changes).
+	w.ControllerManager.Register(controller.NewSensorLegacyKeysController(repos.Sensor, log.With("controller", "sensor-legacy-keys")))
 
 	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
 	// default branches and outdated runners, once each while they hold; and
@@ -943,6 +942,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Tasks from a query in auto mode: add new matches as each task's owner
+	// (suspends a task whose owner left or lost access).
+	if svc != nil && svc.RemediationTask != nil {
+		w.ControllerManager.Register(controller.NewRemediationTaskQueryController(
+			svc.RemediationTask, 5*time.Minute, log.With("controller", "remediation-task-queries"),
+		))
+	}
 	// Task issues: push each task's state to its tracker issue (move and a
 	// progress comment) when it changed since the last push.
 	if svc != nil && svc.JiraSync != nil && repos.TicketLink != nil {
@@ -1265,11 +1271,6 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 		}()
 	}
 
-	// Start sensor health checker
-	if w.SensorHealthChecker != nil {
-		w.SensorHealthChecker.Start()
-	}
-
 	// Start AI triage recovery job
 	if w.AITriageRecoveryJob != nil {
 		w.AITriageRecoveryJob.Start()
@@ -1381,11 +1382,6 @@ func (w *Workers) Stop(log *logger.Logger) {
 		log.Info("stopping job worker...")
 		w.JobWorker.Shutdown()
 		log.Info("job worker stopped")
-	}
-
-	// Stop sensor health checker
-	if w.SensorHealthChecker != nil {
-		w.SensorHealthChecker.Stop()
 	}
 
 	// Stop AI triage recovery job

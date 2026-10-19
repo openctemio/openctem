@@ -25,14 +25,13 @@ type StateChangeCountsResponse struct {
 // shadow-it).
 func changeViewPresets() map[string]listPreset {
 	shadow := asset.ScopeShadow
+	newlyExposed := asset.NewlyExposedHistory(asset.ListStateHistoryOptions{})
 	return map[string]listPreset{
 		"appeared":    {types: []asset.StateChangeType{asset.StateChangeAppeared}, forced: true},
 		"disappeared": {types: []asset.StateChangeType{asset.StateChangeDisappeared}, forced: true},
 		"newly_exposed": {
-			types: []asset.StateChangeType{
-				asset.StateChangeExposureChanged, asset.StateChangeInternetExposureChanged,
-			},
-			newValues: []string{string(asset.ExposurePublic), "true"},
+			types:     newlyExposed.ChangeTypes,
+			newValues: newlyExposed.NewValues,
 			forced:    true,
 		},
 		"exposure_changes": {types: []asset.StateChangeType{

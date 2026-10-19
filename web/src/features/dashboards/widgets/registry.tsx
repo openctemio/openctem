@@ -19,6 +19,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDashboardStats } from '@/features/dashboard'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
+import { DRILL } from '@/features/dashboard/lib/drill'
 import {
   useExecutiveSummary,
   useThreatIntelStats,
@@ -93,15 +94,22 @@ function StatShell({
   href,
   tone = 'default',
   sub,
+  error,
 }: {
   title: string
   value: number | string
   /** A small line under the value. */
   sub?: string
   loading?: boolean
+  /** The read failed: show "—" and say so, never a confident 0. */
+  error?: unknown
   href?: string
   tone?: 'default' | 'danger'
 }) {
+  const { t } = useTranslation()
+  const failed = !!error && !loading
+  const shown = failed ? '—' : value
+  const line = failed ? t('dashboardMetrics.state.loadFailed', "Couldn't load these figures") : sub
   const body = (
     <Card className={href ? 'h-full transition-colors hover:border-primary/50' : 'h-full'}>
       <CardContent className="p-5">
@@ -112,15 +120,15 @@ function StatShell({
           <p
             className={
               'mt-1 text-3xl font-semibold ' +
-              (tone === 'danger' && typeof value === 'number' && value > 0
+              (tone === 'danger' && typeof shown === 'number' && shown > 0
                 ? 'text-destructive'
                 : '')
             }
           >
-            {value}
+            {shown}
           </p>
         )}
-        {sub && !loading && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
+        {line && !loading && <p className="mt-1 text-xs text-muted-foreground">{line}</p>}
       </CardContent>
     </Card>
   )
@@ -163,39 +171,50 @@ function SeverityBreakdownWidget() {
 
 function OpenFindingsWidget() {
   const { t } = useTranslation()
-  const { stats, isLoading } = useStats()
+  const { stats, isLoading, error } = useStats()
   return (
     <StatShell
       title={t('dashboardMetrics.widget.openFindings.title')}
       value={stats.findings.total}
       loading={isLoading}
+      error={error}
       href="/findings"
     />
   )
 }
 
 function OverdueSlaWidget() {
-  const { stats, isLoading } = useStats()
+  const { stats, isLoading, error } = useStats()
   return (
     <StatShell
       title="Overdue (SLA)"
       value={stats.findings.overdue}
       loading={isLoading}
+      error={error}
       tone="danger"
-      href="/findings?sla_status=overdue"
+      // The count is open findings overdue or exceeded: open the same list.
+      href="/findings?state=open&sla_status=overdue,exceeded"
     />
   )
 }
 
 function AssetsWidget() {
-  const { stats, isLoading } = useStats()
-  return <StatShell title="Assets" value={stats.assets.total} loading={isLoading} href="/assets" />
+  const { stats, isLoading, error } = useStats()
+  return (
+    <StatShell
+      title="Assets"
+      value={stats.assets.total}
+      loading={isLoading}
+      error={error}
+      href="/assets"
+    />
+  )
 }
 
 // ── personal widgets (assigned to me) ────────────────────────────────────────
 
 function AssignedToMeWidget() {
-  const { data, isLoading } = useFindingsApi({
+  const { data, isLoading, error } = useFindingsApi({
     assigned_to_me: true,
     exclude_statuses: OPEN_EXCLUDE,
     per_page: 1,
@@ -205,13 +224,14 @@ function AssignedToMeWidget() {
       title="Assigned to me · open"
       value={data?.total ?? 0}
       loading={isLoading}
+      error={error}
       href="/findings?related_to=me"
     />
   )
 }
 
 function MyCriticalHighWidget() {
-  const { data, isLoading } = useFindingsApi({
+  const { data, isLoading, error } = useFindingsApi({
     assigned_to_me: true,
     exclude_statuses: OPEN_EXCLUDE,
     severities: ['critical', 'high'],
@@ -222,14 +242,15 @@ function MyCriticalHighWidget() {
       title="My critical / high"
       value={data?.total ?? 0}
       loading={isLoading}
+      error={error}
       tone="danger"
-      href="/findings?related_to=me&priority_class=P0"
+      href="/findings?related_to=me&state=open&severity=critical,high"
     />
   )
 }
 
 function MyOverdueSlaWidget() {
-  const { data, isLoading } = useFindingsApi({
+  const { data, isLoading, error } = useFindingsApi({
     assigned_to_me: true,
     exclude_statuses: OPEN_EXCLUDE,
     sla_statuses: ['overdue', 'exceeded'],
@@ -240,8 +261,9 @@ function MyOverdueSlaWidget() {
       title="My overdue (SLA)"
       value={data?.total ?? 0}
       loading={isLoading}
+      error={error}
       tone="danger"
-      href="/findings?related_to=me&sla_status=overdue"
+      href="/findings?related_to=me&state=open&sla_status=overdue,exceeded"
     />
   )
 }
@@ -249,19 +271,20 @@ function MyOverdueSlaWidget() {
 // ── program widgets (executive summary / threat intel / coverage) ────────────
 
 function RiskScoreWidget() {
-  const { data, isLoading } = useSummary()
+  const { data, isLoading, error } = useSummary()
   return (
     <StatShell
       title="Risk score"
       value={Math.round(data?.risk_score_current ?? 0)}
       loading={isLoading}
+      error={error}
     />
   )
 }
 
 function SlaComplianceWidget() {
   const { t } = useTranslation()
-  const { data, isLoading } = useSummary()
+  const { data, isLoading, error } = useSummary()
   // Null: no open finding has an SLA, so the share is not measured.
   const pct = data?.sla_compliance_pct
   return (
@@ -269,13 +292,14 @@ function SlaComplianceWidget() {
       title={t('dashboardMetrics.widget.sla.title')}
       value={pct == null ? '—' : `${Math.round(pct)}%`}
       loading={isLoading}
+      error={error}
     />
   )
 }
 
 function MttrWidget() {
   const { t } = useTranslation()
-  const { data, isLoading } = useSummary()
+  const { data, isLoading, error } = useSummary()
   // Null: nothing critical was fixed in the period, so there is no time to report.
   const median = data?.mttr_critical_median_hours
   const p90 = data?.mttr_critical_p90_hours
@@ -292,30 +316,33 @@ function MttrWidget() {
             })
       }
       loading={isLoading}
+      error={error}
     />
   )
 }
 
 function P0OpenWidget() {
-  const { data, isLoading } = useSummary()
+  const { data, isLoading, error } = useSummary()
   return (
     <StatShell
       title="P0 open"
       value={data?.p0_open ?? 0}
       loading={isLoading}
+      error={error}
       tone="danger"
-      href="/findings?priority_class=P0"
+      href={DRILL.p0Open}
     />
   )
 }
 
 function ScanCoverageWidget() {
-  const { data, isLoading } = useCoverage()
+  const { data, isLoading, error } = useCoverage()
   return (
     <StatShell
       title="Scan coverage"
-      value={`${Math.round(data?.coverage_percent ?? 0)}%`}
+      value={!data || data.total_scannable === 0 ? '—' : `${Math.round(data.coverage_percent)}%`}
       loading={isLoading}
+      error={error}
       href="/scans"
     />
   )
@@ -323,13 +350,14 @@ function ScanCoverageWidget() {
 
 function ReachableAssetsWidget() {
   const on = useModuleEnabled('attack_surface')
-  const { data, isLoading } = useAttack()
+  const { data, isLoading, error } = useAttack()
   if (!on) return <ModuleOffShell title="Assets reachable" />
   return (
     <StatShell
       title="Assets reachable"
       value={data?.summary?.reachable_assets ?? 0}
       loading={isLoading}
+      error={error}
       tone="danger"
       href="/attack-paths"
     />

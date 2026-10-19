@@ -1183,18 +1183,12 @@ vars:
     type: bool
     default: "true"
     description: "Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats."
-  - name: WORKER_HEALTH_CHECK_ENABLED
+  - name: SENSOR_LIVENESS_STORE
     component: api
     group: "Sensors"
-    type: bool
-    default: "false"
-    description: "Legacy sensor health checker. Keep it off: the sensor health controller owns liveness and the legacy checker marks every sensor offline right after an API restart."
-  - name: WORKER_HEALTH_CHECK_INTERVAL
-    component: api
-    group: "Sensors"
-    type: duration
-    default: "1m"
-    description: "Interval of the legacy checker."
+    type: string
+    default: "shadow"
+    description: "Where heartbeat liveness lives. `postgres`: every heartbeat updates the sensor row. `shadow`: as postgres, and Redis records every heartbeat too so `openctem_sensor_liveness_disagreements_total` compares the two. `redis`: Redis holds liveness; Postgres gets state changes and a batched checkpoint every 10 minutes. Switch to `redis` after a week of zero disagreements."
   - name: WORKER_HEARTBEAT_TIMEOUT
     component: api
     group: "Sensors"
@@ -1892,6 +1886,19 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: sender address."
+  - name: RELAY_TLS_CERT
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    description: "`openctem-sensor-relay`: path to the relay's server certificate (PEM) presented to sensors. The relay does not start without it. See the sensor relay architecture note."
+  - name: RELAY_TLS_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it."
   - name: BOOTSTRAP_SMTP_FROM_NAME
     component: tool
     group: "Administration tools"
@@ -2188,7 +2195,13 @@ vars:
     group: "Gateway"
     type: string
     default: "/data"
-    description: "Caddy storage: certificates, ACME account, internal CA. Keep it on a volume."
+    description: "Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. The all-in-one image uses `/data/gateway` (it moves an older `/data/caddy` there on start)."
+  - name: OPENCTEM_CADDY_ADMIN
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "127.0.0.1:2019"
+    description: "Address of Caddy's admin API. The all-in-one image sets a unix socket only the gateway's uid can open (`unix/<dir>/admin.sock|0600`), because every process there shares one network namespace."
   - name: OPENCTEM_API_UPSTREAM
     component: gateway
     group: "Gateway"

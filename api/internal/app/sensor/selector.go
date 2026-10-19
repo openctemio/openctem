@@ -7,7 +7,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -39,15 +38,16 @@ var (
 // metricsFreshness bounds how old a sensor's resource metrics may be before
 // the selector stops trusting them. A crashed or wedged sensor keeps its last
 // reported CPU/memory forever; without this guard one bad sample would
-// permanently bias scheduling away from (or towards) that sensor. Sensors
-// heartbeat far more often than this, so fresh sensors are unaffected.
-const metricsFreshness = 5 * time.Minute
+// permanently bias scheduling away from (or towards) that sensor. It is
+// longer than the liveness checkpoint period (with its jitter): with the
+// liveness store in redis mode a steady sensor's metrics reach Postgres
+// only with each checkpoint. A dead sensor is offline long before.
+const metricsFreshness = sensordom.LivenessCheckpointPeriod + 5*time.Minute
 
 // SensorSelector handles intelligent sensor selection for job execution.
 type SensorSelector struct {
 	sensorRepo  sensordom.Repository
 	commandRepo command.Repository
-	sensorState *redis.SensorStateStore
 	logger      *logger.Logger
 
 	// weights drive selectLeastLoaded's scoring. Defaults to the compiled-in
@@ -60,13 +60,11 @@ type SensorSelector struct {
 func NewSensorSelector(
 	sensorRepo sensordom.Repository,
 	commandRepo command.Repository,
-	sensorState *redis.SensorStateStore,
 	log *logger.Logger,
 ) *SensorSelector {
 	return &SensorSelector{
 		sensorRepo:  sensorRepo,
 		commandRepo: commandRepo,
-		sensorState: sensorState,
 		logger:      log.With("service", "sensor_selector"),
 		weights:     sensordom.DefaultLoadBalancingWeights(),
 	}
@@ -99,9 +97,10 @@ type SelectSensorResult struct {
 	Sensor  *sensordom.Sensor
 	Queued  bool
 	Message string
-	// TenantBusy is true when the tenant has online sensors that can run the
-	// job but none has a free slot: the job waits for one of them (it is
-	// never moved to shared sensors because the tenant's fleet is busy).
+	// TenantBusy is true when the tenant has sensors that can run the job
+	// but none can take it now (every one is busy, or they are not online
+	// at the moment): the job waits for one of them (it is never moved to
+	// shared sensors because the tenant's fleet is busy or restarting).
 	TenantBusy bool
 }
 
@@ -120,6 +119,20 @@ func (s *SensorSelector) selectTenantSensor(ctx context.Context, req SelectSenso
 
 	if len(sensors) == 0 {
 		if req.AllowQueue {
+			// A capable sensor that is not online right now (restarting,
+			// briefly missing heartbeats) still owns the work: it waits for
+			// that sensor instead of going to the shared fleet.
+			capable, err := s.sensorRepo.FindByCapabilities(ctx, req.TenantID, req.Capabilities, req.Tool)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find tenant sensors: %w", err)
+			}
+			if len(capable) > 0 {
+				return &SelectSensorResult{
+					Queued:     true,
+					TenantBusy: true,
+					Message:    "Tenant sensors are not online right now, job will be queued",
+				}, nil
+			}
 			return &SelectSensorResult{
 				Queued:  true,
 				Message: "No tenant sensor available, job will be queued",

@@ -2,12 +2,16 @@
 
 /**
  * The suggestions inbox: proposals ranked by risk reduced, each explaining
- * why it was grouped. Review with the keyboard (j/k move, a accept, e edit,
- * d dismiss, s snooze, x select, ? why), or select several and accept them
- * in one go. Nothing changes until someone accepts.
+ * why it was grouped. Review with the keyboard (j/k move, Enter or o open the
+ * detail panel, a accept, e edit, d dismiss, s snooze, x select, ? why), or
+ * select several and accept them in one go. The panel is a deep link
+ * (?suggestion=<id>); Esc closes it. Findings another task took since the
+ * suggestion was made are skipped or moved only as the person decides.
+ * Nothing changes until someone accepts.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Inbox, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
@@ -26,18 +30,26 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { ApiClientError } from '@/lib/api/error-handler'
-import type { DismissReason, RemediationSuggestion, SuggestionKind } from '../api/types'
+import type {
+  DismissReason,
+  FindingConflict,
+  RemediationSuggestion,
+  SuggestionKind,
+} from '../api/types'
 import {
   type ApproveBody,
   hubApi,
   useRevalidateHub,
+  useSuggestion,
   useSuggestions,
 } from '../api/use-remediation-hub'
 import { isTypingTarget } from '../lib/hub'
+import { claimConflicts, suggestionParam } from '../lib/suggestion-detail'
+import { ConflictDialog } from './conflict-dialog'
 import { SuggestionCard } from './suggestion-card'
-import { AcceptDialog, DismissDialog } from './suggestion-dialogs'
+import { SuggestionPanel } from './suggestion-panel'
+import { AcceptDialog, DismissDialog, SnoozeDialog } from './suggestion-dialogs'
 
-const SNOOZE_DAYS = 7
 const PER_PAGE = 25
 
 export function apiMessage(err: unknown, fallback: string): string {
@@ -46,8 +58,11 @@ export function apiMessage(err: unknown, fallback: string): string {
 }
 
 export function SuggestionsInbox() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { hasPermission } = usePermissions()
+  const router = useRouter()
+  const params = useSearchParams()
+  const openId = suggestionParam(params?.get('suggestion'))
   const canWrite = hasPermission(Permission.RemediationWrite)
   // Asset owners without write access may accept a join into their task or a
   // new task for them, as it is; the API checks ownership and scope.
@@ -76,7 +91,31 @@ export function SuggestionsInbox() {
   const [explain, setExplain] = useState<string | null>(null)
   const [editing, setEditing] = useState<RemediationSuggestion | null>(null)
   const [dismissing, setDismissing] = useState<RemediationSuggestion | null>(null)
+  const [snoozing, setSnoozing] = useState<RemediationSuggestion | null>(null)
+  const [conflict, setConflict] = useState<{
+    s: RemediationSuggestion
+    body: Omit<ApproveBody, 'version'>
+    conflicts: FindingConflict[]
+  } | null>(null)
   const [busy, setBusy] = useState(false)
+  // The panel's suggestion: from the page when it is there, else by id.
+  const onPage = openId ? items.find((x) => x.id === openId) : undefined
+  const { data: byId, isLoading: byIdLoading } = useSuggestion(
+    openId && !onPage ? openId : undefined
+  )
+  const panelSuggestion = onPage ?? byId ?? null
+  const panelIndex = onPage ? items.indexOf(onPage) : -1
+
+  const setOpenId = useCallback(
+    (id: string | undefined) => {
+      const next = new URLSearchParams(params?.toString() ?? '')
+      if (id) next.set('suggestion', id)
+      else next.delete('suggestion')
+      const qs = next.toString()
+      router.replace(qs ? `?${qs}` : '?', { scroll: false })
+    },
+    [params, router]
+  )
   const cardRefs = useRef<(HTMLDivElement | null)[]>([])
 
   useEffect(() => {
@@ -96,20 +135,34 @@ export function SuggestionsInbox() {
           res.joined > 0
             ? t('remediationHub.toast.joined', undefined, { n: res.joined })
             : t('remediationHub.toast.accepted', undefined, { n: res.task_ids.length })
-        toast.success(
+        const extra = [
           res.dropped.length
-            ? `${msg} ${t('remediationHub.toast.dropped', undefined, { n: res.dropped.length })}`
-            : msg
-        )
+            ? t('remediationHub.toast.dropped', undefined, { n: res.dropped.length })
+            : '',
+          res.skipped?.length
+            ? t('remediationHub.toast.skipped', undefined, { n: res.skipped.length })
+            : '',
+          res.moved ? t('remediationHub.toast.movedFrom', undefined, { n: res.moved }) : '',
+        ].filter(Boolean)
+        toast.success([msg, ...extra].join(' '))
         setEditing(null)
+        setConflict(null)
+        if (openId === s.id) setOpenId(undefined)
         await done()
       } catch (err) {
-        toast.error(apiMessage(err, t('remediationHub.toast.failed')))
+        const conflicts = claimConflicts(err)
+        if (conflicts && conflicts.length > 0) {
+          // Another task took some findings since: the person decides.
+          setEditing(null)
+          setConflict({ s, body, conflicts })
+        } else {
+          toast.error(apiMessage(err, t('remediationHub.toast.failed')))
+        }
       } finally {
         setBusy(false)
       }
     },
-    [done, t]
+    [done, t, openId, setOpenId]
   )
 
   const dismiss = useCallback(
@@ -118,6 +171,7 @@ export function SuggestionsInbox() {
       try {
         const res = await hubApi.reject(s.id, { version: s.version, reason, note })
         setDismissing(null)
+        if (openId === s.id) setOpenId(undefined)
         await done()
         toast.success(t('remediationHub.toast.dismissed'), {
           action: {
@@ -135,30 +189,41 @@ export function SuggestionsInbox() {
         setBusy(false)
       }
     },
-    [done, t]
+    [done, t, openId, setOpenId]
   )
 
   const snooze = useCallback(
-    async (s: RemediationSuggestion) => {
-      const until = new Date(Date.now() + SNOOZE_DAYS * 24 * 3600 * 1000).toISOString()
+    async (s: RemediationSuggestion, until: string) => {
+      setBusy(true)
       try {
         const res = await hubApi.snooze(s.id, { version: s.version, snoozed_until: until })
+        setSnoozing(null)
+        if (openId === s.id) setOpenId(undefined)
         await done()
-        toast.success(t('remediationHub.toast.snoozed', undefined, { days: SNOOZE_DAYS }), {
-          action: {
-            label: t('remediationHub.actions.undo'),
-            onClick: () => {
-              void hubApi
-                .reopen(s.id, res.version)
-                .then(done, (err) => toast.error(apiMessage(err, t('remediationHub.toast.failed'))))
+        toast.success(
+          t('remediationHub.toast.snoozedUntil', undefined, {
+            date: new Date(until).toLocaleDateString(locale, { dateStyle: 'medium' }),
+          }),
+          {
+            action: {
+              label: t('remediationHub.actions.undo'),
+              onClick: () => {
+                void hubApi
+                  .reopen(s.id, res.version)
+                  .then(done, (err) =>
+                    toast.error(apiMessage(err, t('remediationHub.toast.failed')))
+                  )
+              },
             },
-          },
-        })
+          }
+        )
       } catch (err) {
         toast.error(apiMessage(err, t('remediationHub.toast.failed')))
+      } finally {
+        setBusy(false)
       }
     },
-    [done, t]
+    [done, t, locale, openId, setOpenId]
   )
 
   const bulkAccept = useCallback(async () => {
@@ -196,15 +261,37 @@ export function SuggestionsInbox() {
   // Keyboard review: only when no dialog is open and nobody is typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (editing || dismissing || e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target))
+      if (
+        editing ||
+        dismissing ||
+        snoozing ||
+        conflict ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey ||
+        isTypingTarget(e.target)
+      )
         return
-      const s = items[active]
+      const s = openId ? panelSuggestion : items[active]
+      const move = (step: number) => {
+        const next = Math.min(Math.max(active + step, 0), items.length - 1)
+        setActive(next)
+        if (openId && items[next]) setOpenId(items[next].id)
+      }
       switch (e.key) {
         case 'j':
-          setActive((a) => Math.min(a + 1, items.length - 1))
+          move(1)
           break
         case 'k':
-          setActive((a) => Math.max(a - 1, 0))
+          move(-1)
+          break
+        case 'Enter':
+        case 'o':
+          if (openId || !items[active]) return
+          // Enter on a button or link inside a card keeps its own meaning.
+          if (e.key === 'Enter' && e.target instanceof HTMLElement && e.target.closest('button, a'))
+            return
+          setOpenId(items[active].id)
           break
         case 'a':
           if (s && (canWrite || canOwnerAccept(s)) && s.hidden_members === 0) void accept(s)
@@ -216,7 +303,7 @@ export function SuggestionsInbox() {
           if (s && canWrite && s.hidden_members === 0) setDismissing(s)
           break
         case 's':
-          if (s && canWrite && s.hidden_members === 0) void snooze(s)
+          if (s && canWrite && s.hidden_members === 0) setSnoozing(s)
           break
         case 'x':
           if (s && canWrite && s.hidden_members === 0)
@@ -237,7 +324,20 @@ export function SuggestionsInbox() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [items, active, editing, dismissing, canWrite, canOwnerAccept, accept, snooze])
+  }, [
+    items,
+    active,
+    editing,
+    dismissing,
+    snoozing,
+    conflict,
+    canWrite,
+    canOwnerAccept,
+    accept,
+    openId,
+    panelSuggestion,
+    setOpenId,
+  ])
 
   useEffect(() => {
     const el = cardRefs.current[active]
@@ -362,10 +462,14 @@ export function SuggestionsInbox() {
                 })
               }
               onFocus={() => setActive(i)}
+              onOpen={() => {
+                setActive(i)
+                setOpenId(s.id)
+              }}
               onAccept={() => void accept(s)}
               onEdit={() => setEditing(s)}
               onDismiss={() => setDismissing(s)}
-              onSnooze={() => void snooze(s)}
+              onSnooze={() => setSnoozing(s)}
               explainOpen={explain === s.id}
               onToggleExplain={() => setExplain((x) => (x === s.id ? null : s.id))}
             />
@@ -401,6 +505,50 @@ export function SuggestionsInbox() {
         onConfirm={(body) => editing && void accept(editing, body)}
         busy={busy}
         canAutoJoin={canWrite}
+      />
+      <SuggestionPanel
+        suggestion={panelSuggestion}
+        loading={byIdLoading}
+        open={openId !== undefined}
+        onOpenChange={(o) => !o && setOpenId(undefined)}
+        canWrite={canWrite}
+        canOwnerAccept={panelSuggestion ? canOwnerAccept(panelSuggestion) : false}
+        busy={busy}
+        onAccept={(body) => panelSuggestion && void accept(panelSuggestion, body)}
+        onEdit={() => panelSuggestion && setEditing(panelSuggestion)}
+        onDismiss={() => panelSuggestion && setDismissing(panelSuggestion)}
+        onSnooze={() => panelSuggestion && setSnoozing(panelSuggestion)}
+        position={panelIndex >= 0 ? { index: panelIndex, total: items.length } : undefined}
+        onPrev={
+          panelIndex > 0
+            ? () => {
+                setActive(panelIndex - 1)
+                setOpenId(items[panelIndex - 1].id)
+              }
+            : undefined
+        }
+        onNext={
+          panelIndex >= 0 && panelIndex < items.length - 1
+            ? () => {
+                setActive(panelIndex + 1)
+                setOpenId(items[panelIndex + 1].id)
+              }
+            : undefined
+        }
+      />
+      <SnoozeDialog
+        suggestion={snoozing}
+        open={snoozing !== null}
+        onOpenChange={(o) => !o && setSnoozing(null)}
+        onConfirm={(until) => snoozing && void snooze(snoozing, until)}
+        busy={busy}
+      />
+      <ConflictDialog
+        conflicts={conflict?.conflicts ?? []}
+        open={conflict !== null}
+        onOpenChange={(o) => !o && setConflict(null)}
+        onResolve={(r) => conflict && void accept(conflict.s, { ...conflict.body, conflicts: r })}
+        busy={busy}
       />
       <DismissDialog
         suggestion={dismissing}

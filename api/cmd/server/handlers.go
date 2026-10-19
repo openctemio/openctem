@@ -47,6 +47,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -116,6 +117,9 @@ func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatMod
 func newQueryHandler(db *postgres.DB, svc *Services, log *logger.Logger) *handler.QueryHandler {
 	if db == nil {
 		return nil
+	}
+	if svc != nil && svc.Query != nil {
+		return handler.NewQueryHandler(svc.Query, log)
 	}
 	exec := postgres.NewQueryExecutor(db, postgres.InteractiveQueryTimeout)
 	return handler.NewQueryHandler(queryapp.NewService(exec, svc.DataScope, log), log)
@@ -285,6 +289,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// hello and pick it up (RFC-040 §5.6).
 	if svc.JobSigner != nil {
 		doorbell.SetKeySetVersion(svc.JobSigner.KeySetVersion)
+	}
+	// The platform decides the interval: ±10 % jitter on every advice, and
+	// an idle interval that stretches with the live fleet (the liveness
+	// store's count) so heartbeats stay inside the platform's budget.
+	doorbell.SetJitter(0.10)
+	if store := svc.Sensor.LivenessStore(); store != nil {
+		doorbell.SetFleetSize(store.Watched, nil)
 	}
 	ingestHandler.SetDoorbell(doorbell)
 	// Heartbeat latency feeds the health controller's platform-health guard
@@ -540,7 +551,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
-		ReportSchedule:         newReportScheduleHandler(svc, log),
+		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
@@ -1026,6 +1037,9 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, r
 		repos.Command.SetChangeNotifier(srv.Hub())
 		svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
 	}
+
+	// An open control stream is proof of life for the liveness store.
+	srv.SetPresence(svc.Sensor)
 
 	adv := setupSensorGRPC(cfg, srv, svc, log)
 	srv.SetAdvertiser(adv)
@@ -1557,9 +1571,10 @@ func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Servi
 
 // newReportScheduleHandler builds the report schedule handler with its audit
 // trail.
-func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
+func newReportScheduleHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
 	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
 	h.SetAuditService(svc.Audit)
+	h.SetCreatorNames(tenantapp.NewUserDisplayNames(repos.User))
 	return h
 }
 

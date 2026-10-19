@@ -25,6 +25,27 @@ type NewTaskRecord struct {
 	OneActive bool
 	// EventData is stored on the "created" timeline entry.
 	EventData map[string]any
+	// Conflicts resolves members that belong to another active task (zero
+	// value: refuse them with a *FindingsInOtherTaskError).
+	Conflicts ConflictResolution
+	// Claimed is set by CreateTask: the members skipped or moved.
+	Claimed ClaimReport
+	// Query is the custom query the task was created from, stored in the
+	// same transaction (nil for every other task).
+	Query *TaskQuery
+}
+
+// AddMembersRequest adds findings to a task at the caller's version.
+type AddMembersRequest struct {
+	TenantID        shared.ID
+	TaskID          shared.ID
+	ExpectedVersion int
+	FindingIDs      []shared.ID
+	Role            MemberRole
+	Source          JoinSource
+	ActorID         *shared.ID
+	// Conflicts resolves primary findings of another active task.
+	Conflicts ConflictResolution
 }
 
 // TaskChanges are the editable fields of a task; nil leaves a field as is.
@@ -61,7 +82,10 @@ type TaskRepository interface {
 	GetAction(ctx context.Context, tenantID, actionID shared.ID) (*Action, error)
 	ListTasks(ctx context.Context, tenantID shared.ID, f TaskFilter, page pagination.Pagination) (pagination.Result[*Task], error)
 	CreateTask(ctx context.Context, rec *NewTaskRecord) error
-	AddMembers(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int, ids []shared.ID, role MemberRole, src JoinSource, actor *shared.ID) (*Task, error)
+	AddMembers(ctx context.Context, req AddMembersRequest) (*Task, *ClaimReport, error)
+	// ActivePrimaryTasks maps each finding that is the primary member of an
+	// active task to that task.
+	ActivePrimaryTasks(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (map[shared.ID]shared.ID, error)
 	UpdateTask(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int, ch TaskChanges, actor *shared.ID, eventKind string, eventData map[string]any) (*Task, error)
 	Recompute(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID, actor *shared.ID) error
 	ScopedCounts(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]TaskCounts, error)

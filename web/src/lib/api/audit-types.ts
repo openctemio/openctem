@@ -187,6 +187,7 @@ export type AuditAction =
   | 'report_schedule.created'
   | 'report_schedule.activated'
   | 'report_schedule.deleted'
+  | 'report_schedule.deactivated'
   | 'tool.created'
   | 'tool.updated'
   | 'tool.deleted'
@@ -203,6 +204,7 @@ export type AuditAction =
   | 'remediation_campaign.updated'
   | 'remediation_campaign.status_changed'
   | 'remediation_campaign.deleted'
+  | 'remediation_campaign.migrated'
   // Configuration changes (audited with a before/after diff)
   | 'invitation.resent'
   | 'scim_token.created'

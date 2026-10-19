@@ -45,6 +45,8 @@
 // Merges always go through the finding merge (earliest-created survives, the
 // other is kept as a tombstone); nothing is deleted.
 //
+// An applying run writes one tenant audit entry per affected tenant per run (findings.refingerprinted).
+//
 // Exit status: 0 success, 1 a run failed, 2 usage or connection error.
 package refingerprintcmd
 
@@ -62,6 +64,8 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/refingerprint"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/tools/toolaudit"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -142,6 +146,8 @@ func Main() {
 	}
 
 	failed := false
+	runID := toolaudit.NewRunID()
+	var auditWriter toolaudit.Writer = postgres.NewAuditRepository(&postgres.DB{DB: sqlDB})
 	reports := make([]*refingerprint.Report, 0, len(tenants))
 	for _, t := range tenants {
 		rep, err := svc.Run(ctx, t, refingerprint.Options{Apply: *apply, BatchSize: *batch, MaxBatches: *maxBatches})
@@ -151,6 +157,12 @@ func Main() {
 			continue
 		}
 		reports = append(reports, rep)
+		if *apply {
+			if err := auditRun(ctx, auditWriter, runID, rep); err != nil {
+				fmt.Fprintf(os.Stderr, "refingerprint: tenant %s: %v\n", t, err)
+				failed = true
+			}
+		}
 		if !*asJSON {
 			mode := modeDryRun
 			if rep.Applied {
@@ -171,6 +183,26 @@ func Main() {
 	if failed {
 		os.Exit(1)
 	}
+}
+
+// auditRun records the tenant's re-keys in its own audit log: one entry per
+// tenant per run, only when the run changed something.
+func auditRun(ctx context.Context, w toolaudit.Writer, runID string, rep *refingerprint.Report) error {
+	if !rep.Applied || (rep.Rekeyed == 0 && rep.Merged == 0) {
+		return nil
+	}
+	tenant, err := shared.IDFromString(rep.TenantID)
+	if err != nil {
+		return err
+	}
+	return toolaudit.Record(ctx, w, toolaudit.Event{
+		TenantID:     tenant,
+		Action:       audit.ActionFindingsRefingerprinted,
+		ResourceType: audit.ResourceTypeFinding,
+		Actor:        "refingerprint",
+		RunID:        runID,
+		Counts:       map[string]int{"scanned": rep.Scanned, "rekeyed": rep.Rekeyed, "merged": rep.Merged},
+	})
 }
 
 func databaseURL() string {
