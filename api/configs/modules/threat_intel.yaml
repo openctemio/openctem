@@ -12,3 +12,6 @@
     - {id: findings, kind: hard, reason: "threat intel enriches findings"}
   routes:
     - "/api/v1/threat-actors"
+    - "/api/v1/emerging-threats"
+  jobs:
+    - ThreatAlertPlannerController

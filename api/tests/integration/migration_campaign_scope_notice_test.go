@@ -8,6 +8,7 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,10 +22,29 @@ import (
 )
 
 func TestMigrationCampaignScopeNotice_ListsUnscopedCampaigns(t *testing.T) {
-	url := testdb.URL()
-	if url == "" {
+	// The private database is created and used through the admin connection
+	// (the least-privilege app role may not write tenants), so the notice
+	// connection is built on it as well.
+	dsn := testdb.AdminURL()
+	if dsn == "" {
 		testdb.Skipf(t, "DATABASE_URL not set")
 	}
+	// The notice reads the legacy finding_filter column, which the contract
+	// migration drops: use a private database with that migration reverted so
+	// the shared one is never altered.
+	const dir = "../../migrations"
+	priv := testdb.PrivateDatabase(t, "csn", dir)
+	drop := testdb.MigrationVersion(t, dir, "remediation_campaigns_drop_finding_filter")
+	testdb.Migrate(t, priv, dir, drop, drop, true)
+	var dbName string
+	if err := priv.QueryRow(`SELECT current_database()`).Scan(&dbName); err != nil {
+		t.Fatal(err)
+	}
+	pu, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pu.Path = "/" + dbName
 	files, err := filepath.Glob("../../migrations/*_campaign_scope_unscoped_notice.up.sql")
 	if err != nil || len(files) != 1 {
 		t.Fatalf("migration file: %v %v", files, err)
@@ -36,7 +56,7 @@ func TestMigrationCampaignScopeNotice_ListsUnscopedCampaigns(t *testing.T) {
 
 	var mu sync.Mutex
 	var notices []string
-	base, err := pq.NewConnector(url)
+	base, err := pq.NewConnector(pu.String())
 	if err != nil {
 		t.Fatal(err)
 	}

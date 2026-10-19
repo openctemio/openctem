@@ -14,12 +14,10 @@ import (
 type CampaignStatus string
 
 const (
-	CampaignStatusDraft      CampaignStatus = "draft"
-	CampaignStatusActive     CampaignStatus = "active"
-	CampaignStatusPaused     CampaignStatus = "paused"
-	CampaignStatusValidating CampaignStatus = "validating"
-	CampaignStatusCompleted  CampaignStatus = "completed"
-	CampaignStatusCanceled   CampaignStatus = "canceled"
+	CampaignStatusDraft     CampaignStatus = "draft"
+	CampaignStatusActive    CampaignStatus = "active"
+	CampaignStatusCompleted CampaignStatus = "completed"
+	CampaignStatusCanceled  CampaignStatus = "canceled"
 )
 
 // CampaignPriority defines urgency levels.
@@ -32,37 +30,28 @@ const (
 	CampaignPriorityLow      CampaignPriority = "low"
 )
 
-// Campaign tracks a remediation effort across multiple findings.
+// Campaign is a program of remediation tasks (remediation_tasks.campaign_id)
+// with one owner and one due date. It holds tasks, never findings: what it
+// covers and how far along it is are derived from its tasks (CampaignSummary).
 type Campaign struct {
-	id            shared.ID
-	tenantID      shared.ID
-	name          string
-	description   string
-	status        CampaignStatus
-	priority      CampaignPriority
-	findingFilter map[string]any
-	findingCount  int
-	resolvedCount int
-	progress      float64
-	riskBefore    *float64
-	riskAfter     *float64
-	riskReduction *float64
-	assignedTo    *shared.ID
-	assignedTeam  *shared.ID
-	startDate     *time.Time
-	dueDate       *time.Time
-	completedAt   *time.Time
-	tags          []string
-	createdBy     *shared.ID
-	createdAt     time.Time
-	updatedAt     time.Time
+	id           shared.ID
+	tenantID     shared.ID
+	name         string
+	description  string
+	status       CampaignStatus
+	priority     CampaignPriority
+	assignedTo   *shared.ID
+	assignedTeam *shared.ID
+	startDate    *time.Time
+	dueDate      *time.Time
+	completedAt  *time.Time
+	tags         []string
+	createdBy    *shared.ID
+	createdAt    time.Time
+	updatedAt    time.Time
 	// version is the optimistic-concurrency token: every full save checks it
 	// and bumps it (CampaignRepository.Update).
 	version int
-	// verifiedCount: members closed as resolved (a verified fix), computed
-	// with the counts and never stored. Accepted, false-positive and
-	// duplicate members are closed but not fixed.
-	verifiedCount int
 }
 
 // NewCampaign creates a new remediation campaign.
@@ -72,16 +61,15 @@ func NewCampaign(tenantID shared.ID, name string, priority CampaignPriority) (*C
 	}
 	now := time.Now()
 	return &Campaign{
-		id:            shared.NewID(),
-		tenantID:      tenantID,
-		name:          name,
-		status:        CampaignStatusDraft,
-		priority:      priority,
-		findingFilter: map[string]any{},
-		tags:          []string{},
-		createdAt:     now,
-		updatedAt:     now,
-		version:       1,
+		id:        shared.NewID(),
+		tenantID:  tenantID,
+		name:      name,
+		status:    CampaignStatusDraft,
+		priority:  priority,
+		tags:      []string{},
+		createdAt: now,
+		updatedAt: now,
+		version:   1,
 	}, nil
 }
 
@@ -90,9 +78,6 @@ func ReconstituteCampaign(
 	id, tenantID shared.ID,
 	name, description string,
 	status CampaignStatus, priority CampaignPriority,
-	findingFilter map[string]any,
-	findingCount, resolvedCount int, progress float64,
-	riskBefore, riskAfter, riskReduction *float64,
 	assignedTo, assignedTeam *shared.ID,
 	startDate, dueDate, completedAt *time.Time,
 	tags []string, createdBy *shared.ID,
@@ -103,9 +88,6 @@ func ReconstituteCampaign(
 		id: id, tenantID: tenantID,
 		name: name, description: description,
 		status: status, priority: priority,
-		findingFilter: findingFilter,
-		findingCount:  findingCount, resolvedCount: resolvedCount, progress: progress,
-		riskBefore: riskBefore, riskAfter: riskAfter, riskReduction: riskReduction,
 		assignedTo: assignedTo, assignedTeam: assignedTeam,
 		startDate: startDate, dueDate: dueDate, completedAt: completedAt,
 		tags: tags, createdBy: createdBy,
@@ -115,33 +97,22 @@ func ReconstituteCampaign(
 }
 
 // Getters
-func (c *Campaign) ID() shared.ID                 { return c.id }
-func (c *Campaign) TenantID() shared.ID           { return c.tenantID }
-func (c *Campaign) Name() string                  { return c.name }
-func (c *Campaign) Description() string           { return c.description }
-func (c *Campaign) Status() CampaignStatus        { return c.status }
-func (c *Campaign) Priority() CampaignPriority    { return c.priority }
-func (c *Campaign) FindingFilter() map[string]any { return c.findingFilter }
-func (c *Campaign) FindingCount() int             { return c.findingCount }
-func (c *Campaign) ResolvedCount() int            { return c.resolvedCount }
-func (c *Campaign) Progress() float64             { return c.progress }
-func (c *Campaign) RiskBefore() *float64          { return c.riskBefore }
-func (c *Campaign) RiskAfter() *float64           { return c.riskAfter }
-func (c *Campaign) RiskReduction() *float64       { return c.riskReduction }
-func (c *Campaign) AssignedTo() *shared.ID        { return c.assignedTo }
-func (c *Campaign) AssignedTeam() *shared.ID      { return c.assignedTeam }
-func (c *Campaign) StartDate() *time.Time         { return c.startDate }
-func (c *Campaign) DueDate() *time.Time           { return c.dueDate }
-func (c *Campaign) CompletedAt() *time.Time       { return c.completedAt }
-func (c *Campaign) Tags() []string                { return c.tags }
-func (c *Campaign) CreatedBy() *shared.ID         { return c.createdBy }
-func (c *Campaign) CreatedAt() time.Time          { return c.createdAt }
-func (c *Campaign) UpdatedAt() time.Time          { return c.updatedAt }
-func (c *Campaign) Version() int                  { return c.version }
-func (c *Campaign) VerifiedCount() int            { return c.verifiedCount }
-
-// SetVerifiedCount records how many members are verified fixed (resolved).
-func (c *Campaign) SetVerifiedCount(n int) { c.verifiedCount = n }
+func (c *Campaign) ID() shared.ID              { return c.id }
+func (c *Campaign) TenantID() shared.ID        { return c.tenantID }
+func (c *Campaign) Name() string               { return c.name }
+func (c *Campaign) Description() string        { return c.description }
+func (c *Campaign) Status() CampaignStatus     { return c.status }
+func (c *Campaign) Priority() CampaignPriority { return c.priority }
+func (c *Campaign) AssignedTo() *shared.ID     { return c.assignedTo }
+func (c *Campaign) AssignedTeam() *shared.ID   { return c.assignedTeam }
+func (c *Campaign) StartDate() *time.Time      { return c.startDate }
+func (c *Campaign) DueDate() *time.Time        { return c.dueDate }
+func (c *Campaign) CompletedAt() *time.Time    { return c.completedAt }
+func (c *Campaign) Tags() []string             { return c.tags }
+func (c *Campaign) CreatedBy() *shared.ID      { return c.createdBy }
+func (c *Campaign) CreatedAt() time.Time       { return c.createdAt }
+func (c *Campaign) UpdatedAt() time.Time       { return c.updatedAt }
+func (c *Campaign) Version() int               { return c.version }
 
 // SetVersion records the version the repository stored (after a save).
 func (c *Campaign) SetVersion(v int) { c.version = v }
@@ -162,12 +133,6 @@ func (c *Campaign) Update(name, description string, priority CampaignPriority) {
 	}
 	c.description = description
 	c.priority = priority
-	c.updatedAt = time.Now()
-}
-
-// SetFindingFilter sets the filter criteria for this campaign's findings.
-func (c *Campaign) SetFindingFilter(filter map[string]any) {
-	c.findingFilter = filter
 	c.updatedAt = time.Now()
 }
 
@@ -226,72 +191,65 @@ func (c *Campaign) SetCreatedBy(userID shared.ID) {
 	c.createdBy = &userID
 }
 
-// RedactForViewer replaces what a restricted viewer sees: the filter with
-// out-of-scope references removed and no organization-wide risk values. It
-// is a view, never saved, and does not touch updatedAt.
-func (c *Campaign) RedactForViewer(filter map[string]any) {
-	c.findingFilter = filter
-	c.riskBefore, c.riskAfter, c.riskReduction = nil, nil, nil
+// CampaignSummary is what a campaign holds, derived from its tasks and their
+// findings as one caller may see them: a restricted caller counts only the
+// tasks with a finding in their scope and the findings in it; HiddenTasks is
+// the count of the others.
+type CampaignSummary struct {
+	Tasks            int
+	LiveTasks        int // open, in progress, verifying or on hold
+	DoneTasks        int // done: every finding closed, at least one verified fixed
+	OverdueTasks     int // live and past their deadline
+	HiddenTasks      int
+	Findings         int // primary findings of the visible tasks
+	ClosedFindings   int
+	VerifiedFindings int
 }
 
-// UpdateProgress updates finding counts and progress percentage.
-func (c *Campaign) UpdateProgress(findingCount, resolvedCount int) {
-	c.findingCount = findingCount
-	c.resolvedCount = resolvedCount
-	if findingCount > 0 {
-		c.progress = float64(resolvedCount) / float64(findingCount) * 100
-	} else {
-		c.progress = 0
+// Progress is the share of the findings that are closed, in percent.
+func (s CampaignSummary) Progress() float64 {
+	if s.Findings == 0 {
+		return 0
 	}
-	c.updatedAt = time.Now()
+	return float64(s.ClosedFindings) / float64(s.Findings) * 100
 }
 
-// AllFindingsResolved reports whether every finding in the campaign
-// is closed (progress at 100%). A zero-finding campaign is NOT
-// treated as complete — an empty campaign is a misconfiguration, not
-// an accomplishment.
-func (c *Campaign) AllFindingsResolved() bool {
-	return c.findingCount > 0 && c.resolvedCount >= c.findingCount
+// IsDone reports a campaign whose work is finished: it has tasks, none is
+// still live and at least one is done (an organization-wide summary). A
+// campaign whose tasks were all canceled or closed without a verified fix
+// fixed nothing.
+func (s CampaignSummary) IsDone() bool {
+	return s.Tasks > 0 && s.LiveTasks == 0 && s.DoneTasks > 0
 }
 
-// IsDone reports a campaign whose work is really finished: every member is
-// closed AND at least one was verified fixed. A campaign whose members were
-// all accepted, marked false positive or folded as duplicates fixed nothing.
-func (c *Campaign) IsDone() bool {
-	return c.AllFindingsResolved() && c.verifiedCount > 0
-}
-
-// TryAutoComplete attempts the active/validating → completed
-// transition when all findings are resolved. this is what
-// turns "every finding in my campaign hit resolved" into an actual
-// campaign-level event without an operator clicking Complete.
-//
-// Returns (true, nil) on successful auto-complete.
-// Returns (false, nil) when not yet eligible — callers should treat
-// this as a normal no-op, not an error.
-// Returns (_, err) for genuine state-machine or validation failures.
-func (c *Campaign) TryAutoComplete() (bool, error) {
-	if !c.IsDone() {
-		return false, nil
+// TryAutoComplete completes an active campaign whose (organization-wide)
+// summary is done. Returns whether it changed.
+func (c *Campaign) TryAutoComplete(s CampaignSummary) bool {
+	if c.status != CampaignStatusActive || !s.IsDone() {
+		return false
 	}
-	// Eligible terminal targets: active and validating. Draft,
-	// paused, completed, canceled are explicit user states that we
-	// do not auto-complete out of.
-	if c.status != CampaignStatusActive && c.status != CampaignStatusValidating {
-		return false, nil
-	}
-	if err := c.Complete(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return c.Complete() == nil
 }
 
-// Activate transitions to active status. Allowed from draft (first start),
-// paused (resume) and validating (validation failed: the fix did not hold,
-// so the campaign goes back to remediation instead of being completed).
+// TryAutoReopen moves a completed campaign back to active when one of its
+// tasks is live again (a regression task, a reopened task). Returns whether
+// it changed.
+func (c *Campaign) TryAutoReopen(s CampaignSummary) bool {
+	if c.status != CampaignStatusCompleted || s.LiveTasks == 0 {
+		return false
+	}
+	return c.Reopen() == nil
+}
+
+// TakesTasks reports whether tasks may be added to the campaign: a draft or
+// an active one.
+func (c *Campaign) TakesTasks() bool {
+	return c.status == CampaignStatusDraft || c.status == CampaignStatusActive
+}
+
+// Activate starts a draft campaign.
 func (c *Campaign) Activate() error {
-	if c.status != CampaignStatusDraft && c.status != CampaignStatusPaused &&
-		c.status != CampaignStatusValidating {
+	if c.status != CampaignStatusDraft {
 		return fmt.Errorf("%w: cannot activate from %s", shared.ErrValidation, c.status)
 	}
 	c.status = CampaignStatusActive
@@ -315,29 +273,9 @@ func (c *Campaign) Reopen() error {
 	return nil
 }
 
-// Pause transitions to paused.
-func (c *Campaign) Pause() error {
-	if c.status != CampaignStatusActive {
-		return fmt.Errorf("%w: cannot pause from %s", shared.ErrValidation, c.status)
-	}
-	c.status = CampaignStatusPaused
-	c.updatedAt = time.Now()
-	return nil
-}
-
-// StartValidation transitions to validating (re-scanning to verify fixes).
-func (c *Campaign) StartValidation() error {
-	if c.status != CampaignStatusActive {
-		return fmt.Errorf("%w: cannot validate from %s", shared.ErrValidation, c.status)
-	}
-	c.status = CampaignStatusValidating
-	c.updatedAt = time.Now()
-	return nil
-}
-
 // Complete transitions to completed.
 func (c *Campaign) Complete() error {
-	if c.status != CampaignStatusActive && c.status != CampaignStatusValidating {
+	if c.status != CampaignStatusActive {
 		return fmt.Errorf("%w: cannot complete from %s", shared.ErrValidation, c.status)
 	}
 	c.status = CampaignStatusCompleted
@@ -384,15 +322,28 @@ var (
 	ErrCampaignNotFound = fmt.Errorf("%w: remediation campaign not found", shared.ErrNotFound)
 	// ErrCampaignVersionConflict: the campaign changed since the caller read
 	// it (another person, or the platform); reload and retry.
-	// ErrCampaignNotDone refuses completing a campaign whose findings are not
-	// all closed or of which none was verified fixed, unless the person
-	// explicitly closes it with open members.
-	ErrCampaignNotDone = fmt.Errorf("%w: the campaign is not done (every finding closed and at least one verified fixed); set close_with_open_members to complete it anyway", shared.ErrValidation)
+	// ErrCampaignNotDone refuses completing a campaign that still has a live
+	// task or has no done task.
+	ErrCampaignNotDone = fmt.Errorf("%w: the campaign is not done: every task must be closed and at least one done", shared.ErrValidation)
+	// ErrCampaignTakesNoTasks refuses adding a task to a completed or
+	// canceled campaign.
+	ErrCampaignTakesNoTasks = fmt.Errorf("%w: tasks can be added only to a draft or active campaign", shared.ErrValidation)
 	// ErrCampaignDeadlineOnlyTightens refuses moving a campaign's due date
 	// later or clearing it.
 	ErrCampaignDeadlineOnlyTightens = fmt.Errorf("%w: a campaign's due date can only move earlier", shared.ErrValidation)
 	ErrCampaignVersionConflict      = fmt.Errorf("%w: the remediation campaign was changed by someone else; reload it and try again", shared.ErrConflict)
 )
+
+// CampaignViewer is who reads campaigns: the scope (nil = everything) and,
+// for a restricted caller, the user whose own campaigns (created by or
+// assigned to them) stay visible.
+type CampaignViewer struct {
+	Scope  *shared.DataScope
+	UserID *shared.ID
+}
+
+// Restricted reports a viewer narrowed to scope rows.
+func (v CampaignViewer) Restricted() bool { return v.Scope.Restricted() }
 
 // CampaignFilter defines criteria for listing campaigns.
 type CampaignFilter struct {
@@ -400,6 +351,17 @@ type CampaignFilter struct {
 	Status   *CampaignStatus
 	Priority *CampaignPriority
 	Search   *string
+	// Viewer limits the list to the campaigns the caller may see: a
+	// restricted caller sees a campaign they created or own, or one with a
+	// task that has a finding in their scope.
+	Viewer CampaignViewer
+}
+
+// CampaignTaskRef is one task of a campaign, as an add or a move sees it.
+type CampaignTaskRef struct {
+	TaskID       shared.ID
+	CampaignID   *shared.ID
+	CampaignName string
 }
 
 // CampaignRepository defines persistence for remediation campaigns.
@@ -410,17 +372,28 @@ type CampaignRepository interface {
 	// campaign's, bumps the version, and returns ErrCampaignVersionConflict
 	// otherwise.
 	Update(ctx context.Context, campaign *Campaign) error
-	// UpdateCounts writes only the finding counters and progress and stamps
-	// last_reconciled_at. It never touches status, dates or the version, so a
-	// counter refresh cannot undo a person's change.
-	UpdateCounts(ctx context.Context, campaign *Campaign) error
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	List(ctx context.Context, filter CampaignFilter, page pagination.Pagination) (pagination.Result[*Campaign], error)
-
-	// ListNonTerminal returns campaigns that are not in a terminal state
-	// (completed/canceled) across all tenants, least recently reconciled
-	// first (never reconciled first), up to limit. Used by the progress-reconcile controller
-	// to refresh finding counts and auto-complete. limit <= 0 means a
-	// repository-chosen default.
-	ListNonTerminal(ctx context.Context, limit int) ([]*Campaign, error)
+	// CountByStatus counts the campaigns that match the filter (its status
+	// ignored), per status.
+	CountByStatus(ctx context.Context, filter CampaignFilter) (map[CampaignStatus]int, error)
+	// Visible reports whether the viewer may see the campaign.
+	Visible(ctx context.Context, tenantID, id shared.ID, viewer CampaignViewer) (bool, error)
+	// HasTaskOutsideScope reports whether a task of the campaign has a
+	// finding outside the scope (nil scope: never).
+	HasTaskOutsideScope(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope) (bool, error)
+	// Summaries derives each campaign's summary from its tasks, counting the
+	// findings in the scope only (nil scope: every finding).
+	Summaries(ctx context.Context, tenantID shared.ID, ids []shared.ID, scope *shared.DataScope) (map[shared.ID]CampaignSummary, error)
+	// TaskRefs returns the campaign of each of the tenant's tasks (unknown
+	// ids are left out).
+	TaskRefs(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID) ([]CampaignTaskRef, error)
+	// SetTasksCampaign puts the tasks in the campaign (nil: in none) with a
+	// timeline entry on each task; it bumps each task's version. Returns the
+	// tasks that changed.
+	SetTasksCampaign(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID, campaignID *shared.ID, actor *shared.ID) ([]shared.ID, error)
+	// ListForReconcile returns active and completed campaigns across
+	// tenants, least recently reconciled first, up to limit, and stamps
+	// them reconciled.
+	ListForReconcile(ctx context.Context, limit int) ([]*Campaign, error)
 }
