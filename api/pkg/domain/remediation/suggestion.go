@@ -635,7 +635,7 @@ type SuggestionRepository interface {
 	MarkDigest(ctx context.Context, tenantID shared.ID, at time.Time) error
 	ListSuggestions(ctx context.Context, tenantID shared.ID, f SuggestionFilter, page pagination.Pagination) (pagination.Result[*Suggestion], error)
 	GetSuggestion(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope) (*Suggestion, error)
-	SuggestionMembers(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[TaskMember], error)
+	SuggestionMembers(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[SuggestionMember], error)
 	DecideSuggestion(ctx context.Context, tenantID, id shared.ID, version int, d SuggestionDecision) (*Suggestion, error)
 	CountSuggestions(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (SuggestionCounts, error)
 	AcceptSuggestion(ctx context.Context, plan AcceptPlan) (*AcceptResult, error)
@@ -670,6 +670,8 @@ func CanAutoJoinInto(s TaskState) bool { return s == TaskStateOpen || s == TaskS
 
 // AcceptPlanTask is one task an accept creates.
 type AcceptPlanTask struct {
+	// ID is the new task's id (the repository sets one when zero).
+	ID         shared.ID
 	Title      string
 	Owner      Owner
 	FindingIDs []shared.ID
@@ -693,6 +695,9 @@ type AcceptPlan struct {
 	Excluded []shared.ID
 	AutoJoin bool
 	ActorID  *shared.ID
+	// Conflicts resolves findings taken by another active task since the
+	// suggestion was made (zero value: refuse them).
+	Conflicts ConflictResolution
 }
 
 // AcceptResult is what an accept created.
@@ -701,11 +706,57 @@ type AcceptResult struct {
 	ActionID     shared.ID   `json:"action_id"`
 	TaskIDs      []shared.ID `json:"task_ids"`
 	Joined       int         `json:"joined"`
-	// Dropped are findings that closed or joined another task since the
-	// suggestion was made; they were left out.
+	// Dropped are findings that closed since the suggestion was made; they
+	// were left out.
 	Dropped []shared.ID `json:"dropped"`
+	// Skipped are findings of another active task left out as asked.
+	Skipped []shared.ID `json:"skipped"`
+	// Moved counts findings moved out of another task as asked.
+	Moved int `json:"moved"`
+	// Claim reports the moves (for the audit log and notifications).
+	Claim ClaimReport `json:"-"`
 }
 
 // ErrNothingToAccept: every finding of the suggestion was removed, closed or
-// taken by another task.
+// skipped.
 var ErrNothingToAccept = fmt.Errorf("%w: no finding is left to accept", shared.ErrValidation)
+
+// SuggestionMember is one finding of a suggestion with what a person needs
+// to judge it: where it is, the rule, the installed version, the scanner's
+// advice and the task that claimed it since the suggestion was made.
+// Scanner text (Recommendation, FixCode) is plain text, capped, with secret
+// shapes redacted by the service.
+type SuggestionMember struct {
+	TaskMember
+	RuleID           string
+	CWEIDs           []string
+	FilePath         string
+	StartLine        int
+	Branch           string
+	NetworkPort      int
+	NetworkTransport string
+	// LocationTargets are the first affected targets a finding without a
+	// file names (a URL, host:port).
+	LocationTargets  []string
+	AssetCriticality string
+	PackageName      string
+	InstalledVersion string
+	Recommendation   string
+	FixCode          string
+	// ActiveTask is the active task the finding is the primary member of,
+	// when one claimed it since the suggestion was made.
+	ActiveTask *TaskRef
+}
+
+// TaskRef names a task.
+type TaskRef struct {
+	ID    shared.ID
+	Title string
+}
+
+// Suggestion member text caps (runes).
+const (
+	MaxMemberRecommendation = 2000
+	MaxMemberFixCode        = 4000
+	MaxMemberTargets        = 5
+)
