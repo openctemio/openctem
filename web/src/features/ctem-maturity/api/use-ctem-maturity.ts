@@ -37,7 +37,8 @@ export interface MetricTrendPoint {
   cycle_id: string
   name: string
   closed_at: string
-  value: number
+  /** null when the cycle has no sample (MTTR of a cycle that remediated nothing). */
+  value: number | null
 }
 
 /** One closed cycle with its latest metric values — ctemcycle.CycleMetrics. */
