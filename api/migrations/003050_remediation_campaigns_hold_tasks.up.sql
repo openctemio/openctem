@@ -2,7 +2,7 @@
 -- (docs/rfcs/RFC-098-remediation-tasks.md, "Campaigns").
 --
 -- A finding is in at most one active work unit: the primary membership of an
--- active remediation task. A campaign is a programme of tasks
+-- active remediation task. A campaign is a program of tasks
 -- (remediation_tasks.campaign_id); it never holds findings itself. Until now a
 -- campaign tracked findings through its finding_filter, evaluated on every
 -- read. This migration turns what each running campaign tracks into tasks:
