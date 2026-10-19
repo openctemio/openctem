@@ -1095,6 +1095,7 @@
   "findings.importResults.vexModeEnforceNoApprove": "not_affected statements are stored on the matching findings; requesting false positive approval needs the approve permission.",
   "findings.importResults.vexModeOff": "VEX statements are stored on the matching findings only.",
   "findings.importResults.vexModeDryRun": "VEX statements are stored on the matching findings and counted; no false positive approval is requested (dry run mode).",
+  "findings.conflict.changed": "Someone else changed this finding. It has been reloaded; check it and try again.",
   "findings.priorityCard.validated": "Reproduced by validation",
   "findings.priorityCard.manualOverride": "Set manually",
   "findings.priorityCard.overrideComputed": "A person set this class{when}. The automatic classification would be {computed}.",
@@ -1124,5 +1125,6 @@
   "findings.severityRequest.rejectReason": "Reason for rejecting",
   "findings.severityRequest.reject": "Reject",
   "findings.severityRequest.withdraw": "Withdraw",
-  "findings.severityRequest.approve": "Approve"
+  "findings.severityRequest.approve": "Approve",
+  "findings.contextChips.assetGroup": "Asset group"
 }
