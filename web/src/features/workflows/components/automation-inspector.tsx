@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 
+import { useTranslation } from '@/context/i18n-provider'
+
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,11 +18,8 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useScanConfigs } from '@/lib/api/scan-hooks'
 import {
-  WORKFLOW_ACTION_LABELS,
   WORKFLOW_ACTION_TYPES,
-  WORKFLOW_NOTIFICATION_LABELS,
   WORKFLOW_NOTIFICATION_TYPES,
-  WORKFLOW_TRIGGER_LABELS,
   WORKFLOW_TRIGGER_TYPES,
   type WorkflowActionType,
   type WorkflowNodeConfig,
@@ -28,6 +27,7 @@ import {
   type WorkflowTriggerType,
 } from '@/lib/api/workflow-types'
 import type { AutomationNode, AutomationNodeData } from '../lib/automation-graph'
+import { useAutomationLabels } from '../lib/use-automation-labels'
 
 /** Comma-separated tags as a list, trimmed, without blanks. */
 export function parseTags(text: string): string[] {
@@ -37,19 +37,19 @@ export function parseTags(text: string): string[] {
     .filter(Boolean)
 }
 
-/** A JSON object from text, or an error message. Empty text is {}. */
+/** A JSON object from text, or an error code. Empty text is {}. */
 export function parseConfigJson(
   text: string
-): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+): { ok: true; value: Record<string, unknown> } | { ok: false; error: 'notObject' | 'invalid' } {
   if (!text.trim()) return { ok: true, value: {} }
   try {
     const v: unknown = JSON.parse(text)
     if (v === null || typeof v !== 'object' || Array.isArray(v)) {
-      return { ok: false, error: 'Enter a JSON object, for example {"key": "value"}.' }
+      return { ok: false, error: 'notObject' }
     }
     return { ok: true, value: v as Record<string, unknown> }
   } catch {
-    return { ok: false, error: 'This is not valid JSON.' }
+    return { ok: false, error: 'invalid' }
   }
 }
 
@@ -64,8 +64,9 @@ function JsonField({
   value: Record<string, unknown> | undefined
   onChange: (v: Record<string, unknown>) => void
 }) {
+  const { t } = useTranslation()
   const [text, setText] = useState(() => (value ? JSON.stringify(value, null, 2) : ''))
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<'notObject' | 'invalid' | null>(null)
   return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
@@ -83,20 +84,36 @@ function JsonField({
           } else setError(r.error)
         }}
       />
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && (
+        <p className="text-xs text-destructive">
+          {error === 'notObject'
+            ? t(
+                'automations.inspector.jsonNotObject',
+                'Enter a JSON object, for example {"key": "value"}.'
+              )
+            : t('automations.inspector.jsonInvalid', 'This is not valid JSON.')}
+        </p>
+      )}
     </div>
   )
 }
 
 function SavedScanSelect({ value, onChange }: { value?: string; onChange: (id: string) => void }) {
+  const { t } = useTranslation()
   const { data, isLoading } = useScanConfigs({ per_page: 100, sort: 'name' })
   const scans = data?.data ?? []
   return (
     <div className="space-y-1.5">
-      <Label>Saved scan</Label>
+      <Label>{t('automations.inspector.savedScan', 'Saved scan')}</Label>
       <Select value={value ?? ''} onValueChange={onChange}>
-        <SelectTrigger aria-label="Saved scan">
-          <SelectValue placeholder={isLoading ? 'Loading scans...' : 'Choose a saved scan'} />
+        <SelectTrigger aria-label={t('automations.inspector.savedScan', 'Saved scan')}>
+          <SelectValue
+            placeholder={
+              isLoading
+                ? t('automations.inspector.loadingScans', 'Loading scans...')
+                : t('automations.inspector.chooseScan', 'Choose a saved scan')
+            }
+          />
         </SelectTrigger>
         <SelectContent>
           {scans.map((s) => (
@@ -107,7 +124,9 @@ function SavedScanSelect({ value, onChange }: { value?: string; onChange: (id: s
         </SelectContent>
       </Select>
       {!isLoading && scans.length === 0 && (
-        <p className="text-xs text-muted-foreground">No saved scan yet. Create one in Scans.</p>
+        <p className="text-xs text-muted-foreground">
+          {t('automations.inspector.noScans', 'No saved scan yet. Create one in Scans.')}
+        </p>
       )}
     </div>
   )
@@ -120,34 +139,41 @@ function ActionFields({
   config: WorkflowNodeConfig
   onChange: (c: WorkflowNodeConfig) => void
 }) {
+  const { t } = useTranslation()
+  const labels = useAutomationLabels()
   const type = config.action_type
   const ac = config.action_config ?? {}
   const unsupported = type !== undefined && !WORKFLOW_ACTION_TYPES.includes(type as never)
   return (
     <>
       <div className="space-y-1.5">
-        <Label>Action</Label>
+        <Label>{t('automations.inspector.action', 'Action')}</Label>
         <Select
           value={unsupported ? '' : (type ?? '')}
           onValueChange={(v) =>
             onChange({ ...config, action_type: v as WorkflowActionType, action_config: {} })
           }
         >
-          <SelectTrigger aria-label="Action">
-            <SelectValue placeholder="Choose an action" />
+          <SelectTrigger aria-label={t('automations.inspector.action', 'Action')}>
+            <SelectValue
+              placeholder={t('automations.inspector.chooseAction', 'Choose an action')}
+            />
           </SelectTrigger>
           <SelectContent>
-            {WORKFLOW_ACTION_TYPES.map((t) => (
-              <SelectItem key={t} value={t}>
-                {WORKFLOW_ACTION_LABELS[t]}
+            {WORKFLOW_ACTION_TYPES.map((a) => (
+              <SelectItem key={a} value={a}>
+                {labels.action(a)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         {unsupported && (
           <p className="text-xs text-warning">
-            {WORKFLOW_ACTION_LABELS[type] ?? type} is not supported. Choose another action before
-            saving.
+            {t(
+              'automations.inspector.actionUnsupported',
+              '{label} is not supported. Choose another action before saving.',
+              { label: labels.action(type) }
+            )}
           </p>
         )}
       </div>
@@ -158,7 +184,9 @@ function ActionFields({
         />
       ) : type === 'add_tags' || type === 'remove_tags' ? (
         <div className="space-y-1.5">
-          <Label htmlFor="automation-tags">Tags (comma separated)</Label>
+          <Label htmlFor="automation-tags">
+            {t('automations.inspector.tags', 'Tags (comma separated)')}
+          </Label>
           <Input
             id="automation-tags"
             defaultValue={Array.isArray(ac.tags) ? (ac.tags as string[]).join(', ') : ''}
@@ -171,7 +199,7 @@ function ActionFields({
         <JsonField
           key={type}
           id="automation-action-config"
-          label="Settings (JSON)"
+          label={t('automations.inspector.settingsJson', 'Settings (JSON)')}
           value={config.action_config}
           onChange={(v) => onChange({ ...config, action_config: v })}
         />
@@ -194,6 +222,8 @@ export function AutomationInspector({
   onChange: (data: AutomationNodeData) => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
+  const labels = useAutomationLabels()
   const { data } = node
   const config = data.config
   const [label, setLabel] = useState(data.label)
@@ -206,7 +236,7 @@ export function AutomationInspector({
   return (
     <div className="space-y-4" data-testid="automation-inspector">
       <div className="space-y-1.5">
-        <Label htmlFor="automation-node-name">Name</Label>
+        <Label htmlFor="automation-node-name">{t('automations.inspector.name', 'Name')}</Label>
         <Input
           id="automation-node-name"
           value={label}
@@ -218,28 +248,33 @@ export function AutomationInspector({
       {node.type === 'trigger' && (
         <>
           <div className="space-y-1.5">
-            <Label>Trigger</Label>
+            <Label>{t('automations.inspector.trigger', 'Trigger')}</Label>
             <Select
               value={triggerUnsupported ? '' : (config.trigger_type ?? '')}
               onValueChange={(v) =>
                 setConfig({ ...config, trigger_type: v as WorkflowTriggerType })
               }
             >
-              <SelectTrigger aria-label="Trigger">
-                <SelectValue placeholder="Choose a trigger" />
+              <SelectTrigger aria-label={t('automations.inspector.trigger', 'Trigger')}>
+                <SelectValue
+                  placeholder={t('automations.inspector.chooseTrigger', 'Choose a trigger')}
+                />
               </SelectTrigger>
               <SelectContent>
-                {WORKFLOW_TRIGGER_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {WORKFLOW_TRIGGER_LABELS[t]}
+                {WORKFLOW_TRIGGER_TYPES.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {labels.trigger(k)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {triggerUnsupported && config.trigger_type && (
               <p className="text-xs text-warning">
-                {WORKFLOW_TRIGGER_LABELS[config.trigger_type] ?? config.trigger_type} never fires.
-                Choose another trigger before saving.
+                {t(
+                  'automations.inspector.triggerNeverFires',
+                  '{label} never fires. Choose another trigger before saving.',
+                  { label: labels.trigger(config.trigger_type) }
+                )}
               </p>
             )}
           </div>
@@ -247,7 +282,7 @@ export function AutomationInspector({
             <JsonField
               key={`${node.id}-trigger`}
               id="automation-trigger-config"
-              label="Filter (JSON, optional)"
+              label={t('automations.inspector.filter', 'Filter (JSON, optional)')}
               value={config.trigger_config as Record<string, unknown> | undefined}
               onChange={(v) => setConfig({ ...config, trigger_config: v })}
             />
@@ -257,7 +292,9 @@ export function AutomationInspector({
 
       {node.type === 'condition' && (
         <div className="space-y-1.5">
-          <Label htmlFor="automation-condition">Condition</Label>
+          <Label htmlFor="automation-condition">
+            {t('automations.inspector.condition', 'Condition')}
+          </Label>
           <Input
             id="automation-condition"
             className="font-mono text-xs"
@@ -267,7 +304,10 @@ export function AutomationInspector({
             onBlur={(e) => setConfig({ ...config, condition_expr: e.target.value })}
           />
           <p className="text-xs text-muted-foreground">
-            Connect the Yes and No handles to what runs in each case.
+            {t(
+              'automations.inspector.conditionHint',
+              'Connect the Yes and No handles to what runs in each case.'
+            )}
           </p>
         </div>
       )}
@@ -279,20 +319,22 @@ export function AutomationInspector({
       {node.type === 'notification' && (
         <>
           <div className="space-y-1.5">
-            <Label>Channel</Label>
+            <Label>{t('automations.inspector.channel', 'Channel')}</Label>
             <Select
               value={config.notification_type ?? ''}
               onValueChange={(v) =>
                 setConfig({ ...config, notification_type: v as WorkflowNotificationType })
               }
             >
-              <SelectTrigger aria-label="Channel">
-                <SelectValue placeholder="Choose a channel" />
+              <SelectTrigger aria-label={t('automations.inspector.channel', 'Channel')}>
+                <SelectValue
+                  placeholder={t('automations.inspector.chooseChannel', 'Choose a channel')}
+                />
               </SelectTrigger>
               <SelectContent>
-                {WORKFLOW_NOTIFICATION_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {WORKFLOW_NOTIFICATION_LABELS[t]}
+                {WORKFLOW_NOTIFICATION_TYPES.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {labels.notification(k)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -301,7 +343,7 @@ export function AutomationInspector({
           <JsonField
             key={`${node.id}-notify`}
             id="automation-notification-config"
-            label="Settings (JSON)"
+            label={t('automations.inspector.settingsJson', 'Settings (JSON)')}
             value={config.notification_config}
             onChange={(v) => setConfig({ ...config, notification_config: v })}
           />
@@ -310,7 +352,7 @@ export function AutomationInspector({
 
       <Button variant="outline" size="sm" className="text-destructive" onClick={onDelete}>
         <Trash2 className="me-2 h-4 w-4" />
-        Remove node
+        {t('automations.inspector.removeNode', 'Remove node')}
       </Button>
     </div>
   )
