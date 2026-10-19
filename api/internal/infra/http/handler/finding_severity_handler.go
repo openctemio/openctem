@@ -145,30 +145,30 @@ func (h *VulnerabilityHandler) severityDecisionInput(r *http.Request, note strin
 	return finding.DecideSeverityRequestInput{
 		TenantID:  middleware.MustGetTenantID(r.Context()),
 		FindingID: r.PathValue("id"),
-		RequestID: r.PathValue("requestId"),
+		RequestID: r.PathValue("request_id"),
 		ActorID:   middleware.GetUserID(r.Context()),
 		Note:      note,
 		Audit:     h.buildAuditContext(r),
 	}
 }
 
-// ApproveSeverityRequest handles POST /api/v1/findings/{id}/severity-requests/{requestId}/approve
+// ApproveSeverityRequest handles POST /api/v1/findings/{id}/severity-requests/{request_id}/approve
 // @Summary      Approve a severity request
 // @Description  Records the caller's approval of a pending severity downgrade under the approval policy evaluated now; the last approval needed applies it (200) and recomputes the priority and SLA deadline.
 // @Tags         Findings
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id         path  string  true  "Finding ID"
-// @Param        requestId  path  string  true  "Severity request ID"
+// @Param        request_id  path  string  true  "Severity request ID"
 // @Success      200  {object}  FindingResponse
 // @Failure      403  {object}  map[string]string
 // @Failure      404  {object}  map[string]string
 // @Failure      409  {object}  map[string]string
-// @Router       /findings/{id}/severity-requests/{requestId}/approve [post]
+// @Router       /findings/{id}/severity-requests/{request_id}/approve [post]
 func (h *VulnerabilityHandler) ApproveSeverityRequest(w http.ResponseWriter, r *http.Request) {
 	res, err := h.service.ApproveSeverityRequest(r.Context(), h.severityDecisionInput(r, ""))
 	if err != nil {
-		if h.writeApprovalRefusal(w, r, r.PathValue("requestId"), err) {
+		if h.writeApprovalRefusal(w, r, r.PathValue("request_id"), err) {
 			return
 		}
 		if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
@@ -180,7 +180,7 @@ func (h *VulnerabilityHandler) ApproveSeverityRequest(w http.ResponseWriter, r *
 	h.writeSeverityResult(w, r, res)
 }
 
-// RejectSeverityRequest handles POST /api/v1/findings/{id}/severity-requests/{requestId}/reject
+// RejectSeverityRequest handles POST /api/v1/findings/{id}/severity-requests/{request_id}/reject
 // @Summary      Reject a severity request
 // @Description  Rejects a pending severity downgrade with a reason; the severity stays as it is.
 // @Tags         Findings
@@ -188,12 +188,12 @@ func (h *VulnerabilityHandler) ApproveSeverityRequest(w http.ResponseWriter, r *
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id         path  string                        true  "Finding ID"
-// @Param        requestId  path  string                        true  "Severity request ID"
+// @Param        request_id  path  string                        true  "Severity request ID"
 // @Param        request    body  RejectSeverityRequestRequest  true  "Reason"
 // @Success      200  {object}  FindingResponse
 // @Failure      400  {object}  map[string]string
 // @Failure      404  {object}  map[string]string
-// @Router       /findings/{id}/severity-requests/{requestId}/reject [post]
+// @Router       /findings/{id}/severity-requests/{request_id}/reject [post]
 func (h *VulnerabilityHandler) RejectSeverityRequest(w http.ResponseWriter, r *http.Request) {
 	var req RejectSeverityRequestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -208,18 +208,18 @@ func (h *VulnerabilityHandler) RejectSeverityRequest(w http.ResponseWriter, r *h
 	h.writeSeverityResult(w, r, res)
 }
 
-// CancelSeverityRequest handles POST /api/v1/findings/{id}/severity-requests/{requestId}/cancel
+// CancelSeverityRequest handles POST /api/v1/findings/{id}/severity-requests/{request_id}/cancel
 // @Summary      Withdraw a severity request
 // @Description  The requester withdraws their own pending severity downgrade.
 // @Tags         Findings
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id         path  string  true  "Finding ID"
-// @Param        requestId  path  string  true  "Severity request ID"
+// @Param        request_id  path  string  true  "Severity request ID"
 // @Success      200  {object}  FindingResponse
 // @Failure      403  {object}  map[string]string
 // @Failure      404  {object}  map[string]string
-// @Router       /findings/{id}/severity-requests/{requestId}/cancel [post]
+// @Router       /findings/{id}/severity-requests/{request_id}/cancel [post]
 func (h *VulnerabilityHandler) CancelSeverityRequest(w http.ResponseWriter, r *http.Request) {
 	res, err := h.service.CancelSeverityRequest(r.Context(), h.severityDecisionInput(r, ""))
 	if err != nil {
