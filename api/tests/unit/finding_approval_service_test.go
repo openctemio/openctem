@@ -1520,3 +1520,36 @@ func TestFindingApprovalService_ApproveStatus_LifecycleDecidesForTheApprover(t *
 	assert.True(t, errors.Is(err, finding.ErrLifecycleMove), "got %v", err)
 	assert.Empty(t, findingRepo.statusUpdates, "the finding must not move")
 }
+
+// An approved status change runs the status change's side effects (the
+// workflow event) once, like a direct status change; it
+// used to fire none of them.
+func TestFindingApprovalService_ApproveStatus_FiresStatusSideEffects(t *testing.T) {
+	tenantID := shared.NewID()
+	findingRepo := newMockFindingRepository()
+	f, err := vulnerability.NewFinding(tenantID, shared.NewID(), vulnerability.FindingSourceSAST, "test-tool", vulnerability.SeverityHigh, "Test finding")
+	require.NoError(t, err)
+	require.NoError(t, f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil))
+	findingID := f.ID()
+	f.AddWorkItemURI("https://tickets.example.com/browse/SEC-9")
+	findingRepo.findings[findingID] = f
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+	var workflow []string
+	svc.SetWorkflowStatusDispatch(func(_ context.Context, _ shared.ID, _ *vulnerability.Finding, oldStatus, newStatus string) {
+		workflow = append(workflow, oldStatus+"->"+newStatus)
+	})
+
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "false_positive",
+		ClosureReason: "detection_error", Justification: "Known test pattern: the input is a fixed constant",
+		RequestedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+	require.Empty(t, workflow, "a pending request moves nothing")
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: created.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{string(f.Status()) + "->false_positive"}, workflow)
+}
