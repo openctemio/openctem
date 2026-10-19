@@ -114,13 +114,35 @@ func (r *Reclassifier) SetWriter(w PriorityWriter) {
 	r.writer = w
 }
 
-// save persists one changed finding.
-func (r *Reclassifier) save(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding) error {
-	if r.writer != nil {
-		_, err := r.writer.SavePriorities(ctx, tenantID, []*vulnerability.Finding{f})
-		return err
+// saveAll persists changed findings and returns those it saved: through the
+// narrow writer in one batch, or else one full update each. The first error
+// is kept in *failed (the pass reports it and the tenant is queued again).
+func (r *Reclassifier) saveAll(ctx context.Context, tenantID shared.ID, changed []*vulnerability.Finding, failed *error) []*vulnerability.Finding {
+	if len(changed) == 0 {
+		return nil
 	}
-	return r.findings.Update(ctx, f)
+	if r.writer != nil {
+		if _, err := r.writer.SavePriorities(ctx, tenantID, changed); err != nil {
+			r.logger.Warn("persist reclassified findings failed", "findings", len(changed), "error", err)
+			if *failed == nil {
+				*failed = fmt.Errorf("persist findings: %w", err)
+			}
+			return nil
+		}
+		return changed
+	}
+	saved := make([]*vulnerability.Finding, 0, len(changed))
+	for _, f := range changed {
+		if err := r.findings.Update(ctx, f); err != nil {
+			r.logger.Warn("persist reclassified finding failed", "finding_id", f.ID().String(), "error", err)
+			if *failed == nil {
+				*failed = fmt.Errorf("persist finding: %w", err)
+			}
+			continue
+		}
+		saved = append(saved, f)
+	}
+	return saved
 }
 
 // ProcessQueue claims up to limit queued assets (tenant-fair) and
@@ -312,23 +334,20 @@ func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID sh
 				r.logger.Warn("sla recompute failed", "asset_id", assetID.String(), "error", err)
 			}
 		}
+		// Rewriting an unchanged row costs a tuple in every findings index
+		// for nothing: only a change is persisted, the page's changes in one
+		// batch.
+		changed := make([]*vulnerability.Finding, 0, len(open))
 		for _, f := range open {
-			// Rewriting an unchanged row costs a tuple in every findings index
-			// for nothing: only a change is persisted.
-			after := snapshotOf(f)
-			if after == before[f.ID()] {
+			if snapshotOf(f) == before[f.ID()] {
 				computed = append(computed, f.ID())
 				continue
 			}
-			if err := r.save(ctx, tenantID, f); err != nil {
-				r.logger.Warn("persist reclassified finding failed", "finding_id", f.ID().String(), "error", err)
-				if failed == nil {
-					failed = fmt.Errorf("persist finding: %w", err)
-				}
-				continue
-			}
+			changed = append(changed, f)
+		}
+		for _, f := range r.saveAll(ctx, tenantID, changed, &failed) {
 			computed = append(computed, f.ID())
-			tallyChange(&impact, before[f.ID()], after)
+			tallyChange(&impact, before[f.ID()], snapshotOf(f))
 		}
 		if len(res.Data) < page.PerPage {
 			break
