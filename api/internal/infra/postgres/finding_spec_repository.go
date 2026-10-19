@@ -100,6 +100,51 @@ func (r *FindingRepository) GetStatsWhere(ctx context.Context, w *filterspec.Whe
 	return r.queryFindingStats(ctx, findingStatsSelect+" WHERE "+w.SQL, w.Args)
 }
 
+// slaBreakdownSelect counts a filtered population by SLA standing. The age
+// buckets partition the past-due findings: the first also takes a missing
+// deadline so the buckets always add up to past_due.
+const slaBreakdownSelect = `
+	SELECT
+		COUNT(*),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')),
+		COUNT(*) FILTER (WHERE sla_status = 'warning'),
+		COUNT(*) FILTER (WHERE sla_status = 'on_track'),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND (sla_deadline IS NULL OR sla_deadline > NOW() - INTERVAL '7 days')),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND sla_deadline <= NOW() - INTERVAL '7 days' AND sla_deadline > NOW() - INTERVAL '30 days'),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND sla_deadline <= NOW() - INTERVAL '30 days' AND sla_deadline > NOW() - INTERVAL '90 days'),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND sla_deadline <= NOW() - INTERVAL '90 days'),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND severity = 'critical'),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND severity = 'high'),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND severity = 'medium'),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND severity = 'low'),
+		COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND severity IN ('info','none'))
+	FROM findings
+`
+
+// GetSLABreakdownWhere counts the findings a compiled filter selects by SLA
+// standing. It runs over the same WHERE (tenant, data scope, filters) as
+// ListWhere, so its numbers agree with the list.
+func (r *FindingRepository) GetSLABreakdownWhere(ctx context.Context, w *filterspec.Where) (*vulnerability.SLABreakdown, error) {
+	if err := checkFindingWhere(w); err != nil {
+		return nil, err
+	}
+	b := &vulnerability.SLABreakdown{PastDueBySeverity: map[vulnerability.Severity]int64{}}
+	var crit, high, med, low, info int64
+	if err := r.db.QueryRowContext(ctx, slaBreakdownSelect+" WHERE "+w.SQL, w.Args...).Scan(
+		&b.Total, &b.PastDue, &b.DueSoon, &b.OnTrack,
+		&b.UpTo7, &b.D8to30, &b.D31to90, &b.Over90,
+		&crit, &high, &med, &low, &info,
+	); err != nil {
+		return nil, fmt.Errorf("failed to get sla breakdown: %w", err)
+	}
+	b.PastDueBySeverity[vulnerability.SeverityCritical] = crit
+	b.PastDueBySeverity[vulnerability.SeverityHigh] = high
+	b.PastDueBySeverity[vulnerability.SeverityMedium] = med
+	b.PastDueBySeverity[vulnerability.SeverityLow] = low
+	b.PastDueBySeverity[vulnerability.SeverityInfo] = info
+	return b, nil
+}
+
 // findingExportTimeout bounds one export batch (RFC-048 §3.7).
 const findingExportTimeout = "60s"
 
