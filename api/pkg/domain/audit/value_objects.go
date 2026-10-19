@@ -527,6 +527,8 @@ const (
 	ActionReportScheduleCreated   Action = "report_schedule.created"
 	ActionReportScheduleActivated Action = "report_schedule.activated"
 	ActionReportScheduleDeleted   Action = "report_schedule.deleted"
+	// A paused schedule stops the digest its recipients rely on.
+	ActionReportScheduleDeactivated Action = "report_schedule.deactivated"
 	// EASM seeds (RFC-036 §6.3): what discovery expands from.
 	ActionEASMSeedCreated Action = "easm_seed.created"
 	ActionEASMSeedUpdated Action = "easm_seed.updated"
@@ -813,7 +815,7 @@ func (a Action) IsValid() bool {
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
-		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
@@ -949,7 +951,7 @@ func (a Action) Category() string {
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused:
 		return "exposure"
-	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
+	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated:
 		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved:
@@ -1226,7 +1228,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
-		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
