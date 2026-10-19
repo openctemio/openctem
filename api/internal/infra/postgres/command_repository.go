@@ -151,7 +151,19 @@ func (r *CommandRepository) GetHeldSharedJobForPlatform(ctx context.Context, sen
 // A command with no (or an empty) required_capabilities is returned to any
 // sensor, preserving the pre-existing behavior for every scan/collect command.
 func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, capabilities []string, limit int) ([]*command.Command, error) {
+	return r.GetPendingForSensorExcluding(ctx, tenantID, sensorID, capabilities, limit, nil)
+}
+
+// GetPendingForSensorExcluding is GetPendingForSensor without the commands
+// in exclude: the next page of a claim whose first candidates were all
+// withheld by checks that run after the query (command.PendingPager), so
+// work deeper in the queue the sensor may run is not starved by them.
+func (r *CommandRepository) GetPendingForSensorExcluding(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, capabilities []string, limit int, exclude []shared.ID) ([]*command.Command, error) {
 	where, args := pendingForSensorWhere(tenantID, sensorID, capabilities)
+	if len(exclude) > 0 {
+		where += fmt.Sprintf(" AND commands.id <> ALL($%d::uuid[])", len(args)+1)
+		args = append(args, pq.Array(commandIDStrings(exclude)))
+	}
 	query := fairPendingQuery(r.selectQuery(), where, limit)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -1970,4 +1982,13 @@ func (r *CommandRepository) InstanceScanZoneID(ctx context.Context, tenantID, co
 		return nil, err
 	}
 	return &id, nil
+}
+
+// commandIDStrings is ids as strings, for a uuid[] parameter.
+func commandIDStrings(ids []shared.ID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	return out
 }

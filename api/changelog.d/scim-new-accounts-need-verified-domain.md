@@ -1,0 +1,6 @@
+### Security: SCIM creates accounts only on the organization's verified domains
+
+- `POST /scim/v2/Users` no longer creates a global account for an email whose domain the organization has not DNS-verified. It answers `400 invalidValue` ("the email domain is not a verified domain of this organization; verify the domain or invite the person") and writes nothing. Before, any organization, including a self-signed-up one, could mint a SCIM token and pre-create someone else's account (for example a personal mailbox).
+- A social sign-in (Google, GitHub, Microsoft) adopts a passwordless provisioned account only when every organization the account belongs to has verified the email domain. Otherwise the sign-in is refused, so a squatted account can no longer pull its real owner into the squatter's organization.
+- Existing members are unaffected; SCIM still reconciles (activates, suspends, offboards) people who are already members of the organization, whatever their domain.
+- **Upgrade note:** an identity provider that provisions people on domains the organization has not verified now gets `400` for each new person. Verify the domain (Settings, Domains) or invite those people. Accounts created by SCIM earlier on unverified domains can no longer be claimed by a social sign-in; an administrator can review them in the organization's member list.

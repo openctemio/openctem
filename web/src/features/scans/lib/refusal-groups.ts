@@ -13,6 +13,7 @@ export type RefusalGroupKind =
   | 'proof' // platform sensors (or intrusive probes) need a verified domain
   | 'platform' // only program entries cover it: platform sensors never probe it
   | 'zone' // private address outside every scan zone, or a zone without sensors
+  | 'unresolved' // a name with no DNS answer: fix DNS or scan its address
   | 'entry' // the scope entry that covers it is pending, deactivated or expired
   | 'scope' // nothing in scope covers it (or not at this tier / these ports)
   | 'ownership' // excluded, rejected, waiting for review, third party
@@ -22,6 +23,7 @@ export type RefusalGroupKind =
 const KIND_OF_CODE: Record<string, RefusalGroupKind> = {
   proof_required: 'proof',
   program_platform: 'platform',
+  unresolved: 'unresolved',
   zone_none: 'zone',
   zone_no_sensor: 'zone',
   zone_sensor_mismatch: 'zone',
@@ -53,6 +55,7 @@ const ORDER: RefusalGroupKind[] = [
   'proof',
   'platform',
   'zone',
+  'unresolved',
   'scope',
   'ownership',
   'access',

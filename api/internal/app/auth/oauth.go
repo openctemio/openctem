@@ -106,6 +106,10 @@ type OAuthService struct {
 	// identities binds accounts to the provider's (issuer, subject); a login
 	// finds the account by it first (federated_identity.go). Required.
 	identities useridentity.Repository
+	// claimMembers and claimDomains vouch for a claimable account before a
+	// social sign-in adopts it (oauth_claim_guard.go). Unset: never adopted.
+	claimMembers ClaimMembershipSource
+	claimDomains DomainVerifier
 }
 
 // InvitationLookup answers whether any organization has a pending invitation
@@ -848,6 +852,13 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 
 		if existingProvider != expectedProvider {
 			claimableLocal := existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() == nil
+			// A claimable account is adopted only when every organization it
+			// belongs to has DNS-verified the email domain: otherwise an
+			// organization that provisioned someone else's address without
+			// that proof would capture the real owner's sign-in.
+			if claimableLocal && !s.claimVouched(ctx, existingUser, userInfo.Email) {
+				return nil, errors.New("this email is registered with a different login method")
+			}
 			if !claimableLocal {
 				s.logger.Warn("OAuth login blocked: email registered with a different auth provider",
 					"email", userInfo.Email,
