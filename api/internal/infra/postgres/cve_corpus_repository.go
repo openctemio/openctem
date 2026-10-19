@@ -100,6 +100,13 @@ func (r *CVECorpusRepository) ApplyPage(ctx context.Context, cves []cvecorpus.CV
 		}
 		res.RangesWritten += n
 	}
+	ids := make([]string, 0, len(cves))
+	for _, c := range cves {
+		ids = append(ids, c.ID)
+	}
+	if _, err := fillCatalogStubsFromCorpus(ctx, tx, ids); err != nil {
+		return res, err
+	}
 	if err := tx.Commit(); err != nil {
 		return res, fmt.Errorf("commit: %w", err)
 	}

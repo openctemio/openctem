@@ -197,7 +197,7 @@
   "settings.desc.risk-scoring": "How asset risk scores are weighted.",
   "settings.desc.roles": "Custom roles and the permissions they grant.",
   "settings.desc.scan-approval": "Which scans need a person’s approval before they run: off by default.",
-  "settings.desc.scan-profiles": "Reusable scan configurations: tools, intensity and duration.",
+  "settings.desc.scan-profiles": "Reusable pass/fail rules for scan results.",
   "settings.desc.scan-windows": "When scans may touch which targets: testing windows and blackouts.",
   "settings.desc.scanner-content": "How fresh vulnerability databases, templates and rules must be.",
   "settings.desc.scanner-templates": "Custom Nuclei, Semgrep and Betterleaks templates.",

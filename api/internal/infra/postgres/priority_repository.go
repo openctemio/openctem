@@ -298,7 +298,9 @@ func NewCompensatingControlLookupRepo(db *sql.DB) *CompensatingControlLookupRepo
 }
 
 // GetEffectiveForAssets returns max reduction_factor per asset with active,
-// tested-passing, non-expired controls.
+// tested-passing, non-expired controls. An untested control, a partial or
+// failed test, and a control without a review date (expires_at) count as no
+// reduction: a control nobody has verified must not lower a priority.
 func (r *CompensatingControlLookupRepo) GetEffectiveForAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]float64, error) {
 	if len(assetIDs) == 0 {
 		return map[shared.ID]float64{}, nil
@@ -316,8 +318,9 @@ func (r *CompensatingControlLookupRepo) GetEffectiveForAssets(ctx context.Contex
 		WHERE cc.tenant_id = $1
 		  AND cca.asset_id = ANY($2)
 		  AND cc.status = 'active'
-		  AND (cc.test_result IS NULL OR cc.test_result != 'fail')
-		  AND (cc.expires_at IS NULL OR cc.expires_at > NOW())
+		  AND cc.test_result = 'pass'
+		  AND cc.last_tested_at IS NOT NULL
+		  AND cc.expires_at > NOW()
 		GROUP BY cca.asset_id
 	`
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(idStrings))

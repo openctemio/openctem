@@ -80,7 +80,9 @@ func TestIsValidFingerprint_AllLowerCase(t *testing.T) {
 // generateFindingFingerprint tests
 // =============================================================================
 
-func TestGenerateFindingFingerprint_WithValidProvidedFingerprint(t *testing.T) {
+// A report's own fingerprint never becomes the base: the key is built from
+// server inputs, so a copied fingerprint cannot choose another finding.
+func TestGenerateFindingFingerprint_IgnoresProvidedFingerprint(t *testing.T) {
 	assetID := shared.NewID()
 	validFP := "a1b2c3d4e5f60718293a4b5c6d7e8f90"
 
@@ -89,14 +91,18 @@ func TestGenerateFindingFingerprint_WithValidProvidedFingerprint(t *testing.T) {
 		RuleID:      "test-rule",
 		Title:       "Test Finding",
 	}
+	without := *finding
+	without.Fingerprint = ""
 
-	result, _ := generateFindingFingerprint(assetID, finding, nil)
+	result, base := generateFindingFingerprint(assetID, finding, nil)
+	want, _ := generateFindingFingerprint(assetID, &without, nil)
 
-	// Should be a composite fingerprint (SHA-256 = 64 chars)
 	assert.Len(t, result, 64)
-	// Should use the provided fingerprint as base, combined with assetID
-	expected := createCompositeFingerprint(assetID.String(), validFP)
-	assert.Equal(t, expected, result)
+	assert.NotEqual(t, createCompositeFingerprint(assetID.String(), validFP), result)
+	assert.NotEqual(t, validFP, base)
+	assert.Equal(t, want, result)
+	assert.Equal(t, createCompositeFingerprint(assetID.String(), validFP), legacyClientFingerprint(assetID, finding))
+	assert.Empty(t, legacyClientFingerprint(assetID, &without))
 }
 
 func TestGenerateFindingFingerprint_WithInvalidProvidedFingerprint(t *testing.T) {

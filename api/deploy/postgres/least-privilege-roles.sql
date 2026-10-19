@@ -324,6 +324,10 @@ FROM unnest(ARRAY['users']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 SELECT format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
 SELECT format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
+-- ...but not the owner-rights partition upkeep of the dashboard facts
+-- (SECURITY DEFINER; only the app's background controller calls it).
+SELECT format('REVOKE EXECUTE ON FUNCTION public.dash_asset_day_maintain() FROM %I', :'admin_user')
+WHERE to_regprocedure('public.dash_asset_day_maintain()') IS NOT NULL \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I REVOKE ALL ON TABLES FROM %I', :'migrator_user', :'admin_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migrator_user', :'admin_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'admin_user') \gexec
@@ -353,6 +357,10 @@ BEGIN
         OR has_table_privilege(app, 'public.admin_users', 'DELETE')
         OR NOT has_table_privilege(adm, 'public.admin_users', 'INSERT')) THEN
         RAISE EXCEPTION 'admin_users is not written by % alone', adm;
+    END IF;
+    IF to_regprocedure('public.dash_asset_day_maintain()') IS NOT NULL
+       AND has_function_privilege(adm, 'public.dash_asset_day_maintain()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'role % may run dash_asset_day_maintain (owner rights)', adm;
     END IF;
 END
 $$;
