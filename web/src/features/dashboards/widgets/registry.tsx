@@ -19,6 +19,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDashboardStats } from '@/features/dashboard'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
+import { DRILL } from '@/features/dashboard/lib/drill'
 import {
   useExecutiveSummary,
   useThreatIntelStats,
@@ -243,7 +244,7 @@ function MyCriticalHighWidget() {
       loading={isLoading}
       error={error}
       tone="danger"
-      href="/findings?related_to=me&priority_class=P0"
+      href="/findings?related_to=me&state=open&severity=critical,high"
     />
   )
 }
@@ -262,7 +263,7 @@ function MyOverdueSlaWidget() {
       loading={isLoading}
       error={error}
       tone="danger"
-      href="/findings?related_to=me&sla_status=overdue"
+      href="/findings?related_to=me&state=open&sla_status=overdue,exceeded"
     />
   )
 }
@@ -329,7 +330,7 @@ function P0OpenWidget() {
       loading={isLoading}
       error={error}
       tone="danger"
-      href="/findings?priority_class=P0"
+      href={DRILL.p0Open}
     />
   )
 }

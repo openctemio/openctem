@@ -373,7 +373,7 @@ func (m *sensorSvcMockRepo) ListLivenessCandidates(_ context.Context) (time.Time
 	var out []sensor.LivenessCandidate
 	for _, a := range m.sensors {
 		if a.Health.IsLive() {
-			out = append(out, sensor.LivenessCandidate{ID: a.ID, Health: a.Health, Deadline: a.HeartbeatDeadline()})
+			out = append(out, sensor.LivenessCandidate{ID: a.ID, TenantID: a.TenantID, Health: a.Health, Deadline: a.HeartbeatDeadline()})
 		}
 	}
 	return now, out, nil

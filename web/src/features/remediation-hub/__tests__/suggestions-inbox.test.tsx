@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RemediationSuggestion } from '../api/types'
+import { ApiClientError } from '@/lib/api/error-handler'
 
 const approve = vi.fn()
 // Permissions the mocked member holds; the default is everything.
@@ -41,6 +42,12 @@ vi.mock('@/context/permission-provider', () => ({
     hasPermission: (p: string) => granted.write || !p.endsWith(':write'),
   }),
 }))
+const replace = vi.fn()
+const search = { value: '' }
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace }),
+  useSearchParams: () => new URLSearchParams(search.value),
+}))
 vi.mock('../api/use-owner-names', () => ({
   useOwnerNames: () => ({ users: [], groups: [], user: () => undefined, group: () => undefined }),
 }))
@@ -62,6 +69,7 @@ vi.mock('../api/use-remediation-hub', () => ({
     mutate: vi.fn(),
   }),
   useSuggestionMembers: () => ({ data: undefined }),
+  useSuggestion: () => ({ data: undefined, isLoading: false }),
   useRevalidateHub: () => vi.fn(),
   hubApi: {
     approve: (...a: unknown[]) => approve(...a),
@@ -80,6 +88,8 @@ describe('SuggestionsInbox keyboard review', () => {
     granted.write = true
     items.join = false
     approve.mockReset()
+    replace.mockReset()
+    search.value = ''
     approve.mockResolvedValue({
       suggestion_id: 'two',
       action_id: 'a',
@@ -130,5 +140,91 @@ describe('SuggestionsInbox keyboard review', () => {
     await user.keyboard('j')
     await user.keyboard('a')
     await waitFor(() => expect(approve).toHaveBeenCalledWith('two', { version: 7 }))
+  })
+
+  it('opens the detail panel of the active suggestion with Enter (a deep link)', async () => {
+    render(<SuggestionsInbox />)
+    const user = userEvent.setup()
+    await user.keyboard('j')
+    await user.keyboard('{Enter}')
+    expect(replace).toHaveBeenCalledWith('?suggestion=two', { scroll: false })
+  })
+
+  it('asks what to do with findings another task took, then skips them by default', async () => {
+    approve.mockRejectedValueOnce(
+      new ApiClientError(
+        '2 finding(s) already belong to another remediation task',
+        'FINDINGS_IN_OTHER_TASK',
+        409,
+        {
+          conflicts: [
+            {
+              finding_id: 'f1',
+              finding_title: 'SQL injection in /login',
+              task_id: 't9',
+              task_title: 'Patch the gateway',
+              assignee_user_id: null,
+              assignee_group_id: null,
+              can_move: true,
+            },
+            {
+              finding_id: 'f2',
+              finding_title: 'Old jquery',
+              task_id: 't8',
+              task_title: null,
+              assignee_user_id: null,
+              assignee_group_id: null,
+              can_move: false,
+            },
+          ],
+        }
+      )
+    )
+    render(<SuggestionsInbox />)
+    const user = userEvent.setup()
+    await user.keyboard('a')
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Some findings are already in another task')
+    expect(dialog).toHaveTextContent('In task "Patch the gateway" (Unassigned)')
+    // A task the person cannot read is not named.
+    expect(dialog).toHaveTextContent('In another task')
+    expect(screen.getAllByRole('radio', { name: 'Move here' })[1]).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Skip them and accept' }))
+    await waitFor(() =>
+      expect(approve).toHaveBeenLastCalledWith('one', { version: 7, conflicts: { skip: true } })
+    )
+  })
+
+  it('moves a finding only with a reason', async () => {
+    approve.mockRejectedValueOnce(
+      new ApiClientError('conflict', 'FINDINGS_IN_OTHER_TASK', 409, {
+        conflicts: [
+          {
+            finding_id: 'f1',
+            finding_title: 'SQL injection in /login',
+            task_id: 't9',
+            task_title: 'Patch the gateway',
+            assignee_user_id: null,
+            assignee_group_id: null,
+            can_move: true,
+          },
+        ],
+      })
+    )
+    render(<SuggestionsInbox />)
+    const user = userEvent.setup()
+    await user.keyboard('a')
+    await screen.findByRole('dialog')
+    await user.click(screen.getByRole('radio', { name: 'Move here' }))
+    const confirm = screen.getByRole('button', { name: 'Move 1 and accept' })
+    expect(confirm).toBeDisabled()
+    await user.type(screen.getByRole('textbox', { name: 'Why move them' }), 'Same upgrade')
+    await user.click(confirm)
+    await waitFor(() =>
+      expect(approve).toHaveBeenLastCalledWith('one', {
+        version: 7,
+        conflicts: { move: ['f1'], move_reason: 'Same upgrade' },
+      })
+    )
   })
 })

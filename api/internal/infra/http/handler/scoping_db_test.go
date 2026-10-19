@@ -99,10 +99,16 @@ func TestScopingSummary_CountsSeededRows(t *testing.T) {
 	mustExec(ctx, t, db, `INSERT INTO business_service_assets (tenant_id, service_id, asset_id) VALUES ($1,$2,$3)`, tenantID, svcA, cjOwnerID)
 	mustExec(ctx, t, db, `INSERT INTO business_service_assets (tenant_id, service_id, asset_id) VALUES ($1,$2,$3)`, tenantID, svcB, plain)
 
-	// Boundary: 2 targets (one inactive still counts), 1 exclusion.
+	// Boundary: what is in effect (status active), as the Scope page's
+	// metrics count it: 1 target in effect (one inactive, one waiting for
+	// approval do not count; the waiting one is reported apart), 1 exclusion
+	// in effect (a pending and an expired one do not count).
 	mustExec(ctx, t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern) VALUES ($1,'domain','example.com')`, tenantID)
 	mustExec(ctx, t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1,'domain','old.example.com','inactive')`, tenantID)
-	mustExec(ctx, t, db, `INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason) VALUES ($1,'domain','hr.example.com','HR is out of scope')`, tenantID)
+	mustExec(ctx, t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1,'domain','new.example.com','pending')`, tenantID)
+	mustExec(ctx, t, db, `INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason, status) VALUES ($1,'domain','hr.example.com','HR is out of scope','active')`, tenantID)
+	mustExec(ctx, t, db, `INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason) VALUES ($1,'domain','new-hr.example.com','waiting')`, tenantID)
+	mustExec(ctx, t, db, `INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason, status) VALUES ($1,'domain','old-hr.example.com','was out','expired')`, tenantID)
 
 	// Attacker profiles: 2 for the tenant, 1 foreign.
 	profA := mustID(ctx, t, db, `INSERT INTO attacker_profiles (tenant_id, name, profile_type, is_default) VALUES ($1,'Ext','external_unauth',true) RETURNING id`, tenantID)
@@ -180,7 +186,8 @@ func TestScopingSummary_CountsSeededRows(t *testing.T) {
 		{"business_units.total", s.BusinessUnits.Total, 2},
 		{"assets.total", s.Assets.Total, 4},
 		{"assets.in_business_unit", s.Assets.InBusinessUnit, 1},
-		{"boundary.targets", s.Boundary.Targets, 2},
+		{"boundary.targets", s.Boundary.Targets, 1},
+		{"boundary.targets_waiting", s.Boundary.TargetsWaiting, 1},
 		{"boundary.exclusions", s.Boundary.Exclusions, 1},
 		{"attacker_profiles.total", s.AttackerProfiles.Total, 2},
 		{"threat_models.total", s.ThreatModels.Total, 3},

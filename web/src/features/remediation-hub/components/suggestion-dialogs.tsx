@@ -15,13 +15,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Dialog,
   DialogBody,
   DialogContent,
@@ -36,6 +29,9 @@ import { DISMISS_REASONS, type DismissReason, type RemediationSuggestion } from 
 import { type ApproveBody, useSuggestionMembers } from '../api/use-remediation-hub'
 import { useOwnerNames } from '../api/use-owner-names'
 import { isTypingTarget } from '../lib/hub'
+import { memberLocation } from '../lib/suggestion-detail'
+import { OwnerCombobox, type OwnerValue } from './owner-combobox'
+import { TruncatedText } from '@/features/shared/components/truncated-text'
 
 export function DismissDialog({
   suggestion,
@@ -118,8 +114,6 @@ export function DismissDialog({
   )
 }
 
-const NONE = '__none__'
-
 export function AcceptDialog({
   suggestion,
   open,
@@ -140,7 +134,7 @@ export function AcceptDialog({
   const owners = useOwnerNames()
   const [title, setTitle] = useState('')
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
-  const [overrides, setOverrides] = useState<Record<number, { user: string; group: string }>>({})
+  const [overrides, setOverrides] = useState<Record<number, OwnerValue>>({})
   const [deadline, setDeadline] = useState('')
   const [autoJoin, setAutoJoin] = useState(false)
   const [page, setPage] = useState(1)
@@ -166,11 +160,11 @@ export function AcceptDialog({
     if (suggestion && title.trim() && title.trim() !== suggestion.title) out.title = title.trim()
     if (excluded.size) out.exclude_finding_ids = [...excluded]
     const os = Object.entries(overrides)
-      .filter(([, v]) => v.user || v.group)
+      .filter(([, v]) => v.userId || v.groupId)
       .map(([k, v]) => ({
         index: Number(k),
-        ...(v.user ? { assignee_user_id: v.user } : {}),
-        ...(v.group ? { assignee_group_id: v.group } : {}),
+        ...(v.userId ? { assignee_user_id: v.userId } : {}),
+        ...(v.groupId ? { assignee_group_id: v.groupId } : {}),
       }))
     if (os.length) out.owners = os
     if (deadline) out.deadline = deadline
@@ -201,59 +195,28 @@ export function AcceptDialog({
               {suggestion.partitions.map((p, i) => (
                 <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr] sm:items-center">
                   <span className="text-sm">
-                    {t('remediationHub.accept.partition', undefined, {
-                      n: i + 1,
-                      findings: p.finding_ids.length,
+                    {t('remediationHub.panel.taskN', undefined, { n: i + 1 })}
+                    {' · '}
+                    {t('remediationHub.suggestions.findingsCount', undefined, {
+                      n: p.finding_ids.length,
                     })}
                   </span>
-                  <Select
-                    value={overrides[i]?.user || p.owner_user_id || NONE}
-                    onValueChange={(v) =>
-                      setOverrides((o) => ({
-                        ...o,
-                        [i]: {
-                          user: v === NONE ? '' : v,
-                          group: o[i]?.group ?? p.owner_group_id ?? '',
-                        },
-                      }))
-                    }
-                  >
-                    <SelectTrigger aria-label={t('remediationHub.accept.user')}>
-                      <SelectValue placeholder={t('remediationHub.accept.user')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>{t('remediationHub.accept.noUser')}</SelectItem>
-                      {owners.users.map((u) => (
-                        <SelectItem key={u.id} value={u.id}>
-                          {u.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={overrides[i]?.group || p.owner_group_id || NONE}
-                    onValueChange={(v) =>
-                      setOverrides((o) => ({
-                        ...o,
-                        [i]: {
-                          user: o[i]?.user ?? p.owner_user_id ?? '',
-                          group: v === NONE ? '' : v,
-                        },
-                      }))
-                    }
-                  >
-                    <SelectTrigger aria-label={t('remediationHub.accept.group')}>
-                      <SelectValue placeholder={t('remediationHub.accept.group')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>{t('remediationHub.accept.noGroup')}</SelectItem>
-                      {owners.groups.map((g) => (
-                        <SelectItem key={g.id} value={g.id}>
-                          {g.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="sm:col-span-2">
+                    <OwnerCombobox
+                      label={t('remediationHub.accept.ownerOf', undefined, { n: i + 1 })}
+                      value={overrides[i] ?? { userId: p.owner_user_id, groupId: p.owner_group_id }}
+                      suggested={
+                        p.owner_rule === 'asset_owner'
+                          ? { userId: p.owner_user_id, groupId: p.owner_group_id }
+                          : undefined
+                      }
+                      onChange={(v) => setOverrides((o) => ({ ...o, [i]: v }))}
+                      users={owners.users}
+                      groups={owners.groups}
+                      usersState={owners.usersState}
+                      groupsState={owners.groupsState}
+                    />
+                  </div>
                 </div>
               ))}
             </fieldset>
@@ -315,10 +278,22 @@ export function AcceptDialog({
                       aria-label={t('remediationHub.accept.keep', undefined, { title: m.title })}
                     />
                     <SeverityBadge severity={m.severity as Severity} />
-                    <span className="min-w-0 flex-1 truncate text-sm">{m.title}</span>
-                    <span className="text-muted-foreground hidden truncate text-xs sm:inline">
-                      {m.asset_name}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{m.title}</p>
+                      <TruncatedText
+                        value={memberLocation(m).full}
+                        middle={60}
+                        className="text-muted-foreground block max-w-full font-mono text-xs"
+                        label={t('remediationHub.panel.location')}
+                      />
+                      {m.active_task && (
+                        <p className="text-warning text-xs">
+                          {t('remediationHub.panel.claimed', undefined, {
+                            title: m.active_task.title,
+                          })}
+                        </p>
+                      )}
+                    </div>
                   </li>
                 )
               })}
@@ -355,6 +330,82 @@ export function AcceptDialog({
             disabled={busy || remaining <= 0 || !title.trim()}
           >
             {t('remediationHub.accept.confirm', undefined, { n: remaining })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Days a snooze may last (the API allows at most 180). */
+export const MAX_SNOOZE_DAYS = 180
+const DAY_MS = 24 * 3600 * 1000
+
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+/** Snoozing until a chosen day (default a week); the suggestion comes back then. */
+export function SnoozeDialog({
+  suggestion,
+  open,
+  onOpenChange,
+  onConfirm,
+  busy,
+}: {
+  suggestion: RemediationSuggestion | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** The end of the chosen day, as an ISO timestamp. */
+  onConfirm: (until: string) => void
+  busy?: boolean
+}) {
+  const { t } = useTranslation()
+  // "Now" is read when the dialog opens, never during render.
+  const [now, setNow] = useState(() => Date.now())
+  const [date, setDate] = useState(() => isoDay(new Date(now + 7 * DAY_MS)))
+  useEffect(() => {
+    if (!open) return
+    const at = Date.now()
+    setNow(at)
+    setDate(isoDay(new Date(at + 7 * DAY_MS)))
+  }, [open])
+  const min = isoDay(new Date(now + DAY_MS))
+  const max = isoDay(new Date(now + (MAX_SNOOZE_DAYS - 1) * DAY_MS))
+  const valid = date >= min && date <= max
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>{t('remediationHub.snooze.title')}</DialogTitle>
+          <DialogDescription>
+            {t('remediationHub.snooze.description', undefined, { title: suggestion?.title ?? '' })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="space-y-1">
+          <Label htmlFor="snooze-until">{t('remediationHub.snooze.until')}</Label>
+          <Input
+            id="snooze-until"
+            type="date"
+            value={date}
+            min={min}
+            max={max}
+            onChange={(e) => setDate(e.target.value)}
+            aria-invalid={!valid}
+          />
+          <p className="text-muted-foreground text-xs">
+            {t('remediationHub.snooze.hint', undefined, { days: MAX_SNOOZE_DAYS })}
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('remediationHub.actions.cancel')}
+          </Button>
+          <Button
+            onClick={() => onConfirm(new Date(`${date}T23:59:59Z`).toISOString())}
+            disabled={busy || !valid}
+          >
+            {t('remediationHub.actions.snooze')}
           </Button>
         </DialogFooter>
       </DialogContent>

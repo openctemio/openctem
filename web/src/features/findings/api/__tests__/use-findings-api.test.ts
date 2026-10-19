@@ -242,3 +242,11 @@ describe('useMarkDuplicateApi', () => {
     })
   })
 })
+
+describe('buildFindingsQuery asset_group_id', () => {
+  it('sends the asset group filter (the group page links here)', async () => {
+    const { buildFindingsQuery } = await import('../use-findings-api')
+    expect(buildFindingsQuery({ asset_group_id: 'g-1' }).get('asset_group_id')).toBe('g-1')
+    expect(buildFindingsQuery({}).has('asset_group_id')).toBe(false)
+  })
+})

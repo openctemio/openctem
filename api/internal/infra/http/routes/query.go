@@ -33,5 +33,7 @@ func registerQueryRoutes(router Router, h *handler.QueryHandler, authMiddleware,
 		r.GET("/schema", h.Schema, read)
 		r.POST("/explain", h.Explain, read, limiter.UserMiddleware())
 		r.POST("/run", h.Run, read, limiter.UserMiddleware())
+		// Pure text conversion of a findings list filter (nothing runs).
+		r.POST("/from-filters", h.FromFilters, middleware.Require(permission.FindingsRead), limiter.UserMiddleware())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

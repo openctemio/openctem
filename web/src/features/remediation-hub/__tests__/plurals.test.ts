@@ -30,12 +30,12 @@ describe('remediation hub plurals', () => {
     expect(translate(en, 'remediationHub.suggestions.findingsCount', undefined, { n: 5 })).toBe(
       '5 findings'
     )
-    expect(
-      translate(en, 'remediationHub.suggestions.covers', undefined, {
-        findings: 5,
-        assets: 1,
-        risk: 1,
-      })
-    ).toBe('5 findings on 1 asset · 1 risk point')
+    expect(translate(en, 'remediationHub.suggestions.assetsCount', undefined, { n: 1 })).toBe(
+      '1 asset'
+    )
+    expect(translate(en, 'remediationHub.risk.points', undefined, { n: 1 })).toBe('1 risk point')
+    expect(translate(vi, 'remediationHub.panel.createsTasks', undefined, { n: 2 })).toBe(
+      'Tạo 2 công việc, mỗi người phụ trách một công việc:'
+    )
   })
 })
