@@ -943,6 +943,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Tasks from a query in auto mode: add new matches as each task's owner
+	// (suspends a task whose owner left or lost access).
+	if svc != nil && svc.RemediationTask != nil {
+		w.ControllerManager.Register(controller.NewRemediationTaskQueryController(
+			svc.RemediationTask, 5*time.Minute, log.With("controller", "remediation-task-queries"),
+		))
+	}
 	// Task issues: push each task's state to its tracker issue (move and a
 	// progress comment) when it changed since the last push.
 	if svc != nil && svc.JiraSync != nil && repos.TicketLink != nil {
