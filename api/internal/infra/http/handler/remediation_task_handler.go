@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -208,7 +209,7 @@ func parseOptID(field, s string) (*shared.ID, error) {
 }
 
 // List lists tasks. Query: state (comma list), assignee (me or a user id),
-// group_id, action_id, action_kind, campaign_id, finding_id, search, sort
+// group_id, action_id, action_kind, campaign_id, finding_id, overdue, search, sort
 // (deadline, risk, updated, created), page, per_page.
 // @Summary      List remediation tasks
 // @Description  Tasks the caller may see: a restricted member sees tasks with at least one finding in their data scope, with the counters over those findings (hidden_members counts the rest).
@@ -221,6 +222,7 @@ func parseOptID(field, s string) (*shared.ID, error) {
 // @Param        action_kind  query  string  false  "Action kind (upgrade, rotate, sol, manual)"
 // @Param        campaign_id  query  string  false  "Campaign ID"
 // @Param        finding_id   query  string  false  "Tasks this finding is a member of"
+// @Param        overdue      query  boolean false  "true keeps tasks whose deadline has passed (combine with state for the open ones)"
 // @Param        search       query  string  false  "Title search"
 // @Param        sort         query  string  false  "deadline (default), risk, updated or created"
 // @Param        page         query  int     false  "Page number" default(1)
@@ -270,6 +272,14 @@ func (h *RemediationTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		*dst = id
+	}
+	if o := q.Get("overdue"); o != "" {
+		b, err := strconv.ParseBool(o)
+		if err != nil {
+			apierror.BadRequest("overdue must be true or false").WriteJSON(w)
+			return
+		}
+		in.Filter.Overdue = b
 	}
 	in.Filter.ActionKind = strings.TrimSpace(q.Get("action_kind"))
 	if len(in.Filter.ActionKind) > 16 {

@@ -124,7 +124,7 @@ func webEndpointCaller(r *http.Request) webendpointapp.Caller {
 	ctx := r.Context()
 	return webendpointapp.Caller{
 		TenantID: middleware.MustGetTenantID(ctx), UserID: middleware.GetUserID(ctx),
-		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.IsAPIKeyAuthenticated(ctx),
+		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.IsDelegatedCredential(ctx),
 	}
 }
 
