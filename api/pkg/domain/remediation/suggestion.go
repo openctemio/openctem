@@ -670,6 +670,8 @@ func CanAutoJoinInto(s TaskState) bool { return s == TaskStateOpen || s == TaskS
 
 // AcceptPlanTask is one task an accept creates.
 type AcceptPlanTask struct {
+	// ID is the new task's id (the repository sets one when zero).
+	ID         shared.ID
 	Title      string
 	Owner      Owner
 	FindingIDs []shared.ID
@@ -693,6 +695,9 @@ type AcceptPlan struct {
 	Excluded []shared.ID
 	AutoJoin bool
 	ActorID  *shared.ID
+	// Conflicts resolves findings taken by another active task since the
+	// suggestion was made (zero value: refuse them).
+	Conflicts ConflictResolution
 }
 
 // AcceptResult is what an accept created.
@@ -701,11 +706,17 @@ type AcceptResult struct {
 	ActionID     shared.ID   `json:"action_id"`
 	TaskIDs      []shared.ID `json:"task_ids"`
 	Joined       int         `json:"joined"`
-	// Dropped are findings that closed or joined another task since the
-	// suggestion was made; they were left out.
+	// Dropped are findings that closed since the suggestion was made; they
+	// were left out.
 	Dropped []shared.ID `json:"dropped"`
+	// Skipped are findings of another active task left out as asked.
+	Skipped []shared.ID `json:"skipped"`
+	// Moved counts findings moved out of another task as asked.
+	Moved int `json:"moved"`
+	// Claim reports the moves (for the audit log and notifications).
+	Claim ClaimReport `json:"-"`
 }
 
 // ErrNothingToAccept: every finding of the suggestion was removed, closed or
-// taken by another task.
+// skipped.
 var ErrNothingToAccept = fmt.Errorf("%w: no finding is left to accept", shared.ErrValidation)
