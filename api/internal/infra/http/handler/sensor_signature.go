@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/sensor"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
 	"github.com/openctemio/openctem/api/pkg/sensorsig"
 )
 
@@ -61,6 +62,12 @@ func authenticateSigned(r *http.Request, svc signedAuthenticator, clientIP strin
 		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	if err := p.Verify(r, pub); err != nil {
+		return sensor.SensorIdentity{}, nil, errSignedRefused
+	}
+	// Relayed request: the connector names the sensor of the route it
+	// arrived on. A different signing sensor means an envelope crossed
+	// routes; refuse (defense in depth, the connector already seals routes).
+	if want := r.Header.Get(relay.HeaderRelaySensor); want != "" && (id.Sensor == nil || want != id.Sensor.ID.String()) {
 		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	if err := svc.UseNonce(r.Context(), p.Params.KeyID, p.Params.Nonce); err != nil {
