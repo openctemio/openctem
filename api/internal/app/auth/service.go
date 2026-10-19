@@ -666,30 +666,31 @@ func (s *AuthService) authenticatePassword(ctx context.Context, rawEmail, passwo
 		_ = s.passwordHasher.Verify(password, s.dummyPasswordHash())
 		return nil, ErrInvalidCredentials
 	}
-	if err := s.passwordHasher.Verify(password, *passwordHash); err != nil {
-		if u.IsLocked() {
-			// Already locked: do not extend the lockout or audit each guess
-			// against it; the answer is the same as any wrong password.
-			return nil, ErrInvalidCredentials
-		}
-		// Record failed login attempt
+	// A locked account gives the wrong-password answer to every password,
+	// the right one included, and every attempt against it counts: answering
+	// "locked" only to the right password told a guesser who rotates source
+	// addresses which guess was right, and uncounted guesses during the lock
+	// were free. The work done (hash check, counter update, audit) is the
+	// same for both, so the timing does not tell them apart either.
+	verifyErr := s.passwordHasher.Verify(password, *passwordHash)
+	if locked := u.IsLocked(); verifyErr != nil || locked {
 		s.recordPasswordFailure(ctx, u)
 
-		// Audit failed login
+		reason := "invalid credentials"
+		if locked {
+			reason = "account locked"
+		}
 		actx := auditapp.AuditContext{
 			ActorEmail: email,
 			ActorIP:    ipAddress,
 			UserAgent:  userAgent,
 		}
-		_ = s.auditService.LogAuthFailed(ctx, actx, "invalid credentials")
+		_ = s.auditService.LogAuthFailed(ctx, actx, reason)
 
 		return nil, ErrInvalidCredentials
 	}
 
-	// Correct password: now the account state may be stated.
-	if u.IsLocked() {
-		return nil, ErrAccountLocked
-	}
+	// Correct password on an unlocked account: now its state may be stated.
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended
 	}
