@@ -344,7 +344,9 @@ func digestText(d threatalert.Digest, baseline bool) (string, string) {
 // mailDigests e-mails each member who asked for the digest, counted within
 // their data scope; weekly members get it on Mondays, covering seven days.
 func (p *Planner) mailDigests(ctx context.Context, tenantID shared.ID, local time.Time, since time.Time, baseline bool) {
-	if p.mail == nil {
+	if p.mail == nil || p.scopes == nil {
+		// No scope resolver: no e-mail (fail closed; an unresolved scope
+		// would count every asset of the organization).
 		return
 	}
 	recipients, err := p.store.DigestRecipients(ctx, tenantID)
@@ -363,13 +365,9 @@ func (p *Planner) mailDigests(ctx context.Context, tenantID shared.ID, local tim
 			}
 			from = p.now().Add(-7 * 24 * time.Hour)
 		}
-		var scope *shared.DataScope
-		if p.scopes != nil {
-			s, err := p.scopes.ForUser(ctx, tenantID, rc.UserID)
-			if err != nil {
-				continue // fail closed: no scope, no mail
-			}
-			scope = s
+		scope, err := p.scopes.ForUser(ctx, tenantID, rc.UserID)
+		if err != nil {
+			continue // fail closed: no scope, no mail
 		}
 		d, err := p.store.DigestSummary(ctx, tenantID, from, scope)
 		if err != nil || (d.Empty() && !baseline) || (baseline && d.Exploited == 0 && d.Empty()) {

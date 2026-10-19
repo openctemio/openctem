@@ -92,7 +92,9 @@ type PlannerStore interface {
 	AlertByVuln(ctx context.Context, tenantID shared.ID, vulnID string) (*Alert, error)
 	// SaveAlert inserts or updates the alert (by organization and
 	// vulnerability), sets its id and replaces its assets, in one
-	// transaction.
+	// transaction. An alert read before (non-zero id) is updated only when
+	// it has not changed since (its updated_at); otherwise ErrStale, so a
+	// triage decision made meanwhile is never overwritten.
 	SaveAlert(ctx context.Context, a *Alert, assets []Asset) error
 	// ResolveVuln resolves every open alert of a vulnerability (a rejection
 	// upstream) and reports how many.
