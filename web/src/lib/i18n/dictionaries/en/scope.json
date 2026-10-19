@@ -313,6 +313,8 @@
   "scope.ciTrust.notSeen": "no verified pipeline yet",
   "scope.settings.ciScopeRequiresProof": "Require proof for CI scopes",
   "scope.settings.ciScopeRequiresProofHint": "Off (default): the repositories a CI trust names are in scope as soon as the trust is saved, and a verified pipeline run is shown as evidence. On: a CI trust's new repository entries wait until a verified pipeline run under them.",
+  "scope.refusal.label.unresolved": "Does not resolve",
+  "scope.refusal.message.unresolved": "This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.",
   "scope.strip.entriesInEffect": "Entries in effect",
   "scope.strip.exclusionsInEffect": "Exclusions in effect",
   "scope.strip.waiting": "Waiting for approval",

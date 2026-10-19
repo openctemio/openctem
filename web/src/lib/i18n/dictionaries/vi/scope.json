@@ -313,6 +313,8 @@
   "scope.ciTrust.notSeen": "chưa có pipeline đã xác minh",
   "scope.settings.ciScopeRequiresProof": "Yêu cầu bằng chứng cho phạm vi CI",
   "scope.settings.ciScopeRequiresProofHint": "Tắt (mặc định): các kho mã mà một cấu hình tin cậy CI nêu tên vào phạm vi ngay khi lưu cấu hình, và lần chạy pipeline đã xác minh được hiển thị làm bằng chứng. Bật: các mục kho mã mới của cấu hình tin cậy CI chờ đến khi có một lần chạy pipeline đã xác minh.",
+  "scope.refusal.label.unresolved": "Không phân giải được",
+  "scope.refusal.message.unresolved": "Tên này không phân giải được trong DNS từ nền tảng. Hãy sửa bản ghi DNS của nó hoặc quét địa chỉ của nó.",
   "scope.strip.entriesInEffect": "Mục đang hiệu lực",
   "scope.strip.exclusionsInEffect": "Loại trừ đang hiệu lực",
   "scope.strip.waiting": "Chờ phê duyệt",
