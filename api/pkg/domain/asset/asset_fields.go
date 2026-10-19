@@ -46,7 +46,7 @@ var AssetFields = filterspec.MustRegistry(filterspec.Registry{
 		SQL: "assets.data_classification", Nullable: true},
 	// A NULL flag counts as false.
 	filterspec.Field{Name: "internet_facing", Type: filterspec.TypeBool, Ops: []filterspec.Op{filterspec.OpEq}, SQL: "assets.is_internet_accessible",
-		BoolTemplate: "assets.is_internet_accessible"},
+		BoolTemplate: InternetFacingSQL("assets")},
 	filterspec.Field{Name: "crown_jewel", Type: filterspec.TypeBool, Ops: []filterspec.Op{filterspec.OpEq}, SQL: "assets.is_crown_jewel",
 		BoolTemplate: "assets.is_crown_jewel"},
 	filterspec.Field{Name: "tag", Type: filterspec.TypeString, Ops: assetInNotIn, SQL: "assets.tags",

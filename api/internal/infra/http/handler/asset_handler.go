@@ -348,11 +348,16 @@ type AssetResponse struct {
 	DiscoveredAt    *time.Time `json:"discovered_at,omitempty"`
 
 	// CTEM
-	ComplianceScope      []string `json:"compliance_scope,omitempty"`
-	DataClassification   string   `json:"data_classification,omitempty"`
-	PIIDataExposed       bool     `json:"pii_data_exposed"`
-	PHIDataExposed       bool     `json:"phi_data_exposed"`
-	IsInternetAccessible bool     `json:"is_internet_accessible"`
+	ComplianceScope    []string `json:"compliance_scope,omitempty"`
+	DataClassification string   `json:"data_classification,omitempty"`
+	PIIDataExposed     bool     `json:"pii_data_exposed"`
+	PHIDataExposed     bool     `json:"phi_data_exposed"`
+	// IsInternetAccessible is the raw reachability signal a source reported.
+	// Show and filter on InternetFacing, the product's one definition.
+	IsInternetAccessible bool `json:"is_internet_accessible"`
+	// InternetFacing: exposure is public or a source reported the asset
+	// reachable from the internet (asset.InternetFacing).
+	InternetFacing bool `json:"internet_facing"`
 
 	// CTEM Scoping: CIA impact rating (low | moderate | high; empty = not rated)
 	ImpactConfidentiality string `json:"impact_confidentiality,omitempty"`
@@ -478,6 +483,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		PIIDataExposed:       a.PIIDataExposed(),
 		PHIDataExposed:       a.PHIDataExposed(),
 		IsInternetAccessible: a.IsInternetAccessible(),
+		InternetFacing:       a.IsInternetFacing(),
 
 		// CTEM Scoping: CIA impact rating
 		ImpactConfidentiality: a.ImpactConfidentiality().String(),
@@ -622,7 +628,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        has_owner             query bool   false "Filter assets with (true) / without (false) an assigned owner"
 // @Param        data_classifications  query string false "Filter by data classification (comma-separated: public,internal,confidential,restricted,secret)"
 // @Param        is_control_plane      query bool   false "Filter assets that are a control-plane dependency"
-// @Param        is_internet_accessible query bool  false "Filter internet-reachable assets"
+// @Param        internet_facing query bool  false "Filter internet-facing assets (exposure public or reported reachable)"
 // @Param        environments          query string false "Filter by environment (comma-separated: production,staging,development,testing,dr)"
 // @Param        providers             query string false "Filter by provider/source (comma-separated)"
 // @Param        last_seen_after       query string false "Filter assets last seen at/after this time (RFC3339 or YYYY-MM-DD)"
@@ -683,7 +689,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		HasOwner:             parseQueryBoolPtr(query.Get("has_owner")),
 		DataClassifications:  parseQueryArray(query.Get("data_classifications")),
 		IsControlPlane:       parseQueryBoolPtr(query.Get("is_control_plane")),
-		IsInternetAccessible: parseQueryBoolPtr(query.Get("is_internet_accessible")),
+		InternetFacing:       parseQueryBoolPtr(query.Get("internet_facing")),
 		Environments:         parseQueryArray(query.Get("environments")),
 		Providers:            parseQueryArray(query.Get("providers")),
 		LastSeenAfter:        parseQueryTimePtr(query.Get("last_seen_after")),
@@ -1653,7 +1659,7 @@ type AssetStatsResponse struct {
 	ByDataClassification map[string]int `json:"by_data_classification,omitempty"`
 	ByEnvironment        map[string]int `json:"by_environment,omitempty"`
 	ByProvider           map[string]int `json:"by_provider,omitempty"`
-	ByInternetAccessible map[string]int `json:"by_internet_accessible,omitempty"`
+	ByInternetFacing     map[string]int `json:"by_internet_facing,omitempty"`
 	ByHasOwner           map[string]int `json:"by_has_owner,omitempty"`
 	ByControlPlane       map[string]int `json:"by_control_plane,omitempty"`
 	ByBusinessUnit       map[string]int `json:"by_business_unit,omitempty"`
@@ -1709,7 +1715,7 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		ByDataClassification: aggStats.ByDataClassification,
 		ByEnvironment:        aggStats.ByEnvironment,
 		ByProvider:           aggStats.ByProvider,
-		ByInternetAccessible: aggStats.ByInternetAccessible,
+		ByInternetFacing:     aggStats.ByInternetFacing,
 		ByHasOwner:           aggStats.ByHasOwner,
 		ByControlPlane:       aggStats.ByControlPlane,
 		ByBusinessUnit:       aggStats.ByBusinessUnit,

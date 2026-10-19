@@ -1094,5 +1094,6 @@
   "findings.importResults.vexModeEnforce": "Các tuyên bố not_affected yêu cầu phê duyệt dương tính giả cho các phát hiện đang mở khớp; các phát hiện vẫn mở cho đến khi người khác phê duyệt.",
   "findings.importResults.vexModeEnforceNoApprove": "Các tuyên bố not_affected được lưu trên các phát hiện khớp; yêu cầu phê duyệt dương tính giả cần quyền phê duyệt.",
   "findings.importResults.vexModeOff": "Các tuyên bố VEX chỉ được lưu trên các phát hiện khớp.",
-  "findings.importResults.vexModeDryRun": "Các tuyên bố VEX được lưu trên các phát hiện khớp và được đếm; không có yêu cầu phê duyệt dương tính giả nào được tạo (chế độ chạy thử)."
+  "findings.importResults.vexModeDryRun": "Các tuyên bố VEX được lưu trên các phát hiện khớp và được đếm; không có yêu cầu phê duyệt dương tính giả nào được tạo (chế độ chạy thử).",
+  "findings.contextChips.assetGroup": "Nhóm tài sản"
 }

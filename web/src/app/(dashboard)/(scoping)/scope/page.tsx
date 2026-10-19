@@ -119,31 +119,39 @@ export default function ScopePage() {
   const showApprovals = entriesNeedApproval || pending > 0
   const tab: ScopeTab = tabVisible(tabParam) ? (tabParam as ScopeTab) : 'in'
 
+  // The strip counts what is in effect and each metric opens exactly those
+  // rows (its tab filtered to status active); the tabs count every row they
+  // list, whatever its status.
+  const openInEffect = (next: 'in' | 'out') => {
+    selectTab(next)
+    setStatus('active')
+  }
   const metrics: MetricStripItem[] = [
     {
       key: 'in',
-      label: 'In scope',
+      label: t('scope.strip.entriesInEffect', 'Entries in effect'),
       value: activeEntries?.total ?? 0,
-      hint: 'entries in effect',
-      onClick: () => selectTab('in'),
-      active: tab === 'in',
+      onClick: () => openInEffect('in'),
+      active: tab === 'in' && status === 'active',
     },
     {
       key: 'out',
-      label: 'Out of scope',
+      label: t('scope.strip.exclusionsInEffect', 'Exclusions in effect'),
       value: activeOut?.total ?? 0,
-      hint: 'exclusions in effect',
-      onClick: () => selectTab('out'),
-      active: tab === 'out',
+      onClick: () => openInEffect('out'),
+      active: tab === 'out' && status === 'active',
     },
     ...(showApprovals
       ? ([
           {
             key: 'approvals',
-            label: 'Waiting for approval',
+            label: t('scope.strip.waiting', 'Waiting for approval'),
             value: pending,
             tone: pending > 0 ? 'warning' : 'default',
-            hint: pending > 0 ? 'authorize nothing until approved' : undefined,
+            hint:
+              pending > 0
+                ? t('scope.strip.waitingHint', 'authorize nothing until approved')
+                : undefined,
             onClick: () => selectTab('approvals'),
             active: tab === 'approvals',
           },
@@ -195,10 +203,10 @@ export default function ScopePage() {
         <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
           <TabsList>
             <TabsTrigger value="in">
-              In scope <TabsCount value={inEntries?.total ?? '…'} />
+              {t('scope.tabs.entries', 'Entries')} <TabsCount value={inEntries?.total ?? '…'} />
             </TabsTrigger>
             <TabsTrigger value="out">
-              Out of scope <TabsCount value={outRows?.total ?? '…'} />
+              {t('scope.tabs.exclusions', 'Exclusions')} <TabsCount value={outRows?.total ?? '…'} />
             </TabsTrigger>
             {showApprovals && (
               <TabsTrigger value="approvals">
