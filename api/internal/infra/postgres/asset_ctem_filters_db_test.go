@@ -49,6 +49,9 @@ func TestAsset_CTEMInventoryFilters(t *testing.T) {
 	assetA := insertCTEMAsset(t, db, tenant, "ctem-a", "secret", true, "production", "aws", now)
 	assetB := insertCTEMAsset(t, db, tenant, "ctem-b", "internal", false, "staging", "github", now.Add(-60*24*time.Hour))
 	assetC := insertCTEMAsset(t, db, tenant, "ctem-c", "", false, "", "", now)
+	// assetC is public with no reachability flag: internet-facing by the one
+	// definition (exposure public OR is_internet_accessible).
+	mustExec(t, db, `UPDATE assets SET exposure = 'public' WHERE id = $1`, assetC)
 
 	// Business unit BU1 with assetA as a member.
 	bu1 := shared.NewID().String()
@@ -97,7 +100,8 @@ func TestAsset_CTEMInventoryFilters(t *testing.T) {
 		}
 	}
 
-	assertOnly("internet_accessible", list(asset.NewFilter().WithIsInternetAccessible(true)), assetA)
+	assertOnly("internet_facing", list(asset.NewFilter().WithInternetFacing(true)), assetA, assetC)
+	assertOnly("internet_facing=false", list(asset.NewFilter().WithInternetFacing(false)), assetB)
 	assertOnly("data_classification=secret", list(asset.NewFilter().WithDataClassifications("secret")), assetA)
 	assertOnly("environment=production", list(asset.NewFilter().WithEnvironments("production")), assetA)
 	assertOnly("provider=aws", list(asset.NewFilter().WithProviders(asset.Provider("aws"))), assetA)
@@ -119,8 +123,8 @@ func TestAsset_CTEMInventoryFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("aggregate stats: %v", err)
 	}
-	checkCount(t, "by_internet_accessible[true]", stats.ByInternetAccessible["true"], 1)
-	checkCount(t, "by_internet_accessible[false]", stats.ByInternetAccessible["false"], 2)
+	checkCount(t, "by_internet_facing[true]", stats.ByInternetFacing["true"], 2)
+	checkCount(t, "by_internet_facing[false]", stats.ByInternetFacing["false"], 1)
 	checkCount(t, "by_data_classification[secret]", stats.ByDataClassification["secret"], 1)
 	checkCount(t, "by_data_classification[unset]", stats.ByDataClassification["unset"], 1)
 	checkCount(t, "by_environment[production]", stats.ByEnvironment["production"], 1)

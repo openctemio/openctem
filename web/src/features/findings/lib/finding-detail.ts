@@ -289,6 +289,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     verifiedAt: api.verified_at,
     createdAt: api.created_at,
     updatedAt: api.updated_at,
+    rowVersion: api.row_version,
     activities: mapActivities(api),
     commentsCount: api.comments_count,
 

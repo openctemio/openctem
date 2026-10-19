@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/module"
@@ -78,7 +80,7 @@ var mttdInternetFacingQuery = `
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 			AND (($3::bool AND ` + programVisibleSQL("a.id") + `) OR NOT a.program_only)
 			AND a.status <> 'archived'
-			AND (a.exposure = 'public' OR a.is_internet_accessible = true)
+			AND ` + asset.InternetFacingSQL("a") + `
 			AND a.first_seen >= NOW() - make_interval(days => $2::int)
 	),
 	detected AS MATERIALIZED (
@@ -296,7 +298,7 @@ var timeToOwnerInternetFacingQuery = `
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 			AND (($3::bool AND ` + programVisibleSQL("a.id") + `) OR NOT a.program_only)
 			AND a.status <> 'archived'
-			AND (a.exposure = 'public' OR a.is_internet_accessible = true)
+			AND ` + asset.InternetFacingSQL("a") + `
 			AND a.first_seen >= NOW() - make_interval(days => $2::int)
 	),
 	stopped AS (

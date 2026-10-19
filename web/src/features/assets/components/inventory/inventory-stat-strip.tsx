@@ -44,6 +44,8 @@ interface StatStripProps {
   stats: AssetStatsData
   filters: InventoryFilters
   isLoading?: boolean
+  /** The counts failed to load: every metric shows "—", never 0. */
+  isError?: boolean
   onChange: (next: InventoryFilters) => void
   className?: string
   /** Typed or lens mode: the type's plural ("Hosts") or the lens's label. */
@@ -56,6 +58,7 @@ export function InventoryStatStrip({
   stats,
   filters,
   isLoading,
+  isError = false,
   onChange,
   className,
   typeLabel,
@@ -90,14 +93,15 @@ export function InventoryStatStrip({
     {
       id: 'internet',
       label: t('assets.stats.internetFacing', 'Internet-facing'),
-      // One definition across the product (research/22 P0-12): exposure =
-      // public, the population the Attack surface pages count.
-      value: stats.byExposure['public'] ?? 0,
-      active: isPublicOnly(filters.exposures),
+      // One definition across the product: internet_facing (exposure public
+      // or reported reachable), the population the Attack surface pages and
+      // Crown jewels count.
+      value: stats.byInternetFacing['true'] ?? 0,
+      active: filters.isInternetFacing === true,
       toggle: (f) =>
-        isPublicOnly(f.exposures)
-          ? { ...f, exposures: undefined, page: 1 }
-          : { ...f, exposures: ['public'], page: 1 },
+        f.isInternetFacing === true
+          ? { ...f, isInternetFacing: undefined, page: 1 }
+          : { ...f, isInternetFacing: true, page: 1 },
     },
     {
       id: 'unowned',
@@ -146,15 +150,13 @@ export function InventoryStatStrip({
       items={defs.map((d) => ({
         key: d.id,
         label: d.label,
-        value: d.value,
+        value: isError ? '—' : d.value,
+        hint:
+          isError && d.id === 'total' ? t('assets.stats.unavailable', 'Could not load') : undefined,
         tone: d.tone,
         active: d.active,
         onClick: () => onChange(d.toggle(filters)),
       }))}
     />
   )
-}
-
-function isPublicOnly(exposures: readonly string[] | undefined): boolean {
-  return exposures?.length === 1 && exposures[0] === 'public'
 }
