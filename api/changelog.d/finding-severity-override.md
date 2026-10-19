@@ -7,7 +7,7 @@
 
 - `PATCH /api/v1/findings/{id}/severity` takes a required `reason` and `restore: true` to go back to the reported severity. Findings show `source_severity`, `severity_override` and `pending_severity_request`.
 - A downgrade follows the organization's false-positive approval policy (level and tiers): when the caller may not decide alone it becomes a pending request, approved or rejected at `POST /api/v1/findings/{id}/severity-requests/{requestId}/{approve,reject}` (`findings:approve`) or withdrawn with `/cancel`. An allowed downgrade may extend the SLA deadline up to the new class's window from the first detection.
-- Migrations `002960_finding_severity_override` (columns, `finding_severity_requests`, review trigger) and `002961_finding_severity_override_validate`; safe on populated tables (nullable columns, constraints added NOT VALID then validated).
+- Migrations `002965_finding_severity_override` (columns, `finding_severity_requests`, review trigger) and `002966_finding_severity_override_validate`; safe on populated tables (nullable columns, constraints added NOT VALID then validated).
 
 ### Behaviour change: severity changes need a reason
 
