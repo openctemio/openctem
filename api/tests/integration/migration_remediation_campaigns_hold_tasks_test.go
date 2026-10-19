@@ -122,7 +122,7 @@ func TestMigrationRemediationCampaignsHoldTasks(t *testing.T) {
 	campaign(c1, tenantA, "Patch CVE wave", "draft", `{"cve_ids":["CVE-2024-0001","CVE-2024-0002"]}`, "2026-01-01", gone, nil)
 	campaign(c2, tenantA, "Fix picked findings", "active", `{"finding_ids":["`+f1+`","`+f4+`","`+f6+`"]}`, "2026-02-01", dev, group)
 	campaign(c3, tenantA, "Patch critical", "active", `{"severities":["critical"]}`, "2026-03-01", nil, nil)
-	campaign(c4, tenantA, "Old programme", "completed", `{}`, "2025-01-01", nil, nil)
+	campaign(c4, tenantA, "Old program", "completed", `{}`, "2025-01-01", nil, nil)
 	campaign(c5, tenantA, "Late claim", "draft", `{"finding_id":"`+f7+`"}`, "2026-04-01", nil, nil)
 	campaign(c6, tenantA, "Done long ago", "completed", `{"finding_ids":["`+f5+`"]}`, "2025-02-01", nil, nil)
 	campaign(c7, tenantA, "Upgrade lodash", "active", `{"remediation_key":"upgrade:npm:lodash:4.17.21"}`, "2026-05-01", nil, nil)
