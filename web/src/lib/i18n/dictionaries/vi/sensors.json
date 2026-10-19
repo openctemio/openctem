@@ -1364,7 +1364,6 @@
   "sensors.jobSafety.loosen.interactsh": "Job quét có thể dùng callback ngoài băng tới máy chủ bên ngoài.",
   "sensors.jobSafety.loosen.customTemplates": "Job quét có thể mang template tùy chỉnh.",
   "sensors.jobSafety.loosen.insecureTls": "Công cụ quét có thể chấp nhận chứng chỉ TLS không hợp lệ.",
-  "sensors.jobSafety.loosen.insecureTls": "Công cụ quét có thể chấp nhận chứng chỉ TLS không hợp lệ.",
   "sensors.checks.label.setup": "Thiết lập",
   "sensors.checks.label.posture": "Tư thế bảo mật",
   "sensors.checks.setup.text": "Sensor báo các kiểm tra thiết lập cần chú ý. Mở Thiết lập & sức khỏe để xem chi tiết.",
