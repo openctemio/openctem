@@ -37,6 +37,16 @@ The claim SQL lives in `internal/infra/postgres/command_repository.go`
 (`pendingForSensorWhere`); the dispatch gate in
 `internal/app/command/local_policy.go`.
 
+## The shared fleet
+
+When no sensor of the organization may take a task, the answer says
+whether the shared fleet was an option (`shared_fleet`): `not_used` (the
+organization may use shared sensors, but the task was routed to its own,
+for example a scan set to run on the organization's sensors only) or
+`not_allowed` (it may not now; `shared_fleet_reason` is the access policy's
+reason, English). The run page shows it under the summary, so a run does
+not wait in silence until its timeout (research/191 W-1).
+
 ## Waiting for hosts
 
 When `host_busy` holds a task, the answer says how many of its hosts other

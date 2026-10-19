@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -215,7 +216,7 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 	// group.
 	if filter.DataScopeUserID != nil {
 		scope := &shared.DataScope{TenantID: *filter.TenantID, UserID: *filter.DataScopeUserID, Unrestricted: filter.DataScopeUnrestricted}
-		cond, scopeArgs := dataScopeCondAt("f.asset_id", scope, argOffset)
+		cond, scopeArgs := filterspec.AssigneeScopeSQL("f.asset_id", "f.assigned_to", scope, argOffset)
 		clauses = append(clauses, cond)
 		args = append(args, scopeArgs...)
 	}

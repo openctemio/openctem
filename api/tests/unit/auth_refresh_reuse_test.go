@@ -115,3 +115,23 @@ func TestAuthService_ExchangeToken_RotationFailureRefuses(t *testing.T) {
 		t.Fatal("the exchange must fail when the old token cannot be marked used")
 	}
 }
+
+// Two concurrent refreshes of one token both pass the read-time checks; the
+// loser of the conditional spend is a reuse and ends the session, so the
+// family never forks.
+func TestAuthService_RefreshToken_LostSpendRaceIsReuse(t *testing.T) {
+	svc, deps := newTestAuthService()
+	rt, sid := loginPassword(t, svc, deps, "race@example.com")
+	deps.rtRepo.lostSpendRace = true
+
+	_, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{RefreshToken: rt, TenantID: shared.NewID().String()})
+	if !errors.Is(err, session.ErrRefreshTokenRevoked) {
+		t.Fatalf("lost spend race: want ErrRefreshTokenRevoked, got %v", err)
+	}
+	if deps.sessionRepo.sessions[sid].IsActive() {
+		t.Fatal("the session must be revoked")
+	}
+	if deps.rtRepo.revokeByFamilyCalls != 1 {
+		t.Fatalf("family must be revoked once, got %d", deps.rtRepo.revokeByFamilyCalls)
+	}
+}

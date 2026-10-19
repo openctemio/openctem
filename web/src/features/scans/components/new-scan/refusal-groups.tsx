@@ -92,6 +92,8 @@ function useGroupTitle(g: RefusalGroup): string {
         '{count} resolve to private addresses outside every scan zone',
         vars
       )
+    case 'unresolved':
+      return t('scans.groups.unresolved', '{count} do not resolve in DNS', vars)
     case 'entry':
       if (g.code === 'entry_pending')
         return t('scans.groups.entryPending', '{count} wait for {pattern} to be approved', vars)
@@ -143,6 +145,11 @@ function useGroupHint(g: RefusalGroup, probeTier?: number): string {
       return t(
         'scans.groups.zoneHint',
         'Scanning an internal address would hit your own network, so a scan zone must say which of your sensors may reach it.'
+      )
+    case 'unresolved':
+      return t(
+        'scans.groups.unresolvedHint',
+        'The platform found no DNS record for these names. Fix the DNS record, or scan their addresses instead.'
       )
     case 'entry':
       return t(
