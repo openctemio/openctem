@@ -1,8 +1,8 @@
 package integration
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
