@@ -157,6 +157,24 @@ func registerDashboardRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerDashboardDataRoutes registers "Rebuild dashboard data"
+// (docs/architecture/dashboards.md, "Facts maintainer"): the organization's
+// owners and administrators read the status of its dashboard facts and ask
+// for a full rebuild, at most once per hour (429 with Retry-After). The
+// rebuild recomputes derived data only and changes no identity, privilege or
+// trust, so it takes no step-up; the request is audited.
+func registerDashboardDataRoutes(
+	router Router,
+	h *handler.DashboardFactsHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	router.Group("/api/v1/dashboard-data", func(r Router) {
+		r.GET("/", h.Status, middleware.RequireAdmin())
+		r.POST("/rebuild", h.RequestRebuild, middleware.RequireAdmin())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerAuditRoutes registers audit log endpoints.
 // Audit logs are tenant-scoped (tenant from JWT token).
 // Permission model:
