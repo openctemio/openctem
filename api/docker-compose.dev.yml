@@ -24,8 +24,8 @@ services:
       target: development
     restart: on-failure
     ports:
-      - "8080:8080" # HTTP API
-      - "2345:2345" # Delve debugger
+      - "127.0.0.1:8080:8080" # HTTP API
+      - "127.0.0.1:2345:2345" # Delve debugger
     environment:
       # Application
       APP_NAME: openctem
@@ -38,7 +38,7 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${DB_USER:-openctem}
-      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD (see .env.example)}
       DB_NAME: ${DB_NAME:-openctem}
       DB_SSLMODE: disable
       # Redis

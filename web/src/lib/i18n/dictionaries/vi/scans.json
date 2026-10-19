@@ -1989,6 +1989,8 @@
   "scans.quickPreview.refused.invalid_target": "Mục tiêu này không hợp lệ. Hãy nhập máy chủ, địa chỉ, dải địa chỉ hoặc *.example.com.",
   "scans.quickPreview.refused.not_allowed": "Bạn không thể quét mục tiêu này: nằm ngoài phạm vi hoặc quyền truy cập dữ liệu của bạn.",
   "scans.quickPreview.refused.run_refused": "Không thể quét mục tiêu này như đã nhập. Hãy kiểm tra lại và thử lại.",
+  "scans.approvalSettings.forcedNote": "Tổ chức của bạn đã chọn {chosen}. Lựa chọn này áp dụng nếu quản trị viên nền tảng ngừng bắt buộc {mode}.",
+  "scans.cell.waitingForSensor": "Đang chờ sensor",
   "scans.groups.unresolved": "{count} không phân giải được trong DNS",
   "scans.groups.unresolvedHint": "Nền tảng không tìm thấy bản ghi DNS nào cho các tên này. Hãy sửa bản ghi DNS, hoặc quét địa chỉ của chúng.",
   "scans.summary.unresolved": "{count} không phân giải được trong DNS",

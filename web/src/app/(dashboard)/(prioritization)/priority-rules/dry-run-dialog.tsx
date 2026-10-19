@@ -71,7 +71,11 @@ interface DryRunSample {
 // Response of POST /api/v1/priority-rules/dry-run.
 export interface DryRunResult {
   evaluated: number
+  /** The tenant's open findings; above `cap` the counts are a sample. */
+  open_findings: number
   matched: number
+  /** Matches a platform floor (KEV / validated ⇒ at least P1) keeps above the rule's class. */
+  floored: number
   capped: boolean
   cap: number
   sample: DryRunSample[]
@@ -206,7 +210,8 @@ function LoadingState() {
 
 function ResultView({ result, targetClass }: { result: DryRunResult; targetClass: PriorityClass }) {
   const { t } = useTranslation()
-  const { evaluated, matched, capped, cap, sample, would_be_distribution } = result
+  const { evaluated, open_findings, matched, floored, capped, cap, sample, would_be_distribution } =
+    result
 
   // Nothing to evaluate — no open findings were in scope at all.
   if (evaluated === 0) {
@@ -227,16 +232,49 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
       <div className="rounded-md border p-4">
         <div className="text-muted-foreground mb-2 flex items-center gap-2 text-sm font-medium">
           <ListChecks className="size-4" />
-          Impact
+          {t('prioritization.dryRun.impact', 'Impact')}
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-2xl font-bold tabular-nums">{matched}</span>
           <span className="text-muted-foreground text-sm">
-            of <span className="tabular-nums">{evaluated}</span> finding
-            {evaluated === 1 ? '' : 's'} would be reclassified to{' '}
+            {t(
+              'prioritization.dryRun.matchedOf',
+              'of {evaluated} findings would be reclassified to',
+              {
+                evaluated,
+              }
+            )}{' '}
             <PriorityClassBadge priorityClass={targetClass} showTooltip={false} />
           </span>
         </div>
+        {capped ? (
+          <p
+            className="mt-2 text-xs text-amber-600 dark:text-amber-400" /* palette-ok: caution note, no warning token */
+          >
+            {t(
+              'prioritization.dryRun.sampled',
+              'Sample: the {evaluated} most recent of {total} open findings were evaluated (limit {cap}). Counts for the whole organization may be higher.',
+              { evaluated, total: open_findings, cap }
+            )}
+          </p>
+        ) : (
+          <p className="text-muted-foreground mt-2 text-xs">
+            {t(
+              'prioritization.dryRun.wholeTenant',
+              'All {total} open findings of the organization were evaluated.',
+              { total: open_findings }
+            )}
+          </p>
+        )}
+        {floored > 0 ? (
+          <p className="text-muted-foreground mt-1 text-xs">
+            {t(
+              'prioritization.dryRun.floored',
+              '{count} matching findings stay at P1 or above: known exploited (KEV) or validated findings cannot go below P1.',
+              { count: floored }
+            )}
+          </p>
+        ) : null}
       </div>
 
       {/* Would-be distribution */}
@@ -262,11 +300,12 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm font-medium">
           <span>Sample findings</span>
-          {capped ? (
+          {sample.length < matched ? (
             <span className="text-muted-foreground text-xs font-normal">
-              Showing first <span className="tabular-nums">{sample.length}</span> of{' '}
-              <span className="tabular-nums">{matched}</span> matches (capped at{' '}
-              <span className="tabular-nums">{cap}</span>)
+              {t('prioritization.dryRun.sampleShowing', 'Showing {shown} of {matched} matches', {
+                shown: sample.length,
+                matched,
+              })}
             </span>
           ) : null}
         </div>
