@@ -614,6 +614,9 @@ const (
 	ActionRemediationCampaignUpdated       Action = "remediation_campaign.updated"
 	ActionRemediationCampaignStatusChanged Action = "remediation_campaign.status_changed"
 	ActionRemediationCampaignDeleted       Action = "remediation_campaign.deleted"
+	// ActionRemediationCampaignMigrated: written once per campaign by the
+	// migration that turned what a campaign tracked into its tasks.
+	ActionRemediationCampaignMigrated Action = "remediation_campaign.migrated"
 
 	// Scan config actions
 	ActionScanConfigCreated   Action = "scan_config.created"
@@ -853,7 +856,7 @@ func (a Action) IsValid() bool {
 		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
 		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged,
 		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
-		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted, ActionRemediationCampaignMigrated,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
 		ActionAuditChainRebaselined, ActionAuditLogExported:
 		return true
@@ -973,7 +976,7 @@ func (a Action) Category() string {
 		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged:
 		return "pentest_campaign"
 	case ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
-		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted:
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted, ActionRemediationCampaignMigrated:
 		return "remediation_campaign"
 	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
