@@ -22,7 +22,7 @@
 import Link from '@/components/link'
 import { AlertCircle, ArrowLeft, RefreshCw, ShieldOff, GaugeCircle } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -33,6 +33,7 @@ import { MaturityBreakdownCard } from '@/features/ctem-maturity/components/matur
 import { MaturityTrendCard } from '@/features/ctem-maturity/components/maturity-trend'
 import { StageCoverageCard } from '@/features/ctem-maturity/components/stage-coverage'
 import { useTranslation } from '@/context/i18n-provider'
+import { accessStateOf } from '@/lib/api/access-state'
 
 function LoadingState() {
   return (
@@ -86,11 +87,16 @@ export default function CTEMMaturityPage() {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useCtemMaturity()
 
-  const status = (error as { statusCode?: number } | undefined)?.statusCode
+  const access = accessStateOf(error)
 
   const body = (() => {
-    // 403 → the ctem_cycles module is disabled for this tenant.
-    if (status === 403) return <ModuleDisabledState />
+    // A 403 is either the ctem_cycles module switched off, or a viewer
+    // restricted by data scope without the grant for organization figures:
+    // two different answers, never "module not enabled" for both.
+    if (access === 'module_off') return <ModuleDisabledState />
+    if (access === 'no_access') {
+      return <ErrorState title={t('insights.maturity.subject', 'program maturity')} error={error} />
+    }
 
     if (isLoading || (!data && !error)) return <LoadingState />
 

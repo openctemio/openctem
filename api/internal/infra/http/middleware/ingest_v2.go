@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/semaphore"
@@ -132,6 +133,15 @@ func V2ReadVerified(limits protov2.Limits) func(http.Handler) http.Handler {
 			// before reading a byte: the per-tenant concurrency bound alone
 			// does not bound many tenants at once.
 			weight := decodedWeight(r.ContentLength, encoding, limits)
+			// One organization (or the shared sensors together) holds at
+			// most its share of the budget, so it cannot spend it all and
+			// starve the others' uploads.
+			owner := v2BudgetOwner(r)
+			if !v2BudgetShares.tryAcquire(owner, weight, V2DecodeBudgetBytes/v2BudgetShareDivisor) {
+				writeV2RateLimited(w, 0)
+				return
+			}
+			defer v2BudgetShares.release(owner, weight)
 			if !v2DecodeBudget.TryAcquire(weight) {
 				writeV2RateLimited(w, 0)
 				return
@@ -168,6 +178,53 @@ func V2ReadVerified(limits protov2.Limits) func(http.Handler) http.Handler {
 var V2DecodeBudgetBytes int64 = 1 << 30
 
 var v2DecodeBudget = semaphore.NewWeighted(V2DecodeBudgetBytes)
+
+// v2BudgetShareDivisor: one owner (an organization, or all shared sensors
+// together) may hold at most 1/v2BudgetShareDivisor of the decode budget,
+// except that an owner holding nothing may always start one request (so a
+// maximal request still runs on a small budget).
+const v2BudgetShareDivisor = 4
+
+// v2BudgetShares is what each owner holds of the decode budget.
+var v2BudgetShares = &byteShares{held: map[string]int64{}}
+
+// v2BudgetOwner is whose share a result request counts against: its
+// organization, or the shared sensors' pool for a sensor without one.
+func v2BudgetOwner(r *http.Request) string {
+	if tid := GetTenantID(r.Context()); tid != "" {
+		return tid
+	}
+	return IngestSharedPoolKey
+}
+
+// byteShares bounds the bytes each key holds.
+type byteShares struct {
+	mu   sync.Mutex
+	held map[string]int64
+}
+
+// tryAcquire adds w to key's holding unless key already holds something
+// and would then exceed limit.
+func (b *byteShares) tryAcquire(key string, w, limit int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	h := b.held[key]
+	if h > 0 && h+w > limit {
+		return false
+	}
+	b.held[key] = h + w
+	return true
+}
+
+func (b *byteShares) release(key string, w int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if h := b.held[key] - w; h > 0 {
+		b.held[key] = h
+	} else {
+		delete(b.held, key) // keep the map bounded to active owners
+	}
+}
 
 // SetV2DecodeBudget replaces the budget (tests).
 func SetV2DecodeBudget(n int64) {

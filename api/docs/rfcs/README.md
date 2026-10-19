@@ -124,6 +124,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-113](RFC-113-sensor-tool-standard.md) | Sensor tool standard (one contract for jobs, targets and results) | Proposed (2026-10-17). |
 | [RFC-114](RFC-114-system-page.md) | System page and host operations for self-managed installs | Proposed (2026-10-17) |
 | [RFC-115](RFC-115-custom-query-language.md) | Custom query language | Accepted (2026-10-18). |
+| [RFC-116](RFC-116-sensor-relay.md) | Sensor relay and sealed envelopes | Accepted (2026-10-19). |
 | [RFC-117](RFC-117-emerging-threat-alerts.md) | Emerging-threat alerts | In progress (2026-10-19) |
 <!-- END RFC INDEX -->
 

@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -46,5 +50,17 @@ func TestParseTaskUpdate(t *testing.T) {
 		if _, err := parseTaskUpdate(rawBody(t, bad)); !errors.Is(err, shared.ErrValidation) {
 			t.Errorf("%s: want a validation error, got %v", bad, err)
 		}
+	}
+}
+
+// overdue is a boolean: anything else is a 400 before the service is asked.
+func TestRemediationTaskList_OverdueMustBeBoolean(t *testing.T) {
+	h := NewRemediationTaskHandler(nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/remediation/tasks?overdue=soon", nil)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, shared.NewID().String()))
+	rec := httptest.NewRecorder()
+	h.List(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("overdue=soon: status %d, want 400", rec.Code)
 	}
 }
