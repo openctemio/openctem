@@ -421,5 +421,7 @@
   "settings.desc.security-overview": "Điểm số và danh sách việc cần xử lý trước trong tổ chức của bạn.",
   "settings.securityCard.counts": "{risks} rủi ro · {warns} cảnh báo",
   "settings.securityCard.allGood": "Hiện không có gì cần xử lý.",
-  "settings.securityCard.open": "Mở tổng quan bảo mật"
+  "settings.securityCard.open": "Mở tổng quan bảo mật",
+  "settings.item.emerging-threats": "Mối đe dọa mới nổi",
+  "settings.desc.emerging-threats": "Khi nào và bằng cách nào các CVE mới hoặc mới bị khai thác sẽ cảnh báo bạn."
 }
