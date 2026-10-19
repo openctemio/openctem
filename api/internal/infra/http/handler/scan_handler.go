@@ -1296,7 +1296,7 @@ type ScanLastRunResponse struct {
 	CreatedAt   string  `json:"created_at"`
 	StartedAt   *string `json:"started_at,omitempty"`
 	CompletedAt *string `json:"completed_at,omitempty"`
-	// Progress is 0-100 for a live run: finished tasks of all tasks.
+	// Progress is 0-100 for a live run: finished steps of the planned steps.
 	Progress int `json:"progress"`
 	// RefusalCode and ErrorMessage say why a blocked or failed run ended.
 	RefusalCode  string                  `json:"refusal_code,omitempty"`

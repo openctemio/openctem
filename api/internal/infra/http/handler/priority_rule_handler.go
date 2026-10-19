@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,9 @@ type PriorityRuleHandler struct {
 	// dry-run endpoint returns 503 (no classifier wired, e.g. no database).
 	dryRunner priorityRuleDryRunner
 	audit     *auditapp.AuditService
+	// dryRunLimit rate limits the dry run per tenant: it classifies up to
+	// finding.DefaultDryRunCap open findings (scoring_preview_limit.go).
+	dryRunLimit *tenantRateLimiter
 }
 
 // SetAuditService wires the audit log for priority rule changes. A rule can
@@ -88,7 +92,8 @@ type priorityRuleDryRunner interface {
 
 // NewPriorityRuleHandler creates a new handler.
 func NewPriorityRuleHandler(db *sql.DB, log *logger.Logger) *PriorityRuleHandler {
-	return &PriorityRuleHandler{db: db, logger: log}
+	return &PriorityRuleHandler{db: db, logger: log,
+		dryRunLimit: newTenantRateLimiter(scoringPreviewPerMinute, scoringPreviewBurst)}
 }
 
 // SetDryRunner wires the priority-classification service used by the dry-run
@@ -176,7 +181,7 @@ func (h *PriorityRuleHandler) List(w http.ResponseWriter, r *http.Request) {
 			is_active, evaluation_order, created_at, updated_at
 		FROM priority_override_rules
 		WHERE tenant_id = $1
-		ORDER BY evaluation_order DESC, name ASC
+		ORDER BY evaluation_order DESC, created_at, id
 	`, tenantID)
 	if err != nil {
 		h.logger.Error("list priority rules", "error", err)
@@ -422,8 +427,11 @@ type dryRunSampleResponse struct {
 }
 
 // DryRun evaluates a DRAFT (possibly unsaved) priority rule against the tenant's
-// OPEN findings using the real classification engine, returning an exact match
-// count, a would-be priority-class distribution, and a bounded sample. Read-only:
+// OPEN findings using the real classification engine (platform floors and the
+// attribution cap included), returning an exact match count over the whole
+// tenant up to the cap ("capped" marks a sample, "open_findings" is the
+// tenant total), how many matches a floor keeps above the rule's class, a
+// would-be priority-class distribution, and a bounded sample. Read-only:
 // nothing is mutated or persisted. Backs the settings priority-rule "dry run"
 // dialog, replacing its client-side heuristic with real engine results.
 func (h *PriorityRuleHandler) DryRun(w http.ResponseWriter, r *http.Request) {
@@ -437,6 +445,14 @@ func (h *PriorityRuleHandler) DryRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		apierror.BadRequest("invalid tenant").WriteJSON(w)
 		return
+	}
+	if h.dryRunLimit != nil {
+		if ok, retryAfter := h.dryRunLimit.allow(tenantID, time.Now()); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			apierror.TooManyRequests(fmt.Sprintf("The rule dry run is limited to %d per minute. Try again in %d seconds.",
+				scoringPreviewPerMinute, retryAfter)).WriteJSON(w)
+			return
+		}
 	}
 
 	var req struct {
@@ -496,7 +512,9 @@ func (h *PriorityRuleHandler) DryRun(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"evaluated":             result.Evaluated,
+		"open_findings":         result.OpenFindings,
 		"matched":               result.Matched,
+		"floored":               result.Floored,
 		"capped":                result.Capped,
 		"cap":                   result.Cap,
 		"sample":                sample,

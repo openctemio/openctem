@@ -1,14 +1,15 @@
 # =============================================================================
 # Docker Compose - Base Configuration
 # =============================================================================
-# Shared services for development and production.
+# Shared services for DEVELOPMENT only: ports are published on 127.0.0.1 and
+# the database password must be set (DB_PASSWORD in .env). Not for production.
 #
 # Usage:
 #   Development: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #   Production:  not this file; use deploy/docker-compose.yml (one HTTPS port)
 #
-# Note: This base file exposes DB/Redis ports for development convenience.
-#       Production override should NOT expose these ports externally.
+# Note: This base file exposes DB/Redis ports on the loopback interface only,
+#       for development convenience.
 # =============================================================================
 
 services:
@@ -18,10 +19,10 @@ services:
   postgres:
     image: postgres:17-alpine
     ports:
-      - "${DB_EXTERNAL_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_EXTERNAL_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${DB_USER:-openctem}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD (see .env.example)}
       POSTGRES_DB: ${DB_NAME:-openctem}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -41,7 +42,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "${REDIS_EXTERNAL_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_EXTERNAL_PORT:-6379}:6379"
     command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
     volumes:
       - redis-data:/data

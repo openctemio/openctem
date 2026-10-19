@@ -280,19 +280,26 @@ a local administrator for when SSO is unavailable.
      two-minute leeway, a non-empty `sub`, and the nonce.
   4. **Matching, no JIT.** The administrator bound to (`iss`, `sub`) signs in.
      With no binding, an administrator whose email equals the token's email is
-     bound on this first sign-in, only if the email is verified
-     (`email_verified: true`, or Entra's `xms_edov: true`), the administrator
-     is active, not break-glass, and not bound to another subject. After that,
-     matching is by `iss` + `sub` only, never by email. An unknown identity is
-     refused; nothing is created.
+     matched, only if the email is verified (`email_verified: true`, or
+     Entra's `xms_edov: true`), the administrator is active, not break-glass,
+     and not bound to another subject. That match never binds by email alone:
+     the pending session carries (`iss`, `sub`), and the identity is bound only
+     after the administrator proves their own console second factor (TOTP,
+     security key or recovery code), conditionally (still unbound, same
+     enabled issuer). A trusted `acr`/`amr` never stands in for that factor on
+     a first sign-in. After that, matching is by `iss` + `sub` only, never by
+     email. An unknown identity is refused; nothing is created.
 - **Second factor.** The default still requires the console TOTP after an IdP
   sign-in. Reason: the console cannot see how the IdP authenticated the user,
   and an IdP compromise or a weak IdP policy would otherwise be enough to reach
   every organization. A super admin can opt in to accepting the IdP's MFA by
   listing trusted `acr` values (sent as `acr_values` and required in the
   token's `acr`) and/or `amr` values (any one present in the token's `amr`).
-  Only then does a matching token open a verified session directly. The
-  session records `auth_method = idp`.
+  Only then does a matching token of an already bound identity open a
+  verified session directly. Trusting a new `acr`/`amr` value, and changing
+  the issuer or the client id, needs a second super admin's approval
+  (`platform_idp.change`, see the four-eyes approvals). The session records
+  `auth_method = idp`.
 - **Require IdP.** With the IdP enabled and `require_idp` on, the local
   password path (`/auth/login`) is refused for every administrator except
   break-glass ones, and turning it on ends existing password sessions of

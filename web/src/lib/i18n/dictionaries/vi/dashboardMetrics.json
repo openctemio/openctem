@@ -28,6 +28,7 @@
   "dashboardMetrics.executive.mttrSub": "trung bình {mean} · p90 {p90} · đã khắc phục {n}",
   "dashboardMetrics.hero.activeExposure": "Phơi nhiễm đang hoạt động",
   "dashboardMetrics.hero.exploitableNow": "có thể khai thác ngay",
+  "dashboardMetrics.hero.p0Link": "Phát hiện P0 đang mở: {n}",
   "dashboardMetrics.hero.risk": "Rủi ro",
   "dashboardMetrics.hero.kevChains": "Chuỗi KEV",
   "dashboardMetrics.coverage.validation": "Xác thực",
