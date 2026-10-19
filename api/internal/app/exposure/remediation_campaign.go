@@ -267,9 +267,31 @@ func (s *RemediationCampaignService) ListCampaignFindings(ctx context.Context, t
 		if err != nil {
 			return pagination.Result[*vulnerability.Finding]{}, fmt.Errorf("resolve data scope: %w", err)
 		}
-		filter = filter.WithDataScope(scope)
+		filter = filter.WithDataScope(s.campaignViewScope(ctx, campaign, scope))
 	}
 	return s.lister.List(ctx, filter, vulnerability.NewFindingListOptions(), page)
+}
+
+// isCampaignAssignee reports whether the request's caller is the campaign's
+// assignee (its owner, assigned_to).
+func (s *RemediationCampaignService) isCampaignAssignee(ctx context.Context, campaign *remediation.Campaign) bool {
+	if s.dataScope == nil || campaign == nil || campaign.AssignedTo() == nil {
+		return false
+	}
+	caller := s.dataScope.CallerUserID(ctx)
+	return caller != "" && campaign.AssignedTo().String() == caller
+}
+
+// campaignViewScope is the scope a campaign's findings are read over: the
+// caller's data scope, except that the campaign's assignee sees every
+// finding of the campaign (the set the campaign tracks, never more) that is
+// not on an asset hidden from them. Assignment grants view, not change:
+// getWritable still checks the caller's own scope.
+func (s *RemediationCampaignService) campaignViewScope(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) *shared.DataScope {
+	if scope.Restricted() && s.isCampaignAssignee(ctx, campaign) {
+		return &shared.DataScope{TenantID: scope.TenantID, UserID: scope.UserID, Unrestricted: true}
+	}
+	return scope
 }
 
 // campaignFindingFilter is the set of findings a campaign tracks, whatever
@@ -314,6 +336,7 @@ func (s *RemediationCampaignService) ApplyViewerScope(ctx context.Context, campa
 		}
 		return
 	}
+	scope = s.campaignViewScope(ctx, campaign, scope)
 	total, resolved, verified, err := s.scopedProgress(ctx, campaign, scope)
 	if err != nil {
 		s.logger.Warn("campaign scoped progress failed", "id", campaign.ID().String(), "error", err)
@@ -429,6 +452,10 @@ func (s *RemediationCampaignService) visibleIn(ctx context.Context, campaign *re
 		return true, nil
 	}
 	if by := campaign.CreatedBy(); by != nil && s.dataScope != nil && by.String() == s.dataScope.CallerUserID(ctx) {
+		return true, nil
+	}
+	// The assignee sees the campaign assigned to them.
+	if s.isCampaignAssignee(ctx, campaign) {
 		return true, nil
 	}
 	if assetID := firstString(campaign.FindingFilter(), "asset_id"); assetID != "" {

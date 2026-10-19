@@ -324,11 +324,12 @@ Integration credentials (access tokens, API keys) are encrypted using AES-256-GC
 │  LAYER 2: Data scope — which assets this user can see  │
 │  = assets of the user's active groups                  │
 │  + explicit per-user grants (asset_access_grants)      │
+│  + assets they are primary/secondary owner of          │
 └────────────────────────────────────────────────────────┘
 ```
 
 **Layer 2 (data scope)** rows live in `user_accessible_assets`, computed from
-exactly two sources:
+exactly three sources:
 
 - **Group assignment:** the assets assigned to the user's active groups
   (`asset_owners` rows with a `group_id`: Groups → Assets, scope rules, or a
@@ -336,11 +337,15 @@ exactly two sources:
 - **Explicit grant:** one user, one asset, in `asset_access_grants`
   (migration `000372`), managed with `team:groups:write` through
   `GET/POST/DELETE /api/v1/assets/{id}/access-grants`.
+- **Ownership:** a `primary` or `secondary` *user* owner set by a person
+  (`v_asset_owner_scope`, migration `002980`) sees the asset; naming one
+  needs `team:groups:write`. `owner_ref` matches and stakeholder / informed
+  owners grant nothing. Ownership adds no permission (the role decides).
 
-**Being an asset owner is not a scope grant** (decision O1,
-2026-10-03): naming a *user* as an owner is an assignment (accountability,
-finding assignment, notifications) and never changes what that user can see.
-Owners and internal calls with no user are never restricted.
+A member who creates an asset gets a `creator` grant on it.
+The assignee of a finding sees that finding (per item, `filterspec.AssigneeScopeSQL`,
+`Enforcer.FindingInScope`), and the assignee of a remediation campaign sees the campaign.
+Organization owners and internal calls with no user are never restricted.
 Administrators and holders of a `has_full_data_access` role are not narrowed
 to scope rows, with one exception: the program-only assets of a **private
 bug-bounty program** (and their findings) are seen only by that program's
