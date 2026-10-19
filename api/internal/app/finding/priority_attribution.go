@@ -70,8 +70,10 @@ func (s *PriorityClassificationService) unconfirmedAssets(ctx context.Context, t
 }
 
 // ruleClassification is the result of a matched override rule, with the
-// attribution cap applied: a rule may not page anyone for an asset that is
-// not confirmed either.
+// platform floors applied: a rule may raise freely, but it can never put a
+// finding with exploitation evidence (KEV, validated exploitable) below P1
+// (the exploitation floor), and it may not page anyone for an asset that is
+// not confirmed either (the attribution cap, last).
 func ruleClassification(rule *vulnerability.PriorityOverrideRule, pctx vulnerability.PriorityContext, withID bool) vulnerability.PriorityClassification {
 	c := vulnerability.PriorityClassification{
 		Class:  rule.PriorityClass(),
@@ -82,5 +84,5 @@ func ruleClassification(rule *vulnerability.PriorityOverrideRule, pctx vulnerabi
 		id := rule.ID()
 		c.RuleID = &id
 	}
-	return vulnerability.ApplyAttributionCap(c, pctx)
+	return vulnerability.ApplyAttributionCap(vulnerability.ApplyExploitationFloor(c, pctx), pctx)
 }
