@@ -134,45 +134,72 @@ func (s *ReportScheduleService) GetSchedule(ctx context.Context, tenantID, sched
 	return s.repo.GetByID(ctx, tid, sid)
 }
 
-// DeleteSchedule removes a schedule.
-func (s *ReportScheduleService) DeleteSchedule(ctx context.Context, tenantID, scheduleID string) error {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
-	}
-	sid, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid schedule ID", shared.ErrValidation)
-	}
-	return s.repo.Delete(ctx, tid, sid)
+// ReportScheduleActor is the member changing a schedule. CanManageAll is
+// true when they hold reports:manage (owners and admins); otherwise they
+// change only the schedules they created.
+type ReportScheduleActor struct {
+	UserID       string
+	CanManageAll bool
 }
 
-// ToggleSchedule activates or deactivates a schedule.
-func (s *ReportScheduleService) ToggleSchedule(ctx context.Context, tenantID, scheduleID string, active bool) error {
+// errNotScheduleManager is returned when the actor neither created the
+// schedule nor holds the manage permission.
+var errNotScheduleManager = fmt.Errorf("%w: only the schedule's creator or a member who manages reports can change it", shared.ErrForbidden)
+
+// manageable loads the tenant's schedule and refuses an actor who may not
+// change it. Another tenant's schedule is not found.
+func (s *ReportScheduleService) manageable(ctx context.Context, tenantID, scheduleID string, actor ReportScheduleActor) (*reportscheduledom.ReportSchedule, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 	sid, err := shared.IDFromString(scheduleID)
 	if err != nil {
-		return fmt.Errorf("%w: invalid schedule ID", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid schedule ID", shared.ErrValidation)
 	}
-
 	schedule, err := s.repo.GetByID(ctx, tid, sid)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if !schedule.ManageableBy(actor.UserID, actor.CanManageAll) {
+		return nil, errNotScheduleManager
+	}
+	return schedule, nil
+}
+
+// DeleteSchedule removes a schedule the actor may manage and returns it.
+func (s *ReportScheduleService) DeleteSchedule(ctx context.Context, tenantID, scheduleID string, actor ReportScheduleActor) (*reportscheduledom.ReportSchedule, error) {
+	schedule, err := s.manageable(ctx, tenantID, scheduleID, actor)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.Delete(ctx, schedule.TenantID(), schedule.ID()); err != nil {
+		return nil, err
+	}
+	return schedule, nil
+}
+
+// ToggleSchedule activates or deactivates a schedule the actor may manage
+// and returns it.
+func (s *ReportScheduleService) ToggleSchedule(ctx context.Context, tenantID, scheduleID string, active bool, actor ReportScheduleActor) (*reportscheduledom.ReportSchedule, error) {
+	schedule, err := s.manageable(ctx, tenantID, scheduleID, actor)
+	if err != nil {
+		return nil, err
 	}
 
 	if active {
 		// A schedule made before the recipient policy (or whose recipient
 		// has since left) is not switched back on with them.
-		if err := s.checkRecipients(ctx, tid, schedule.Recipients()); err != nil {
-			return err
+		if err := s.checkRecipients(ctx, schedule.TenantID(), schedule.Recipients()); err != nil {
+			return nil, err
 		}
 		schedule.Activate()
 	} else {
 		schedule.Deactivate()
 	}
 
-	return s.repo.Update(ctx, schedule)
+	if err := s.repo.Update(ctx, schedule); err != nil {
+		return nil, err
+	}
+	return schedule, nil
 }
