@@ -402,6 +402,7 @@ type TaskFilter struct {
 	ActionID   *shared.ID
 	ActionKind string
 	CampaignID *shared.ID
+	NoCampaign bool       // tasks in no campaign
 	FindingID  *shared.ID // tasks the finding is an active member of
 	Search     string
 	Sort       TaskSort

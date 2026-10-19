@@ -923,8 +923,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "risk-snapshot"),
 	))
 
-	// Remediation progress — periodically refresh campaign finding counts and
-	// auto-complete campaigns whose findings are all resolved.
+	// Remediation progress: complete campaigns whose tasks are done and
+	// reopen completed ones with a live task again.
 	if svc != nil && svc.RemediationCampaign != nil {
 		if svc.Module != nil {
 			svc.RemediationCampaign.SetModuleGuard(svc.Module) // skip tenants with remediation off

@@ -166,6 +166,7 @@ func parseOptID(field, s string) (*shared.ID, error) {
 // @Param        action_kind  query  string  false  "Action kind (upgrade, rotate, sol, manual)"
 // @Param        campaign_id  query  string  false  "Campaign ID"
 // @Param        finding_id   query  string  false  "Tasks this finding is a member of"
+// @Param        no_campaign  query  bool    false  "Only tasks in no campaign"
 // @Param        search       query  string  false  "Title search"
 // @Param        sort         query  string  false  "deadline (default), risk, updated or created"
 // @Param        page         query  int     false  "Page number" default(1)
@@ -205,6 +206,7 @@ func (h *RemediationTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		in.Filter.AssigneeID = id
 	}
+	in.Filter.NoCampaign = q.Get("no_campaign") == "true"
 	for field, dst := range map[string]**shared.ID{
 		"group_id": &in.Filter.GroupID, "action_id": &in.Filter.ActionID,
 		"campaign_id": &in.Filter.CampaignID, "finding_id": &in.Filter.FindingID,
