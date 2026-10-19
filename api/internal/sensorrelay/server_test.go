@@ -45,6 +45,7 @@ type harness struct {
 	roots     *x509.CertPool
 	conn1     tls.Certificate // connector of realm-1
 	conn2     tls.Certificate // connector of realm-2
+	server    tls.Certificate
 	now       time.Time
 	nowMu     sync.Mutex
 }
@@ -73,6 +74,7 @@ func newHarness(t *testing.T, lim Limits) *harness {
 	h.srv = srv
 	sk, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	serverCert := selfSigned(t, &sk.PublicKey, sk, "relay.example.com")
+	h.server = serverCert
 	h.roots = x509.NewCertPool()
 	h.roots.AddCert(serverCert.Leaf)
 	h.ts = httptest.NewUnstartedServer(srv.Handler())
