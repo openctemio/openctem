@@ -130,7 +130,8 @@ function ProviderIcon({ provider, className }: { provider: string; className?: s
 function summarizeEventTypes(
   enabled: string[],
   catalog: NotificationEventTypeInfo[],
-  categories: NotificationEventCategoryInfo[]
+  categories: NotificationEventCategoryInfo[],
+  otherLabel: string
 ): { category: string; label: string; labels: string[] }[] {
   const labelled = labelEventTypes(enabled, catalog)
   const byCategory = new Map<string, string[]>()
@@ -146,7 +147,7 @@ function summarizeEventTypes(
   const categoryLabels = new Map(categories.map((c) => [c.category, c.label]))
   return Array.from(byCategory.entries()).map(([category, labels]) => ({
     category,
-    label: categoryLabels.get(category) ?? (category === 'unknown' ? 'Other' : category),
+    label: categoryLabels.get(category) ?? (category === 'unknown' ? otherLabel : category),
     labels,
   }))
 }
@@ -193,42 +194,70 @@ export default function NotificationIntegrationsPage() {
     try {
       await invalidateNotificationIntegrationsCache()
       await mutate()
-      toast.success('Integrations refreshed')
+      toast.success(t('notificationChannels.toast.refreshed', 'Integrations refreshed'))
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to refresh integrations'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('notificationChannels.toast.refreshFailed', 'Failed to refresh integrations')
+        )
+      )
     } finally {
       setActionInProgress(null)
     }
-  }, [mutate])
+  }, [mutate, t])
 
-  const handleTestNotification = useCallback(async (integration: Integration) => {
-    setActionInProgress(integration.id)
-    try {
-      const response = await csrfFetch(`/api/v1/integrations/${integration.id}/test-notification`, {
-        method: 'POST',
-      })
+  const handleTestNotification = useCallback(
+    async (integration: Integration) => {
+      setActionInProgress(integration.id)
+      try {
+        const response = await csrfFetch(
+          `/api/v1/integrations/${integration.id}/test-notification`,
+          {
+            method: 'POST',
+          }
+        )
 
-      // Handle rate limit (429)
-      if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After')
-        const seconds = retryAfter ? parseInt(retryAfter, 10) : 60
-        toast.error(`Rate limit exceeded. Please wait ${seconds} seconds before trying again.`)
-        return
+        // Handle rate limit (429)
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After')
+          const seconds = retryAfter ? parseInt(retryAfter, 10) : 60
+          toast.error(
+            t(
+              'notificationChannels.toast.rateLimited',
+              'Rate limit exceeded. Please wait {seconds} seconds before trying again.',
+              { seconds }
+            )
+          )
+          return
+        }
+
+        if (!response.ok) throw new Error('Test failed')
+        const result = await response.json()
+        if (result.success) {
+          toast.success(
+            t('notificationChannels.toast.testSent', 'Test notification sent to "{name}"', {
+              name: integration.name,
+            })
+          )
+        } else {
+          toast.error(
+            result.error || t('notificationChannels.toast.testFailed', 'Test notification failed')
+          )
+        }
+      } catch (err) {
+        toast.error(
+          getErrorMessage(
+            err,
+            t('notificationChannels.toast.testError', 'Failed to send test notification')
+          )
+        )
+      } finally {
+        setActionInProgress(null)
       }
-
-      if (!response.ok) throw new Error('Test failed')
-      const result = await response.json()
-      if (result.success) {
-        toast.success(`Test notification sent to "${integration.name}"`)
-      } else {
-        toast.error(result.error || 'Test notification failed')
-      }
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to send test notification'))
-    } finally {
-      setActionInProgress(null)
-    }
-  }, [])
+    },
+    [t]
+  )
 
   const handleDelete = useCallback(async () => {
     if (!selectedIntegration) return
@@ -236,17 +265,26 @@ export default function NotificationIntegrationsPage() {
     try {
       // apiClient path: a STEP_UP_REQUIRED answer opens the re-authentication dialog and retries.
       await del(`/api/v1/integrations/${selectedIntegration.id}`)
-      toast.success(`Integration "${selectedIntegration.name}" deleted`)
+      toast.success(
+        t('notificationChannels.toast.deleted', 'Integration "{name}" deleted', {
+          name: selectedIntegration.name,
+        })
+      )
       await invalidateNotificationIntegrationsCache()
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete integration'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('notificationChannels.toast.deleteFailed', 'Failed to delete integration')
+        )
+      )
     } finally {
       setDeleteDialogOpen(false)
       setSelectedIntegration(null)
       setActionInProgress(null)
     }
-  }, [selectedIntegration, mutate])
+  }, [selectedIntegration, mutate, t])
 
   const handleDeleteClick = useCallback((integration: Integration) => {
     setSelectedIntegration(integration)
@@ -262,7 +300,12 @@ export default function NotificationIntegrationsPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Channel" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('notificationChannels.col.channel', 'Channel')}
+          />
+        ),
         cell: ({ row }) => {
           const integration = row.original
           // Channel name / chat id live in integration.metadata now — the
@@ -283,7 +326,12 @@ export default function NotificationIntegrationsPage() {
       },
       {
         accessorKey: 'provider',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Provider" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('notificationChannels.col.provider', 'Provider')}
+          />
+        ),
         cell: ({ row }) => (
           <Badge variant="outline" className="text-xs">
             {PROVIDER_LABELS[row.original.provider] || row.original.provider}
@@ -292,15 +340,21 @@ export default function NotificationIntegrationsPage() {
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('notificationChannels.col.status', 'Status')}
+          />
+        ),
         cell: ({ row }) => {
           const integration = row.original
-          const statusConfig = STATUS_CONFIG[integration.status] || STATUS_CONFIG.pending
+          const statusKey = STATUS_CONFIG[integration.status] ? integration.status : 'pending'
+          const statusConfig = STATUS_CONFIG[statusKey]
           return (
             <div className="space-y-1">
               <Badge variant={statusConfig.variant} className="gap-1">
                 {statusConfig.icon}
-                {statusConfig.label}
+                {t(`notificationChannels.status.${statusKey}`, statusConfig.label)}
               </Badge>
               {integration.status_message && integration.status === 'error' && (
                 <p
@@ -316,7 +370,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         id: 'severity_filters',
-        header: 'Severity filters',
+        header: t('notificationChannels.col.severityFilters', 'Severity filters'),
         enableSorting: false,
         cell: ({ row }) => {
           const ext = row.original.notification_extension
@@ -330,7 +384,11 @@ export default function NotificationIntegrationsPage() {
                       const severities = ext?.enabled_severities ?? []
                       const isAllSeverities = coversAllSeverities(severities)
                       if (isAllSeverities) {
-                        return <span className="text-xs text-muted-foreground">All severities</span>
+                        return (
+                          <span className="text-xs text-muted-foreground">
+                            {t('notificationChannels.severity.all', 'All severities')}
+                          </span>
+                        )
                       }
                       // Show max 3 severity badges, then "+N more"
                       const maxShow = 3
@@ -350,7 +408,7 @@ export default function NotificationIntegrationsPage() {
                                 variant="outline"
                                 className={cn('text-xs', colorClass)}
                               >
-                                {config?.label || sev}
+                                {t(`notificationChannels.severity.${sev}`, config?.label || sev)}
                               </Badge>
                             )
                           })}
@@ -365,19 +423,23 @@ export default function NotificationIntegrationsPage() {
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-[200px]">
-                  <p className="text-xs font-medium mb-1">Severity filters:</p>
+                  <p className="text-xs font-medium mb-1">
+                    {t('notificationChannels.severity.tooltipTitle', 'Severity filters:')}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {(() => {
                       const severities = ext?.enabled_severities ?? []
                       const isAllSeverities = coversAllSeverities(severities)
                       if (isAllSeverities) {
                         // Show actual list of all severities
-                        return ALL_NOTIFICATION_SEVERITIES.map((s) => s.label).join(', ')
+                        return ALL_NOTIFICATION_SEVERITIES.map((s) =>
+                          t(`notificationChannels.severity.${s.value}`, s.label)
+                        ).join(', ')
                       }
                       return severities
                         .map((sev) => {
                           const config = ALL_NOTIFICATION_SEVERITIES.find((s) => s.value === sev)
-                          return config?.label || sev
+                          return t(`notificationChannels.severity.${sev}`, config?.label || sev)
                         })
                         .join(', ')
                     })()}
@@ -390,7 +452,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         id: 'event_types',
-        header: 'Event types',
+        header: t('notificationChannels.col.eventTypes', 'Event types'),
         enableSorting: false,
         cell: ({ row }) => {
           const ext = row.original.notification_extension
@@ -400,7 +462,12 @@ export default function NotificationIntegrationsPage() {
           // everything.
           const isAll =
             enabled.length === 0 || (eventTypeCount > 0 && enabled.length === eventTypeCount)
-          const groups = summarizeEventTypes(enabled, eventTypeCatalog, eventCategories)
+          const groups = summarizeEventTypes(
+            enabled,
+            eventTypeCatalog,
+            eventCategories,
+            t('notificationChannels.events.other', 'Other')
+          )
 
           return (
             <TooltipProvider>
@@ -408,7 +475,9 @@ export default function NotificationIntegrationsPage() {
                 <TooltipTrigger asChild>
                   <div className="flex gap-1 flex-wrap cursor-default">
                     {isAll ? (
-                      <span className="text-xs text-muted-foreground">All events</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t('notificationChannels.events.all', 'All events')}
+                      </span>
                     ) : groups.length > 0 && groups.length <= 2 ? (
                       groups.map((g) => (
                         <Badge
@@ -424,15 +493,21 @@ export default function NotificationIntegrationsPage() {
                         variant="outline"
                         className="text-xs bg-primary/10 text-primary border-primary/20"
                       >
-                        {enabled.length} event types
+                        {t('notificationChannels.events.count', '{count} event types', {
+                          count: enabled.length,
+                        })}
                       </Badge>
                     )}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-[280px]">
-                  <p className="text-xs font-medium mb-1">Event types:</p>
+                  <p className="text-xs font-medium mb-1">
+                    {t('notificationChannels.events.tooltipTitle', 'Event types:')}
+                  </p>
                   {isAll ? (
-                    <p className="text-xs text-muted-foreground">All event types enabled</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('notificationChannels.events.allEnabled', 'All event types enabled')}
+                    </p>
                   ) : (
                     groups.map((g) => (
                       <div key={g.category} className="mb-1 last:mb-0">
@@ -451,7 +526,12 @@ export default function NotificationIntegrationsPage() {
       },
       {
         accessorKey: 'last_sync_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last used" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('notificationChannels.col.lastUsed', 'Last used')}
+          />
+        ),
         cell: ({ row }) => <RelativeTime date={row.original.last_sync_at} />,
       },
       {
@@ -463,19 +543,19 @@ export default function NotificationIntegrationsPage() {
           const integration = row.original
           const actions: RowAction[] = [
             {
-              label: 'Send test',
+              label: t('notificationChannels.actions.sendTest', 'Send test'),
               icon: Send,
               onClick: () => void handleTestNotification(integration),
               route: 'POST /api/v1/integrations/{id}/test-notification',
             },
             {
-              label: 'Edit',
+              label: t('notificationChannels.actions.edit', 'Edit'),
               icon: Pencil,
               onClick: () => handleEditClick(integration),
               route: 'PUT /api/v1/integrations/{id}/notification',
             },
             {
-              label: 'View events',
+              label: t('notificationChannels.actions.viewEvents', 'View events'),
               icon: History,
               onClick: () =>
                 router.push(
@@ -484,7 +564,7 @@ export default function NotificationIntegrationsPage() {
               route: 'PUT /api/v1/integrations/{id}',
             },
             {
-              label: 'Delete',
+              label: t('notificationChannels.actions.delete', 'Delete'),
               icon: Trash2,
               onClick: () => handleDeleteClick(integration),
               destructive: true,
@@ -497,6 +577,7 @@ export default function NotificationIntegrationsPage() {
       },
     ],
     [
+      t,
       router,
       handleTestNotification,
       handleEditClick,
@@ -509,17 +590,33 @@ export default function NotificationIntegrationsPage() {
   )
 
   const metrics: MetricStripItem[] = [
-    { key: 'total', label: 'Channels', value: stats.total },
-    { key: 'connected', label: 'Connected', value: stats.connected },
-    { key: 'error', label: 'Errors', value: stats.error, tone: 'danger' },
+    {
+      key: 'total',
+      label: t('notificationChannels.metrics.channels', 'Channels'),
+      value: stats.total,
+    },
+    {
+      key: 'connected',
+      label: t('notificationChannels.metrics.connected', 'Connected'),
+      value: stats.connected,
+    },
+    {
+      key: 'error',
+      label: t('notificationChannels.metrics.errors', 'Errors'),
+      value: stats.error,
+      tone: 'danger',
+    },
   ]
 
   return (
     <>
       <Main>
         <PageHeader
-          title="Notification channels"
-          description="Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks."
+          title={t('notificationChannels.page.title', 'Notification channels')}
+          description={t(
+            'notificationChannels.page.description',
+            'Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks.'
+          )}
         >
           <Can route="PUT /api/v1/integrations/{id}">
             <Button
@@ -528,7 +625,7 @@ export default function NotificationIntegrationsPage() {
               onClick={() => router.push('/settings/integrations/notifications/history')}
             >
               <History className="me-2 h-4 w-4" />
-              View events
+              {t('notificationChannels.page.viewEvents', 'View events')}
             </Button>
             <Button
               variant="outline"
@@ -536,20 +633,24 @@ export default function NotificationIntegrationsPage() {
               onClick={() => router.push('/settings/integrations/notifications/outbox')}
             >
               <Inbox className="me-2 h-4 w-4" />
-              Queue
+              {t('notificationChannels.page.queue', 'Queue')}
             </Button>
           </Can>
           <Can route="POST /api/v1/integrations/notifications">
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
-              Add channel
+              {t('notificationChannels.page.addChannel', 'Add channel')}
             </Button>
           </Can>
         </PageHeader>
 
         {error ? (
           <div className="mt-5">
-            <ErrorState title="notification channels" error={error} onRetry={() => void mutate()} />
+            <ErrorState
+              title={t('notificationChannels.page.errorTitle', 'notification channels')}
+              error={error}
+              onRetry={() => void mutate()}
+            />
           </div>
         ) : (
           <>
@@ -564,13 +665,16 @@ export default function NotificationIntegrationsPage() {
               ) : integrations.length === 0 ? (
                 <EmptyState
                   icon={Bell}
-                  title="No notification channels"
-                  description="Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts."
+                  title={t('notificationChannels.page.emptyTitle', 'No notification channels')}
+                  description={t(
+                    'notificationChannels.page.emptyDescription',
+                    'Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts.'
+                  )}
                   action={
                     <Can route="POST /api/v1/integrations/notifications">
                       <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                         <Plus className="me-2 h-4 w-4" />
-                        Add channel
+                        {t('notificationChannels.page.addChannel', 'Add channel')}
                       </Button>
                     </Can>
                   }
@@ -580,15 +684,18 @@ export default function NotificationIntegrationsPage() {
                   columns={columns}
                   data={integrations}
                   getRowId={(i) => i.id}
-                  searchPlaceholder="Search channels..."
+                  searchPlaceholder={t(
+                    'notificationChannels.page.searchPlaceholder',
+                    'Search channels...'
+                  )}
                   showSelectionCount={false}
                   toolbarEnd={
                     <Button
                       variant="outline"
                       size="icon"
                       className="h-9 w-9"
-                      aria-label="Refresh"
-                      title="Refresh"
+                      aria-label={t('notificationChannels.page.refresh', 'Refresh')}
+                      title={t('notificationChannels.page.refresh', 'Refresh')}
                       onClick={handleRefresh}
                       disabled={actionInProgress === 'refresh'}
                     >
@@ -599,7 +706,10 @@ export default function NotificationIntegrationsPage() {
                       )}
                     </Button>
                   }
-                  emptyMessage="No channels match your search"
+                  emptyMessage={t(
+                    'notificationChannels.page.noMatch',
+                    'No channels match your search'
+                  )}
                 />
               )}
             </div>
