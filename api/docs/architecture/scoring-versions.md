@@ -31,6 +31,18 @@ EPSS only, so it does not depend on a scoring version.
 - one **tenant** row per change of the risk scoring settings, priority rules
   or SLA policies (`source = risk_settings | priority_rules | sla_policy`).
 
+Model history:
+
+| Kind | Version | Change |
+|---|---|---|
+| finding priority | 1 | P0 to P3 classification |
+| finding priority | 2 | Exploitation floor: a KEV or validated (reproduced) finding is at least P1 after controls, AI triage and tenant rules; AI triage lowers only P2 to P3; KEV no longer rewrites severity ([priority explainability](priority-explainability.md#platform-floors-priority-model-v2)) |
+
+Bumping a constant needs no migration: the start-up registration records the
+new platform row and every open finding is recomputed once, in the
+background, through the durable queue (forward only, deadlines only tighten,
+closed findings stay frozen).
+
 The row id is the version. The current version of a tenant for a kind is the
 newest platform or tenant row (`scoring_version(tenant, kind, model)`). A value
 whose stored version is missing or older is **stale**.

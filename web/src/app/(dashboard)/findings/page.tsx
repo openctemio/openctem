@@ -70,12 +70,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
-import {
-  ACTIONABLE_SEVERITIES,
-  SEVERITY_LEVELS,
-  highestSeverity,
-  type SeverityLevel,
-} from '@/lib/severity'
+import { ACTIONABLE_SEVERITIES, SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
@@ -120,6 +115,7 @@ import {
   ArrowLeft,
   Layers,
   ChevronRight,
+  SquareCode,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -148,11 +144,14 @@ import {
 import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialog'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
 import { useCanCreateTicket } from '@/features/findings/hooks/use-can-create-ticket'
-import { LinkFindingsToRemediationDialog } from '@/features/remediation/components/link-findings-dialog'
+import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/add-findings-to-task-dialog'
+import { CreateTaskFromQueryDialog } from '@/features/remediation-hub/components/create-task-from-query-dialog'
+import { taskQueryApi } from '@/features/remediation-hub/api/use-task-query'
 import { VerifyGroupActions } from '@/features/findings/components/verify-group-actions'
 import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
 import {
   useFindingsApi,
+  buildFindingsEndpoint,
   useFindingApi,
   useFindingStatsApi,
   buildFindingsExportUrl,
@@ -656,11 +655,7 @@ function FindingsContent() {
   const [markFixedGroup, setMarkFixedGroup] = useState<FindingGroup | null>(null)
   const [ticketFinding, setTicketFinding] = useState<Finding | null>(null)
   // Findings selected to spin up (or join) a remediation task. Non-null = dialog open.
-  const [remedContext, setRemedContext] = useState<{
-    ids: string[]
-    name?: string
-    priority?: string
-  } | null>(null)
+  const [remedFindings, setRemedFindings] = useState<{ id: string; title: string }[] | null>(null)
   const { hasPermission } = usePermissions()
   // The gate of POST /findings/import (the API stays authoritative).
   const canImport =
@@ -672,6 +667,13 @@ function FindingsContent() {
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
   // OSS where no modules are reported).
   const remediationEnabled = useModuleEnabled('remediation')
+  // "Create task from these filters": the list filter becomes query text on
+  // the server (the same filter registry), then the query-task dialog opens.
+  const canQueryTask =
+    remediationEnabled &&
+    hasPermission(Permission.RemediationWrite) &&
+    hasPermission(Permission.FindingsRead)
+  const [taskQuery, setTaskQuery] = useState<{ query: string; ignored: string[] } | null>(null)
   const canCreateTicket = useCanCreateTicket()
 
   // Statuses hidden from default dashboard view (pentest WIP, not ready for visibility)
@@ -932,6 +934,15 @@ function FindingsContent() {
     toast.success('Findings refreshed')
   }
 
+  const openTaskFromFilters = useCallback(async () => {
+    const endpoint = buildFindingsEndpoint(apiFilters)
+    const params = endpoint.includes('?') ? endpoint.slice(endpoint.indexOf('?') + 1) : ''
+    try {
+      setTaskQuery(await taskQueryApi.fromFilters(params))
+    } catch {
+      setTaskQuery({ query: '', ignored: [] })
+    }
+  }, [apiFilters])
   const canServerExport = hasPermission(Permission.FindingsExport)
   const handleExport = (format: string) => {
     // With findings:export the server streams every matching finding (up to
@@ -1140,13 +1151,7 @@ function FindingsContent() {
   // the mobilise step is one click from where a finding lives.
   const openRemediationFor = useCallback((selected: Finding[]) => {
     if (selected.length === 0) return
-    // Most severe selected finding sets the priority; informational-only
-    // selections get the lowest priority rather than a medium default.
-    const top = highestSeverity(selected.map((f) => f.severity))
-    const priority = top === undefined ? 'medium' : top === 'info' ? 'low' : top
-    const name =
-      selected.length === 1 ? `Fix: ${selected[0].title}` : `Remediate ${selected.length} findings`
-    setRemedContext({ ids: selected.map((f) => f.id), name, priority })
+    setRemedFindings(selected.map((f) => ({ id: f.id, title: f.title })))
   }, [])
 
   const handleRowAction = useCallback(
@@ -1466,7 +1471,7 @@ function FindingsContent() {
                 {hasPermission('findings:remediation:write') && remediationEnabled && (
                   <DropdownMenuItem onClick={() => handleRowAction('remediate', finding)}>
                     <Wrench className="me-2 h-4 w-4" />
-                    Add to remediation
+                    {t('remediationClaim.menu.addToRemediation')}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
@@ -1929,6 +1934,25 @@ function FindingsContent() {
       />
       {groupBySelect}
       {refreshButton}
+      {canQueryTask && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => void openTaskFromFilters()}
+              aria-label={t('remediationQuery.findings.fromFilters')}
+            >
+              <SquareCode className="h-4 w-4 md:me-2" aria-hidden />
+              <span className="hidden md:inline">
+                {t('remediationQuery.findings.fromFiltersShort')}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('remediationQuery.findings.fromFilters')}</TooltipContent>
+        </Tooltip>
+      )}
       {exportMenu}
     </>
   )
@@ -2232,7 +2256,7 @@ function FindingsContent() {
                 onClick={() => openRemediationFor(selectedFindings)}
               >
                 <Wrench className="me-2 h-4 w-4" />
-                Remediation task
+                {t('remediationClaim.menu.bulk')}
               </Button>
             )}
 
@@ -2315,18 +2339,28 @@ function FindingsContent() {
         />
       )}
 
-      {/* Mounted only while open: the dialog fetches remediation campaigns on
-          mount, so keeping it always-mounted would fire that (gated-module)
-          request on every Findings page load. */}
-      {remedContext && (
-        <LinkFindingsToRemediationDialog
-          open={!!remedContext}
-          onOpenChange={(open) => {
-            if (!open) setRemedContext(null)
+      {/* Task from the list's filters: mounted only while open. */}
+      {canQueryTask && taskQuery && (
+        <CreateTaskFromQueryDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setTaskQuery(null)
           }}
-          findingIds={remedContext?.ids ?? []}
-          suggestedName={remedContext?.name}
-          suggestedPriority={remedContext?.priority}
+          initialQuery={taskQuery.query}
+          ignoredFilters={taskQuery.ignored}
+        />
+      )}
+
+      {/* Mounted only while open: the dialog reads members, groups, tasks and
+          campaigns, so keeping it always-mounted would fire those (gated-module)
+          requests on every Findings page load. */}
+      {remedFindings && (
+        <AddFindingsToTaskDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRemedFindings(null)
+          }}
+          findings={remedFindings}
           onDone={clearSelection}
         />
       )}

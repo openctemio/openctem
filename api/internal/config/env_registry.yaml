@@ -1183,6 +1183,12 @@ vars:
     type: bool
     default: "true"
     description: "Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats."
+  - name: SENSOR_LIVENESS_STORE
+    component: api
+    group: "Sensors"
+    type: string
+    default: "shadow"
+    description: "Where heartbeat liveness lives. `postgres`: every heartbeat updates the sensor row. `shadow`: as postgres, and Redis records every heartbeat too so `openctem_sensor_liveness_disagreements_total` compares the two. `redis`: Redis holds liveness; Postgres gets state changes and a batched checkpoint every 10 minutes. Switch to `redis` after a week of zero disagreements."
   - name: WORKER_HEARTBEAT_TIMEOUT
     component: api
     group: "Sensors"

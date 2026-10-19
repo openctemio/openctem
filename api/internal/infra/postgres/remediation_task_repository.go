@@ -226,6 +226,9 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter) (string, []any)
 	if f.FindingID != nil {
 		conds = append(conds, "EXISTS (SELECT 1 FROM remediation_task_members fm WHERE fm.tenant_id = t.tenant_id AND fm.task_id = t.id AND fm.left_at IS NULL AND fm.finding_id = "+next(f.FindingID.String())+")")
 	}
+	if f.Overdue {
+		conds = append(conds, "t.deadline IS NOT NULL AND t.deadline < NOW()")
+	}
 	if s := strings.TrimSpace(f.Search); s != "" {
 		p := next("%" + escapeLikePattern(s) + "%")
 		conds = append(conds, "(t.title ILIKE "+p+" OR a.title ILIKE "+p+")")
@@ -393,6 +396,11 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 	}
 	if err := recordClaimMovesInTx(ctx, tx, t.TenantID, rec.Claimed, rec.ActorID); err != nil {
 		return err
+	}
+	if rec.Query != nil {
+		if err := insertTaskQueryInTx(ctx, tx, t, rec.Query); err != nil {
+			return err
+		}
 	}
 	data := rec.EventData
 	if data == nil {
