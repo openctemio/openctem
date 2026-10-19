@@ -79,7 +79,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
 		// Reports
-		ReportsRead, ReportsWrite,
+		ReportsRead, ReportsWrite, ReportsManage,
 		// Threat Intel
 		ThreatIntelRead, ThreatIntelWrite,
 		// AI Triage
@@ -160,7 +160,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
 		// Reports
-		ReportsRead, ReportsWrite,
+		ReportsRead, ReportsWrite, ReportsManage,
 		// Threat Intel
 		ThreatIntelRead, ThreatIntelWrite,
 		// AI Triage
