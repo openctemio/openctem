@@ -59,6 +59,11 @@ func (c *KeyChanges) add(o *KeyChanges) {
 	}
 }
 
+// HasStaleKeys reports a key of the tenant derived by older key rules.
+func (a *KeyApplier) HasStaleKeys(ctx context.Context, tenantID shared.ID) (bool, error) {
+	return a.repo.HasStaleKeys(ctx, tenantID)
+}
+
 // ApplyBatch keys the given persisted findings (their ids are read back from
 // the database, so the in-memory copy does not need the package details).
 func (a *KeyApplier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error {
@@ -121,7 +126,7 @@ func (a *KeyApplier) apply(ctx context.Context, tenantID shared.ID, sources []re
 			if write {
 				werr = a.repo.Delete(ctx, tenantID, src.FindingID)
 			}
-		case src.CurrentKey == key && src.CurrentTitle == title:
+		case src.CurrentKey == key && src.CurrentTitle == title && src.CurrentVersion >= remediationdom.KeyAlgorithmVersion:
 			ch.Unchanged++
 			continue
 		default:

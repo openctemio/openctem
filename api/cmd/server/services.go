@@ -943,12 +943,11 @@ func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, m
 
 // ServiceDeps contains dependencies needed to create services.
 type ServiceDeps struct {
-	Config           *config.Config
-	Log              *logger.Logger
-	DB               *sql.DB
-	Repos            *Repositories
-	RedisClient      *redis.Client
-	SensorStateStore *redis.SensorStateStore
+	Config      *config.Config
+	Log         *logger.Logger
+	DB          *sql.DB
+	Repos       *Repositories
+	RedisClient *redis.Client
 }
 
 // NewServices initializes all services.
@@ -1694,6 +1693,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.RemediationSuggest.SetTasks(s.RemediationTask)
+	// Keys derived by older key rules are derived again before a run uses them.
+	s.RemediationSuggest.SetKeyRederiver(remediationKeys)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -2247,7 +2248,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Capability = capability.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize sensor selector for load balancing
-	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
+	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, log)
 	// Same SENSOR_LB_* weights drive job placement, so tuning them changes
 	// scheduling and not just the reported score.
 	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())

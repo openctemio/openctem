@@ -51,6 +51,7 @@ type SuggestionService struct {
 	notifier  SuggestionNotifier
 	modules   ModuleGuard
 	tasks     *TaskService
+	keys      KeyRederiver
 	logger    *logger.Logger
 	now       func() time.Time
 }
@@ -69,6 +70,16 @@ func (s *SuggestionService) SetAuditLogger(a TaskAuditLogger) { s.audit = a }
 // SetNotifier wires the digest notification.
 func (s *SuggestionService) SetNotifier(n SuggestionNotifier) { s.notifier = n }
 
+// KeyRederiver re-derives a tenant's remediation keys when some were derived
+// by older key rules (*KeyApplier).
+type KeyRederiver interface {
+	HasStaleKeys(ctx context.Context, tenantID shared.ID) (bool, error)
+	Backfill(ctx context.Context, tenantID shared.ID, write bool, batch int) (*KeyChanges, error)
+}
+
+// SetKeyRederiver wires the self-healing re-derivation of stale keys.
+func (s *SuggestionService) SetKeyRederiver(k KeyRederiver) { s.keys = k }
+
 // SetModuleGuard skips tenants with the remediation module off.
 func (s *SuggestionService) SetModuleGuard(g ModuleGuard) { s.modules = g }
 
@@ -80,6 +91,7 @@ const digestInterval = 24 * time.Hour
 
 // RunTenant runs the generator for one tenant.
 func (s *SuggestionService) RunTenant(ctx context.Context, tenantID shared.ID) (remediationdom.RunStats, error) {
+	s.rederiveStaleKeys(ctx, tenantID)
 	cands, err := s.repo.Candidates(ctx, tenantID)
 	if err != nil {
 		return remediationdom.RunStats{}, err
@@ -116,6 +128,30 @@ func (s *SuggestionService) RunTenant(ctx context.Context, tenantID shared.ID) (
 	}
 	st.Candidates, st.AutoJoined = len(cands), autoJoined
 	return st, nil
+}
+
+// rederiveStaleKeys derives the tenant's keys again when some were derived by
+// older key rules, so no suggestion is built on a key the current rules would
+// not give (older rules grouped findings by boilerplate advice). Candidates
+// skip stale keys anyway, so a failure here only delays those findings.
+func (s *SuggestionService) rederiveStaleKeys(ctx context.Context, tenantID shared.ID) {
+	if s.keys == nil {
+		return
+	}
+	stale, err := s.keys.HasStaleKeys(ctx, tenantID)
+	if err != nil || !stale {
+		if err != nil {
+			s.logger.Warn("check stale remediation keys", "tenant_id", tenantID.String(), "error", err)
+		}
+		return
+	}
+	ch, err := s.keys.Backfill(ctx, tenantID, true, DefaultBackfillBatch)
+	if err != nil {
+		s.logger.Warn("re-derive stale remediation keys", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	s.logger.Info("re-derived stale remediation keys", "tenant_id", tenantID.String(),
+		"scanned", ch.Scanned, "changed", ch.Changed, "removed", ch.Removed, "added", ch.Added)
 }
 
 // Refresh runs the generator for the caller's tenant now, at most once a

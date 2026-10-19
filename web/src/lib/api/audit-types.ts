@@ -187,6 +187,7 @@ export type AuditAction =
   | 'report_schedule.created'
   | 'report_schedule.activated'
   | 'report_schedule.deleted'
+  | 'report_schedule.deactivated'
   | 'tool.created'
   | 'tool.updated'
   | 'tool.deleted'
