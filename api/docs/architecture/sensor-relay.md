@@ -84,8 +84,18 @@ openctem-sensor-relay pin -cert connector.pem                    # pin for relay
 | `CONNECTOR_REALM` | the realm the relay serves this connector |
 | `CONNECTOR_INGEST_KEYS` | comma-separated ingest key files (two during a rotation) |
 | `CONNECTOR_RESPONSE_KEY` | the response key file |
-| `CONNECTOR_API_URL` | the API on the private network, e.g. `http://api:8080` |
+| `CONNECTOR_API_URL` | the API on the private network, e.g. `http://api:8080`; **no path prefix** (sensors sign the request path, so a prefix would break every signature; the connector refuses to start with one) |
 | `CONNECTOR_HEALTH_LISTEN` | `/healthz` and `/metrics`, default `127.0.0.1:9091` |
+
+The connector sets `X-Relay-Sensor` to the sensor id of the route each
+envelope arrived on, replacing anything the sensor sent; the API refuses a
+signed request whose verified signing sensor is another one.
+
+The relay is at-least-once: a request can be delivered twice (retry after a
+lost answer, connector restart). A relayed call that is not idempotent must
+carry an `Idempotency-Key` header (the connector forwards it) so a route
+that honours it can answer the repeat with the first result; a route that
+does not honour it must be safe to repeat.
 
 Key files are created 0400 and refused when others can read them. The
 connector forwards only `/api/v2/sensor/` requests, only allowlisted

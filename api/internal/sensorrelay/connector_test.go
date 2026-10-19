@@ -108,7 +108,7 @@ func TestConnectorEndToEnd(t *testing.T) {
 	ik, rpub := startConnector(t, h, api.ts.URL)
 	s := newRelayedSensor(h, "sensor-a")
 	hdr := http.Header{"Signature": {"sig1=:abc:"}, "Signature-Input": {"sig1=()"}, "Content-Type": {"application/json"},
-		"X-Forwarded-For": {"203.0.113.9"}, "Cookie": {"session=stolen"}, "X-Real-Ip": {"203.0.113.9"}}
+		"X-Relay-Sensor": {"sensor-victim"}, "X-Forwarded-For": {"203.0.113.9"}, "Cookie": {"session=stolen"}, "X-Real-Ip": {"203.0.113.9"}}
 	resp := send(t, h, s, ik.Public(), rpub, s.route, "POST", "/api/v2/sensor/heartbeat?x=1", hdr)
 	if resp == nil || resp.Status != 200 || string(resp.Body) != `{"path":"/api/v2/sensor/heartbeat"}` {
 		t.Fatalf("answer %+v", resp)
@@ -121,6 +121,9 @@ func TestConnectorEndToEnd(t *testing.T) {
 	api.mu.Unlock()
 	if got.URL.RawQuery != "x=1" || got.Header.Get("Signature") != "sig1=:abc:" || string(body) != `{"k":1}` {
 		t.Fatalf("API saw %s %v %q", got.URL, got.Header, body)
+	}
+	if got.Header.Get(relay.HeaderRelaySensor) != "sensor-a" {
+		t.Errorf("route sensor id not forwarded: %q", got.Header.Get(relay.HeaderRelaySensor))
 	}
 	for _, h := range []string{"X-Forwarded-For", "Cookie", "X-Real-Ip"} {
 		if got.Header.Get(h) != "" {
@@ -206,13 +209,14 @@ func TestConnectorConfigRefusals(t *testing.T) {
 		t.Fatalf("good: %v", err)
 	}
 	for name, mod := range map[string]func(*ConnectorConfig){
-		"http relay":  func(c *ConnectorConfig) { c.RelayURL = "http://relay.example.com" },
-		"bad api url": func(c *ConnectorConfig) { c.APIURL = "ftp://x" },
-		"no realm":    func(c *ConnectorConfig) { c.Realm = "" },
-		"no ingest":   func(c *ConnectorConfig) { c.IngestKeys = nil },
-		"no resp key": func(c *ConnectorConfig) { c.ResponseKey = nil },
-		"no cert":     func(c *ConnectorConfig) { c.ClientCert.Certificate = nil },
-		"short pin":   func(c *ConnectorConfig) { c.RelayPin = []byte{1} },
+		"http relay":      func(c *ConnectorConfig) { c.RelayURL = "http://relay.example.com" },
+		"bad api url":     func(c *ConnectorConfig) { c.APIURL = "ftp://x" },
+		"api path prefix": func(c *ConnectorConfig) { c.APIURL = "http://api:8080/prefix" },
+		"no realm":        func(c *ConnectorConfig) { c.Realm = "" },
+		"no ingest":       func(c *ConnectorConfig) { c.IngestKeys = nil },
+		"no resp key":     func(c *ConnectorConfig) { c.ResponseKey = nil },
+		"no cert":         func(c *ConnectorConfig) { c.ClientCert.Certificate = nil },
+		"short pin":       func(c *ConnectorConfig) { c.RelayPin = []byte{1} },
 	} {
 		c := good
 		mod(&c)

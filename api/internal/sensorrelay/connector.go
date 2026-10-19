@@ -112,6 +112,10 @@ func NewConnector(cfg ConnectorConfig) (*Connector, error) {
 	if err != nil || (au.Scheme != "http" && au.Scheme != "https") || au.Host == "" {
 		return nil, errors.New("sensorrelay: connector API URL must be http(s)")
 	}
+	// The sensors sign the request path; a prefix would change it.
+	if au.Path != "" && au.Path != "/" || au.RawQuery != "" || au.Fragment != "" {
+		return nil, errors.New("sensorrelay: connector API URL must have no path prefix, query or fragment")
+	}
 	switch {
 	case !relay.ValidID(cfg.Realm):
 		return nil, errors.New("sensorrelay: connector realm required")
@@ -251,7 +255,7 @@ func (c *Connector) handle(ctx context.Context, it relay.Item) {
 		c.met.requests.WithLabelValues("refused").Inc()
 		return
 	}
-	answer := c.replay(ctx, req)
+	answer := c.replay(ctx, req, it.Sensor)
 	env, err := sealed.SealResponse(replyTo, c.cfg.ResponseKey, route, sealed.Digest(it.Envelope), answer)
 	if err != nil {
 		c.met.requests.WithLabelValues("seal_failed").Inc()
@@ -288,7 +292,7 @@ func plain(status int, msg string) *sealed.Response {
 }
 
 // replay sends the inner request to the API and returns its answer.
-func (c *Connector) replay(ctx context.Context, in *sealed.Request) *sealed.Response {
+func (c *Connector) replay(ctx context.Context, in *sealed.Request, sensorID string) *sealed.Response {
 	if !allowedPath(in.Path) {
 		c.met.requests.WithLabelValues("path_refused").Inc()
 		return plain(http.StatusForbidden, "forbidden")
@@ -309,6 +313,9 @@ func (c *Connector) replay(ctx context.Context, in *sealed.Request) *sealed.Resp
 			}
 		}
 	}
+	// Set after the copy, and not an allowlisted header: only the route the
+	// envelope arrived on decides it.
+	req.Header.Set(relay.HeaderRelaySensor, sensorID)
 	req.ContentLength = int64(len(in.Body))
 	resp, err := c.api.Do(req)
 	if err != nil {

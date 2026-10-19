@@ -37,6 +37,12 @@ const (
 	PathConnectorDown = "/v1/connector/down/" // + sensor id
 )
 
+// HeaderRelaySensor is set by the relay connector on every request it
+// replays to the API, to the sensor id of the route the envelope arrived
+// on. The API refuses a signed request whose verified signing sensor is
+// another one.
+const HeaderRelaySensor = "X-Relay-Sensor"
+
 // Limits shared by both ends.
 const (
 	// MaxEnvelope bounds one envelope (the sealed v2 request body cap plus
