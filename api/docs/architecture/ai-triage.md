@@ -5,7 +5,50 @@ severity assessment, exploitability, business impact, false-positive
 likelihood and remediation steps. The result is a suggestion for a person;
 it never changes the finding on its own.
 
-Status: shipped. Planned work is listed at the end.
+Status: shipped. Planned work is listed at the end. Design and decisions:
+[RFC-119](../rfcs/RFC-119-ai-triage-governance.md).
+
+## Who turns it on
+
+- **Platform administrator**: sets up the platform AI provider in the
+  console (System > AI provider: provider, model, write-only key), or with
+  an environment key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`), which pins the provider. A key makes platform AI
+  available; nothing is sent until an organization turns AI triage on.
+- **Organization administrator** (owner or administrator): turns AI triage
+  on or off for the organization in Settings > AI
+  (`GET/PUT /api/v1/organization/settings/ai`, `settings:write`, a recent
+  sign-in, audited as critical `ai_settings.updated`). Turning it on is the
+  organization's consent to send finding content, within its AI data policy,
+  to the provider. It is stored as `settings.ai.enabled_at` / `enabled_by`;
+  until then the effective mode is `disabled`. The worker checks consent
+  again, so turning it off stops jobs already queued (`ai_disabled`).
+- **Upgrade**: migration 003140 keeps AI triage on for organizations that
+  already had a triage result (`enabled_by = upgrade`, one audit row
+  `ai_settings.opt_in_migrated` each); every other organization starts off.
+- **Members**: the AI triage button (`ai_triage:trigger` and
+  `findings:write`); bulk also needs `findings:bulk_update`.
+
+`GET /api/v1/findings/ai-triage/config` tells the web UI whether the button
+works (`is_enabled`) and, when not, why: `not_enabled` (an organization
+administrator turns it on in Settings > AI), `platform_not_configured` (a
+platform administrator sets up a provider in the console) or
+`budget_exhausted`. It also returns the month's platform token use and limit.
+
+## Cost controls
+
+- Monthly budget per organization for platform AI (`ai_triage_budgets`), on
+  by default: 2,000,000 tokens per month (`AI_TRIAGE_BUDGET_ENABLED`,
+  `AI_TRIAGE_BUDGET_DEFAULT_TOKENS`, set on the month's row when it is
+  created). A triage that would pass it fails with `budget_exhausted`. An
+  organization with its own key is not counted.
+- Provider rate limit: `AI_RATE_LIMIT_RPM` per provider key, and each
+  organization's own bucket in front of the platform key's
+  (`AI_RATE_LIMIT_TENANT_RPM`, default 20), so one organization cannot starve
+  the others.
+- HTTP rate limit: 10 triage requests per minute per organization and
+  replica; a bulk request spends one unit per finding and is refused (429)
+  past the allowance.
 
 ## Flow
 
@@ -58,7 +101,7 @@ permission" when the reason is that AI is not available:
 | Code | Status | Meaning | Who fixes it |
 |---|---|---|---|
 | `AI_PLATFORM_NOT_CONFIGURED` | 503 | the organization uses platform AI and no provider is set up | platform administrator (console, System > AI provider) |
-| `AI_DISABLED` | 403 | AI triage is off for the organization | organization administrator |
+| `AI_DISABLED` | 403 | AI triage is off for the organization (not turned on yet, or turned off) | organization administrator (Settings > AI) |
 | `AI_POLICY_RESTRICTED` | 403 | the AI data policy keeps this finding on the platform | campaign lead or organization administrator |
 
 A failed triage stores a fixed failure code in `error_message`; the API
@@ -67,7 +110,7 @@ returns it as `error_code`, and the web UI translates it. Raw error text
 shown, broadcast, sent to workflows or written to the audit log. Rows from
 before the codes read as `internal_error`.
 
-Codes: `internal_error`, `ai_policy_restricted`, `provider_not_configured`,
+Codes: `internal_error`, `ai_policy_restricted`, `ai_disabled`, `provider_not_configured`,
 `provider_rate_limited`, `provider_auth_failed`, `provider_quota_exceeded`,
 `provider_timeout`, `provider_unavailable`, `content_blocked`,
 `input_too_large`, `invalid_response`, `empty_response`, `budget_exhausted`,
@@ -112,8 +155,10 @@ carries them over.
 - Actors: a scanned target that plants text in HTTP bodies or code (prompt
   injection); a member burning the platform's budget; another organization;
   the provider (retention).
-- Controls: nonce-fenced prompt and output validation; no automatic effect
+- Controls: organization consent (checked at request time and in the
+  worker); nonce-fenced prompt and output validation; no automatic effect
   of a verdict; the AI data-egress policy at request time and in the worker;
+  monthly budgets and per-organization fair share;
   data scope and pentest membership on the routes; tenant-scoped queries
   everywhere; fixed provider URLs through the SSRF-safe client; encrypted,
   write-only keys in the rekey registry; failure codes instead of raw
@@ -121,7 +166,8 @@ carries them over.
 
 ## Planned
 
-Organization opt-in before any data leaves, per-organization budgets and
-fair share of the provider rate limit, an organization Settings > AI page,
-own-key and self-hosted providers, richer context and a result card with
-apply actions (research 196).
+Own-key (BYOK) and self-hosted (OpenAI-compatible base URL) providers in
+Settings > AI, context enrichment and redaction with a "what was sent"
+record, a structured result schema, the result card with apply actions and
+history, "Triage selected" bulk on a fair-share queue with a result cache,
+an atomic de-duplication index, and an evaluation set (RFC-119).
