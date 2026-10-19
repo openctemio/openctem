@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_software_version_vulns_condition;

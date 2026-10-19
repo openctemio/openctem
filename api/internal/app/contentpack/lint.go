@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"path"
 	"strings"
 	"unicode/utf8"
@@ -44,6 +45,10 @@ func LintExcluding(ctx context.Context, kind string, files []dom.File) (dom.Lint
 func lint(ctx context.Context, kind string, files []dom.File, exclude bool) (dom.LintReport, map[string]bool) {
 	rep := dom.LintReport{Tier: dom.TierT0, Files: len(files)}
 	excluded := map[string]bool{}
+	var nuclei map[string]*dom.LintReport
+	if kind == dom.KindNucleiTemplates {
+		nuclei = lintNucleiPack(ctx, files, exclude)
+	}
 	for _, f := range files {
 		if ctx.Err() != nil {
 			rep.Error("", "LINT_TIMEOUT", "lint did not finish in time")
@@ -52,7 +57,9 @@ func lint(ctx context.Context, kind string, files []dom.File, exclude bool) (dom
 		fr := dom.LintReport{Tier: dom.TierT0}
 		switch kind {
 		case dom.KindNucleiTemplates:
-			lintNuclei(&fr, f, exclude)
+			if r := nuclei[f.Path]; r != nil {
+				fr = *r
+			}
 		case dom.KindSemgrepRules:
 			lintSemgrep(&fr, f)
 		case dom.KindWordlist:
@@ -96,126 +103,228 @@ func isYAML(p string) bool {
 	return ext == ".yaml" || ext == ".yml"
 }
 
-// lintNuclei validates every YAML file as a template (the custom-template
-// validator: no code, javascript, headless or file protocols, no
-// self-contained templates, safe regexes) and classifies it. Other files
-// (payload lists, README) are data the templates may reference.
+// nucleiFile is one template's lint result before workflow resolution.
+type nucleiFile struct {
+	path     string
+	rep      *dom.LintReport
+	analysis *template.NucleiAnalysis
+	tier     dom.Tier
+	why      string
+	failed   bool // refused: errors, or left out of an upstream release
+	resolved bool
+	visiting bool
+}
+
+// lintNucleiPack lints every YAML file of a pack as a template (the
+// custom-template validator: no code-class blocks, no self-contained
+// templates, safe regexes, bounded request volume) and classifies it from
+// its parsed structure (template.AnalyzeNuclei). Other files (payload
+// lists, README) are data the templates may reference.
+//
+// References are resolved inside the pack only: a workflow's templates and
+// a template's payload files must be files of the same pack, by a relative
+// path that stays inside it, and a workflow's tier and request volume are
+// those of what it runs. A workflow that references a template outside the
+// pack, or one that was refused, is refused with it.
 //
 // upstream (a platform-managed release): attack payloads in a template's
 // requests (shell fragments, file paths such as /etc/passwd: the text
 // check the custom-template validator applies to the whole document) are
 // what detection templates send to their targets, so they make the template
-// T2 instead of refusing it. Protocols that run code on the scanner, read
-// its files or drive a browser, self-contained templates and unsafe regexes
-// are refused either way (structural checks on the parsed document).
-func lintNuclei(rep *dom.LintReport, f dom.File, upstream bool) {
-	if !isYAML(f.Path) {
-		return
+// T2 instead of refusing it. Code-class blocks (code, javascript, flow,
+// headless, file), self-contained templates, unsafe regexes and references
+// outside the pack are refused either way (structural checks on the parsed
+// document).
+func lintNucleiPack(ctx context.Context, files []dom.File, upstream bool) map[string]*dom.LintReport {
+	byPath := make(map[string][]byte, len(files))
+	for _, f := range files {
+		byPath[path.Clean(f.Path)] = f.Data
 	}
-	res := template.ValidateTemplate(scannertemplate.TemplateTypeNuclei, f.Data)
+	out := make(map[string]*dom.LintReport, len(files))
+	parsed := make(map[string]*nucleiFile, len(files))
+	for _, f := range files {
+		if ctx.Err() != nil {
+			break
+		}
+		if !isYAML(f.Path) {
+			continue
+		}
+		nf := lintNucleiFile(f, byPath, upstream)
+		parsed[path.Clean(f.Path)] = nf
+		out[f.Path] = nf.rep
+	}
+	for _, f := range files {
+		if nf := parsed[path.Clean(f.Path)]; nf != nil {
+			resolveWorkflow(path.Clean(f.Path), nf, parsed)
+		}
+	}
+	for _, nf := range parsed {
+		if nf.failed {
+			continue
+		}
+		nf.rep.Items++
+		if nf.tier != dom.TierT0 {
+			nf.rep.Warn(nf.path, "TIER_"+string(nf.tier), nf.why)
+		}
+		nf.rep.Tier = nf.tier
+	}
+	return out
+}
+
+// lintNucleiFile validates and classifies one template on its own.
+func lintNucleiFile(f dom.File, byPath map[string][]byte, upstream bool) *nucleiFile {
+	nf := &nucleiFile{path: f.Path, rep: &dom.LintReport{Tier: dom.TierT0}, tier: dom.TierT0}
+	dir := path.Dir(path.Clean(f.Path))
+	sizer := func(ref string) (int, bool) {
+		data, ok := lookupRef(byPath, dir, ref)
+		if !ok {
+			return 0, false
+		}
+		return countLines(data), true
+	}
+	res := template.ValidateNuclei(f.Data, template.NucleiOptions{Snapshot: true, PayloadSizer: sizer})
 	payloads := false
 	for _, e := range res.Errors {
 		if upstream && e.Code == "DANGEROUS_PATTERN" && e.Field == "content" {
 			payloads = true
 			continue
 		}
-		rep.Error(f.Path, e.Code, e.Field+": "+e.Message)
+		nf.rep.Error(f.Path, e.Code, e.Field+": "+e.Message)
 	}
-	if len(rep.Errors) > 0 {
-		return
+	if len(nf.rep.Errors) > 0 {
+		nf.failed = true
+		return nf
 	}
-	rep.Items++
 	var tpl map[string]any
 	if err := yaml.Unmarshal(f.Data, &tpl); err != nil {
-		return // the validator parsed it already
+		nf.failed = true
+		nf.rep.Error(f.Path, "INVALID_YAML", err.Error())
+		return nf
 	}
-	tier, why := classifyNuclei(tpl, f.Data)
+	nf.analysis = template.AnalyzeNuclei(tpl, sizer)
+	nf.tier, nf.why = tierOf(nf.analysis)
 	if payloads {
-		tier, why = dom.TierT2, "attack payloads in its requests (shell fragments or system file paths)"
+		nf.tier, nf.why = dom.TierT2, "attack payloads in its requests (shell fragments or system file paths)"
 	}
-	if tier != dom.TierT0 {
-		rep.Warn(f.Path, "TIER_"+string(tier), why)
-	}
-	rep.Tier = rep.Tier.Max(tier)
+	return nf
 }
 
-// t1Protocols reach beyond HTTP (RFC-061 §3.2: network and DNS at least T1).
-var t1Protocols = []string{"dns", "network", "tcp", "ssl", "websocket", "whois"} //nolint:gochecknoglobals // static table
-
-// intrusiveMethods change state on the target.
-var intrusiveMethods = map[string]bool{"PUT": true, "PATCH": true, "DELETE": true} //nolint:gochecknoglobals // static table
-
-// classifyNuclei is a template's tier and the reason.
-func classifyNuclei(tpl map[string]any, raw []byte) (dom.Tier, string) {
-	lower := bytes.ToLower(raw)
-	if bytes.Contains(lower, []byte("interactsh")) {
-		return dom.TierT2, "out-of-band callbacks (interactsh)"
+// resolveWorkflow resolves a workflow's references inside the pack and
+// raises its tier and volume to those of what it runs. A reference to a
+// file that is not in the pack, is not a template, or was refused refuses
+// the workflow; so does a cycle.
+func resolveWorkflow(p string, nf *nucleiFile, parsed map[string]*nucleiFile) {
+	if nf.resolved || nf.failed || nf.analysis == nil || len(nf.analysis.WorkflowRefs) == 0 {
+		nf.resolved = true
+		return
 	}
-	if _, ok := tpl["flow"]; ok {
-		return dom.TierT2, "scripted flow"
+	if nf.visiting {
+		nf.fail("WORKFLOW_CYCLE", "the workflow references itself")
+		return
 	}
-	tier, why := dom.TierT0, ""
-	for _, key := range []string{"http", "requests"} {
-		reqs, _ := tpl[key].([]any)
-		for _, r := range reqs {
-			req, _ := r.(map[string]any)
-			if t, w := classifyNucleiRequest(req); t.Rank() > tier.Rank() {
-				tier, why = t, w
-			}
+	nf.visiting = true
+	defer func() { nf.visiting = false; nf.resolved = true }()
+	requests := nf.analysis.Requests
+	dir := path.Dir(p)
+	for _, ref := range nf.analysis.WorkflowRefs {
+		target, key := lookupTemplate(parsed, dir, ref.Path)
+		if target == nil {
+			nf.fail("WORKFLOW_OUTSIDE_SNAPSHOT", fmt.Sprintf("%s: %q is not a template of this pack", ref.Field, ref.Path))
+			return
 		}
-	}
-	if tier == dom.TierT2 {
-		return tier, why
-	}
-	for _, p := range t1Protocols {
-		if _, ok := tpl[p]; ok {
-			return dom.TierT1, "the " + p + " protocol"
+		if target.visiting {
+			nf.fail("WORKFLOW_CYCLE", fmt.Sprintf("%s: %q leads back to this workflow", ref.Field, ref.Path))
+			return
 		}
+		resolveWorkflow(key, target, parsed)
+		if target.failed {
+			nf.fail("WORKFLOW_REFERENCE_REFUSED", fmt.Sprintf("%s: %q was refused", ref.Field, ref.Path))
+			return
+		}
+		if target.tier.Rank() > nf.tier.Rank() {
+			nf.tier, nf.why = target.tier, fmt.Sprintf("runs %s (%s)", ref.Path, target.why)
+		}
+		requests = satAdd(requests, target.analysis.Requests)
 	}
-	if _, ok := tpl["workflows"]; ok && tier == dom.TierT0 {
-		return dom.TierT1, "a workflow of other templates"
+	if nf.tier == dom.TierT0 {
+		nf.tier, nf.why = dom.TierT1, "a workflow of other templates"
 	}
-	return tier, why
+	if requests > template.MaxTemplateRequests {
+		nf.fail("REQUEST_VOLUME_CAP", fmt.Sprintf("the workflow sends about %d requests per target; the limit is %d", requests, template.MaxTemplateRequests))
+		return
+	}
+	if requests > template.VolumeHighRequests && nf.tier != dom.TierT2 {
+		nf.tier, nf.why = dom.TierT2, fmt.Sprintf("about %d requests per target", requests)
+	}
+	nf.analysis.Requests = requests
 }
 
-func classifyNucleiRequest(req map[string]any) (dom.Tier, string) {
-	if req == nil {
-		return dom.TierT0, ""
+func (nf *nucleiFile) fail(code, msg string) {
+	nf.failed = true
+	nf.rep.Error(nf.path, code, msg)
+}
+
+// lookupTemplate finds a referenced template, relative to the pack root
+// first and then to the referencing file's directory.
+func lookupTemplate(parsed map[string]*nucleiFile, dir, ref string) (*nucleiFile, string) {
+	clean, err := template.CleanRef(ref)
+	if err != nil {
+		return nil, ""
 	}
-	if race, _ := req["race"].(bool); race {
-		return dom.TierT2, "race requests"
-	}
-	if _, ok := req["race_count"]; ok {
-		return dom.TierT2, "race requests"
-	}
-	if threads, ok := req["threads"].(int); ok && threads > 25 {
-		return dom.TierT2, "more than 25 concurrent requests"
-	}
-	method := strings.ToUpper(fmt.Sprint(req["method"]))
-	body, _ := req["body"].(string)
-	if intrusiveMethods[method] || (method == "POST" && strings.TrimSpace(body) != "") {
-		return dom.TierT2, method + " requests with a body or that change state"
-	}
-	raws, _ := req["raw"].([]any)
-	for _, r := range raws {
-		s, _ := r.(string)
-		m, b := rawRequest(s)
-		if intrusiveMethods[m] || (m == "POST" && b != "") {
-			return dom.TierT2, m + " requests with a body or that change state"
+	for _, k := range []string{clean, path.Join(dir, clean)} {
+		if nf := parsed[k]; nf != nil {
+			return nf, k
 		}
 	}
-	if _, ok := req["payloads"]; ok {
-		return dom.TierT1, "payload fuzzing"
+	return nil, ""
+}
+
+// lookupRef finds a referenced data file the same way.
+func lookupRef(byPath map[string][]byte, dir, ref string) ([]byte, bool) {
+	clean, err := template.CleanRef(ref)
+	if err != nil {
+		return nil, false
+	}
+	for _, k := range []string{clean, path.Join(dir, clean)} {
+		if d, ok := byPath[k]; ok {
+			return d, true
+		}
+	}
+	return nil, false
+}
+
+func countLines(data []byte) int {
+	n := 0
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) > 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func satAdd(a, b int) int {
+	if a > math.MaxInt32-b {
+		return math.MaxInt32
+	}
+	return a + b
+}
+
+// tierOf maps a template's capabilities to its tier and the reason
+// (RFC-061 §3.2): out-of-band callbacks, state-changing requests and high
+// volume are T2; payload lists, protocols beyond HTTP and DNS are T1.
+func tierOf(a *template.NucleiAnalysis) (dom.Tier, string) {
+	for _, c := range []template.Capability{template.CapOOBCallback, template.CapHTTPStateChange, template.CapVolumeHigh} {
+		if why, ok := a.Caps[c]; ok {
+			return dom.TierT2, why
+		}
+	}
+	for _, c := range []template.Capability{template.CapHTTPPayloads, template.CapNetRaw, template.CapDNSQuery} {
+		if why, ok := a.Caps[c]; ok {
+			return dom.TierT1, why
+		}
 	}
 	return dom.TierT0, ""
-}
-
-// rawRequest is the method and body of a raw HTTP request.
-func rawRequest(s string) (string, string) {
-	s = strings.TrimLeft(strings.ReplaceAll(s, "\r\n", "\n"), " \n\t")
-	method, _, _ := strings.Cut(s, " ")
-	_, body, _ := strings.Cut(s, "\n\n")
-	return strings.ToUpper(method), strings.TrimSpace(body)
 }
 
 // lintSemgrep validates every YAML file as a rules file. Rules are passive
