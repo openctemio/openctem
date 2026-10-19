@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -445,44 +446,77 @@ func (r *ScoringRepository) EnqueueIntelChanges(ctx context.Context) (int64, err
 // trg_findings_sla_deadline_guard enforces the same rule for every writer.
 // Only a finding that is still open is written, so a finding closed while
 // the pass ran stays frozen, and no other column (status, assignee, ...) a
-// concurrent edit may have changed is overwritten. Returns how many rows
-// were written.
+// concurrent edit may have changed is overwritten. One statement writes up to
+// savePriorityBatch findings (UPDATE ... FROM VALUES), so a pass over a large
+// tenant costs one round trip per batch, not one per finding. Returns how
+// many rows were written.
 func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (int, error) {
-	q := `
-		UPDATE findings SET
-			priority_class = CASE WHEN priority_class_override THEN priority_class ELSE $3 END,
-			priority_class_reason = CASE WHEN priority_class_override THEN priority_class_reason ELSE $4 END,
-			is_reachable = $5, reachable_from_count = $6,
-			epss_score = $7, epss_percentile = $8, is_in_kev = $9, kev_due_date = $10,
-			sla_deadline = CASE
-				WHEN $11::timestamptz IS NULL THEN sla_deadline
-				WHEN sla_deadline IS NULL THEN $11
-				ELSE LEAST(sla_deadline, $11) END,
-			sla_status = CASE
-				WHEN $11::timestamptz IS NULL THEN sla_status
-				WHEN sla_deadline IS NULL OR $11 < sla_deadline THEN $12
-				ELSE sla_status END,
-			updated_at = now()
-		WHERE tenant_id = $1 AND id = $2 AND ` + vulnerability.OpenStatusSQL("status")
-	saved := 0
+	// One row per finding (the last copy wins): UPDATE ... FROM VALUES must
+	// not see one id twice.
+	seen := make(map[shared.ID]int, len(findings))
+	rows := make([]*vulnerability.Finding, 0, len(findings))
 	for _, f := range findings {
 		if f == nil {
 			continue
 		}
-		res, err := r.db.ExecContext(ctx, q, tenantID.String(), f.ID().String(),
-			nullPriorityClass(f.PriorityClass()), nullString(f.PriorityClassReason()),
-			f.IsReachable(), f.ReachableFromCount(),
-			nullFloat64(f.EPSSScore()), nullFloat64(f.EPSSPercentile()), f.IsInKEV(), nullTime(f.KEVDueDate()),
-			nullTime(f.SLADeadline()), string(f.SLAStatus()))
-		if err != nil {
-			return saved, fmt.Errorf("save finding priority: %w", err)
+		if i, dup := seen[f.ID()]; dup {
+			rows[i] = f
+			continue
 		}
-		if n, _ := res.RowsAffected(); n > 0 {
-			saved++
-		}
+		seen[f.ID()] = len(rows)
+		rows = append(rows, f)
 	}
-	return saved, nil
+	saved := 0
+	err := forEachStatementChunk(len(rows), savePriorityParams, 1, savePriorityBatch, func(start, end int) error {
+		values := make([]string, 0, end-start)
+		args := make([]any, 1, 1+(end-start)*savePriorityParams)
+		args[0] = tenantID.String()
+		for _, f := range rows[start:end] {
+			n := len(args)
+			values = append(values, fmt.Sprintf(
+				"($%d::uuid, $%d::varchar, $%d::text, $%d::boolean, $%d::integer, $%d::numeric, $%d::numeric, "+
+					"$%d::boolean, $%d::date, $%d::timestamptz, $%d::varchar)",
+				n+1, n+2, n+3, n+4, n+5, n+6, n+7, n+8, n+9, n+10, n+11))
+			args = append(args, f.ID().String(),
+				nullPriorityClass(f.PriorityClass()), nullString(f.PriorityClassReason()),
+				f.IsReachable(), f.ReachableFromCount(),
+				nullFloat64(f.EPSSScore()), nullFloat64(f.EPSSPercentile()), f.IsInKEV(), nullTime(f.KEVDueDate()),
+				nullTime(f.SLADeadline()), string(f.SLAStatus()))
+		}
+		res, err := r.db.ExecContext(ctx, `
+		UPDATE findings f SET
+			priority_class = CASE WHEN f.priority_class_override THEN f.priority_class ELSE v.class END,
+			priority_class_reason = CASE WHEN f.priority_class_override THEN f.priority_class_reason ELSE v.reason END,
+			is_reachable = v.reachable, reachable_from_count = v.reach_from,
+			epss_score = v.epss, epss_percentile = v.epss_pct, is_in_kev = v.kev, kev_due_date = v.kev_due,
+			sla_deadline = CASE
+				WHEN v.sla IS NULL THEN f.sla_deadline
+				WHEN f.sla_deadline IS NULL THEN v.sla
+				ELSE LEAST(f.sla_deadline, v.sla) END,
+			sla_status = CASE
+				WHEN v.sla IS NULL THEN f.sla_status
+				WHEN f.sla_deadline IS NULL OR v.sla < f.sla_deadline THEN v.sla_status
+				ELSE f.sla_status END,
+			updated_at = now()
+		FROM (VALUES `+strings.Join(values, ", ")+`)
+			AS v(id, class, reason, reachable, reach_from, epss, epss_pct, kev, kev_due, sla, sla_status)
+		WHERE f.tenant_id = $1 AND f.id = v.id AND `+vulnerability.OpenStatusSQL("f.status"), args...)
+		if err != nil {
+			return fmt.Errorf("save finding priorities: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		saved += int(n)
+		return nil
+	})
+	return saved, err
 }
+
+// savePriorityParams is the bind parameters per finding in SavePriorities;
+// savePriorityBatch caps the findings per statement (rows locked at once).
+const (
+	savePriorityParams = 11
+	savePriorityBatch  = 1000
+)
 
 // epssRefreshBatch bounds one EPSS refresh statement (rows locked at once).
 const epssRefreshBatch = 2000

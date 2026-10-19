@@ -780,6 +780,12 @@ export interface Finding {
   reachableFromCount?: number
   isInternetAccessible?: boolean
 
+  // Severity provenance: what the tools reported, the analyst's override
+  // (severity is the effective value) and a downgrade waiting for approval.
+  sourceSeverity?: string
+  severityOverride?: import('../api/finding-api.types').ApiSeverityOverride
+  pendingSeverityRequest?: import('../api/finding-api.types').ApiSeverityRequest
+
   // Extended: Security Context
   exposureVector?: string // network/local/adjacent/physical
   isNetworkAccessible?: boolean

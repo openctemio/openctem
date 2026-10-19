@@ -14,7 +14,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { Severity } from '@/features/shared/types'
+import { mutate as mutateSWR } from 'swr'
+import type { ApiFinding } from '../api/finding-api.types'
 import {
+  findingDetailKey,
   invalidateFindingsCache,
   useAssignFindingApi,
   useUnassignFindingApi,
@@ -22,6 +25,7 @@ import {
   useUpdateFindingStatusApi,
 } from '../api/use-findings-api'
 import { ApprovalDialog } from '../components/approval-dialog'
+import { SeverityChangeDialog } from '../components/severity-change-dialog'
 import type { TransitionDecision } from '../api/use-finding-transitions'
 import { subStatusName, useSubStatusCatalog } from '../api/use-finding-lifecycles'
 import {
@@ -55,6 +59,8 @@ export interface FindingTriageTarget {
   subStatusId?: string
   /** Version of the finding shown; writes are refused when it moved on. */
   rowVersion?: number
+  /** The severity the tools reported (the restore target of an override). */
+  sourceSeverity?: string
 }
 
 export interface UseFindingTriageOptions {
@@ -75,6 +81,10 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   const [approvalTarget, setApprovalTarget] = useState<FindingStatus | null>(null)
   // A fix claim or a resolve waits here for its note (the API requires one).
   const [noteTarget, setNoteTarget] = useState<NotedStatus | null>(null)
+  // A severity change waits here for its reason (the API requires one).
+  const [severityTarget, setSeverityTarget] = useState<{ to: string; restore: boolean } | null>(
+    null
+  )
 
   // Follow the server after a revalidation or when another finding is shown.
   //
@@ -203,35 +213,75 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     }
   }
 
-  const changeSeverity = async (next: Severity, isUndo = false) => {
-    if (next === severity) return
-    const previous = severity
-    setSeverity(next)
+  // A severity change asks for its reason first; the answer carries the
+  // recomputed priority, SLA deadline and reason, written into the finding's
+  // cache at once (then everything about findings revalidates). A downgrade
+  // the organization's policy does not let this person decide alone comes
+  // back as a pending request: the severity stays.
+  const submitSeverity = async (target: { to: string; restore: boolean }, reason: string) => {
     try {
-      wrote(await updateSeverity({ severity: next, rowVersion: rowVersion.current }))
-      opts.onSeverityChange?.(next)
+      const updated = await updateSeverity(
+        target.restore
+          ? { restore: true, reason, rowVersion: rowVersion.current }
+          : { severity: target.to as Severity, reason, rowVersion: rowVersion.current }
+      )
+      wrote(updated)
+      setSeverityTarget(null)
+      if (updated) {
+        await mutateSWR(
+          findingDetailKey(finding.id),
+          (cur?: ApiFinding) =>
+            cur
+              ? {
+                  ...cur,
+                  severity: updated.severity,
+                  source_severity: updated.source_severity,
+                  severity_override: updated.severity_override,
+                  pending_severity_request: updated.pending_severity_request,
+                  priority_class: updated.priority_class,
+                  priority_class_reason: updated.priority_class_reason,
+                  sla_deadline: updated.sla_deadline,
+                  sla_status: updated.sla_status,
+                }
+              : cur,
+          { revalidate: false }
+        )
+      }
       await invalidateFindingsCache()
+      if (updated?.pending_severity_request) {
+        toast.info(
+          t(
+            'findings.triage.severityPending',
+            'The change to {severity} waits for approval; the severity stays until then',
+            { severity: t(`severity.${target.to}`, target.to) }
+          )
+        )
+        return
+      }
+      const next = (updated?.severity ?? target.to) as Severity
+      setSeverity(next)
+      opts.onSeverityChange?.(next)
       toast.success(
         t('findings.triage.severityUpdated', 'Severity updated to {severity}', {
-          severity: t(`severity.${next}`, SEVERITY_CONFIG[next].label),
-        }),
-        isUndo
-          ? { duration: 3000 }
-          : {
-              action: {
-                label: t('findings.triage.undo', 'Undo'),
-                onClick: () => void changeSeverity(previous, true),
-              },
-              duration: 5000,
-            }
+          severity: t(`severity.${next}`, SEVERITY_CONFIG[next]?.label ?? next),
+        })
       )
     } catch (error) {
-      setSeverity(previous)
       if (await changedMeanwhile(error)) return
       toast.error(
         getErrorMessage(error, t('findings.triage.severityFailed', 'Failed to update severity'))
       )
     }
+  }
+
+  const changeSeverity = (next: Severity) => {
+    if (next === severity) return
+    setSeverityTarget({ to: next, restore: false })
+  }
+
+  const restoreSeverity = () => {
+    if (!finding.sourceSeverity) return
+    setSeverityTarget({ to: finding.sourceSeverity, restore: true })
   }
 
   const changeAssignee = async (next: FindingUser | null, isUndo = false) => {
@@ -329,9 +379,24 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     />
   ) : null
 
+  const severityDialog: ReactNode = severityTarget ? (
+    <SeverityChangeDialog
+      open
+      from={severity}
+      to={severityTarget.to}
+      restore={severityTarget.restore}
+      busy={severityBusy}
+      onOpenChange={(open) => {
+        if (!open) setSeverityTarget(null)
+      }}
+      onConfirm={(reason) => void submitSeverity(severityTarget, reason)}
+    />
+  ) : null
+
   const dialogs: ReactNode = (
     <>
       {approvalDialog}
+      {severityDialog}
       {noteDialog}
       {moveDialog}
     </>
@@ -344,7 +409,8 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     assignee,
     changeStatus: (s: FindingStatus, move?: TransitionDecision) =>
       void changeStatus(s, false, undefined, move),
-    changeSeverity: (s: Severity) => void changeSeverity(s),
+    changeSeverity: (s: Severity) => changeSeverity(s),
+    restoreSeverity,
     changeAssignee: (u: FindingUser | null) => void changeAssignee(u),
     statusBusy,
     severityBusy,

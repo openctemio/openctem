@@ -50,8 +50,10 @@ export function MaturityTrendCard({
         <ul className="divide-y">
           {METRIC_KEYS.map((key) => {
             const series = trend.series[key] ?? []
-            const values = series.map((p) => p.value)
-            const latest = values.length > 0 ? values[values.length - 1] : undefined
+            // A cycle without a sample (null) is a gap, not a 0.
+            const values = series.map((p) => p.value).filter((v): v is number => v !== null)
+            const last = series.length > 0 ? series[series.length - 1].value : null
+            const latest = last === null ? undefined : last
             return (
               <li key={key} className="flex items-center justify-between gap-4 py-2.5">
                 <span className="text-sm">{METRIC_LABEL[key]}</span>
