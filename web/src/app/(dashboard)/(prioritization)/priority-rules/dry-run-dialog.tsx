@@ -248,7 +248,9 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
           </span>
         </div>
         {capped ? (
-          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400" /* palette-ok: caution note, no warning token */>
+          <p
+            className="mt-2 text-xs text-amber-600 dark:text-amber-400" /* palette-ok: caution note, no warning token */
+          >
             {t(
               'prioritization.dryRun.sampled',
               'Sample: the {evaluated} most recent of {total} open findings were evaluated (limit {cap}). Counts for the whole organization may be higher.',
