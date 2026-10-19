@@ -1,11 +1,17 @@
 package postgres
 
+// Remediation campaigns: programs of remediation tasks
+// (docs/architecture/remediation-campaigns.md). A campaign holds tasks
+// (remediation_tasks.campaign_id), never findings; its summary is derived
+// from its tasks and their findings on every read, over the reader's scope.
+
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -25,120 +31,53 @@ func NewRemediationCampaignRepository(db *DB) *RemediationCampaignRepository {
 	return &RemediationCampaignRepository{db: db}
 }
 
-const rcSelectCols = `id, tenant_id, name, description, status, priority,
-	finding_filter, finding_count, resolved_count, progress,
-	risk_score_before, risk_score_after, risk_reduction,
-	assigned_to, assigned_team, start_date, due_date, completed_at,
-	tags, created_by, created_at, updated_at, version`
+var _ remediation.CampaignRepository = (*RemediationCampaignRepository)(nil)
+
+const rcSelectCols = `c.id, c.tenant_id, c.name, c.description, c.status, c.priority,
+	c.assigned_to, c.assigned_team, c.start_date, c.due_date, c.completed_at,
+	c.tags, c.created_by, c.created_at, c.updated_at, c.version`
+
+// liveTaskStates are the task states that still take work.
+const liveTaskStatesSQL = `('open', 'in_progress', 'verifying', 'on_hold')`
 
 func (r *RemediationCampaignRepository) scanCampaign(scan func(dest ...any) error) (*remediation.Campaign, error) {
 	var (
-		id, tenantID, name, description string
+		id, tenantID                    shared.ID
+		name, description               string
 		status, priority                string
-		filterJSON                      []byte
-		findingCount, resolvedCount     int
-		progress                        float64
-		riskBefore, riskAfter, riskRed  sql.NullFloat64
 		assignedTo, assignedTeam        sql.NullString
 		startDate, dueDate, completedAt sql.NullTime
 		tags                            pq.StringArray
-		createdByStr                    sql.NullString
+		createdBy                       sql.NullString
 		createdAt, updatedAt            time.Time
 		version                         int
 	)
-
-	err := scan(
-		&id, &tenantID, &name, &description, &status, &priority,
-		&filterJSON, &findingCount, &resolvedCount, &progress,
-		&riskBefore, &riskAfter, &riskRed,
-		&assignedTo, &assignedTeam,
-		&startDate, &dueDate, &completedAt,
-		&tags, &createdByStr, &createdAt, &updatedAt, &version,
-	)
-	if err != nil {
+	if err := scan(&id, &tenantID, &name, &description, &status, &priority,
+		&assignedTo, &assignedTeam, &startDate, &dueDate, &completedAt,
+		&tags, &createdBy, &createdAt, &updatedAt, &version); err != nil {
 		return nil, err
 	}
-
-	parsedID, _ := shared.IDFromString(id)
-	parsedTenantID, _ := shared.IDFromString(tenantID)
-
-	var filter map[string]any
-	_ = json.Unmarshal(filterJSON, &filter)
-
-	var rb, ra, rr *float64
-	if riskBefore.Valid {
-		rb = &riskBefore.Float64
-	}
-	if riskAfter.Valid {
-		ra = &riskAfter.Float64
-	}
-	if riskRed.Valid {
-		rr = &riskRed.Float64
-	}
-
-	parseOptionalID := func(s sql.NullString) *shared.ID {
-		if !s.Valid {
-			return nil
-		}
-		uid, err := shared.IDFromString(s.String)
-		if err != nil {
-			return nil
-		}
-		return &uid
-	}
-
-	parseOptionalTime := func(t sql.NullTime) *time.Time {
-		if !t.Valid {
-			return nil
-		}
-		return &t.Time
-	}
-
 	return remediation.ReconstituteCampaign(
-		parsedID, parsedTenantID,
-		name, description,
+		id, tenantID, name, description,
 		remediation.CampaignStatus(status), remediation.CampaignPriority(priority),
-		filter, findingCount, resolvedCount, progress,
-		rb, ra, rr,
-		parseOptionalID(assignedTo), parseOptionalID(assignedTeam),
-		parseOptionalTime(startDate), parseOptionalTime(dueDate), parseOptionalTime(completedAt),
-		[]string(tags), parseOptionalID(createdByStr),
+		rtNullID(assignedTo), rtNullID(assignedTeam),
+		rtTimePtr(startDate), rtTimePtr(dueDate), rtTimePtr(completedAt),
+		[]string(tags), rtNullID(createdBy),
 		createdAt, updatedAt, version,
 	), nil
 }
 
+// Create inserts a campaign.
 func (r *RemediationCampaignRepository) Create(ctx context.Context, c *remediation.Campaign) error {
-	filterJSON, _ := json.Marshal(c.FindingFilter())
-
-	var assignedTo, assignedTeam, createdBy *string
-	if c.AssignedTo() != nil {
-		s := c.AssignedTo().String()
-		assignedTo = &s
-	}
-	if c.AssignedTeam() != nil {
-		s := c.AssignedTeam().String()
-		assignedTeam = &s
-	}
-	if c.CreatedBy() != nil {
-		s := c.CreatedBy().String()
-		createdBy = &s
-	}
-
-	query := `INSERT INTO remediation_campaigns (
+	_, err := r.db.ExecContext(ctx, `INSERT INTO remediation_campaigns (
 		id, tenant_id, name, description, status, priority,
-		finding_filter, finding_count, resolved_count, progress,
-		risk_score_before, risk_score_after, risk_reduction,
 		assigned_to, assigned_team, start_date, due_date,
 		tags, created_by, created_at, updated_at, version
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`
-
-	_, err := r.db.ExecContext(ctx, query,
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
 		c.ID().String(), c.TenantID().String(),
 		c.Name(), c.Description(), string(c.Status()), string(c.Priority()),
-		filterJSON, c.FindingCount(), c.ResolvedCount(), c.Progress(),
-		c.RiskBefore(), c.RiskAfter(), c.RiskReduction(),
-		assignedTo, assignedTeam, c.StartDate(), c.DueDate(),
-		pq.StringArray(c.Tags()), createdBy,
+		idArg(c.AssignedTo()), idArg(c.AssignedTeam()), c.StartDate(), c.DueDate(),
+		pq.StringArray(c.Tags()), idArg(c.CreatedBy()),
 		c.CreatedAt(), c.UpdatedAt(), c.Version(),
 	)
 	if err != nil {
@@ -147,8 +86,9 @@ func (r *RemediationCampaignRepository) Create(ctx context.Context, c *remediati
 	return nil
 }
 
+// GetByID returns a campaign of the tenant.
 func (r *RemediationCampaignRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*remediation.Campaign, error) {
-	query := "SELECT " + rcSelectCols + " FROM remediation_campaigns WHERE tenant_id = $1 AND id = $2"
+	query := "SELECT " + rcSelectCols + " FROM remediation_campaigns c WHERE c.tenant_id = $1 AND c.id = $2"
 	c, err := r.scanCampaign(r.db.QueryRowContext(ctx, query, tenantID.String(), id.String()).Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -159,42 +99,21 @@ func (r *RemediationCampaignRepository) GetByID(ctx context.Context, tenantID, i
 	return c, nil
 }
 
+// Update saves every field when the stored version is the campaign's.
 func (r *RemediationCampaignRepository) Update(ctx context.Context, c *remediation.Campaign) error {
-	filterJSON, _ := json.Marshal(c.FindingFilter())
-
-	var assignedTo, assignedTeam *string
-	if c.AssignedTo() != nil {
-		s := c.AssignedTo().String()
-		assignedTo = &s
-	}
-	if c.AssignedTeam() != nil {
-		s := c.AssignedTeam().String()
-		assignedTeam = &s
-	}
-
-	// Optimistic save: only when the stored version is the one the campaign
-	// was read at. A stale save (a second tab, the reconciler after a person's
-	// Cancel) changes nothing and reports a conflict.
-	query := `UPDATE remediation_campaigns SET
-		name=$3, description=$4, status=$5, priority=$6,
-		finding_filter=$7, finding_count=$8, resolved_count=$9, progress=$10,
-		risk_score_before=$11, risk_score_after=$12, risk_reduction=$13,
-		assigned_to=$14, assigned_team=$15, start_date=$16, due_date=$17, completed_at=$18,
-		tags=$19, updated_at=$20, version = version + 1
-		WHERE tenant_id=$1 AND id=$2 AND version=$21
-		RETURNING version`
-
 	var newVersion int
-	err := r.db.QueryRowContext(ctx, query,
+	err := r.db.QueryRowContext(ctx, `UPDATE remediation_campaigns SET
+		name=$3, description=$4, status=$5, priority=$6,
+		assigned_to=$7, assigned_team=$8, start_date=$9, due_date=$10, completed_at=$11,
+		tags=$12, updated_at=$13, version = version + 1
+		WHERE tenant_id=$1 AND id=$2 AND version=$14
+		RETURNING version`,
 		c.TenantID().String(), c.ID().String(),
 		c.Name(), c.Description(), string(c.Status()), string(c.Priority()),
-		filterJSON, c.FindingCount(), c.ResolvedCount(), c.Progress(),
-		c.RiskBefore(), c.RiskAfter(), c.RiskReduction(),
-		assignedTo, assignedTeam, c.StartDate(), c.DueDate(), c.CompletedAt(),
+		idArg(c.AssignedTo()), idArg(c.AssignedTeam()), c.StartDate(), c.DueDate(), c.CompletedAt(),
 		pq.StringArray(c.Tags()), c.UpdatedAt(), c.Version(),
 	).Scan(&newVersion)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Gone (another tenant's id, or deleted) or changed since read.
 		var exists bool
 		if qerr := r.db.QueryRowContext(ctx,
 			"SELECT EXISTS (SELECT 1 FROM remediation_campaigns WHERE tenant_id = $1 AND id = $2)",
@@ -213,20 +132,7 @@ func (r *RemediationCampaignRepository) Update(ctx context.Context, c *remediati
 	return nil
 }
 
-// UpdateCounts writes the finding counters and progress only, and stamps
-// last_reconciled_at. Status, dates, the filter and the version are never
-// written here, so a counter refresh cannot revert anyone's change.
-func (r *RemediationCampaignRepository) UpdateCounts(ctx context.Context, c *remediation.Campaign) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE remediation_campaigns
-		SET finding_count = $3, resolved_count = $4, progress = $5, last_reconciled_at = now()
-		WHERE tenant_id = $1 AND id = $2`,
-		c.TenantID().String(), c.ID().String(), c.FindingCount(), c.ResolvedCount(), c.Progress())
-	if err != nil {
-		return fmt.Errorf("failed to update remediation campaign counts: %w", err)
-	}
-	return nil
-}
-
+// Delete removes a campaign; its tasks stay and leave it (ON DELETE SET NULL).
 func (r *RemediationCampaignRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
 	res, err := r.db.ExecContext(ctx,
 		"DELETE FROM remediation_campaigns WHERE tenant_id = $1 AND id = $2",
@@ -238,48 +144,74 @@ func (r *RemediationCampaignRepository) Delete(ctx context.Context, tenantID, id
 	return deletedOne(res, "remediation campaign")
 }
 
-func (r *RemediationCampaignRepository) List(ctx context.Context, filter remediation.CampaignFilter, page pagination.Pagination) (pagination.Result[*remediation.Campaign], error) {
-	where := "WHERE 1=1"
-	args := []any{}
-	argIdx := 1
+// campaignVisibleCond is the predicate on campaign alias c for what the
+// viewer may see. Anyone not restricted sees every campaign of the tenant
+// (hidden program findings only leave the counts); a restricted viewer sees
+// the campaigns they created or own and those with a task holding a finding
+// in their scope.
+func campaignVisibleCond(v remediation.CampaignViewer, args []any) (string, []any) {
+	if !v.Restricted() {
+		return sqlTrue, args
+	}
+	conds := make([]string, 0, 3)
+	if v.UserID != nil {
+		args = append(args, v.UserID.String())
+		p := fmt.Sprintf("$%d", len(args))
+		conds = append(conds, "c.created_by = "+p, "c.assigned_to = "+p)
+	}
+	scopeCond, args := dataScopeCond("vf.asset_id", v.Scope, args)
+	conds = append(conds, `EXISTS (SELECT 1 FROM remediation_tasks vt
+		JOIN remediation_task_members vm ON vm.tenant_id = vt.tenant_id AND vm.task_id = vt.id AND vm.left_at IS NULL
+		JOIN findings vf ON vf.tenant_id = vm.tenant_id AND vf.id = vm.finding_id
+		WHERE vt.tenant_id = c.tenant_id AND vt.campaign_id = c.id AND `+scopeCond+`)`)
+	return "(" + strings.Join(conds, " OR ") + ")", args
+}
 
+func campaignListWhere(filter remediation.CampaignFilter) (string, []any) {
+	args := []any{}
+	conds := []string{}
+	next := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
 	if filter.TenantID != nil {
-		where += fmt.Sprintf(" AND tenant_id = $%d", argIdx)
-		args = append(args, filter.TenantID.String())
-		argIdx++
+		conds = append(conds, "c.tenant_id = "+next(filter.TenantID.String()))
+	} else {
+		conds = append(conds, "FALSE")
 	}
 	if filter.Status != nil {
-		where += fmt.Sprintf(" AND status = $%d", argIdx)
-		args = append(args, string(*filter.Status))
-		argIdx++
+		conds = append(conds, "c.status = "+next(string(*filter.Status)))
 	}
 	if filter.Priority != nil {
-		where += fmt.Sprintf(" AND priority = $%d", argIdx)
-		args = append(args, string(*filter.Priority))
-		argIdx++
+		conds = append(conds, "c.priority = "+next(string(*filter.Priority)))
 	}
-	if filter.Search != nil && *filter.Search != "" {
-		where += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx)
-		args = append(args, "%"+escapeLikePattern(*filter.Search)+"%")
-		// argIdx not incremented — no further conditions
+	if filter.Search != nil && strings.TrimSpace(*filter.Search) != "" {
+		p := next("%" + escapeLikePattern(strings.TrimSpace(*filter.Search)) + "%")
+		conds = append(conds, "(c.name ILIKE "+p+" OR c.description ILIKE "+p+")")
 	}
+	vis, args := campaignVisibleCond(filter.Viewer, args)
+	conds = append(conds, vis)
+	return strings.Join(conds, " AND "), args
+}
 
-	var total int
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM remediation_campaigns "+where, args...).Scan(&total); err != nil {
+// List lists the campaigns the viewer may see: active first, then draft,
+// completed and canceled; the earliest due date first within a status.
+func (r *RemediationCampaignRepository) List(ctx context.Context, filter remediation.CampaignFilter, page pagination.Pagination) (pagination.Result[*remediation.Campaign], error) {
+	where, args := campaignListWhere(filter)
+	var total int64
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM remediation_campaigns c WHERE "+where, args...).Scan(&total); err != nil {
 		return pagination.Result[*remediation.Campaign]{}, fmt.Errorf("failed to count campaigns: %w", err)
 	}
-
-	query := "SELECT " + rcSelectCols + " FROM remediation_campaigns " + where +
-		" ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC" +
-		fmt.Sprintf(" LIMIT %d OFFSET %d", page.PerPage, (page.Page-1)*page.PerPage)
-
+	query := "SELECT " + rcSelectCols + " FROM remediation_campaigns c WHERE " + where +
+		` ORDER BY CASE c.status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END,
+		  c.due_date ASC NULLS LAST, c.created_at DESC, c.id` +
+		fmt.Sprintf(" LIMIT %d OFFSET %d", page.PerPage, page.Offset())
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return pagination.Result[*remediation.Campaign]{}, fmt.Errorf("failed to list campaigns: %w", err)
 	}
-	defer rows.Close()
-
-	items := make([]*remediation.Campaign, 0)
+	defer func() { _ = rows.Close() }()
+	items := make([]*remediation.Campaign, 0, page.PerPage)
 	for rows.Next() {
 		c, err := r.scanCampaign(rows.Scan)
 		if err != nil {
@@ -290,30 +222,213 @@ func (r *RemediationCampaignRepository) List(ctx context.Context, filter remedia
 	if err := rows.Err(); err != nil {
 		return pagination.Result[*remediation.Campaign]{}, fmt.Errorf("failed to iterate campaigns: %w", err)
 	}
-
-	return pagination.NewResult(items, int64(total), page), nil
+	return pagination.NewResult(items, total, page), nil
 }
 
-// ListNonTerminal returns non-terminal campaigns across all tenants, least
-// recently reconciled first (never reconciled first). The reconciler stamps
-// every campaign it visits (UpdateCounts), so a large backlog rotates instead
-// of the same first page being picked every run. limit <= 0 falls back to a default of 500.
-func (r *RemediationCampaignRepository) ListNonTerminal(ctx context.Context, limit int) ([]*remediation.Campaign, error) {
+// CountByStatus counts the campaigns the viewer may see, per status.
+func (r *RemediationCampaignRepository) CountByStatus(ctx context.Context, tenantID shared.ID, viewer remediation.CampaignViewer) (map[remediation.CampaignStatus]int, error) {
+	where, args := campaignListWhere(remediation.CampaignFilter{TenantID: &tenantID, Viewer: viewer})
+	rows, err := r.db.QueryContext(ctx, "SELECT c.status, COUNT(*) FROM remediation_campaigns c WHERE "+where+" GROUP BY c.status", args...)
+	if err != nil {
+		return nil, fmt.Errorf("count campaigns by status: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[remediation.CampaignStatus]int{}
+	for rows.Next() {
+		var (
+			st string
+			n  int
+		)
+		if err := rows.Scan(&st, &n); err != nil {
+			return nil, fmt.Errorf("count campaigns by status: %w", err)
+		}
+		out[remediation.CampaignStatus(st)] = n
+	}
+	return out, rows.Err()
+}
+
+// Visible reports whether the viewer may see the campaign.
+func (r *RemediationCampaignRepository) Visible(ctx context.Context, tenantID, id shared.ID, viewer remediation.CampaignViewer) (bool, error) {
+	args := []any{tenantID.String(), id.String()}
+	cond, args := campaignVisibleCond(viewer, args)
+	var ok bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM remediation_campaigns c
+		WHERE c.tenant_id = $1 AND c.id = $2 AND `+cond+`)`, args...).Scan(&ok); err != nil {
+		return false, fmt.Errorf("check campaign visibility: %w", err)
+	}
+	return ok, nil
+}
+
+// HasTaskOutsideScope reports whether a task of the campaign has a finding
+// outside the scope.
+func (r *RemediationCampaignRepository) HasTaskOutsideScope(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope) (bool, error) {
+	if scope == nil {
+		return false, nil
+	}
+	args := []any{tenantID.String(), id.String()}
+	cond, args := dataScopeCond("f.asset_id", scope, args)
+	var out bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM remediation_tasks t
+		JOIN remediation_task_members m ON m.tenant_id = t.tenant_id AND m.task_id = t.id AND m.left_at IS NULL
+		JOIN findings f ON f.tenant_id = m.tenant_id AND f.id = m.finding_id
+		WHERE t.tenant_id = $1 AND t.campaign_id = $2 AND NOT (`+cond+`))`, args...).Scan(&out); err != nil {
+		return false, fmt.Errorf("check campaign task scope: %w", err)
+	}
+	return out, nil
+}
+
+// Summaries derives each campaign's summary from its tasks (archived tasks
+// left out), counting only the findings in the scope. A task is visible when
+// it has a finding in the scope, or, for a reader who is not restricted, when
+// it has no active member at all (a canceled task released them).
+func (r *RemediationCampaignRepository) Summaries(ctx context.Context, tenantID shared.ID, ids []shared.ID, scope *shared.DataScope) (map[shared.ID]remediation.CampaignSummary, error) {
+	out := make(map[shared.ID]remediation.CampaignSummary, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := []any{tenantID.String(), pq.Array(rtIDStrings(ids)), closedStatusArray(), scope.Restricted()}
+	sc, args := dataScopeCond("f.asset_id", scope, args)
+	q := `
+		SELECT x.campaign_id,
+		       COUNT(*) FILTER (WHERE x.visible),
+		       COUNT(*) FILTER (WHERE x.visible AND x.state IN ` + liveTaskStatesSQL + `),
+		       COUNT(*) FILTER (WHERE x.visible AND x.state = 'done'),
+		       COUNT(*) FILTER (WHERE x.visible AND x.state IN ` + liveTaskStatesSQL + ` AND x.late),
+		       COUNT(*) FILTER (WHERE NOT x.visible),
+		       COALESCE(SUM(x.prim) FILTER (WHERE x.visible), 0),
+		       COALESCE(SUM(x.closed) FILTER (WHERE x.visible), 0),
+		       COALESCE(SUM(x.verified) FILTER (WHERE x.visible), 0)
+		FROM (
+			SELECT t.campaign_id, t.state,
+			       (COUNT(m.id) FILTER (WHERE ` + sc + `) > 0 OR (NOT $4 AND COUNT(m.id) = 0)) AS visible,
+			       COUNT(m.id) FILTER (WHERE m.role = 'primary' AND ` + sc + `) AS prim,
+			       COUNT(m.id) FILTER (WHERE m.role = 'primary' AND ` + sc + ` AND f.status = ANY($3::text[])) AS closed,
+			       COUNT(m.id) FILTER (WHERE m.role = 'primary' AND ` + sc + ` AND ` + verifiedFixedSQL + `) AS verified,
+			       (COALESCE(bool_or(m.role = 'primary' AND ` + sc + ` AND f.status <> ALL($3::text[]) AND f.sla_deadline < now()), false)
+			        OR (t.deadline_source IN ('manual', 'campaign') AND t.deadline < now())) AS late
+			FROM remediation_tasks t
+			LEFT JOIN remediation_task_members m ON m.tenant_id = t.tenant_id AND m.task_id = t.id AND m.left_at IS NULL
+			LEFT JOIN findings f ON f.tenant_id = m.tenant_id AND f.id = m.finding_id
+			WHERE t.tenant_id = $1 AND t.campaign_id = ANY($2::uuid[]) AND t.state <> 'archived'
+			GROUP BY t.campaign_id, t.id, t.state, t.deadline_source, t.deadline
+		) x
+		GROUP BY x.campaign_id`
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("summarize campaigns: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			id shared.ID
+			s  remediation.CampaignSummary
+		)
+		if err := rows.Scan(&id, &s.Tasks, &s.LiveTasks, &s.DoneTasks, &s.OverdueTasks, &s.HiddenTasks,
+			&s.Findings, &s.ClosedFindings, &s.VerifiedFindings); err != nil {
+			return nil, fmt.Errorf("summarize campaigns: %w", err)
+		}
+		out[id] = s
+	}
+	return out, rows.Err()
+}
+
+// TaskRefs returns the campaign of each of the tenant's tasks.
+func (r *RemediationCampaignRepository) TaskRefs(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID) ([]remediation.CampaignTaskRef, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT t.id, t.campaign_id, COALESCE(c.name, '')
+		FROM remediation_tasks t
+		LEFT JOIN remediation_campaigns c ON c.tenant_id = t.tenant_id AND c.id = t.campaign_id
+		WHERE t.tenant_id = $1 AND t.id = ANY($2::uuid[])
+		ORDER BY t.id`, tenantID.String(), pq.Array(rtIDStrings(taskIDs)))
+	if err != nil {
+		return nil, fmt.Errorf("read task campaigns: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []remediation.CampaignTaskRef
+	for rows.Next() {
+		var (
+			ref  remediation.CampaignTaskRef
+			camp sql.NullString
+		)
+		if err := rows.Scan(&ref.TaskID, &camp, &ref.CampaignName); err != nil {
+			return nil, fmt.Errorf("read task campaigns: %w", err)
+		}
+		ref.CampaignID = rtNullID(camp)
+		out = append(out, ref)
+	}
+	return out, rows.Err()
+}
+
+// SetTasksCampaign puts the tasks in the campaign (nil: none), bumps their
+// version and writes an "updated" entry on each task's timeline.
+func (r *RemediationCampaignRepository) SetTasksCampaign(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID, campaignID *shared.ID, actor *shared.ID) ([]shared.ID, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin set task campaign: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	changed, err := queryIDsInTx(ctx, tx, `
+		UPDATE remediation_tasks SET campaign_id = $3, version = version + 1, updated_at = now()
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND campaign_id IS DISTINCT FROM $3::uuid
+		RETURNING id`, tenantID.String(), pq.Array(rtIDStrings(taskIDs)), idArg(campaignID))
+	if err != nil {
+		return nil, fmt.Errorf("set task campaign: %w", err)
+	}
+	data := map[string]any{"campaign_id": ""}
+	if campaignID != nil {
+		data["campaign_id"] = campaignID.String()
+	}
+	dj, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("encode task event: %w", err)
+	}
+	actorType := actorTypeUser
+	if actor == nil {
+		actorType = "system"
+	}
+	if len(changed) > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO remediation_task_events (tenant_id, task_id, kind, actor_id, actor_type, data)
+			SELECT $1, id, $3, $4, $5, $6 FROM unnest($2::uuid[]) AS id`,
+			tenantID.String(), pq.Array(rtIDStrings(changed)), remediation.TaskEventUpdated, idArg(actor), actorType, dj); err != nil {
+			return nil, fmt.Errorf("write task events: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit set task campaign: %w", err)
+	}
+	return changed, nil
+}
+
+// ListForReconcile returns active and completed campaigns across tenants,
+// least recently reconciled first, and stamps them reconciled.
+func (r *RemediationCampaignRepository) ListForReconcile(ctx context.Context, limit int) ([]*remediation.Campaign, error) {
 	if limit <= 0 {
 		limit = 500
 	}
-
-	query := "SELECT " + rcSelectCols + ` FROM remediation_campaigns
-		WHERE status NOT IN ('completed', 'canceled')
-		ORDER BY last_reconciled_at ASC NULLS FIRST, id
-		LIMIT $1`
-
-	rows, err := r.db.QueryContext(ctx, query, limit)
+	rows, err := r.db.QueryContext(ctx, `
+		WITH picked AS (
+			SELECT id FROM remediation_campaigns
+			WHERE status IN ('active', 'completed')
+			ORDER BY last_reconciled_at ASC NULLS FIRST, id
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		), stamped AS (
+			UPDATE remediation_campaigns c SET last_reconciled_at = now()
+			FROM picked WHERE c.id = picked.id
+			RETURNING c.*
+		)
+		SELECT `+rcSelectCols+` FROM stamped c ORDER BY c.id`, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list non-terminal campaigns: %w", err)
+		return nil, fmt.Errorf("failed to list campaigns to reconcile: %w", err)
 	}
-	defer rows.Close()
-
+	defer func() { _ = rows.Close() }()
 	items := make([]*remediation.Campaign, 0)
 	for rows.Next() {
 		c, err := r.scanCampaign(rows.Scan)
@@ -322,8 +437,5 @@ func (r *RemediationCampaignRepository) ListNonTerminal(ctx context.Context, lim
 		}
 		items = append(items, c)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate campaigns: %w", err)
-	}
-	return items, nil
+	return items, rows.Err()
 }

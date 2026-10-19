@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab; campaigns as programs of tasks (§9a) |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -11,11 +11,12 @@
 A **remediation action** is *what* fixes a set of findings: one upgrade (`upgrade:pypi:django:4.2.30`), one
 secret rotation (`rotate:secret:<fingerprint>`), or a fix a person named. A **remediation task** is *who* does
 that fix and *by when*: one owner (a user and/or a group), a deadline and a state derived from its findings.
-A **campaign** stays a program lens over tasks ("all exposures to CVE-X by Friday") whose deadline can only
-tighten the tasks' deadlines.
+A **campaign** is a program of tasks ("all exposures to CVE-X by Friday") with one owner and a due date that
+can only tighten its tasks' deadlines. It holds tasks, never findings: a finding is in at most one active work
+unit, the primary membership of a task (§9a).
 
 ```
-campaign (optional, a program lens with a deadline)
+campaign (optional, a program of tasks with an owner and a due date)
   └── remediation action (WHAT fixes it)          created only by a person
         └── remediation task (WHO, BY WHEN)        the work unit: owner, deadline, ticket
               └── member findings (WHERE)          each with its own status and verification
@@ -175,6 +176,33 @@ findings through the finding service (Done is a fix claim for each); the echo of
 pushed, within ten minutes) is ignored. `SyncService.TaskChanged` pushes a task at once for a caller that wants it
 before the next pass.
 
+## 9a. Campaigns
+
+A campaign is a program of tasks: `remediation_tasks.campaign_id`, a task in at most one campaign. It holds
+no findings and stores no counts; what it covers and how far along it is are derived from its tasks on every
+read, over the reader's data scope: tasks (visible, live, done, overdue, and the count of tasks outside the
+scope), findings of those tasks and how many are closed and verified fixed.
+
+- **Lifecycle:** `draft` → `active` → `completed`, `canceled` from draft or active, `completed` → `active`
+  (reopen). Completing needs every task closed and one done (the rule a task uses for its findings). The
+  progress controller completes an active campaign whose tasks are done and reopens a completed one when a task
+  is live again (a regression task joins its campaign). The former `paused` and `validating` states are gone: a
+  task has its own on-hold state, and every finding is verified on its own.
+- **Tasks:** tasks are added to a draft or active campaign (`POST .../campaigns/{id}/tasks`, or a task's
+  `campaign_id`) and removed (`DELETE .../campaigns/{id}/tasks/{task_id}`; the task stays). A task in another
+  campaign answers 409 `TASKS_IN_OTHER_CAMPAIGN` unless the request sets `move`. The campaign's due date bounds
+  the deadline of its tasks while it is draft or active.
+- **Data scope:** a restricted member sees a campaign they created or own (`assigned_to`), or one with a task
+  holding a finding in their scope; tasks outside their scope are a count (`hidden_tasks`). The owner of a
+  campaign sees the whole campaign's counts. A restricted member changes a campaign only when no task of it has
+  a finding outside their scope, adds only tasks they may change, and moves a task out of another campaign only
+  when they may change that one too.
+- **Tracker:** the campaign's Jira epic stays: completing the campaign moves the epic to Done; the epic moving to
+  a done status marks every live task of the campaign fixed (a fix claim per finding, verified on its own).
+- **Conversion:** the campaigns that tracked findings through a filter were converted into tasks once
+  (migrations `remediation_campaigns_hold_tasks` and `remediation_campaigns_drop_finding_filter`;
+  `docs/architecture/remediation-campaigns.md`).
+
 ## 10. API
 
 ```
@@ -203,6 +231,15 @@ POST  /api/v1/remediation/suggestions/{id}/approve       accept, optionally edit
 POST  /api/v1/remediation/suggestions/approve            accept several as they are
 GET   /api/v1/remediation/actions/{id}
 PATCH /api/v1/remediation/actions/{id}                   auto_join on or off
+GET   /api/v1/remediation/campaigns                      list with summaries and counts per status (status, priority, search)
+POST  /api/v1/remediation/campaigns                      create (optionally with task_ids; 409 TASKS_IN_OTHER_CAMPAIGN)
+GET   /api/v1/remediation/campaigns/{id}
+PATCH /api/v1/remediation/campaigns/{id}                 name, description, priority, owner, team, dates, tags; version
+PATCH /api/v1/remediation/campaigns/{id}/status          active, completed (only when done), canceled
+POST  /api/v1/remediation/campaigns/{id}/tasks           add tasks (move to move them from another campaign)
+DELETE /api/v1/remediation/campaigns/{id}/tasks/{task_id} the task leaves the campaign
+POST  /api/v1/remediation/campaigns/{id}/create-ticket   the campaign's Jira epic
+DELETE /api/v1/remediation/campaigns/{id}                its tasks stay and leave it
 ```
 
 Reads need `findings:remediation:read` (members also `findings:read`); changes need
@@ -246,3 +283,4 @@ auto-join stay with write. Marking findings fixed will also need `findings:fix_a
 | 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Implemented |
 | 7 | Finding drawer band: the task a finding is tracked in, its state and deadline | Implemented |
 | 8 | My Work tasks tab: my open tasks (mine or my groups), earliest deadline first | Implemented |
+| 9 | Campaigns hold tasks only: filter campaigns converted into tasks, summaries derived from tasks, add/remove/move tasks, lifecycle draft/active/completed/canceled | Implemented |

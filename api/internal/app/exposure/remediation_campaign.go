@@ -1,8 +1,18 @@
 package exposure
 
+// Remediation campaigns: programs of remediation tasks
+// (docs/architecture/remediation-campaigns.md, RFC-098). A campaign holds
+// tasks (remediation_tasks.campaign_id), never findings: a finding is in at
+// most one active work unit, the primary membership of a task. What a
+// campaign covers and how far along it is are derived from its tasks.
+//
+// Data scope: a restricted caller sees a campaign they created or own
+// (assigned_to), or one with a task that has a finding in their scope; they
+// change it only when no task of it has a finding outside their scope. Out of
+// scope tasks appear as a count only.
+
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,27 +26,11 @@ import (
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// FindingCounter is the narrow slice of the finding repository the campaign
-// service needs to compute progress: how many findings match a filter.
-// Satisfied by *postgres.FindingRepository.
-type FindingCounter interface {
-	Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error)
-}
-
-// FindingLister lists the findings a filter selects, one page at a time.
-// Satisfied by *postgres.FindingRepository.
-type FindingLister interface {
-	List(ctx context.Context, filter vulnerability.FindingFilter, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error)
-}
-
-// CampaignEpicCreator creates and transitions an external tracker epic for a
-// tenant. Implemented by *jira.SyncService. Declared here with primitive types
-// so this package needs no dependency on the jira package.
+// CampaignEpicCreator creates and moves the Jira epic of a campaign.
 type CampaignEpicCreator interface {
 	CreateEpic(ctx context.Context, tenantID shared.ID, projectKey, summary, description string, labels []string) (issueKey, issueURL string, err error)
 	// TransitionEpic moves the linked epic to a target status name (echo-safe,
@@ -44,128 +38,669 @@ type CampaignEpicCreator interface {
 	TransitionEpic(ctx context.Context, tenantID shared.ID, issueKey, targetStatus, comment string) error
 }
 
-// epicDoneStatus is the Jira status a campaign's epic is moved to on completion.
-// Jira's default done state; per-tenant override is a documented follow-up.
 const epicDoneStatus = "Done"
 
-// CampaignFindingResolver marks the OPEN findings matching a filter fixed
-// ("mark fixed": legal steps to fix_applied, a proof-of-fix re-check per
-// finding). Nil → the resolve action is unavailable. Implemented by an
-// adapter over the finding bulk-status path + its abuse guard.
-type CampaignFindingResolver interface {
-	ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in CampaignResolveInput) (*CampaignResolveResult, error)
-}
-
-// CampaignResolveRow is one finding a campaign resolve did not update, and why.
-type CampaignResolveRow struct {
-	FindingID string `json:"finding_id"`
-	Outcome   string `json:"outcome"` // skipped | failed
-	Reason    string `json:"reason"`
-}
-
-// CampaignResolveResult is the outcome of a campaign resolve: how many
-// findings were marked fixed, skipped (already fix_applied) or refused, the
-// reason for each one not updated, and the proof-of-fix re-checks queued.
-type CampaignResolveResult struct {
-	Updated           int                  `json:"updated"`
-	Skipped           int                  `json:"skipped"`
-	Failed            int                  `json:"failed"`
-	ValidationsQueued int                  `json:"validations_queued"`
-	Rows              []CampaignResolveRow `json:"rows"`
-}
-
-// ErrCampaignResolveClosesNothing refuses a campaign resolve that asks to
-// close findings: each finding is verified on its own.
-var ErrCampaignResolveClosesNothing = fmt.Errorf("%w: a campaign resolve marks its findings fixed (fix_applied); each finding is then verified on its own (covered scan, retest or a reviewer), never closed for the campaign", shared.ErrValidation)
-
-// CampaignKeyResolver serves campaigns scoped to a remediation-group key (a
-// "solution family" — every finding one fix resolves). Progress and resolution
-// for such a campaign are computed from the remediation side-table, NOT from a
-// generic FindingFilter (the key isn't expressible as one). Nil → keyed
-// campaigns cannot compute progress or resolve. Implemented by an adapter over
-// the remediation key repository + group resolver at the composition root.
-type CampaignKeyResolver interface {
-	// CountByKey returns (total, resolved) findings sharing the remediation key.
-	// A non-nil scope counts only findings on the scope's assets.
-	CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (total, resolved int64, err error)
-	// CountVerifiedByKey returns how many findings sharing the key are
-	// resolved (a verified fix), on the scope's assets when scope is non-nil.
-	CountVerifiedByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, error)
-	// ResolveGroupByKey marks the OPEN findings under the key fixed, reusing
-	// the same guarded bulk-status path as the standalone group resolve.
-	ResolveGroupByKey(ctx context.Context, tenantID string, key string, in CampaignResolveInput) (*CampaignResolveResult, error)
-}
-
-// CampaignResolveInput parameterizes a campaign resolve.
-type CampaignResolveInput struct {
-	Status              string // fix_applied (the default and the only target)
-	Resolution          string // the note of the fix claim (required)
-	ActorID             string
-	HasVerifyPermission bool
-	// HasFixApplyPermission: a fix_applied target needs findings:fix_apply.
-	HasFixApplyPermission bool
-	Approved              bool
-}
-
-// RemediationCampaignService manages remediation campaigns.
-type RemediationCampaignService struct {
-	dataScope   *datascope.Enforcer // Layer 2: a restricted reader's progress counts (nil = unrestricted)
-	repo        remediation.CampaignRepository
-	finding     FindingCounter                       // nil → progress stays zero
-	lister      FindingLister                        // nil → a campaign lists no findings
-	resolver    CampaignFindingResolver              // nil → resolve action disabled
-	keyResolver CampaignKeyResolver                  // nil → keyed campaigns can't count/resolve
-	ticketRepo  remediation.CampaignTicketRepository // nil → ticketing disabled
-	epicCreator CampaignEpicCreator                  // nil → ticketing disabled
-	audit       CampaignAuditLogger                  // nil → no audit trail (tests)
-	assignees   CampaignAssigneeChecker              // nil → naming an assignee is refused
-	modules     CampaignModuleGuard                  // nil → progress reconciles for every tenant
-	logger      *logger.Logger
+// CampaignTasks is the slice of the remediation task service a campaign
+// needs (wired at the composition root, so this package does not import it).
+type CampaignTasks interface {
+	// CheckTaskWritable refuses a task the caller may not change (not found
+	// for them, or with a finding outside their scope).
+	CheckTaskWritable(ctx context.Context, tenantID, taskID shared.ID) error
+	// RecomputeTasks re-derives the tasks' deadlines after their campaign
+	// (and so its due date) changed.
+	RecomputeTasks(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID) error
+	// CampaignTaskIDs lists the live tasks of a campaign.
+	CampaignTaskIDs(ctx context.Context, tenantID, campaignID shared.ID) ([]shared.ID, error)
+	// ClaimTaskFixed marks a task's open findings fixed (a fix claim each
+	// finding then verifies on its own), as the platform. Returns the
+	// refusals, one line per finding.
+	ClaimTaskFixed(ctx context.Context, tenantID, taskID shared.ID, note string) (refusals []string, err error)
 }
 
 // CampaignModuleGuard reports the modules a tenant has off
-// (*module.ModuleService). The background progress reconcile skips the
-// campaigns of a tenant with the remediation module off: no counts written,
-// no auto-complete, no ticket sync. The next pass after the module is turned
-// back on catches up.
+// (*module.ModuleService). The background reconcile skips the campaigns of a
+// tenant with the remediation module off.
 type CampaignModuleGuard interface {
 	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
 }
 
-// SetModuleGuard wires the tenant module state into the progress reconcile.
-func (s *RemediationCampaignService) SetModuleGuard(g CampaignModuleGuard) { s.modules = g }
-
 // CampaignAssigneeChecker decides whether a user may own a campaign in a
-// tenant: an active member with an active account.
-// postgres.AccessControlRepository.IsActiveTenantMember implements it.
+// tenant (an active member with an active account) and whether a group is
+// the tenant's. postgres.AccessControlRepository implements it.
 type CampaignAssigneeChecker interface {
 	IsActiveTenantMember(ctx context.Context, tenantID, userID shared.ID) (bool, error)
-	// IsGroupInTenant reports whether a group (the campaign's validator
-	// team) belongs to the tenant.
 	IsGroupInTenant(ctx context.Context, tenantID, groupID shared.ID) (bool, error)
 }
 
-// SetAssigneeChecker wires the campaign owner membership check. Without it
-// naming an owner is refused (fail closed).
-func (s *RemediationCampaignService) SetAssigneeChecker(c CampaignAssigneeChecker) {
-	s.assignees = c
+// CampaignAuditLogger writes audit-log events. *auditapp.AuditService
+// implements it.
+type CampaignAuditLogger interface {
+	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
 }
 
-// ErrInvalidCampaignAssignee is the one answer for an owner who is not an
-// active member of the organization (unknown, of another organization,
-// suspended or deactivated), so the endpoint is no oracle for which user ids
-// exist elsewhere (research doc 21b, C2 / L-15).
-var ErrInvalidCampaignAssignee = fmt.Errorf("%w: the assignee must be an active member of this organization", shared.ErrValidation)
+// campaignAuditSystemActor names the actor of a change no user made.
+const campaignAuditSystemActor = "system"
 
-// ErrInvalidCampaignTeam is the one answer for a validator team that is not a
-// group of the campaign's organization (unknown or another organization's),
-// so the endpoint is no oracle for group ids elsewhere.
-var ErrInvalidCampaignTeam = fmt.Errorf("%w: the team must be a group of this organization", shared.ErrValidation)
+// MaxCampaignTasksPerRequest bounds one add.
+const MaxCampaignTasksPerRequest = 200
 
-// assertTeam refuses a validator team that is not a group of the tenant.
-// remediation_campaigns.assigned_team carries no tenant check of its own. A
-// nil id (no team, or unassign) needs no check; without a checker naming a
-// team is refused (fail closed).
+// Errors answered to callers.
+var (
+	// ErrInvalidCampaignAssignee is the one answer for an owner who is not an
+	// active member of the organization, so the endpoint is no oracle for
+	// user ids elsewhere.
+	ErrInvalidCampaignAssignee = fmt.Errorf("%w: the assignee must be an active member of this organization", shared.ErrValidation)
+	// ErrInvalidCampaignTeam is the one answer for a team that is not a
+	// group of the campaign's organization.
+	ErrInvalidCampaignTeam = fmt.Errorf("%w: the team must be a group of this organization", shared.ErrValidation)
+	// ErrCampaignOutsideScope refuses a change to a campaign the caller can
+	// see but with a task that has a finding outside their scope.
+	ErrCampaignOutsideScope = fmt.Errorf("%w: a task of this campaign has findings outside your data scope; only someone who can see all of them may change it", shared.ErrForbidden)
+	// ErrTicketingNotConfigured: no Jira wiring.
+	ErrTicketingNotConfigured = fmt.Errorf("%w: campaign ticketing is not configured", shared.ErrValidation)
+	// ErrCampaignTaskNotFound is the one answer for a task of another
+	// organization, of none, or one the caller may not change.
+	ErrCampaignTaskNotFound = fmt.Errorf("%w: one or more tasks were not found", shared.ErrNotFound)
+	// ErrCampaignTaskNotInCampaign: removing a task the campaign does not hold.
+	ErrCampaignTaskNotInCampaign = fmt.Errorf("%w: the task is not in this campaign", shared.ErrValidation)
+)
+
+// CampaignTaskConflict is a task that is already in another campaign.
+type CampaignTaskConflict struct {
+	TaskID       string  `json:"task_id"`
+	CampaignID   string  `json:"campaign_id"`
+	CampaignName *string `json:"campaign_name"` // nil when the caller cannot see that campaign
+	CanMove      bool    `json:"can_move"`
+}
+
+// TasksInOtherCampaignError refuses adding tasks that are in another campaign
+// unless the request asks to move them (409 TASKS_IN_OTHER_CAMPAIGN).
+type TasksInOtherCampaignError struct {
+	Conflicts []CampaignTaskConflict
+}
+
+func (e *TasksInOtherCampaignError) Error() string {
+	return fmt.Sprintf("%d task(s) are in another campaign; set move to move them", len(e.Conflicts))
+}
+
+func (e *TasksInOtherCampaignError) Unwrap() error { return shared.ErrConflict }
+
+// CampaignView is a campaign as one caller sees it.
+type CampaignView struct {
+	Campaign *remediation.Campaign
+	Summary  remediation.CampaignSummary
+	// CanEdit: the caller may change it (data scope; the route checks the
+	// permission).
+	CanEdit bool
+}
+
+// RemediationCampaignService manages remediation campaigns.
+type RemediationCampaignService struct {
+	repo        remediation.CampaignRepository
+	dataScope   *datascope.Enforcer // nil = every caller unrestricted (tests, jobs)
+	tasks       CampaignTasks
+	ticketRepo  remediation.CampaignTicketRepository // nil → ticketing disabled
+	epicCreator CampaignEpicCreator                  // nil → ticketing disabled
+	audit       CampaignAuditLogger                  // nil → no audit trail (tests)
+	assignees   CampaignAssigneeChecker              // nil → naming an assignee is refused
+	modules     CampaignModuleGuard                  // nil → reconcile every tenant
+	logger      *logger.Logger
+}
+
+// NewRemediationCampaignService creates a new service.
+func NewRemediationCampaignService(repo remediation.CampaignRepository, log *logger.Logger) *RemediationCampaignService {
+	return &RemediationCampaignService{repo: repo, logger: log}
+}
+
+// SetDataScope wires the data-scope enforcer.
+func (s *RemediationCampaignService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
+
+// SetTasks wires the remediation task service.
+func (s *RemediationCampaignService) SetTasks(t CampaignTasks) { s.tasks = t }
+
+// SetAuditLogger wires the audit log.
+func (s *RemediationCampaignService) SetAuditLogger(a CampaignAuditLogger) { s.audit = a }
+
+// SetAssigneeChecker wires the owner and team checks (fail closed without).
+func (s *RemediationCampaignService) SetAssigneeChecker(c CampaignAssigneeChecker) { s.assignees = c }
+
+// SetModuleGuard wires the tenant module state into the reconcile.
+func (s *RemediationCampaignService) SetModuleGuard(g CampaignModuleGuard) { s.modules = g }
+
+// SetTicketing wires the campaign→Jira epic link.
+func (s *RemediationCampaignService) SetTicketing(ticketRepo remediation.CampaignTicketRepository, epic CampaignEpicCreator) {
+	s.ticketRepo = ticketRepo
+	s.epicCreator = epic
+}
+
+// viewer resolves who reads: the caller's scope and user id.
+func (s *RemediationCampaignService) viewer(ctx context.Context, tenantID shared.ID) (remediation.CampaignViewer, error) {
+	if s.dataScope == nil {
+		return remediation.CampaignViewer{}, nil
+	}
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return remediation.CampaignViewer{}, fmt.Errorf("resolve data scope: %w", err)
+	}
+	v := remediation.CampaignViewer{Scope: scope}
+	if uid, err := shared.IDFromString(s.dataScope.CallerUserID(ctx)); err == nil {
+		v.UserID = &uid
+	}
+	return v, nil
+}
+
+func isOwnCampaign(c *remediation.Campaign, v remediation.CampaignViewer) bool {
+	return v.UserID != nil && c.AssignedTo() != nil && *c.AssignedTo() == *v.UserID
+}
+
+// getVisible loads a campaign the caller may see; any other answers not found.
+func (s *RemediationCampaignService) getVisible(ctx context.Context, tenantID, id shared.ID) (*remediation.Campaign, remediation.CampaignViewer, error) {
+	c, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, remediation.CampaignViewer{}, err
+	}
+	v, err := s.viewer(ctx, tenantID)
+	if err != nil {
+		return nil, v, err
+	}
+	if v.Restricted() {
+		ok, err := s.repo.Visible(ctx, tenantID, id, v)
+		if err != nil {
+			return nil, v, err
+		}
+		if !ok {
+			return nil, v, remediation.ErrCampaignNotFound
+		}
+	}
+	return c, v, nil
+}
+
+// canEdit: a caller who is not restricted may change every campaign; a
+// restricted one only a campaign none of whose tasks has a finding outside
+// their scope.
+func (s *RemediationCampaignService) canEdit(ctx context.Context, c *remediation.Campaign, v remediation.CampaignViewer) (bool, error) {
+	if !v.Restricted() {
+		return true, nil
+	}
+	outside, err := s.repo.HasTaskOutsideScope(ctx, c.TenantID(), c.ID(), v.Scope)
+	if err != nil {
+		return false, err
+	}
+	return !outside, nil
+}
+
+// getWritable loads a campaign the caller may change.
+func (s *RemediationCampaignService) getWritable(ctx context.Context, tenantID, id shared.ID) (*remediation.Campaign, remediation.CampaignViewer, error) {
+	c, v, err := s.getVisible(ctx, tenantID, id)
+	if err != nil {
+		return nil, v, err
+	}
+	ok, err := s.canEdit(ctx, c, v)
+	if err != nil {
+		return nil, v, err
+	}
+	if !ok {
+		return nil, v, ErrCampaignOutsideScope
+	}
+	return c, v, nil
+}
+
+// views builds what the caller sees of each campaign: the summary over their
+// scope (the campaign's owner sees the whole campaign's counts: assignment
+// grants view of the program) and whether they may change it.
+func (s *RemediationCampaignService) views(ctx context.Context, campaigns []*remediation.Campaign, v remediation.CampaignViewer) ([]CampaignView, error) {
+	out := make([]CampaignView, len(campaigns))
+	if len(campaigns) == 0 {
+		return out, nil
+	}
+	tenantID := campaigns[0].TenantID()
+	var mine, others []shared.ID
+	for _, c := range campaigns {
+		if v.Restricted() && isOwnCampaign(c, v) {
+			mine = append(mine, c.ID())
+		} else {
+			others = append(others, c.ID())
+		}
+	}
+	sums, err := s.repo.Summaries(ctx, tenantID, others, v.Scope)
+	if err != nil {
+		return nil, err
+	}
+	if len(mine) > 0 {
+		whole := &shared.DataScope{TenantID: tenantID, UserID: v.Scope.UserID, Unrestricted: true}
+		own, err := s.repo.Summaries(ctx, tenantID, mine, whole)
+		if err != nil {
+			return nil, err
+		}
+		for id, sum := range own {
+			sums[id] = sum
+		}
+	}
+	for i, c := range campaigns {
+		edit, err := s.canEdit(ctx, c, v)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = CampaignView{Campaign: c, Summary: sums[c.ID()], CanEdit: edit}
+	}
+	return out, nil
+}
+
+func (s *RemediationCampaignService) view(ctx context.Context, c *remediation.Campaign, v remediation.CampaignViewer) (*CampaignView, error) {
+	vs, err := s.views(ctx, []*remediation.Campaign{c}, v)
+	if err != nil {
+		return nil, err
+	}
+	return &vs[0], nil
+}
+
+func parseIDs(tenantID, campaignID string) (shared.ID, shared.ID, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return shared.ID{}, shared.ID{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	cid, err := shared.IDFromString(campaignID)
+	if err != nil {
+		return shared.ID{}, shared.ID{}, remediation.ErrCampaignNotFound
+	}
+	return tid, cid, nil
+}
+
+// ListCampaigns lists the campaigns the caller may see, with their summaries.
+func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID string, filter remediation.CampaignFilter, page pagination.Pagination) (pagination.Result[CampaignView], error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return pagination.Result[CampaignView]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	v, err := s.viewer(ctx, tid)
+	if err != nil {
+		return pagination.Result[CampaignView]{}, err
+	}
+	filter.TenantID, filter.Viewer = &tid, v
+	res, err := s.repo.List(ctx, filter, page)
+	if err != nil {
+		return pagination.Result[CampaignView]{}, err
+	}
+	vs, err := s.views(ctx, res.Data, v)
+	if err != nil {
+		return pagination.Result[CampaignView]{}, err
+	}
+	return pagination.NewResult(vs, res.Total, page), nil
+}
+
+// CountCampaignsByStatus counts the campaigns the caller may see, per status.
+func (s *RemediationCampaignService) CountCampaignsByStatus(ctx context.Context, tenantID string) (map[remediation.CampaignStatus]int, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	v, err := s.viewer(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.CountByStatus(ctx, tid, v)
+}
+
+// GetCampaign returns a campaign the caller may see.
+func (s *RemediationCampaignService) GetCampaign(ctx context.Context, tenantID, campaignID string) (*CampaignView, error) {
+	tid, cid, err := parseIDs(tenantID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	c, v, err := s.getVisible(ctx, tid, cid)
+	if err != nil {
+		return nil, err
+	}
+	return s.view(ctx, c, v)
+}
+
+// CreateRemediationCampaignInput creates a campaign, optionally with tasks.
+type CreateRemediationCampaignInput struct {
+	TenantID     string
+	Name         string
+	Description  string
+	Priority     string
+	AssignedTo   string
+	AssignedTeam string
+	StartDate    string
+	DueDate      string
+	Tags         []string
+	TaskIDs      []string
+	MoveTasks    bool
+	ActorID      string
+}
+
+// CreateCampaign creates a draft campaign and adds the tasks, if any.
+func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input CreateRemediationCampaignInput, actx auditapp.AuditContext) (*CampaignView, error) {
+	tid, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	priority := remediation.CampaignPriorityMedium
+	if input.Priority != "" {
+		if priority, err = remediation.ParseCampaignPriority(input.Priority); err != nil {
+			return nil, err
+		}
+	}
+	name := strings.TrimSpace(input.Name)
+	campaign, err := remediation.NewCampaign(tid, name, priority)
+	if err != nil {
+		return nil, err
+	}
+	campaign.Update(name, input.Description, priority)
+	if input.Tags != nil {
+		campaign.SetTags(input.Tags)
+	}
+	var actor *shared.ID
+	if id, aerr := shared.IDFromString(input.ActorID); aerr == nil {
+		campaign.SetCreatedBy(id)
+		actor = &id
+	}
+	to, err := s.optionalAssignee(ctx, tid, input.AssignedTo)
+	if err != nil {
+		return nil, err
+	}
+	team, err := s.optionalTeam(ctx, tid, input.AssignedTeam)
+	if err != nil {
+		return nil, err
+	}
+	campaign.SetAssignment(to, team)
+	start, err := optionalCampaignDateStr("start_date", input.StartDate, false)
+	if err != nil {
+		return nil, err
+	}
+	due, err := optionalCampaignDateStr("due_date", input.DueDate, true)
+	if err != nil {
+		return nil, err
+	}
+	campaign.SetTimeline(start, due)
+
+	taskIDs, err := parseTaskIDs(input.TaskIDs)
+	if err != nil {
+		return nil, err
+	}
+	// Check the tasks before anything is stored.
+	if _, err := s.checkTasksToAdd(ctx, tid, nil, taskIDs, input.MoveTasks); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Create(ctx, campaign); err != nil {
+		return nil, fmt.Errorf("failed to create remediation campaign: %w", err)
+	}
+	s.logAudit(ctx, tid, actx,
+		auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignCreated, auditdom.ResourceTypeRemediationCampaign, campaign.ID().String()).
+			WithResourceName(campaign.Name()).
+			WithMessage(fmt.Sprintf("Remediation campaign '%s' created", campaign.Name())).
+			WithMetadata("priority", string(campaign.Priority())).
+			WithMetadata("tasks", len(taskIDs)).
+			WithSeverity(auditdom.SeverityLow))
+	if len(taskIDs) > 0 {
+		if err := s.putTasks(ctx, campaign, taskIDs, actor, actx); err != nil {
+			return nil, err
+		}
+	}
+	v, err := s.viewer(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return s.view(ctx, campaign, v)
+}
+
+func parseTaskIDs(raw []string) ([]shared.ID, error) {
+	seen := make(map[shared.ID]bool, len(raw))
+	out := make([]shared.ID, 0, len(raw))
+	for _, r := range raw {
+		id, err := shared.IDFromString(strings.TrimSpace(r))
+		if err != nil {
+			return nil, ErrCampaignTaskNotFound
+		}
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	if len(out) > MaxCampaignTasksPerRequest {
+		return nil, fmt.Errorf("%w: at most %d tasks per request", shared.ErrValidation, MaxCampaignTasksPerRequest)
+	}
+	return out, nil
+}
+
+// checkTasksToAdd refuses tasks the caller may not change and, unless move
+// is set, tasks that are in another campaign; with move, the caller must be
+// able to change each source campaign. Returns the tasks not already in the
+// target campaign.
+func (s *RemediationCampaignService) checkTasksToAdd(ctx context.Context, tenantID shared.ID, target *shared.ID, taskIDs []shared.ID, move bool) ([]shared.ID, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+	if s.tasks == nil {
+		return nil, ErrCampaignTaskNotFound
+	}
+	refs, err := s.repo.TaskRefs(ctx, tenantID, taskIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) != len(taskIDs) {
+		return nil, ErrCampaignTaskNotFound
+	}
+	for _, id := range taskIDs {
+		if err := s.tasks.CheckTaskWritable(ctx, tenantID, id); err != nil {
+			if errors.Is(err, shared.ErrNotFound) || errors.Is(err, shared.ErrForbidden) {
+				return nil, ErrCampaignTaskNotFound
+			}
+			return nil, err
+		}
+	}
+	conflicts := make([]CampaignTaskConflict, 0, len(refs))
+	add := make([]shared.ID, 0, len(refs))
+	for _, ref := range refs {
+		if ref.CampaignID != nil && target != nil && *ref.CampaignID == *target {
+			continue
+		}
+		add = append(add, ref.TaskID)
+		if ref.CampaignID == nil {
+			continue
+		}
+		c := CampaignTaskConflict{TaskID: ref.TaskID.String(), CampaignID: ref.CampaignID.String()}
+		if src, _, verr := s.getVisible(ctx, tenantID, *ref.CampaignID); verr == nil {
+			name := src.Name()
+			c.CampaignName = &name
+			_, _, werr := s.getWritable(ctx, tenantID, *ref.CampaignID)
+			c.CanMove = werr == nil
+		}
+		conflicts = append(conflicts, c)
+	}
+	if len(conflicts) > 0 {
+		if !move {
+			return nil, &TasksInOtherCampaignError{Conflicts: conflicts}
+		}
+		for _, c := range conflicts {
+			if !c.CanMove {
+				return nil, ErrCampaignOutsideScope
+			}
+		}
+	}
+	return add, nil
+}
+
+// putTasks moves the tasks into the campaign, re-derives their deadlines and
+// audits the change.
+func (s *RemediationCampaignService) putTasks(ctx context.Context, c *remediation.Campaign, taskIDs []shared.ID, actor *shared.ID, actx auditapp.AuditContext) error {
+	cid := c.ID()
+	changed, err := s.repo.SetTasksCampaign(ctx, c.TenantID(), taskIDs, &cid, actor)
+	if err != nil {
+		return err
+	}
+	s.recompute(ctx, c.TenantID(), changed)
+	if len(changed) > 0 {
+		s.logAudit(ctx, c.TenantID(), actx,
+			auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignUpdated, auditdom.ResourceTypeRemediationCampaign, cid.String()).
+				WithResourceName(c.Name()).
+				WithMessage(fmt.Sprintf("%d task(s) added to remediation campaign '%s'", len(changed), c.Name())).
+				WithMetadata("tasks_added", idStrings(changed)).
+				WithSeverity(auditdom.SeverityLow))
+	}
+	return nil
+}
+
+func (s *RemediationCampaignService) recompute(ctx context.Context, tenantID shared.ID, ids []shared.ID) {
+	if s.tasks == nil || len(ids) == 0 {
+		return
+	}
+	if err := s.tasks.RecomputeTasks(ctx, tenantID, ids); err != nil {
+		// The remediation-tasks controller re-derives them on its next pass.
+		s.logger.Warn("recompute tasks after a campaign change failed", "error", logger.SanitizeError(err))
+	}
+}
+
+// AddCampaignTasks adds tasks to a draft or active campaign.
+func (s *RemediationCampaignService) AddCampaignTasks(ctx context.Context, tenantID, campaignID string, rawTaskIDs []string, move bool, actorID string, actx auditapp.AuditContext) (*CampaignView, error) {
+	tid, cid, err := parseIDs(tenantID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	c, v, err := s.getWritable(ctx, tid, cid)
+	if err != nil {
+		return nil, err
+	}
+	if !c.TakesTasks() {
+		return nil, remediation.ErrCampaignTakesNoTasks
+	}
+	taskIDs, err := parseTaskIDs(rawTaskIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(taskIDs) == 0 {
+		return nil, fmt.Errorf("%w: task_ids is required", shared.ErrValidation)
+	}
+	add, err := s.checkTasksToAdd(ctx, tid, &cid, taskIDs, move)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.putTasks(ctx, c, add, optionalID(actorID), actx); err != nil {
+		return nil, err
+	}
+	return s.view(ctx, c, v)
+}
+
+// RemoveCampaignTask takes a task out of the campaign (the task stays).
+func (s *RemediationCampaignService) RemoveCampaignTask(ctx context.Context, tenantID, campaignID, taskID, actorID string, actx auditapp.AuditContext) (*CampaignView, error) {
+	tid, cid, err := parseIDs(tenantID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	c, v, err := s.getWritable(ctx, tid, cid)
+	if err != nil {
+		return nil, err
+	}
+	tk, err := shared.IDFromString(taskID)
+	if err != nil {
+		return nil, ErrCampaignTaskNotFound
+	}
+	refs, err := s.repo.TaskRefs(ctx, tid, []shared.ID{tk})
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) != 1 || refs[0].CampaignID == nil || *refs[0].CampaignID != cid {
+		return nil, ErrCampaignTaskNotInCampaign
+	}
+	changed, err := s.repo.SetTasksCampaign(ctx, tid, []shared.ID{tk}, nil, optionalID(actorID))
+	if err != nil {
+		return nil, err
+	}
+	s.recompute(ctx, tid, changed)
+	s.logAudit(ctx, tid, actx,
+		auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignUpdated, auditdom.ResourceTypeRemediationCampaign, cid.String()).
+			WithResourceName(c.Name()).
+			WithMessage(fmt.Sprintf("A task left remediation campaign '%s'", c.Name())).
+			WithMetadata("tasks_removed", []string{tk.String()}).
+			WithSeverity(auditdom.SeverityLow))
+	return s.view(ctx, c, v)
+}
+
+// CheckTaskCampaignChange is the campaign side of moving one task between
+// campaigns through the task itself (PATCH task campaign_id): the target
+// must be a draft or active campaign the caller may change, and so must the
+// task's current campaign when it leaves one. from/to nil = no campaign.
+func (s *RemediationCampaignService) CheckTaskCampaignChange(ctx context.Context, tenantID shared.ID, from, to *shared.ID) error {
+	if to != nil {
+		c, _, err := s.getWritable(ctx, tenantID, *to)
+		if err != nil {
+			if errors.Is(err, shared.ErrNotFound) {
+				return fmt.Errorf("%w: the campaign was not found", shared.ErrValidation)
+			}
+			return err
+		}
+		if !c.TakesTasks() {
+			return remediation.ErrCampaignTakesNoTasks
+		}
+	}
+	if from != nil && (to == nil || *from != *to) {
+		if _, _, err := s.getWritable(ctx, tenantID, *from); err != nil && !errors.Is(err, shared.ErrNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+func optionalID(s string) *shared.ID {
+	id, err := shared.IDFromString(s)
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
+func idStrings(ids []shared.ID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	return out
+}
+
+func parseCampaignDate(field, s string, endOfDay bool) (*time.Time, error) {
+	s = strings.TrimSpace(s)
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return &t, nil
+	}
+	if d, err := time.Parse(time.DateOnly, s); err == nil {
+		if endOfDay {
+			d = d.Add(24*time.Hour - time.Second)
+		}
+		return &d, nil
+	}
+	return nil, fmt.Errorf("%w: %s must be an RFC 3339 timestamp or a date (YYYY-MM-DD)", shared.ErrValidation, field)
+}
+
+func optionalCampaignDateStr(field, s string, endOfDay bool) (*time.Time, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	return parseCampaignDate(field, s, endOfDay)
+}
+
+func (s *RemediationCampaignService) optionalAssignee(ctx context.Context, tenantID shared.ID, raw string) (*shared.ID, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	id, err := shared.IDFromString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+	}
+	return &id, s.assertAssignee(ctx, tenantID, &id)
+}
+
+func (s *RemediationCampaignService) optionalTeam(ctx context.Context, tenantID shared.ID, raw string) (*shared.ID, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	id, err := shared.IDFromString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid assigned_team id", shared.ErrValidation)
+	}
+	return &id, s.assertTeam(ctx, tenantID, &id)
+}
+
 func (s *RemediationCampaignService) assertTeam(ctx context.Context, tenantID shared.ID, groupID *shared.ID) error {
 	if groupID == nil {
 		return nil
@@ -183,8 +718,6 @@ func (s *RemediationCampaignService) assertTeam(ctx context.Context, tenantID sh
 	return nil
 }
 
-// assertAssignee refuses an owner who is not an active member of the tenant.
-// A nil id (no owner, or unassign) needs no check.
 func (s *RemediationCampaignService) assertAssignee(ctx context.Context, tenantID shared.ID, userID *shared.ID) error {
 	if userID == nil {
 		return nil
@@ -202,719 +735,22 @@ func (s *RemediationCampaignService) assertAssignee(ctx context.Context, tenantI
 	return nil
 }
 
-// CampaignAuditLogger writes audit-log events. *auditapp.AuditService
-// implements it.
-type CampaignAuditLogger interface {
-	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
-}
-
-// campaignAuditSystemActor names the actor of a change no user made: the
-// background reconcile auto-completing a campaign, or an inbound Jira epic.
-const campaignAuditSystemActor = "system"
-
-// NewRemediationCampaignService creates a new service.
-func NewRemediationCampaignService(repo remediation.CampaignRepository, log *logger.Logger) *RemediationCampaignService {
-	return &RemediationCampaignService{repo: repo, logger: log}
-}
-
-// SetAuditLogger wires the audit log. Creates, edits, status changes
-// (manual and automatic) and deletes are recorded in audit_logs.
-func (s *RemediationCampaignService) SetAuditLogger(a CampaignAuditLogger) {
-	s.audit = a
-}
-
-// SetFindingCounter wires the finding counter used to compute campaign
-// progress. When unset, progress stays at zero (the service still functions as
-// plain CRUD). Kept as a setter so the constructor signature is stable and to
-// avoid an import cycle at the composition root.
-func (s *RemediationCampaignService) SetFindingCounter(c FindingCounter) {
-	s.finding = c
-}
-
-// SetDataScope wires the Layer 2 data-scope enforcer: a restricted reader
-// sees campaign progress over their own in-scope findings (ApplyViewerScope).
-func (s *RemediationCampaignService) SetDataScope(e *datascope.Enforcer) {
-	s.dataScope = e
-}
-
-// SetFindingLister wires the finding list behind ListCampaignFindings.
-func (s *RemediationCampaignService) SetFindingLister(l FindingLister) { s.lister = l }
-
-// ListCampaignFindings lists one page of the campaign's findings: the set its
-// finding count counts (campaignFindingFilter), on the caller's in-scope
-// assets when the caller is restricted. Tenant-scoped: a campaign of another
-// tenant is not found.
-func (s *RemediationCampaignService) ListCampaignFindings(ctx context.Context, tenantID, campaignID string, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return pagination.Result[*vulnerability.Finding]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	cid, err := shared.IDFromString(campaignID)
-	if err != nil {
-		return pagination.Result[*vulnerability.Finding]{}, shared.ErrNotFound
-	}
-	campaign, err := s.getVisible(ctx, tid, cid)
-	if err != nil {
-		return pagination.Result[*vulnerability.Finding]{}, err
-	}
-	none := pagination.NewResult([]*vulnerability.Finding{}, 0, page)
-	filter, ok := campaignFindingFilter(campaign)
-	if !ok || s.lister == nil {
-		return none, nil
-	}
-	if s.dataScope != nil {
-		scope, err := s.dataScope.Resolve(ctx, tid)
-		if err != nil {
-			return pagination.Result[*vulnerability.Finding]{}, fmt.Errorf("resolve data scope: %w", err)
-		}
-		filter = filter.WithDataScope(scope)
-	}
-	return s.lister.List(ctx, filter, vulnerability.NewFindingListOptions(), page)
-}
-
-// campaignFindingFilter is the set of findings a campaign tracks, whatever
-// their status: a keyed campaign's solution family, or its finding filter.
-// ok is false for a campaign without scope, which tracks nothing.
-func campaignFindingFilter(campaign *remediation.Campaign) (vulnerability.FindingFilter, bool) {
-	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
-		f := vulnerability.NewFindingFilter().WithTenantID(campaign.TenantID())
-		f.RemediationKey = &key
-		return f, true
-	}
-	f := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
-	if !findingFilterHasScope(f) {
-		return f, false
-	}
-	// The whole scope regardless of status, so the count stays stable as
-	// findings resolve (see recomputeProgress).
-	f.Statuses = nil
-	return f, true
-}
-
-// ApplyViewerScope replaces the campaign's finding and resolved counts, in
-// memory only, with the ones over the caller's in-scope findings when the
-// caller is restricted (research 24 §5.1, gap L-18). The stored counts stay
-// organization-wide: auto-complete and the controller read those, and a
-// restricted read never persists its view. Unrestricted callers get the
-// organization's live counts (reads never persist them either). Errors fail
-// closed (zero counts) rather than show the organization's numbers.
-func (s *RemediationCampaignService) ApplyViewerScope(ctx context.Context, campaign *remediation.Campaign) {
-	if s.dataScope == nil || campaign == nil {
-		return
-	}
-	scope, err := s.dataScope.Resolve(ctx, campaign.TenantID())
-	if err != nil {
-		s.logger.Warn("campaign viewer scope failed", "id", campaign.ID().String(), "error", err)
-		campaign.UpdateProgress(0, 0)
-		return
-	}
-	if scope == nil {
-		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
-			s.logger.Warn("campaign live progress failed", "id", campaign.ID().String(), "error", rerr)
-		}
-		return
-	}
-	total, resolved, verified, err := s.scopedProgress(ctx, campaign, scope)
-	if err != nil {
-		s.logger.Warn("campaign scoped progress failed", "id", campaign.ID().String(), "error", err)
-		total, resolved, verified = 0, 0, 0
-	}
-	campaign.UpdateProgress(int(total), int(resolved))
-	campaign.SetVerifiedCount(int(verified))
-	campaign.RedactForViewer(s.scopedFilter(ctx, campaign, scope))
-}
-
-// getVisible loads a campaign the caller may see. A caller restricted by
-// data scope sees only a campaign that touches their scope (at least one of
-// its findings, or its asset, is on an in-scope asset) or that they created;
-// any other campaign answers not found, for reads and writes alike, so a
-// restricted member can neither read nor change another team's campaign.
-// Callers with no scope (owners, admins, full-data roles, system jobs) see
-// every campaign of the tenant.
-func (s *RemediationCampaignService) getVisible(ctx context.Context, tenantID, id shared.ID) (*remediation.Campaign, error) {
-	campaign, err := s.repo.GetByID(ctx, tenantID, id)
-	if err != nil {
-		return nil, err
-	}
-	if s.dataScope == nil {
-		return campaign, nil
-	}
-	scope, err := s.dataScope.Resolve(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve data scope: %w", err)
-	}
-	ok, err := s.visibleIn(ctx, campaign, scope)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, remediation.ErrCampaignNotFound
-	}
-	return campaign, nil
-}
-
-// ErrCampaignOutsideScope refuses a change to a campaign that a restricted
-// caller can see but that also covers findings outside their scope.
-var ErrCampaignOutsideScope = fmt.Errorf("%w: this campaign also covers findings outside your data scope; only someone who can see all of them may change it", shared.ErrForbidden)
-
-// getWritable loads a campaign the caller may change. Seeing a campaign needs
-// one of its findings in scope (getVisible); changing it needs all of them,
-// so one shared finding never gives a restricted member control of another
-// team's campaign (owner decision 2026-10-15). A restricted caller may change
-// a campaign only when its asset (if any) and every one of its findings are
-// in their scope; an empty campaign only when they created it.
-func (s *RemediationCampaignService) getWritable(ctx context.Context, tenantID, id shared.ID) (*remediation.Campaign, error) {
-	campaign, err := s.getVisible(ctx, tenantID, id)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.requireAllInScope(ctx, campaign); err != nil {
-		return nil, err
-	}
-	return campaign, nil
-}
-
-// requireAllInScope refuses (ErrCampaignOutsideScope) a restricted caller
-// unless the campaign's asset (if any) and every one of its findings are in
-// their scope, or it has no finding and they created it. It is checked on the
-// stored campaign before a change, and on a new or changed filter before it
-// is saved, so a restricted member can neither change another team's
-// campaign nor point one at another team's assets or CVEs. Callers with no
-// scope pass.
-func (s *RemediationCampaignService) requireAllInScope(ctx context.Context, campaign *remediation.Campaign) error {
-	if s.dataScope == nil {
-		return nil
-	}
-	scope, err := s.dataScope.Resolve(ctx, campaign.TenantID())
-	if err != nil {
-		return fmt.Errorf("resolve data scope: %w", err)
-	}
-	if scope == nil {
-		return nil
-	}
-	if assetID := firstString(campaign.FindingFilter(), "asset_id"); assetID != "" {
-		id, perr := shared.IDFromString(assetID)
-		in := false
-		if perr == nil {
-			if in, perr = s.dataScope.InScope(ctx, scope, id); perr != nil {
-				return fmt.Errorf("campaign asset scope: %w", perr)
-			}
-		}
-		if !in {
-			return ErrCampaignOutsideScope
-		}
-	}
-	all, _, _, err := s.countProgress(ctx, campaign, nil)
-	if err != nil {
-		return fmt.Errorf("campaign scope: %w", err)
-	}
-	mine, _, _, err := s.countProgress(ctx, campaign, scope)
-	if err != nil {
-		return fmt.Errorf("campaign scope: %w", err)
-	}
-	if mine < all {
-		return ErrCampaignOutsideScope
-	}
-	if all == 0 {
-		if by := campaign.CreatedBy(); by == nil || by.String() != s.dataScope.CallerUserID(ctx) {
-			return ErrCampaignOutsideScope
-		}
-	}
-	return nil
-}
-
-// visibleIn reports whether a campaign touches the scope (nil = everything).
-func (s *RemediationCampaignService) visibleIn(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) (bool, error) {
-	if scope == nil {
-		return true, nil
-	}
-	if by := campaign.CreatedBy(); by != nil && s.dataScope != nil && by.String() == s.dataScope.CallerUserID(ctx) {
-		return true, nil
-	}
-	if assetID := firstString(campaign.FindingFilter(), "asset_id"); assetID != "" {
-		if id, err := shared.IDFromString(assetID); err == nil {
-			in, ierr := s.dataScope.InScope(ctx, scope, id)
-			if ierr != nil {
-				return false, fmt.Errorf("campaign asset scope: %w", ierr)
-			}
-			if in {
-				return true, nil
-			}
-		}
-	}
-	total, _, _, err := s.countProgress(ctx, campaign, scope)
-	if err != nil {
-		return false, fmt.Errorf("campaign scope: %w", err)
-	}
-	return total > 0, nil
-}
-
-// scopedFilter is the campaign's finding filter as a scoped viewer may see
-// it: explicit finding ids and the asset id outside the caller's data scope
-// are removed (they name findings and assets the viewer cannot open). Fails
-// closed: on any lookup error the references are dropped.
-func (s *RemediationCampaignService) scopedFilter(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) map[string]any {
-	raw := campaign.FindingFilter()
-	out := make(map[string]any, len(raw))
-	for k, v := range raw {
-		out[k] = v
-	}
-	delete(out, "finding_id")
-	if ids := filterFindingIDs(raw); len(ids) > 0 {
-		out["finding_ids"] = s.inScopeFindingIDs(ctx, campaign.TenantID(), ids, scope)
-	}
-	if assetID := firstString(raw, "asset_id"); assetID != "" {
-		id, err := shared.IDFromString(assetID)
-		in := false
-		if err == nil && s.dataScope != nil {
-			in, err = s.dataScope.InScope(ctx, scope, id)
-		}
-		if err != nil || !in {
-			delete(out, "asset_id")
-		}
-	}
-	return out
-}
-
-// inScopeFindingIDs keeps the ids of the tenant's findings on the scope's
-// assets, in the order given.
-func (s *RemediationCampaignService) inScopeFindingIDs(ctx context.Context, tenantID shared.ID, ids []string, scope *shared.DataScope) []string {
-	kept := make([]string, 0, len(ids))
-	if s.lister == nil {
-		return kept
-	}
-	visible := make(map[string]bool, len(ids))
-	const batch = 100 // the list page size limit
-	for start := 0; start < len(ids); start += batch {
-		chunk := ids[start:min(start+batch, len(ids))]
-		f := vulnerability.NewFindingFilter().WithTenantID(tenantID).WithDataScope(scope)
-		f.FindingIDs = chunk
-		res, err := s.lister.List(ctx, f, vulnerability.NewFindingListOptions(), pagination.New(1, len(chunk)))
-		if err != nil {
-			s.logger.Warn("campaign filter scope check failed", "error", logger.SanitizeError(err))
-			return kept
-		}
-		for _, fd := range res.Data {
-			visible[fd.ID().String()] = true
-		}
-	}
-	for _, id := range ids {
-		if visible[id] {
-			kept = append(kept, id)
-		}
-	}
-	return kept
-}
-
-// scopedProgress counts the campaign's findings and closed findings on the
-// scope's assets, with the same rules as recomputeProgress.
-func (s *RemediationCampaignService) scopedProgress(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) (total, closed, verified int64, err error) {
-	return s.countProgress(ctx, campaign, scope)
-}
-
-// countProgress counts the campaign's findings, its closed findings and its
-// verified-fixed (resolved) findings, on the scope's assets when scope is
-// non-nil. The total ignores any status the filter pins, so it stays stable as
-// findings close.
-func (s *RemediationCampaignService) countProgress(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) (total, closed, verified int64, err error) {
-	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
-		if s.keyResolver == nil {
-			return 0, 0, 0, nil
-		}
-		if total, closed, err = s.keyResolver.CountByKey(ctx, campaign.TenantID(), key, scope); err != nil {
-			return 0, 0, 0, fmt.Errorf("count campaign findings by key: %w", err)
-		}
-		if verified, err = s.keyResolver.CountVerifiedByKey(ctx, campaign.TenantID(), key, scope); err != nil {
-			return 0, 0, 0, fmt.Errorf("count verified campaign findings by key: %w", err)
-		}
-		return total, closed, verified, nil
-	}
-	if s.finding == nil {
-		return 0, 0, 0, nil
-	}
-	base := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
-	// An unscoped campaign ({} filter) tracks nothing until it gets a scope.
-	if !findingFilterHasScope(base) {
-		return 0, 0, 0, nil
-	}
-	if scope != nil {
-		base = base.WithDataScope(scope)
-	}
-	count := func(statuses []vulnerability.FindingStatus) (int64, error) {
-		f := base
-		f.Statuses = statuses
-		return s.finding.Count(ctx, f)
-	}
-	if total, err = count(nil); err != nil {
-		return 0, 0, 0, fmt.Errorf("count campaign findings: %w", err)
-	}
-	if closed, err = count(vulnerability.ClosedFindingStatuses()); err != nil {
-		return 0, 0, 0, fmt.Errorf("count closed campaign findings: %w", err)
-	}
-	if verified, err = count([]vulnerability.FindingStatus{vulnerability.FindingStatusResolved}); err != nil {
-		return 0, 0, 0, fmt.Errorf("count verified campaign findings: %w", err)
-	}
-	return total, closed, verified, nil
-}
-
-// SetFindingResolver wires the bulk resolver that makes ResolveCampaignFindings
-// available (RFC-015 Phase 3). When unset, the resolve action is unavailable.
-func (s *RemediationCampaignService) SetFindingResolver(r CampaignFindingResolver) {
-	s.resolver = r
-}
-
-// SetKeyResolver wires progress + resolution for campaigns scoped to a
-// remediation-group key (a solution family). When unset, such campaigns keep
-// zero progress and their resolve fails closed (never a tenant-wide resolve).
-func (s *RemediationCampaignService) SetKeyResolver(r CampaignKeyResolver) {
-	s.keyResolver = r
-}
-
-// ResolveCampaignFindings marks every OPEN finding of the campaign fixed in
-// one action ("mark fixed" on the finding bulk path: legal steps to
-// fix_applied, findings:fix_apply, a note, only the person's own findings, a
-// proof-of-fix re-check per finding, the abuse guard). It never closes a
-// finding: each one is verified on its own. The result names every finding
-// that was not updated and why.
-func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context, tenantID, campaignID string, in CampaignResolveInput) (*CampaignResolveResult, error) {
-	if in.Status != "" && in.Status != string(vulnerability.FindingStatusFixApplied) {
-		return nil, ErrCampaignResolveClosesNothing
-	}
-	in.Status = string(vulnerability.FindingStatusFixApplied)
-	if !in.HasFixApplyPermission {
-		return nil, fmt.Errorf("%w: marking findings fixed requires findings:fix_apply", shared.ErrForbidden)
-	}
-	if strings.TrimSpace(in.Resolution) == "" {
-		return nil, fmt.Errorf("%w: a note is required to mark findings fixed", shared.ErrValidation)
-	}
-
-	campaign, err := s.GetCampaign(ctx, tenantID, campaignID)
-	if err != nil {
-		return nil, err
-	}
-	// Only a campaign being worked on marks findings fixed: not a draft, a
-	// paused, a completed or a canceled one.
-	if st := campaign.Status(); st != remediation.CampaignStatusActive && st != remediation.CampaignStatusValidating {
-		return nil, fmt.Errorf("%w: a %s campaign cannot mark findings fixed; activate it first", shared.ErrValidation, st)
-	}
-	// The stored filter must parse: a condition is never dropped.
-	if _, perr := parseCampaignFilter(campaign.TenantID(), campaign.FindingFilter()); perr != nil {
-		return nil, fmt.Errorf("%w; edit the campaign's scope before resolving", perr)
-	}
-
-	// A keyed campaign (solution family) MUST resolve through the key path only.
-	// Its remediation_key is not expressible as a FindingFilter, so falling
-	// through to the generic resolver would map it to a tenant-only filter and
-	// close every finding in the tenant. Fail closed if the key path is unwired.
-	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
-		if s.keyResolver == nil {
-			return nil, fmt.Errorf("%w: keyed campaign resolve is not configured", shared.ErrValidation)
-		}
-		res, kerr := s.keyResolver.ResolveGroupByKey(ctx, tenantID, key, in)
-		if kerr != nil {
-			return nil, kerr
-		}
-		s.logger.Info("marked remediation campaign findings fixed by key",
-			"tenant", sanitizeLogValue(tenantID), "campaign_id", sanitizeLogValue(campaignID),
-			"updated", res.Updated, "skipped", res.Skipped, "failed", res.Failed)
-		return res, nil
-	}
-
-	if s.resolver == nil {
-		return nil, fmt.Errorf("%w: campaign resolve is not configured", shared.ErrValidation)
-	}
-	filter := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
-	// Refuse to resolve an unscoped campaign: an empty filter would map to a
-	// tenant-only filter and close every open finding in the tenant.
-	if !findingFilterHasScope(filter) {
-		return nil, fmt.Errorf("%w: campaign has no scope — refusing tenant-wide resolve", shared.ErrValidation)
-	}
-	res, err := s.resolver.ResolveOpenByFilter(ctx, tenantID, filter, in)
-	if err != nil {
-		return nil, err
-	}
-	s.logger.Info("marked remediation campaign findings fixed",
-		"tenant", sanitizeLogValue(tenantID), "campaign_id", sanitizeLogValue(campaignID),
-		"updated", res.Updated, "skipped", res.Skipped, "failed", res.Failed)
-	return res, nil
-}
-
-// sanitizeLogValue strips CR/LF and control characters from a
-// user-influenceable value before it is logged, preventing log forging
-// (CodeQL go/log-injection). Mirrors the remediation group service's helper —
-// the shared logger can emit plain text, where an unescaped newline would let a
-// caller forge log lines.
-func sanitizeLogValue(s string) string {
-	const maxLen = 128
-	if len(s) > maxLen {
-		s = s[:maxLen]
-	}
-	// The explicit ReplaceAll pair is the form CodeQL go/log-injection accepts
-	// as a barrier; strings.Map below then drops the remaining control chars.
-	s = strings.ReplaceAll(s, "\n", "")
-	s = strings.ReplaceAll(s, "\r", "")
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r < 0x20 {
-			return -1
-		}
-		return r
-	}, s)
-}
-
-// SetTicketing wires the campaign→Jira-epic integration. Safe to call after
-// construction; when either dependency is nil, CreateTicket returns an error
-// (the feature degrades off, the rest of the service is unaffected).
-func (s *RemediationCampaignService) SetTicketing(ticketRepo remediation.CampaignTicketRepository, epic CampaignEpicCreator) {
-	s.ticketRepo = ticketRepo
-	s.epicCreator = epic
-}
-
-// ErrTicketingNotConfigured is returned by CreateTicket when no epic creator /
-// ticket store is wired (e.g. no Jira integration configured).
-var ErrTicketingNotConfigured = fmt.Errorf("%w: campaign ticketing is not configured", shared.ErrValidation)
-
-// CreateRemediationCampaignInput holds input for creating a campaign.
-type CreateRemediationCampaignInput struct {
-	TenantID      string
-	Name          string
-	Description   string
-	Priority      string
-	FindingFilter map[string]any
-	AssignedTo    string
-	AssignedTeam  string
-	StartDate     string
-	DueDate       string
-	Tags          []string
-	ActorID       string
-}
-
-// CreateCampaign creates a new remediation campaign.
-func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input CreateRemediationCampaignInput, actx auditapp.AuditContext) (*remediation.Campaign, error) {
-	tid, err := shared.IDFromString(input.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	priority := remediation.CampaignPriorityMedium
-	if input.Priority != "" {
-		p, perr := remediation.ParseCampaignPriority(input.Priority)
-		if perr != nil {
-			return nil, perr
-		}
-		priority = p
-	}
-
-	campaign, err := remediation.NewCampaign(tid, input.Name, priority)
-	if err != nil {
-		return nil, err
-	}
-
-	campaign.Update(input.Name, input.Description, priority)
-	if input.FindingFilter != nil {
-		if err := ValidateCampaignFilter(input.FindingFilter); err != nil {
-			return nil, err
-		}
-		campaign.SetFindingFilter(input.FindingFilter)
-	}
-	if input.Tags != nil {
-		campaign.SetTags(input.Tags)
-	}
-	if input.ActorID != "" {
-		actorID, _ := shared.IDFromString(input.ActorID)
-		campaign.SetCreatedBy(actorID)
-	}
-	// A restricted member may create a campaign only over their own scope.
-	if err := s.requireAllInScope(ctx, campaign); err != nil {
-		return nil, err
-	}
-	if input.AssignedTo != "" || input.AssignedTeam != "" {
-		var toPtr, teamPtr *shared.ID
-		if input.AssignedTo != "" {
-			assignee, aerr := shared.IDFromString(input.AssignedTo)
-			if aerr != nil {
-				return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
-			}
-			if err := s.assertAssignee(ctx, campaign.TenantID(), &assignee); err != nil {
-				return nil, err
-			}
-			toPtr = &assignee
-		}
-		if input.AssignedTeam != "" {
-			team, terr := shared.IDFromString(input.AssignedTeam)
-			if terr != nil {
-				return nil, fmt.Errorf("%w: invalid assigned_team id", shared.ErrValidation)
-			}
-			if err := s.assertTeam(ctx, campaign.TenantID(), &team); err != nil {
-				return nil, err
-			}
-			teamPtr = &team
-		}
-		campaign.SetAssignment(toPtr, teamPtr)
-	}
-	// Start/due dates: RFC 3339 or a date alone (parseCampaignDate); anything
-	// else is refused, never dropped. If no start date is chosen, Activate()
-	// auto-stamps it when the task first moves to in-progress.
-	if input.StartDate != "" {
-		start, derr := parseCampaignDate("start_date", input.StartDate, false)
-		if derr != nil {
-			return nil, derr
-		}
-		campaign.SetStartDate(start)
-	}
-	if input.DueDate != "" {
-		due, derr := parseCampaignDate("due_date", input.DueDate, true)
-		if derr != nil {
-			return nil, derr
-		}
-		campaign.SetDueDate(due)
-	}
-
-	if err := s.repo.Create(ctx, campaign); err != nil {
-		return nil, fmt.Errorf("failed to create remediation campaign: %w", err)
-	}
-
-	// Seed the initial finding counts so the campaign doesn't read 0/0 until
-	// the first reconcile tick. Best-effort: a counting failure must not fail
-	// creation — the controller will reconcile it shortly after.
-	if changed, err := s.recomputeProgress(ctx, campaign); err != nil {
-		s.logger.Warn("initial campaign progress compute failed", "id", campaign.ID().String(), "error", err)
-	} else if changed {
-		if err := s.repo.UpdateCounts(ctx, campaign); err != nil {
-			s.logger.Warn("failed to persist initial campaign progress", "id", campaign.ID().String(), "error", err)
-		}
-	}
-
-	s.logAudit(ctx, campaign.TenantID(), actx,
-		auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignCreated, auditdom.ResourceTypeRemediationCampaign, campaign.ID().String()).
-			WithResourceName(campaign.Name()).
-			WithMessage(fmt.Sprintf("Remediation campaign '%s' created", campaign.Name())).
-			WithMetadata("priority", string(campaign.Priority())).
-			WithMetadata("status", string(campaign.Status())).
-			WithSeverity(auditdom.SeverityLow))
-
-	s.logger.Info("remediation campaign created", "id", campaign.ID().String(), "name", input.Name)
-	return campaign, nil
-}
-
-// GetCampaign retrieves a campaign with its finding counts computed live, so
-// the detail view reflects current finding statuses. A read never writes: the
-// live counts are not persisted here (the reconciler and the refresh endpoint
-// do that), so a GET can never overwrite a concurrent change. The recompute is
-// best-effort: on any error the last-persisted counts are returned unchanged.
-func (s *RemediationCampaignService) GetCampaign(ctx context.Context, tenantID, campaignID string) (*remediation.Campaign, error) {
-	tid, _ := shared.IDFromString(tenantID)
-	cid, _ := shared.IDFromString(campaignID)
-	campaign, err := s.getVisible(ctx, tid, cid)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
-		s.logger.Warn("campaign progress refresh failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(rerr))
-	}
-	return campaign, nil
-}
-
-// parseCampaignDate reads a campaign start or due date: an RFC 3339
-// timestamp, or a date alone (YYYY-MM-DD) read in UTC. A date alone is the
-// start of that day for a start date and its last second for a due date, so
-// a campaign due on a day is overdue only once the day has passed. Anything
-// else is a validation error.
-func parseCampaignDate(field, s string, endOfDay bool) (*time.Time, error) {
-	s = strings.TrimSpace(s)
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return &t, nil
-	}
-	if d, err := time.Parse(time.DateOnly, s); err == nil {
-		if endOfDay {
-			d = d.Add(24*time.Hour - time.Second)
-		}
-		return &d, nil
-	}
-	return nil, fmt.Errorf("%w: %s must be an RFC 3339 timestamp or a date (YYYY-MM-DD)", shared.ErrValidation, field)
-}
-
-// optionalCampaignDate is parseCampaignDate where "" clears the date.
-func optionalCampaignDate(field, s string, endOfDay bool) (*time.Time, error) {
-	if strings.TrimSpace(s) == "" {
-		return nil, nil
-	}
-	return parseCampaignDate(field, s, endOfDay)
-}
-
-// ListCampaigns lists campaigns with filtering.
-//
-// A caller restricted by data scope gets only the campaigns that touch their
-// scope (getVisible); the page and the total are computed over those. The
-// visibility of a campaign depends on its findings, so the filtering runs
-// here over every campaign of the tenant.
-func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID string, filter remediation.CampaignFilter, page pagination.Pagination) (pagination.Result[*remediation.Campaign], error) {
-	tid, _ := shared.IDFromString(tenantID)
-	filter.TenantID = &tid
-	if s.dataScope == nil {
-		return s.repo.List(ctx, filter, page)
-	}
-	scope, err := s.dataScope.Resolve(ctx, tid)
-	if err != nil {
-		return pagination.Result[*remediation.Campaign]{}, fmt.Errorf("resolve data scope: %w", err)
-	}
-	if scope == nil {
-		return s.repo.List(ctx, filter, page)
-	}
-	visible := make([]*remediation.Campaign, 0)
-	const batch = 100
-	// Every campaign of the tenant is examined, page by page: a cap would
-	// silently leave later campaigns out of the caller's list.
-	for p := 1; ; p++ {
-		res, lerr := s.repo.List(ctx, filter, pagination.New(p, batch))
-		if lerr != nil {
-			return pagination.Result[*remediation.Campaign]{}, lerr
-		}
-		for _, c := range res.Data {
-			ok, verr := s.visibleIn(ctx, c, scope)
-			if verr != nil {
-				return pagination.Result[*remediation.Campaign]{}, verr
-			}
-			if ok {
-				visible = append(visible, c)
-			}
-		}
-		if len(res.Data) < batch {
-			break
-		}
-	}
-	start := min(page.Offset(), len(visible))
-	end := min(start+page.PerPage, len(visible))
-	return pagination.NewResult(visible[start:end], int64(len(visible)), page), nil
-}
-
-// UpdateRemediationCampaignInput holds fields for partial campaign update.
+// UpdateRemediationCampaignInput: nil leaves a field; "" clears an optional
+// one (dates, assignee, team).
 type UpdateRemediationCampaignInput struct {
-	Name        *string
-	Description *string
-	Priority    *string
-	Tags        []string
-	// StartDate and DueDate: nil = leave unchanged; ptr to "" = clear;
-	// otherwise RFC 3339 or a date alone (parseCampaignDate).
-	StartDate *string
-	DueDate   *string
-	// FindingFilter re-scopes the campaign (e.g. a task's "link to finding").
-	// nil = leave the existing scope untouched; non-nil (incl. {}) = replace it.
-	FindingFilter map[string]any
-	// AssignedTo sets the owner. nil = leave unchanged; ptr to "" = unassign;
-	// ptr to a user UUID = assign that user.
-	AssignedTo *string
-	// AssignedTeam sets the validator (the "who verifies" — segregation from the
-	// fixer). Same nil/""/uuid semantics as AssignedTo.
+	Name         *string
+	Description  *string
+	Priority     *string
+	Tags         []string
+	StartDate    *string
+	DueDate      *string
+	AssignedTo   *string
 	AssignedTeam *string
-	// Version is the campaign version the caller edited (optimistic check).
-	// nil = check only against the version read here.
-	Version *int
+	Version      *int
 }
 
-// deadlineOnlyTightens allows setting a first due date or moving it to an
-// earlier day; moving it later or clearing it is refused (a campaign's
-// deadline only tightens). Days are compared, as the column stores a date.
+// deadlineOnlyTightens refuses moving a campaign's due date later or
+// clearing it once set.
 func deadlineOnlyTightens(current, next *time.Time) error {
 	if current == nil {
 		return nil
@@ -925,7 +761,6 @@ func deadlineOnlyTightens(current, next *time.Time) error {
 	return nil
 }
 
-// checkVersion refuses a change made on a stale copy of the campaign.
 func checkVersion(campaign *remediation.Campaign, expected *int) error {
 	if expected != nil && *expected != campaign.Version() {
 		return remediation.ErrCampaignVersionConflict
@@ -933,12 +768,13 @@ func checkVersion(campaign *remediation.Campaign, expected *int) error {
 	return nil
 }
 
-// UpdateCampaign updates campaign fields (name, description, priority, tags, due_date).
-func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantID, campaignID string, input UpdateRemediationCampaignInput, actx auditapp.AuditContext) (*remediation.Campaign, error) {
-	tid, _ := shared.IDFromString(tenantID)
-	cid, _ := shared.IDFromString(campaignID)
-
-	campaign, err := s.getWritable(ctx, tid, cid)
+// UpdateCampaign changes a campaign's fields.
+func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantID, campaignID string, input UpdateRemediationCampaignInput, actx auditapp.AuditContext) (*CampaignView, error) {
+	tid, cid, err := parseIDs(tenantID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	campaign, v, err := s.getWritable(ctx, tid, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -946,7 +782,7 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		return nil, err
 	}
 	before := snapshotCampaign(campaign)
-
+	dueChanged := false
 	if input.Name != nil {
 		name := strings.TrimSpace(*input.Name)
 		if name == "" {
@@ -968,14 +804,14 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		campaign.SetTags(input.Tags)
 	}
 	if input.StartDate != nil {
-		start, derr := optionalCampaignDate("start_date", *input.StartDate, false)
+		start, derr := optionalCampaignDateStr("start_date", *input.StartDate, false)
 		if derr != nil {
 			return nil, derr
 		}
 		campaign.SetStartDate(start)
 	}
 	if input.DueDate != nil {
-		due, derr := optionalCampaignDate("due_date", *input.DueDate, true)
+		due, derr := optionalCampaignDateStr("due_date", *input.DueDate, true)
 		if derr != nil {
 			return nil, derr
 		}
@@ -983,173 +819,198 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 			return nil, err
 		}
 		campaign.SetDueDate(due)
-	}
-	if input.FindingFilter != nil {
-		// Re-scoping the campaign (e.g. linking a finding) — apply then recompute
-		// the counts immediately so "N findings linked" reflects the new scope
-		// without waiting for the reconcile sweep.
-		if err := ValidateCampaignFilter(input.FindingFilter); err != nil {
-			return nil, err
-		}
-		campaign.SetFindingFilter(input.FindingFilter)
-		// The new scope must be the caller's too: a restricted member may not
-		// point a campaign at another team's assets or CVEs.
-		if err := s.requireAllInScope(ctx, campaign); err != nil {
-			return nil, err
-		}
-		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
-			s.logger.Warn("recompute after re-scope failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(rerr))
-		}
+		dueChanged = true
 	}
 	if input.AssignedTo != nil || input.AssignedTeam != nil {
-		toPtr, aerr := resolveAssignee(campaign.AssignedTo(), input.AssignedTo, "assigned_to")
-		if aerr != nil {
-			return nil, aerr
-		}
-		// Only a newly named owner is checked; keeping the current one, or
-		// unassigning, is not.
-		if input.AssignedTo != nil && toPtr != nil {
-			if err := s.assertAssignee(ctx, campaign.TenantID(), toPtr); err != nil {
+		to, team := campaign.AssignedTo(), campaign.AssignedTeam()
+		if input.AssignedTo != nil {
+			if to, err = s.optionalAssignee(ctx, tid, *input.AssignedTo); err != nil {
 				return nil, err
 			}
 		}
-		teamPtr, terr := resolveAssignee(campaign.AssignedTeam(), input.AssignedTeam, "assigned_team")
-		if terr != nil {
-			return nil, terr
-		}
-		// Only a newly named team is checked; keeping it or clearing it is not.
-		if input.AssignedTeam != nil && teamPtr != nil {
-			if err := s.assertTeam(ctx, campaign.TenantID(), teamPtr); err != nil {
+		if input.AssignedTeam != nil {
+			if team, err = s.optionalTeam(ctx, tid, *input.AssignedTeam); err != nil {
 				return nil, err
 			}
 		}
-		campaign.SetAssignment(toPtr, teamPtr)
+		campaign.SetAssignment(to, team)
 	}
-
 	if err := s.repo.Update(ctx, campaign); err != nil {
 		if errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrNotFound) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to update campaign: %w", err)
 	}
-
+	if dueChanged && s.tasks != nil {
+		// The due date bounds every live task of the campaign.
+		if ids, lerr := s.tasks.CampaignTaskIDs(ctx, tid, cid); lerr == nil {
+			s.recompute(ctx, tid, ids)
+		}
+	}
 	if changes := diffCampaign(before, snapshotCampaign(campaign)); !changes.IsEmpty() {
-		s.logAudit(ctx, campaign.TenantID(), actx,
-			auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignUpdated, auditdom.ResourceTypeRemediationCampaign, campaign.ID().String()).
+		s.logAudit(ctx, tid, actx,
+			auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignUpdated, auditdom.ResourceTypeRemediationCampaign, cid.String()).
 				WithResourceName(campaign.Name()).
 				WithChanges(changes).
 				WithMessage(fmt.Sprintf("Remediation campaign '%s' updated", campaign.Name())).
 				WithSeverity(auditdom.SeverityLow))
 	}
-
-	s.logger.Info("remediation campaign updated", "id", sanitizeLogValue(campaignID))
-	return campaign, nil
+	return s.view(ctx, campaign, v)
 }
 
-// UpdateCampaignStatus transitions campaign status.
-func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, tenantID, campaignID, newStatus string, actx auditapp.AuditContext) (*remediation.Campaign, error) {
-	return s.UpdateCampaignStatusAt(ctx, tenantID, campaignID, newStatus, CampaignStatusOptions{}, actx)
-}
-
-// CampaignStatusOptions qualify a status change.
-type CampaignStatusOptions struct {
-	// ExpectedVersion: the campaign version the caller saw (nil = the
-	// version read here).
-	ExpectedVersion *int
-	// CloseWithOpenMembers completes a campaign that is not done (findings
-	// still open, or none verified fixed). Explicit and audited.
-	CloseWithOpenMembers bool
-}
-
-// UpdateCampaignStatusAt transitions campaign status when the campaign is
-// still at opts.ExpectedVersion.
-func (s *RemediationCampaignService) UpdateCampaignStatusAt(ctx context.Context, tenantID, campaignID, newStatus string, opts CampaignStatusOptions, actx auditapp.AuditContext) (*remediation.Campaign, error) {
-	expectedVersion := opts.ExpectedVersion
-	tid, _ := shared.IDFromString(tenantID)
-	cid, _ := shared.IDFromString(campaignID)
-
-	campaign, err := s.getWritable(ctx, tid, cid)
+// UpdateCampaignStatus moves a campaign: active (start a draft, reopen a
+// completed one), completed (only when done: every task closed and one done),
+// canceled (from draft or active). Its tasks are not changed.
+func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, tenantID, campaignID, newStatus string, expectedVersion *int, actx auditapp.AuditContext) (*CampaignView, error) {
+	tid, cid, err := parseIDs(tenantID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	campaign, v, err := s.getWritable(ctx, tid, cid)
 	if err != nil {
 		return nil, err
 	}
 	if err := checkVersion(campaign, expectedVersion); err != nil {
 		return nil, err
 	}
-	fromStatus := campaign.Status()
-
-	// Completing stamps the risk reduction from the finding counts and records
-	// how many findings were still open, so both must be live, not whatever
-	// the last reconcile persisted. Best-effort: a counting failure keeps the
-	// stored counts rather than failing the transition.
-	if remediation.CampaignStatus(newStatus) == remediation.CampaignStatusCompleted {
-		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
-			s.logger.Warn("recompute before completion failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(rerr))
-		}
-	}
-
+	from := campaign.Status()
 	switch remediation.CampaignStatus(newStatus) {
 	case remediation.CampaignStatusActive:
-		// Active from completed is a Reopen (the work was not done); from
-		// draft, paused or validating it is a start, a resume or rework
-		// after a failed validation.
-		if campaign.Status() == remediation.CampaignStatusCompleted {
+		if from == remediation.CampaignStatusCompleted {
 			err = campaign.Reopen()
 		} else {
 			err = campaign.Activate()
 		}
-	case remediation.CampaignStatusPaused:
-		err = campaign.Pause()
-	case remediation.CampaignStatusValidating:
-		err = campaign.StartValidation()
 	case remediation.CampaignStatusCompleted:
-		// Done means every finding closed and at least one verified fixed.
-		// Anything less needs the explicit, audited override.
-		if !campaign.IsDone() && !opts.CloseWithOpenMembers {
+		whole, serr := s.wholeSummary(ctx, campaign)
+		if serr != nil {
+			return nil, serr
+		}
+		if !whole.IsDone() {
 			return nil, remediation.ErrCampaignNotDone
 		}
 		err = campaign.Complete()
 	case remediation.CampaignStatusCanceled:
 		err = campaign.Cancel()
 	default:
-		return nil, fmt.Errorf("%w: invalid status: %s", shared.ErrValidation, newStatus)
+		return nil, fmt.Errorf("%w: status must be active, completed or canceled", shared.ErrValidation)
 	}
 	if err != nil {
 		return nil, err
 	}
-
 	if err := s.repo.Update(ctx, campaign); err != nil {
 		if errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrNotFound) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to update campaign status: %w", err)
 	}
-
 	if campaign.Status() == remediation.CampaignStatusCompleted {
 		s.syncEpicOnCompletion(ctx, tid, cid, campaign.Name())
 	}
-
-	trigger := "manual"
-	if campaign.Status() == remediation.CampaignStatusCompleted && !campaign.IsDone() {
-		trigger = "manual_with_open_members"
+	if campaign.Status() == remediation.CampaignStatusCanceled && s.tasks != nil {
+		// A canceled campaign's due date no longer bounds its tasks.
+		if ids, lerr := s.tasks.CampaignTaskIDs(ctx, tid, cid); lerr == nil {
+			s.recompute(ctx, tid, ids)
+		}
 	}
-	s.auditStatusChange(ctx, campaign, fromStatus, actx, trigger)
-
-	s.logger.Info("remediation campaign status updated", "id", sanitizeLogValue(campaignID), "status", sanitizeLogValue(newStatus))
-	return campaign, nil
+	s.auditStatusChange(ctx, campaign, from, actx, "manual")
+	return s.view(ctx, campaign, v)
 }
 
-// syncEpicOnCompletion best-effort transitions a completed campaign's linked
-// Jira epic to the done state. No-op when ticketing is unwired or the campaign
-// has no linked epic. Errors are logged, never propagated — a Jira hiccup must
-// not fail the campaign-completion request. Echo-guarded in TransitionEpic, so
-// safe to call from multiple completion paths (manual + auto-complete).
+// wholeSummary is the campaign's summary over every task (what completion
+// and the reconcile decide on).
+func (s *RemediationCampaignService) wholeSummary(ctx context.Context, c *remediation.Campaign) (remediation.CampaignSummary, error) {
+	sums, err := s.repo.Summaries(ctx, c.TenantID(), []shared.ID{c.ID()}, nil)
+	if err != nil {
+		return remediation.CampaignSummary{}, err
+	}
+	return sums[c.ID()], nil
+}
+
+// DeleteCampaign deletes a campaign; its tasks stay and leave it.
+func (s *RemediationCampaignService) DeleteCampaign(ctx context.Context, tenantID, campaignID string, actx auditapp.AuditContext) error {
+	tid, cid, err := parseIDs(tenantID, campaignID)
+	if err != nil {
+		return err
+	}
+	campaign, _, err := s.getWritable(ctx, tid, cid)
+	if err != nil {
+		return err
+	}
+	var ids []shared.ID
+	if s.tasks != nil {
+		ids, _ = s.tasks.CampaignTaskIDs(ctx, tid, cid)
+	}
+	if err := s.repo.Delete(ctx, tid, cid); err != nil {
+		return err
+	}
+	s.recompute(ctx, tid, ids)
+	s.logAudit(ctx, tid, actx,
+		auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignDeleted, auditdom.ResourceTypeRemediationCampaign, cid.String()).
+			WithResourceName(campaign.Name()).
+			WithMessage(fmt.Sprintf("Remediation campaign '%s' deleted; its tasks stay", campaign.Name())).
+			WithMetadata("status", string(campaign.Status())).
+			WithMetadata("live_tasks", len(ids)).
+			WithSeverity(auditdom.SeverityMedium))
+	return nil
+}
+
+// ReconcileProgress completes active campaigns whose tasks are done and
+// reopens completed ones with a live task again (the remediation progress
+// controller). Returns how many campaigns changed.
+func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int, error) {
+	campaigns, err := s.repo.ListForReconcile(ctx, 0)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list campaigns for reconcile: %w", err)
+	}
+	changed := 0
+	disabled := make(map[shared.ID]bool)
+	for _, c := range campaigns {
+		if s.modules != nil {
+			off, seen := disabled[c.TenantID()]
+			if !seen {
+				off = s.modules.TenantDisabledModules(ctx, c.TenantID().String())[moduledom.ModuleRemediation]
+				disabled[c.TenantID()] = off
+			}
+			if off {
+				continue
+			}
+		}
+		sum, serr := s.wholeSummary(ctx, c)
+		if serr != nil {
+			s.logger.Warn("campaign reconcile failed", "id", c.ID().String(), "error", serr)
+			continue
+		}
+		from := c.Status()
+		trigger := ""
+		switch {
+		case c.TryAutoComplete(sum):
+			trigger = "auto_complete"
+		case c.TryAutoReopen(sum):
+			trigger = "auto_reopen"
+		default:
+			continue
+		}
+		if uerr := s.repo.Update(ctx, c); uerr != nil {
+			s.logger.Info("campaign reconcile skipped: changed since read", "id", c.ID().String(), "error", uerr)
+			continue
+		}
+		if c.Status() == remediation.CampaignStatusCompleted {
+			s.syncEpicOnCompletion(ctx, c.TenantID(), c.ID(), c.Name())
+		}
+		s.auditStatusChange(ctx, c, from, auditapp.AuditContext{ActorEmail: campaignAuditSystemActor}, trigger)
+		changed++
+	}
+	return changed, nil
+}
+
 func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, tenantID, campaignID shared.ID, campaignName string) {
 	if s.ticketRepo == nil || s.epicCreator == nil {
 		return
 	}
 	link, err := s.ticketRepo.GetByCampaignAndProvider(ctx, tenantID, campaignID, "jira")
 	if err != nil {
-		return // not linked (or lookup failed) — nothing to sync
+		return // not linked (or lookup failed): nothing to sync
 	}
 	comment := fmt.Sprintf("%s marked remediation campaign %q complete.", brand.Name(), campaignName)
 	if terr := s.epicCreator.TransitionEpic(ctx, tenantID, link.IssueKey(), epicDoneStatus, comment); terr != nil {
@@ -1158,13 +1019,11 @@ func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, t
 	}
 }
 
-// HandleEpicStatusChange is the inbound half of campaign-epic sync. Jira
-// Done on a campaign's epic is a fix claim for the campaign's findings: they
-// are marked fixed through the campaign resolve ("mark fixed": legal steps,
-// proof of fix queued per finding), with the Jira integration as the recorded
-// actor. It never completes the campaign: a campaign is done when its
-// findings are verified closed. handled is false when the issue is not a
-// campaign epic; refusals list each finding the rules kept where it is.
+// HandleEpicStatusChange reacts to a campaign's Jira epic moving to a done
+// status: every live task of the campaign is marked fixed (a fix claim on
+// each open finding, which each finding then verifies on its own; never a
+// close). Returns the refusals, whether the issue was a campaign epic, and
+// an error.
 func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, jiraAccount string) ([]string, bool, error) {
 	if s.ticketRepo == nil {
 		return nil, false, nil
@@ -1176,42 +1035,30 @@ func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context,
 		}
 		return nil, false, fmt.Errorf("lookup campaign by issue key: %w", err)
 	}
-	if !isJiraDoneStatus(jiraStatus) {
+	if !isJiraDoneStatus(jiraStatus) || s.tasks == nil {
 		return nil, true, nil
 	}
-	changes := map[string]any{"ticket": issueKey}
-	actorName := "jira"
-	if jiraAccount != "" {
-		changes["jira_account_id"] = jiraAccount
-		actorName = "jira:" + jiraAccount
-	}
-	ctx = vulnerability.WithTicketInbound(ctx, "jira")
-	ctx = vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
-		Source: "jira", Reason: "ticket_status", ActorType: "integration", ActorName: actorName, Changes: changes,
-	})
-	res, err := s.ResolveCampaignFindings(ctx, tenantID.String(), link.CampaignID().String(), CampaignResolveInput{
-		Status:                string(vulnerability.FindingStatusFixApplied),
-		Resolution:            campaignEpicNote(issueKey, jiraStatus, jiraAccount),
-		HasFixApplyPermission: true,
-	})
+	ids, err := s.tasks.CampaignTaskIDs(ctx, tenantID, link.CampaignID())
 	if err != nil {
-		// The detail stays in the log; the ticket gets a fixed message.
-		return []string{campaignEpicClaimFailed}, true, fmt.Errorf("mark campaign findings fixed from epic: %w", err)
+		return []string{campaignEpicClaimFailed}, true, fmt.Errorf("list campaign tasks: %w", err)
 	}
-	refusals := make([]string, 0, len(res.Rows))
-	for _, r := range res.Rows {
-		if r.Outcome == "failed" {
-			refusals = append(refusals, r.FindingID+": "+r.Reason)
+	note := campaignEpicNote(issueKey, jiraStatus, jiraAccount)
+	var refusals []string
+	for _, id := range ids {
+		r, cerr := s.tasks.ClaimTaskFixed(ctx, tenantID, id, note)
+		if cerr != nil {
+			refusals = append(refusals, id.String()+": "+campaignEpicClaimFailed)
+			s.logger.Warn("mark campaign task fixed from epic failed", "task_id", id.String(), "error", logger.SanitizeError(cerr))
+			continue
 		}
+		refusals = append(refusals, r...)
 	}
-	s.logger.Info("campaign findings marked fixed from inbound jira epic",
-		"campaign_id", link.CampaignID().String(), "updated", res.Updated, "failed", res.Failed)
+	s.logger.Info("campaign tasks marked fixed from inbound jira epic",
+		"campaign_id", link.CampaignID().String(), "tasks", len(ids), "refusals", len(refusals))
 	return refusals, true, nil
 }
 
-// campaignEpicClaimFailed is the epic comment when the campaign's findings
-// could not be marked fixed (no internal error text leaves the platform).
-const campaignEpicClaimFailed = "the campaign's findings could not be marked fixed; see the campaign in OpenCTEM"
+const campaignEpicClaimFailed = "the campaign's task could not be marked fixed; see the campaign in OpenCTEM"
 
 func campaignEpicNote(issueKey, jiraStatus, account string) string {
 	note := fmt.Sprintf("jira %s (campaign epic) moved to %s", issueKey, jiraStatus)
@@ -1221,231 +1068,12 @@ func campaignEpicNote(issueKey, jiraStatus, account string) string {
 	return note
 }
 
-// isJiraDoneStatus reports whether a Jira status name represents a done state.
 func isJiraDoneStatus(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "done", "resolved", "closed", "complete", "completed":
 		return true
 	}
 	return false
-}
-
-// DeleteCampaign deletes a campaign.
-func (s *RemediationCampaignService) DeleteCampaign(ctx context.Context, tenantID, campaignID string, actx auditapp.AuditContext) error {
-	tid, _ := shared.IDFromString(tenantID)
-	cid, _ := shared.IDFromString(campaignID)
-	// Read first (tenant-scoped) so the audit row can name what was deleted.
-	campaign, err := s.getWritable(ctx, tid, cid)
-	if err != nil {
-		return err
-	}
-	if err := s.repo.Delete(ctx, tid, cid); err != nil {
-		return err
-	}
-	s.logAudit(ctx, campaign.TenantID(), actx,
-		auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignDeleted, auditdom.ResourceTypeRemediationCampaign, campaign.ID().String()).
-			WithResourceName(campaign.Name()).
-			WithMessage(fmt.Sprintf("Remediation campaign '%s' deleted", campaign.Name())).
-			WithMetadata("status", string(campaign.Status())).
-			WithSeverity(auditdom.SeverityMedium))
-	return nil
-}
-
-// RefreshCampaignProgress recomputes a single campaign's finding counts,
-// applies auto-complete when every finding is resolved, and persists the
-// result. Returns the up-to-date campaign. This is the on-demand path behind
-// the "refresh" endpoint; the controller drives the same logic in bulk.
-func (s *RemediationCampaignService) RefreshCampaignProgress(ctx context.Context, tenantID, campaignID string, actx auditapp.AuditContext) (*remediation.Campaign, error) {
-	tid, _ := shared.IDFromString(tenantID)
-	cid, _ := shared.IDFromString(campaignID)
-
-	campaign, err := s.getWritable(ctx, tid, cid)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := s.recomputeProgress(ctx, campaign); err != nil {
-		return nil, fmt.Errorf("failed to compute campaign progress: %w", err)
-	}
-	if err := s.repo.UpdateCounts(ctx, campaign); err != nil {
-		return nil, fmt.Errorf("failed to persist campaign progress: %w", err)
-	}
-	fromStatus := campaign.Status()
-	autoCompleted := false
-	if completed, cerr := campaign.TryAutoComplete(); cerr != nil {
-		s.logger.Warn("campaign auto-complete failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(cerr))
-	} else if completed {
-		// A versioned save: a Cancel or Pause made since the read wins.
-		if err := s.repo.Update(ctx, campaign); err != nil {
-			return nil, err
-		}
-		autoCompleted = true
-	}
-	if autoCompleted {
-		s.auditStatusChange(ctx, campaign, fromStatus, actx, "auto_complete")
-	}
-	if campaign.Status() == remediation.CampaignStatusCompleted {
-		s.syncEpicOnCompletion(ctx, tid, cid, campaign.Name())
-	}
-	return campaign, nil
-}
-
-// ReconcileProgress refreshes finding counts for every non-terminal campaign
-// across all tenants, auto-completing any whose findings are all resolved.
-// Returns the number of campaigns whose persisted state changed. Driven by the
-// remediation-progress controller. A failure on one campaign is logged and does
-// not abort the sweep.
-func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int, error) {
-	if s.finding == nil {
-		return 0, nil // no counter wired — nothing to reconcile
-	}
-
-	campaigns, err := s.repo.ListNonTerminal(ctx, 0)
-	if err != nil {
-		return 0, fmt.Errorf("failed to list campaigns for reconcile: %w", err)
-	}
-
-	updated := 0
-	disabled := make(map[shared.ID]bool)
-	for _, campaign := range campaigns {
-		if s.modules != nil {
-			off, seen := disabled[campaign.TenantID()]
-			if !seen {
-				off = s.modules.TenantDisabledModules(ctx, campaign.TenantID().String())[moduledom.ModuleRemediation]
-				disabled[campaign.TenantID()] = off
-			}
-			if off {
-				continue
-			}
-		}
-		changed, rerr := s.recomputeProgress(ctx, campaign)
-		if rerr != nil {
-			s.logger.Warn("campaign progress reconcile failed", "id", campaign.ID().String(), "error", rerr)
-			continue
-		}
-		// Counters only, stamped even when unchanged so the next sweep moves
-		// on to other campaigns (no starvation past the batch size).
-		if uerr := s.repo.UpdateCounts(ctx, campaign); uerr != nil {
-			s.logger.Warn("failed to persist reconciled campaign counts", "id", campaign.ID().String(), "error", uerr)
-			continue
-		}
-		fromStatus := campaign.Status()
-		completed, cerr := campaign.TryAutoComplete()
-		if cerr != nil {
-			s.logger.Warn("campaign auto-complete failed", "id", campaign.ID().String(), "error", cerr)
-		}
-		if completed {
-			// A versioned save: if a person paused or canceled the campaign
-			// since it was listed, the save conflicts and their change stands.
-			if uerr := s.repo.Update(ctx, campaign); uerr != nil {
-				s.logger.Info("campaign auto-complete skipped: changed since read", "id", campaign.ID().String(), "error", uerr)
-				continue
-			}
-			s.logger.Info("remediation campaign auto-completed", "id", campaign.ID().String())
-			s.syncEpicOnCompletion(ctx, campaign.TenantID(), campaign.ID(), campaign.Name())
-			s.auditStatusChange(ctx, campaign, fromStatus, auditapp.AuditContext{ActorEmail: campaignAuditSystemActor}, "auto_complete")
-		}
-		if changed || completed {
-			updated++
-		}
-	}
-	return updated, nil
-}
-
-// recomputeProgress evaluates the campaign's finding filter against the
-// findings table and updates the in-memory finding/resolved counts. Returns
-// true when either count changed (so the caller knows whether to persist).
-// No-op (false, nil) when no finding counter is wired.
-func (s *RemediationCampaignService) recomputeProgress(ctx context.Context, campaign *remediation.Campaign) (bool, error) {
-	if campaignRemediationKey(campaign.FindingFilter()) != "" {
-		if s.keyResolver == nil {
-			return false, nil
-		}
-	} else if s.finding == nil {
-		return false, nil
-	}
-	// The denominator is the WHOLE campaign scope regardless of status (a
-	// pinned status would make total and closed disjoint and let progress
-	// pass 100%). Unscoped campaigns count 0/0 (countProgress).
-	total, closed, verified, err := s.countProgress(ctx, campaign, nil)
-	if err != nil {
-		return false, err
-	}
-	prevFindings, prevResolved := campaign.FindingCount(), campaign.ResolvedCount()
-	campaign.UpdateProgress(int(total), int(closed))
-	campaign.SetVerifiedCount(int(verified))
-	return prevFindings != campaign.FindingCount() || prevResolved != campaign.ResolvedCount(), nil
-}
-
-// campaignRemediationKey returns the remediation-group key a campaign is scoped
-// to, or "" when the campaign is a plain filter-based campaign. A non-empty key
-// means the campaign tracks a solution family and must use the key path for
-// both progress and resolution (never the generic finding filter).
-func campaignRemediationKey(raw map[string]any) string {
-	return firstString(raw, "remediation_key")
-}
-
-// campaignFilterToFindingFilter maps a stored finding_filter onto a
-// FindingFilter with the tenant pinned (parseCampaignFilter). A stored filter
-// that does not parse (saved before the strict check) maps to a filter with
-// no scope, so the campaign tracks nothing and cannot resolve: a condition is
-// never dropped, which would widen the set.
-func campaignFilterToFindingFilter(tenantID shared.ID, raw map[string]any) vulnerability.FindingFilter {
-	f, err := parseCampaignFilter(tenantID, raw)
-	if err != nil {
-		return vulnerability.NewFindingFilter().WithTenantID(tenantID)
-	}
-	return f
-}
-
-// findingFilterHasScope reports whether a campaign's converted filter narrows
-// beyond the tenant. An empty campaign filter ({}) maps to a tenant-only filter
-// that matches EVERY finding — the cause of the "every campaign shows N findings
-// linked" bug, and a resolve-all footgun. An unscoped campaign must therefore
-// own nothing (count 0) and must never resolve. Keyed campaigns are handled on a
-// separate path and always have scope.
-//
-// Scope needs a real dimension that names what is fixed: an asset, CVEs,
-// linked findings or a tool (a fix key goes through the keyed path).
-// Severity, source, status and free-text search only narrow it: "every
-// critical finding" or "every new finding" is the whole organization.
-func findingFilterHasScope(f vulnerability.FindingFilter) bool {
-	return len(f.CVEIDs) > 0 ||
-		len(f.FindingIDs) > 0 ||
-		f.AssetID != nil ||
-		f.ToolName != nil
-}
-
-// filterFindingIDs collects the explicit finding ids of a stored filter
-// ("finding_ids" list or "finding_id" string).
-func filterFindingIDs(raw map[string]any) []string {
-	var out []string
-	add := func(v any) {
-		switch t := v.(type) {
-		case string:
-			out = append(out, t)
-		case []string:
-			out = append(out, t...)
-		case []any:
-			for _, x := range t {
-				if s, ok := x.(string); ok {
-					out = append(out, s)
-				}
-			}
-		}
-	}
-	add(raw["finding_ids"])
-	add(raw["finding_id"])
-	return out
-}
-
-// firstString returns the value of key as a string, or "" when absent or not a
-// string.
-func firstString(raw map[string]any, key string) string {
-	if v, ok := raw[key].(string); ok {
-		return v
-	}
-	return ""
 }
 
 // CampaignTicketInfo describes a campaign's external tracker link.
@@ -1457,10 +1085,7 @@ type CampaignTicketInfo struct {
 	AlreadyExisted bool   `json:"already_existed"`
 }
 
-// CreateTicket creates a Jira epic for a campaign and links it. Idempotent: if
-// the campaign already has a Jira ticket, the existing link is returned without
-// creating a duplicate epic. Requires the ticketing integration to be wired
-// (SetTicketing) and the tenant to have a connected Jira integration.
+// CreateTicket creates a Jira epic for a campaign and links it. Idempotent.
 func (s *RemediationCampaignService) CreateTicket(ctx context.Context, tenantID, campaignID, projectKey string) (*CampaignTicketInfo, error) {
 	if s.ticketRepo == nil || s.epicCreator == nil {
 		return nil, ErrTicketingNotConfigured
@@ -1468,24 +1093,15 @@ func (s *RemediationCampaignService) CreateTicket(ctx context.Context, tenantID,
 	if projectKey == "" {
 		return nil, fmt.Errorf("%w: project_key is required", shared.ErrValidation)
 	}
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	cid, err := shared.IDFromString(campaignID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid campaign id", shared.ErrValidation)
-	}
-
-	// Ensure the campaign exists and is tenant-scoped before touching Jira.
-	campaign, err := s.getWritable(ctx, tid, cid)
+	tid, cid, err := parseIDs(tenantID, campaignID)
 	if err != nil {
 		return nil, err
 	}
-
+	campaign, _, err := s.getWritable(ctx, tid, cid)
+	if err != nil {
+		return nil, err
+	}
 	const provider = "jira"
-
-	// Idempotency: return the existing link instead of opening a second epic.
 	if existing, gerr := s.ticketRepo.GetByCampaignAndProvider(ctx, tid, cid, provider); gerr == nil {
 		return &CampaignTicketInfo{
 			CampaignID: campaignID, Provider: provider,
@@ -1495,45 +1111,36 @@ func (s *RemediationCampaignService) CreateTicket(ctx context.Context, tenantID,
 	} else if !errors.Is(gerr, remediation.ErrCampaignTicketNotFound) {
 		return nil, fmt.Errorf("check existing campaign ticket: %w", gerr)
 	}
-
+	whole, err := s.wholeSummary(ctx, campaign)
+	if err != nil {
+		return nil, err
+	}
 	summary := fmt.Sprintf("[Remediation] %s", campaign.Name())
-	key, url, err := s.epicCreator.CreateEpic(ctx, tid, projectKey, summary, buildEpicDescription(campaign),
+	key, url, err := s.epicCreator.CreateEpic(ctx, tid, projectKey, summary, buildEpicDescription(campaign, whole),
 		[]string{"openctem", "remediation-campaign"})
 	if err != nil {
 		return nil, fmt.Errorf("create campaign epic: %w", err)
 	}
-
 	link, err := remediation.NewCampaignTicket(tid, cid, provider, key, url)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.ticketRepo.Create(ctx, link); err != nil {
-		// The epic was created in Jira but we failed to persist the link. Surface
-		// the error; a retry is idempotent on the Jira side only if the operator
-		// re-runs against the same project (a fresh create would duplicate). We
-		// log the orphaned key so it can be reconciled manually.
 		s.logger.Error("created jira epic but failed to persist campaign link",
-			"campaign_id", campaignID, "issue_key", key, "error", err)
+			"campaign_id", cid.String(), "issue_key", key, "error", err)
 		return nil, fmt.Errorf("persist campaign ticket link: %w", err)
 	}
-
-	s.logger.Info("campaign jira epic created", "campaign_id", sanitizeLogValue(campaignID), "issue_key", sanitizeLogValue(key))
-	return &CampaignTicketInfo{
-		CampaignID: campaignID, Provider: provider,
-		IssueKey: key, IssueURL: url,
-	}, nil
+	return &CampaignTicketInfo{CampaignID: cid.String(), Provider: provider, IssueKey: key, IssueURL: url}, nil
 }
 
-// CampaignTicketLink is the external tracker link surfaced on a campaign in
-// read responses (so the UI can show / link to the epic).
+// CampaignTicketLink is the linked tracker issue a campaign response shows.
 type CampaignTicketLink struct {
 	Provider string `json:"provider"`
 	IssueKey string `json:"issue_key"`
 	IssueURL string `json:"issue_url"`
 }
 
-// CampaignTicketFor returns the campaign's linked ticket, or nil when there is
-// none / ticketing isn't wired. Never errors on "no link" — absence is normal.
+// CampaignTicketFor returns the campaign's Jira epic link, or nil.
 func (s *RemediationCampaignService) CampaignTicketFor(ctx context.Context, tenantID, campaignID shared.ID) (*CampaignTicketLink, error) {
 	if s.ticketRepo == nil {
 		return nil, nil
@@ -1548,9 +1155,7 @@ func (s *RemediationCampaignService) CampaignTicketFor(ctx context.Context, tena
 	return &CampaignTicketLink{Provider: link.Provider(), IssueKey: link.IssueKey(), IssueURL: link.IssueURL()}, nil
 }
 
-// CampaignTicketsFor batch-loads ticket links for the given campaigns, keyed by
-// campaign id string. Campaigns with no link are absent. Returns an empty map
-// when ticketing isn't wired.
+// CampaignTicketsFor batch-loads the epic links of campaigns.
 func (s *RemediationCampaignService) CampaignTicketsFor(ctx context.Context, tenantID shared.ID, campaignIDs []shared.ID) (map[string]*CampaignTicketLink, error) {
 	out := make(map[string]*CampaignTicketLink, len(campaignIDs))
 	if s.ticketRepo == nil || len(campaignIDs) == 0 {
@@ -1566,51 +1171,19 @@ func (s *RemediationCampaignService) CampaignTicketsFor(ctx context.Context, ten
 	return out, nil
 }
 
-// buildEpicDescription renders the epic body from a campaign's current state.
-func buildEpicDescription(c *remediation.Campaign) string {
+func buildEpicDescription(c *remediation.Campaign, sum remediation.CampaignSummary) string {
 	desc := c.Description()
 	if desc == "" {
 		desc = "(no description)"
 	}
-	body := fmt.Sprintf("Remediation campaign tracked by %s.\n\n%s\n\nProgress: %d/%d findings resolved (%.0f%%).", brand.Name(),
-		desc, c.ResolvedCount(), c.FindingCount(), c.Progress())
+	body := fmt.Sprintf("Remediation campaign tracked by %s.\n\n%s\n\nProgress: %d tasks, %d of %d findings closed (%.0f%%).",
+		brand.Name(), desc, sum.Tasks, sum.ClosedFindings, sum.Findings, sum.Progress())
 	if due := c.DueDate(); due != nil {
 		body += fmt.Sprintf("\nDue: %s", due.Format("2006-01-02"))
 	}
 	return body
 }
 
-// resolveAssignee applies one side of an assignment update. The two sides are
-// independently updatable and must not wipe each other, so each starts from the
-// current value:
-//
-//	nil    -> keep current
-//	""     -> clear
-//	uuid   -> set
-//
-// Extracted because AssignedTo and AssignedTeam were two copies of this ladder
-// inline, which is what pushed UpdateCampaign past the nesting limit.
-func resolveAssignee(current *shared.ID, input *string, field string) (*shared.ID, error) {
-	if input == nil {
-		return current, nil
-	}
-	if *input == "" {
-		return nil, nil
-	}
-	id, err := shared.IDFromString(*input)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid %s id", shared.ErrValidation, field)
-	}
-	return &id, nil
-}
-
-// ============================================
-// AUDIT
-// ============================================
-
-// logAudit writes one audit event, best-effort: an audit failure is logged and
-// never fails the change it records. The tenant is always the campaign's own
-// (it was loaded tenant-scoped), never a value from the request body.
 func (s *RemediationCampaignService) logAudit(ctx context.Context, tenantID shared.ID, actx auditapp.AuditContext, ev auditapp.AuditEvent) {
 	if s.audit == nil {
 		return
@@ -1621,55 +1194,37 @@ func (s *RemediationCampaignService) logAudit(ctx context.Context, tenantID shar
 	}
 }
 
-// auditStatusChange records a lifecycle transition. trigger says what moved
-// it: "manual" (PATCH /status), "auto_complete" (every finding closed) or
-// "jira_epic" (the linked epic was closed). Completing while findings are
-// still open records how many, so the trail shows a campaign closed early.
-func (s *RemediationCampaignService) auditStatusChange(ctx context.Context, campaign *remediation.Campaign, from remediation.CampaignStatus, actx auditapp.AuditContext, trigger string) {
-	to := campaign.Status()
-	ev := auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignStatusChanged, auditdom.ResourceTypeRemediationCampaign, campaign.ID().String()).
-		WithResourceName(campaign.Name()).
+func (s *RemediationCampaignService) auditStatusChange(ctx context.Context, c *remediation.Campaign, from remediation.CampaignStatus, actx auditapp.AuditContext, trigger string) {
+	to := c.Status()
+	ev := auditapp.NewSuccessEvent(auditdom.ActionRemediationCampaignStatusChanged, auditdom.ResourceTypeRemediationCampaign, c.ID().String()).
+		WithResourceName(c.Name()).
 		WithChanges(auditdom.NewChanges().Set("status", string(from), string(to))).
-		WithMessage(fmt.Sprintf("Remediation campaign '%s' status changed from %s to %s", campaign.Name(), from, to)).
+		WithMessage(fmt.Sprintf("Remediation campaign '%s' status changed from %s to %s", c.Name(), from, to)).
 		WithMetadata("trigger", trigger).
-		WithMetadata("finding_count", campaign.FindingCount()).
-		WithMetadata("resolved_count", campaign.ResolvedCount()).
 		WithSeverity(auditdom.SeverityLow)
-	switch to {
-	case remediation.CampaignStatusCompleted:
-		open := max(campaign.FindingCount()-campaign.ResolvedCount(), 0)
-		ev = ev.WithMetadata("open_findings", open).WithMetadata("verified_findings", campaign.VerifiedCount())
-		if open > 0 || campaign.VerifiedCount() == 0 {
-			// Closing a campaign with work left is worth a reviewer's look.
-			ev = ev.WithSeverity(auditdom.SeverityMedium)
-		}
-	case remediation.CampaignStatusCanceled:
+	if to == remediation.CampaignStatusCanceled {
 		ev = ev.WithSeverity(auditdom.SeverityMedium)
 	}
-	s.logAudit(ctx, campaign.TenantID(), actx, ev)
+	s.logAudit(ctx, c.TenantID(), actx, ev)
 }
 
-// campaignSnapshot is the editable state of a campaign, compared before and
-// after an update so the audit row records only what changed.
 type campaignSnapshot struct {
 	name, description, priority string
 	assignedTo, assignedTeam    string
 	startDate, dueDate          string
 	tags                        []string
-	findingFilter               string
 }
 
 func snapshotCampaign(c *remediation.Campaign) campaignSnapshot {
 	return campaignSnapshot{
-		name:          c.Name(),
-		description:   c.Description(),
-		priority:      string(c.Priority()),
-		assignedTo:    idString(c.AssignedTo()),
-		assignedTeam:  idString(c.AssignedTeam()),
-		startDate:     dateString(c.StartDate()),
-		dueDate:       dateString(c.DueDate()),
-		tags:          append([]string(nil), c.Tags()...),
-		findingFilter: filterString(c.FindingFilter()),
+		name:         c.Name(),
+		description:  c.Description(),
+		priority:     string(c.Priority()),
+		assignedTo:   idString(c.AssignedTo()),
+		assignedTeam: idString(c.AssignedTeam()),
+		startDate:    dateString(c.StartDate()),
+		dueDate:      dateString(c.DueDate()),
+		tags:         append([]string(nil), c.Tags()...),
 	}
 }
 
@@ -1686,7 +1241,6 @@ func diffCampaign(before, after campaignSnapshot) *auditdom.Changes {
 	setIf("assigned_team", before.assignedTeam, after.assignedTeam)
 	setIf("start_date", before.startDate, after.startDate)
 	setIf("due_date", before.dueDate, after.dueDate)
-	setIf("finding_filter", before.findingFilter, after.findingFilter)
 	setIf("description", before.description, after.description)
 	if strings.Join(before.tags, "\x00") != strings.Join(after.tags, "\x00") {
 		ch.Set("tags", before.tags, after.tags)
@@ -1706,17 +1260,4 @@ func dateString(t *time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
-}
-
-// filterString renders a finding filter deterministically (JSON sorts map
-// keys) so two equal filters compare equal.
-func filterString(f map[string]any) string {
-	if len(f) == 0 {
-		return ""
-	}
-	b, err := json.Marshal(f)
-	if err != nil {
-		return fmt.Sprint(f)
-	}
-	return string(b)
 }
