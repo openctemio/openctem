@@ -31,10 +31,36 @@ import {
   EASMOverview,
   useAttackSurfaceStats,
 } from '@/features/attack-surface'
-import { newInWindow } from '@/features/attack-surface/lib/trend'
 import { formatDistanceToNow } from 'date-fns'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
+
+/** A stat card that opens the rows it counts. */
+function StatLink({
+  href,
+  label,
+  children,
+}: {
+  href: string
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      className="block rounded-xl transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </Link>
+  )
+}
+
+// Drill-downs: each card opens exactly the population it counts.
+const INTERNET_FACING_HREF = '/assets?internet_facing=true'
+const CRITICAL_INTERNET_FACING_HREF = '/assets?internet_facing=true&criticalities=critical,high'
+const NEWLY_EXPOSED_HREF = '/assets/changes?view=newly_exposed'
 
 // Asset type to icon mapping. Icons stay muted: the type name carries the meaning.
 const assetTypeIcons: Record<string, LucideIcon> = {
@@ -106,12 +132,12 @@ function ListRowsSkeleton({ rows }: { rows: number }) {
 }
 
 export default function AttackSurfacePage() {
+  const { t } = useTranslation()
   const { stats, isLoading, error } = useAttackSurfaceStats()
 
   const breakdown = (stats?.assetBreakdown ?? []).filter((item) => item.total > 0)
   const exposed = stats?.exposedServicesList ?? []
   const changes = stats?.recentChanges ?? []
-  const criticalExposures = stats?.criticalExposures || 0
   const days = stats?.trendWindowDays ?? 7
 
   return (
@@ -141,43 +167,105 @@ export default function AttackSurfacePage() {
           ))
         ) : (
           <>
-            <StatsCard
-              title="Total assets"
-              value={stats?.totalAssets || 0}
-              icon={Layers}
-              description={newInWindow(stats?.totalAssetsChange, days)}
-            />
-            <StatsCard
-              title="Exposed assets"
-              value={stats?.exposedServices || 0}
-              icon={Network}
-              description={newInWindow(stats?.exposedServicesChange, days, 'newly exposed')}
-              info="Assets whose exposure is public: reachable from the internet."
-            />
-            <StatsCard
-              title="Critical exposures"
-              value={criticalExposures}
-              icon={AlertTriangle}
-              valueClassName={criticalExposures > 0 ? 'text-destructive' : undefined}
-              description={newInWindow(stats?.criticalExposuresChange, days, 'newly exposed')}
-              info="Public assets with critical or high criticality."
-            />
+            <StatLink
+              href="/assets"
+              label={t('attackSurface.overview.totalAssets', 'Total assets')}
+            >
+              <StatsCard
+                title={t('attackSurface.overview.totalAssets', 'Total assets')}
+                value={stats?.totalAssets || 0}
+                icon={Layers}
+                description={t(
+                  'attackSurface.overview.newInWindow',
+                  '{count} new in the last {days} days',
+                  { count: stats?.totalAssetsChange ?? 0, days }
+                )}
+              />
+            </StatLink>
+            <StatLink
+              href={INTERNET_FACING_HREF}
+              label={t('attackSurface.overview.internetFacing', 'Internet-facing assets')}
+            >
+              <StatsCard
+                title={t('attackSurface.overview.internetFacing', 'Internet-facing assets')}
+                value={stats?.internetFacingAssets || 0}
+                icon={Network}
+                description={t(
+                  'attackSurface.overview.newlyExposed',
+                  '{count} newly exposed in the last {days} days',
+                  { count: stats?.newlyExposed ?? 0, days }
+                )}
+                info={t(
+                  'attackSurface.overview.internetFacingInfo',
+                  'Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › What changed.'
+                )}
+              />
+            </StatLink>
+            <StatLink
+              href={CRITICAL_INTERNET_FACING_HREF}
+              label={t(
+                'attackSurface.overview.criticalInternetFacing',
+                'Critical internet-facing assets'
+              )}
+            >
+              <StatsCard
+                title={t(
+                  'attackSurface.overview.criticalInternetFacing',
+                  'Critical internet-facing assets'
+                )}
+                value={stats?.criticalInternetFacingAssets || 0}
+                icon={AlertTriangle}
+                info={t(
+                  'attackSurface.overview.criticalInternetFacingInfo',
+                  'Internet-facing assets with critical or high criticality. A population to watch, not open risks: open exposures are listed below.'
+                )}
+              />
+            </StatLink>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Average risk score</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  {t('attackSurface.overview.avgRisk', 'Average risk score')}
+                </CardTitle>
                 <Shield className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold tabular-nums">
-                  {Math.round(stats?.riskScore || 0)}
-                  <span className="ms-1 text-xs font-normal text-muted-foreground">of 100</span>
-                </div>
-                <Progress value={stats?.riskScore || 0} className="mt-2 h-1.5" />
+                {stats?.totalAssets ? (
+                  <>
+                    <div className="text-2xl font-bold tabular-nums">
+                      {Math.round(stats.riskScore || 0)}
+                      <span className="ms-1 text-xs font-normal text-muted-foreground">
+                        {t('attackSurface.overview.of100', 'of 100')}
+                      </span>
+                    </div>
+                    <Progress value={stats.riskScore || 0} className="mt-2 h-1.5" />
+                  </>
+                ) : (
+                  <div
+                    className="text-2xl font-bold text-muted-foreground"
+                    title={t('attackSurface.overview.noAssetsToScore', 'No assets to score')}
+                  >
+                    —
+                  </div>
+                )}
               </CardContent>
             </Card>
           </>
         )}
       </div>
+
+      {!isLoading && !error && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          <Link
+            href={NEWLY_EXPOSED_HREF}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {t(
+              'attackSurface.overview.seeNewlyExposed',
+              'See what became internet-facing this week'
+            )}
+          </Link>
+        </p>
+      )}
 
       <EASMOverview />
 

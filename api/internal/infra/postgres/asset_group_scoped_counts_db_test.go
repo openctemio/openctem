@@ -117,6 +117,24 @@ func TestAssetGroupList_CountsFollowDataScope_DB(t *testing.T) {
 	if st.TotalAssets != 3 || st.TotalFindings != 6 {
 		t.Fatalf("unrestricted stats assets %d findings %d, want 3 6", st.TotalAssets, st.TotalFindings)
 	}
+
+	// An asset in two groups is one asset in "Assets in groups".
+	second := shared.NewID()
+	exec(`INSERT INTO asset_groups (id, tenant_id, name) VALUES ($1, $2, 'second')`, second.String(), tenant.String())
+	exec(`INSERT INTO asset_group_members (asset_group_id, asset_id) SELECT $1, asset_id FROM asset_group_members WHERE asset_group_id = $2`,
+		second.String(), group.String())
+	for _, sc := range []struct {
+		scope *shared.DataScope
+		want  int64
+	}{{nil, 3}, {scope, 1}} {
+		st, err = repo.GetStats(ctx, tenant, sc.scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.TotalAssets != sc.want {
+			t.Errorf("assets in groups with the asset in two groups = %d, want %d (distinct)", st.TotalAssets, sc.want)
+		}
+	}
 }
 
 func groupCounts(gs []*assetgroup.AssetGroup) []int {

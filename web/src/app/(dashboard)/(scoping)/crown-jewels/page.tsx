@@ -121,9 +121,11 @@ function impactLabel(score: number) {
   return score >= 67 ? 'High' : score >= 34 ? 'Medium' : 'Low'
 }
 
-// Real reachability → exposed vs not (drives the "Exposure" signal).
+// Internet-facing, the product's one definition (API internet_facing:
+// exposure public or reported reachable). Exposure values are public,
+// restricted, private, isolated or unknown; there is no "internet".
 function isExposed(j: CrownJewel) {
-  return Boolean(j.isInternetAccessible) || j.exposure === 'internet' || j.exposure === 'external'
+  return Boolean(j.isInternetFacing)
 }
 
 // Compact findings-by-severity chips (only non-zero bands).
@@ -190,7 +192,7 @@ export default function CrownJewelsPage() {
         findingCount: (a.finding_count as number) || 0,
         findingSeverity: severityCounts(sev),
         exposure: (a.exposure as string) || 'unknown',
-        isInternetAccessible: Boolean(a.is_internet_accessible),
+        isInternetFacing: Boolean(a.internet_facing),
         criticality: (a.criticality as string) || '',
         dataClassification: (cls || 'internal') as DataClassification,
         piiExposed: Boolean(a.pii_data_exposed),

@@ -143,7 +143,7 @@ func NewNotifier(o Enqueuer, inApp InAppNotifier, window time.Duration, log *log
 
 // IsInternetFacing reports whether an asset is reachable from the internet.
 func IsInternetFacing(a *asset.Asset) bool {
-	return a.IsInternetAccessible() || a.Exposure() == asset.ExposurePublic
+	return a.IsInternetFacing()
 }
 
 // AssetsDiscovered is the ingest callback for newly created assets: it keeps

@@ -215,7 +215,7 @@ func (r *AssetStateHistoryRepository) List(ctx context.Context, tenantID shared.
 		argIdx++
 	}
 	if opts.AssetInternetFacing != nil {
-		facing := "EXISTS (SELECT 1 FROM assets a WHERE a.id = h.asset_id AND a.tenant_id = h.tenant_id AND (a.is_internet_accessible OR a.exposure = 'public'))"
+		facing := "EXISTS (SELECT 1 FROM assets a WHERE a.id = h.asset_id AND a.tenant_id = h.tenant_id  AND " + asset.InternetFacingSQL("a") + ")"
 		if !*opts.AssetInternetFacing {
 			facing = "NOT " + facing
 		}

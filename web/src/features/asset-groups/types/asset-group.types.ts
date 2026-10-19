@@ -149,3 +149,31 @@ export interface AssetGroupStats {
   ungroupedAssetsCount: number
   averageAssetsPerGroup: number
 }
+
+/**
+ * A member asset of a group as the group pages show it. `type` is the stored
+ * asset type (domain, subdomain, application, ip_address, ...): label it
+ * with the asset type registry, never fold it into a fixed list.
+ */
+export interface GroupAsset {
+  id: string
+  type: string
+  name: string
+  status: string
+  riskScore: number
+  findingCount: number
+  lastSeen: string
+}
+
+/** A finding on a group member. `open` follows the findings' open statuses. */
+export interface GroupFinding {
+  id: string
+  title: string
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
+  /** The stored finding status (new, confirmed, in_progress, resolved, ...). */
+  status: string
+  /** Open (new, confirmed, in progress, fix applied): what the group's finding count counts. */
+  open: boolean
+  assetName: string
+  discoveredAt: string
+}

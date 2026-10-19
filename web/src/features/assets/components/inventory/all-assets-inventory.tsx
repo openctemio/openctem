@@ -103,7 +103,7 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     businessUnitIds: f.businessUnitIds,
     hasOwner: f.hasOwner,
     isControlPlane: f.isControlPlane,
-    isInternetAccessible: f.isInternetAccessible,
+    isInternetFacing: f.isInternetFacing,
     isCrownJewel: f.isCrownJewel,
     programAssets: f.programAssets,
     freshness: f.freshness,
@@ -146,8 +146,10 @@ function useAssetsKeepingPrevious(filters: AssetSearchFilters) {
     ...result,
     assets: shown.assets,
     total: shown.total,
-    /** True only before anything has ever loaded. */
-    isFirstLoad: result.isLoading && !settled,
+    /** True only before anything has ever loaded: also while the request
+     * has not started yet (tenant or permissions still loading), so the
+     * table shows a skeleton, never "No assets yet", until an answer came. */
+    isFirstLoad: !settled && !result.isError && (result.isLoading || !result.hasLoaded),
   }
 }
 
@@ -263,7 +265,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const searchFilters = useMemo(() => toSearchFilters(filters), [filters])
   const { assets, total, isFirstLoad, isLoading, isError, error, mutate } =
     useAssetsKeepingPrevious(searchFilters)
-  const { stats, isLoading: statsLoading, mutate: statsMutate } = useAssetStats()
+  const { stats, isLoading: statsLoading, error: statsError, mutate: statsMutate } = useAssetStats()
   const { data: buData } = useBusinessUnits()
 
   // Typed mode: the list is one type (and maybe one sub-type).
@@ -286,6 +288,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const {
     stats: typeStats,
     isLoading: typeStatsLoading,
+    error: typeStatsError,
     mutate: typeStatsMutate,
   } = useAssetStats({
     types: typeView ? [typeView.type] : undefined,
@@ -507,6 +510,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         stats={scopeLabel ? typeStats : stats}
         filters={filters}
         isLoading={scopeLabel ? typeStatsLoading : statsLoading}
+        isError={Boolean(scopeLabel ? typeStatsError : statsError)}
         onChange={setFilters}
         typeLabel={scopeLabel}
         boolFacets={boolFacets}
