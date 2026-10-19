@@ -118,6 +118,9 @@ func newQueryHandler(db *postgres.DB, svc *Services, log *logger.Logger) *handle
 	if db == nil {
 		return nil
 	}
+	if svc != nil && svc.Query != nil {
+		return handler.NewQueryHandler(svc.Query, log)
+	}
 	exec := postgres.NewQueryExecutor(db, postgres.InteractiveQueryTimeout)
 	return handler.NewQueryHandler(queryapp.NewService(exec, svc.DataScope, log), log)
 }
