@@ -744,7 +744,9 @@ func findingUpsertConflictSQL() string {
 			title = COALESCE(EXCLUDED.title, findings.title),
 			description = COALESCE(EXCLUDED.description, findings.description),
 			message = EXCLUDED.message,
-			severity = EXCLUDED.severity,
+			-- An analyst's severity override stands: the reported severity
+			-- then moves source_severity only.
+			` + reportedSeveritySetSQL("findings.", "EXCLUDED.severity") + `,
 			scan_id = EXCLUDED.scan_id,
 			-- The tool of the sighting moves with scan_id (RFC-043 interim
 			-- auto-resolve guard); tool_name stays the first reporter.
@@ -790,8 +792,13 @@ func findingUpsertConflictSQL() string {
 			epss_percentile = EXCLUDED.epss_percentile,
 			is_in_kev = EXCLUDED.is_in_kev,
 			kev_due_date = EXCLUDED.kev_due_date,
-			priority_class = CASE WHEN findings.priority_class_override THEN findings.priority_class ELSE EXCLUDED.priority_class END,
-			priority_class_reason = CASE WHEN findings.priority_class_override THEN findings.priority_class_reason ELSE EXCLUDED.priority_class_reason END,
+			-- The incoming class was computed from the reported severity: a
+			-- finding with a severity override keeps its own (the
+			-- finding-priority worker recomputes it from the effective one).
+			priority_class = CASE WHEN findings.priority_class_override OR findings.severity_overridden_at IS NOT NULL
+				THEN findings.priority_class ELSE EXCLUDED.priority_class END,
+			priority_class_reason = CASE WHEN findings.priority_class_override OR findings.severity_overridden_at IS NOT NULL
+				THEN findings.priority_class_reason ELSE EXCLUDED.priority_class_reason END,
 			priority_class_override = findings.priority_class_override,
 			priority_class_overridden_by = findings.priority_class_overridden_by,
 			priority_class_overridden_at = findings.priority_class_overridden_at,
@@ -1449,6 +1456,10 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 		cond, args = dataScopeCond("f.asset_id", filter.DataScope, args)
 		statusFilter += " AND " + cond
 	}
+	if filter.PentestMemberFor != nil {
+		args = append(args, filter.PentestMemberFor.String())
+		statusFilter += " AND " + vulnerability.FindingMemberVisibilitySQL("f", "$1", fmt.Sprintf("$%d::uuid", len(args)))
+	}
 	argN := len(args) + 1
 
 	if len(filter.SeverityIn) > 0 {
@@ -2091,7 +2102,8 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 // closure reason (its default when empty), and an open status clears both,
 // so a reopened or dispositioned finding never keeps a stale "fixed" claim.
 func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) error {
-	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, nil)
+	_, err := r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, nil)
+	return err
 }
 
 var _ vulnerability.FixClaimBatchWriter = (*FindingRepository)(nil)
@@ -2110,6 +2122,22 @@ func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID 
 	if len(from) == 0 {
 		return fmt.Errorf("%w: no source status given", shared.ErrValidation)
 	}
+	_, err := r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, from)
+	return err
+}
+
+var _ vulnerability.StatusMoveWriter = (*FindingRepository)(nil)
+
+// MoveStatusBatch is UpdateStatusBatchFrom (from empty: every lifecycle
+// predecessor of status) that returns the findings the write moved, so the
+// caller runs the side effects of a status change only for those.
+func (r *FindingRepository) MoveStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, from []vulnerability.FindingStatus, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) ([]shared.ID, error) {
+	allowed := vulnerability.UserFromStatuses(status)
+	for _, f := range from {
+		if !slices.Contains(allowed, f) {
+			return nil, fmt.Errorf("%w: %s is not a predecessor of %s", shared.ErrValidation, f, status)
+		}
+	}
 	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, from)
 }
 
@@ -2117,23 +2145,26 @@ func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID 
 // acceptance in the same statement. Leaving accepted later clears the end
 // (database trigger trg_findings_clear_acceptance_expiry).
 func (r *FindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, until time.Time, acceptedBy *shared.ID, reason vulnerability.ClosureReason) error {
-	return r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy,
+	_, err := r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy,
 		vulnerability.Closure{Reason: reason}, &until, nil)
+	return err
 }
 
-func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) error {
+// updateStatusBatch runs the guarded status write and returns the ids of the
+// findings it moved.
+func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) ([]shared.ID, error) {
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
 	query, args, err := statusWriteSQL(tenantID, ids, status, resolution, resolvedBy, closure, acceptanceEnd, from)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := r.db.execStatusWrite(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to update findings status: %w", err)
+	moved, err := r.db.queryStatusWriteIDs(ctx, ids, query+" RETURNING id", args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update findings status: %w", err)
 	}
-
-	return nil
+	return moved, nil
 }
 
 // statusWriteSQL builds the status write of updateStatusBatch, so a caller
@@ -2401,6 +2432,7 @@ func (r *FindingRepository) selectQuery() string {
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
+			` + findingSeverityColumnsSQL + `,
 			branch_only,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
@@ -2545,6 +2577,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	var typeCols findingTypeScan
 	var netCols findingNetworkScan
 	var scanCols findingScannerScan
+	var sevCols findingSeverityScan
 	dests := []any{
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
 		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
@@ -2574,6 +2607,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	dests = append(dests, typeCols.dests()...)
 	dests = append(dests, netCols.dests()...)
 	dests = append(dests, scanCols.dests()...)
+	dests = append(dests, sevCols.dests()...)
 	dests = append(dests, &branchOnly, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
@@ -2621,6 +2655,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	f.RestoreTypeDetails(typeCols.details())
 	f.RestoreNetwork(netCols.location())
 	f.RestoreScannerDetails(scanCols.details())
+	f.RestoreSeverityProvenance(sevCols.provenance())
 	f.RestoreBranchOnly(branchOnly)
 	return f, nil
 }
@@ -3197,6 +3232,10 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		}
 		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
 	}
+	if filter.PentestMemberFor != nil {
+		args = append(args, filter.PentestMemberFor.String())
+		query += " AND " + vulnerability.FindingMemberVisibilitySQL("findings", "$1", fmt.Sprintf("$%d::uuid", len(args)))
+	}
 
 	return r.queryFindingStats(ctx, query, args)
 }
@@ -3323,9 +3362,11 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.BySource[vulnerability.FindingSourcePentest] = sourcePentest
 	stats.BySource[vulnerability.FindingSourceExternal] = sourceExternal
 
-	// Calculate open and resolved counts
-	// Open = new + confirmed + in_progress + pentest pre-publication (draft, in_review)
-	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview
+	// Open is the open lens (the findings list's state=open), the one
+	// definition every surface and the scheduled report use: it includes
+	// fix_applied (awaiting verification) and leaves out unpublished pentest
+	// findings (draft, in_review).
+	stats.OpenCount = stateOpen
 	stats.ResolvedCount = statusResolved
 
 	stats.KevOpen = kevOpen
@@ -3965,6 +4006,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
+			` + findingSeverityColumnsSQL + `,
 			branch_only,
 			FALSE AS has_data_flow
 		FROM findings
@@ -4180,7 +4222,10 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		nullString(f.Description()),
 		nullString(f.Snippet()),
 		f.Message(),
-		f.Severity().String(),
+		// The reported severity after the merge; buildBatchEnrichQuery
+		// writes it to severity or, under an analyst override, to
+		// source_severity.
+		f.SourceSeverity().String(),
 		nullFloat64(f.CVSSScore()),
 		nullString(f.CVSSVector()),
 		nullString(f.CVEID()),
@@ -4273,6 +4318,12 @@ func buildBatchEnrichQuery(rowCount int) string {
 			sb.WriteString(", ")
 		}
 		col := enrichColumnDefs[i].name
+		if col == "severity" {
+			// The analyst's override stands; the row's current override is
+			// read here, not the one loaded before the merge.
+			sb.WriteString(reportedSeverityMaxSetSQL("f.", "d.severity"))
+			continue
+		}
 		sb.WriteString(col)
 		if col == "occurrence_count" {
 			// A re-sighting counts one, computed from the row being updated.

@@ -6,6 +6,7 @@ import { Loader2, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -47,10 +48,11 @@ export function CloneScanProfileDialog({
   profile,
   onSuccess,
 }: CloneScanProfileDialogProps) {
+  const { t } = useTranslation()
   const form = useForm<CloneScanProfileFormData>({
     resolver: zodResolver(cloneScanProfileSchema),
     defaultValues: {
-      new_name: `${profile.name} (Copy)`,
+      new_name: t('scans.profiles.cloneName', undefined, { name: profile.name }),
     },
   })
 
@@ -59,19 +61,19 @@ export function CloneScanProfileDialog({
   const onSubmit = async (data: CloneScanProfileFormData) => {
     try {
       await cloneProfile(data)
-      toast.success(`Profile cloned as "${data.new_name}"`)
+      toast.success(t('scans.profiles.cloned', undefined, { name: data.new_name }))
       await invalidateScanProfilesCache()
       form.reset()
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to clone profile'))
+      toast.error(getErrorMessage(err, t('scans.profiles.cloneFailed')))
     }
   }
 
   const handleClose = (isOpen: boolean) => {
     if (!isOpen) {
-      form.reset({ new_name: `${profile.name} (Copy)` })
+      form.reset({ new_name: t('scans.profiles.cloneName', undefined, { name: profile.name }) })
     }
     onOpenChange(isOpen)
   }
@@ -82,10 +84,10 @@ export function CloneScanProfileDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Copy className="h-5 w-5" />
-            Clone Scan Profile
+            {t('scans.profiles.cloneTitle')}
           </DialogTitle>
           <DialogDescription>
-            Create a copy of &quot;{profile.name}&quot; with a new name.
+            {t('scans.profiles.cloneDesc', undefined, { name: profile.name })}
           </DialogDescription>
         </DialogHeader>
 
@@ -97,9 +99,9 @@ export function CloneScanProfileDialog({
                 name="new_name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>New Profile Name</FormLabel>
+                    <FormLabel>{t('scans.profiles.cloneNameLabel')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter a name for the cloned profile" {...field} />
+                      <Input placeholder={t('scans.profiles.cloneNamePlaceholder')} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -114,11 +116,11 @@ export function CloneScanProfileDialog({
                 onClick={() => handleClose(false)}
                 disabled={isMutating}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={isMutating}>
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                Clone Profile
+                {t('scans.profiles.clone')}
               </Button>
             </DialogFooter>
           </DialogForm>

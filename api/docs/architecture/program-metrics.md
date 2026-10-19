@@ -127,6 +127,25 @@ code that defines them is the source of truth:
   computed at close) over the closed cycles that have one; `null` when none
   has.
 
+#### Per-cycle metrics (`ctem_cycle_metrics`)
+
+Each closed cycle stores its own metrics over its active window
+(`internal/infra/postgres/ctem_cycle_metrics_repository.go`); charter success
+criteria and the maturity breakdown read them.
+
+- `mttr_hours`, `findings_resolved`, `validation_coverage`, `p0_resolved` and
+  `p1_resolved` count only **remediated** findings
+  (`vulnerability.RemediatedSQL`): a false positive, an accepted risk or an
+  obsolete closure is not a fix.
+- `mttr_hours` runs from first detection (the earlier of `first_detected_at`
+  and `created_at`) to `resolved_at`.
+- `mttr_hours` and `validation_coverage` are left out when the cycle
+  remediated nothing (no sample), never stored as 0. A charter criterion on
+  them then reads `not_measurable`, the trend series carries `null` for that
+  cycle, and the maturity components `mttr_trend` and `validation_coverage`
+  are excluded (weight 0). Values stored before this rule are kept as they
+  were.
+
 ### 7. Critical assets lacking a control (`control_coverage`)
 
 A snapshot of the inventory now, not windowed. One row per control:

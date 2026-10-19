@@ -58,8 +58,10 @@ export interface Vulnerability {
   modified_at?: string
   status: VulnerabilityStatus
   risk_score: number
-  created_at: string
-  updated_at: string
+  // Not served by the shared catalog (a row's creation time would tell when
+  // some organization first reported the CVE); set by tenant views only.
+  created_at?: string
+  updated_at?: string
 }
 
 export interface VulnerabilityListFilters {

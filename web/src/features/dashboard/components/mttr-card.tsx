@@ -5,7 +5,10 @@ import { formatChartDate } from '@/lib/format-chart-date'
 import { Clock, TrendingDown, TrendingUp } from 'lucide-react'
 import { SEVERITY_CHART_COLORS } from '@/lib/severity-colors'
 import { STATE_TEXT } from '../lib/ctem-colors'
-import { useMTTRMetrics, useRiskVelocity } from '../hooks/use-dashboard-stats'
+import { useRiskVelocity } from '../hooks/use-dashboard-stats'
+import { useMttrAnalytics } from '../hooks/use-ctem-dashboard'
+import { formatHours } from '../lib/format-hours'
+import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import {
   BarChart,
@@ -18,29 +21,23 @@ import {
 } from '@/components/charts'
 import { ACTIONABLE_SEVERITIES, SEVERITY_LABELS } from '@/lib/severity'
 
-function formatHours(hours: number): string {
-  if (hours < 1) return `${Math.round(hours * 60)}m`
-  if (hours < 24) return `${Math.round(hours)}h`
-  return `${Math.round(hours / 24)}d`
-}
-
+/**
+ * Mean time to remediate. It reads the same endpoint, window and field as the
+ * Executive summary's "Overall" (useMttrAnalytics), so both show one figure;
+ * it no longer averages the per-severity means. A severity with nothing
+ * remediated in the window is "—", never 0m.
+ */
 export function MTTRCard() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
-  const { data: mttr } = useMTTRMetrics(currentTenant?.id ?? null)
+  const { data: mttr } = useMttrAnalytics(currentTenant?.id ?? null)
 
   if (!mttr) return null
 
-  // MTTR is a remediation metric: informational findings carry no SLA and no
-  // remediation target, so the card covers the actionable severities only.
-  const criticalMTTR = mttr.critical ?? 0
-  const highMTTR = mttr.high ?? 0
-  const reported = ACTIONABLE_SEVERITIES.filter((s) => typeof mttr[s] === 'number')
-  const avgAll =
-    reported.length > 0 ? reported.reduce((sum, s) => sum + (mttr[s] ?? 0), 0) / reported.length : 0
-
+  const bySeverity = mttr.by_severity ?? {}
   const chartData = ACTIONABLE_SEVERITIES.map((s) => ({
     severity: SEVERITY_LABELS[s],
-    hours: Math.round(mttr[s] ?? 0),
+    hours: Math.round(bySeverity[s] ?? 0),
     fill: SEVERITY_CHART_COLORS[s],
   })).filter((d) => d.hours > 0)
 
@@ -49,18 +46,21 @@ export function MTTRCard() {
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
           <Clock className="h-4 w-4 text-muted-foreground" />
-          Mean Time to Remediate
+          {t('dashboardMetrics.mttr.title', 'Mean time to remediate')}
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{formatHours(avgAll)}</div>
+        <div className="text-2xl font-bold">{formatHours(mttr.overall_hours)}</div>
         <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
           <span>
-            Critical:{' '}
-            <span className={`font-medium ${STATE_TEXT.crit}`}>{formatHours(criticalMTTR)}</span>
+            {t('dashboardMetrics.mttr.critical', 'Critical:')}{' '}
+            <span className={`font-medium ${STATE_TEXT.crit}`}>
+              {formatHours(bySeverity.critical)}
+            </span>
           </span>
           <span>
-            High: <span className="font-medium text-orange-500">{formatHours(highMTTR)}</span>
+            {t('dashboardMetrics.mttr.high', 'High:')}{' '}
+            <span className="font-medium text-foreground">{formatHours(bySeverity.high)}</span>
           </span>
         </div>
         {chartData.length > 0 && (
