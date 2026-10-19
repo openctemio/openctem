@@ -353,6 +353,15 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.VulnerabilitiesRead,
     module: Module.ThreatIntel,
   },
+  // Emerging threats: new or newly exploited CVEs that match the organization's software.
+  '/emerging-threats': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.ThreatIntel,
+  },
+  '/emerging-threats/**': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.ThreatIntel,
+  },
   '/business-impact': {
     permission: Permission.VulnerabilitiesRead,
     module: Module.BusinessImpact,
@@ -808,6 +817,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
 
   // Vulnerability matching policy (RFC-066): owners and admins.
   '/settings/vulnerability-matching': {
+    permission: Permission.TeamUpdate,
+  },
+  // Emerging-threat alert policy: owners and admins.
+  '/settings/emerging-threats': {
     permission: Permission.TeamUpdate,
   },
   // Finding approvals: settings:read to see, settings:write (+ step-up) to save.

@@ -36,6 +36,7 @@ import {
   Bot,
   Boxes,
   Bug,
+  Siren,
   Building,
   CalendarClock,
   Clock,
@@ -499,6 +500,15 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Bug,
         permission: Permission.TeamUpdate,
         keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
+      },
+      {
+        id: 'emerging-threats',
+        title: 'Emerging threats',
+        description: 'When new or newly exploited CVEs alert you, and how.',
+        url: '/settings/emerging-threats',
+        icon: Siren,
+        permission: Permission.TeamUpdate,
+        keywords: ['cve', 'kev', 'epss', 'alert', 'digest', 'quiet hours', 'exploited', 'zero-day'],
       },
       {
         id: 'license-policy',

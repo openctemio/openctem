@@ -115,4 +115,23 @@ describe('SourceDataSection', () => {
     expect(screen.getByText('41')).toBeTruthy()
     expect(screen.getByTestId('source-vuln-ids').textContent).toContain('USN-6859-1')
   })
+
+  it('shows the detection rule from the pack, never a sensor path', () => {
+    const d = mapFindingSourceData({
+      native: { scheme: 'nuclei', vuln_id: 'wordpress-click2shell' },
+      rule: {
+        pack: 'nuclei-templates',
+        version: '2026-10-05 (7ae245)',
+        path: 'http/vulnerabilities/wordpress/wordpress-click2shell.yaml',
+      },
+      source_extra: { target: 'https://example.com' },
+    })!
+    const { container } = render(<SourceDataSection data={d} ruleName="WordPress Click2Shell" />)
+    const rule = screen.getByTestId('source-detection-rule').textContent ?? ''
+    expect(rule).toContain('wordpress-click2shell · WordPress Click2Shell')
+    expect(rule).toContain('nuclei-templates@2026-10-05 (7ae245)')
+    expect(rule).toContain('http/vulnerabilities/wordpress/wordpress-click2shell.yaml')
+    expect(container.textContent).not.toContain('/var/lib')
+    expect(container.textContent).not.toContain('template_path')
+  })
 })

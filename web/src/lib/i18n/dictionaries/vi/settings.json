@@ -445,5 +445,7 @@
   "settings.ai.usage": "Tháng này: đã dùng {used} trên {limit} token.",
   "settings.ai.confirmTitle": "Bật phân loại bằng AI?",
   "settings.ai.confirmDesc": "Nội dung phát hiện (xem \"Những gì được gửi\") sẽ được gửi tới nhà cung cấp AI mà quản trị viên nền tảng đã thiết lập, mỗi khi thành viên yêu cầu phân tích. Bạn có thể tắt bất cứ lúc nào.",
-  "settings.ai.confirm": "Bật"
+  "settings.ai.confirm": "Bật",
+  "settings.item.emerging-threats": "Mối đe dọa mới nổi",
+  "settings.desc.emerging-threats": "Khi nào và bằng cách nào các CVE mới hoặc mới bị khai thác sẽ cảnh báo bạn."
 }
