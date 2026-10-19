@@ -599,7 +599,13 @@ func eachLine(path string, fn func([]byte) error) error {
 		return err
 	}
 	defer gz.Close()
-	sc := bufio.NewScanner(&limited{r: gz, left: MaxDecompressedBytes})
+	return scanLines(&limited{r: gz, left: MaxDecompressedBytes}, fn)
+}
+
+// scanLines calls fn with each non-empty line of r (at most
+// MaxRecordBytes each).
+func scanLines(r io.Reader, fn func([]byte) error) error {
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), MaxRecordBytes)
 	for sc.Scan() {
 		if len(sc.Bytes()) == 0 {
