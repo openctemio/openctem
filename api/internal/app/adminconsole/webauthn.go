@@ -456,6 +456,12 @@ func (s *Service) RecoveryLogin(ctx context.Context, pendingToken, code string, 
 
 // completeSecondFactor replaces a pending session with a verified one.
 func (s *Service) completeSecondFactor(ctx context.Context, sess *admin.Session, a *admin.AdminUser, client ClientInfo, note string) (string, *admin.AdminUser, error) {
+	// A first IdP sign-in binds its identity only now, after this
+	// administrator proved their own second factor.
+	if err := s.bindPendingIdP(ctx, sess, a, client); err != nil {
+		_ = s.console.DeleteSession(ctx, sess.ID)
+		return "", nil, err
+	}
 	if a.FailedLoginCount() > 0 {
 		a.ResetFailedLogins()
 		if err := s.admins.Update(ctx, a); err != nil {

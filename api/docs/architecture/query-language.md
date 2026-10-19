@@ -188,3 +188,16 @@ their versions, sharing and deletion) will be.
 - `api/internal/infra/postgres/query_executor.go` — read-only execution, timeout, estimate
 - `api/internal/app/query/` — principal resolution, concurrency, service
 - `api/internal/infra/http/handler/query_handler.go`, `routes/query.go`
+
+## Matching findings (tasks from a query)
+
+`query.Service.MatchFindings` runs a filter-only findings query (`findings where ...`, no pipeline) as a
+caller and returns the matching ids instead of rows: the count and the first N ids, oldest first, from
+`pgsql.RenderMatch` (the same compiled WHERE clause as `Render`, narrowed by `MatchOptions`: excluded statuses
+and sources, and "not the primary member of a remediation task"). It shares the principal resolution, rules,
+limits and concurrency caps of `Run`. A background caller (an auto-mode remediation task) passes its stored
+owner with their current role and permissions; `Caller.Owner` carries the owner flag that a request would
+otherwise provide. Used by remediation tasks (RFC-098 §13).
+
+`POST /api/v1/query/from-filters` turns a findings list query string into query text through the list's own
+filter registry (`querylang.FromSpec`); params that are not filters are returned as `ignored`.

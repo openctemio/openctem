@@ -59,6 +59,10 @@ manual states (on hold, canceled).
 | `GET /api/v1/remediation/tasks/{task_id}/members` | `findings:remediation:read` + `findings:read` |
 | `POST /api/v1/remediation/tasks/{task_id}/members` | `findings:remediation:write` |
 | `GET /api/v1/remediation/tasks/{task_id}/timeline` | `findings:remediation:read` |
+| `POST /api/v1/remediation/tasks/query/preview`, `POST /api/v1/remediation/tasks/query` | `findings:remediation:write` + `findings:read`, query rate limit |
+| `GET /api/v1/remediation/tasks/{task_id}/query` | `findings:remediation:read` |
+| `POST /api/v1/remediation/tasks/{task_id}/query/{run,preview}` | `findings:remediation:write` + `findings:read`, query rate limit |
+| `POST /api/v1/remediation/tasks/{task_id}/query/auto` | `findings:remediation:write` |
 
 All routes are in the `remediation` module. `assignee=me` lists tasks assigned to the caller or to one of their
 groups. Every change carries the task's `version`; a stale one answers `409`.
@@ -215,6 +219,28 @@ Strings are in the `remediationHub` dictionary (en, vi). Write actions show only
 `findings:remediation:read` sees "Accept as owner" (and the `a` key) on `join` and `task_route` suggestions, and
 nothing else; the API decides whether they own the task and the assets.
 
+## Tasks from a query
+
+Design: RFC-098 §13. The flow:
+
+```
+query text --(caller: tenant, user, admin flag, permissions from the request)--> query.Service.MatchFindings
+   plan (pkg/querylang: tenant, data scope, pentest member rule, mandatory exclusions)
+   + task rules (pgsql.MatchOptions: closed and pentest findings out; unclaimed only for re-run and auto)
+   --> QueryExecutor.Match (READ ONLY, 5 s, work_mem cap): count + first 1000 ids
+preview: PrimaryHolders (conflicts, shown per the caller's read/write on the holding task) + QueryPreviewStats
+create:  CreateTask (members join with source "query", remediation_task_queries row in the same transaction)
+re-run / auto: ClaimQueryFindings (lock task, lock findings in id order, keep only free open findings,
+         trim to the cap, insert ON CONFLICT DO NOTHING: the primary unique index settles races)
+```
+
+The auto include worker (`RemediationTaskQueryController`, every 5 minutes, each task at most every 15)
+resolves the stored owner outside a request (active membership, role, permissions) and suspends the task
+with a reason instead of running when the owner is gone or lacks `findings:read` +
+`findings:remediation:write`, when the task closed, or when the query no longer compiles. Additions and
+suspensions are audited (`remediation_task.query_auto_added`, `.query_auto_state_changed`) and the owner gets
+an in-app notification (type `remediation_task`).
+
 ## Shipped and planned
 
 Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). The finding
@@ -241,3 +267,8 @@ are in the `myWork` dictionary (en, vi).
   `api/internal/infra/http/handler/remediation_suggestion_handler.go`,
   `api/internal/infra/controller/remediation_suggestions.go`
 - `api/tests/integration/remediation_tasks_test.go`, `remediation_suggestions_test.go`, `remediation_claim_test.go`
+- Tasks from a query: `api/migrations/*_remediation_task_queries.*.sql`, `api/pkg/domain/remediation/task_query.go`,
+  `api/internal/app/remediation/query_tasks.go`, `api/internal/app/query/match.go`, `api/pkg/querylang/pgsql/match.go`,
+  `api/internal/infra/postgres/remediation_task_query_repository.go`,
+  `api/internal/infra/http/handler/remediation_task_query_handler.go`, `query_from_filters_handler.go`,
+  `api/internal/infra/controller/remediation_task_query.go`, `api/tests/integration/remediation_task_query_test.go`

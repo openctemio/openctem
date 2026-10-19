@@ -120,11 +120,27 @@ openssl rand -base64 32
 
 ### Redis ACL (Redis 6+)
 
-Create dedicated user for the application:
+Create a dedicated user for the API. It needs every key it writes (sessions,
+permissions, rate limits, the job queue, the sensor liveness store) and Lua
+scripts (rate limits and the sensor liveness store run atomic scripts):
 
 ```redis
-ACL SETUSER openctem on >strongpassword openctem:* +@all -@dangerous
+ACL SETUSER openctem on >strongpassword ~* &* +@all -@dangerous +@scripting
 ```
+
+**Sensor plane user (planned).** The sensor control plane needs only the
+heartbeat soft state (`oc:sl:*`), the signed-request nonces
+(`sensorsig:nonce:*`) and the control-stream wake channel
+(`sensor:v3:wake`). When the sensor plane runs as its own process (a sensor
+gateway), give it a user restricted to those:
+
+```redis
+ACL SETUSER sensorplane on >strongpassword ~oc:sl:* ~sensorsig:nonce:* &sensor:v3:wake \
+  +@read +@write +@scripting +@pubsub +ping -@dangerous
+```
+
+Today the API serves the sensor plane itself and uses one connection
+(`REDIS_*`), so this second user is not configured yet.
 
 ## High Availability
 
@@ -217,7 +233,10 @@ REDIS_MIN_IDLE_CONNS=20    # Keep connections warm
 
 # Memory
 maxmemory 2gb
-maxmemory-policy allkeys-lru
+# Never evict: the job queue and the sensor liveness store must not lose
+# keys silently (an evicted liveness entry is a sensor that looks silent).
+# Alert at 80 % of maxmemory instead.
+maxmemory-policy noeviction
 
 # Connections
 maxclients 10000
