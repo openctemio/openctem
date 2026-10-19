@@ -1,13 +1,5 @@
 import { z } from 'zod'
 
-// Tool configuration schema
-export const toolConfigSchema = z.object({
-  enabled: z.boolean(),
-  severity: z.enum(['info', 'low', 'medium', 'high', 'critical']).optional(),
-  timeout: z.number().min(0).optional(),
-  options: z.record(z.string(), z.unknown()).optional(),
-})
-
 // Quality Gate schema for CI/CD pass/fail decisions
 export const qualityGateSchema = z.object({
   enabled: z.boolean(),
@@ -38,11 +30,6 @@ export interface QualityGateFormData {
 export interface CreateScanProfileFormData {
   name: string
   description?: string
-  tools_config?: Record<string, z.infer<typeof toolConfigSchema>>
-  intensity: 'low' | 'medium' | 'high'
-  max_concurrent_scans: number
-  timeout_seconds: number
-  tags?: string[]
   is_default: boolean
   quality_gate?: QualityGateFormData
 }
@@ -51,11 +38,6 @@ export interface CreateScanProfileFormData {
 export const createScanProfileSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
-  tools_config: z.record(z.string(), toolConfigSchema).optional(),
-  intensity: z.enum(['low', 'medium', 'high']),
-  max_concurrent_scans: z.number().min(1).max(100),
-  timeout_seconds: z.number().min(60).max(86400),
-  tags: z.array(z.string().max(50)).max(20).optional(),
   is_default: z.boolean(),
   quality_gate: qualityGateSchema.optional(),
 })
@@ -64,11 +46,6 @@ export const createScanProfileSchema = z.object({
 export interface UpdateScanProfileFormData {
   name?: string
   description?: string
-  tools_config?: Record<string, z.infer<typeof toolConfigSchema>>
-  intensity?: 'low' | 'medium' | 'high'
-  max_concurrent_scans?: number
-  timeout_seconds?: number
-  tags?: string[]
   quality_gate?: QualityGateFormData
 }
 
@@ -76,11 +53,6 @@ export interface UpdateScanProfileFormData {
 export const updateScanProfileSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
-  tools_config: z.record(z.string(), toolConfigSchema).optional(),
-  intensity: z.enum(['low', 'medium', 'high']).optional(),
-  max_concurrent_scans: z.number().min(1).max(100).optional(),
-  timeout_seconds: z.number().min(60).max(86400).optional(),
-  tags: z.array(z.string().max(50)).max(20).optional(),
   quality_gate: qualityGateSchema.optional(),
 })
 
@@ -93,35 +65,6 @@ export interface CloneScanProfileFormData {
 export const cloneScanProfileSchema = z.object({
   new_name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
 })
-
-// Options for forms
-export const INTENSITY_OPTIONS = [
-  { value: 'low', label: 'Low', description: 'Fast scans with basic checks' },
-  { value: 'medium', label: 'Medium', description: 'Balanced scans with standard checks' },
-  { value: 'high', label: 'High', description: 'Comprehensive scans with all checks' },
-] as const
-
-export const SEVERITY_OPTIONS = [
-  { value: 'info', label: 'Info' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'critical', label: 'Critical' },
-] as const
-
-// Tool choices of a scan profile. The description is an i18n key
-// (scans.toolOption.<tool>).
-export const TOOL_OPTIONS = [
-  { value: 'opengrep', label: 'Opengrep', descriptionKey: 'scans.toolOption.opengrep' },
-  { value: 'semgrep', label: 'Semgrep', descriptionKey: 'scans.toolOption.semgrep' },
-  { value: 'trivy', label: 'Trivy', descriptionKey: 'scans.toolOption.trivy' },
-  { value: 'nuclei', label: 'Nuclei', descriptionKey: 'scans.toolOption.nuclei' },
-  { value: 'betterleaks', label: 'Betterleaks', descriptionKey: 'scans.toolOption.betterleaks' },
-  { value: 'checkov', label: 'Checkov', descriptionKey: 'scans.toolOption.checkov' },
-  { value: 'tfsec', label: 'Tfsec', descriptionKey: 'scans.toolOption.tfsec' },
-  { value: 'grype', label: 'Grype', descriptionKey: 'scans.toolOption.grype' },
-  { value: 'syft', label: 'Syft', descriptionKey: 'scans.toolOption.syft' },
-] as const
 
 // Default Quality Gate configuration
 export const DEFAULT_QUALITY_GATE: QualityGateFormData = {

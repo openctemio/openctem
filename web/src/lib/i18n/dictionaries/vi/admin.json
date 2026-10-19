@@ -1949,5 +1949,19 @@
   "admin.ai.providerName.claude": "Anthropic Claude",
   "admin.ai.providerName.openai": "OpenAI",
   "admin.ai.providerName.gemini": "Google Gemini",
-  "admin.region.placeholder": "eu-central"
+  "admin.region.placeholder": "eu-central",
+  "admin.org.dashboardData.title": "Dữ liệu dashboard",
+  "admin.org.dashboardData.requested": "Đã yêu cầu dựng lại.",
+  "admin.org.dashboardData.tooSoon": "Chỉ có thể dựng lại dữ liệu dashboard mỗi giờ một lần.",
+  "admin.org.dashboardData.failed": "Không thể yêu cầu dựng lại.",
+  "admin.org.dashboardData.description": "Dữ liệu lưu sẵn theo từng tài sản dùng cho dashboard của tổ chức, cập nhật theo mọi thay đổi và đối soát mỗi đêm.",
+  "admin.org.dashboardData.lastRebuilt": "Lần chạy toàn bộ gần nhất",
+  "admin.org.dashboardData.lastDrift": "Sai lệch đã sửa",
+  "admin.org.dashboardData.pendingChanges": "Thay đổi đang chờ",
+  "admin.org.dashboardData.state": "Trạng thái",
+  "admin.org.dashboardData.running": "Đang chạy",
+  "admin.org.dashboardData.pending": "Đã yêu cầu",
+  "admin.org.dashboardData.idle": "Không hoạt động",
+  "admin.org.dashboardData.rebuild": "Dựng lại dữ liệu dashboard",
+  "admin.org.dashboardData.nextAt": "Có thể dựng lại lần tiếp theo lúc {time}"
 }

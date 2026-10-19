@@ -39,11 +39,8 @@ import {
   invalidateScanProfilesCache,
 } from '@/lib/api/scan-profile-hooks'
 import type { ScanProfile } from '@/lib/api/scan-profile-types'
-import { INTENSITY_OPTIONS } from '../schemas/scan-profile-schema'
+import { gateSummary } from '../gate-summary'
 import { useTranslation } from '@/context/i18n-provider'
-
-const getIntensityLabel = (intensity: string) =>
-  INTENSITY_OPTIONS.find((i) => i.value === intensity)?.label || intensity
 
 export function ScanProfilesSection() {
   const { t } = useTranslation()
@@ -78,7 +75,7 @@ export function ScanProfilesSection() {
   const handleRefresh = useCallback(async () => {
     await invalidateScanProfilesCache()
     await mutate()
-    toast.success('Scan profiles refreshed')
+    toast.success(t('scans.profiles.refreshed'))
   }, [mutate])
 
   const handleEditProfile = useCallback((profile: ScanProfile) => {
@@ -100,12 +97,12 @@ export function ScanProfilesSection() {
     if (!selectedProfile) return
     try {
       await deleteProfile()
-      toast.success(`Profile "${selectedProfile.name}" deleted`)
+      toast.success(t('scans.profiles.deleted', undefined, { name: selectedProfile.name }))
       await invalidateScanProfilesCache()
       setDeleteDialogOpen(false)
       setSelectedProfile(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete profile'))
+      toast.error(getErrorMessage(err, t('scans.profiles.deleteFailed')))
     }
   }, [selectedProfile, deleteProfile])
 
@@ -113,10 +110,10 @@ export function ScanProfilesSection() {
     async (profile: ScanProfile) => {
       try {
         await setDefaultProfile(profile.id)
-        toast.success(`"${profile.name}" set as default profile`)
+        toast.success(t('scans.profiles.defaultSet', undefined, { name: profile.name }))
         await invalidateScanProfilesCache()
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to set default profile'))
+        toast.error(getErrorMessage(err, t('scans.profiles.defaultFailed')))
       }
     },
     [setDefaultProfile]
@@ -127,7 +124,9 @@ export function ScanProfilesSection() {
       {
         id: 'name',
         accessorFn: (p) => `${p.name} ${p.description ?? ''}`,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.profiles.name')} />
+        ),
         cell: ({ row }) => {
           const profile = row.original
           return (
@@ -137,10 +136,12 @@ export function ScanProfilesSection() {
                 {profile.is_default && (
                   <Badge variant="secondary" className="gap-1">
                     <Star className="h-3 w-3 fill-current" />
-                    Default
+                    {t('scans.profiles.badge.default')}
                   </Badge>
                 )}
-                {profile.is_system && <Badge variant="outline">System</Badge>}
+                {profile.is_system && (
+                  <Badge variant="outline">{t('scans.profiles.badge.system')}</Badge>
+                )}
               </div>
               {profile.description && (
                 <p
@@ -155,31 +156,13 @@ export function ScanProfilesSection() {
         },
       },
       {
-        id: 'intensity',
-        accessorKey: 'intensity',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Intensity" />,
-        cell: ({ row }) => (
-          <Badge variant="outline">{getIntensityLabel(row.original.intensity)}</Badge>
+        id: 'rule',
+        accessorFn: (p) => gateSummary(p.quality_gate, t),
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.profiles.col.rule')} />
         ),
-      },
-      {
-        id: 'tools',
-        accessorFn: (p) => Object.values(p.tools_config || {}).filter((t) => t.enabled).length,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Tools" />,
         cell: ({ getValue }) => (
-          <span className="text-sm tabular-nums text-muted-foreground">
-            {getValue<number>()} enabled
-          </span>
-        ),
-      },
-      {
-        id: 'timeout',
-        accessorKey: 'timeout_seconds',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Timeout" />,
-        cell: ({ row }) => (
-          <span className="text-sm tabular-nums text-muted-foreground">
-            {Math.floor(row.original.timeout_seconds / 60)}m
-          </span>
+          <span className="text-sm text-muted-foreground">{getValue<string>()}</span>
         ),
       },
       {
@@ -195,7 +178,7 @@ export function ScanProfilesSection() {
                   ...(!profile.is_default && canSetDefault
                     ? ([
                         {
-                          label: 'Set as default',
+                          label: t('scans.profiles.setAsDefault'),
                           icon: Star,
                           onClick: () => handleSetDefault(profile),
                           disabled: isSettingDefault,
@@ -204,13 +187,13 @@ export function ScanProfilesSection() {
                       ] satisfies RowAction[])
                     : []),
                   {
-                    label: 'Edit',
+                    label: t('scans.profiles.edit'),
                     icon: Pencil,
                     onClick: () => handleEditProfile(profile),
                     permission: Permission.ScanProfilesWrite,
                   },
                   {
-                    label: 'Clone',
+                    label: t('scans.profiles.clone'),
                     icon: Copy,
                     onClick: () => handleCloneProfile(profile),
                     permission: Permission.ScanProfilesWrite,
@@ -218,7 +201,7 @@ export function ScanProfilesSection() {
                   ...(!profile.is_system
                     ? ([
                         {
-                          label: 'Delete',
+                          label: t('scans.profiles.delete'),
                           icon: Trash2,
                           onClick: () => handleDeleteClick(profile),
                           destructive: true,
@@ -241,6 +224,7 @@ export function ScanProfilesSection() {
       handleDeleteClick,
       isSettingDefault,
       canSetDefault,
+      t,
     ]
   )
 
@@ -250,18 +234,18 @@ export function ScanProfilesSection() {
         <DropdownMenuTrigger asChild>
           <Button size="sm">
             <Plus className="h-4 w-4" />
-            Add profile
+            {t('scans.profiles.add')}
             <ChevronDown className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => setAddDialogOpen(true)}>
             <Plus className="me-2 h-4 w-4" />
-            Create custom profile
+            {t('scans.profiles.addCustom')}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setPresetDialogOpen(true)}>
             <Sparkles className="me-2 h-4 w-4" />
-            Add preset profile
+            {t('scans.profiles.addPreset')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -270,20 +254,22 @@ export function ScanProfilesSection() {
 
   let body: React.ReactNode
   if (error) {
-    body = <ErrorState title="scan profiles" error={error} onRetry={handleRefresh} />
+    body = (
+      <ErrorState title={t('scans.profiles.errorTitle')} error={error} onRetry={handleRefresh} />
+    )
   } else if (isLoading) {
     body = <TableSkeleton rows={4} />
   } else if (profiles.length === 0) {
     body = (
       <EmptyState
         icon={Settings2}
-        title="No scan profiles"
-        description="Create a profile to define reusable scan configurations."
+        title={t('scans.profiles.empty')}
+        description={t('scans.profiles.emptyDesc')}
         action={
           <Can permission={Permission.ScanProfilesWrite}>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="h-4 w-4" />
-              Create profile
+              {t('scans.profiles.create')}
             </Button>
           </Can>
         }
@@ -295,19 +281,16 @@ export function ScanProfilesSection() {
         columns={columns}
         data={profiles}
         getRowId={(p) => p.id}
-        searchPlaceholder="Search profiles…"
+        searchPlaceholder={t('scans.profiles.search')}
         toolbarEnd={<RefreshButton onClick={handleRefresh} loading={isLoading} />}
-        emptyMessage="No profiles match your search"
+        emptyMessage={t('scans.profiles.noMatch')}
       />
     )
   }
 
   return (
     <>
-      <PageHeader
-        title="Scan profiles"
-        description="Reusable scan configurations: which tools run, how intensively, and for how long."
-      >
+      <PageHeader title={t('scans.profiles.title')} description={t('scans.profiles.pageDesc')}>
         {addMenu}
       </PageHeader>
 

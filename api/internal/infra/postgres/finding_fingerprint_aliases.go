@@ -20,6 +20,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // fingerprintAliasChunk bounds the array bound to one lookup.
@@ -94,54 +95,83 @@ func rememberFindingKey(ctx context.Context, tx *sql.Tx, tenantID, findingID str
 	return nil
 }
 
+// adoptGuardSQL restricts a re-key to the finding the guard names: always
+// on its asset; with Strict also on rule, tool (first or latest reporter)
+// and location. Parameters start at $n.
+func adoptGuardSQL(n int) string {
+	return fmt.Sprintf(`
+		  AND asset_id::text = $%d
+		  AND (NOT $%d::boolean OR (
+		      COALESCE(rule_id, '') = $%d
+		      AND $%d IN (tool_name, COALESCE(last_seen_tool, tool_name))
+		      AND COALESCE(file_path, '') = $%d))`, n, n+1, n+2, n+3, n+4)
+}
+
+func adoptGuardArgs(g vulnerability.AdoptGuard) []any {
+	return []any{g.AssetID, g.Strict, g.RuleID, g.Tool, g.Path}
+}
+
 // AdoptFingerprint re-keys the live finding stored under from to the
 // versioned key to, with its identity tuple, when the finding has an older
-// recipe version and no finding holds to yet. The old key stays an alias
-// (trigger). Race-safe: the NOT EXISTS guard and the unique index decide, and
-// losing a race is not an error.
-func (r *FindingRepository) AdoptFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int) (bool, error) {
-	if from == "" || to == "" || from == to || len(identityKey) == 0 || tenantID.IsZero() {
-		return false, nil
-	}
-	res, err := r.db.ExecContext(ctx, `
-		UPDATE findings
-		SET fingerprint = $3, fingerprint_version = $5, identity_key = $4::jsonb, updated_at = NOW()
-		WHERE tenant_id = $1 AND fingerprint = $2
-		  AND fingerprint_version < $5
-		  AND status <> 'duplicate'
-		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`,
-		tenantID.String(), from, to, string(identityKey), version)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("adopt versioned fingerprint: %w", err)
-	}
-	n, _ := res.RowsAffected()
-	return n > 0, nil
+// recipe version, sits where the guard says, and no finding holds to yet.
+// The old key stays an alias (trigger). Race-safe: the NOT EXISTS guard and
+// the unique index decide, and losing a race is not an error.
+func (r *FindingRepository) AdoptFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, g vulnerability.AdoptGuard) (bool, error) {
+	return r.adopt(ctx, tenantID, from, to, identityKey, version, "<", g)
 }
 
 // AdoptFormerFingerprint re-keys the finding stored under from to to within
 // the same recipe version: a SAST finding stored under its line-anchored key
 // takes its code-anchored key once a report carries the code. The same
 // guards as AdoptFingerprint apply; from stays an alias (trigger).
-func (r *FindingRepository) AdoptFormerFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int) (bool, error) {
-	if from == "" || to == "" || from == to || len(identityKey) == 0 || tenantID.IsZero() {
+func (r *FindingRepository) AdoptFormerFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, g vulnerability.AdoptGuard) (bool, error) {
+	return r.adopt(ctx, tenantID, from, to, identityKey, version, "<=", g)
+}
+
+func (r *FindingRepository) adopt(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, cmp string, g vulnerability.AdoptGuard) (bool, error) {
+	if from == "" || to == "" || from == to || len(identityKey) == 0 || tenantID.IsZero() || g.AssetID == "" {
 		return false, nil
 	}
+	args := append([]any{tenantID.String(), from, to, string(identityKey), version}, adoptGuardArgs(g)...)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE findings
 		SET fingerprint = $3, fingerprint_version = $5, identity_key = $4::jsonb, updated_at = NOW()
 		WHERE tenant_id = $1 AND fingerprint = $2
-		  AND fingerprint_version <= $5
+		  AND fingerprint_version `+cmp+` $5
 		  AND status <> 'duplicate'
-		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`,
-		tenantID.String(), from, to, string(identityKey), version)
+		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`+adoptGuardSQL(6), args...)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("adopt former fingerprint: %w", err)
+		return false, fmt.Errorf("adopt fingerprint: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// AdoptClientKeyedFingerprint re-keys a version-1 finding stored under a key a
+// report chose (its own fingerprint) to the server's version-1 key, when the
+// finding is the issue the guard names (always Strict) and no finding holds
+// to yet. The old key stays an alias (trigger).
+func (r *FindingRepository) AdoptClientKeyedFingerprint(ctx context.Context, tenantID shared.ID, from, to string, g vulnerability.AdoptGuard) (bool, error) {
+	if from == "" || to == "" || from == to || tenantID.IsZero() || g.AssetID == "" {
+		return false, nil
+	}
+	g.Strict = true
+	args := append([]any{tenantID.String(), from, to}, adoptGuardArgs(g)...)
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE findings
+		SET fingerprint = $3, updated_at = NOW()
+		WHERE tenant_id = $1 AND fingerprint = $2
+		  AND fingerprint_version <= 1
+		  AND status <> 'duplicate'
+		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`+adoptGuardSQL(4), args...)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("adopt legacy fingerprint: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	return n > 0, nil
