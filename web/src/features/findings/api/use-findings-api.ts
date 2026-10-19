@@ -500,6 +500,8 @@ export async function fetchFindingStats(url: string): Promise<FindingStatsRespon
  */
 export interface FindingStatsFilters extends Omit<FindingApiFilters, 'page' | 'per_page' | 'sort'> {
   assetId?: string | null
+  /** Also split the filtered findings by SLA standing and past-due age (response `sla`). */
+  sla_breakdown?: boolean
 }
 
 /**
@@ -508,8 +510,9 @@ export interface FindingStatsFilters extends Omit<FindingApiFilters, 'page' | 'p
  */
 export function buildFindingStatsUrl(filters?: FindingStatsFilters): string {
   if (!filters) return '/api/v1/findings/stats'
-  const { assetId, ...rest } = filters
+  const { assetId, sla_breakdown, ...rest } = filters
   const params = buildFindingsQuery({ ...rest, asset_id: rest.asset_id ?? assetId ?? undefined })
+  if (sla_breakdown) params.set('sla_breakdown', 'true')
   const queryString = params.toString()
   return queryString ? `/api/v1/findings/stats?${queryString}` : '/api/v1/findings/stats'
 }
