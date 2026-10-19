@@ -3362,9 +3362,11 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.BySource[vulnerability.FindingSourcePentest] = sourcePentest
 	stats.BySource[vulnerability.FindingSourceExternal] = sourceExternal
 
-	// Calculate open and resolved counts
-	// Open = new + confirmed + in_progress + pentest pre-publication (draft, in_review)
-	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview
+	// Open is the open lens (the findings list's state=open), the one
+	// definition every surface and the scheduled report use: it includes
+	// fix_applied (awaiting verification) and leaves out unpublished pentest
+	// findings (draft, in_review).
+	stats.OpenCount = stateOpen
 	stats.ResolvedCount = statusResolved
 
 	stats.KevOpen = kevOpen
@@ -3699,7 +3701,8 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			conditions = append(conditions, "FALSE")
 		} else {
 			// argIndex not incremented — this is the last block that consumes it.
-			cond, scopeArgs := dataScopeCondAt("asset_id", &shared.DataScope{TenantID: *filter.TenantID,
+			// The assignee of a finding sees it too (filterspec.AssigneeScopeSQL).
+			cond, scopeArgs := filterspec.AssigneeScopeSQL("asset_id", "assigned_to", &shared.DataScope{TenantID: *filter.TenantID,
 				UserID: *filter.DataScopeUserID, Unrestricted: filter.DataScopeUnrestricted}, argIndex)
 			args = append(args, scopeArgs...)
 			conditions = append(conditions, cond)

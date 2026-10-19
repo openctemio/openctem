@@ -72,6 +72,14 @@ export interface ExecutiveSummary {
   p0_open: number
   p0_resolved_period: number
   p1_open: number
+  /** Live open P2 and P3 (with p0_open and p1_open: the current distribution). */
+  p2_open?: number
+  p3_open?: number
+  /**
+   * True when the figures are counted over the viewer's data scope. The stored
+   * trend history is organization-wide, so a scoped viewer has no trend.
+   */
+  scoped?: boolean
   /** Open within SLA: null when no open finding has an SLA (not measured, never 100). */
   sla_compliance_pct: number | null
   sla_breached: number
@@ -168,6 +176,8 @@ export interface AttackPathsResponse {
 
 export interface ScanCoverage {
   coverage_percent: number
+  /** Assets a scan could cover; 0 means coverage is not measurable. */
+  total_scannable?: number
   never_scanned: number
   critical_uncovered: number
 }
@@ -225,6 +235,9 @@ function useKey(url: string | null, tenantId: string | null): string | null {
 // HOOKS
 // ============================================
 
+/** The MTTR window every dashboard surface uses. */
+export const MTTR_WINDOW_DAYS = 90
+
 export function useRiskTrend(tenantId: string | null, days = 90) {
   return useSWR<RiskTrendPoint[]>(
     useKey(`/api/v1/dashboard/risk-trend?days=${days}`, tenantId),
@@ -256,9 +269,13 @@ export function useExecutiveSummary(tenantId: string | null) {
   )
 }
 
-export function useMttrAnalytics(tenantId: string | null) {
+/**
+ * Time to remediate over the trailing window. Every surface showing MTTR reads
+ * this one hook with the same window, so they show the same figure.
+ */
+export function useMttrAnalytics(tenantId: string | null, days = MTTR_WINDOW_DAYS) {
   return useSWR<MttrAnalytics>(
-    useKey('/api/v1/dashboard/mttr-analytics', tenantId),
+    useKey(`/api/v1/dashboard/mttr-analytics?days=${days}`, tenantId),
     (url: string) => get<MttrAnalytics>(url),
     config
   )
