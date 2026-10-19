@@ -220,7 +220,7 @@ GET   /api/v1/remediation/tasks/{task_id}/timeline
 POST  /api/v1/remediation/tasks/query/preview            preview a task from a query (read-only; §13)
 POST  /api/v1/remediation/tasks/query                    create a task from a query, snapshot or auto (409 FINDINGS_IN_OTHER_TASK)
 GET   /api/v1/remediation/tasks/{task_id}/query          the stored query, mode and auto state
-POST  /api/v1/remediation/tasks/{task_id}/query/rerun[/preview]  new matches; added only on confirmation
+POST  /api/v1/remediation/tasks/{task_id}/query/{run,preview}  new matches; added only on confirmation
 POST  /api/v1/remediation/tasks/{task_id}/query/auto     pause or resume auto include
 POST  /api/v1/query/from-filters                         a findings list filter as query text
 GET   /api/v1/remediation/suggestions                    list, best first (state, kind, key_kind, min_risk, search, queued)
