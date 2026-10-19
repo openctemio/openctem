@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
 	"github.com/openctemio/openctem/api/pkg/sensorsig"
 )
 
@@ -23,13 +24,19 @@ type fakeSigned struct {
 	keyID  string
 	nonces map[string]bool
 	used   int
+	// fixedID, when set, is the sensor id every identity gets.
+	fixedID shared.ID
 }
 
 func (f *fakeSigned) SigningIdentity(_ context.Context, keyID string, _ bool) (sensor.SensorIdentity, ed25519.PublicKey, error) {
 	if keyID != f.keyID {
 		return sensor.SensorIdentity{}, nil, errors.New("unknown")
 	}
-	return sensor.SensorIdentity{Sensor: &sensordom.Sensor{ID: shared.NewID(), AuthKind: sensordom.AuthKindKeyBound}}, f.pub, nil
+	id := shared.NewID()
+	if !f.fixedID.IsZero() {
+		id = f.fixedID
+	}
+	return sensor.SensorIdentity{Sensor: &sensordom.Sensor{ID: id, AuthKind: sensordom.AuthKindKeyBound}}, f.pub, nil
 }
 
 func (f *fakeSigned) UseNonce(_ context.Context, keyID, nonce string) error {
@@ -76,6 +83,21 @@ func TestAuthenticateSigned_Accepts(t *testing.T) {
 	}
 	if f.used != 1 {
 		t.Fatal("use not recorded")
+	}
+}
+
+func TestAuthenticateSigned_RelayedSensorMustMatch(t *testing.T) {
+	f, s := newSignedFixture(t)
+	f.fixedID = shared.NewID()
+	r := signedRequest(t, s, http.MethodGet, "/api/v2/sensor/hello", "")
+	r.Header.Set(relay.HeaderRelaySensor, f.fixedID.String())
+	if _, _, err := authenticateSigned(r, f, "", time.Now()); err != nil {
+		t.Fatalf("matching relayed sensor refused: %v", err)
+	}
+	r = signedRequest(t, s, http.MethodGet, "/api/v2/sensor/hello", "")
+	r.Header.Set(relay.HeaderRelaySensor, shared.NewID().String())
+	if _, _, err := authenticateSigned(r, f, "", time.Now()); !errors.Is(err, errSignedRefused) {
+		t.Fatalf("relayed request for another sensor: %v", err)
 	}
 }
 
