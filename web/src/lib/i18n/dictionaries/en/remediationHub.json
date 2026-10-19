@@ -87,6 +87,7 @@
   "remediationHub.dismiss.reasons.wrong_grouping": "Wrong grouping",
   "remediationHub.dismiss.reasons.wrong_owner": "Wrong owner",
   "remediationHub.dismiss.title": "Dismiss suggestion",
+  "remediationHub.event.campaign_conflict": "Another campaign also claimed {count} findings of this task when campaigns started holding tasks; they stayed here",
   "remediationHub.event.created": "Task created with {count} findings",
   "remediationHub.event.fix_claimed": "Marked fixed: {updated} findings claimed fixed",
   "remediationHub.event.members_added": "{count} findings added",
