@@ -113,8 +113,11 @@ included):
   pairing view's `job_signing_root`). The sensor pins that root only when
   the key set the platform serves is signed by it, and refuses to pair
   otherwise. The value comes from the signer's key set, which the database
-  cannot change; the strongest form is the root id the operator recorded at
-  `root keygen`, passed the same way.
+  cannot change, but the console receives it from the API: a compromised API
+  can show a root of its own, so the console's value is trust on first use
+  of the API, not out of band. The out-of-band form is the root id the
+  operator recorded at `root keygen`, compared with (or used instead of) the
+  console's value.
 
 Helm is not covered yet.
 
