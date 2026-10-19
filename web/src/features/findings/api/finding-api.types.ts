@@ -335,6 +335,8 @@ export interface ApiFinding {
   metadata?: Record<string, unknown>
   created_at: string
   updated_at: string
+  /** Optimistic-concurrency version: send it back as If-Match on a write. */
+  row_version?: number
 
   // Extended fields from SARIF/scanner output
   confidence?: number // 0-100 confidence score

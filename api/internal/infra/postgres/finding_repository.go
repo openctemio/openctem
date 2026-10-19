@@ -26,6 +26,9 @@ const maxJSONSize = 64 * 1024 * 1024 // 64MB upper bound for marshaled JSON fiel
 type FindingRepository struct {
 	db *DB
 	limitChecks
+	// afterEnrichLoad, when set (tests only), runs between the enrichment's
+	// read and its write, to stand in for a concurrent writer.
+	afterEnrichLoad func(attempt int)
 }
 
 // NewFindingRepository creates a new FindingRepository.
@@ -1178,6 +1181,20 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	if !strings.Contains(query, "sub_status_id = $") {
 		return errors.New("finding update: the sub-status column was not bound")
 	}
+	// Optimistic concurrency: a copy read from storage only lands while the
+	// row is still at the version it was read at (every UPDATE bumps it,
+	// migration 003113), so a stale copy never puts back what another writer
+	// changed. A caller that named the version it saw (an API If-Match) is
+	// refused when this copy is not at that version.
+	if want, ok := vulnerability.ExpectedRowVersion(ctx, finding.ID()); ok &&
+		(!finding.HasRowVersion() || finding.RowVersion() != want) {
+		return r.findingConflict(ctx, finding)
+	}
+	if finding.HasRowVersion() {
+		args = append(args, finding.RowVersion())
+		query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
+			fmt.Sprintf("\n\t\tWHERE id = $1 AND tenant_id = $20 AND row_version = $%d", len(args)), 1)
+	}
 	result, err := r.db.execStatusWrite(ctx, query, args...)
 
 	if err != nil {
@@ -1190,10 +1207,31 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	}
 
 	if rowsAffected == 0 {
+		if finding.HasRowVersion() {
+			return r.findingConflict(ctx, finding)
+		}
 		return vulnerability.FindingNotFoundError(finding.ID())
+	}
+	if finding.HasRowVersion() {
+		finding.RestoreRowVersion(finding.RowVersion() + 1)
 	}
 
 	return nil
+}
+
+// findingConflict explains a refused versioned write: not found when the row
+// is gone (or belongs to another tenant: the read is tenant-scoped, so another
+// tenant's id never answers "conflict"), otherwise a conflict carrying the
+// stored finding.
+func (r *FindingRepository) findingConflict(ctx context.Context, finding *vulnerability.Finding) error {
+	current, err := r.GetByID(ctx, finding.TenantID(), finding.ID())
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return vulnerability.FindingNotFoundError(finding.ID())
+		}
+		return &vulnerability.FindingConflictError{FindingID: finding.ID()}
+	}
+	return &vulnerability.FindingConflictError{FindingID: finding.ID(), Current: current}
 }
 
 // Delete removes a finding by ID.
@@ -2250,6 +2288,7 @@ func (r *FindingRepository) DeleteByScanID(ctx context.Context, tenantID shared.
 
 // UpdateScanIDBatchByFingerprints updates scan metadata for existing findings by their fingerprints.
 // This preserves user-set status (false_positive, accepted, etc.) while updating scan tracking.
+// A sighting counts one even when its enrichment lost the race to another writer, so concurrent sightings are never dropped from occurrence_count.
 // Returns the count of updated findings.
 func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, toolName string) (int64, error) {
 	if len(fingerprints) == 0 {
@@ -2261,6 +2300,7 @@ func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context,
 	query := `
 		UPDATE findings
 		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(), observation_state = 'present',
+			occurrence_count = occurrence_count + 1,
 			last_seen_tool = COALESCE(NULLIF($4, ''), last_seen_tool)
 		WHERE tenant_id = $2 AND fingerprint = ANY($3)
 	`
@@ -2433,7 +2473,7 @@ func (r *FindingRepository) selectQuery() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
-			branch_only,
+			branch_only, row_version,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2607,8 +2647,9 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	dests = append(dests, typeCols.dests()...)
 	dests = append(dests, netCols.dests()...)
 	dests = append(dests, scanCols.dests()...)
+	var rowVersion int64
 	dests = append(dests, sevCols.dests()...)
-	dests = append(dests, &branchOnly, &hasDataFlow)
+	dests = append(dests, &branchOnly, &rowVersion, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
 	}
@@ -2657,6 +2698,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	f.RestoreScannerDetails(scanCols.details())
 	f.RestoreSeverityProvenance(sevCols.provenance())
 	f.RestoreBranchOnly(branchOnly)
+	f.RestoreRowVersion(rowVersion)
 	return f, nil
 }
 
@@ -4008,14 +4050,17 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
-			branch_only,
+			branch_only, row_version,
 			FALSE AS has_data_flow
 		FROM findings
 	`
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 75
+const enrichColumnsPerRow = 63
+
+// enrichWhereColumns is the number of leading enrichColumnDefs used in WHERE.
+const enrichWhereColumns = 3
 
 // enrichBatchChunkSize caps rows per batch UPDATE; forEachStatementChunk lowers
 // it to what fits under PostgreSQL's bind-parameter limit (65535/75 = 873).
@@ -4028,12 +4073,22 @@ type enrichColumnDef struct {
 }
 
 // enrichColumnDefs defines the column order for batch enrichment VALUES clause.
-// First 2 columns (id, tenant_id) are used in WHERE, rest are SET columns.
+// The first enrichWhereColumns (id, tenant_id, row_version) are used in WHERE,
+// the rest are SET columns.
+//
+// The SET columns are only those EnrichFrom merges from a sighting. Columns
+// other writers own are never written here, because the row was read before
+// the merge and writing them back would revert a concurrent change: EPSS and
+// KEV (threat-intel refresh), the priority class, its reason and an analyst's
+// override, reachability (the priority worker) and the SLA deadline and status
+// (the SLA applier). The row_version predicate catches the rest: a row that
+// moved after it was read is re-read and merged again.
 //
 //nolint:gochecknoglobals // Package-level column definitions for batch enrichment query builder
 var enrichColumnDefs = []enrichColumnDef{
 	{"id", "uuid"},
 	{"tenant_id", "uuid"},
+	{"row_version", "bigint"},
 	{"title", "text"},
 	{"description", "text"},
 	{"snippet", "text"},
@@ -4069,17 +4124,6 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"is_network_accessible", "boolean"},
 	{"is_internet_accessible", "boolean"},
 	{"attack_prerequisites", "text"},
-	{"epss_score", "float8"},
-	{"epss_percentile", "float8"},
-	{"is_in_kev", "boolean"},
-	{"kev_due_date", "date"},
-	{"priority_class", "varchar(2)"},
-	{"priority_class_reason", "text"},
-	{"priority_class_override", "boolean"},
-	{"priority_class_overridden_by", "uuid"},
-	{"priority_class_overridden_at", "timestamptz"},
-	{"is_reachable", "boolean"},
-	{"reachable_from_count", "int"},
 	{"remediation_type", "text"},
 	{"estimated_fix_time", "int"},
 	{"fix_complexity", "text"},
@@ -4093,8 +4137,6 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"end_line", "int"},
 	{"start_column", "int"},
 	{"end_column", "int"},
-	{"sla_deadline", "timestamptz"},
-	{"sla_status", "text"},
 	{"last_seen_tool", "text"},
 	{"network_port", "int"},
 	{"network_transport", "text"},
@@ -4130,18 +4172,38 @@ func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenan
 		newByFP[fp] = f
 	}
 
-	// Load existing findings from DB
-	existingByFP, err := r.GetByFingerprintsBatch(ctx, tenantID, fingerprints)
-	if err != nil {
-		return 0, fmt.Errorf("failed to load existing findings for enrichment: %w", err)
+	// Load, merge and write; a row another writer changed between the read
+	// and the write is left alone by the row_version predicate, then read
+	// and merged again (bounded).
+	var totalEnriched int64
+	pending := fingerprints
+	for attempt := 0; attempt < vulnerability.FindingWriteAttempts && len(pending) > 0; attempt++ {
+		existingByFP, err := r.GetByFingerprintsBatch(ctx, tenantID, pending)
+		if err != nil {
+			return totalEnriched, fmt.Errorf("failed to load existing findings for enrichment: %w", err)
+		}
+		if r.afterEnrichLoad != nil {
+			r.afterEnrichLoad(attempt)
+		}
+		written, lost, err := r.enrichOnce(ctx, existingByFP, newByFP)
+		totalEnriched += written
+		if err != nil {
+			return totalEnriched, err
+		}
+		pending = lost
 	}
-
-	if len(existingByFP) == 0 {
-		return 0, nil
+	if len(pending) > 0 {
+		return totalEnriched, fmt.Errorf("enrich %d findings: %w", len(pending), vulnerability.ErrFindingConflict)
 	}
+	return totalEnriched, nil
+}
 
-	// Apply enrichment and collect args for batch UPDATE
+// enrichOnce merges each new sighting into the stored finding read with it
+// and writes the merged rows in one transaction. It returns how many rows
+// landed and the fingerprints whose row moved after it was read.
+func (r *FindingRepository) enrichOnce(ctx context.Context, existingByFP, newByFP map[string]*vulnerability.Finding) (int64, []string, error) {
 	allArgs := make([][]interface{}, 0, len(existingByFP))
+	fpByID := make(map[string]string, len(existingByFP))
 	for fp, existing := range existingByFP {
 		newData, ok := newByFP[fp]
 		if !ok {
@@ -4150,49 +4212,58 @@ func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenan
 		existing.EnrichFrom(newData)
 		args, argErr := collectEnrichArgs(existing)
 		if argErr != nil {
-			return 0, fmt.Errorf("failed to collect enrich args for %s: %w", fp, argErr)
+			return 0, nil, fmt.Errorf("failed to collect enrich args for %s: %w", fp, argErr)
 		}
 		allArgs = append(allArgs, args)
+		fpByID[existing.ID().String()] = fp
 	}
-
 	if len(allArgs) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 
 	// Batch UPDATE in transaction using chunked VALUES clause
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to begin enrichment transaction: %w", err)
+		return 0, nil, fmt.Errorf("failed to begin enrichment transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var totalEnriched int64
+	landed := make(map[string]bool, len(allArgs))
 	err = forEachStatementChunk(len(allArgs), enrichColumnsPerRow, 0, enrichBatchChunkSize, func(start, end int) error {
 		chunk := allArgs[start:end]
 		flatArgs := make([]interface{}, 0, len(chunk)*enrichColumnsPerRow)
 		for _, row := range chunk {
 			flatArgs = append(flatArgs, row...)
 		}
-		result, execErr := tx.ExecContext(ctx, buildBatchEnrichQuery(len(chunk)), flatArgs...)
+		rows, execErr := tx.QueryContext(ctx, buildBatchEnrichQuery(len(chunk)), flatArgs...)
 		if execErr != nil {
 			return fmt.Errorf("failed to batch update enriched findings: %w", execErr)
 		}
-		affected, raErr := result.RowsAffected()
-		if raErr != nil {
-			return fmt.Errorf("enriched findings row count: %w", raErr)
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if scanErr := rows.Scan(&id); scanErr != nil {
+				return fmt.Errorf("enriched finding id: %w", scanErr)
+			}
+			landed[id] = true
 		}
-		totalEnriched += affected
-		return nil
+		return rows.Err()
 	})
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("failed to commit enrichment transaction: %w", err)
+		return 0, nil, fmt.Errorf("failed to commit enrichment transaction: %w", err)
 	}
 
-	return totalEnriched, nil
+	var lost []string
+	for id, fp := range fpByID {
+		if !landed[id] {
+			lost = append(lost, fp)
+		}
+	}
+	return int64(len(landed)), lost, nil
 }
 
 // collectEnrichArgs marshals a single finding into the ordered parameter slice
@@ -4218,6 +4289,7 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		// WHERE columns
 		f.ID().String(),
 		f.TenantID().String(),
+		f.RowVersion(),
 		// SET columns
 		nullString(f.Title()),
 		nullString(f.Description()),
@@ -4257,17 +4329,6 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		f.IsNetworkAccessible(),
 		f.IsInternetAccessible(),
 		nullString(f.AttackPrerequisites()),
-		nullFloat64(f.EPSSScore()),
-		nullFloat64(f.EPSSPercentile()),
-		f.IsInKEV(),
-		nullTime(f.KEVDueDate()),
-		nullPriorityClass(f.PriorityClass()),
-		nullString(f.PriorityClassReason()),
-		f.PriorityClassOverride(),
-		nullID(f.PriorityClassOverriddenBy()),
-		nullTime(f.PriorityClassOverriddenAt()),
-		f.IsReachable(),
-		f.ReachableFromCount(),
 		nullString(f.RemediationType().String()),
 		nullIntPtr(f.EstimatedFixTime()),
 		nullString(f.FixComplexity().String()),
@@ -4281,12 +4342,6 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		f.EndLine(),
 		f.StartColumn(),
 		f.EndColumn(),
-		// SLA — carried through re-ingest enrichment so the deadline persists
-		// (EnrichFrom preserves it; without these columns the batch UPDATE
-		// would leave the row untouched, which is fine, but keeping them here
-		// means the enrich path is the single write surface for all findings).
-		nullTime(f.SLADeadline()),
-		f.SLAStatus().String(),
 		nullString(f.LastSeenTool()),
 		// Network location — EnrichFrom fills it first-wins (enrichNetwork).
 	}, append(append(findingNetworkArgs(f), findingScannerArgs(f)...),
@@ -4302,7 +4357,8 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 //	UPDATE findings AS f SET title = d.title, description = d.description, ...
 //	FROM (VALUES ($1::uuid, $2::uuid, $3::text, ...), ($51, $52, $53, ...), ...)
 //	AS d(id, tenant_id, title, description, ...)
-//	WHERE f.id = d.id AND f.tenant_id = d.tenant_id
+//	WHERE f.id = d.id AND f.tenant_id = d.tenant_id AND f.row_version = d.row_version
+//	RETURNING f.id
 func buildBatchEnrichQuery(rowCount int) string {
 	colCount := len(enrichColumnDefs)
 	var sb strings.Builder
@@ -4313,9 +4369,9 @@ func buildBatchEnrichQuery(rowCount int) string {
 	// A re-sighting makes a stale finding present again (observation.go).
 	sb.WriteString("UPDATE findings AS f SET observation_state = 'present', ")
 
-	// SET clause: columns 2..N (skip id, tenant_id which are WHERE columns)
-	for i := 2; i < colCount; i++ {
-		if i > 2 {
+	// SET clause: the columns after the WHERE columns (id, tenant_id, row_version)
+	for i := enrichWhereColumns; i < colCount; i++ {
+		if i > enrichWhereColumns {
 			sb.WriteString(", ")
 		}
 		col := enrichColumnDefs[i].name
@@ -4371,7 +4427,9 @@ func buildBatchEnrichQuery(rowCount int) string {
 		sb.WriteString(col.name)
 	}
 
-	sb.WriteString(") WHERE f.id = d.id AND f.tenant_id = d.tenant_id")
+	// Optimistic concurrency: a row that moved after it was read is left
+	// alone (and re-read by the caller); the ids that landed come back.
+	sb.WriteString(") WHERE f.id = d.id AND f.tenant_id = d.tenant_id AND f.row_version = d.row_version RETURNING f.id")
 
 	return sb.String()
 }
