@@ -28,6 +28,8 @@
 //
 // The default output is aggregate counts only, no names.
 //
+// An applying run writes one tenant audit entry per affected tenant per run (assets.merged).
+//
 // Exit status: 0 success, 1 a merge failed, 2 usage or connection error.
 package repomerge
 
@@ -44,6 +46,8 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/tools/toolaudit"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -89,22 +93,50 @@ func Main() {
 	} else if tenants, err = repo.TenantsWithRepositories(ctx); err != nil {
 		fail(2, err.Error())
 	}
-	os.Exit(run(ctx, repo, tenants, *apply, *resolve, *asJSON))
+	auditWriter := postgres.NewAuditRepository(&postgres.DB{DB: sqlDB})
+	os.Exit(run(ctx, repo, auditWriter, tenants, *apply, *resolve, *asJSON))
+}
+
+// merger merges a tenant's duplicate repositories.
+type merger interface {
+	MergeDuplicateRepositories(ctx context.Context, tenantID shared.ID, apply, resolve bool) (*postgres.RepositoryMergeReport, error)
+}
+
+// auditRun records the tenant's merges in its own audit log: one entry per
+// tenant per run, only for an applied run that merged something.
+func auditRun(ctx context.Context, w toolaudit.Writer, runID string, tenant shared.ID, rep *postgres.RepositoryMergeReport) error {
+	if !rep.Applied || rep.AssetsMerged == 0 {
+		return nil
+	}
+	return toolaudit.Record(ctx, w, toolaudit.Event{
+		TenantID:     tenant,
+		Action:       audit.ActionAssetsMerged,
+		ResourceType: audit.ResourceTypeAsset,
+		Actor:        "repomerge",
+		RunID:        runID,
+		Counts: map[string]int{"repositories": rep.Groups, "assets_merged": rep.AssetsMerged, "findings": rep.Findings,
+			"branches": rep.Branches, "pipelines": rep.Pipelines, "runs": rep.Runs},
+	})
 }
 
 // run merges (or counts) per tenant and prints the reports; it returns the
 // exit status.
-func run(ctx context.Context, repo *postgres.RepositoryMergeRepository, tenants []shared.ID, apply, resolve, asJSON bool) int {
+func run(ctx context.Context, repo merger, auditWriter toolaudit.Writer, tenants []shared.ID, apply, resolve, asJSON bool) int {
 	status := 0
 	total := postgres.RepositoryMergeReport{Applied: apply}
 	reports := make([]*postgres.RepositoryMergeReport, 0, len(tenants))
 	affected := 0
+	runID := toolaudit.NewRunID()
 	for _, t := range tenants {
 		rep, err := repo.MergeDuplicateRepositories(ctx, t, apply, resolve)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "repomerge: tenant %s: %v\n", t, err)
 			status = 1
 			continue
+		}
+		if err := auditRun(ctx, auditWriter, runID, t, rep); err != nil {
+			fmt.Fprintf(os.Stderr, "repomerge: tenant %s: %v\n", t, err)
+			status = 1
 		}
 		if rep.FailedGroups > 0 {
 			status = 1

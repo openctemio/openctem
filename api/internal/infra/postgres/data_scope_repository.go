@@ -74,7 +74,8 @@ func (r *DataScopeRepository) AssetIDsInScope(ctx context.Context, tenantID, use
 }
 
 // FindingIDsInScope returns the subset of findingIDs (in the tenant) whose
-// asset the user has a scope row for.
+// asset the user has a scope row for, or that are assigned to the user (the
+// assignee sees the finding, never on an asset hidden from them).
 func (r *DataScopeRepository) FindingIDsInScope(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) ([]shared.ID, error) {
 	if len(findingIDs) == 0 {
 		return nil, nil
@@ -86,8 +87,9 @@ func (r *DataScopeRepository) FindingIDsInScope(ctx context.Context, tenantID, u
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT f.id FROM findings f
 		 WHERE f.tenant_id = $2 AND f.id = ANY($3::uuid[])
-		   AND f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa
-		                      WHERE uaa.user_id = $1 AND uaa.tenant_id = $2)
+		   AND (f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa
+		                       WHERE uaa.user_id = $1 AND uaa.tenant_id = $2)
+		        OR f.assigned_to = $1)
 		   AND `+notHiddenCond("f.asset_id", 1, 2),
 		userID.String(), tenantID.String(), pq.Array(ids))
 	if err != nil {

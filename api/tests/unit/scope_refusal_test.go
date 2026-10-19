@@ -16,7 +16,7 @@ func TestScopeRefusal_CodesAndFixes(t *testing.T) {
 		scopedom.RefusalNeedsReview, scopedom.RefusalCandidate, scopedom.RefusalDependency, scopedom.RefusalMonitorOnly,
 		scopedom.RefusalNoEntry, scopedom.RefusalEntryPending, scopedom.RefusalEntryExpired, scopedom.RefusalEntryInactive,
 		scopedom.RefusalTierExceeds, scopedom.RefusalProofRequired, scopedom.RefusalOutOfDataScope, scopedom.RefusalNotAnAsset,
-		scopedom.RefusalZoneNone, scopedom.RefusalZoneNoSensor, scopedom.RefusalZoneSensorMismatch,
+		scopedom.RefusalZoneNone, scopedom.RefusalZoneNoSensor, scopedom.RefusalZoneSensorMismatch, scopedom.RefusalUnresolved,
 		scopedom.RefusalProgramPlatform, scopedom.RefusalConstrained,
 	}
 	all := permission.AllPermissions()

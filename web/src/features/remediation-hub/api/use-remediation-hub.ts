@@ -180,7 +180,13 @@ export const hubApi = {
     assignee_group_id?: string
     deadline?: string
     action_id?: string
+    campaign_id?: string
+    conflicts?: ConflictResolution
   }) => post<RemediationTask>(TASKS, body),
+  addMembers: (
+    id: string,
+    body: { version: number; finding_ids: string[]; conflicts?: ConflictResolution }
+  ) => post<RemediationTask>(`${TASKS}/${id}/members`, body),
   resolveTask: (id: string, body: { version: number; note: string }) =>
     post<MarkFixedResult>(`${TASKS}/${id}/resolve`, body),
   splitTask: (

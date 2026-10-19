@@ -17,6 +17,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -35,6 +36,22 @@ type aoHarness struct {
 	actor  shared.ID // a member with assets:read/write/delete
 	mu     sync.Mutex
 	perms  []string // the actor's permissions (assets:* by default); setPerms
+	owners *handler.AssetOwnerHandler
+}
+
+// withAudit records the handler's audit events in audit_logs.
+func (h *aoHarness) withAudit() {
+	h.owners.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(&postgres.DB{DB: h.db}), logger.NewNop()))
+}
+
+func (h *aoHarness) auditCount(action string, resource shared.ID) int {
+	h.t.Helper()
+	var n int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = $2 AND resource_id = $3`,
+		h.tenant.String(), action, resource.String()).Scan(&n); err != nil {
+		h.t.Fatal(err)
+	}
+	return n
 }
 
 // setPerms replaces the actor's permissions for the next requests.
@@ -77,6 +94,7 @@ func newAOHarness(t *testing.T) *aoHarness {
 
 	db := &postgres.DB{DB: sqldb}
 	ownerHandler := handler.NewAssetOwnerHandler(postgres.NewAccessControlRepository(db), postgres.NewAssetRepository(db), logger.NewNop())
+	h.owners = ownerHandler
 	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete)
 	auth := Middleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -203,9 +221,13 @@ func TestAssetOwners_OwnerRefOwnerRemovalClearsOwnerRef(t *testing.T) {
 		return ref.String
 	}
 
+	// Bob is a manual secondary owner: removing him removes his view of the
+	// asset, an access change (team:groups:write).
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete, permission.GroupsWrite)
 	if status, body := h.do(http.MethodDelete, "/api/v1/assets/"+asset.String()+"/owners/"+ids[bob.String()], nil); status != http.StatusNoContent {
 		t.Fatalf("remove manual owner = %d %s", status, body)
 	}
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete)
 	if ownerRef() == "" {
 		t.Fatal("removing a manual owner cleared owner_ref")
 	}
@@ -240,46 +262,117 @@ func (h *aoHarness) scopeRows(user shared.ID) int {
 	return n
 }
 
-// Owner decision O1: naming a user as an owner (any type) is an assignment
-// only and never changes their data scope, and removing an owner never takes
-// away access a grant gives.
-func TestAssetOwners_AddingAUserOwnerDoesNotChangeDataScope(t *testing.T) {
+// A primary or secondary user owner sees the asset (ownership grants view):
+// naming, re-typing or removing one changes who can see the asset, so it needs
+// team:groups:write like a group owner or an access grant, nobody names
+// themself, and each change is audited. Stakeholder and informed owners grant
+// nothing and need only assets:write. Removing an owner never takes away
+// access a grant gives.
+func TestAssetOwners_PrimaryOwnerGrantsView(t *testing.T) {
 	h := newAOHarness(t)
+	h.withAudit()
 	dev := h.member("dev")
 	asset := h.asset("")
+	path := "/api/v1/assets/" + asset.String() + "/owners"
+	add := func(user shared.ID, typ string) (int, string) {
+		return h.do(http.MethodPost, path, map[string]string{"user_id": user.String(), "ownership_type": typ})
+	}
 
-	for _, typ := range []string{"primary", "secondary", "stakeholder", "informed"} {
+	// assets:* alone: primary and secondary refused, nothing granted.
+	for _, typ := range []string{"primary", "secondary"} {
+		if status, body := add(dev, typ); status != http.StatusForbidden {
+			t.Fatalf("add %s owner with assets:write only = %d %s, want 403", typ, status, body)
+		}
+	}
+	// Stakeholder and informed owners: allowed, no access.
+	for _, typ := range []string{"stakeholder", "informed"} {
 		a := h.asset("")
-		status, body := h.do(http.MethodPost, "/api/v1/assets/"+a.String()+"/owners",
-			map[string]string{"user_id": dev.String(), "ownership_type": typ})
-		if status != http.StatusCreated {
+		if status, body := h.do(http.MethodPost, "/api/v1/assets/"+a.String()+"/owners",
+			map[string]string{"user_id": dev.String(), "ownership_type": typ}); status != http.StatusCreated {
 			t.Fatalf("add %s owner = %d %s", typ, status, body)
 		}
 	}
 	if n := h.scopeRows(dev); n != 0 {
-		t.Fatalf("adding user owners created %d data-scope rows, want 0 (fail-open user would drop to seeing only these)", n)
+		t.Fatalf("refused or non-granting owners created %d data-scope rows, want 0", n)
 	}
 
-	// A grant gives access; adding then removing an owner leaves it alone.
 	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete, permission.GroupsRead, permission.GroupsWrite)
-	if status, body := h.do(http.MethodPost, "/api/v1/assets/"+asset.String()+"/access-grants",
-		map[string]string{"user_id": dev.String()}); status != http.StatusCreated {
-		t.Fatalf("grant = %d %s", status, body)
+	// Nobody names themself a viewing owner (the access-grant rule).
+	if status, body := add(h.actor, "primary"); status != http.StatusForbidden {
+		t.Fatalf("self as primary owner = %d %s, want 403", status, body)
 	}
-	status, body := h.do(http.MethodPost, "/api/v1/assets/"+asset.String()+"/owners",
-		map[string]string{"user_id": dev.String(), "ownership_type": "primary"})
+	status, body := add(dev, "primary")
 	if status != http.StatusCreated {
-		t.Fatalf("add owner = %d %s", status, body)
+		t.Fatalf("add primary owner with groups:write = %d %s", status, body)
 	}
 	var created struct {
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal([]byte(body), &created)
-	if status, body := h.do(http.MethodDelete, "/api/v1/assets/"+asset.String()+"/owners/"+created.ID, nil); status != http.StatusNoContent {
+	if !h.canSee(dev, asset) || h.scopeRows(dev) != 1 {
+		t.Fatal("primary owner does not see the asset (or sees more)")
+	}
+	if n := h.auditCount("asset.access_granted", asset); n != 1 {
+		t.Errorf("access_granted audit rows = %d, want 1", n)
+	}
+
+	// Demotion to stakeholder needs groups:write and removes access.
+	ownerPath := path + "/" + created.ID
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete)
+	if status, body := h.do(http.MethodPut, ownerPath, map[string]string{"ownership_type": "stakeholder"}); status != http.StatusForbidden {
+		t.Fatalf("demote without groups:write = %d %s, want 403", status, body)
+	}
+	// primary -> secondary changes no access: assets:write is enough.
+	if status, body := h.do(http.MethodPut, ownerPath, map[string]string{"ownership_type": "secondary"}); status != http.StatusNoContent {
+		t.Fatalf("primary -> secondary = %d %s", status, body)
+	}
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete, permission.GroupsRead, permission.GroupsWrite)
+	if status, body := h.do(http.MethodPut, ownerPath, map[string]string{"ownership_type": "stakeholder"}); status != http.StatusNoContent {
+		t.Fatalf("demote = %d %s", status, body)
+	}
+	if h.canSee(dev, asset) {
+		t.Fatal("demoted owner still sees the asset")
+	}
+	if n := h.auditCount("asset.access_revoked", asset); n != 1 {
+		t.Errorf("access_revoked audit rows = %d, want 1", n)
+	}
+	if status, body := h.do(http.MethodPut, ownerPath, map[string]string{"ownership_type": "primary"}); status != http.StatusNoContent {
+		t.Fatalf("promote = %d %s", status, body)
+	}
+
+	// A grant gives access too; removing the owner leaves it.
+	if status, body := h.do(http.MethodPost, "/api/v1/assets/"+asset.String()+"/access-grants",
+		map[string]string{"user_id": dev.String()}); status != http.StatusCreated {
+		t.Fatalf("grant = %d %s", status, body)
+	}
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete)
+	if status, body := h.do(http.MethodDelete, ownerPath, nil); status != http.StatusForbidden {
+		t.Fatalf("remove primary owner without groups:write = %d %s, want 403", status, body)
+	}
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete, permission.GroupsRead, permission.GroupsWrite)
+	if status, body := h.do(http.MethodDelete, ownerPath, nil); status != http.StatusNoContent {
 		t.Fatalf("remove owner = %d %s", status, body)
 	}
 	if !h.canSee(dev, asset) {
 		t.Fatal("removing an owner took away access given by an explicit grant")
+	}
+
+	// Without the grant, an ex-owner loses the asset at once.
+	other := h.asset("")
+	status, body = h.do(http.MethodPost, "/api/v1/assets/"+other.String()+"/owners",
+		map[string]string{"user_id": dev.String(), "ownership_type": "secondary"})
+	if status != http.StatusCreated {
+		t.Fatalf("add secondary owner = %d %s", status, body)
+	}
+	_ = json.Unmarshal([]byte(body), &created)
+	if !h.canSee(dev, other) {
+		t.Fatal("secondary owner does not see the asset")
+	}
+	if status, body := h.do(http.MethodDelete, "/api/v1/assets/"+other.String()+"/owners/"+created.ID, nil); status != http.StatusNoContent {
+		t.Fatalf("remove secondary owner = %d %s", status, body)
+	}
+	if h.canSee(dev, other) {
+		t.Fatal("ex-owner still sees the asset")
 	}
 }
 

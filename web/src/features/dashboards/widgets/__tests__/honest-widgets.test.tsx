@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import type { ExecutiveSummary } from '@/features/dashboard/hooks/use-ctem-dashboard'
 
 let summary: Partial<ExecutiveSummary> | undefined
+let summaryError: unknown
 
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 'tenant-1' } }),
@@ -14,7 +15,7 @@ vi.mock('@/features/dashboard', () => ({
   }),
 }))
 vi.mock('@/features/dashboard/hooks/use-ctem-dashboard', () => ({
-  useExecutiveSummary: () => ({ data: summary, isLoading: false }),
+  useExecutiveSummary: () => ({ data: summary, isLoading: false, error: summaryError }),
   useThreatIntelStats: () => ({ data: undefined, isLoading: false }),
   useScanCoverage: () => ({ data: undefined, isLoading: false }),
   useAttackPaths: () => ({ data: undefined, isLoading: false }),
@@ -36,6 +37,16 @@ const render1 = (type: string) => {
 describe('widgets render a figure that is not measured as a dash', () => {
   beforeEach(() => {
     summary = undefined
+    summaryError = undefined
+  })
+
+  // research/188 A-003: a failed read rendered "P0 open 0".
+  it('a failed read shows a dash and says so, never 0', () => {
+    summaryError = new Error('500')
+    render1('p0_open')
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText("Couldn't load these figures")).toBeInTheDocument()
+    expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 
   it('open within SLA: dash when no open finding has an SLA, never 0% or 100%', () => {
