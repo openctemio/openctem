@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"strings"
 )
 
 // HashToken returns the SHA256 hash of a token as a hex string.
@@ -116,4 +117,17 @@ func PepperID(pepper string) string {
 	mac := hmac.New(sha256.New, []byte(pepper))
 	mac.Write([]byte(pepperIDContext))
 	return hex.EncodeToString(mac.Sum(nil))[:16]
+}
+
+// PaddedTokenVariant returns the legacy padded form of an unpadded 32-byte
+// base64url token (the same token with its trailing "=" restored). Tokens
+// issued before the switch to unpadded encoding were stored hashed in their
+// padded form, and mail clients often strip that "=" from the link, so a
+// lookup that misses retries once with this variant. ok is false when the
+// token is not a 43-character unpadded token.
+func PaddedTokenVariant(token string) (padded string, ok bool) {
+	if len(token) != 43 || strings.HasSuffix(token, "=") {
+		return "", false
+	}
+	return token + "=", true
 }

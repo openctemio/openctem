@@ -111,15 +111,15 @@ describe('ExposureHero', () => {
 })
 
 describe('FixNextQueue', () => {
-  it('ranks chains and top risks by score with KEV chip and Triage link', () => {
+  it('lists findings, then chains, with KEV and EPSS reason chips and a Triage link', () => {
     render(<FixNextQueue chains={chains} topRisks={summary.top_risks} />)
     expect(screen.getByText(/example.com — via public/i)).toBeInTheDocument()
     expect(screen.getByText('Stripe access token in repo')).toBeInTheDocument()
     expect(screen.getAllByText('KEV').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Triage/).length).toBe(2)
-    // Chain (52) outranks the finding (EPSS 0.42 -> 42)
-    expect(screen.getByText('52')).toBeInTheDocument()
-    expect(screen.getByText('42')).toBeInTheDocument()
+    // EPSS is a reason chip, not a bare rank number.
+    expect(screen.getByText('EPSS 42%')).toBeInTheDocument()
+    expect(screen.queryByText('52')).toBeNull()
   })
 
   it('shows an empty state when nothing is exploitable', () => {

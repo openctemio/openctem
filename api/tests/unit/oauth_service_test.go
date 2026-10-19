@@ -360,6 +360,13 @@ func (m *mockOAuthRefreshTokenRepo) Update(_ context.Context, _ *session.Refresh
 	return nil
 }
 
+func (m *mockOAuthRefreshTokenRepo) MarkUsedIfUnused(_ context.Context, _ shared.ID) (bool, error) {
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	return true, nil
+}
+
 func (m *mockOAuthRefreshTokenRepo) Delete(_ context.Context, _ shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr

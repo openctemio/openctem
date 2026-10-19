@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -95,7 +96,7 @@ const (
 	// AlgorithmDeterministic names the key-based generator; its version
 	// changes when its rules change.
 	AlgorithmDeterministic        = "deterministic"
-	AlgorithmDeterministicVersion = 1
+	AlgorithmDeterministicVersion = 2
 	// MinGroupMembers is the smallest new group suggested, unless a member
 	// is P0 or in KEV (then one is enough).
 	MinGroupMembers = 2
@@ -144,6 +145,10 @@ type Candidate struct {
 	InKEV         bool
 	SLADeadline   *time.Time
 	RiskPoints    int
+	// RuleID and FindingTitle feed the confidence of a solution-text group:
+	// one rule and one vulnerability make "one fix" more certain.
+	RuleID       string
+	FindingTitle string
 }
 
 // IsUrgent reports a P0 or KEV finding.
@@ -260,16 +265,81 @@ func idOrEmpty(id *shared.ID) string {
 	return id.String()
 }
 
-// KeyConfidence is how sure a key is to mean "one fix": an exact package
-// target or secret is certain; a solution text match is weaker.
+// Basis factors: why the generator believes one fix closes every finding of
+// a suggestion. Stored in fix_spec.basis so the console can explain the
+// confidence in words.
+const (
+	BasisSamePackageTarget = "same_package_target"
+	BasisSameSecretValue   = "same_secret_value"
+	BasisSameSolutionText  = "same_specific_solution_text"
+	BasisSameRule          = "same_rule"
+	BasisSameFindingTitle  = "same_finding_title"
+)
+
+// maxBasisRules bounds the rule ids a suggestion lists in fix_spec.
+const maxBasisRules = 5
+
+// KeyConfidence is the floor of how sure a key is to mean "one fix": an exact
+// package target or secret is certain; a specific solution text starts at
+// 0.6 and gains from the members (Confidence).
 func KeyConfidence(key string) float64 {
 	switch KeyKind(key) {
 	case KindUpgrade, KindRotate:
 		return 1.0
 	case KindSol:
-		return 0.7
+		return 0.6
 	}
 	return 0.5
+}
+
+// Confidence is how sure the generator is that one fix closes every one of
+// these findings, with the factors behind it. An exact package target or
+// secret value is certain. A specific solution text is 0.6, plus 0.2 when
+// every finding comes from one scanner rule and 0.1 when every finding is the
+// same vulnerability (same title); the factors not met are left out.
+func Confidence(key string, cs []Candidate) (float64, []string) {
+	switch KeyKind(key) {
+	case KindUpgrade:
+		return 1.0, []string{BasisSamePackageTarget}
+	case KindRotate:
+		return 1.0, []string{BasisSameSecretValue}
+	case KindSol:
+		conf, basis := 0.6, []string{BasisSameSolutionText}
+		rules, titles := map[string]bool{}, map[string]bool{}
+		for _, c := range cs {
+			rules[strings.ToLower(strings.TrimSpace(c.RuleID))] = true
+			titles[strings.ToLower(strings.TrimSpace(c.FindingTitle))] = true
+		}
+		if len(rules) == 1 && !rules[""] {
+			conf += 0.2
+			basis = append(basis, BasisSameRule)
+		}
+		if len(titles) == 1 && !titles[""] {
+			conf += 0.1
+			basis = append(basis, BasisSameFindingTitle)
+		}
+		return math.Round(conf*100) / 100, basis
+	}
+	return KeyConfidence(key), nil
+}
+
+// basisRules lists up to maxBasisRules distinct rule ids, sorted.
+func basisRules(cs []Candidate) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		r := strings.TrimSpace(c.RuleID)
+		if r == "" || seen[r] {
+			continue
+		}
+		seen[r] = true
+		out = append(out, r)
+	}
+	sort.Strings(out)
+	if len(out) > maxBasisRules {
+		out = out[:maxBasisRules]
+	}
+	return out
 }
 
 // FixSpecForKey describes the fix a key names, for the fix steps a person
@@ -382,7 +452,7 @@ func newSuggestion(tenantID shared.ID, kind SuggestionKind, key string, cs []Can
 	s := Suggestion{
 		TenantID: tenantID, Kind: kind, Algorithm: AlgorithmDeterministic, AlgorithmVersion: AlgorithmDeterministicVersion,
 		Key: key, KeyKind: KeyKind(key), TargetActionID: actionID, TargetTaskID: taskID,
-		Confidence: KeyConfidence(key), FixSpec: FixSpecForKey(key), State: SuggestionProposed,
+		FixSpec: FixSpecForKey(key), State: SuggestionProposed,
 	}
 	if len(cs) > MaxSuggestionMembers {
 		s.Truncated = len(cs) - MaxSuggestionMembers
@@ -448,6 +518,14 @@ func newSuggestion(tenantID shared.ID, kind SuggestionKind, key string, cs []Can
 	sort.SliceStable(s.Partitions, func(i, j int) bool { return s.Partitions[i].RiskPoints > s.Partitions[j].RiskPoints })
 	s.MemberCount = len(s.FindingIDs)
 	s.RiskParts.AssetCount = len(assets)
+	var basis []string
+	s.Confidence, basis = Confidence(key, cs)
+	if len(basis) > 0 {
+		s.FixSpec["basis"] = basis
+	}
+	if rules := basisRules(cs); len(rules) > 0 {
+		s.FixSpec["rule_ids"] = rules
+	}
 	s.Identity = Identity(kind, key, actionID, taskID, owner)
 	return s
 }
@@ -592,6 +670,8 @@ func CanAutoJoinInto(s TaskState) bool { return s == TaskStateOpen || s == TaskS
 
 // AcceptPlanTask is one task an accept creates.
 type AcceptPlanTask struct {
+	// ID is the new task's id (the repository sets one when zero).
+	ID         shared.ID
 	Title      string
 	Owner      Owner
 	FindingIDs []shared.ID
@@ -615,6 +695,9 @@ type AcceptPlan struct {
 	Excluded []shared.ID
 	AutoJoin bool
 	ActorID  *shared.ID
+	// Conflicts resolves findings taken by another active task since the
+	// suggestion was made (zero value: refuse them).
+	Conflicts ConflictResolution
 }
 
 // AcceptResult is what an accept created.
@@ -623,11 +706,17 @@ type AcceptResult struct {
 	ActionID     shared.ID   `json:"action_id"`
 	TaskIDs      []shared.ID `json:"task_ids"`
 	Joined       int         `json:"joined"`
-	// Dropped are findings that closed or joined another task since the
-	// suggestion was made; they were left out.
+	// Dropped are findings that closed since the suggestion was made; they
+	// were left out.
 	Dropped []shared.ID `json:"dropped"`
+	// Skipped are findings of another active task left out as asked.
+	Skipped []shared.ID `json:"skipped"`
+	// Moved counts findings moved out of another task as asked.
+	Moved int `json:"moved"`
+	// Claim reports the moves (for the audit log and notifications).
+	Claim ClaimReport `json:"-"`
 }
 
 // ErrNothingToAccept: every finding of the suggestion was removed, closed or
-// taken by another task.
+// skipped.
 var ErrNothingToAccept = fmt.Errorf("%w: no finding is left to accept", shared.ErrValidation)
