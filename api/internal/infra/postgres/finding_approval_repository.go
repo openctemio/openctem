@@ -445,6 +445,10 @@ func applyApprovedInTx(ctx context.Context, tx *sql.Tx, a *vulnerability.Approva
 	} else if n == 0 {
 		return fmt.Errorf("%w: the finding changed since the request; it can no longer move to %s", shared.ErrValidation, status)
 	}
+	// The finding's ticket status push, queued with the move.
+	if err := enqueueContextJobsForTx(ctx, tx, []shared.ID{a.FindingID}, []shared.ID{a.FindingID}); err != nil {
+		return err
+	}
 	if entry != nil {
 		if err := insertFindingActivity(ctx, tx, entry); err != nil {
 			return err
