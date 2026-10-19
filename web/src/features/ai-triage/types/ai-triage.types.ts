@@ -58,7 +58,8 @@ export interface AITriageResult {
   // Timestamps
   createdAt: string
   completedAt?: string
-  errorMessage?: string
+  /** Failure code of a failed triage; the UI translates it. */
+  errorCode?: string
 }
 
 /**
@@ -153,11 +154,15 @@ export type AIMode = 'platform' | 'byok' | 'agent' | 'disabled'
 /**
  * AI configuration info returned from the API
  */
+/** Why AI triage cannot run for the organization (GET /findings/ai-triage/config). */
+export type AIUnavailableReason = 'not_enabled' | 'platform_not_configured' | 'budget_exhausted'
+
 export interface AIConfig {
   mode: AIMode
   provider: string
   model: string
   isEnabled: boolean
+  reason?: AIUnavailableReason
   autoTriageEnabled: boolean
   autoTriageSeverities?: string[]
   monthlyTokenLimit: number
