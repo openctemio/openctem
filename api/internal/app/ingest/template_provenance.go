@@ -56,7 +56,11 @@ func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.T
 	}
 	p := vulnerability.TemplateProvenance{}
 	p.TemplateDigest, _ = f.Properties["template_digest"].(string)
-	p.TemplatePath, _ = f.Properties["template_path"].(string)
+	if raw, _ := f.Properties["template_path"].(string); raw != "" {
+		// A sensor may report the file on its own disk: keep the path
+		// inside the template pack only.
+		p.TemplatePath = vulnerability.NormalizeTemplatePath(raw).Rel
+	}
 	p.TemplatesVersion, p.TemplatesDigest = reportTemplateRelease(tool)
 	return p.Sanitize()
 }

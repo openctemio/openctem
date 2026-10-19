@@ -52,7 +52,7 @@ func FindingValues(f *vulnerability.Finding, asset *AssetInfo, assignee *UserInf
 	if cve := strings.TrimSpace(f.CVEID()); cve != "" {
 		v["finding.cve_ids"] = ticketmapdom.List(cve)
 	}
-	if p := f.FilePath(); p != "" {
+	if p := vulnerability.DisplayPath(f.FilePath()); p != "" {
 		v["finding.file_path"] = ticketmapdom.Text(p)
 		loc := p
 		if f.StartLine() > 0 {
@@ -122,7 +122,7 @@ func TaskValues(c *remediation.Campaign, members []*vulnerability.Finding, total
 		if i >= maxTableRows {
 			break
 		}
-		loc := f.FilePath()
+		loc := vulnerability.DisplayPath(f.FilePath())
 		if loc != "" && f.StartLine() > 0 {
 			loc = fmt.Sprintf("%s:%d", loc, f.StartLine())
 		}

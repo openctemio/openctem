@@ -119,13 +119,19 @@ function ScoreRow({ score }: { score: FindingSourceScore }) {
   )
 }
 
-export function SourceDataSection({ data }: { data: FindingSourceData }) {
+export function SourceDataSection({
+  data,
+  ruleName,
+}: {
+  data: FindingSourceData
+  ruleName?: string
+}) {
   const { t } = useTranslation()
   const n = data.native
   const l = data.lifecycle
   const sol = data.solution
   const vex = data.vex
-  const hasRecord = !!n || !!l || data.vulnerabilityIds.length > 0 || !!data.locationKey
+  const hasRecord = !!n || !!l || data.vulnerabilityIds.length > 0 || !!data.locationKey || !!data.rule
   return (
     <>
       {data.scores.length > 0 && (
@@ -262,6 +268,27 @@ export function SourceDataSection({ data }: { data: FindingSourceData }) {
                       <span key={`${text}-${i}`}>{text}</span>
                     )
                   })}
+                </span>
+              ) : null}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.detectionRule', 'Detection rule')} full>
+              {data.rule || n?.vulnId ? (
+                <span className="space-y-0.5" data-testid="source-detection-rule">
+                  <span className="block text-sm">
+                    {[n?.vulnId, ruleName && ruleName !== n?.vulnId ? ruleName : undefined]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                  {data.rule?.pack && (
+                    <span className="block text-xs text-muted-foreground">
+                      {data.rule.version ? `${data.rule.pack}@${data.rule.version}` : data.rule.pack}
+                    </span>
+                  )}
+                  {data.rule?.path && (
+                    <span className="block">
+                      <Mono>{data.rule.path}</Mono>
+                    </span>
+                  )}
                 </span>
               ) : null}
             </DetailField>
