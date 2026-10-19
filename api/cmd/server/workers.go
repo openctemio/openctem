@@ -345,6 +345,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// No offline conviction while the platform itself is degraded (RFC-035
 	// D3): just started, stalled, or slow to handle heartbeats.
 	sensorHealth.SetPlatformHealth(svc.SensorPlatformHealth)
+	// Judges from the liveness store in redis mode, compares in shadow mode.
+	if svc.Sensor != nil {
+		sensorHealth.SetLiveness(svc.Sensor.LivenessMode(), svc.Sensor.LivenessStore())
+	}
+	// An offline conviction ends the sensor's leases at once.
+	sensorHealth.SetLeaseExpirer(repos.Command)
 	w.ControllerManager.Register(sensorHealth)
 	// How many sensors still use a legacy rda_ key (a gauge and a log line
 	// when it changes).
