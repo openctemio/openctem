@@ -1238,8 +1238,8 @@ func (a *Asset) IsHighRiskCompliance() bool {
 func (a *Asset) CTEMRiskFactor() float64 {
 	factor := 1.0
 
-	// Internet accessible increases risk
-	if a.isInternetAccessible {
+	// Internet-facing increases risk
+	if a.IsInternetFacing() {
 		factor *= 1.5
 	}
 

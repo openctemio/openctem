@@ -29,18 +29,20 @@ func NewAttackSurfaceHandler(service *attack.SurfaceService, log *logger.Logger)
 // @Description Attack surface statistics response
 type AttackSurfaceStatsResponse struct {
 	// Summary statistics
-	TotalAssets       int     `json:"total_assets" example:"303"`
-	ExposedServices   int     `json:"exposed_services" example:"47"`
-	CriticalExposures int     `json:"critical_exposures" example:"12"`
-	RiskScore         float64 `json:"risk_score" example:"72.5"`
+	TotalAssets int `json:"total_assets" example:"303"`
+	// Internet-facing assets: exposure public or reported reachable from
+	// the internet (one definition across the product).
+	InternetFacingAssets int `json:"internet_facing_assets" example:"47"`
+	// The same, limited to critical/high criticality.
+	CriticalInternetFacingAssets int     `json:"critical_internet_facing_assets" example:"12"`
+	RiskScore                    float64 `json:"risk_score" example:"72.5"`
 
-	// Trends: what is new in the last trend_window_days days. Counts, never
-	// negative: assets added; public assets added or newly made public; the
-	// same limited to critical/high criticality.
-	TotalAssetsChange       int `json:"total_assets_change" example:"12"`
-	ExposedServicesChange   int `json:"exposed_services_change" example:"3"`
-	CriticalExposuresChange int `json:"critical_exposures_change" example:"2"`
-	TrendWindowDays         int `json:"trend_window_days" example:"7"`
+	// Trends over trend_window_days days, counts never negative: assets
+	// added, and "became internet-facing" changes (the same number as the
+	// newly exposed view of /state-history/counts).
+	TotalAssetsChange int `json:"total_assets_change" example:"12"`
+	NewlyExposed      int `json:"newly_exposed" example:"3"`
+	TrendWindowDays   int `json:"trend_window_days" example:"7"`
 
 	// Asset breakdown by type
 	AssetBreakdown []AssetTypeBreakdownResponse `json:"asset_breakdown"`
@@ -294,16 +296,15 @@ func (h *AttackSurfaceHandler) toStatsResponse(stats *attack.SurfaceStats) Attac
 	}
 
 	return AttackSurfaceStatsResponse{
-		TotalAssets:             stats.TotalAssets,
-		ExposedServices:         stats.ExposedServices,
-		CriticalExposures:       stats.CriticalExposures,
-		RiskScore:               stats.RiskScore,
-		TotalAssetsChange:       stats.TotalAssetsChange,
-		ExposedServicesChange:   stats.ExposedServicesChange,
-		CriticalExposuresChange: stats.CriticalExposuresChange,
-		TrendWindowDays:         stats.TrendWindowDays,
-		AssetBreakdown:          breakdown,
-		ExposedServicesList:     services,
-		RecentChanges:           changes,
+		TotalAssets:                  stats.TotalAssets,
+		InternetFacingAssets:         stats.InternetFacingAssets,
+		CriticalInternetFacingAssets: stats.CriticalInternetFacingAssets,
+		RiskScore:                    stats.RiskScore,
+		TotalAssetsChange:            stats.TotalAssetsChange,
+		NewlyExposed:                 stats.NewlyExposed,
+		TrendWindowDays:              stats.TrendWindowDays,
+		AssetBreakdown:               breakdown,
+		ExposedServicesList:          services,
+		RecentChanges:                changes,
 	}
 }

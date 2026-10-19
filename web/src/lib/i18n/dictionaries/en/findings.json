@@ -1094,5 +1094,6 @@
   "findings.importResults.vexModeEnforce": "not_affected statements request false positive approval for the matching open findings; the findings stay open until another person approves.",
   "findings.importResults.vexModeEnforceNoApprove": "not_affected statements are stored on the matching findings; requesting false positive approval needs the approve permission.",
   "findings.importResults.vexModeOff": "VEX statements are stored on the matching findings only.",
-  "findings.importResults.vexModeDryRun": "VEX statements are stored on the matching findings and counted; no false positive approval is requested (dry run mode)."
+  "findings.importResults.vexModeDryRun": "VEX statements are stored on the matching findings and counted; no false positive approval is requested (dry run mode).",
+  "findings.contextChips.assetGroup": "Asset group"
 }
