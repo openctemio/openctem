@@ -76,21 +76,38 @@ func TestCVEProcessor_DedupesCVEsAcrossFindings(t *testing.T) {
 	require.Len(t, repo.lastBatch, 2)
 }
 
-func TestCVEProcessor_MergesSeverityAsMax(t *testing.T) {
+// The shared catalog takes nothing but the CVE id from a tenant report: the
+// report's title, description, CVSS, references and versions stay on the
+// tenant's findings (global-catalog-trust.md).
+func TestCVEProcessor_SendsOnlyTheCVEIdentityToTheCatalog(t *testing.T) {
 	repo := newFakeRepo()
 	p := NewCVEProcessor(repo, logger.NewDefault())
 	report := &ctis.Report{
 		Findings: []ctis.Finding{
-			{Severity: ctis.SeverityLow, Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2099-2010"}},
-			{Severity: ctis.SeverityCritical, Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2099-2010"}},
+			{
+				Severity: ctis.SeverityCritical, Title: "crafted title", Description: "tenant secret in description",
+				Vulnerability: &ctis.VulnerabilityDetails{
+					CVEID: "CVE-2099-2010", CVSSScore: 0.1, CVSSVector: "CVSS:3.1/AV:P/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:N",
+					Advisories: []string{"https://attacker.example.com/x"}, FixedVersion: "9.9.9", EPSSScore: 0.9,
+					ExploitAvailable: true, ExploitMaturity: "weaponized",
+				},
+			},
 		},
 	}
-	output := &Output{}
-	_, err := p.ProcessBatch(context.Background(), report, output)
+	_, err := p.ProcessBatch(context.Background(), report, &Output{})
 	require.NoError(t, err)
 
 	require.Len(t, repo.lastBatch, 1)
-	assert.Equal(t, vulnerability.SeverityCritical, repo.lastBatch[0].Severity())
+	v := repo.lastBatch[0]
+	assert.Equal(t, "CVE-2099-2010", v.CVEID())
+	assert.Equal(t, "CVE-2099-2010", v.Title())
+	assert.Empty(t, v.Description())
+	assert.Nil(t, v.CVSSScore())
+	assert.Empty(t, v.CVSSVector())
+	assert.Nil(t, v.EPSSScore())
+	assert.Empty(t, v.References())
+	assert.Empty(t, v.FixedVersions())
+	assert.False(t, v.ExploitAvailable())
 }
 
 func TestCVEProcessor_SkipsInvalidCVEIDs(t *testing.T) {

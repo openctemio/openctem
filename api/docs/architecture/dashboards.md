@@ -9,12 +9,37 @@ here as they ship.
 |---|---|
 | Ownership: organization and personal dashboards, `dashboards:org:view` / `dashboards:org:manage`, audiences, schedule fields | **Shipped** (migration `002930_dashboard_ownership`) |
 | Fact layer: per-asset fact tables, dirty queue, change triggers, recompute and rebuild functions | **Shipped** (migration `002916_dashboard_fact_tables`) |
-| Facts maintainer (claims the dirty queue, recomputes, nightly reconciliation, metrics) | Planned |
+| Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002963_dashboard_facts_maintainer`) |
 | Widget registry reading the facts; viewer-scope and organization-wide reads | Planned |
 | Snapshots, the refresher, Refresh now | Planned |
 
-Until the maintainer ships, the facts are not read by any endpoint: the
-dashboard endpoints still aggregate `findings` directly.
+The facts are built and kept current, but no endpoint reads them yet: the
+dashboard endpoints still aggregate `findings` directly until the widget
+registry ships.
+
+## Current figures and history
+
+A figure labelled as current is always live and counted over the viewer's
+scope; stored snapshots are only the history behind a trend line.
+
+- `GET /dashboard/executive-summary` returns the open counts by priority class
+  (`p0_open` .. `p3_open`, the open lens, their sum is `findings_total`) and
+  `scoped`: true when the figures are counted over the viewer's data scope.
+  The CTEM view's "Open now" bars read these (each bar opens
+  `/findings?state=open&priority_class=Px`); the P0 line and the open-findings
+  trend end at the live count.
+- `GET /dashboard/risk-trend` reads the daily `risk_snapshots`, which are
+  organization-wide. A scoped viewer gets no trend and the web says "Trend not
+  available for your scope" instead of zeros. The chart caption names the date
+  of the last snapshot.
+- "Open findings" has one definition, the open lens (the findings list's
+  `state=open`): `GET /findings/stats` returns `open_count` equal to
+  `by_state.open`, and the scheduled report uses it.
+- Time to remediate is read from one place, `GET /dashboard/mttr-analytics`
+  over 90 days (`overall_hours`), on the Classic card and the Executive page.
+- A failed read shows an error with Retry on the card it feeds; a figure with
+  no denominator (no scannable asset, nothing to validate, no approval
+  decided, nothing fixed) shows "—" with the reason, never 0.
 
 ## Ownership: organization and personal dashboards
 
@@ -273,8 +298,9 @@ database; running it again changes nothing.
 ### Rollout
 
 - The migration only creates tables, functions and triggers; it computes no
-  facts. The maintainer builds each tenant whose `dash_fact_status.rebuilt_at`
-  is NULL with `RebuildTenant`, then keeps it current from the queue.
+  facts. The `dashboard-facts-reconcile` controller builds every tenant whose
+  `dash_fact_status.rebuilt_at` is NULL (a resumable first run), and the
+  `dashboard-facts` controller keeps it current from the queue.
 - Disk: about 2-5 % of the findings table size for F1-F3 (estimate: about
   0.1 GB for a 1k-asset tenant, 0.7 GB at 100k assets, 1.5 GB at 1M assets,
   for 10M findings).
@@ -282,14 +308,113 @@ database; running it again changes nothing.
   (see the pull request that added the layer for numbers); run it on a
   scratch `*_test` or `*_bench` database only.
 
-### Not done here (the maintainer)
+## Facts maintainer
 
-- claim and recompute loop (`dashboard-facts` controller, per-tenant round
-  robin, leased), first build of every tenant, nightly reconciliation that
-  rebuilds and counts drift, daily `dash_mark_aged_assets`, F2 retention
-  (delete days before the window in batches), metrics (fact lag, queue
-  depth, drift), an admin "Rebuild dashboard data" action;
-- extending the F2 partitions before they run out (a later migration).
+Two leased controllers (`internal/infra/controller/dashboard_facts.go`), each
+run by one replica at a time, so a long rebuild never delays the queue.
+
+### Queue: `dashboard-facts` (every 30 s)
+
+- Lists the tenants with change marks and serves them in round-robin from
+  the tenant after the one served last, each for at most a 5 s slice within a
+  25 s tick: one busy tenant cannot starve the others.
+- Each claim is one call of `dash_process_dirty(tenant, 500)`, one
+  transaction: it claims the oldest rows with `FOR UPDATE SKIP LOCKED` (never
+  a row a running writer or another maintainer holds), ORs the reason bits
+  per asset, recomputes the assets whose bits include 1 (findings) or 16 (age
+  band), and deletes exactly the claimed ids. Reasons 2, 4 and 8 (asset row,
+  group membership, ownership) do not change per-asset facts and are consumed
+  without a recompute. A failure rolls the whole claim back: marks stay, facts
+  stay.
+- Assets are recomputed in id order, as full runs do, so two transactions
+  never wait on each other's per-asset locks in a cycle.
+
+### Full runs: `dashboard-facts-reconcile` (every minute, up to 4 minutes a tick)
+
+One run kind at a time per tenant, resumable across ticks (`run_kind`,
+`run_cursor`, `run_drift` in `dash_fact_status`), in this order of urgency:
+
+| Kind | When | Drift counted |
+|---|---|---|
+| in progress | a run that did not finish in the last tick | as its kind |
+| `requested` | "Rebuild dashboard data" was asked after the last run started | yes |
+| `initial` | the tenant's facts were never built (`rebuilt_at` NULL), e.g. after the upgrade or for a new organization | no (every fact is new) |
+| `nightly` | the last run is older than 24 h (spread by when each tenant last ran) | yes |
+
+Each step (`dash_fact_run_step`, 200 assets) calls `dash_reconcile_asset`,
+which recomputes the asset and reports the fact rows it corrected as
+**drift**, except when the asset had a pending mark (reason 1 or 16) before
+or after the recompute (the queue had not reached it yet) or an open finding
+of the asset crossed an age band after the later of the last age-band
+marking and the last full run (time alone moved it). The final step also
+recomputes the findings without an asset and deletes facts of assets that no
+longer exist (counted as drift), then records `rebuilt_at`, `reconciled_at`
+and `last_drift`. Drift is fixed by the run and counted in
+`openctem_dashboard_fact_drift_rows_total{kind}`; any drift is a bug (a write
+path that bypassed the triggers, or a recompute error) and raises the
+`DashboardFactsDrift` alert.
+
+The same controller, once a day:
+
+- marks crossed age bands per tenant (`dash_mark_aged_assets` from the last
+  marking, or the last full run, to now);
+- keeps the F2 partitions with `dash_asset_day_maintain()`: creates the next
+  24 months and drops the partitions that end before the 13-month history
+  window (retention); rows of a month that sat in the default partition are
+  deleted and their assets marked, since F2 is derived and the queue writes
+  them again into the new partition. The function is `SECURITY DEFINER` (the
+  API role has no DDL right), takes no input, runs with `search_path`
+  `pg_catalog, pg_temp` and schema-qualified names, waits at most 5 s for a
+  lock, and is executable by neither `PUBLIC` nor the console role (see
+  [database roles](../deployment/database-roles.md)). It stays in the
+  controller rather than in migrations so installations that upgrade rarely
+  keep their partitions and retention without a release.
+
+### Metrics and alerts
+
+| Metric | Meaning |
+|---|---|
+| `openctem_dashboard_fact_lag_seconds` (histogram) | per claimed batch, the age of its oldest mark: write to fact (target p95 < 2 min) |
+| `openctem_dashboard_fact_queue_depth` | unprocessed marks, all tenants |
+| `openctem_dashboard_fact_queue_oldest_seconds` | age of the oldest unprocessed mark (0 = empty) |
+| `openctem_dashboard_fact_drift_rows_total{kind}` | fact rows corrected without a change mark (`requested`, `nightly`) |
+| `openctem_dashboard_fact_runs_total{kind}` | completed full runs |
+
+Alerts `DashboardFactsLagging` (oldest mark over 10 minutes for 15 minutes)
+and `DashboardFactsDrift` (any drift in a day); runbooks in
+`docs/operations/monitoring.md`. No metric carries a tenant label.
+
+### "Rebuild dashboard data"
+
+| Route | Who | Effect |
+|---|---|---|
+| `GET /api/v1/dashboard-data/` | owner or administrator of the organization | status: `rebuilt_at`, `reconciled_at`, `last_drift`, `rebuild_requested_at`, `running`, `pending`, `queue_depth`, `next_rebuild_at` |
+| `POST /api/v1/dashboard-data/rebuild` | owner or administrator | records a rebuild request (202); the reconcile controller runs it as a `requested` run |
+| `GET /api/v1/admin/tenants/{tenantId}/dashboard-data` | any console administrator | the same status for one organization |
+| `POST /api/v1/admin/tenants/{tenantId}/dashboard-data/rebuild` | console `ops_admin` or `super_admin` | the same request, on the path organization (admin audit `organization.dashboard_data_rebuild`) |
+
+- One accepted request per organization per hour, whoever asks: the check
+  and the write are one statement on `dash_fact_status.rebuild_requested_at`,
+  so concurrent requests cannot both pass, and the console shares the
+  organization's limit. A refused request answers 429 with `Retry-After`.
+- Every accepted request writes `dashboard_data.rebuild_requested` to the
+  organization's audit log, with `origin` = `organization` or `console`.
+- No step-up: the action recomputes derived data and changes no identity,
+  privilege or trust (the step-up rule in
+  `docs/architecture/step-up-reauth.md` and the console's write inventory).
+- Threat model: the tenant comes from the session (or the console path
+  organization, after the console checked it exists), never from the body;
+  every statement filters on it; the response holds times and counts only.
+  The worst a caller with the permission can do is one full recompute of
+  their own organization per hour; the run is batched (200 assets per short
+  transaction) and time-boxed per tick.
+
+Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
+`internal/infra/postgres/dashboard_facts_maintainer.go`,
+`internal/infra/controller/dashboard_facts.go`,
+`internal/app/dashboard/facts/service.go`,
+`internal/infra/http/handler/dashboard_facts_handler.go`,
+`pkg/domain/dashboardfact/`.
 
 ## Drill-downs and refusals
 
