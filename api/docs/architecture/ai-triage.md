@@ -17,7 +17,7 @@ Status: shipped. Planned work is listed at the end. Design and decisions:
   available; nothing is sent until an organization turns AI triage on.
 - **Organization administrator** (owner or administrator): turns AI triage
   on or off for the organization in Settings > AI
-  (`GET/PUT /api/v1/tenants/{tenant}/settings/ai`, `settings:write`, a recent
+  (`GET/PUT /api/v1/organization/settings/ai`, `settings:write`, a recent
   sign-in, audited as critical `ai_settings.updated`). Turning it on is the
   organization's consent to send finding content, within its AI data policy,
   to the provider. It is stored as `settings.ai.enabled_at` / `enabled_by`;

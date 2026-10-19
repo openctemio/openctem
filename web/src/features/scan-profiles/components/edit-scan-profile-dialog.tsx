@@ -37,7 +37,9 @@ import {
 } from '../schemas/scan-profile-schema'
 import { useUpdateScanProfile, invalidateScanProfilesCache } from '@/lib/api/scan-profile-hooks'
 import type { QualityGate, ScanProfile } from '@/lib/api/scan-profile-types'
+import type { RuleSources } from '@/lib/api/scan-types'
 import { QualityGateFields } from './quality-gate-fields'
+import { RuleSourcesField } from './rule-sources-field'
 
 interface EditScanProfileDialogProps {
   open: boolean
@@ -54,6 +56,7 @@ export function EditScanProfileDialog({
 }: EditScanProfileDialogProps) {
   const { t } = useTranslation()
   const [gate, setGate] = useState<QualityGate>(profile.quality_gate)
+  const [ruleSources, setRuleSources] = useState<RuleSources>(profile.rule_sources ?? 'both')
 
   const form = useForm<UpdateScanProfileFormData>({
     resolver: zodResolver(updateScanProfileSchema),
@@ -65,12 +68,13 @@ export function EditScanProfileDialog({
   // Reset the form when another profile is opened.
   useEffect(() => {
     setGate(profile.quality_gate)
+    setRuleSources(profile.rule_sources ?? 'both')
     form.reset({ name: profile.name, description: profile.description || '' })
   }, [profile, form])
 
   const onSubmit = async (data: UpdateScanProfileFormData) => {
     try {
-      await updateProfile({ ...data, quality_gate: gate })
+      await updateProfile({ ...data, quality_gate: gate, rule_sources: ruleSources })
       toast.success(t('scans.profiles.updated', undefined, { name: data.name || profile.name }))
       await invalidateScanProfilesCache()
       onOpenChange(false)
@@ -145,6 +149,15 @@ export function EditScanProfileDialog({
                   idPrefix="edit-profile"
                 />
               </div>
+
+              <Separator />
+
+              <RuleSourcesField
+                value={ruleSources}
+                onChange={setRuleSources}
+                disabled={isSystemProfile}
+                idPrefix="edit-profile"
+              />
             </DialogBody>
 
             <DialogFooter>

@@ -35,3 +35,17 @@ func registerEmergingThreatSettingsRoutes(router Router, h *handler.TenantHandle
 		r.PUT("/", h.UpdateEmergingThreatSettings, middleware.RequireAdmin())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
+
+// registerAISettingsRoutes wires the organization's AI triage consent under
+// the token singleton /api/v1/organization. Owner/admin only. Turning it on
+// lets finding content go to the AI provider, so the write needs
+// settings:write, a recent sign-in, and is audited.
+func registerAISettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/ai", func(r Router) {
+		r.GET("/", h.GetAISettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		r.PUT("/", h.UpdateAISettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
