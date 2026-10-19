@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -197,9 +198,6 @@ func run() int {
 	defer closeWithLog(redisClient, "redis", log)
 	log.Info("redis connected")
 
-	sensorStateStore := redis.NewSensorStateStore(redisClient, log)
-	log.Info("sensor state store initialized")
-
 	jobNotifier := redis.NewJobNotifier(redisClient, log)
 	if err := jobNotifier.StartListener(ctx); err != nil {
 		log.Error("failed to start job notifier", "error", err)
@@ -222,6 +220,14 @@ func run() int {
 	// ==========================================================================
 	// Repositories
 	// ==========================================================================
+	// The byte budget of sensor result uploads in flight, from this
+	// replica's memory limit: a quarter, at most 1 GiB (research/191 R-1).
+	// Set once, before anything serves.
+	if mem := middleware.ContainerMemoryLimit(); mem > 0 {
+		middleware.SetV2DecodeBudget(middleware.V2DecodeBudgetForMemory(mem))
+		log.Info("sensor result upload memory budget", "bytes", middleware.V2DecodeBudgetBytes, "memory_limit", mem)
+	}
+
 	repos := NewRepositories(db)
 	repos.UseAdminDB(adminDB)
 	repos.InitIntegrationExtensions(db)
@@ -231,12 +237,11 @@ func run() int {
 	// Services
 	// ==========================================================================
 	services, err := NewServices(&ServiceDeps{
-		Config:           cfg,
-		Log:              log,
-		DB:               db.DB,
-		Repos:            repos,
-		RedisClient:      redisClient,
-		SensorStateStore: sensorStateStore,
+		Config:      cfg,
+		Log:         log,
+		DB:          db.DB,
+		Repos:       repos,
+		RedisClient: redisClient,
 	})
 	if err != nil {
 		log.Error("failed to initialize services", "error", err)

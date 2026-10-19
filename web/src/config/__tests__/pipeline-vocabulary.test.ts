@@ -74,7 +74,7 @@ const ALLOWED: { path: RegExp; why: string }[] = [
     why: 'the markdown rendering pipeline',
   },
   {
-    path: /^src\/lib\/api\/(workflow-types\.ts|__tests__\/workflow-unsupported\.test\.ts)$/,
+    path: /^src\/(lib\/api\/(workflow-types\.ts|__tests__\/workflow-unsupported\.test\.ts)|features\/workflows\/lib\/use-automation-labels\.ts)$/,
     why: 'stored automation action id trigger_pipeline',
   },
   {

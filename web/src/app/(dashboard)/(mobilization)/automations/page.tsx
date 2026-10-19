@@ -91,16 +91,14 @@ import type {
   WorkflowRun,
   CreateWorkflowRequest,
   UpdateWorkflowGraphRequest,
-  WorkflowTriggerType,
 } from '@/lib/api/workflow-types'
-import {
-  WORKFLOW_TRIGGER_LABELS,
-  getUnsupportedWorkflowFeatures,
-  formatUnsupportedWorkflowFeature,
-} from '@/lib/api/workflow-types'
+import { getUnsupportedWorkflowFeatures } from '@/lib/api/workflow-types'
+import { useAutomationLabels } from '@/features/workflows/lib/use-automation-labels'
+
+type T = ReturnType<typeof useTranslation>['t']
 
 // Helper to format relative time
-function formatRelativeTime(dateStr: string): string {
+function formatRelativeTime(dateStr: string, t: T): string {
   const date = new Date(dateStr)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
@@ -108,34 +106,43 @@ function formatRelativeTime(dateStr: string): string {
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`
-  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+  if (diffMins < 1) return t('automations.time.justNow', 'just now')
+  if (diffMins < 60) return t('automations.time.minutesAgo', '{n} min ago', { n: diffMins })
+  if (diffHours < 24) return t('automations.time.hoursAgo', '{n} h ago', { n: diffHours })
+  if (diffDays < 7) return t('automations.time.daysAgo', '{n} d ago', { n: diffDays })
   return date.toLocaleDateString()
 }
 
 // Helper to get trigger type display
-function getTriggerDisplay(workflow: Workflow): string {
-  if (!workflow.nodes || workflow.nodes.length === 0) return 'No trigger configured'
+function getTriggerDisplay(
+  workflow: Workflow,
+  t: T,
+  triggerLabel: (type: string) => string
+): string {
+  const none = t('automations.trigger.none', 'No trigger configured')
+  if (!workflow.nodes || workflow.nodes.length === 0) return none
   const triggerNode = workflow.nodes.find((n) => n.node_type === 'trigger')
-  if (!triggerNode) return 'No trigger configured'
+  if (!triggerNode) return none
   const triggerType = triggerNode.config?.trigger_type
   if (!triggerType) return triggerNode.name
-  return WORKFLOW_TRIGGER_LABELS[triggerType as WorkflowTriggerType] || triggerType
+  return triggerLabel(triggerType)
 }
 
 // Flag for a stored workflow that uses a trigger/action the platform does not
 // run. The API refuses to activate or save it as is.
 function UnsupportedBadge({ features }: { features: string[] }) {
+  const { t } = useTranslation()
+  const labels = useAutomationLabels()
   if (features.length === 0) return null
   return (
     <Badge
       variant="outline"
       className="border-warning/30 bg-warning/10 text-warning text-xs"
-      title={`Not supported: ${features.map(formatUnsupportedWorkflowFeature).join(', ')}`}
+      title={t('automations.unsupported.badgeTitle', 'Not supported: {features}', {
+        features: features.map(labels.feature).join(', '),
+      })}
     >
-      Unsupported
+      {t('automations.unsupported.badge', 'Unsupported')}
     </Badge>
   )
 }
@@ -156,22 +163,36 @@ function WorkflowTriggerButton({
   workflowId: string
   workflowName: string
 }) {
+  const { t } = useTranslation()
   const { trigger, isMutating } = useTriggerWorkflow(workflowId)
 
   const handleRun = async () => {
     try {
       await trigger({ trigger_type: 'manual' })
-      toast.success(`Workflow "${workflowName}" triggered successfully`)
+      toast.success(
+        t('automations.toast.triggered', 'Workflow "{name}" triggered successfully', {
+          name: workflowName,
+        })
+      )
       await invalidateWorkflowRunsCache()
     } catch (err) {
-      toast.error(getErrorMessage(err, `Failed to trigger workflow "${workflowName}"`))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('automations.toast.triggerFailed', 'Failed to trigger workflow "{name}"', {
+            name: workflowName,
+          })
+        )
+      )
     }
   }
 
   return (
     <DropdownMenuItem onClick={handleRun} disabled={isMutating}>
       <Play className="me-2 h-4 w-4" />
-      {isMutating ? 'Running...' : 'Run now'}
+      {isMutating
+        ? t('automations.menu.running', 'Running...')
+        : t('automations.menu.runNow', 'Run now')}
     </DropdownMenuItem>
   )
 }
@@ -187,6 +208,8 @@ export default function WorkflowsPage() {
   const [pendingDelete, setPendingDelete] = useState<Workflow | null>(null)
   const deleteWorkflowId = pendingDelete?.id ?? null
   const { t } = useTranslation()
+  const labels = useAutomationLabels()
+  const triggerOf = (w: Workflow) => getTriggerDisplay(w, t, labels.trigger)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newWorkflowName, setNewWorkflowName] = useState('')
   const [newWorkflowDescription, setNewWorkflowDescription] = useState('')
@@ -251,7 +274,9 @@ export default function WorkflowsPage() {
     // Check if we have at least one trigger node
     const hasTrigger = nodes.some((n) => n.type === 'trigger')
     if (!hasTrigger) {
-      toast.error('Workflow must have at least one trigger node')
+      toast.error(
+        t('automations.toast.needTrigger', 'Workflow must have at least one trigger node')
+      )
       return
     }
 
@@ -285,12 +310,18 @@ export default function WorkflowsPage() {
       // Atomic update - replaces entire graph in a single transaction
       await put<Workflow>(workflowEndpoints.updateGraph(editingWorkflow.id), request)
 
-      toast.success(`Workflow "${editingWorkflow.name}" saved successfully`)
+      toast.success(
+        t('automations.toast.saved', 'Workflow "{name}" saved successfully', {
+          name: editingWorkflow.name,
+        })
+      )
       await invalidateWorkflowsCache()
       setEditingWorkflow(null)
     } catch (err) {
       console.error('Failed to save workflow:', err)
-      toast.error(getErrorMessage(err, 'Failed to save workflow'))
+      toast.error(
+        getErrorMessage(err, t('automations.toast.saveFailed', 'Failed to save workflow'))
+      )
     } finally {
       setIsSaving(false)
     }
@@ -298,7 +329,7 @@ export default function WorkflowsPage() {
 
   const handleSaveNewWorkflow = async () => {
     if (!saveWorkflowName.trim()) {
-      toast.error('Please enter a workflow name')
+      toast.error(t('automations.toast.enterName', 'Please enter a workflow name'))
       return
     }
 
@@ -314,7 +345,11 @@ export default function WorkflowsPage() {
       }
 
       const newWorkflow = await createWorkflow(request)
-      toast.success(`Workflow "${saveWorkflowName}" created successfully`)
+      toast.success(
+        t('automations.toast.created', 'Workflow "{name}" created successfully', {
+          name: saveWorkflowName,
+        })
+      )
       await invalidateWorkflowsCache()
 
       // Set as editing workflow so future saves update this workflow
@@ -327,7 +362,9 @@ export default function WorkflowsPage() {
       setSaveWorkflowDescription('')
     } catch (err) {
       console.error('Failed to create workflow:', err)
-      toast.error(getErrorMessage(err, 'Failed to create workflow'))
+      toast.error(
+        getErrorMessage(err, t('automations.toast.createFailed', 'Failed to create workflow'))
+      )
     } finally {
       setIsSaving(false)
     }
@@ -341,7 +378,7 @@ export default function WorkflowsPage() {
           ? workflow
           : await get<Workflow>(`/api/v1/workflows/${workflow.id}`)
       await createWorkflow({
-        name: `${full.name} (copy)`,
+        name: t('automations.copyName', '{name} (copy)', { name: full.name }),
         description: full.description,
         nodes: (full.nodes ?? []).map((n) => ({
           node_key: n.node_key,
@@ -358,10 +395,14 @@ export default function WorkflowsPage() {
           label: e.label,
         })),
       })
-      toast.success(`Duplicated "${workflow.name}"`)
+      toast.success(
+        t('automations.toast.duplicated', 'Duplicated "{name}"', { name: workflow.name })
+      )
       await invalidateWorkflowsCache()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to duplicate workflow'))
+      toast.error(
+        getErrorMessage(err, t('automations.toast.duplicateFailed', 'Failed to duplicate workflow'))
+      )
     }
   }
 
@@ -374,29 +415,50 @@ export default function WorkflowsPage() {
       setPendingDelete(null)
       await invalidateWorkflowsCache()
     } catch (err) {
-      toast.error(getErrorMessage(err, `Failed to delete workflow: ${workflow.name}`))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('automations.toast.deleteFailed', 'Failed to delete workflow: {name}', {
+            name: workflow.name,
+          })
+        )
+      )
     }
   }
 
-  const handleToggleWorkflow = useCallback(async (workflow: Workflow, enabled: boolean) => {
+  const handleToggleWorkflow = async (workflow: Workflow, enabled: boolean) => {
     try {
       const response = await csrfFetch(`/api/v1/workflows/${workflow.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: enabled }),
       })
-      if (!response.ok) throw new Error('Failed to update workflow')
-      toast.success(`Workflow ${enabled ? 'activated' : 'deactivated'}: ${workflow.name}`)
+      if (!response.ok) {
+        throw new Error(t('automations.toast.updateFailed', 'Failed to update workflow'))
+      }
+      toast.success(
+        enabled
+          ? t('automations.toast.activated', 'Workflow activated: {name}', { name: workflow.name })
+          : t('automations.toast.deactivated', 'Workflow deactivated: {name}', {
+              name: workflow.name,
+            })
+      )
       await invalidateWorkflowsCache()
     } catch (err) {
       toast.error(
         getErrorMessage(
           err,
-          `Failed to ${enabled ? 'activate' : 'deactivate'} workflow: ${workflow.name}`
+          enabled
+            ? t('automations.toast.activateFailed', 'Failed to activate workflow: {name}', {
+                name: workflow.name,
+              })
+            : t('automations.toast.deactivateFailed', 'Failed to deactivate workflow: {name}', {
+                name: workflow.name,
+              })
         )
       )
     }
-  }, [])
+  }
 
   const handleViewWorkflow = (workflow: Workflow) => {
     setSelectedWorkflow(workflow)
@@ -411,12 +473,16 @@ export default function WorkflowsPage() {
     setEdges(graph.edges)
     setSelectedWorkflow(null)
     setTab('builder')
-    toast.info(`Loaded "${workflow.name}" into the builder.`)
+    toast.info(
+      t('automations.toast.loadedIntoBuilder', 'Loaded "{name}" into the builder.', {
+        name: workflow.name,
+      })
+    )
   }
 
   const handleCreateWorkflow = async () => {
     if (!newWorkflowName.trim()) {
-      toast.error('Please enter a workflow name')
+      toast.error(t('automations.toast.enterName', 'Please enter a workflow name'))
       return
     }
 
@@ -441,13 +507,19 @@ export default function WorkflowsPage() {
       }
 
       await createWorkflow(request)
-      toast.success(`Workflow "${newWorkflowName}" created successfully`)
+      toast.success(
+        t('automations.toast.created', 'Workflow "{name}" created successfully', {
+          name: newWorkflowName,
+        })
+      )
       await invalidateWorkflowsCache()
       setIsCreateDialogOpen(false)
       setNewWorkflowName('')
       setNewWorkflowDescription('')
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to create workflow'))
+      toast.error(
+        getErrorMessage(err, t('automations.toast.createFailed', 'Failed to create workflow'))
+      )
     }
   }
 
@@ -458,7 +530,12 @@ export default function WorkflowsPage() {
   const workflowColumns: ColumnDef<Workflow>[] = [
     {
       accessorKey: 'name',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Workflow" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('automations.columns.workflow', 'Workflow')}
+        />
+      ),
       cell: ({ row }) => (
         <div className="min-w-0 max-w-[360px]">
           <div className="flex min-w-0 items-center gap-2">
@@ -474,27 +551,31 @@ export default function WorkflowsPage() {
     {
       id: 'status',
       accessorFn: (w) => (w.is_active ? 'active' : 'inactive'),
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('automations.columns.status', 'Status')} />
+      ),
       cell: ({ row }) => (
         <Badge variant={row.original.is_active ? 'default' : 'secondary'}>
-          {row.original.is_active ? 'Active' : 'Inactive'}
+          {row.original.is_active
+            ? t('automations.status.active', 'Active')
+            : t('automations.status.inactive', 'Inactive')}
         </Badge>
       ),
     },
     {
       id: 'trigger',
       enableSorting: false,
-      header: 'Trigger',
+      header: t('automations.columns.trigger', 'Trigger'),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-sm text-muted-foreground">
-          {getTriggerDisplay(row.original)}
+          {triggerOf(row.original)}
         </span>
       ),
     },
     {
       id: 'actions_list',
       enableSorting: false,
-      header: 'Steps',
+      header: t('automations.columns.steps', 'Steps'),
       cell: ({ row }) => {
         const actions = getActionNames(row.original)
         if (actions.length === 0) return <span className="text-sm text-muted-foreground">—</span>
@@ -516,7 +597,9 @@ export default function WorkflowsPage() {
     },
     {
       accessorKey: 'total_runs',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Runs" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('automations.columns.runs', 'Runs')} />
+      ),
       cell: ({ row }) => {
         const w = row.original
         const rate = w.total_runs > 0 ? Math.round((w.successful_runs / w.total_runs) * 100) : 0
@@ -524,7 +607,9 @@ export default function WorkflowsPage() {
           <span className="whitespace-nowrap text-sm tabular-nums">
             {w.total_runs}
             {w.total_runs > 0 && (
-              <span className="ms-1 text-muted-foreground">({rate}% success)</span>
+              <span className="ms-1 text-muted-foreground">
+                {t('automations.runs.successRate', '({rate}% success)', { rate })}
+              </span>
             )}
           </span>
         )
@@ -532,17 +617,24 @@ export default function WorkflowsPage() {
     },
     {
       accessorKey: 'last_run_at',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Last run" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('automations.columns.lastRun', 'Last run')}
+        />
+      ),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-sm text-muted-foreground">
-          {row.original.last_run_at ? formatRelativeTime(row.original.last_run_at) : 'Never'}
+          {row.original.last_run_at
+            ? formatRelativeTime(row.original.last_run_at, t)
+            : t('automations.lastRun.never', 'Never')}
         </span>
       ),
     },
     {
       id: 'enabled',
       enableSorting: false,
-      header: 'Enabled',
+      header: t('automations.columns.enabled', 'Enabled'),
       cell: ({ row }) => {
         // An unsupported workflow can be switched off, never on (API 400).
         const blocked =
@@ -552,9 +644,20 @@ export default function WorkflowsPage() {
             <Switch
               checked={row.original.is_active}
               disabled={blocked}
-              title={blocked ? 'Uses an unsupported trigger or action' : undefined}
+              title={
+                blocked
+                  ? t(
+                      'automations.unsupported.switchTitle',
+                      'Uses an unsupported trigger or action'
+                    )
+                  : undefined
+              }
               onCheckedChange={(checked) => handleToggleWorkflow(row.original, checked)}
-              aria-label={row.original.is_active ? 'Deactivate workflow' : 'Activate workflow'}
+              aria-label={
+                row.original.is_active
+                  ? t('automations.switch.deactivate', 'Deactivate workflow')
+                  : t('automations.switch.activate', 'Activate workflow')
+              }
             />
           </div>
         )
@@ -572,7 +675,9 @@ export default function WorkflowsPage() {
                 variant="ghost"
                 size="sm"
                 className="h-8 w-8 p-0"
-                aria-label={`Actions for ${workflow.name}`}
+                aria-label={t('automations.menu.actionsFor', 'Actions for {name}', {
+                  name: workflow.name,
+                })}
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreHorizontal className="h-4 w-4" />
@@ -581,17 +686,17 @@ export default function WorkflowsPage() {
             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onClick={() => handleViewWorkflow(workflow)}>
                 <Eye className="me-2 h-4 w-4" />
-                View details
+                {t('automations.menu.viewDetails', 'View details')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleEditInBuilder(workflow)}>
                 <Pencil className="me-2 h-4 w-4" />
-                Edit in builder
+                {t('automations.menu.editInBuilder', 'Edit in builder')}
               </DropdownMenuItem>
               <WorkflowTriggerButton workflowId={workflow.id} workflowName={workflow.name} />
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleDuplicateWorkflow(workflow)}>
                 <Copy className="me-2 h-4 w-4" />
-                Duplicate
+                {t('automations.menu.duplicate', 'Duplicate')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -612,24 +717,34 @@ export default function WorkflowsPage() {
   const runColumns: ColumnDef<WorkflowRun>[] = [
     {
       id: 'workflow',
-      accessorFn: (run) => workflowNameById.get(run.workflow_id) ?? 'Workflow run',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Workflow" />,
+      accessorFn: (run) =>
+        workflowNameById.get(run.workflow_id) ?? t('automations.runs.fallbackName', 'Workflow run'),
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('automations.columns.workflow', 'Workflow')}
+        />
+      ),
       cell: ({ getValue }) => <span className="text-sm font-medium">{getValue<string>()}</span>,
     },
     {
       accessorKey: 'status',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('automations.columns.status', 'Status')} />
+      ),
       cell: ({ row }) => <RunStatusBadge status={row.original.status} />,
     },
     {
       id: 'nodes',
       enableSorting: false,
-      header: 'Nodes',
+      header: t('automations.columns.nodes', 'Nodes'),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-sm tabular-nums">
           {row.original.completed_nodes}/{row.original.total_nodes}
           {row.original.failed_nodes > 0 && (
-            <span className="ms-1.5 text-destructive">({row.original.failed_nodes} failed)</span>
+            <span className="ms-1.5 text-destructive">
+              {t('automations.runs.failedNodes', '({n} failed)', { n: row.original.failed_nodes })}
+            </span>
           )}
         </span>
       ),
@@ -637,24 +752,29 @@ export default function WorkflowsPage() {
     {
       id: 'duration',
       enableSorting: false,
-      header: 'Duration',
+      header: t('automations.columns.duration', 'Duration'),
       cell: ({ row }) => {
         const run = row.original
         const duration =
           run.started_at && run.completed_at
             ? `${((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
             : run.started_at
-              ? 'Running…'
+              ? t('automations.runs.running', 'Running…')
               : '—'
         return <span className="text-sm tabular-nums text-muted-foreground">{duration}</span>
       },
     },
     {
       accessorKey: 'created_at',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Started" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('automations.columns.started', 'Started')}
+        />
+      ),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-sm text-muted-foreground">
-          {formatRelativeTime(row.original.created_at)}
+          {formatRelativeTime(row.original.created_at, t)}
         </span>
       ),
     },
@@ -672,22 +792,31 @@ export default function WorkflowsPage() {
     <>
       <Main>
         <PageHeader
-          title="Automations"
-          description="When something happens, do something: notify, assign, open a ticket or run a saved scan."
+          title={t('automations.page.title', 'Automations')}
+          description={t(
+            'automations.page.description',
+            'When something happens, do something: notify, assign, open a ticket or run a saved scan.'
+          )}
         >
           <Can permission={Permission.WorkflowsWrite} mode="disable">
             <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
-              New workflow
+              {t('automations.page.newWorkflow', 'New workflow')}
             </Button>
           </Can>
         </PageHeader>
 
         <Tabs value={tab} onValueChange={setTab} className="mt-4">
           <TabsList>
-            <TabsTrigger value="workflows">Workflows</TabsTrigger>
-            <TabsTrigger value="executions">Recent executions</TabsTrigger>
-            <TabsTrigger value="builder">Visual builder</TabsTrigger>
+            <TabsTrigger value="workflows">
+              {t('automations.tabs.workflows', 'Workflows')}
+            </TabsTrigger>
+            <TabsTrigger value="executions">
+              {t('automations.tabs.executions', 'Recent executions')}
+            </TabsTrigger>
+            <TabsTrigger value="builder">
+              {t('automations.tabs.builder', 'Visual builder')}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="workflows" className="mt-5 space-y-5">
@@ -696,12 +825,24 @@ export default function WorkflowsPage() {
             <MetricStrip
               loading={workflowsLoading}
               items={[
-                { key: 'total', label: 'Workflows', value: workflowStats.totalWorkflows },
-                { key: 'active', label: 'Active', value: workflowStats.active },
-                { key: 'runs', label: 'Total runs', value: workflowStats.triggered },
+                {
+                  key: 'total',
+                  label: t('automations.metrics.workflows', 'Workflows'),
+                  value: workflowStats.totalWorkflows,
+                },
+                {
+                  key: 'active',
+                  label: t('automations.metrics.active', 'Active'),
+                  value: workflowStats.active,
+                },
+                {
+                  key: 'runs',
+                  label: t('automations.metrics.totalRuns', 'Total runs'),
+                  value: workflowStats.triggered,
+                },
                 {
                   key: 'success',
-                  label: 'Success rate',
+                  label: t('automations.metrics.successRate', 'Success rate'),
                   value: workflowStats.triggered > 0 ? `${workflowStats.successRate}%` : '—',
                 },
               ]}
@@ -711,25 +852,35 @@ export default function WorkflowsPage() {
             ) : workflowsError ? (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Failed to load workflows</AlertTitle>
+                <AlertTitle>
+                  {t('automations.error.loadTitle', 'Failed to load workflows')}
+                </AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center gap-3">
-                  <span>{getErrorMessage(workflowsError, 'Please try again.')}</span>
+                  <span>
+                    {getErrorMessage(
+                      workflowsError,
+                      t('automations.error.tryAgain', 'Please try again.')
+                    )}
+                  </span>
                   <Button variant="outline" size="sm" onClick={() => invalidateWorkflowsCache()}>
                     <RefreshCw className="me-2 h-4 w-4" />
-                    Retry
+                    {t('automations.error.retry', 'Retry')}
                   </Button>
                 </AlertDescription>
               </Alert>
             ) : workflows.length === 0 ? (
               <EmptyState
                 icon={WorkflowIcon}
-                title="No workflows yet"
-                description="Create your first automation workflow."
+                title={t('automations.empty.title', 'No workflows yet')}
+                description={t(
+                  'automations.empty.description',
+                  'Create your first automation workflow.'
+                )}
                 action={
                   <Can permission={Permission.WorkflowsWrite} mode="disable">
                     <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
-                      Create workflow
+                      {t('automations.empty.create', 'Create workflow')}
                     </Button>
                   </Can>
                 }
@@ -739,10 +890,10 @@ export default function WorkflowsPage() {
                 columns={workflowColumns}
                 data={workflows}
                 searchKey="name"
-                searchPlaceholder="Search workflows..."
+                searchPlaceholder={t('automations.table.searchPlaceholder', 'Search workflows...')}
                 getRowId={(w) => w.id}
                 onRowClick={handleViewWorkflow}
-                emptyMessage="No workflows match"
+                emptyMessage={t('automations.table.noMatch', 'No workflows match')}
               />
             )}
           </TabsContent>
@@ -753,8 +904,11 @@ export default function WorkflowsPage() {
             ) : runs.length === 0 ? (
               <EmptyState
                 icon={Clock}
-                title="No executions yet"
-                description="Run a workflow to see its execution history here."
+                title={t('automations.executions.emptyTitle', 'No executions yet')}
+                description={t(
+                  'automations.executions.emptyDescription',
+                  'Run a workflow to see its execution history here.'
+                )}
               />
             ) : (
               <DataTable
@@ -765,7 +919,9 @@ export default function WorkflowsPage() {
                 showPagination={false}
                 getRowId={(r) => r.id}
                 toolbarStart={
-                  <span className="text-sm text-muted-foreground">Latest {runs.length} runs</span>
+                  <span className="text-sm text-muted-foreground">
+                    {t('automations.executions.latest', 'Latest {n} runs', { n: runs.length })}
+                  </span>
                 }
               />
             )}
@@ -777,17 +933,25 @@ export default function WorkflowsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="flex items-center gap-2">
-                      Visual workflow builder
+                      {t('automations.builder.title', 'Visual workflow builder')}
                       {editingWorkflow && (
                         <Badge variant="secondary" className="font-normal">
-                          Editing: {editingWorkflow.name}
+                          {t('automations.builder.editing', 'Editing: {name}', {
+                            name: editingWorkflow.name,
+                          })}
                         </Badge>
                       )}
                     </CardTitle>
                     <CardDescription>
                       {editingWorkflow
-                        ? 'Make changes and click Save to update the workflow'
-                        : 'Add steps after the trigger, connect them and set each one up'}
+                        ? t(
+                            'automations.builder.hintEditing',
+                            'Make changes and click Save to update the workflow'
+                          )
+                        : t(
+                            'automations.builder.hintNew',
+                            'Add steps after the trigger, connect them and set each one up'
+                          )}
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -801,16 +965,20 @@ export default function WorkflowsPage() {
                         }}
                       >
                         <XCircle className="me-2 h-4 w-4" />
-                        Clear
+                        {t('automations.builder.clear', 'Clear')}
                       </Button>
                     )}
                     <Button variant="outline" size="sm" onClick={resetCanvas}>
                       <RefreshCw className="me-2 h-4 w-4" />
-                      Reset
+                      {t('automations.builder.reset', 'Reset')}
                     </Button>
                     <Button size="sm" onClick={handleSaveWorkflow} disabled={isSaving}>
                       <Save className="me-2 h-4 w-4" />
-                      {isSaving ? 'Saving...' : editingWorkflow ? 'Save changes' : 'Save workflow'}
+                      {isSaving
+                        ? t('automations.builder.saving', 'Saving...')
+                        : editingWorkflow
+                          ? t('automations.builder.saveChanges', 'Save changes')
+                          : t('automations.builder.saveWorkflow', 'Save workflow')}
                     </Button>
                   </div>
                 </div>
@@ -872,19 +1040,21 @@ export default function WorkflowsPage() {
                           wf.is_active && 'border-success/30 bg-success/10 text-success'
                         )}
                       >
-                        {wf.is_active ? 'Active' : 'Inactive'}
+                        {wf.is_active
+                          ? t('automations.status.active', 'Active')
+                          : t('automations.status.inactive', 'Inactive')}
                       </Badge>
                       <UnsupportedBadge features={unsupported} />
                     </>
                   }
-                  meta={[getTriggerDisplay(wf)]}
+                  meta={[triggerOf(wf)]}
                   actions={
                     <>
                       <WorkflowRunButton workflow={wf} size="sm" />
                       <Can permission={Permission.WorkflowsWrite} mode="disable">
                         <Button size="sm" variant="outline" onClick={() => handleEditInBuilder(wf)}>
                           <Pencil className="h-4 w-4" />
-                          Edit
+                          {t('automations.detail.edit', 'Edit')}
                         </Button>
                       </Can>
                     </>
@@ -896,36 +1066,52 @@ export default function WorkflowsPage() {
               <div className="space-y-5">
                 {unsupported.length > 0 && (
                   <Alert variant="destructive">
-                    <AlertTitle>Uses an unsupported step</AlertTitle>
+                    <AlertTitle>
+                      {t('automations.unsupported.alertTitle', 'Uses an unsupported step')}
+                    </AlertTitle>
                     <AlertDescription>
-                      {unsupported.map(formatUnsupportedWorkflowFeature).join(', ')}{' '}
-                      {unsupported.length === 1 ? 'is' : 'are'} not run by the platform. Remove{' '}
-                      {unsupported.length === 1 ? 'it' : 'them'} before activating or saving this
-                      workflow.
+                      {unsupported.length === 1
+                        ? t(
+                            'automations.unsupported.alertOne',
+                            '{features} is not run by the platform. Remove it before activating or saving this workflow.',
+                            { features: unsupported.map(labels.feature).join(', ') }
+                          )
+                        : t(
+                            'automations.unsupported.alertMany',
+                            '{features} are not run by the platform. Remove them before activating or saving this workflow.',
+                            { features: unsupported.map(labels.feature).join(', ') }
+                          )}
                     </AlertDescription>
                   </Alert>
                 )}
-                <DetailStatGrid aria-label="Runs">
-                  <DetailStat label="Total runs" value={wf.total_runs} />
+                <DetailStatGrid aria-label={t('automations.detail.runsAria', 'Runs')}>
                   <DetailStat
-                    label="Success rate"
+                    label={t('automations.detail.totalRuns', 'Total runs')}
+                    value={wf.total_runs}
+                  />
+                  <DetailStat
+                    label={t('automations.detail.successRate', 'Success rate')}
                     value={`${successRate}%`}
                     tone={wf.total_runs > 0 && successRate < 50 ? 'warning' : 'default'}
                   />
                 </DetailStatGrid>
 
                 <DetailSections>
-                  <DetailSection title="Description">
+                  <DetailSection title={t('automations.detail.description', 'Description')}>
                     <p className="text-sm text-muted-foreground">
-                      {wf.description || 'No description'}
+                      {wf.description || t('automations.detail.noDescription', 'No description')}
                     </p>
                   </DetailSection>
 
-                  <DetailSection title="Trigger" icon={Zap}>
-                    <p className="text-sm">{getTriggerDisplay(wf)}</p>
+                  <DetailSection title={t('automations.detail.trigger', 'Trigger')} icon={Zap}>
+                    <p className="text-sm">{triggerOf(wf)}</p>
                   </DetailSection>
 
-                  <DetailSection title="Actions" icon={Play} count={actions.length}>
+                  <DetailSection
+                    title={t('automations.detail.actions', 'Actions')}
+                    icon={Play}
+                    count={actions.length}
+                  >
                     {actions.length > 0 ? (
                       <ol className="divide-y rounded-lg border">
                         {actions.map((action, idx) => (
@@ -938,12 +1124,17 @@ export default function WorkflowsPage() {
                         ))}
                       </ol>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No actions configured</p>
+                      <p className="text-sm text-muted-foreground">
+                        {t('automations.detail.noActions', 'No actions configured')}
+                      </p>
                     )}
                   </DetailSection>
 
                   {wf.tags && wf.tags.length > 0 && (
-                    <DetailSection title="Tags" count={wf.tags.length}>
+                    <DetailSection
+                      title={t('automations.detail.tags', 'Tags')}
+                      count={wf.tags.length}
+                    >
                       <div className="flex flex-wrap gap-1.5">
                         {wf.tags.map((tag, idx) => (
                           <Badge key={idx} variant="outline">
@@ -963,7 +1154,7 @@ export default function WorkflowsPage() {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create workflow</DialogTitle>
+            <DialogTitle>{t('automations.create.title', 'Create workflow')}</DialogTitle>
             <DialogDescription>
               {t(
                 'automations.createHint',
@@ -974,19 +1165,27 @@ export default function WorkflowsPage() {
           <DialogBody>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="workflow-name">Name</Label>
+                <Label htmlFor="workflow-name">{t('automations.create.name', 'Name')}</Label>
                 <Input
                   id="workflow-name"
-                  placeholder="e.g., Critical Finding Response"
+                  placeholder={t(
+                    'automations.create.namePlaceholder',
+                    'e.g., Critical Finding Response'
+                  )}
                   value={newWorkflowName}
                   onChange={(e) => setNewWorkflowName(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="workflow-description">Description (optional)</Label>
+                <Label htmlFor="workflow-description">
+                  {t('automations.create.descriptionLabel', 'Description (optional)')}
+                </Label>
                 <Textarea
                   id="workflow-description"
-                  placeholder="Describe what this workflow does..."
+                  placeholder={t(
+                    'automations.create.descriptionPlaceholder',
+                    'Describe what this workflow does...'
+                  )}
                   value={newWorkflowDescription}
                   onChange={(e) => setNewWorkflowDescription(e.target.value)}
                   rows={3}
@@ -996,10 +1195,12 @@ export default function WorkflowsPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
+              {t('automations.create.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleCreateWorkflow} disabled={isCreating || !newWorkflowName.trim()}>
-              {isCreating ? 'Creating...' : 'Create workflow'}
+              {isCreating
+                ? t('automations.create.creating', 'Creating...')
+                : t('automations.create.submit', 'Create workflow')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1009,50 +1210,81 @@ export default function WorkflowsPage() {
       <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Save workflow</DialogTitle>
+            <DialogTitle>{t('automations.save.title', 'Save workflow')}</DialogTitle>
             <DialogDescription>
-              Save your workflow design. The workflow will include {nodes.length} node(s) and{' '}
-              {edges.length} connection(s).
+              {t(
+                'automations.save.description',
+                'Save your workflow design. The workflow will include {nodes} node(s) and {edges} connection(s).',
+                { nodes: nodes.length, edges: edges.length }
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="save-workflow-name">Name</Label>
+                <Label htmlFor="save-workflow-name">{t('automations.create.name', 'Name')}</Label>
                 <Input
                   id="save-workflow-name"
-                  placeholder="e.g., Critical Finding Response"
+                  placeholder={t(
+                    'automations.create.namePlaceholder',
+                    'e.g., Critical Finding Response'
+                  )}
                   value={saveWorkflowName}
                   onChange={(e) => setSaveWorkflowName(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="save-workflow-description">Description (optional)</Label>
+                <Label htmlFor="save-workflow-description">
+                  {t('automations.create.descriptionLabel', 'Description (optional)')}
+                </Label>
                 <Textarea
                   id="save-workflow-description"
-                  placeholder="Describe what this workflow does..."
+                  placeholder={t(
+                    'automations.create.descriptionPlaceholder',
+                    'Describe what this workflow does...'
+                  )}
                   value={saveWorkflowDescription}
                   onChange={(e) => setSaveWorkflowDescription(e.target.value)}
                   rows={3}
                 />
               </div>
               <div className="rounded-lg border p-3 bg-muted/50">
-                <p className="text-sm font-medium mb-2">Workflow summary</p>
+                <p className="text-sm font-medium mb-2">
+                  {t('automations.save.summary', 'Workflow summary')}
+                </p>
                 <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
-                  <div>Triggers: {nodes.filter((n) => n.type === 'trigger').length}</div>
-                  <div>Conditions: {nodes.filter((n) => n.type === 'condition').length}</div>
-                  <div>Actions: {nodes.filter((n) => n.type === 'action').length}</div>
-                  <div>Notifications: {nodes.filter((n) => n.type === 'notification').length}</div>
+                  <div>
+                    {t('automations.save.triggers', 'Triggers: {n}', {
+                      n: nodes.filter((n) => n.type === 'trigger').length,
+                    })}
+                  </div>
+                  <div>
+                    {t('automations.save.conditions', 'Conditions: {n}', {
+                      n: nodes.filter((n) => n.type === 'condition').length,
+                    })}
+                  </div>
+                  <div>
+                    {t('automations.save.actions', 'Actions: {n}', {
+                      n: nodes.filter((n) => n.type === 'action').length,
+                    })}
+                  </div>
+                  <div>
+                    {t('automations.save.notifications', 'Notifications: {n}', {
+                      n: nodes.filter((n) => n.type === 'notification').length,
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsSaveDialogOpen(false)}>
-              Cancel
+              {t('automations.create.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleSaveNewWorkflow} disabled={isSaving || !saveWorkflowName.trim()}>
-              {isSaving ? 'Saving...' : 'Save workflow'}
+              {isSaving
+                ? t('automations.builder.saving', 'Saving...')
+                : t('automations.save.submit', 'Save workflow')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1071,22 +1303,36 @@ function WorkflowRunButton({
   className?: string
   size?: 'sm' | 'default'
 }) {
+  const { t } = useTranslation()
   const { trigger, isMutating } = useTriggerWorkflow(workflow.id)
 
   const handleRun = async () => {
     try {
       await trigger({ trigger_type: 'manual' })
-      toast.success(`Workflow "${workflow.name}" triggered successfully`)
+      toast.success(
+        t('automations.toast.triggered', 'Workflow "{name}" triggered successfully', {
+          name: workflow.name,
+        })
+      )
       await invalidateWorkflowRunsCache()
     } catch (err) {
-      toast.error(getErrorMessage(err, `Failed to trigger workflow "${workflow.name}"`))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('automations.toast.triggerFailed', 'Failed to trigger workflow "{name}"', {
+            name: workflow.name,
+          })
+        )
+      )
     }
   }
 
   return (
     <Button className={className} size={size} onClick={handleRun} disabled={isMutating}>
       <Play className="h-4 w-4" />
-      {isMutating ? 'Running...' : 'Run now'}
+      {isMutating
+        ? t('automations.menu.running', 'Running...')
+        : t('automations.menu.runNow', 'Run now')}
     </Button>
   )
 }

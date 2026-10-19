@@ -28,6 +28,7 @@ vi.mock('@/lib/permissions', () => ({
   Permission: {
     SensorsPair: 'sensors:pair',
     SensorsApprove: 'sensors:approve',
+    SensorsRead: 'sensors:read',
     ScanZonesRead: 'zones:read',
   },
   useHasPermission: (p: string) => perms.granted.has(p),
@@ -37,6 +38,11 @@ vi.mock('@/lib/api/scan-zone-hooks', () => ({
 }))
 vi.mock('@/lib/api/sensor-hooks', () => ({
   invalidateSensorsCache: vi.fn(async () => undefined),
+  useTenantSensorStats: (cfg?: { isPaused?: () => boolean }) => ({
+    data: cfg?.isPaused?.()
+      ? undefined
+      : { products: [{ id: 'openctemio-sensor', image: 'ghcr.io/example/sensor:1.2.3' }] },
+  }),
 }))
 vi.mock('@/lib/api/sensor-pairing-hooks', () => ({
   lookupPairing: api.lookup,
@@ -80,6 +86,27 @@ describe('PairSensorDialog', () => {
     perms.granted = new Set(['sensors:pair', 'sensors:approve', 'zones:read'])
     api.expectation = { data: undefined, error: undefined }
     api.expectationIds = []
+  })
+
+  it('tells a first-time admin how to get the sensor, keyless and per permission', async () => {
+    perms.granted = new Set(['sensors:pair', 'sensors:approve', 'sensors:read'])
+    const { unmount } = render(<PairSensorDialog open onOpenChange={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: "Don't have the sensor yet?" }))
+    expect(screen.getByText('docker pull ghcr.io/example/sensor:1.2.3')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Open the sensor installation guide' })
+    ).toHaveAttribute('href', expect.stringContaining('/install/'))
+    expect(screen.queryByText(/API_KEY|apikey/i)).toBeNull()
+    unmount()
+
+    // Without a read of the fleet the image is not shown; the guide still is.
+    perms.granted = new Set(['sensors:pair'])
+    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: "Don't have the sensor yet?" }))
+    expect(screen.queryByText(/docker pull/)).toBeNull()
+    expect(
+      screen.getByRole('link', { name: 'Open the sensor installation guide' })
+    ).toBeInTheDocument()
   })
 
   it('looks up the normalised code and shows the fingerprint, host facts and source address', async () => {
