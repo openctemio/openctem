@@ -88,6 +88,8 @@
   "admin.confirm.reasonHint": "Ít nhất {min} ký tự. Được lưu trong nhật ký kiểm toán quản trị.",
   "admin.confirm.reasonPlaceholder": "Phiếu hỗ trợ hoặc yêu cầu và lý do, ví dụ \"Phiếu 4411: chủ sở hữu đã nghỉ việc\"",
   "admin.confirm.roleRefused": "Vai trò console của bạn không được làm việc này. Hãy nhờ một super admin.",
+  "admin.cp.storedNotDelivered": "Đã lưu, chưa phân phối",
+  "admin.cp.notDelivered": "Chưa hoạt động: cảm biến chưa tải gói nội dung. Gói đã lưu không được lần quét nào dùng, và thu hồi gói không dừng được gì. Mẫu tùy chỉnh vẫn đi kèm trong từng công việc quét.",
   "admin.cp.ackSecrets": "Tôi đã kiểm tra mọi tệp liệt kê ở trên: đây không phải thông tin xác thực thật (hoặc buộc phải giữ nguyên). Vẫn lưu gói.",
   "admin.cp.active": "Đang hoạt động",
   "admin.cp.add": "Thêm gói",
