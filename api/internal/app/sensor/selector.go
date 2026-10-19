@@ -95,9 +95,10 @@ type SelectSensorResult struct {
 	Sensor  *sensordom.Sensor
 	Queued  bool
 	Message string
-	// TenantBusy is true when the tenant has online sensors that can run the
-	// job but none has a free slot: the job waits for one of them (it is
-	// never moved to shared sensors because the tenant's fleet is busy).
+	// TenantBusy is true when the tenant has sensors that can run the job
+	// but none can take it now (every one is busy, or they are not online
+	// at the moment): the job waits for one of them (it is never moved to
+	// shared sensors because the tenant's fleet is busy or restarting).
 	TenantBusy bool
 }
 
@@ -116,6 +117,20 @@ func (s *SensorSelector) selectTenantSensor(ctx context.Context, req SelectSenso
 
 	if len(sensors) == 0 {
 		if req.AllowQueue {
+			// A capable sensor that is not online right now (restarting,
+			// briefly missing heartbeats) still owns the work: it waits for
+			// that sensor instead of going to the shared fleet.
+			capable, err := s.sensorRepo.FindByCapabilities(ctx, req.TenantID, req.Capabilities, req.Tool)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find tenant sensors: %w", err)
+			}
+			if len(capable) > 0 {
+				return &SelectSensorResult{
+					Queued:     true,
+					TenantBusy: true,
+					Message:    "Tenant sensors are not online right now, job will be queued",
+				}, nil
+			}
 			return &SelectSensorResult{
 				Queued:  true,
 				Message: "No tenant sensor available, job will be queued",
