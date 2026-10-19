@@ -118,6 +118,9 @@ import (
 //	/admin/instance-scan-zones
 //	                          any admin         super_admin + step-up + reason +
 //	                                            fresh code in the body
+//	/admin/tenants/{id}/dashboard-data
+//	                          any admin         rebuild: ops_admin+ (audited; once
+//	                                            per hour per organization)
 //	/admin/tenants/{id}/audit-chain
 //	                          any admin         rebaseline: super_admin + step-up +
 //	                                            fresh code in the body (audited,
@@ -682,6 +685,17 @@ func registerAdminRoutes(
 			if h.AdminAuditChain != nil {
 				r.GET("/{tenantId}/audit-chain", h.AdminAuditChain.Classify, read...)
 				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, stepUp("organization.audit_chain_rebaseline"), scope)
+			}
+
+			// Dashboard data of an organization (docs/architecture/dashboards.md,
+			// "Facts maintainer"): any admin reads the status; ops_admin+ asks
+			// for a rebuild of derived data (once per hour per organization,
+			// shared with the organization's own request; audited, no step-up:
+			// no identity, privilege or trust changes).
+			if h.DashboardFacts != nil {
+				r.GET("/{tenantId}/dashboard-data", h.DashboardFacts.ConsoleStatus, read...)
+				r.POST("/{tenantId}/dashboard-data/rebuild", h.DashboardFacts.ConsoleRequestRebuild,
+					with([]Middleware{opsWrite, scope}, audit("organization.dashboard_data_rebuild"))...)
 			}
 
 			// Idle policy of an organization (off by default): any admin
