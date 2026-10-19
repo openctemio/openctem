@@ -49,6 +49,22 @@ type ThreatIntelRefreshController struct {
 	events     IntelEventEmitter
 	feed       string
 	logger     *logger.Logger
+	// lastSweep is when the findings were last compared with the catalogs
+	// (recompute queue, KEV escalation); see sweepDue.
+	lastSweep time.Time
+}
+
+// findingSweepEvery: the comparison of open findings with the catalogs runs
+// after every changed sync and at least this often even when the source
+// answered 304 or failed, so findings created since (or a sweep that failed)
+// are still reconciled.
+const findingSweepEvery = 24 * time.Hour
+
+// sweepDue reports whether the open findings are compared with the catalogs
+// on this run: after a sync that changed something, or when the last sweep
+// is findingSweepEvery old.
+func sweepDue(changed bool, lastSweep, now time.Time) bool {
+	return changed || lastSweep.IsZero() || now.Sub(lastSweep) >= findingSweepEvery
 }
 
 // NewThreatIntelRefreshController creates the daily EPSS refresh. queue may
@@ -100,17 +116,19 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 		processed += r.RecordsSynced
 		c.logger.Info("threat intel synced", "source", r.Source, "records", r.RecordsSynced, "duration_ms", r.DurationMs)
 	}
-	changed := r.Error == nil && !r.NotModified
+	sweep := sweepDue(r.Error == nil && !r.NotModified, c.lastSweep, time.Now())
+	sweepOK := true
 
 	// Before the escalator writes is_in_kev: compare each open finding with
 	// the fresh catalogs. A failed enqueue must not fail the sync.
-	if changed && c.intelQueue != nil {
+	if sweep && c.intelQueue != nil {
 		n, err := c.intelQueue.EnqueueIntelChanges(ctx)
 		if err != nil {
 			// The crossings are found by comparing the stored EPSS with the
 			// catalog: refreshing the stored values now would lose them, so
 			// the refresh waits for the next run.
 			c.logger.Warn("queue findings with changed intel failed; stored EPSS not refreshed", "error", err)
+			sweepOK = false
 		} else {
 			if n > 0 {
 				c.logger.Info("findings with changed intel queued for a priority recompute", "assets", n)
@@ -129,10 +147,11 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 
 	// After KEV sync, auto-escalate + flag findings with CVEs in the KEV
 	// catalog. A severity change queues its asset by itself (trigger).
-	if changed && c.escalator != nil {
+	if sweep && c.escalator != nil {
 		res, err := c.escalator.EscalateKEVFindings(ctx)
 		if err != nil {
 			c.logger.Warn("KEV auto-escalation failed", "error", err)
+			sweepOK = false
 		} else if res.Escalated > 0 || res.Flagged > 0 || res.Unflagged > 0 {
 			c.logger.Info("KEV reconciliation completed",
 				"findings_escalated", res.Escalated,
@@ -142,6 +161,10 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 			)
 			processed += res.Escalated + res.Flagged + res.Unflagged
 		}
+	}
+
+	if sweep && sweepOK {
+		c.lastSweep = time.Now()
 	}
 
 	// The event log compares the stored catalog with what it saw before,
