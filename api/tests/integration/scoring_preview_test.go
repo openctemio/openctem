@@ -221,3 +221,29 @@ func TestScoringPreview_FloorImpactEqualsApply(t *testing.T) {
 		t.Fatalf("closed finding class moved to %s", c)
 	}
 }
+
+// The preview reads every asset of the tenant: a List page is capped at
+// 100 rows, and the preview used to stop after the first page.
+func TestScoringPreview_CountsEveryAsset(t *testing.T) {
+	fx := newScoringFixture(t)
+	ctx := context.Background()
+	tid := fx.newTenant(t)
+	other := fx.newTenant(t)
+	svc := fx.riskService(t)
+	const n = 250
+	if _, err := fx.db.Exec(`
+		INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status)
+		SELECT gen_random_uuid(), $1, 'preview-bulk-' || g, 'repository', 'medium', 'active'
+		FROM generate_series(1, $2::int) g`, tid.String(), n); err != nil {
+		t.Fatal(err)
+	}
+	fx.newAsset(t, other, "github.com/acme/preview-bulk-other")
+	base := tenant.DefaultRiskScoringPreset()
+	impact, err := svc.PreviewRiskImpact(ctx, tid, assetapp.MapTenantToAssetScoringConfig(&base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if impact.TotalAssets != n {
+		t.Fatalf("preview counted %d assets, the tenant has %d", impact.TotalAssets, n)
+	}
+}
