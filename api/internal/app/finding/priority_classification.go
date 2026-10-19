@@ -758,13 +758,6 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		hasOwner = s.ownerPresence(ctx, tenantID, ownerAssetIDs)
 	}
 
-	// AI-triage false-positive verdicts for the whole batch — ONE tenant-scoped
-	// query for every finding id, no per-finding N+1 (mirrors the preloads above).
-	findingIDs := make([]shared.ID, 0, len(findings))
-	for _, f := range findings {
-		findingIDs = append(findingIDs, f.ID())
-	}
-
 	// Attribution of every asset in the batch: one tenant-scoped query.
 	attrAssetIDs := make([]shared.ID, 0, len(assets))
 	for aid := range assets {
