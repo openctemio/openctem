@@ -130,6 +130,7 @@ offboarding without step-up and is removed.
 | `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST …/webhook-secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, repository events) for the organization. |
 | `PATCH /api/v1/attachments/storage-config` | Decides where evidence files are written and with which credentials. |
 | `POST /api/v1/sensors`, `POST /api/v1/sensors/{id}/regenerate-key` | Mints a persistent sensor key, a credential that outlives the session (the same reason as an API key). Revoking, disabling and deleting stay one click. |
+| `POST /api/v1/priority-rules`, `PUT`/`DELETE /api/v1/priority-rules/{id}` | A rule re-classes findings across the organization, down to the platform floors ([priority explainability](priority-explainability.md)). |
 | `POST /api/v1/credentials/{id}/reveal` | Returns a leaked credential in plaintext; also audited (`credential.revealed`), and the response is not cached. |
 
 ### Actions that need step-up only in some cases

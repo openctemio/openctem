@@ -115,6 +115,7 @@ import {
   ArrowLeft,
   Layers,
   ChevronRight,
+  SquareCode,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -144,10 +145,13 @@ import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialo
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
 import { useCanCreateTicket } from '@/features/findings/hooks/use-can-create-ticket'
 import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/add-findings-to-task-dialog'
+import { CreateTaskFromQueryDialog } from '@/features/remediation-hub/components/create-task-from-query-dialog'
+import { taskQueryApi } from '@/features/remediation-hub/api/use-task-query'
 import { VerifyGroupActions } from '@/features/findings/components/verify-group-actions'
 import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
 import {
   useFindingsApi,
+  buildFindingsEndpoint,
   useFindingApi,
   useFindingStatsApi,
   buildFindingsExportUrl,
@@ -590,6 +594,8 @@ function FindingsContent() {
   const [componentParam] = useUrlFilter('component_id', '')
   const [ownerParam] = useUrlFilter('asset_owner_id', '')
   const [ownerNullParam] = useUrlFilter('asset_owner_id_null', '')
+  // An asset group's links (its findings tab, its severity breakdown).
+  const [assetGroupParam] = useUrlFilter('asset_group_id', '')
   const ownerUnassigned = ownerNullParam === 'true'
   // Bumped after a change, so the grouped view reloads its groups and rows.
   const [groupsReloadKey, setGroupsReloadKey] = useState(0)
@@ -663,6 +669,13 @@ function FindingsContent() {
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
   // OSS where no modules are reported).
   const remediationEnabled = useModuleEnabled('remediation')
+  // "Create task from these filters": the list filter becomes query text on
+  // the server (the same filter registry), then the query-task dialog opens.
+  const canQueryTask =
+    remediationEnabled &&
+    hasPermission(Permission.RemediationWrite) &&
+    hasPermission(Permission.FindingsRead)
+  const [taskQuery, setTaskQuery] = useState<{ query: string; ignored: string[] } | null>(null)
   const canCreateTicket = useCanCreateTicket()
 
   // Statuses hidden from default dashboard view (pentest WIP, not ready for visibility)
@@ -718,6 +731,7 @@ function FindingsContent() {
     componentParam,
     ownerParam,
     ownerNullParam,
+    assetGroupParam,
     groupParam,
     viewParam,
     lens,
@@ -765,6 +779,7 @@ function FindingsContent() {
     if (componentParam) filters.component_id = componentParam
     if (ownerParam) filters.asset_owner_id = ownerParam
     if (ownerUnassigned) filters.asset_owner_unassigned = true
+    if (assetGroupParam) filters.asset_group_id = assetGroupParam
     if (effectiveSeverities.length > 0) filters.severities = effectiveSeverities
     if (savedId) filters.view = savedId
     if (!savedId || rawLens) filters.state = lens
@@ -802,6 +817,7 @@ function FindingsContent() {
     componentParam,
     ownerParam,
     ownerUnassigned,
+    assetGroupParam,
     effectiveSeverities,
     statuses,
     sourceFilter,
@@ -852,6 +868,7 @@ function FindingsContent() {
       component_id: apiFilters.component_id,
       asset_owner_id: apiFilters.asset_owner_id,
       asset_owner_unassigned: apiFilters.asset_owner_unassigned,
+      asset_group_id: apiFilters.asset_group_id,
     }),
     [HIDDEN_STATUSES, apiFilters]
   )
@@ -866,6 +883,7 @@ function FindingsContent() {
     componentId: componentParam,
     ownerId: ownerParam,
     ownerUnassigned,
+    assetGroupId: assetGroupParam,
   }
   const hasContextScope = hasFindingContextFilters(contextFilterValues)
   // keepPreviousData: a filter change keeps the numbers on screen until the
@@ -923,6 +941,15 @@ function FindingsContent() {
     toast.success('Findings refreshed')
   }
 
+  const openTaskFromFilters = useCallback(async () => {
+    const endpoint = buildFindingsEndpoint(apiFilters)
+    const params = endpoint.includes('?') ? endpoint.slice(endpoint.indexOf('?') + 1) : ''
+    try {
+      setTaskQuery(await taskQueryApi.fromFilters(params))
+    } catch {
+      setTaskQuery({ query: '', ignored: [] })
+    }
+  }, [apiFilters])
   const canServerExport = hasPermission(Permission.FindingsExport)
   const handleExport = (format: string) => {
     // With findings:export the server streams every matching finding (up to
@@ -1914,6 +1941,25 @@ function FindingsContent() {
       />
       {groupBySelect}
       {refreshButton}
+      {canQueryTask && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => void openTaskFromFilters()}
+              aria-label={t('remediationQuery.findings.fromFilters')}
+            >
+              <SquareCode className="h-4 w-4 md:me-2" aria-hidden />
+              <span className="hidden md:inline">
+                {t('remediationQuery.findings.fromFiltersShort')}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('remediationQuery.findings.fromFilters')}</TooltipContent>
+        </Tooltip>
+      )}
       {exportMenu}
     </>
   )
@@ -2297,6 +2343,18 @@ function FindingsContent() {
           onOpenChange={(open) => {
             if (!open) setTicketFinding(null)
           }}
+        />
+      )}
+
+      {/* Task from the list's filters: mounted only while open. */}
+      {canQueryTask && taskQuery && (
+        <CreateTaskFromQueryDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setTaskQuery(null)
+          }}
+          initialQuery={taskQuery.query}
+          ignoredFilters={taskQuery.ignored}
         />
       )}
 

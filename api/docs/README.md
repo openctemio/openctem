@@ -55,7 +55,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [EASM](architecture/easm.md), [EASM DNS checks](architecture/easm-dns-checks.md), [certificate transparency monitoring](architecture/certificate-transparency-monitoring.md), [change detection](architecture/change-detection.md)
 
 **Sensors and scanning**
-- [Sensors](architecture/sensors.md), [sensor identity](architecture/agent-identity.md), [sensor pairing](architecture/sensor-pairing.md), [sensor ↔ platform trust](architecture/sensor-platform-trust.md), [signed jobs](architecture/job-signing.md), [result binding](architecture/sensor-result-binding.md)
+- [Sensors](architecture/sensors.md), [sensor identity](architecture/agent-identity.md), [sensor pairing](architecture/sensor-pairing.md), [sensor ↔ platform trust](architecture/sensor-platform-trust.md), [signed jobs](architecture/job-signing.md), [result binding](architecture/sensor-result-binding.md), [sensor relay](architecture/sensor-relay.md)
 - [Scan lifecycle](architecture/scan-lifecycle.md), [scan orchestration](architecture/scan-orchestration.md), [scan stages](architecture/scan-stages.md), [scan zones](architecture/scan-zones.md), [placement](architecture/placement.md), [scan naming](architecture/scan-naming.md)
 - [Tool contract](architecture/tool-contract.md), [tool availability](architecture/tool-availability.md), [secret scanning](architecture/secret-scanning.md)
 - [Content packs](architecture/content-packs.md), [content catalog](architecture/content-catalog.md): signed content packages, offline import, installs and revocation
@@ -64,7 +64,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
 
 **Findings and prioritization**
-- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md)
+- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md), [finding write concurrency (row_version)](architecture/finding-row-version.md)
 - [Global catalog trust](architecture/global-catalog-trust.md), [priority explainability](architecture/priority-explainability.md), [CTEM-ID catalog](architecture/ctem-id-catalog.md)
 - [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md)
 

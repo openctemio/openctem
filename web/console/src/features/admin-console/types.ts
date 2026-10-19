@@ -430,6 +430,8 @@ export type AdminApprovalAction =
   | 'admin.revoke_super_admin'
   | 'console_mfa.disable'
   | 'platform_idp.remove'
+  | 'platform_idp.change'
+  | 'admin.reset_credentials'
   | 'signup.open'
   | 'audit_chain.rebaseline'
   | 'organization.purge'

@@ -426,3 +426,49 @@ func TestRemediationTasks_HoldResumeCancel(t *testing.T) {
 		Version: task.Version, FindingIDs: []shared.ID{r.finding(r.assetA, "new", nil)}}, auditapp.AuditContext{})
 	assert.ErrorIs(t, err, remediation.ErrTaskTerminal)
 }
+
+// overdue=true counts every open task past its deadline, not just the ones
+// on a page; a task without a deadline or with a future one is never
+// overdue, another tenant's tasks never count, and a restricted member's
+// count covers only the tasks they can see.
+func TestRemediationTasks_OverdueFilter(t *testing.T) {
+	r := newRTRig(t)
+	admin, member := r.adminCtx(), r.memberCtx()
+	mk := func(asset shared.ID, title string, deadline *string) remediation.Task {
+		task, err := r.svc.CreateTask(admin, remediationapp.CreateTaskInput{TenantID: r.tenant, ActorID: &r.admin, Title: title,
+			FindingIDs: []shared.ID{r.finding(asset, "new", nil)}}, auditapp.AuditContext{})
+		require.NoError(t, err)
+		if deadline == nil {
+			r.exec(`UPDATE remediation_tasks SET deadline = NULL WHERE id = $1`, task.ID.String())
+		} else {
+			r.exec(`UPDATE remediation_tasks SET deadline = NOW() + $2::interval WHERE id = $1`, task.ID.String(), *deadline)
+		}
+		return *task
+	}
+	past, future := "-2 days", "3 days"
+	late := mk(r.assetA, "late", &past)
+	lateB := mk(r.assetB, "late out of scope", &past)
+	mk(r.assetA, "future", &future)
+	mk(r.assetA, "no deadline", nil)
+	canceled := mk(r.assetA, "late but canceled", &past)
+	r.exec(`UPDATE remediation_tasks SET state = 'canceled' WHERE id = $1`, canceled.ID.String())
+
+	open := []remediation.TaskState{remediation.TaskStateOpen, remediation.TaskStateInProgress,
+		remediation.TaskStateVerifying, remediation.TaskStateOnHold}
+	count := func(ctx context.Context, tenant shared.ID, f remediation.TaskFilter) int64 {
+		res, err := r.svc.ListTasks(ctx, remediationapp.ListTasksInput{TenantID: tenant, Filter: f}, pagination.New(1, 1))
+		require.NoError(t, err)
+		return res.Total
+	}
+	assert.EqualValues(t, 2, count(admin, r.tenant, remediation.TaskFilter{States: open, Overdue: true}))
+	assert.EqualValues(t, 3, count(admin, r.tenant, remediation.TaskFilter{Overdue: true}), "without a state filter canceled counts too")
+	assert.EqualValues(t, 4, count(admin, r.tenant, remediation.TaskFilter{States: open}))
+	assert.EqualValues(t, 0, count(admin, r.other, remediation.TaskFilter{States: open, Overdue: true}), "another tenant sees none")
+
+	res, err := r.svc.ListTasks(member, remediationapp.ListTasksInput{TenantID: r.tenant,
+		Filter: remediation.TaskFilter{States: open, Overdue: true}}, pagination.New(1, 50))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, res.Total, "a restricted member counts only tasks they can see")
+	assert.Equal(t, late.ID, res.Data[0].ID)
+	assert.NotEqual(t, lateB.ID, res.Data[0].ID)
+}

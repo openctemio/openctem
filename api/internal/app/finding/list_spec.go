@@ -128,6 +128,28 @@ func (s *VulnerabilityService) GetFindingStatsBySpec(ctx context.Context, c Filt
 	return repo.GetStatsWhere(ctx, where)
 }
 
+type findingSLARepo interface {
+	GetSLABreakdownWhere(ctx context.Context, w *filterspec.Where) (*vulnerability.SLABreakdown, error)
+}
+
+// GetFindingSLABreakdownBySpec splits the findings a decoded filter selects by
+// SLA standing, as the caller: the same compiled WHERE as the list and stats.
+func (s *VulnerabilityService) GetFindingSLABreakdownBySpec(ctx context.Context, c FilterCaller, spec *filterspec.Spec) (*vulnerability.SLABreakdown, error) {
+	repo, ok := s.findingRepo.(findingSLARepo)
+	if !ok {
+		return nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetSLABreakdownWhere(ctx, where)
+}
+
 // groupsArgOffset is the first placeholder the grouped-view queries leave to
 // the filter ($1 is their tenant).
 const groupsArgOffset = 2

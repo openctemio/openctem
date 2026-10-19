@@ -22,6 +22,7 @@ import type {
   RemediationTask,
   SuggestionCounts,
   SuggestionKind,
+  SuggestionMember,
   TaskEvent,
   TaskMember,
   TaskState,
@@ -135,8 +136,13 @@ export function useSuggestionStats(enabled = true) {
   return useSWR<SuggestionCounts>(enabled ? `${SUGGESTIONS}/stats` : null, get)
 }
 
+/** One suggestion by id (a deep link may name one that is not on the page). */
+export function useSuggestion(id: string | undefined) {
+  return useSWR<RemediationSuggestion>(id ? `${SUGGESTIONS}/${id}` : null, get)
+}
+
 export function useSuggestionMembers(id: string | undefined, page: number, perPage = 50) {
-  return useSWR<Page<TaskMember>>(
+  return useSWR<Page<SuggestionMember>>(
     id ? `${SUGGESTIONS}/${id}/members?page=${page}&per_page=${perPage}` : null,
     get,
     { keepPreviousData: true }
@@ -233,4 +239,6 @@ export interface ApproveBody {
   owners?: { index: number; assignee_user_id?: string; assignee_group_id?: string }[]
   deadline?: string
   auto_join?: boolean
+  /** Resolves findings another active task took since the suggestion was made. */
+  conflicts?: ConflictResolution
 }

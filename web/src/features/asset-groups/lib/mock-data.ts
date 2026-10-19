@@ -4,7 +4,7 @@
  * Vietnamese company asset groups for development and testing
  */
 
-import type { AssetGroup } from '../types'
+import type { AssetGroup, GroupAsset, GroupFinding } from '../types'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 
 // Helper to generate dates
@@ -235,15 +235,6 @@ export const getAssetGroups = (): AssetGroup[] => {
 }
 
 // Mock assets for groups (simplified for demo)
-export interface GroupAsset {
-  id: string
-  type: 'domain' | 'website' | 'api' | 'host' | 'cloud' | 'repository' | 'database'
-  name: string
-  status: 'active' | 'inactive' | 'monitoring'
-  riskScore: number
-  findingCount: number
-  lastSeen: string
-}
 
 // Generate mock assets for a group
 export const getAssetsByGroupId = (groupId: string): GroupAsset[] => {
@@ -295,14 +286,6 @@ export const getAssetsByGroupId = (groupId: string): GroupAsset[] => {
 }
 
 // Get findings summary for a group
-export interface GroupFinding {
-  id: string
-  title: string
-  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
-  status: 'open' | 'in_progress' | 'resolved'
-  assetName: string
-  discoveredAt: string
-}
 
 export const getFindingsByGroupId = (groupId: string): GroupFinding[] => {
   const group = getAssetGroupById(groupId)
@@ -331,6 +314,7 @@ export const getFindingsByGroupId = (groupId: string): GroupFinding[] => {
       title: findingTitles[i % findingTitles.length],
       severity: severities[i % severities.length],
       status: statuses[i % statuses.length],
+      open: statuses[i % statuses.length] !== 'resolved',
       assetName: `asset-${i + 1}.example.vn`,
       discoveredAt: daysAgo(Math.floor(Math.random() * 30)),
     })
