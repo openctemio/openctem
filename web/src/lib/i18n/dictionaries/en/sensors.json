@@ -645,6 +645,7 @@
   "sensors.pair.getCode": "Get a code",
   "sensors.pair.runOnHost": "Run this on the sensor host:",
   "sensors.pair.pairCommand": "Pair command",
+  "sensors.pair.signingRootNote": "The command carries the job-signing root: the sensor checks the platform's job signer against it and refuses to pair if they differ.",
   "sensors.pair.expired": "The code expired. Get a new one.",
   "sensors.pair.rejected": "This pairing request was rejected.",
   "sensors.pair.waiting": "Waiting for the sensor to connect · expires in {time}",

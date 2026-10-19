@@ -1263,6 +1263,12 @@ vars:
     values: [auto, off]
     default: "auto"
     description: "`auto` serves sensor protocol v3 and picks its bindings itself (HTTPS always, gRPC once the sensor CA loads and its self-probe passes). `off` is the emergency switch: every sensor falls back to v2 at its next call."
+  - name: SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS
+    component: api
+    group: "Sensors"
+    type: bool
+    default: "false"
+    description: "Lets a production API start without `SIGNER_SOCKET`: sensor jobs are then not signed, and sensors paired from then on refuse to start. Development only."
   - name: SIGNER_SOCKET
     component: api
     group: "Sensors"
@@ -1964,6 +1970,12 @@ vars:
     group: "Administration tools"
     type: string
     description: "`rekey`: format of `REKEY_OLD_KEY` (`hex`, `base64` or `raw`). Unset: detected."
+  - name: SIGNER_GENERATE_KEY
+    component: tool
+    group: "Administration tools"
+    type: bool
+    default: "false"
+    description: "`openctem-signer serve`: `true` creates the signing key on first start when `SIGNER_KEY_FILE` does not exist (never replaces one) and logs its id. The default compose file sets it."
   - name: SIGNER_KEYSET_FILE
     component: tool
     group: "Administration tools"

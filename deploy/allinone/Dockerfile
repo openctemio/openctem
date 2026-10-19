@@ -100,6 +100,8 @@ COPY --from=console --chown=0:0 /app /opt/openctem/console
 # (the API image's operator commands are links to the server binary, see
 # api/Dockerfile; this image keeps bootstrap-admin, linked below)
 COPY --from=api --chown=0:0 /app/server /opt/openctem/api/
+# The job signer (docs/architecture/job-signing.md), started by supervise.sh.
+COPY --from=api --chown=0:0 /app/openctem-signer /opt/openctem/api/
 COPY --from=api --chown=0:0 /app/migrations /opt/openctem/api/migrations
 COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 # The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).

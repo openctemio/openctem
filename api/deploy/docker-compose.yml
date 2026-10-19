@@ -419,6 +419,10 @@ services:
       # other modes and the snippets then skip it). Each sensor product's
       # release line is built into the API (versions.yaml), not set here.
       SENSOR_CA_CERT_FILE: /ca/openctem-root-ca.crt
+      # Signed jobs (docs/architecture/job-signing.md): every job handed to a
+      # sensor is signed by the signer service below, reached only through
+      # this socket. Production refuses to start without it.
+      SIGNER_SOCKET: /run/openctem-signer/signer.sock
     healthcheck:
       test: ["CMD", "/app/server", "-healthcheck"]
       interval: 15s
@@ -432,6 +436,8 @@ services:
         condition: service_healthy
       db-grants:
         condition: service_completed_successfully
+      signer:
+        condition: service_healthy
     networks:
       openctem:
         # Fixed, so the console listener can bind this private address only.
@@ -453,6 +459,8 @@ services:
       # feed cache are staged here. A small in-memory tmpfs fills up and counts
       # against the memory limit. Not backed up.
       - api-tmp:/tmp
+      # The job signer's socket (never its keys).
+      - signer-socket:/run/openctem-signer
     read_only: true
     cap_drop:
       - ALL
@@ -462,6 +470,54 @@ services:
       resources:
         limits:
           memory: ${API_MEMORY_LIMIT:-2g}
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Job signer (docs/architecture/job-signing.md, RFC-040 §5.6)
+  # ---------------------------------------------------------------------------
+  # Signs every job the API hands a sensor. Its own container from the API
+  # image, its own user, no network at all, its own key volume never mounted
+  # into the API; the API reaches it only through the socket volume. The key
+  # is created on first start (SIGNER_GENERATE_KEY) and its id is logged:
+  # back up the signer-keys volume offline. Key sets signed by an offline
+  # root (recommended: sensors then pin the root out of band) and the scope
+  # ledger are described in docker-compose.job-signer.yml and job-signing.md.
+  signer:
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.11.0}}
+    entrypoint: ["/app/openctem-signer"]
+    command: ["serve"]
+    user: "1001:1000"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SIGNER_KEY_FILE: /var/lib/openctem-signer/keys/signer.pem
+      SIGNER_GENERATE_KEY: "true"
+      SIGNER_SOCKET: /run/openctem-signer/signer.sock
+      SIGNER_STATE_DIR: /var/lib/openctem-signer/state
+      # Scope ledger: the signer signs only inside the scope people approved.
+      # A new signer enforces it at once, so on an install that already has
+      # scopes run the ledger bootstrap first (docker-compose.job-signer.yml)
+      # or set SIGNER_LEDGER=audit in .env until it is done.
+      SIGNER_LEDGER: ${SIGNER_LEDGER:-}
+      # SIGNER_KEYSET_FILE: /etc/openctem-signer/keyset.json
+    volumes:
+      - signer-keys:/var/lib/openctem-signer/keys
+      - signer-state:/var/lib/openctem-signer/state
+      - signer-socket:/run/openctem-signer
+      # - ./keyset.json:/etc/openctem-signer/keyset.json:ro
+    healthcheck:
+      test: ["CMD", "/app/openctem-signer", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${SIGNER_MEMORY_LIMIT:-256m}
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
@@ -667,6 +723,9 @@ volumes:
   gateway-config:
   postgres-data:
   redis-data:
+  signer-keys:
+  signer-state:
+  signer-socket:
 
 networks:
   openctem:
