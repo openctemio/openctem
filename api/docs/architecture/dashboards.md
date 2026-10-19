@@ -290,3 +290,22 @@ database; running it again changes nothing.
   (delete days before the window in batches), metrics (fact lag, queue
   depth, drift), an admin "Rebuild dashboard data" action;
 - extending the F2 partitions before they run out (a later migration).
+
+## Drill-downs and refusals
+
+- A figure opens the list built from the filter it is counted with, so the
+  list total equals the figure. The targets live in one table,
+  `web/src/features/dashboard/lib/drill.ts`: open P0 / P1
+  (`/findings?state=open&priority_class=…`), SLA breached
+  (`/findings?state=open&sla_status=overdue,exceeded`), validation coverage
+  (`/validation`). The CTEM loop, the hero P0 number, the Executive P0, P1 and
+  SLA tiles, Executive top-risk rows (the finding) and the custom dashboard
+  widgets use them.
+- A 403 on organization-only figures (`/dashboard/program-metrics`,
+  `/ctem-cycles/metrics/trend`) carries
+  `details.any_of = ["dashboards:org:view", "dashboards:org:manage"]`. The web
+  tells three cases apart (`web/src/lib/api/access-state.ts`): a missing
+  permission ("You do not have access", naming the grant, no Retry), a
+  switched-off module (`MODULE_NOT_ENABLED`) and a failure (message and
+  Retry). The shared `ErrorState` does this for every page; the dashboard's
+  CTEM maturity card is left out for a viewer without the grant.
