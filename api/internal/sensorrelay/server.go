@@ -279,7 +279,7 @@ func (s *Server) sensorPrincipal(r *http.Request) (relay.Ticket, bool) {
 	}
 	t, err := relay.VerifyTicket(token, realm.TicketKeys, s.cfg.RelayID, s.cfg.now())
 	if err != nil || !t.KeyMatches(pub) {
-		s.log.Debug("relay: sensor ticket refused", "realm", realmName)
+		s.log.Debug("relay: sensor ticket refused", "realm", realm.Name)
 		return none, false
 	}
 	return t, true
