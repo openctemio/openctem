@@ -28,6 +28,7 @@ type Repositories struct {
 	Software                *postgres.SoftwareRepository                // Software catalog and asset links (RFC-066)
 	CVECorpus               *postgres.CVECorpusRepository               // CVE corpus for inventory matching (RFC-066)
 	VulnEvent               *postgres.VulnEventRepository               // material vulnerability changes (RFC-117)
+	ThreatAlert             *postgres.ThreatAlertRepository             // emerging-threat alerts (RFC-117)
 	SoftwareMatch           *postgres.SoftwareMatchRepository           // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources   *postgres.AssetAttributeSourceRepository    // Per-source asset attribute values (RFC-069)
 	AssetFreshness          *postgres.AssetFreshnessRepository          // Last observation per attribute class (RFC-075)
@@ -382,6 +383,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Software:                postgres.NewSoftwareRepository(db),
 		CVECorpus:               postgres.NewCVECorpusRepository(db),
 		VulnEvent:               postgres.NewVulnEventRepository(db),
+		ThreatAlert:             postgres.NewThreatAlertRepository(db),
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),

@@ -563,6 +563,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		GitHubWebhook:        githubWebhookHandler,
 		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
+		EmergingThreat:       emergingThreatHandler(svc, log),
 		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
@@ -1891,4 +1892,14 @@ func platformSettings(repos *Repositories) platformsetting.Repository {
 		return nil
 	}
 	return repos.PlatformSetting
+}
+
+// emergingThreatHandler builds the emerging-threat alert API (nil without
+// the service or the data scope enforcer: the routes stay unmounted rather
+// than unscoped).
+func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingThreatHandler {
+	if svc.ThreatAlerts == nil || svc.DataScope == nil {
+		return nil
+	}
+	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
 }

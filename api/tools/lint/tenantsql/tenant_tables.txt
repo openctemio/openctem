@@ -251,6 +251,10 @@ tenant_sensor_products
 tenant_tool_configs
 tenant_tool_settings
 threat_actors
+threat_alert_assets
+threat_alert_queue
+threat_alert_tenant_state
+threat_alerts
 threat_model_threats
 threat_models
 ticket_links
