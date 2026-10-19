@@ -44,7 +44,7 @@ const wrap = (ui: ReactNode) =>
 
 const entry = (over: Record<string, unknown> = {}) => ({
   id: 'e1',
-  pattern: '*.vndirect.com.vn',
+  pattern: '*.example.com',
   target_type: 'domain',
   status: 'pending',
   max_tier: 't1',
@@ -84,7 +84,7 @@ describe('ScopePendingEntry', () => {
     const user = userEvent.setup()
     wrap(<ScopePendingEntry entryId="e1" />)
     expect(
-      await screen.findByText(/You asked for \*\.vndirect\.com\.vn, so another approver/)
+      await screen.findByText(/You asked for \*\.example\.com, so another approver/)
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve the entry' })).toBeNull()
     expect(screen.queryByRole('button', { name: /only owner/ })).toBeNull()
@@ -139,7 +139,7 @@ describe('ScopePendingEntry', () => {
     const box = await screen.findByTestId('pending-entry')
     expect(within(box).getByText('3 things left before it can be scanned:')).toBeInTheDocument()
     expect(within(box).getByText(/probes at T2 intrusive; the entry allows T1/)).toBeInTheDocument()
-    expect(within(box).getByText(/controls vndirect\.com\.vn/)).toBeInTheDocument()
+    expect(within(box).getByText(/controls example\.com/)).toBeInTheDocument()
     expect(within(box).getByRole('button', { name: 'Verify domain' })).toBeInTheDocument()
   })
 

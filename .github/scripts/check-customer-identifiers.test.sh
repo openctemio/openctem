@@ -31,6 +31,15 @@ deny=$'acmebank\nWidgets-Corp.example\n\n'
 d="$(repo)"; put "$d" src/a.go 'host := "app.example.com"'
 expect "clean tree passes" 0 "$d" "$deny"
 expect "no secret: skipped with a notice" 0 "$d" "" "skipped"
+expect_required() {
+  local name="$1" want="$2" d="$3" deny="$4" rc=0 out
+  out="$(cd "$d" && REQUIRE_DENYLIST=true CUSTOMER_DENYLIST="$deny" bash "$script" 2>&1)" || rc=$?
+  if [[ "$rc" -ne "$want" ]]; then echo "FAIL: $name (exit $rc, want $want)"; echo "$out"; failed=$((failed + 1))
+  else echo "ok:   $name"; pass=$((pass + 1)); fi
+}
+expect_required "required: missing secret fails closed" 1 "$d" ""
+expect_required "required: blank secret fails closed" 1 "$d" $'\n \n'
+expect_required "required: secret present, clean tree passes" 0 "$d" "$deny"
 expect "blank-only secret: skipped, not match-all" 0 "$d" $'\n \n' "holds no patterns"
 
 d="$(repo)"; put "$d" src/a.go 'host := "portal.AcmeBank.example"'
@@ -49,7 +58,7 @@ d="$(repo)"; put "$d" web/.env.example "ORIGINS=$lan"
 expect "live LAN outside tests fails (even with no secret)" 1 "$d" "" "web/.env.example:1"
 
 d="$(repo)"; put "$d" api/x_test.go "u := \"https://$lan\""; put "$d" web/src/__tests__/y.test.ts "'$lan'"
-expect "live LAN in tests is allowed" 0 "$d" "$deny"
+expect "live LAN in tests fails too" 1 "$d" "$deny" "api/x_test.go:1"
 
 d="$(repo)"; put "$d" a.txt 'acmebank'; printf 'acmebank\n' > "$d/untracked.txt"
 git -C "$d" commit -qm x; git -C "$d" rm -q --cached a.txt

@@ -82,23 +82,23 @@ func TestScopeDuplicate_EntryNamesExistingRowOfOwnTenantOnly(t *testing.T) {
 	strict, other := shared.NewID(), shared.NewID()
 	svc, _, _ := dupService(t, modeByTenant{other: scangov.ModeOff})
 	// Strict, two more admins: an approver's entry waits for approval.
-	pending, err := create(svc, strict, approverA, "*.vndirect.example", nil)
+	pending, err := create(svc, strict, approverA, "*.customer.example", nil)
 	if err != nil || !pending.IsPending() {
 		t.Fatalf("strict entry: %v pending=%v", err, pending != nil && pending.IsPending())
 	}
-	_, err = create(svc, strict, approverB, "*.vndirect.example", nil)
+	_, err = create(svc, strict, approverB, "*.customer.example", nil)
 	wantDuplicate(t, err, scopedom.ErrTargetAlreadyExists, pending.ID(), scopedom.StatusPending)
 
 	_, err = svc.PreviewTarget(context.Background(), scope.CreateTargetInput{TenantID: strict.String(),
-		TargetType: "domain", Pattern: "*.vndirect.example", CreatedBy: approverB.UserID, Actor: approverB})
+		TargetType: "domain", Pattern: "*.customer.example", CreatedBy: approverB.UserID, Actor: approverB})
 	wantDuplicate(t, err, scopedom.ErrTargetAlreadyExists, pending.ID(), scopedom.StatusPending)
 
 	// Another tenant never sees (or collides with) this tenant's row.
-	mine, err := create(svc, other, approverA, "*.vndirect.example", nil)
+	mine, err := create(svc, other, approverA, "*.customer.example", nil)
 	if err != nil || !mine.InEffect(time.Now()) {
 		t.Fatalf("other tenant's create: %v", err)
 	}
-	_, err = create(svc, other, approverA, "*.vndirect.example", nil)
+	_, err = create(svc, other, approverA, "*.customer.example", nil)
 	wantDuplicate(t, err, scopedom.ErrTargetAlreadyExists, mine.ID(), scopedom.StatusActive)
 }
 
