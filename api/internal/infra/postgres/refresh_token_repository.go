@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -124,6 +125,23 @@ func (r *RefreshTokenRepository) Update(ctx context.Context, token *session.Refr
 	}
 
 	return nil
+}
+
+// MarkUsedIfUnused spends the token only if it is still unused and not
+// revoked; it reports whether this call spent it.
+func (r *RefreshTokenRepository) MarkUsedIfUnused(ctx context.Context, id shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE refresh_tokens
+		SET used_at = NOW()
+		WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL`, id.String())
+	if err != nil {
+		return false, fmt.Errorf("spend refresh token: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("spend refresh token: %w", err)
+	}
+	return n == 1, nil
 }
 
 // Delete deletes a refresh token.

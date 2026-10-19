@@ -692,8 +692,8 @@ func TestMFA_Login(t *testing.T) {
 			t.Fatal("account not locked after 5 wrong second factors")
 		}
 		_, err := h.svc.Login(context.Background(), auth.LoginInput{Email: "lock@example.com", Password: mfaTestPassword})
-		if !errors.Is(err, auth.ErrAccountLocked) {
-			t.Fatalf("locked account login: want ErrAccountLocked, got %v", err)
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("locked account login: want ErrInvalidCredentials (no lock oracle), got %v", err)
 		}
 	})
 

@@ -226,6 +226,9 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter) (string, []any)
 	if f.FindingID != nil {
 		conds = append(conds, "EXISTS (SELECT 1 FROM remediation_task_members fm WHERE fm.tenant_id = t.tenant_id AND fm.task_id = t.id AND fm.left_at IS NULL AND fm.finding_id = "+next(f.FindingID.String())+")")
 	}
+	if f.Overdue {
+		conds = append(conds, "t.deadline IS NOT NULL AND t.deadline < NOW()")
+	}
 	if s := strings.TrimSpace(f.Search); s != "" {
 		p := next("%" + escapeLikePattern(s) + "%")
 		conds = append(conds, "(t.title ILIKE "+p+" OR a.title ILIKE "+p+")")
@@ -317,7 +320,8 @@ func rtIDStrings(ids []shared.ID) []string {
 // (created or reused by key), the task, the members, the "created" timeline
 // entry and a timeline entry on every member finding. A finding that is
 // already the primary member of another active task refuses the whole
-// create with a FindingsInOtherTaskError.
+// create with a FindingsInOtherTaskError unless rec.Conflicts resolves it
+// (claimFindingsInTx).
 func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remediation.NewTaskRecord) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -362,14 +366,19 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 		}
 	}
 
-	if err := lockFindingsInTx(ctx, tx, rec.Task.TenantID, append(append([]shared.ID{}, rec.Members...), rec.Related...)); err != nil {
-		return err
-	}
-	if err := refuseOtherPrimaryInTx(ctx, tx, rec.Task.TenantID, rec.Task.ID, rec.Members); err != nil {
-		return err
-	}
-
 	t := &rec.Task
+	claim, err := r.claimFindingsInTx(ctx, tx, claimInput{tenantID: t.TenantID, ids: rec.Members, alsoLock: rec.Related,
+		res: rec.Conflicts, into: func(shared.ID) claimTarget { return claimTarget{id: t.ID, title: t.Title} }, actor: rec.ActorID})
+	if err != nil {
+		return err
+	}
+	members := claim.keep(rec.Members)
+	if len(members) == 0 {
+		return remediation.ErrNoFindingLeft
+	}
+	rec.Members = members
+	rec.Claimed = claim.report
+	rec.Claimed.Skipped = claim.skippedIDs()
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO remediation_tasks (id, tenant_id, action_id, campaign_id, title, description,
 			assignee_user_id, assignee_group_id, manual_deadline, regression_of, created_by)
@@ -383,6 +392,9 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 		return err
 	}
 	if err := insertMembersInTx(ctx, tx, t, rec.Related, remediation.MemberRoleRelated, rec.Source, rec.ActorID); err != nil {
+		return err
+	}
+	if err := recordClaimMovesInTx(ctx, tx, t.TenantID, rec.Claimed, rec.ActorID); err != nil {
 		return err
 	}
 	data := rec.EventData
@@ -452,40 +464,9 @@ func queryIDsInTx(ctx context.Context, tx *sql.Tx, q string, args ...any) ([]sha
 	return out, rows.Err()
 }
 
-// refuseOtherPrimaryInTx refuses findings that are already the primary
-// member of an active task other than taskID.
-func refuseOtherPrimaryInTx(ctx context.Context, tx *sql.Tx, tenantID, taskID shared.ID, ids []shared.ID) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	rows, err := tx.QueryContext(ctx, `
-		SELECT finding_id FROM remediation_task_members
-		WHERE tenant_id = $1 AND finding_id = ANY($2::uuid[]) AND left_at IS NULL AND role = 'primary' AND task_id <> $3
-		ORDER BY finding_id`,
-		tenantID.String(), pq.Array(rtIDStrings(ids)), taskID.String())
-	if err != nil {
-		return fmt.Errorf("check primary tasks: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var taken []shared.ID
-	for rows.Next() {
-		var id shared.ID
-		if err := rows.Scan(&id); err != nil {
-			return fmt.Errorf("check primary tasks: %w", err)
-		}
-		taken = append(taken, id)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("check primary tasks: %w", err)
-	}
-	if len(taken) > 0 {
-		return &remediation.FindingsInOtherTaskError{FindingIDs: taken}
-	}
-	return nil
-}
-
 // insertMembersInTx adds members (skipping a finding already active in the
-// task) and writes a timeline entry on each finding that joined.
+// task, except that a related link added as primary becomes primary) and
+// writes a timeline entry on each finding that joined.
 func insertMembersInTx(ctx context.Context, tx *sql.Tx, t *remediation.Task, ids []shared.ID, role remediation.MemberRole, src remediation.JoinSource, actor *shared.ID) error {
 	if len(ids) == 0 {
 		return nil
@@ -494,12 +475,15 @@ func insertMembersInTx(ctx context.Context, tx *sql.Tx, t *remediation.Task, ids
 		INSERT INTO remediation_task_members (tenant_id, task_id, finding_id, role, join_source, joined_by)
 		SELECT $1, $2, f.id, $4, $5, $6 FROM findings f
 		WHERE f.tenant_id = $1 AND f.id = ANY($3::uuid[])
-		ON CONFLICT DO NOTHING
+		ON CONFLICT (task_id, finding_id) WHERE left_at IS NULL DO UPDATE SET role = 'primary'
+			WHERE remediation_task_members.role = 'related' AND EXCLUDED.role = 'primary'
 		RETURNING finding_id`,
 		t.TenantID.String(), t.ID.String(), pq.Array(rtIDStrings(ids)), string(role), string(src), idArg(actor))
 	if err != nil {
 		if isUniqueViolation(err) {
-			return &remediation.FindingsInOtherTaskError{}
+			// A concurrent claim won the finding between the check and the
+			// insert: the partial unique index decides.
+			return &remediation.FindingsInOtherTaskError{FindingIDs: ids}
 		}
 		return fmt.Errorf("add task members: %w", err)
 	}
@@ -594,46 +578,60 @@ func lockTaskInTx(ctx context.Context, tx *sql.Tx, tenantID, taskID shared.ID, e
 }
 
 // AddMembers adds findings to a task (primary or related), checked against
-// the caller's version of the task. Returns the findings that joined.
-func (r *RemediationTaskRepository) AddMembers(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int, ids []shared.ID, role remediation.MemberRole, src remediation.JoinSource, actor *shared.ID) (*remediation.Task, error) {
+// the caller's version of the task. Primary members are claimed: findings of
+// another active task are refused, skipped or moved as the request says.
+func (r *RemediationTaskRepository) AddMembers(ctx context.Context, req remediation.AddMembersRequest) (*remediation.Task, *remediation.ClaimReport, error) {
+	tenantID, taskID := req.TenantID, req.TaskID
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("begin add members: %w", err)
+		return nil, nil, fmt.Errorf("begin add members: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	t, err := lockTaskInTx(ctx, tx, tenantID, taskID, expectedVersion)
+	t, err := lockTaskInTx(ctx, tx, tenantID, taskID, req.ExpectedVersion)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if t.State.IsTerminal() {
-		return nil, remediation.ErrTaskTerminal
+		return nil, nil, remediation.ErrTaskTerminal
 	}
-	if err := lockFindingsInTx(ctx, tx, tenantID, ids); err != nil {
-		return nil, err
-	}
-	if role == remediation.MemberRolePrimary {
-		if err := refuseOtherPrimaryInTx(ctx, tx, tenantID, taskID, ids); err != nil {
-			return nil, err
+	ids := req.FindingIDs
+	report := &remediation.ClaimReport{}
+	if req.Role == remediation.MemberRolePrimary {
+		claim, err := r.claimFindingsInTx(ctx, tx, claimInput{tenantID: tenantID, ids: ids, except: &taskID, res: req.Conflicts,
+			into: func(shared.ID) claimTarget { return claimTarget{id: t.ID, title: t.Title} }, actor: req.ActorID})
+		if err != nil {
+			return nil, nil, err
 		}
+		if ids = claim.keep(ids); len(ids) == 0 {
+			return nil, nil, remediation.ErrNoFindingLeft
+		}
+		*report = claim.report
+		report.Skipped = claim.skippedIDs()
+	} else if err := lockFindingsInTx(ctx, tx, tenantID, ids); err != nil {
+		return nil, nil, err
 	}
-	if err := insertMembersInTx(ctx, tx, t, ids, role, src, actor); err != nil {
-		return nil, err
+	if err := insertMembersInTx(ctx, tx, t, ids, req.Role, req.Source, req.ActorID); err != nil {
+		return nil, nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE remediation_tasks SET version = version + 1, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), taskID.String()); err != nil {
-		return nil, fmt.Errorf("bump task version: %w", err)
+		return nil, nil, fmt.Errorf("bump task version: %w", err)
 	}
-	if err := insertTaskEventInTx(ctx, tx, tenantID, taskID, remediation.TaskEventMembersAdded, actor,
-		map[string]any{"count": len(ids), "role": string(role), "source": string(src)}); err != nil {
-		return nil, err
+	if err := insertTaskEventInTx(ctx, tx, tenantID, taskID, remediation.TaskEventMembersAdded, req.ActorID,
+		map[string]any{"count": len(ids), "role": string(req.Role), "source": string(req.Source)}); err != nil {
+		return nil, nil, err
 	}
-	if err := r.recomputeInTx(ctx, tx, tenantID, []shared.ID{taskID}, actor); err != nil {
-		return nil, err
+	if err := recordClaimMovesInTx(ctx, tx, tenantID, *report, req.ActorID); err != nil {
+		return nil, nil, err
+	}
+	if err := r.recomputeInTx(ctx, tx, tenantID, []shared.ID{taskID}, req.ActorID); err != nil {
+		return nil, nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit add members: %w", err)
+		return nil, nil, fmt.Errorf("commit add members: %w", err)
 	}
-	return r.GetTask(ctx, tenantID, taskID)
+	got, err := r.GetTask(ctx, tenantID, taskID)
+	return got, report, err
 }
 
 // UpdateTask applies changes to a task at the caller's version, records one

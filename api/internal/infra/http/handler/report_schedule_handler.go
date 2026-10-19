@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,23 +12,47 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/reportschedule"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ReportScheduleHandler handles report schedule HTTP requests.
+//
+// Authorization: reports:read lists schedules and reports:write creates
+// them; a schedule is paused, resumed or deleted only by its creator or a
+// holder of reports:manage (owners and admins). Recipient addresses are
+// personal data and are returned only to those same people.
 type ReportScheduleHandler struct {
 	service      *module.ReportScheduleService
 	auditService *auditapp.AuditService
+	creatorNames CreatorNameResolver
 	logger       *logger.Logger
+}
+
+// CreatorNameResolver returns a user's display name, or "" when the user has
+// no name other than an email address (an email is never shown here).
+type CreatorNameResolver interface {
+	GetUserNameByID(ctx context.Context, id shared.ID) (string, error)
+}
+
+// SetCreatorNames resolves the creator's name for the schedule list.
+func (h *ReportScheduleHandler) SetCreatorNames(r CreatorNameResolver) { h.creatorNames = r }
+
+// actor is the caller as a schedule actor.
+func scheduleActor(r *http.Request) module.ReportScheduleActor {
+	return module.ReportScheduleActor{
+		UserID:       middleware.GetUserID(r.Context()),
+		CanManageAll: middleware.HasPermission(r.Context(), permission.ReportsManage.String()),
+	}
 }
 
 // SetAuditService records schedule creation, activation and deletion with
 // the recipients (a schedule mails organization posture out).
 func (h *ReportScheduleHandler) SetAuditService(a *auditapp.AuditService) { h.auditService = a }
 
-func (h *ReportScheduleHandler) audit(r *http.Request, action auditdom.Action, scheduleID string, recipients []reportschedule.Recipient) {
+func (h *ReportScheduleHandler) audit(r *http.Request, action auditdom.Action, scheduleID string, recipients []reportschedule.Recipient, createdBy *shared.ID) {
 	if h.auditService == nil {
 		return
 	}
@@ -39,6 +64,9 @@ func (h *ReportScheduleHandler) audit(r *http.Request, action auditdom.Action, s
 		WithSeverity(auditdom.SeverityForAction(action))
 	if recipients != nil {
 		event = event.WithMetadata("recipients", emails)
+	}
+	if createdBy != nil {
+		event = event.WithMetadata("created_by", createdBy.String())
 	}
 	actx := auditapp.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
@@ -71,17 +99,58 @@ type reportScheduleResponse struct {
 	NextRunAt       *time.Time                 `json:"next_run_at,omitempty"`
 	RunCount        int                        `json:"run_count"`
 	CreatedAt       time.Time                  `json:"created_at"`
+	// CreatedBy is the creator's user ID ("" for a schedule without one);
+	// CreatedByName their display name, never an email.
+	CreatedBy     string `json:"created_by,omitempty"`
+	CreatedByName string `json:"created_by_name,omitempty"`
+	// CanManage tells the caller whether they may pause, resume or delete
+	// the schedule. Recipients is empty when they may not; RecipientCount
+	// is always the number of recipients.
+	CanManage      bool `json:"can_manage"`
+	RecipientCount int  `json:"recipient_count"`
 }
 
-func toReportScheduleResponse(s *reportschedule.ReportSchedule) reportScheduleResponse {
-	return reportScheduleResponse{
+func toReportScheduleResponse(s *reportschedule.ReportSchedule, actor module.ReportScheduleActor) reportScheduleResponse {
+	canManage := s.ManageableBy(actor.UserID, actor.CanManageAll)
+	recipients := []reportschedule.Recipient{}
+	if canManage && s.Recipients() != nil {
+		recipients = s.Recipients()
+	}
+	resp := reportScheduleResponse{
 		ID: s.ID().String(), Name: s.Name(),
 		ReportType: s.ReportType(), Format: s.Format(),
 		CronExpression: s.CronExpression(), Timezone: s.Timezone(),
-		Recipients: s.Recipients(), DeliveryChannel: s.DeliveryChannel(),
+		Recipients: recipients, DeliveryChannel: s.DeliveryChannel(),
 		IsActive: s.IsActive(), LastRunAt: s.LastRunAt(),
 		LastStatus: s.LastStatus(), NextRunAt: s.NextRunAt(),
 		RunCount: s.RunCount(), CreatedAt: s.CreatedAt(),
+		CanManage: canManage, RecipientCount: len(s.Recipients()),
+	}
+	if cb := s.CreatedBy(); cb != nil {
+		resp.CreatedBy = cb.String()
+	}
+	return resp
+}
+
+// withCreatorNames fills CreatedByName, one lookup per distinct creator.
+func (h *ReportScheduleHandler) withCreatorNames(ctx context.Context, rows []reportScheduleResponse) {
+	if h.creatorNames == nil {
+		return
+	}
+	names := map[string]string{}
+	for i := range rows {
+		id := rows[i].CreatedBy
+		if id == "" {
+			continue
+		}
+		name, seen := names[id]
+		if !seen {
+			if uid, err := shared.IDFromString(id); err == nil {
+				name, _ = h.creatorNames.GetUserNameByID(ctx, uid)
+			}
+			names[id] = name
+		}
+		rows[i].CreatedByName = name
 	}
 }
 
@@ -99,10 +168,12 @@ func (h *ReportScheduleHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actor := scheduleActor(r)
 	data := make([]reportScheduleResponse, 0, len(result.Data))
 	for _, s := range result.Data {
-		data = append(data, toReportScheduleResponse(s))
+		data = append(data, toReportScheduleResponse(s, actor))
 	}
+	h.withCreatorNames(r.Context(), data)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -144,11 +215,13 @@ func (h *ReportScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
-	h.audit(r, auditdom.ActionReportScheduleCreated, schedule.ID().String(), schedule.Recipients())
+	h.audit(r, auditdom.ActionReportScheduleCreated, schedule.ID().String(), schedule.Recipients(), nil)
 
+	resp := []reportScheduleResponse{toReportScheduleResponse(schedule, scheduleActor(r))}
+	h.withCreatorNames(r.Context(), resp)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(toReportScheduleResponse(schedule))
+	_ = json.NewEncoder(w).Encode(resp[0])
 }
 
 // Get handles GET /api/v1/reports/schedules/{id}
@@ -162,8 +235,10 @@ func (h *ReportScheduleHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := []reportScheduleResponse{toReportScheduleResponse(schedule, scheduleActor(r))}
+	h.withCreatorNames(r.Context(), resp)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toReportScheduleResponse(schedule))
+	_ = json.NewEncoder(w).Encode(resp[0])
 }
 
 // Delete handles DELETE /api/v1/reports/schedules/{id}
@@ -171,11 +246,12 @@ func (h *ReportScheduleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := r.PathValue("id")
 
-	if err := h.service.DeleteSchedule(r.Context(), tenantID, id); err != nil {
+	schedule, err := h.service.DeleteSchedule(r.Context(), tenantID, id, scheduleActor(r))
+	if err != nil {
 		h.handleError(w, err)
 		return
 	}
-	h.audit(r, auditdom.ActionReportScheduleDeleted, id, nil)
+	h.audit(r, auditdom.ActionReportScheduleDeleted, id, schedule.Recipients(), schedule.CreatedBy())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -192,13 +268,16 @@ func (h *ReportScheduleHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ToggleSchedule(r.Context(), tenantID, id, req.Active); err != nil {
+	schedule, err := h.service.ToggleSchedule(r.Context(), tenantID, id, req.Active, scheduleActor(r))
+	if err != nil {
 		h.handleError(w, err)
 		return
 	}
+	action := auditdom.ActionReportScheduleDeactivated
 	if req.Active {
-		h.audit(r, auditdom.ActionReportScheduleActivated, id, nil)
+		action = auditdom.ActionReportScheduleActivated
 	}
+	h.audit(r, action, id, schedule.Recipients(), schedule.CreatedBy())
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
@@ -208,6 +287,8 @@ func (h *ReportScheduleHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Schedule").WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden("Only the schedule's creator or a member who manages reports can change it").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:

@@ -359,6 +359,8 @@ func TestFix4_OAuth_RegistrationDisabled_BindsExisting(t *testing.T) {
 	}
 	repo := &fakeUserRepo{byEmail: invited}
 	svc := &OAuthService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{}}
+	// Not in any organization yet, so the claim guard vouches for it.
+	svc.SetClaimGuard(claimMembers{ms: &tenantdom.UserMembershipsByStatus{}}, claimDomains{})
 
 	got, err := svc.findOrCreateUser(context.Background(),
 		&OAuthUserInfo{Email: "invited@corp.com"}, OAuthProviderGoogle)

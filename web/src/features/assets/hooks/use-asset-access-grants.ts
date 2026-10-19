@@ -17,7 +17,7 @@ export interface AssetAccessGrant {
   userName?: string
   userEmail?: string
   /** `migration`: created in 2026-10 from the user's former ownership-based access. */
-  source: 'manual' | 'migration'
+  source: 'manual' | 'migration' | 'creator'
   grantedByName?: string
   grantedAt: string
 }
@@ -28,7 +28,7 @@ function toGrant(g: BackendGrant): AssetAccessGrant {
     userId: g.user_id ?? '',
     userName: g.user_name || undefined,
     userEmail: g.user_email || undefined,
-    source: g.source === 'migration' ? 'migration' : 'manual',
+    source: g.source === 'migration' || g.source === 'creator' ? g.source : 'manual',
     grantedByName: g.granted_by_name || undefined,
     grantedAt: g.granted_at ?? '',
   }
