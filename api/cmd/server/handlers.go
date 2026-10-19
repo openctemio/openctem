@@ -290,6 +290,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.JobSigner != nil {
 		doorbell.SetKeySetVersion(svc.JobSigner.KeySetVersion)
 	}
+	// The platform decides the interval: ±10 % jitter on every advice, and
+	// an idle interval that stretches with the live fleet (the liveness
+	// store's count) so heartbeats stay inside the platform's budget.
+	doorbell.SetJitter(0.10)
+	if store := svc.Sensor.LivenessStore(); store != nil {
+		doorbell.SetFleetSize(store.Watched, nil)
+	}
 	ingestHandler.SetDoorbell(doorbell)
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
@@ -1030,6 +1037,9 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, r
 		repos.Command.SetChangeNotifier(srv.Hub())
 		svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
 	}
+
+	// An open control stream is proof of life for the liveness store.
+	srv.SetPresence(svc.Sensor)
 
 	adv := setupSensorGRPC(cfg, srv, svc, log)
 	srv.SetAdvertiser(adv)

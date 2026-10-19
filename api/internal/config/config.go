@@ -523,6 +523,10 @@ type SensorConfigConfig struct {
 	// answers say omit_inventory false and a slim heartbeat is asked for the
 	// manifest again, so the sensor goes back to full heartbeats.
 	SlimHeartbeat bool
+	// LivenessStore is where heartbeat liveness lives
+	// (SENSOR_LIVENESS_STORE: postgres, shadow or redis; default shadow).
+	// See docs/architecture/sensors.md, "Heartbeat soft state".
+	LivenessStore string
 
 	// SignerSocket is the Unix socket of the job signer (cmd/signer,
 	// RFC-040 §5.6, docs/architecture/job-signing.md): SIGNER_SOCKET.
@@ -1498,6 +1502,7 @@ func Load() (*Config, error) {
 
 			KeyRenewBefore:        getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
 			SlimHeartbeat:         getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
+			LivenessStore:         getEnv("SENSOR_LIVENESS_STORE", "shadow"),
 			SignerSocket:          getEnv("SIGNER_SOCKET", ""),
 			SignerTimeout:         getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
 			HeartbeatInterval:     getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
@@ -1916,6 +1921,11 @@ func (c *Config) Validate() error {
 	}
 	if err := c.InternalAPI.validate(); err != nil {
 		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(c.SensorConfig.LivenessStore)) {
+	case "", "postgres", "shadow", "redis":
+	default:
+		return fmt.Errorf("SENSOR_LIVENESS_STORE=%q must be postgres, shadow or redis", c.SensorConfig.LivenessStore)
 	}
 	if err := validateAccountPortalURL(c.AccountPortalURL); err != nil {
 		return err

@@ -22,6 +22,9 @@ import (
 // SensorRepository implements sensor.Repository using PostgreSQL.
 type SensorRepository struct {
 	db *DB
+	// liveness overlays the heartbeat soft state on rows read (redis mode;
+	// nil otherwise). See SetLivenessOverlay.
+	liveness sensor.LivenessStore
 	tokenPepper
 	limitChecks // sensors (the organization's own; shared sensors never count)
 }
@@ -151,7 +154,7 @@ func (r *SensorRepository) CountByTenant(ctx context.Context, tenantID shared.ID
 func (r *SensorRepository) GetByID(ctx context.Context, id shared.ID) (*sensor.Sensor, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanSensor(row)
+	return r.overlayOne(ctx)(r.scanSensor(row))
 }
 
 // GetByTenantAndID retrieves one of the tenant's own sensors by ID. A shared
@@ -160,7 +163,7 @@ func (r *SensorRepository) GetByID(ctx context.Context, id shared.ID) (*sensor.S
 func (r *SensorRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sensor.Sensor, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2 AND scope = 'organization'"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
-	return r.scanSensor(row)
+	return r.overlayOne(ctx)(r.scanSensor(row))
 }
 
 // GetByAPIKeyHash retrieves a sensor by API key hash.
@@ -214,6 +217,7 @@ func (r *SensorRepository) List(ctx context.Context, filter sensor.Filter, page 
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
+	r.overlayLiveness(ctx, sensors)
 
 	return pagination.NewResult(sensors, total, page), nil
 }
