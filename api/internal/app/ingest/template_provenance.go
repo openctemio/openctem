@@ -11,6 +11,7 @@ package ingest
 
 import (
 	"context"
+	"strings"
 
 	"github.com/openctemio/ctis"
 
@@ -49,9 +50,10 @@ func reportTemplateRelease(tool *ctis.Tool) (version, digest string) {
 }
 
 // findingTemplateProvenance is the sanitized provenance of one finding of a
-// report; Empty when the finding names no template digest.
+// report; Empty when the finding names no template digest and is not one
+// of the organization's own rules.
 func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.TemplateProvenance {
-	if f == nil || f.Properties == nil {
+	if f == nil {
 		return vulnerability.TemplateProvenance{}
 	}
 	p := vulnerability.TemplateProvenance{}
@@ -67,6 +69,12 @@ func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.T
 		}
 	}
 	p.TemplatesVersion, p.TemplatesDigest = reportTemplateRelease(tool)
+	// The organization's own rules: the sensor prefixes their ids and marks
+	// nuclei results (rule_source). The store links the template.
+	if rs, _ := f.Properties["rule_source"].(string); rs == vulnerability.RuleSourceTenant || strings.HasPrefix(f.RuleID, vulnerability.TenantRulePrefix) {
+		p.RuleSource = vulnerability.RuleSourceTenant
+		p.RuleID = f.RuleID
+	}
 	return p.Sanitize()
 }
 

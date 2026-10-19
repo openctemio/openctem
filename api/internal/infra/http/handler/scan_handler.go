@@ -169,8 +169,9 @@ type UpdateScanRequest struct {
 	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	ProfileID        *string    `json:"profile_id" validate:"omitempty"`
 	// RuleSources: omitted = unchanged, "" = inherit the profile's, else
-	// both, platform or tenant.
-	RuleSources *string `json:"rule_sources" validate:"omitempty,oneof=both platform tenant"`
+	// both, platform or tenant. The domain setter validates the value: a
+	// oneof tag here would reject "" (validator checks the pointed-to value).
+	RuleSources *string `json:"rule_sources" validate:"omitempty"`
 	// ScanZoneID: omitted = unchanged, "" = Automatic routing, id = pin to that zone.
 	ScanZoneID          *string `json:"scan_zone_id" validate:"omitempty"`
 	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=0,max=86400"`
