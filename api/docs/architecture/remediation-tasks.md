@@ -241,6 +241,14 @@ with a reason instead of running when the owner is gone or lacks `findings:read`
 suspensions are audited (`remediation_task.query_auto_added`, `.query_auto_state_changed`) and the owner gets
 an in-app notification (type `remediation_task`).
 
+Console: `CreateTaskFromQueryDialog` (Tasks: "New task from query"; Findings toolbar: "Task from filters",
+which converts the list's query string through `POST /api/v1/query/from-filters` and names the params it
+could not carry over), with `QueryBox` (field and value completion from `GET /api/v1/query/schema`, live
+check through `POST /api/v1/query/explain`), `QueryPreviewPanel` and the shared `ClaimConflictStep` (skip by
+default, move with a reason). The task page shows `TaskQueryPanel`: the stored query as plain text, the mode,
+the auto state with the suspension reason, pause / resume, and "Re-run query" (adds only after the
+confirmation dialog). Strings: the `remediationQuery` dictionary (en, vi).
+
 ## Shipped and planned
 
 Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). The finding
