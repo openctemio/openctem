@@ -5,7 +5,7 @@ import "testing"
 func TestInternalAPIBindAddress(t *testing.T) {
 	base := InternalAPIConfig{CertFile: "c", KeyFile: "k", ClientCAFile: "ca", JWTPublicKeysFile: "j", JWTIssuer: "openctem-cloud"}
 	for addr, wantErr := range map[string]bool{
-		"10.0.0.5:9443": false, "172.16.4.2:9443": false, "192.168.8.10:9443": false, "127.0.0.1:9443": false,
+		"10.0.0.5:9443": false, "172.16.4.2:9443": false, "192.168.1.10:9443": false, "127.0.0.1:9443": false,
 		"[::1]:9443": false, "[fd00::5]:9443": false,
 		":9443": true, "0.0.0.0:9443": true, "[::]:9443": true, "no-port": true,
 		"203.0.113.7:9443": true, "8.8.8.8:9443": true, "[2001:db8::1]:9443": true,
