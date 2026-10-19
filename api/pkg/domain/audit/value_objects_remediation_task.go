@@ -8,7 +8,10 @@ const (
 	ActionRemediationTaskStateChanged Action = "remediation_task.state_changed"
 	ActionRemediationTaskMembersMoved Action = "remediation_task.members_moved"
 	ActionRemediationTaskSplit        Action = "remediation_task.split"
-	ActionRemediationTaskMerged       Action = "remediation_task.merged"
+	// ActionRemediationTaskFindingsMoved: findings were moved out of this
+	// task while being added to another (a resolved claim conflict).
+	ActionRemediationTaskFindingsMoved Action = "remediation_task.findings_moved"
+	ActionRemediationTaskMerged        Action = "remediation_task.merged"
 	// ActionRemediationTaskFixClaimed: a person marked a task fixed.
 	ActionRemediationTaskFixClaimed Action = "remediation_task.fix_claimed"
 	// ActionRemediationTaskExceptionRequested: a person asked for one
@@ -30,7 +33,9 @@ var _ = registerActions("remediation_task", map[Action]Severity{
 	ActionRemediationTaskStateChanged: SeverityMedium,
 	ActionRemediationTaskMembersMoved: SeverityLow,
 	ActionRemediationTaskSplit:        SeverityLow,
-	ActionRemediationTaskMerged:       SeverityLow,
+	// Takes findings away from another task (and its owner).
+	ActionRemediationTaskFindingsMoved: SeverityMedium,
+	ActionRemediationTaskMerged:        SeverityLow,
 	// A fix claim changes the status of every open finding of the task.
 	ActionRemediationTaskFixClaimed: SeverityMedium,
 	// One request to hide the risk of every open finding of the task.
