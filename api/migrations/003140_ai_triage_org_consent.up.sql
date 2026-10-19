@@ -19,7 +19,7 @@ WITH used AS (
        SET settings = jsonb_set(
                t.settings,
                '{ai}',
-               COALESCE(t.settings->'ai', '{}'::jsonb) || jsonb_build_object(
+               (CASE WHEN jsonb_typeof(t.settings->'ai') = 'object' THEN t.settings->'ai' ELSE '{}'::jsonb END) || jsonb_build_object(
                    'enabled_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
                    'enabled_by', 'upgrade'),
                true),

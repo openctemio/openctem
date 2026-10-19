@@ -53,13 +53,16 @@ func TestMigrationAITriageOrgConsent(t *testing.T) {
 	// used: has a triage result. unused: none. off: used, but its mode is
 	// disabled. chosen: used, and an administrator already turned it on.
 	tenants := map[string]string{}
-	for _, name := range []string{"used", "unused", "off", "chosen"} {
+	for _, name := range []string{"used", "unused", "off", "chosen", "nullai"} {
 		id := shared.NewID().String()
 		tenants[name] = id
 		settings := `{}`
 		switch name {
 		case "off":
 			settings = `{"ai": {"mode": "disabled"}}`
+		case "nullai":
+			// A JSON null section must become an object, not [null, {...}].
+			settings = `{"ai": null}`
 		case "chosen":
 			settings = `{"ai": {"mode": "platform", "enabled_at": "2026-05-01T00:00:00Z", "enabled_by": "11111111-1111-7111-8111-111111111111"}}`
 		}
@@ -98,12 +101,17 @@ func TestMigrationAITriageOrgConsent(t *testing.T) {
 		"unused": {"", 0},
 		"off":    {"", 0},
 		"chosen": {"11111111-1111-7111-8111-111111111111", 0},
+		"nullai": {"upgrade", 1},
 	}
 	for name, w := range want {
 		by, audits := state(name)
 		if by != w[0] || audits != w[1] {
 			t.Errorf("%s after up: enabled_by=%q audits=%d, want %q %d", name, by, audits, w[0], w[1])
 		}
+	}
+	var kind string
+	if err := db.QueryRowContext(ctx, `SELECT jsonb_typeof(settings->'ai') FROM tenants WHERE id = $1`, tenants["nullai"]).Scan(&kind); err != nil || kind != "object" {
+		t.Errorf("null ai section after up: %q (%v), want an object", kind, err)
 	}
 	var at sql.NullString
 	if err := db.QueryRowContext(ctx, `SELECT settings->'ai'->>'enabled_at' FROM tenants WHERE id = $1`, tenants["used"]).Scan(&at); err != nil || len(at.String) != len("2026-10-19T00:00:00Z") {
