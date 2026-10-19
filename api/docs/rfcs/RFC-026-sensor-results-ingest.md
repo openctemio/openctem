@@ -295,6 +295,10 @@ API (§6) if multi-gigabyte files ever matter.
 | Property size, properties and tags per asset | unchanged (`MaxPropertySize` 1 MiB, 100, 50) | same |
 | Open (uncommitted) reports per sensor | 8 → `429 too-many-open-reports` | — |
 | Concurrent ingest requests per tenant | 8 (existing) | 8 |
+| Concurrent result uploads per sensor | 2 → `429` (research/191 R-1) | — |
+| Concurrent result uploads of all shared sensors together (per replica) | 8 → `429` (shared sensors have no tenant) | — |
+| Bytes held by result uploads in flight (per replica) | a quarter of the container memory limit, 64 MiB to 1 GiB; reserved before a byte is read → `429` | — |
+| Share of those bytes one organization (or all shared sensors together) may hold | a quarter of the budget; an owner holding nothing may always start one upload → `429` | — |
 | Per-item errors returned | first 100, then `errors_truncated: true` | 100 |
 
 All limits are published on `GET /api/v2/sensor/hello` (RFC-023 C3), so the

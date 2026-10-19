@@ -1191,7 +1191,7 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	if ssoEnforcementMiddleware != nil {
 		middlewares = append(middlewares, ssoEnforcementMiddleware)
 	}
-	// Organization IP allowlist for user sessions and API keys (no-op for sensors).
+	// Organization IP allowlist for every user principal: sessions, API keys, MCP OAuth and OIDC tokens (no-op for sensors).
 	if ipAllowlistMiddleware != nil {
 		middlewares = append(middlewares, ipAllowlistMiddleware)
 	}
