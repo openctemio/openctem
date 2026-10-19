@@ -27,6 +27,7 @@ import (
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/audit"
@@ -1470,12 +1471,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			newThreatModelOracle(repos.ThreatModel, defaultThreatScoreThreshold, 5*time.Minute))
 	}
 
-	// AI-triage de-escalation: feed a high-confidence "likely false positive"
-	// verdict into prioritization so it can LOWER a finding by one bounded level
-	// (the only signal that reduces priority). Batch-first, tenant-scoped, nil-safe
-	// — no verdict / low confidence → no effect, never an escalation.
-	s.PriorityClassification.SetAITriageVerdictLookup(postgres.NewAITriagePriorityLookupRepo(deps.DB))
-
 	// Finding-priority recompute wiring:
 	//   producers → ControlChangePublisher → finding_priority_queue (DB;
 	//   triggers queue the rest) → finding-priority worker (workers.go) →
@@ -1791,10 +1786,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
-		// On triage completion, enqueue an asset-scoped reclassify so a
-		// high-confidence false-positive verdict de-escalates the finding's
-		// priority, through the finding-priority queue (wired above).
-		s.AITriage.SetReclassifyEnqueuer(aiTriageReclassifyEnqueuer{pub: s.ControlChangePub})
+		// The organization's AI data-egress policy, shared with MCP: pentest
+		// findings above the TLP limit for AI, or of a campaign with AI off,
+		// never reach the model.
+		s.AITriage.SetEgressPolicy(aipolicy.New(mcpPolicyReader{tenants: s.Tenant}, repos.PentestCampaign))
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
 		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)

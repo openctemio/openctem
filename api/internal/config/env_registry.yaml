@@ -1823,7 +1823,7 @@ vars:
     group: "AI triage"
     type: bool
     default: "true"
-    description: "Requeue triage jobs stuck in processing."
+    description: "Mark triage jobs stuck in pending or processing as failed (stuck_timeout). Transient provider errors are retried by the job queue before that."
   - name: AI_TRIAGE_RECOVERY_INTERVAL
     component: api
     group: "AI triage"
@@ -1835,7 +1835,7 @@ vars:
     group: "AI triage"
     type: duration
     default: "15m"
-    description: "Age after which a processing job counts as stuck."
+    description: "Age after which a pending or processing job counts as stuck."
   - name: ANTHROPIC_API_KEY
     component: api
     group: "AI triage"
