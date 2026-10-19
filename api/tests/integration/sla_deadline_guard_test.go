@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -56,11 +57,11 @@ func TestSLADeadlineGuard_StaleWriterCannotExtend(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 1. The stale full-row Update writes its other columns but cannot put
-	// the old, later deadline back.
+	// 1. The stale full-row Update is refused (the row moved since it was
+	// read): it neither extends the deadline nor writes its other columns.
 	stale.SetDescription("edited by a stale writer")
-	if err := fx.findings.Update(ctx, stale); err != nil {
-		t.Fatal(err)
+	if err := fx.findings.Update(ctx, stale); !errors.Is(err, vulnerability.ErrFindingConflict) {
+		t.Fatalf("stale Update = %v, want ErrFindingConflict", err)
 	}
 	if r := fx.row(t, tid, fid); !r.deadline.Time.Equal(near) {
 		t.Fatalf("stale Update extended the deadline to %v, want %v", r.deadline.Time, near)
@@ -69,11 +70,11 @@ func TestSLADeadlineGuard_StaleWriterCannotExtend(t *testing.T) {
 		t.Fatalf("stale Update changed sla_status to %q, want warning", s)
 	}
 	var desc string
-	if err := fx.db.QueryRow(`SELECT description FROM findings WHERE tenant_id = $1 AND id = $2`, tid.String(), fid.String()).Scan(&desc); err != nil {
+	if err := fx.db.QueryRow(`SELECT COALESCE(description, '') FROM findings WHERE tenant_id = $1 AND id = $2`, tid.String(), fid.String()).Scan(&desc); err != nil {
 		t.Fatal(err)
 	}
-	if desc != "edited by a stale writer" {
-		t.Fatalf("the writer's other columns were dropped: description = %q", desc)
+	if desc == "edited by a stale writer" {
+		t.Fatalf("the refused stale write landed: description = %q", desc)
 	}
 
 	// 2. A recompute that computed a later deadline keeps the stored one.

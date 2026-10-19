@@ -3,6 +3,7 @@ package routes
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -84,6 +85,11 @@ func TestDashboardAggregates_FollowTheViewer_DB(t *testing.T) {
 		status, body := get(who, "/api/v1/dashboard/program-metrics")
 		if wantStatus := map[bool]int{true: http.StatusForbidden, false: http.StatusOK}[who == "member"]; status != wantStatus {
 			t.Errorf("program metrics as %s = %d %.200s, want %d", who, status, body, wantStatus)
+		}
+		// The refusal names the grant, so the web shows "no access" with who
+		// can grant it rather than "module not enabled" or a raw error.
+		if who == "member" && (!strings.Contains(body, `"any_of"`) || !strings.Contains(body, "dashboards:org:view")) {
+			t.Errorf("program metrics refusal does not name the grant: %.300s", body)
 		}
 		if status, body := get(who, "/api/v1/dashboard/process-metrics"); status != http.StatusOK {
 			t.Errorf("process metrics as %s = %d %.200s", who, status, body)

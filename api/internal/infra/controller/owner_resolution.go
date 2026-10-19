@@ -15,7 +15,9 @@ import (
 // When a scanner ingests an asset, it may set owner_ref (e.g., "alice@example.com")
 // but cannot know the internal user UUID. This controller finds those assets and
 // adds the matching tenant member as a primary owner in asset_owners (source
-// 'owner_ref'), the one owner model. Such an owner never grants data access.
+// 'owner_ref'), the one owner model. Such an owner never grants data access:
+// owner_ref is data from a source, so only an owner set by a person puts the
+// asset in the owner's data scope (accesscontrol.UserOwnerGrantsScope).
 //
 // Runs every 30 minutes.
 type OwnerResolutionController struct {

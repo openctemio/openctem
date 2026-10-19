@@ -3,6 +3,8 @@
 import { formatEpssScore } from '@/lib/epss'
 import { useState } from 'react'
 import useSWR from 'swr'
+import Link from '@/components/link'
+import { DRILL } from '@/features/dashboard/lib/drill'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -43,6 +45,9 @@ import {
   Target,
 } from 'lucide-react'
 import { compareSeverity } from '@/lib/severity'
+import { WidgetError } from '@/features/dashboard/components/widget-error'
+import { MTTR_WINDOW_DAYS } from '@/features/dashboard/hooks/use-ctem-dashboard'
+import { formatHours } from '@/features/dashboard/lib/format-hours'
 
 // ============================================
 // TYPES
@@ -55,6 +60,7 @@ interface TopRisk {
   asset_name: string
   epss_score?: number
   is_in_kev: boolean
+  finding_id?: string
 }
 
 interface ExecutiveSummary {
@@ -112,18 +118,22 @@ const PRIORITY_CLASSES = ['P0', 'P1', 'P2', 'P3']
 // HELPERS
 // ============================================
 
+/** A headline tile that opens the list it counts. */
+function DrillCard({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="block rounded-xl transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </Link>
+  )
+}
+
 function PriorityChip({ value }: { value: string }) {
   const pc = value.toUpperCase()
   if (!PRIORITY_CLASSES.includes(pc)) return <Badge variant="outline">{value}</Badge>
   return <PriorityClassBadge priorityClass={pc as PriorityClass} />
-}
-
-function formatHours(hours: number | undefined | null): string {
-  if (hours === undefined || hours === null || Number.isNaN(hours)) return '—'
-  if (hours < 1) return `${(hours * 60).toFixed(0)}m`
-  if (hours < 24) return `${hours.toFixed(1)}h`
-  const days = hours / 24
-  return `${days.toFixed(1)}d`
 }
 
 function formatPercent(pct: number | undefined | null): string {
@@ -162,9 +172,18 @@ const TOP_RISK_COLUMNS: ColumnDef<TopRisk>[] = [
     accessorKey: 'title',
     enableSorting: false,
     header: 'Title',
-    cell: ({ row }) => (
-      <span className="block max-w-md truncate text-sm font-medium">{row.original.title}</span>
-    ),
+    // A top risk opens its finding.
+    cell: ({ row }) =>
+      row.original.finding_id ? (
+        <Link
+          href={`/findings/${row.original.finding_id}`}
+          className="block max-w-md truncate text-sm font-medium hover:underline focus-visible:underline"
+        >
+          {row.original.title}
+        </Link>
+      ) : (
+        <span className="block max-w-md truncate text-sm font-medium">{row.original.title}</span>
+      ),
   },
   {
     accessorKey: 'severity',
@@ -220,21 +239,36 @@ export default function ExecutiveSummaryPage() {
 
   const tenantReady = !!currentTenant?.id
 
-  const { data: summary, isLoading: summaryLoading } = useSWR<ExecutiveSummary>(
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    error: summaryError,
+    mutate: retrySummary,
+  } = useSWR<ExecutiveSummary>(
     tenantReady ? `/api/v1/dashboard/executive-summary?days=${period}` : null,
     get,
     { revalidateOnFocus: false }
   )
 
   // MTTR is fixed at 90 days for trend stability
-  const { data: mttr, isLoading: mttrLoading } = useSWR<MTTRAnalytics>(
-    tenantReady ? '/api/v1/dashboard/mttr-analytics?days=90' : null,
+  const {
+    data: mttr,
+    isLoading: mttrLoading,
+    error: mttrError,
+    mutate: retryMttr,
+  } = useSWR<MTTRAnalytics>(
+    tenantReady ? `/api/v1/dashboard/mttr-analytics?days=${MTTR_WINDOW_DAYS}` : null,
     get,
     { revalidateOnFocus: false }
   )
 
   // Process metrics fixed at 90 days
-  const { data: processMetrics, isLoading: processLoading } = useSWR<ProcessMetrics>(
+  const {
+    data: processMetrics,
+    isLoading: processLoading,
+    error: processError,
+    mutate: retryProcess,
+  } = useSWR<ProcessMetrics>(
     tenantReady ? '/api/v1/dashboard/process-metrics?days=90' : null,
     get,
     { revalidateOnFocus: false }
@@ -272,6 +306,8 @@ export default function ExecutiveSummaryPage() {
       <div className="mt-5">
         {summaryLoading ? (
           <StatsRowSkeleton count={8} />
+        ) : !summary && summaryError ? (
+          <WidgetError onRetry={() => void retrySummary()} className="rounded-xl border py-8" />
         ) : (
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatsCard
@@ -292,29 +328,35 @@ export default function ExecutiveSummaryPage() {
               description={summary ? `${summary.findings_new_period} new in period` : undefined}
               icon={CheckCircle2}
             />
-            <StatsCard
-              title={t('dashboardMetrics.executive.sla')}
-              value={formatPercent(summary?.sla_compliance_pct)}
-              description={summary ? `${summary.sla_breached} breached` : undefined}
-              icon={ShieldCheck}
-            />
-            <StatsCard
-              title="P0 open"
-              value={summary?.p0_open ?? 0}
-              valueClassName={summary && summary.p0_open > 0 ? 'text-destructive' : undefined}
-              description={
-                summary ? `${summary.p0_resolved_period} resolved this period` : undefined
-              }
-              icon={ShieldAlert}
-            />
+            <DrillCard href={DRILL.slaBreached}>
+              <StatsCard
+                title={t('dashboardMetrics.executive.sla')}
+                value={formatPercent(summary?.sla_compliance_pct)}
+                description={summary ? `${summary.sla_breached} breached` : undefined}
+                icon={ShieldCheck}
+              />
+            </DrillCard>
+            <DrillCard href={DRILL.p0Open}>
+              <StatsCard
+                title="P0 open"
+                value={summary?.p0_open ?? 0}
+                valueClassName={summary && summary.p0_open > 0 ? 'text-destructive' : undefined}
+                description={
+                  summary ? `${summary.p0_resolved_period} resolved this period` : undefined
+                }
+                icon={ShieldAlert}
+              />
+            </DrillCard>
             {summary && (
               <>
-                <StatsCard
-                  title="P1 open"
-                  value={summary.p1_open}
-                  description={`${summary.p1_resolved_period} resolved this period`}
-                  icon={AlertTriangle}
-                />
+                <DrillCard href={DRILL.p1Open}>
+                  <StatsCard
+                    title="P1 open"
+                    value={summary.p1_open}
+                    description={`${summary.p1_resolved_period} resolved this period`}
+                    icon={AlertTriangle}
+                  />
+                </DrillCard>
                 <StatsCard
                   title={t('dashboardMetrics.hero.crownJewels')}
                   value={summary.crown_jewels_at_risk}
@@ -390,6 +432,8 @@ export default function ExecutiveSummaryPage() {
           <CardContent>
             {mttrLoading ? (
               <Skeleton className="h-40 w-full" />
+            ) : !mttr && mttrError ? (
+              <WidgetError onRetry={() => void retryMttr()} className="h-40" />
             ) : mttr && Object.keys(mttr.by_severity).length > 0 ? (
               <div className="divide-y">
                 {Object.entries(mttr.by_severity)
@@ -427,6 +471,8 @@ export default function ExecutiveSummaryPage() {
           <CardContent>
             {mttrLoading ? (
               <Skeleton className="h-40 w-full" />
+            ) : !mttr && mttrError ? (
+              <WidgetError onRetry={() => void retryMttr()} className="h-40" />
             ) : mttr && Object.keys(mttr.by_priority_class).length > 0 ? (
               <div className="divide-y">
                 {Object.entries(mttr.by_priority_class).map(([priority, hours]) => (
@@ -453,12 +499,22 @@ export default function ExecutiveSummaryPage() {
         <h2 className="text-base font-semibold">Process health</h2>
         {processLoading ? (
           <StatsRowSkeleton />
+        ) : !processMetrics && processError ? (
+          <WidgetError onRetry={() => void retryProcess()} className="rounded-xl border py-8" />
         ) : processMetrics ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatsCard
               title="Approval avg time"
-              value={formatHours(processMetrics.approval_avg_hours)}
-              description={`${processMetrics.approval_count} approvals tracked`}
+              value={
+                processMetrics.approval_count > 0
+                  ? formatHours(processMetrics.approval_avg_hours)
+                  : '—'
+              }
+              description={
+                processMetrics.approval_count > 0
+                  ? `${processMetrics.approval_count} approvals tracked`
+                  : t('dashboardMetrics.executive.noApprovals', 'No approvals decided yet')
+              }
               icon={Clock}
             />
             <StatsCard

@@ -49,13 +49,40 @@ export function CtemDashboard() {
   const tenantId = currentTenant?.id || null
 
   // CTEM story data
-  const { data: trend, isLoading: trendLoading } = useRiskTrend(tenantId, 90)
-  const { data: summary, isLoading: summaryLoading } = useExecutiveSummary(tenantId)
-  const { data: threatIntel, isLoading: threatLoading } = useThreatIntelStats(tenantId)
+  // Each read keeps its error: a failed read renders an error state on the
+  // cards it feeds, never zeros.
+  const {
+    data: trend,
+    isLoading: trendLoading,
+    error: trendError,
+    mutate: retryTrend,
+  } = useRiskTrend(tenantId, 90)
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    error: summaryError,
+    mutate: retrySummary,
+  } = useExecutiveSummary(tenantId)
+  const {
+    data: threatIntel,
+    isLoading: threatLoading,
+    error: threatError,
+    mutate: retryThreat,
+  } = useThreatIntelStats(tenantId)
   const { data: exposure, isLoading: exposureLoading } = useExposureChains(tenantId)
   const { data: attackPaths, isLoading: pathsLoading } = useAttackPaths(tenantId)
-  const { data: scanCoverage, isLoading: scanLoading } = useScanCoverage(tenantId)
-  const { data: validationCoverage, isLoading: validationLoading } = useValidationCoverage(tenantId)
+  const {
+    data: scanCoverage,
+    isLoading: scanLoading,
+    error: scanError,
+    mutate: retryScan,
+  } = useScanCoverage(tenantId)
+  const {
+    data: validationCoverage,
+    isLoading: validationLoading,
+    error: validationError,
+    mutate: retryValidation,
+  } = useValidationCoverage(tenantId)
   // Scoping readiness for the loop's Scoping tile; rows about a module that is
   // off are left out, the same as the Scoping overview.
   const { data: scopingSummary } = useScopingSummary()
@@ -69,10 +96,12 @@ export function CtemDashboard() {
   // Maturity is module-gated — skip the fetch entirely when disabled so it 403s nothing.
   const ctemCyclesEnabled = useModuleEnabled('ctem_cycles')
   const attackSurfaceEnabled = useModuleEnabled('attack_surface')
-  const { data: maturity, isLoading: maturityLoading } = useCtemMaturityTrend(
-    tenantId,
-    ctemCyclesEnabled
-  )
+  const {
+    data: maturity,
+    isLoading: maturityLoading,
+    error: maturityError,
+    mutate: retryMaturity,
+  } = useCtemMaturityTrend(tenantId, ctemCyclesEnabled)
 
   // Retained analyst charts
   const { stats, isLoading: statsLoading } = useDashboardStats(tenantId)
@@ -89,8 +118,18 @@ export function CtemDashboard() {
           trend={trend}
           kevChainCount={kevChainCount}
           isLoading={summaryLoading || trendLoading}
+          error={summaryError}
+          onRetry={() => void retrySummary()}
         />
-        <PriorityOverTime trend={trend} isLoading={trendLoading} />
+        <PriorityOverTime
+          summary={summary}
+          summaryError={summaryError}
+          onRetrySummary={() => void retrySummary()}
+          trend={trend}
+          trendError={trendError}
+          onRetryTrend={() => void retryTrend()}
+          isLoading={trendLoading || summaryLoading}
+        />
       </section>
 
       {/* Row 2 — CTEM loop */}
@@ -102,6 +141,12 @@ export function CtemDashboard() {
           threatIntel={threatIntel}
           scoping={scoping}
           isLoading={summaryLoading || scanLoading || validationLoading || threatLoading}
+          errors={{
+            summary: summaryError,
+            scan: scanError,
+            validation: validationError,
+            threat: threatError,
+          }}
         />
       </section>
 
@@ -113,6 +158,8 @@ export function CtemDashboard() {
           chains={chains}
           topRisks={summary?.top_risks}
           isLoading={exposureLoading || summaryLoading}
+          error={summaryError}
+          onRetry={() => void retrySummary()}
         />
         {attackSurfaceEnabled && (
           <AttackPathsCard
@@ -126,18 +173,34 @@ export function CtemDashboard() {
 
       {/* Row 4 — Threat intel + coverage/hygiene (+ optional maturity) */}
       <section className="mb-6 grid gap-4 lg:grid-cols-2">
-        <ThreatIntelCard stats={threatIntel} isLoading={threatLoading} />
+        <ThreatIntelCard
+          stats={threatIntel}
+          isLoading={threatLoading}
+          error={threatError}
+          onRetry={() => void retryThreat()}
+        />
         <CoverageHygiene
           scan={scanCoverage}
           validation={validationCoverage}
           slaPct={summary?.sla_compliance_pct}
           isLoading={scanLoading || validationLoading || summaryLoading}
+          error={scanError && validationError && summaryError}
+          onRetry={() => {
+            void retryScan()
+            void retryValidation()
+            void retrySummary()
+          }}
         />
       </section>
 
       {ctemCyclesEnabled && (
         <section className="mb-6">
-          <CtemMaturityCard data={maturity} isLoading={maturityLoading} />
+          <CtemMaturityCard
+            data={maturity}
+            isLoading={maturityLoading}
+            error={maturityError}
+            onRetry={() => void retryMaturity()}
+          />
         </section>
       )}
 

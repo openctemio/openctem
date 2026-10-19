@@ -10,6 +10,8 @@ import (
 	"net"
 	"time"
 
+	queryapp "github.com/openctemio/openctem/api/internal/app/query"
+
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
@@ -369,7 +371,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
 		IsOwner: middleware.IsOwner(ctx),
-		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
+		APIKey:  middleware.IsDelegatedCredential(ctx),
 	}
 }
 
@@ -419,6 +421,13 @@ func (r workflowMemberReader) IsActiveTenantMember(ctx context.Context, tenantID
 // workflowPermissionReader reads the automation principal's permissions
 // from the database (the union of their roles), never from a cache.
 type workflowPermissionReader struct{ roles *postgres.RoleRepository }
+
+// queryTaskOwners reads the owner of an auto-mode task query outside a
+// request: membership, role and permissions.
+type queryTaskOwners struct {
+	workflowMemberReader
+	workflowPermissionReader
+}
 
 func (r workflowPermissionReader) GetUserPermissions(ctx context.Context, tenantID, userID string) ([]string, error) {
 	tid, err := role.ParseID(tenantID)
@@ -826,8 +835,11 @@ type Services struct {
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
 	RemediationTask     *remediation.TaskService
-	RemediationSuggest  *remediation.SuggestionService
-	RemediationGroup    *remediation.GroupService
+	// Query runs custom queries (one instance: its concurrency caps are
+	// per process).
+	Query              *queryapp.Service
+	RemediationSuggest *remediation.SuggestionService
+	RemediationGroup   *remediation.GroupService
 
 	// Business Units
 	BusinessUnit *asset.BusinessUnitService
@@ -987,12 +999,11 @@ func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, m
 
 // ServiceDeps contains dependencies needed to create services.
 type ServiceDeps struct {
-	Config           *config.Config
-	Log              *logger.Logger
-	DB               *sql.DB
-	Repos            *Repositories
-	RedisClient      *redis.Client
-	SensorStateStore *redis.SensorStateStore
+	Config      *config.Config
+	Log         *logger.Logger
+	DB          *sql.DB
+	Repos       *Repositories
+	RedisClient *redis.Client
 }
 
 // NewServices initializes all services.
@@ -1215,6 +1226,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One remediation-group key applier for every path that creates findings
 	// (scan ingest, CVE matching, manual, license policy).
 	remediationKeys := remediation.NewKeyApplier(repos.FindingRemediationKey, log)
+	remediationKeys.SetAuditWriter(repos.Audit)
+	remediationKeys.SetBackfillActor("remediation key rules upgrade")
 	s.LicensePolicy = licapp.NewService(repos.LicensePolicy, repos.Finding, repos.Tenant, log)
 	s.LicensePolicy.SetRemediationKeyApplier(remediationKeys)
 	s.SBOMImport.SetLicenseEvaluator(s.LicensePolicy)
@@ -1734,11 +1747,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// One exception over a task's open findings (RFC-111 §7).
 	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
+	if deps.DB != nil {
+		s.Query = queryapp.NewService(postgres.NewQueryExecutor(&postgres.DB{DB: deps.DB}, postgres.InteractiveQueryTimeout), s.DataScope, log)
+	}
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.RemediationSuggest.SetTasks(s.RemediationTask)
+	// Keys derived by older key rules are derived again before a run uses them.
+	s.RemediationSuggest.SetKeyRederiver(remediationKeys)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -2020,6 +2038,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Heartbeat gaps: the fleet histogram and each tenant sensor's 48 h
 	// history (the Control channel sparkline; RFC-035).
 	s.Sensor.SetHeartbeatHistory(repos.SensorHeartbeatHistory)
+	// Heartbeat soft state (SENSOR_LIVENESS_STORE): shadow by default, so
+	// the Redis verdict is compared with Postgres before the switch.
+	if mode, err := sensordom.ParseLivenessMode(cfg.SensorConfig.LivenessStore); err == nil && mode != sensordom.LivenessPostgres && deps.RedisClient != nil {
+		store := redis.NewSensorLivenessStore(deps.RedisClient.Client())
+		s.Sensor.SetLiveness(mode, store, repos.Sensor, repos.SensorHeartbeatHistory)
+		if mode == sensordom.LivenessRedis {
+			// Postgres holds checkpoints only: every read of a sensor
+			// overlays the live deadline.
+			repos.Sensor.SetLivenessOverlay(store)
+		}
+		log.Info("sensor liveness store", "mode", string(mode))
+		if w := redis.EvictionPolicyWarning(context.Background(), deps.RedisClient.Client()); w != "" {
+			log.Warn(w)
+		}
+	}
 	s.Sensor.SetHeartbeatGapObserver(telemetry.SensorHeartbeatMetrics{})
 	// Command leases (RFC-035 D6): a claim holds for SENSOR_COMMAND_LEASE
 	// and every heartbeat renews what the sensor holds; job recovery takes
@@ -2300,7 +2333,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Capability = capability.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize sensor selector for load balancing
-	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
+	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, log)
 	// Same SENSOR_LB_* weights drive job placement, so tuning them changes
 	// scheduling and not just the reported score.
 	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
@@ -3157,6 +3190,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		if s.DomainVerify != nil {
+			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
+		}
 		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
@@ -3208,6 +3244,16 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// once.
 	if s.Scan != nil {
 		s.Scan.SetOwnerNotifications(repos.MemberLifecycle, s.Notification)
+	}
+	// Tasks from a query: the query runs as the creator; auto mode re-reads
+	// the owner's membership and permissions on every run and tells them
+	// of additions and suspensions.
+	if s.RemediationTask != nil && s.Query != nil {
+		s.RemediationTask.SetQueryTasks(repos.RemediationTask, s.Query, queryTaskOwners{
+			workflowMemberReader{tenants: repos.Tenant, access: repos.AccessControl},
+			workflowPermissionReader{roles: repos.Role},
+		}, s.Notification)
+		s.RemediationTask.SetModuleGuard(s.Module)
 	}
 
 	// Scope entries: settings, the approval count and the widening notice to

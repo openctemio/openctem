@@ -41,7 +41,7 @@ type SecretPromoter interface {
 type RotationTaskStore interface {
 	ActiveTaskByActionKey(ctx context.Context, tenantID shared.ID, actionKey string) (*remediation.Task, error)
 	CreateTask(ctx context.Context, rec *remediation.NewTaskRecord) error
-	AddMembers(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int, ids []shared.ID, role remediation.MemberRole, src remediation.JoinSource, actor *shared.ID) (*remediation.Task, error)
+	AddMembers(ctx context.Context, req remediation.AddMembersRequest) (*remediation.Task, *remediation.ClaimReport, error)
 }
 
 // SecretRotation is one rotation task a run opened or joined.
@@ -139,8 +139,9 @@ func (e *SecretExposure) ensureTask(ctx context.Context, tenantID shared.ID, f c
 // looks the task up again and joins it, once.
 func (e *SecretExposure) joinOrCreate(ctx context.Context, tenantID shared.ID, f cirun.RunFinding, key, title string, existing *remediation.Task, retry bool) (*SecretRotation, error) {
 	if existing != nil {
-		if _, err := e.tasks.AddMembers(ctx, tenantID, existing.ID, existing.Version, []shared.ID{f.ID},
-			remediation.MemberRolePrimary, remediation.JoinSourceAutoJoin, nil); err != nil {
+		if _, _, err := e.tasks.AddMembers(ctx, remediation.AddMembersRequest{TenantID: tenantID, TaskID: existing.ID,
+			ExpectedVersion: existing.Version, FindingIDs: []shared.ID{f.ID}, Role: remediation.MemberRolePrimary,
+			Source: remediation.JoinSourceAutoJoin}); err != nil {
 			var other *remediation.FindingsInOtherTaskError
 			if errors.As(err, &other) {
 				return nil, nil // the finding already has its own task

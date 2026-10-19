@@ -60,10 +60,26 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
  * route builder or a constant.
  */
 const REVIEWED = new Set([
+  // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
+  'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
+  // StatLink only forwards the page's own constant routes (INTERNET_FACING_HREF and siblings).
+  'app/(dashboard)/(scoping)/attack-surface/page.tsx|Link|href={href}',
+  // Dashboard drill-down links: DRILL (features/dashboard/lib/drill.ts) holds build-time constant
+  // same-origin list routes; DrillCard only forwards its caller's DRILL value.
+  'app/(dashboard)/insights/executive/page.tsx|Link|href={href}',
+  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.slaBreached}',
+  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p0Open}',
+  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p1Open}',
+  'features/dashboard/components/ctem/exposure-hero.tsx|Link|href={DRILL.p0Open}',
+  'features/dashboards/widgets/registry.tsx|StatShell|href={DRILL.p0Open}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
   'features/remediation-hub/components/fix-plan.tsx|Link|href={r.href}',
+  // SLA compliance links: /findings?<fixed filter keys> built by findingsHref from the SLA filter
+  // constants and one SEVERITY_ORDER value (no API text reaches the href).
+  "app/(dashboard)/(mobilization)/sla/page.tsx|Link|href={findingsHref(tileFilter('pastDue'), { severity: sev })}",
+  "app/(dashboard)/(mobilization)/sla/page.tsx|Link|href={findingsHref(tileFilter('pastDue'))}",
   // Navigation config (src/config/*) and settings/category tables in code.
   // /settings lists the settings nav items and search results built from them
   // (src/config/settings-nav.ts urls, plus '#<anchor id>' from the same file).
