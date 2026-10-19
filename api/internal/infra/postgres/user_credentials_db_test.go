@@ -54,6 +54,55 @@ func TestUserRepository_CredentialFieldsAreAtomic(t *testing.T) {
 		}
 	})
 
+	// research/189 B1a-1: failures while locked still count, each further run
+	// of maxAttempts failures doubles the lock (capped), and a run in between
+	// keeps the current lock.
+	t.Run("lockout backs off and caps", func(t *testing.T) {
+		lockFor := func(t *testing.T, before int) (attempts int, secs float64, locked bool) {
+			t.Helper()
+			if _, err := db.ExecContext(ctx, `UPDATE users SET failed_login_attempts = $2, locked_until = NULL WHERE id = $1`, id.String(), before); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := repo.RecordFailedLogin(ctx, id, 5, 15*time.Minute); err != nil {
+				t.Fatal(err)
+			}
+			var until *time.Time
+			if err := db.QueryRowContext(ctx, `SELECT failed_login_attempts, locked_until FROM users WHERE id = $1`, id.String()).Scan(&attempts, &until); err != nil {
+				t.Fatal(err)
+			}
+			if until == nil {
+				return attempts, 0, false
+			}
+			return attempts, time.Until(*until).Seconds(), true
+		}
+		if n, _, locked := lockFor(t, 6); n != 7 || locked {
+			t.Fatalf("7th failure: attempts=%d locked=%v, want 7 and no new lock", n, locked)
+		}
+		if n, secs, locked := lockFor(t, 9); n != 10 || !locked || secs < 29*60 || secs > 31*60 {
+			t.Fatalf("10th failure: attempts=%d locked=%v for %.0fs, want 10 and about 30m", n, locked, secs)
+		}
+		if _, secs, locked := lockFor(t, 5+5*40-1); !locked || secs < 23.9*3600 || secs > 24.1*3600 {
+			t.Fatalf("long run: locked=%v for %.0fs, want the 24h cap", locked, secs)
+		}
+	})
+
+	t.Run("a new password clears the lockout", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, `UPDATE users SET failed_login_attempts = 12, locked_until = NOW() + interval '1 hour' WHERE id = $1`, id.String()); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.UpdatePasswordHash(ctx, id, "reset-hash"); err != nil {
+			t.Fatal(err)
+		}
+		var attempts int
+		var locked bool
+		if err := db.QueryRowContext(ctx, `SELECT failed_login_attempts, locked_until IS NOT NULL FROM users WHERE id = $1`, id.String()).Scan(&attempts, &locked); err != nil {
+			t.Fatal(err)
+		}
+		if attempts != 0 || locked {
+			t.Fatalf("after a password reset: attempts=%d locked=%v, want 0 and unlocked", attempts, locked)
+		}
+	})
+
 	t.Run("a stale profile save does not put back an old password hash", func(t *testing.T) {
 		stale, err := repo.GetByID(ctx, id) // snapshot before the password change
 		if err != nil {
