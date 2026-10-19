@@ -1,0 +1,7 @@
+### Security: a report's own fingerprint no longer chooses which finding it lands on
+
+- Ingest builds the version-1 finding key from server inputs only. Before, any 16-hex `fingerprint` in a report became the key base, so an uploader who knew another finding's base (it was returned in `partial_fingerprints` of `GET /findings/{id}`) could move that finding's false-positive or accepted triage onto a different issue on the same asset, or make a new issue land on it as a re-sighting.
+- Every re-key of a stored finding is bound to the finding's asset. A row still stored under the old report-chosen key is taken over only by a result with the same asset, rule, tool and location path; its triage is kept.
+- Reports may not set the server-only partial-fingerprint keys (`composite/*`, `sensor/*`, `server/*`), and the finding API no longer returns them.
+- Secrets: two different secrets in one file that mask alike are no longer folded into one finding (a leaked credential was dropped). A secret is keyed on the producer's keyed hash, else on the server's keyed hash of a raw value the report carried (taken before masking); with only a mask, the key also carries the rule, secret type and line. Existing secret findings keep their triage: they are re-keyed on their next sighting. The re-fingerprint job no longer recomputes secret keys from the stored mask hash.
+- No migration. Golden dedup corpus unchanged in outcome.

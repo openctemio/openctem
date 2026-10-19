@@ -12,7 +12,8 @@ import (
 // registerVEXStatementRoutes wires the organization's VEX statements
 // (api/docs/rfcs/RFC-070-software-components-inventory.md). Reading needs
 // components:read; writing closes findings, so it needs findings:approve
-// (the false-positive permission). Data scope is applied in the service.
+// (the false-positive permission); a statement with status fixed also needs
+// findings:verify, checked in the handler and enforced by the service. Data scope is applied in the service.
 func registerVEXStatementRoutes(router Router, h *handler.VEXStatementHandler,
 	authMiddleware, userSyncMiddleware, moduleGate Middleware) {
 	if h == nil {

@@ -25,6 +25,7 @@ import {
 import { useOrganization } from '@console/features/admin-console/api/use-admin-organizations'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { OrganizationAuditChainPanel } from '@console/features/admin-console/components/organization-audit-chain-panel'
+import { OrganizationDashboardDataPanel } from '@console/features/admin-console/components/organization-dashboard-data-panel'
 import { OrganizationLimitsPanel } from '@console/features/admin-console/components/organization-limits-panel'
 import { OrganizationModulesPanel } from '@console/features/admin-console/components/organization-modules-panel'
 import { OrganizationScanPolicyPanel } from '@console/features/admin-console/components/organization-scan-policy-panel'
@@ -185,8 +186,9 @@ export default function AdminOrganizationPage({
               </TabsList>
             </div>
 
-            <TabsContent value="overview" className="mt-4">
+            <TabsContent value="overview" className="mt-4 space-y-5">
               <OrganizationSummary org={org} onOpenTab={setTab} />
+              <OrganizationDashboardDataPanel tenantId={org.id} canRebuild={canManageUsers} />
             </TabsContent>
 
             <TabsContent value="users" className="mt-4">
