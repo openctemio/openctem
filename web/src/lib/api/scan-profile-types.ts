@@ -10,9 +10,6 @@ export type Intensity = 'low' | 'medium' | 'high'
 // Severity levels for tool findings
 export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical'
 
-// Template modes for scanner templates
-export type TemplateMode = 'default' | 'custom' | 'both'
-
 /**
  * Tool configuration within a scan profile
  */
@@ -21,8 +18,6 @@ export interface ToolConfig {
   severity?: Severity
   timeout?: number
   options?: Record<string, unknown>
-  template_mode?: TemplateMode // "default", "custom", "both"
-  custom_template_ids?: string[] // IDs of custom templates to use
 }
 
 /**
@@ -245,20 +240,6 @@ export function createDefaultQualityGate(overrides?: Partial<QualityGate>): Qual
  */
 export function isUnlimited(value: number): boolean {
   return value < 0
-}
-
-// Template mode display names
-export const TEMPLATE_MODE_DISPLAY_NAMES: Record<TemplateMode, string> = {
-  default: 'Default',
-  custom: 'Custom Only',
-  both: 'Both',
-}
-
-// Template mode descriptions
-export const TEMPLATE_MODE_DESCRIPTIONS: Record<TemplateMode, string> = {
-  default: 'Use only official/built-in templates',
-  custom: 'Use only tenant-uploaded custom templates',
-  both: 'Run both default and custom templates',
 }
 
 // ============================================
