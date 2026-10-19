@@ -492,11 +492,11 @@ export interface Asset {
   technologies?: AssetTechnologyBrief[]
   exposure: ExposureLevel // Network accessibility classification
   /**
-   * Whether the asset is reachable from the internet (assets.is_internet_accessible).
-   * Optional: the list response only carries it once the backend surfaces the
-   * column, so `undefined` reads as "unknown" in the inventory rather than false.
+   * Internet-facing: exposure is public or a source reported the asset
+   * reachable from the internet. The one definition across the product
+   * (API `internet_facing`, asset.InternetFacing).
    */
-  isInternetAccessible?: boolean
+  isInternetFacing?: boolean
   /**
    * CTEM Scoping critical-asset register: per-dimension CIA business-impact
    * ratings (api #467). Each is independently optional — undefined means the

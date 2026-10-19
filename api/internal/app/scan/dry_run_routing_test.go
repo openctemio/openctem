@@ -47,7 +47,7 @@ func plannerService(proof bool, sel SensorSelector) *Service {
 func TestDryRun_RoutingAndProof(t *testing.T) {
 	ctx := context.Background()
 	own := &sensor.Sensor{ID: shared.NewID(), Name: "sensor-docker-01"}
-	targets := []string{"app.verified.example", "portal.vndirect.example"}
+	targets := []string{"app.verified.example", "portal.customer.example"}
 	cases := []struct {
 		name       string
 		proof      bool
@@ -63,11 +63,11 @@ func TestDryRun_RoutingAndProof(t *testing.T) {
 		{"off: auto with own sensor: tenant first", false, ownSelector{sensor: own, canUse: true}, "auto", 1, nil, RoutingTenant, RoutingReasonTenantFirst, "sensor-docker-01"},
 		{"off: intrusive on platform needs no proof", false, ownSelector{canUse: true}, "platform", 2, nil, RoutingPlatform, RoutingReasonPlatform, ""},
 		{"on: auto with own sensor: unverified run there", true, ownSelector{sensor: own, canUse: true}, "auto", 1, nil, RoutingTenant, RoutingReasonProof, "sensor-docker-01"},
-		{"on: auto without own sensor: unverified need proof", true, ownSelector{canUse: true}, "auto", 1, []string{"portal.vndirect.example"}, RoutingWaits, RoutingReasonNoTenantSensor, ""},
-		{"on: explicit platform: unverified refused", true, ownSelector{sensor: own, canUse: true}, "platform", 1, []string{"portal.vndirect.example"}, RoutingPlatform, RoutingReasonPlatform, ""},
+		{"on: auto without own sensor: unverified need proof", true, ownSelector{canUse: true}, "auto", 1, []string{"portal.customer.example"}, RoutingWaits, RoutingReasonNoTenantSensor, ""},
+		{"on: explicit platform: unverified refused", true, ownSelector{sensor: own, canUse: true}, "platform", 1, []string{"portal.customer.example"}, RoutingPlatform, RoutingReasonPlatform, ""},
 		{"on: own sensors, safe active: no proof", true, ownSelector{sensor: own}, "tenant", 1, nil, RoutingTenant, RoutingReasonTenantFirst, "sensor-docker-01"},
-		{"on: own sensors, intrusive: proof needed", true, ownSelector{sensor: own}, "tenant", 2, []string{"portal.vndirect.example"}, RoutingTenant, RoutingReasonTenantFirst, "sensor-docker-01"},
-		{"on: sensor lookup fails: waits, unverified refused", true, ownSelector{err: errors.New("db down")}, "auto", 1, []string{"portal.vndirect.example"}, RoutingWaits, RoutingReasonNoTenantSensor, ""},
+		{"on: own sensors, intrusive: proof needed", true, ownSelector{sensor: own}, "tenant", 2, []string{"portal.customer.example"}, RoutingTenant, RoutingReasonTenantFirst, "sensor-docker-01"},
+		{"on: sensor lookup fails: waits, unverified refused", true, ownSelector{err: errors.New("db down")}, "auto", 1, []string{"portal.customer.example"}, RoutingWaits, RoutingReasonNoTenantSensor, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -112,7 +112,7 @@ func TestPartitionRefused(t *testing.T) {
 	ctx, tenant := context.Background(), shared.NewID()
 	svc := plannerService(true, ownSelector{canUse: true})
 	in := CreateScanInput{ScanType: "single", ScannerName: "nuclei", SensorPreference: "platform",
-		Targets: []string{"app.verified.example", "portal.vndirect.example", "www.vndirect.example"}}
+		Targets: []string{"app.verified.example", "portal.customer.example", "www.customer.example"}}
 	kept, skipped, err := svc.partitionRefused(ctx, tenant, in)
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ func TestPartitionRefused(t *testing.T) {
 	if len(kept) != 1 || kept[0] != "app.verified.example" || len(skipped) != 2 || skipped[0].Code != scopedom.RefusalProofRequired {
 		t.Fatalf("kept %v skipped %+v", kept, skipped)
 	}
-	in.Targets = []string{"portal.vndirect.example"}
+	in.Targets = []string{"portal.customer.example"}
 	_, _, err = svc.partitionRefused(ctx, tenant, in)
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != codeNothingAllowed {
@@ -128,7 +128,7 @@ func TestPartitionRefused(t *testing.T) {
 	}
 	// Setting off: nothing is skipped.
 	kept, skipped, err = plannerService(false, ownSelector{canUse: true}).partitionRefused(ctx, tenant,
-		CreateScanInput{ScanType: "single", ScannerName: "nuclei", SensorPreference: "platform", Targets: []string{"portal.vndirect.example"}})
+		CreateScanInput{ScanType: "single", ScannerName: "nuclei", SensorPreference: "platform", Targets: []string{"portal.customer.example"}})
 	if err != nil || len(kept) != 1 || len(skipped) != 0 {
 		t.Fatalf("proof off: kept %v skipped %v err %v", kept, skipped, err)
 	}

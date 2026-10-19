@@ -78,8 +78,9 @@ SELECT
 	  WHERE EXISTS (SELECT 1 FROM business_unit_assets bua
 	                  JOIN business_units bu ON bu.id = bua.business_unit_id AND bu.tenant_id = $1
 	                 WHERE bua.asset_id = la.id)),
-	(SELECT COUNT(*) FROM scope_targets st WHERE st.tenant_id = $1),
-	(SELECT COUNT(*) FROM scope_exclusions se WHERE se.tenant_id = $1),
+	(SELECT COUNT(*) FROM scope_targets st WHERE st.tenant_id = $1 AND st.status = 'active'),
+	(SELECT COUNT(*) FROM scope_targets st WHERE st.tenant_id = $1 AND st.status = 'pending'),
+	(SELECT COUNT(*) FROM scope_exclusions se WHERE se.tenant_id = $1 AND se.status = 'active'),
 	(SELECT COUNT(*) FROM attacker_profiles ap WHERE ap.tenant_id = $1),
 	(SELECT COUNT(*) FROM threat_models tm WHERE tm.tenant_id = $1),
 	(SELECT COUNT(DISTINCT cj.id) FROM threat_models tm
@@ -122,7 +123,7 @@ func (r *ScopingSummaryRepository) GetSummary(ctx context.Context, tenantID shar
 		&s.BusinessServices.Total, &s.BusinessServices.WithAssets,
 		&s.BusinessUnits.Total,
 		&s.Assets.Total, &s.Assets.InBusinessUnit,
-		&s.Boundary.Targets, &s.Boundary.Exclusions,
+		&s.Boundary.Targets, &s.Boundary.TargetsWaiting, &s.Boundary.Exclusions,
 		&s.AttackerProfiles.Total,
 		&s.ThreatModels.Total, &s.ThreatModels.CrownJewelsCovered,
 		&s.Cycles.Total,

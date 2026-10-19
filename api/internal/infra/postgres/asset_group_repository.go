@@ -550,6 +550,19 @@ func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID,
 	stats.AverageRiskScore = avgScore
 	stats.TotalFindings = totalFindings
 
+	// "Assets in groups" counts each asset once, however many groups hold
+	// it (the sum of the group sizes counted an asset in two groups twice).
+	distinctArgs := []any{tenantID.String()}
+	scopeCond, distinctArgs := dataScopeCond("agm.asset_id", scope, distinctArgs)
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT agm.asset_id)
+		FROM asset_group_members agm
+		JOIN asset_groups g ON g.id = agm.asset_group_id AND g.tenant_id = $1
+		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = $1 AND a.deleted_at IS NULL
+		WHERE `+scopeCond, distinctArgs...).Scan(&stats.TotalAssets); err != nil {
+		return nil, fmt.Errorf("get stats distinct assets: %w", err)
+	}
+
 	// Get by environment
 	stats.ByEnvironment = make(map[assetgroup.Environment]int64)
 	envQuery := `

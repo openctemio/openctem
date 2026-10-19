@@ -105,10 +105,9 @@ func (b *BatchAssigner) applyPriorityOverride(ctx context.Context, f *vulnerabil
 		if rank == nil {
 			return
 		}
-		if err := f.SetRank(rank); err != nil {
-			return
-		}
-		if err := b.findingRepo.Update(ctx, f); err != nil {
+		if _, err := vulnerability.UpdateFindingRetrying(ctx, b.findingRepo, f, func(cur *vulnerability.Finding) error {
+			return cur.SetRank(rank)
+		}); err != nil {
 			b.logger.Warn("failed to apply assignment-rule priority in batch",
 				"finding_id", f.ID().String(), "priority", r.Options.SetFindingPriority, "error", err)
 		}

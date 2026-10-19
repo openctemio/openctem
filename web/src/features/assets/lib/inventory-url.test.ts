@@ -19,7 +19,7 @@ describe('inventory URL codec', () => {
       types: ['host', 'domain'],
       criticalities: ['critical'],
       hasOwner: false,
-      isInternetAccessible: true,
+      isInternetFacing: true,
       lastSeenBefore: '2026-01-01T00:00:00.000Z',
       sort: '-risk_score',
       page: 3,

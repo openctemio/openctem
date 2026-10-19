@@ -335,6 +335,8 @@ export interface ApiFinding {
   metadata?: Record<string, unknown>
   created_at: string
   updated_at: string
+  /** Optimistic-concurrency version: send it back as If-Match on a write. */
+  row_version?: number
 
   // Extended fields from SARIF/scanner output
   confidence?: number // 0-100 confidence score
@@ -732,6 +734,8 @@ export interface FindingApiFilters {
   asset_owner_id?: string
   /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
   asset_owner_unassigned?: boolean
+  /** Findings on the members of an asset group (the group page's links). Sent as `asset_group_id`. */
+  asset_group_id?: string
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */
   sort?: string
   page?: number
@@ -759,4 +763,16 @@ export interface FindingStatsResponse {
   open_by_severity?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
   /** Fixes claimed by an owner (fix_applied), waiting for a verifier. */
   awaiting_verification?: number
+  /** Present when the request sets sla_breakdown=true. */
+  sla?: FindingSlaBreakdown
+}
+
+/** The filtered findings split by SLA standing, in one read. */
+export interface FindingSlaBreakdown {
+  past_due: number
+  due_soon: number
+  on_track: number
+  /** Past due by days past the deadline; adds up to past_due. */
+  past_due_by_age: { up_to_7: number; d8_to_30: number; d31_to_90: number; over_90: number }
+  past_due_by_severity: Record<string, number>
 }
