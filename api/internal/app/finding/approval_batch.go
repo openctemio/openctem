@@ -17,6 +17,7 @@ package finding
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -445,12 +446,23 @@ func (s *VulnerabilityService) ApproveGroupException(ctx context.Context, tenant
 			}, vulnerability.SourceAPI, nil)
 		return entry, err == nil, err
 	}
-	out, applied, canceled, err := store.SignOffBatch(ctx, tenantID, batchID, approver, rec,
+	out, applied, canceled, err := store.SignOffBatch(s.ticketSyncCtx(ctx, tenantID, findings), tenantID, batchID, approver, rec,
 		func(prior []approvalpolicy.Signoff) (bool, error) { return res.Sign(approver, prior) }, finish)
 	if err != nil {
 		return nil, err
 	}
 	out.RequiredApprovals = res.Required
+	if applied > 0 {
+		// Each member the group decision moved gets the status change's
+		// side effects, once.
+		moved := make([]*vulnerability.Finding, 0, len(findings))
+		for _, f := range findings {
+			if !slices.Contains(canceled, f.ID()) {
+				moved = append(moved, f)
+			}
+		}
+		s.afterApplied(ctx, tenantID, approver.String(), moved, b.RequestedStatus)
+	}
 	return &GroupExceptionDecision{Batch: out, Applied: applied, Canceled: canceled, Shortened: shortened}, nil
 }
 

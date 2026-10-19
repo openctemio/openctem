@@ -227,7 +227,7 @@ func TestVEXStatements_DB(t *testing.T) {
 	if n := f.pendingRequests(f3); n != 1 {
 		t.Errorf("widened range: %d pending requests on 4.17.21, want 1", n)
 	}
-	if _, _, err = svc.Update(ctx, f.tenant, st.ID.String(), vexapp.Patch{Status: &fixed}, actx); err != nil {
+	if _, _, err = svc.Update(ctx, f.tenant, st.ID.String(), vexapp.Patch{Status: &fixed, CanVerify: true}, actx); err != nil {
 		t.Fatalf("update status: %v", err)
 	}
 	for _, id := range []shared.ID{f1, f2, f3} {
@@ -383,7 +383,7 @@ func TestVEXStatements_Import_DB(t *testing.T) {
  {"vulnerability":{"name":"CVE-2021-1000"},"products":[{"@id":"pkg:npm/not-in-inventory-x@1.0.0"}],"status":"not_affected",
   "justification":"vulnerable_code_not_present"}]}`
 
-	prev, err := svc.Import(ctx, f.tenant, "", strings.NewReader(doc), true, actx)
+	prev, err := svc.Import(ctx, f.tenant, "", strings.NewReader(doc), true, true, actx)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestVEXStatements_Import_DB(t *testing.T) {
 	}
 	f.wantStatus(fnd, "new", "")
 
-	res, err := svc.Import(ctx, f.tenant, "", strings.NewReader(doc), false, actx)
+	res, err := svc.Import(ctx, f.tenant, "", strings.NewReader(doc), false, true, actx)
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestVEXStatements_Import_DB(t *testing.T) {
 	if origin != "document" || !strings.HasPrefix(ref, "openvex") {
 		t.Errorf("origin %s ref %s", origin, ref)
 	}
-	again, err := svc.Import(ctx, f.tenant, "", strings.NewReader(doc), false, actx)
+	again, err := svc.Import(ctx, f.tenant, "", strings.NewReader(doc), false, true, actx)
 	if err != nil || again.Unchanged != 1 || again.Created != 0 {
 		t.Fatalf("re-import is idempotent: %+v %v", again, err)
 	}
@@ -427,10 +427,10 @@ func TestVEXStatements_Import_DB(t *testing.T) {
 	// A member restricted to part of the tenant imports only for an asset.
 	member := vexapp.NewService(repo, &vexScope{tenant: f.tenant, user: f.user, restricted: true,
 		assets: map[shared.ID]bool{f.a1: true}}, nil, nil)
-	if _, err := member.Import(ctx, f.tenant, "", strings.NewReader(doc), true, actx); !errors.Is(err, shared.ErrForbidden) {
+	if _, err := member.Import(ctx, f.tenant, "", strings.NewReader(doc), true, true, actx); !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("tenant-wide import by a restricted member: %v", err)
 	}
-	if _, err := member.Import(ctx, f.tenant, f.a2.String(), strings.NewReader(doc), true, actx); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := member.Import(ctx, f.tenant, f.a2.String(), strings.NewReader(doc), true, true, actx); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("import for an out-of-scope asset: %v", err)
 	}
 }
@@ -469,5 +469,85 @@ func TestVEXStatements_NotAffectedNeverSetsFalsePositive_DB(t *testing.T) {
 	}
 	if reason == "" || !strings.Contains(just, "vulnerable_code_not_present") {
 		t.Errorf("request carries the statement: closure %q justification %q", reason, just)
+	}
+}
+
+// A fixed statement resolves findings with verification vex_statement, so
+// writing one needs findings:verify (the transport sets CanVerify); the
+// service refuses without it and writes nothing.
+func TestVEXStatements_FixedNeedsVerify_DB(t *testing.T) {
+	f := newVEXFixture(t)
+	ctx := context.Background()
+	repo := NewVEXStatementRepository(&DB{DB: f.db})
+	svc := vexapp.NewService(repo, &vexScope{tenant: f.tenant}, &vexAudit{}, nil)
+	actx := auditapp.AuditContext{TenantID: f.tenant.String(), ActorID: f.user.String()}
+	f1 := f.finding(f.tenant, f.a1, f.v20, "CVE-2021-23337", "sca", "new")
+	countStatements := func() int {
+		var n int
+		if err := f.db.QueryRow(`SELECT count(*) FROM vex_statements WHERE tenant_id = $1`, f.tenant.String()).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	in := vexapp.Input{VulnID: "CVE-2021-23337", ProductID: f.product, Versions: []string{"4.17.20"}, Status: "fixed"}
+
+	// create fixed without verify: forbidden, no row, finding untouched.
+	if _, _, err := svc.Create(ctx, f.tenant, in, actx); !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("fixed without verify: %v, want forbidden", err)
+	}
+	if n := countStatements(); n != 0 {
+		t.Errorf("%d statements written, want 0", n)
+	}
+	f.wantStatus(f1, "new", "")
+
+	// not_affected needs only the route's permission.
+	na := in
+	na.Status, na.Justification = "not_affected", "vulnerable_code_not_in_execute_path"
+	st, _, err := svc.Create(ctx, f.tenant, na, actx)
+	if err != nil {
+		t.Fatalf("not_affected without verify: %v", err)
+	}
+	// patching it to fixed without verify: forbidden, unchanged.
+	fixed := "fixed"
+	if _, _, err := svc.Update(ctx, f.tenant, st.ID.String(), vexapp.Patch{Status: &fixed}, actx); !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("patch to fixed without verify: %v, want forbidden", err)
+	}
+	if got, _ := repo.Get(ctx, f.tenant, st.ID); got == nil || string(got.Status) != "not_affected" {
+		t.Errorf("statement changed despite refusal: %+v", got)
+	}
+	f.wantStatus(f1, "new", "")
+
+	// import with one fixed statement: refused as a whole, nothing written.
+	doc := `{"@context":"https://openvex.dev/ns/v0.2.0","@id":"https://example.com/vex/9","author":"a","timestamp":"2026-10-01T00:00:00Z","version":1,"statements":[
+	 {"vulnerability":{"name":"CVE-2021-23337"},"products":[{"@id":"pkg:npm/` + f.purlName() + `@4.17.20"}],"status":"fixed"}]}`
+	before := countStatements()
+	if _, err := svc.Import(ctx, f.tenant, "", strings.NewReader(doc), false, false, actx); !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("import with a fixed statement without verify: %v, want forbidden", err)
+	}
+	if n := countStatements(); n != before {
+		t.Errorf("import wrote %d statements before refusing", n-before)
+	}
+
+	if _, err := svc.Delete(ctx, f.tenant, st.ID.String(), actx); err != nil {
+		t.Fatal(err)
+	}
+	// with verify, fixed works (create, then widening a fixed statement).
+	in.CanVerify = true
+	fx, _, err := svc.Create(ctx, f.tenant, in, actx)
+	if err != nil {
+		t.Fatalf("fixed with verify: %v", err)
+	}
+	f.wantStatus(f1, "resolved", "vex_statement")
+	rng := ">=4.17.0,<4.17.22"
+	if _, _, err := svc.Update(ctx, f.tenant, fx.ID.String(), vexapp.Patch{VersionRange: &rng}, actx); !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("widening a fixed statement without verify: %v, want forbidden", err)
+	}
+	just := "reviewed"
+	if _, _, err := svc.Update(ctx, f.tenant, fx.ID.String(), vexapp.Patch{ImpactStatement: &just}, actx); err != nil {
+		t.Errorf("text-only edit of a fixed statement should pass: %v", err)
+	}
+	// deleting stays allowed without verify (it reopens, not closes).
+	if _, err := svc.Delete(ctx, f.tenant, fx.ID.String(), actx); err != nil {
+		t.Errorf("delete: %v", err)
 	}
 }
