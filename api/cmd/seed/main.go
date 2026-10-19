@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,8 +17,14 @@ func main() {
 	// Parse flags
 	dbURL := flag.String("db", "", "Database URL (or set DATABASE_URL env)")
 	seedFile := flag.String("file", "migrations/seed/seed_data.sql", "Path to seed SQL file")
-	clean := flag.Bool("clean", false, "Clean existing data before seeding")
+	clean := flag.Bool("clean", false, "Clean existing data before seeding (destructive, needs -yes)")
+	yes := flag.Bool("yes", false, "Confirm -clean")
 	flag.Parse()
+
+	if err := confirmClean(*clean, *yes); err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
 
 	// Get database URL
 	databaseURL := *dbURL
@@ -169,4 +176,12 @@ func printSummary(ctx context.Context, db *sql.DB) {
 			fmt.Printf("  %s: %d\n", c.table, count)
 		}
 	}
+}
+
+// confirmClean refuses the destructive -clean unless -yes is also given.
+func confirmClean(clean, yes bool) error {
+	if clean && !yes {
+		return errors.New("-clean deletes data; rerun with -clean -yes")
+	}
+	return nil
 }
