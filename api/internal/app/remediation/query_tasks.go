@@ -434,8 +434,8 @@ type SetQueryAutoStateInput struct {
 
 // SetQueryAutoState pauses or resumes auto mode. A suspended task resumes
 // only when its owner is again an active member with the access a run
-// needs; resuming makes the caller the owner when the previous owner is
-// gone, so the query never runs ownerless.
+// needs; a task whose owner is gone stays suspended (the query never runs
+// ownerless, and a resume never changes whose access it runs with).
 func (s *TaskService) SetQueryAutoState(ctx context.Context, in SetQueryAutoStateInput, actx auditapp.AuditContext) (*remediationdom.TaskQuery, error) {
 	t, q, err := s.queryForChange(ctx, in.TenantID, in.TaskID)
 	if err != nil {
