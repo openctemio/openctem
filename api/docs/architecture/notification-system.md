@@ -425,6 +425,13 @@ const (
 
 Integrations can filter which event types they receive.
 
+Emerging-threat alerts (`emerging_threat`, `emerging_threat_digest`,
+[emerging-threat-alerts.md](emerging-threat-alerts.md)) are on by default and
+were added to every channel that receives `new_finding` or
+`finding_priority_escalated` (migration `threat_alerts`). Their severity is a
+constant (critical for an immediate alert, info for the digest), so the
+severity filter does not apply; the event-type list is the switch.
+
 The registry clients render is `integration.AllEventTypes()` (served by
 `GET /api/v1/me/event-types`). A channel's severity filter applies only to
 events whose severity describes a finding; `integration.SeverityFilterApplies`

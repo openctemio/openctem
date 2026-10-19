@@ -87,7 +87,7 @@ func (s *tmScope) AssertFinding(_ context.Context, _ shared.ID, id shared.ID) er
 
 type tmObjects struct {
 	findings map[shared.ID]*vulnerability.Finding
-	tasks    map[shared.ID]*remediation.Campaign
+	tasks    map[shared.ID]*remediation.Task
 	members  map[shared.ID][]*vulnerability.Finding
 }
 
@@ -104,9 +104,9 @@ func (o *tmObjects) Asset(context.Context, shared.ID, shared.ID) (*appticketmap.
 func (o *tmObjects) User(context.Context, shared.ID, shared.ID) (*appticketmap.UserInfo, error) {
 	return nil, shared.ErrNotFound
 }
-func (o *tmObjects) Task(_ context.Context, tenantID, id shared.ID) (*remediation.Campaign, error) {
+func (o *tmObjects) Task(_ context.Context, tenantID, id shared.ID) (*remediation.Task, error) {
 	c, ok := o.tasks[id]
-	if !ok || c.TenantID() != tenantID {
+	if !ok || c.TenantID != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return c, nil
@@ -178,7 +178,7 @@ func newTMFixture(t *testing.T) tmFixture {
 	})
 	f.repo = postgres.NewTicketMappingRepository(&postgres.DB{DB: db})
 	f.scope = &tmScope{hidden: map[shared.ID]bool{}}
-	f.objects = &tmObjects{findings: map[shared.ID]*vulnerability.Finding{}, tasks: map[shared.ID]*remediation.Campaign{}, members: map[shared.ID][]*vulnerability.Finding{}}
+	f.objects = &tmObjects{findings: map[shared.ID]*vulnerability.Finding{}, tasks: map[shared.ID]*remediation.Task{}, members: map[shared.ID][]*vulnerability.Finding{}}
 	trackers := tmTrackers{owner: map[shared.ID]shared.ID{f.intgA: f.tenantA, f.intgB: f.tenantB}, meta: tmMeta()}
 	f.svc = appticketmap.NewService(f.repo, trackers, f.scope, f.objects, "https://app.example.test", logger.NewNop())
 	return f
@@ -439,11 +439,9 @@ func TestTicketMapping_TaskPreviewIsScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	camp, err := remediation.NewCampaign(f.tenantA, "Upgrade django", remediation.CampaignPriorityHigh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.objects.tasks[camp.ID()] = camp
+	// A ticket-mapping "task" is a real remediation task.
+	camp := &remediation.Task{ID: shared.NewID(), TenantID: f.tenantA, Title: "Upgrade django", State: remediation.TaskStateOpen}
+	f.objects.tasks[camp.ID] = camp
 	mk := func(title string) *vulnerability.Finding {
 		fd, err := vulnerability.NewFinding(f.tenantA, shared.NewID(), vulnerability.FindingSourceSCA, "trivy", vulnerability.SeverityHigh, title)
 		if err != nil {
@@ -452,11 +450,11 @@ func TestTicketMapping_TaskPreviewIsScoped(t *testing.T) {
 		return fd
 	}
 	in, out := mk("visible-cve"), mk("hidden-cve")
-	f.objects.members[camp.ID()] = []*vulnerability.Finding{in, out}
+	f.objects.members[camp.ID] = []*vulnerability.Finding{in, out}
 	f.scope.hidden[out.ID()] = true
 	f.scope.restricted = true
 
-	p, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID(), true)
+	p, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,17 +467,17 @@ func TestTicketMapping_TaskPreviewIsScoped(t *testing.T) {
 	}
 	// No member in scope: the task is not found for this caller.
 	f.scope.hidden[in.ID()] = true
-	if _, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID(), true); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID, true); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("task without visible members: want not found, got %v", err)
 	}
 	// An unrestricted caller sees the whole task.
 	f.scope.restricted = false
 	f.scope.hidden = map[shared.ID]bool{}
-	if p, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID(), true); err != nil || !strings.Contains(fmt.Sprint(p.Fields["description"]), "hidden") {
+	if p, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID, true); err != nil || !strings.Contains(fmt.Sprint(p.Fields["description"]), "hidden") {
 		t.Fatalf("unrestricted: %v", err)
 	}
 	// Another tenant's task id is not found.
-	if _, err := f.svc.PreviewOutbound(ctx, f.tenantB, v.Profile.ID, 0, camp.ID(), true); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := f.svc.PreviewOutbound(ctx, f.tenantB, v.Profile.ID, 0, camp.ID, true); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant: %v", err)
 	}
 }

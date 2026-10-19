@@ -902,7 +902,7 @@ $WEB up -d
    (the pre-upgrade migrations Job is hop 2; `kubectl -n $NS logs -f job/<fullname>-api-migrations`).
 5. `kubectl -n $NS exec deploy/<fullname>-api -- ./server -sensor-upgrade-check`,
    then flush `user_perms:*` in Redis as in 10.1.
-6. Create the administrators: `kubectl -n $NS exec deploy/<fullname>-api -- ./bootstrap-admin -email=... -backup-email=...`
+6. Create the administrators: `kubectl -n $NS exec -it deploy/<fullname>-api -- ./bootstrap-admin -email=... -backup-email=...`
    (the chart's bootstrap Job does not run on upgrade).
 7. Sensors ([8.2](#82-upgrade-order)) and verification.
 
