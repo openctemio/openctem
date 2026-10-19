@@ -53,6 +53,20 @@ func IsAPIKeyAuthenticated(ctx context.Context) bool {
 	return GetAPIKeyID(ctx) != ""
 }
 
+// IsDelegatedCredential reports whether the request acts for a user through
+// a credential that is not the user's own session: an `oct_` API key or an
+// MCP OAuth access token. Such a credential never inherits its holder's
+// full-data role on data-scope paths (datascope.Caller.APIKey); it reads
+// what the user's scope rows allow, and the grant's own scopes still bound
+// the permissions.
+func IsDelegatedCredential(ctx context.Context) bool {
+	switch GetAuthProvider(ctx) {
+	case AuthProviderAPIKey, AuthProviderMCPOAuth:
+		return true
+	}
+	return IsAPIKeyAuthenticated(ctx)
+}
+
 // APIKeyAuthenticator is the slice of the apikey service the middleware needs.
 // Declared here (not imported from the app package) so the middleware depends
 // only on the domain type. Satisfied by *apikey.Service.

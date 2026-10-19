@@ -100,7 +100,9 @@ type HeartbeatUpdate struct {
 // LivenessCandidate is a sensor the health controller watches: its stored
 // health (online, late or stale) and its deadline.
 type LivenessCandidate struct {
-	ID       shared.ID
+	ID shared.ID
+	// TenantID is the sensor's organization; nil for a shared sensor.
+	TenantID *shared.ID
 	Health   SensorHealth
 	Deadline HeartbeatDeadline
 }

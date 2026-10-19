@@ -389,6 +389,10 @@ func describe(a admin.ApprovalAction) string {
 		return "turn off the security-key requirement"
 	case admin.ApprovalPlatformIdPRemove:
 		return "remove or relax the administrators' identity provider"
+	case admin.ApprovalPlatformIdPChange:
+		return "change the administrators' identity provider or the second factor it is trusted for"
+	case admin.ApprovalResetCredentials:
+		return "reset another administrator's console second factor"
 	case admin.ApprovalSignupOpen:
 		return "open sign-up"
 	case admin.ApprovalAuditChainRebaseline:

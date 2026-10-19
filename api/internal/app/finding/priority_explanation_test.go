@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -116,5 +117,63 @@ func TestExplainFinding_FindingNotFound(t *testing.T) {
 	svc := newExplainSvc(&explainFindingRepo{err: errors.New("nope")}, &explainAssetRepo{})
 	if _, err := svc.ExplainFinding(context.Background(), shared.NewID(), shared.NewID()); err == nil {
 		t.Fatal("expected error when finding load fails")
+	}
+}
+
+type explainRulesRepo struct {
+	rules []*vulnerability.PriorityOverrideRule
+}
+
+func (r explainRulesRepo) ListActiveByTenant(_ context.Context, _ shared.ID) ([]*vulnerability.PriorityOverrideRule, error) {
+	return r.rules, nil
+}
+
+// A person's class override is what the explanation reports, with who and
+// when, next to the engine's verdict and the model version; it is not
+// "P0 because ..." for a finding a person set to P3.
+func TestExplainFinding_ShowsManualOverride(t *testing.T) {
+	f := buildExplainFinding(t)
+	by := shared.NewID()
+	f.OverridePriorityClass(vulnerability.PriorityP3, "accepted by the app owner", by)
+	svc := newExplainSvc(&explainFindingRepo{f: f}, &explainAssetRepo{a: buildExplainAsset(t)})
+
+	exp, err := svc.ExplainFinding(context.Background(), shared.NewID(), shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp.Class != "P3" || exp.Source != "manual" || exp.Reason != "accepted by the app owner" {
+		t.Fatalf("decision = %s/%s/%q, want the manual P3 override", exp.Class, exp.Source, exp.Reason)
+	}
+	if exp.Override == nil || exp.Override.By == nil || *exp.Override.By != by.String() || exp.Override.At == nil {
+		t.Fatalf("override = %+v, want who and when", exp.Override)
+	}
+	if exp.ComputedClass != "P0" || exp.StoredClass != "P3" || exp.Stale {
+		t.Fatalf("computed=%s stored=%s stale=%v, want computed P0, stored P3, not stale", exp.ComputedClass, exp.StoredClass, exp.Stale)
+	}
+	if exp.ModelVersion != scoring.PriorityModelVersion || exp.ModelVersion < 2 {
+		t.Fatalf("model_version = %d, want %d", exp.ModelVersion, scoring.PriorityModelVersion)
+	}
+}
+
+// A tenant rule may not put a known-exploited finding below P1: the
+// exploitation floor applies to the rule result.
+func TestExplainFinding_RuleCannotGoBelowExploitationFloor(t *testing.T) {
+	rule, err := vulnerability.NewPriorityOverrideRule(shared.NewID(), "bury criticals", vulnerability.PriorityP3,
+		[]vulnerability.RuleCondition{{Field: "severity", Operator: "in", Value: []any{"critical", "high"}}}, shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := newExplainSvc(&explainFindingRepo{f: buildExplainFinding(t)}, &explainAssetRepo{a: buildExplainAsset(t)})
+	svc.ruleRepo = explainRulesRepo{rules: []*vulnerability.PriorityOverrideRule{rule}}
+
+	exp, err := svc.ExplainFinding(context.Background(), shared.NewID(), shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp.Class != "P1" || exp.Source != "rule" {
+		t.Fatalf("KEV finding under a P3 rule = %s (%s), want P1 by the floor; reason %q", exp.Class, exp.Source, exp.Reason)
+	}
+	if exp.RuleName == nil || *exp.RuleName != "bury criticals" {
+		t.Fatalf("rule name = %v", exp.RuleName)
 	}
 }

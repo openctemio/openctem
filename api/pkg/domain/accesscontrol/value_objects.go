@@ -32,6 +32,17 @@ const (
 	AssignmentSourceOwnerRef = "owner_ref"
 )
 
+// UserOwnerGrantsScope reports whether a user owner row puts the asset in
+// that user's data scope (view of the asset and its findings; what they may
+// do there is still their role's): a primary or secondary owner set by a
+// person. Owners matched from owner_ref and stakeholder, informed or
+// regulatory owners grant nothing. The SQL view v_asset_owner_scope is the
+// same rule (docs/architecture/asset-ownership.md).
+func UserOwnerGrantsScope(t OwnershipType, source string) bool {
+	return (t == OwnershipPrimary || t == OwnershipSecondary) &&
+		(source == "" || source == AssignmentSourceManual)
+}
+
 // AllOwnershipTypes returns all valid ownership types.
 func AllOwnershipTypes() []OwnershipType {
 	return []OwnershipType{

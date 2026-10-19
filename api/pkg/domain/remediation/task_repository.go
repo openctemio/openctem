@@ -30,6 +30,9 @@ type NewTaskRecord struct {
 	Conflicts ConflictResolution
 	// Claimed is set by CreateTask: the members skipped or moved.
 	Claimed ClaimReport
+	// Query is the custom query the task was created from, stored in the
+	// same transaction (nil for every other task).
+	Query *TaskQuery
 }
 
 // AddMembersRequest adds findings to a task at the caller's version.

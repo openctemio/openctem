@@ -99,15 +99,17 @@ func (r *AdminConsoleRepository) AdvanceMFAStep(ctx context.Context, adminID sha
 func (r *AdminConsoleRepository) CreateSession(ctx context.Context, s *admin.Session) error {
 	const q = `
 		INSERT INTO admin_sessions
-		    (id, admin_id, token_hash, mfa_verified, created_at, expires_at, last_seen_at, ip, user_agent, auth_method)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10)`
+		    (id, admin_id, token_hash, mfa_verified, created_at, expires_at, last_seen_at, ip, user_agent, auth_method,
+		     pending_idp_issuer, pending_idp_subject)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10, NULLIF($11, ''), NULLIF($12, ''))`
 	method := s.AuthMethod
 	if method == "" {
 		method = admin.AuthMethodPassword
 	}
 	_, err := r.db.ExecContext(ctx, q,
 		s.ID.String(), s.AdminID.String(), s.TokenHash, s.MFAVerified,
-		s.CreatedAt, s.ExpiresAt, s.LastSeenAt, s.IP, s.UserAgent, method)
+		s.CreatedAt, s.ExpiresAt, s.LastSeenAt, s.IP, s.UserAgent, method,
+		s.PendingIdPIssuer, s.PendingIdPSubject)
 	if err != nil {
 		return fmt.Errorf("create admin session: %w", err)
 	}
@@ -119,7 +121,8 @@ func (r *AdminConsoleRepository) GetSessionByTokenHash(ctx context.Context, toke
 	const q = `
 		SELECT id, admin_id, token_hash, mfa_verified, created_at, expires_at, last_seen_at,
 		       COALESCE(ip, ''), COALESCE(user_agent, ''), auth_method, step_up_at,
-		       COALESCE(elevated_role, ''), elevated_until
+		       COALESCE(elevated_role, ''), elevated_until,
+		       COALESCE(pending_idp_issuer, ''), COALESCE(pending_idp_subject, '')
 		FROM admin_sessions WHERE token_hash = $1`
 	var (
 		s           admin.Session
@@ -130,7 +133,7 @@ func (r *AdminConsoleRepository) GetSessionByTokenHash(ctx context.Context, toke
 	)
 	err := r.db.QueryRowContext(ctx, q, tokenHash).Scan(
 		&id, &adminID, &s.TokenHash, &s.MFAVerified, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt, &s.IP, &s.UserAgent, &s.AuthMethod, &stepUpAt,
-		&elevRole, &elevUntil,
+		&elevRole, &elevUntil, &s.PendingIdPIssuer, &s.PendingIdPSubject,
 	)
 	s.ElevatedRole = admin.AdminRole(elevRole)
 	if elevUntil.Valid {

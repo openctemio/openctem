@@ -1377,12 +1377,13 @@ targets must match a scope target (decision D9). See
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
 they may see and change. Scope rows live in `user_accessible_assets`, computed
-from exactly two sources:
+from exactly three sources:
 
 | Source | Managed with | Rows |
 |---|---|---|
 | **Group assignment**: the assets assigned to the user's active groups | `team:groups:write` (Groups → Assets, scope rules, or a *group* owner on an asset's Owners tab) | `asset_owners` rows with `group_id` × `group_members` |
-| **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000372`) |
+| **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`); a member without full data access who creates an asset gets one automatically (source `creator`) | `asset_access_grants` (migration `000372`) |
+| **Ownership**: a `primary` or `secondary` *user* owner set by a person | `team:groups:write` on top of `assets:write` / `assets:delete` (an asset's Owners tab) | `v_asset_owner_scope` (migration `003053`) |
 
 **Private program assets** (RFC-065 §15.3): the program-only assets of
 private bug-bounty programs, and their findings, are seen only by the
@@ -1401,17 +1402,66 @@ not hidden from them (`filterspec.ProgramHiddenSQL`, the one "program
 hidden" predicate). Notification pushes for a hidden asset reach only
 owners and the program's members.
 
-**Being an owner is not an access grant** (owner decision O1, 2026-10-03).
-Naming a user as an owner of an asset, in any RACI role or through the
-`owner_ref` email match, is an assignment (accountability, finding
-assignment, notifications) and never changes what that user can see. Before
-O1 it did: `assets:write` alone could narrow a member who saw everything
-to that one asset, or widen one who saw nothing. Migration `000372` turned every such
-owner-derived access row into an explicit grant (source `migration`), so
-nobody lost an asset at the upgrade; administrators review and revoke them
-on the asset's Owners tab (*Direct access*). A group owner remains the
-group's assignment, which is why adding or removing one needs
-`team:groups:write` on top of `assets:write`/`assets:delete`.
+**Owning an asset grants view of it** (owner decision 2026-10-19, which
+replaces O1). A user named `primary` or `secondary` owner **by a person**
+(`assignment_source = 'manual'`) has the asset, and so its findings,
+exposures and every other asset-bound row, in their data scope: the same
+`user_accessible_assets` rows every scoped read (lists, by-id routes,
+dashboards and their facts, exports, MCP tools, notifications) already uses.
+Ownership adds no permission: what the owner may do on the asset is what
+their role allows on any asset in their scope (a viewer owner reads only).
+Not granting: `stakeholder`, `informed` and `regulatory` owners, and owners
+matched from `owner_ref` (data from a source or an import, so a source can
+never widen a member's view). The rule is one SQL view,
+`v_asset_owner_scope`, mirrored by `accesscontrol.UserOwnerGrantsScope`; an
+`asset_owners` trigger recomputes the affected (user, asset) row on insert,
+delete and on a change of user, type or source, in the same transaction, so
+an ex-owner loses the asset at once (unless a group or a grant still gives
+it). The user must be an active member of the asset's organization. Naming,
+re-typing (into or out of `primary`/`secondary`) or removing such an owner
+changes who can see the asset, so it needs `team:groups:write` like a group
+owner or an access grant, refuses self-designation for a non-administrator
+(as an access grant refuses a self-grant), and is audited as
+`asset.access_granted` / `asset.access_revoked` with `source=ownership`. A
+group owner remains the group's assignment, which is why adding or removing
+one needs `team:groups:write` on top of `assets:write`/`assets:delete`.
+
+**Being assigned grants view of the assigned item** (owner decision
+2026-10-19). Unlike ownership this is per item, not per asset, so it is not a
+`user_accessible_assets` row:
+
+- The **assignee of a finding** (`findings.assigned_to`) sees that finding:
+  the findings list, stats, groups and export (`filterspec.AssigneeScopeSQL`,
+  registry field `ScopeAssigneeSQL`), the by-id routes
+  (`DataScopeRepository.FindingIDsInScope`, `Enforcer.FindingInScope`) and
+  the bulk paths (`Enforcer.FindingFilterForCaller`). Never the asset (its
+  page stays 404) nor the asset's other findings, never a finding on a
+  private program asset hidden from them, and pentest findings keep their
+  campaign-membership rule. Dashboards and their facts stay per asset scope.
+- The **assignee of a remediation campaign** (`remediation_campaigns.assigned_to`)
+  sees the campaign and the findings it tracks (list, counts, the campaign's
+  findings page), not other findings, and not on hidden assets. The wider
+  view of the campaign's findings applies only when someone else with full
+  data access created the campaign: its filter is evaluated live, so a
+  campaign a restricted member created (and assigned to themself or a
+  colleague) shows its assignee only the findings in the assignee's own
+  scope. Changing the campaign still needs every one of its findings in
+  their own scope.
+
+What the assignee may do is their role's. The view is computed from the
+assignment on every request, so unassigning removes it at once; assignments
+are recorded in the finding activity and the campaign audit. The
+organization comes from the caller (an assignee row of another organization
+never matches), and a request without a user (an organization API key) is
+nobody's assignee.
+
+**The creator sees what they created.** `POST /api/v1/assets` by a caller
+whose scope is restricted (a member without full data access, or an API key
+bound to such a user) adds an explicit grant for the caller with source
+`creator`, audited `asset.access_granted`. Creating never merges into an
+existing asset (a duplicate is a 409), so the grant only ever covers the new
+asset. Callers who see every asset get no grant; a request without a user
+(an organization API key, ingest) gets none.
 
 | Route | Gate |
 |---|---|
@@ -1419,6 +1469,7 @@ group's assignment, which is why adding or removing one needs
 | `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 403 when the user is the caller (no self-grant, so access held through a group cannot be turned into a personal grant before leaving it); 409 when the grant exists; audited `asset.access_granted` |
 | `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
 | `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
+| `POST /api/v1/assets/{id}/owners` with `user_id` and type `primary`/`secondary` · `PUT …/owners/{id}` moving a user owner into or out of those types · `DELETE …/owners/{id}` of such an owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise); 403 when a non-administrator names themself; audited `asset.access_granted` / `asset.access_revoked` |
 | `POST /api/v1/groups/{g}/assets` · `/assets/bulk` · scope rules | `team:groups:write`; the group must be in the caller's organization, and each asset must be a live asset of the **group's** organization. A single assign answers 404 for a foreign, deleted or unknown asset id alike; a bulk assign counts them as failed |
 
 **You can only hand out scope you hold** (owner decision D13, research doc 15

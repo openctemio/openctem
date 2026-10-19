@@ -290,6 +290,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_LB_NETWORK_WEIGHT` | float | `0.05` |  |  | Weight of network I/O. |
 | `SENSOR_PUBLIC_API_URL` | string | empty |  |  | URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`. |
 | `SENSOR_SLIM_HEARTBEAT` | bool | `true` |  |  | Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats. |
+| `SENSOR_LIVENESS_STORE` | string | `shadow` |  |  | Where heartbeat liveness lives. `postgres`: every heartbeat updates the sensor row. `shadow`: as postgres, and Redis records every heartbeat too so `openctem_sensor_liveness_disagreements_total` compares the two. `redis`: Redis holds liveness; Postgres gets state changes and a batched checkpoint every 10 minutes. Switch to `redis` after a week of zero disagreements. |
 | `WORKER_HEARTBEAT_TIMEOUT` | duration | `5m` |  |  | No heartbeat for this long marks a sensor inactive. Advised heartbeat intervals stay below half of it. |
 | `SCAN_ZONE_RESOLVER` | string | empty |  |  | DNS resolver scan-zone routing resolves host names with: `system` (the platform's own resolver, which may know internal names) or `host[:port]` of a recursive resolver. Unset: a public resolver when organizations are self-service, otherwise `system`. |
 | `SENSOR_MTLS_CA_CERT_FILE` | path | empty |  |  | Sensor CA certificate (PEM) for protocol v3 client certificates. Set together with `SENSOR_MTLS_CA_KEY_FILE`; unset, the CA is created once in `SENSOR_MTLS_CA_DIR`. |
@@ -478,6 +479,8 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `BOOTSTRAP_SMTP_USER` | string | empty |  |  | `bootstrap-admin`: SMTP user name. |
 | `BOOTSTRAP_SMTP_PASSWORD` | string | empty |  | yes | `bootstrap-admin`: SMTP password, stored encrypted with `APP_ENCRYPTION_KEY`. |
 | `BOOTSTRAP_SMTP_FROM` | string | empty |  |  | `bootstrap-admin`: sender address. |
+| `RELAY_TLS_CERT` | path | empty | yes |  | `openctem-sensor-relay`: path to the relay's server certificate (PEM) presented to sensors. The relay does not start without it. See the sensor relay architecture note. |
+| `RELAY_TLS_KEY` | path | empty | yes | yes | `openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it. |
 | `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM). |
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
