@@ -16,26 +16,26 @@ import (
 func TestQuickScan_WildcardGoesToScanTargetsAndExpands(t *testing.T) {
 	tenantID := shared.NewID()
 	inv := newFakeSelectorAssets(tenantID)
-	inv.byRoot["pti.com.vn"] = []string{"api.pti.com.vn", "www.pti.com.vn"}
+	inv.byRoot["example.net"] = []string{"api.example.net", "www.example.net"}
 	svc, deps := newTestScanService()
 	svc.SetSelectorAssets(inv)
 	deps.toolRepo.addTool("nuclei", true)
 
 	res, err := svc.QuickScan(context.Background(), scanservice.QuickScanInput{
-		TenantID: tenantID.String(), Targets: []string{"*.pti.com.vn"}, ScannerName: "nuclei",
+		TenantID: tenantID.String(), Targets: []string{"*.example.net"}, ScannerName: "nuclei",
 	})
 	if err != nil {
 		t.Fatalf("quick scan of a wildcard: %v", err)
 	}
 	sc := deps.scanRepo.scans[res.ScanID]
-	if len(sc.Targets) != 1 || sc.Targets[0] != "*.pti.com.vn" {
+	if len(sc.Targets) != 1 || sc.Targets[0] != "*.example.net" {
 		t.Errorf("scan targets = %v", sc.Targets)
 	}
 	if _, mirrored := sc.ScannerConfig["targets"]; mirrored {
 		t.Errorf("typed targets were copied into the scanner settings: %v", sc.ScannerConfig)
 	}
 	got := dispatchedTargets(t, deps)
-	want := []string{"api.pti.com.vn", "pti.com.vn", "www.pti.com.vn"}
+	want := []string{"api.example.net", "example.net", "www.example.net"}
 	if !slices.Equal(got, want) {
 		t.Errorf("dispatched %v, want %v", got, want)
 	}
@@ -120,7 +120,7 @@ func TestQuickScanPreview_ZeroMatchOffersDiscovery(t *testing.T) {
 	deps.toolRepo.addTool("subfinder", true)
 	preview := func(scanner string) scanservice.QuickPreviewTarget {
 		pv, err := svc.PreviewQuickScan(context.Background(), scanservice.QuickScanPreviewInput{
-			TenantID: tenantID.String(), Targets: []string{"*.pti.com.vn"}, ScannerName: scanner,
+			TenantID: tenantID.String(), Targets: []string{"*.example.net"}, ScannerName: scanner,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -128,8 +128,8 @@ func TestQuickScanPreview_ZeroMatchOffersDiscovery(t *testing.T) {
 		return pv.Targets[0]
 	}
 	p := preview("nuclei")
-	if p.Known != 0 || p.Discovery == nil || p.Discovery.Tool != "subfinder" || p.Discovery.Root != "pti.com.vn" {
-		t.Errorf("preview = %+v, want a subfinder offer on pti.com.vn", p)
+	if p.Known != 0 || p.Discovery == nil || p.Discovery.Tool != "subfinder" || p.Discovery.Root != "example.net" {
+		t.Errorf("preview = %+v, want a subfinder offer on example.net", p)
 	}
 	if p := preview("subfinder"); p.Discovery != nil {
 		t.Errorf("discovery offered to a discovery scan: %+v", p.Discovery)

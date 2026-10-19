@@ -65,7 +65,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
 
 **Findings and prioritization**
-- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md)
+- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md), [finding write concurrency (row_version)](architecture/finding-row-version.md)
 - [Global catalog trust](architecture/global-catalog-trust.md), [priority explainability](architecture/priority-explainability.md), [CTEM-ID catalog](architecture/ctem-id-catalog.md)
 - [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md)
 

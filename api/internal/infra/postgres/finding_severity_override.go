@@ -24,7 +24,7 @@ import (
 const SubjectTypeSeverityRequest = "severity_request"
 
 type severityExecer interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // severityDecisionSQL writes the effective severity, its provenance and what
@@ -43,7 +43,9 @@ const severityDecisionSQL = `
 		sla_deadline = COALESCE($16::timestamptz, sla_deadline),
 		sla_status = CASE WHEN $16::timestamptz IS NULL THEN sla_status ELSE $17 END,
 		updated_at = now()
-	WHERE tenant_id = $1 AND id = $2 AND severity = $18`
+	WHERE tenant_id = $1 AND id = $2 AND severity = $18
+	  AND ($19::bigint IS NULL OR row_version = $19)
+	RETURNING row_version`
 
 func saveSeverityDecision(ctx context.Context, x severityExecer, f *vulnerability.Finding, expected vulnerability.Severity) error {
 	p := f.SeverityProvenance()
@@ -51,20 +53,32 @@ func saveSeverityDecision(ctx context.Context, x severityExecer, f *vulnerabilit
 	if p.OverriddenAt != nil {
 		reason = sql.NullString{String: p.OverrideReason, Valid: true}
 	}
-	res, err := x.ExecContext(ctx, severityDecisionSQL,
+	// A caller that named the version it saw (an API If-Match) is refused
+	// when the row moved on; the write also bumps the version (migration
+	// 003113), which the finding carries back to the caller.
+	var wantVersion sql.NullInt64
+	if want, ok := vulnerability.ExpectedRowVersion(ctx, f.ID()); ok {
+		wantVersion = sql.NullInt64{Int64: want, Valid: true}
+	}
+	var newVersion int64
+	err := x.QueryRowContext(ctx, severityDecisionSQL,
 		f.TenantID().String(), f.ID().String(),
 		f.Severity().String(), nullString(string(p.Source)), reason, nullID(p.OverriddenBy), nullTime(p.OverriddenAt),
 		nullPriorityClass(f.PriorityClass()), nullString(f.PriorityClassReason()),
 		f.IsReachable(), f.ReachableFromCount(),
 		nullFloat64(f.EPSSScore()), nullFloat64(f.EPSSPercentile()), f.IsInKEV(), nullTime(f.KEVDueDate()),
 		nullTime(f.SLADeadline()), string(f.SLAStatus()),
-		expected.String())
+		expected.String(), wantVersion).Scan(&newVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		if wantVersion.Valid {
+			return &vulnerability.FindingConflictError{FindingID: f.ID()}
+		}
+		return vulnerability.ErrSeverityChangeConflict
+	}
 	if err != nil {
 		return fmt.Errorf("save severity decision: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return vulnerability.ErrSeverityChangeConflict
-	}
+	f.RestoreRowVersion(newVersion)
 	return nil
 }
 
