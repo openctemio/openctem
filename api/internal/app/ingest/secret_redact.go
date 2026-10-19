@@ -1,10 +1,56 @@
 package ingest
 
 import (
+	"strings"
+
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
+
+// keyRawSecrets runs before redactReportSecrets. It drops every
+// partial-fingerprint key only the server writes (composite/*, sensor/*,
+// server/*) from each finding, and, for a secret whose masked_value is not
+// masked (the producer sent the raw value), records the server's keyed
+// per-tenant hash of that value under partialServerSecretHMAC. The finding
+// is then keyed on the secret, not on the mask the redaction leaves; the
+// raw value itself is never kept.
+func (p *FindingProcessor) keyRawSecrets(tenantID shared.ID, report *ctis.Report) {
+	if report == nil {
+		return
+	}
+	for i := range report.Findings {
+		f := &report.Findings[i]
+		for k := range f.PartialFingerprints {
+			if vulnerability.IsServerPartialFingerprintKey(k) {
+				delete(f.PartialFingerprints, k)
+			}
+		}
+		if f.Secret == nil || looksMasked(f.Secret.MaskedValue) {
+			continue
+		}
+		h := p.secretFingerprinter.Fingerprint(tenantID, "raw:v1:"+strings.TrimSpace(f.Secret.MaskedValue))
+		if h == "" {
+			continue
+		}
+		if f.PartialFingerprints == nil {
+			f.PartialFingerprints = map[string]string{}
+		}
+		f.PartialFingerprints[partialServerSecretHMAC] = h
+	}
+}
+
+// looksMasked reports whether a reported secret value is already a mask
+// (the same test the CTIS redaction applies): empty, only mask characters,
+// a run of them, or "redacted".
+func looksMasked(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" || strings.Trim(t, "*•") == "" {
+		return true
+	}
+	return strings.Contains(t, "***") || strings.Contains(t, "•••") || strings.Contains(strings.ToLower(t), "redacted")
+}
 
 // redactReportSecrets masks raw secret values in every free-text field of
 // every finding of a report, before anything is stored, fingerprinted,

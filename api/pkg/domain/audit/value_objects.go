@@ -241,6 +241,16 @@ const (
 	// ActionFindingDuplicateMarked records a user folding a finding into the
 	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
 	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
+	// ActionFindingSeverityChanged records a change of a finding's effective
+	// severity by a person: an override, a restore of the reported severity,
+	// or an approved request (old, new, reported severity, reason).
+	ActionFindingSeverityChanged Action = "finding.severity_changed"
+	// ActionFindingSeverityRequested records a severity downgrade that waits
+	// for the approval the organization's policy asks for.
+	ActionFindingSeverityRequested Action = "finding.severity_requested"
+	// ActionFindingSeverityRequestClosed records a severity request rejected
+	// by an approver or withdrawn by its requester.
+	ActionFindingSeverityRequestClosed Action = "finding.severity_request_closed"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -517,6 +527,8 @@ const (
 	ActionReportScheduleCreated   Action = "report_schedule.created"
 	ActionReportScheduleActivated Action = "report_schedule.activated"
 	ActionReportScheduleDeleted   Action = "report_schedule.deleted"
+	// A paused schedule stops the digest its recipients rely on.
+	ActionReportScheduleDeactivated Action = "report_schedule.deactivated"
 	// EASM seeds (RFC-036 §6.3): what discovery expands from.
 	ActionEASMSeedCreated Action = "easm_seed.created"
 	ActionEASMSeedUpdated Action = "easm_seed.updated"
@@ -755,6 +767,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted,
@@ -802,7 +815,7 @@ func (a Action) IsValid() bool {
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
-		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
@@ -881,7 +894,8 @@ func (a Action) Category() string {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
 		return "saved_view"
@@ -937,7 +951,7 @@ func (a Action) Category() string {
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused:
 		return "exposure"
-	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
+	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated:
 		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved:
@@ -1214,7 +1228,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
-		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
