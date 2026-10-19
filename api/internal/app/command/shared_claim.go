@@ -106,7 +106,8 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 		limit = 10
 	}
 	limit = min(limit, 100)
-	cands, err := claimer.GetSharedPendingForSensor(ctx, sensorID, caps, candidateLimit(limit))
+	page := candidateLimit(limit)
+	cands, err := claimer.GetSharedPendingForSensor(ctx, sensorID, caps, page)
 	if err != nil {
 		return nil, err
 	}
@@ -115,43 +116,35 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 	}
 
 	subj := s.sharedSubject(ctx, in.Sensor)
-	order, groups := byTenant(cands)
 	rules := map[shared.ID]*bp.JobRules{}
 	layers := map[shared.ID]settingsLayers{}
-	kept := map[shared.ID]bool{}
-	for _, tenantID := range order {
-		if allowed, why := s.sharedAccess(ctx, tenantID); !allowed {
-			s.logger.Debug("organization may not use shared sensors now; its shared jobs wait",
-				"tenant_id", tenantID.String(), "reason", why)
-			continue
+	allowed := map[shared.ID]bool{}
+	pager, canPage := claimer.(SharedPendingPager)
+	var out []*commanddom.Command
+	var seen []shared.ID
+	// Withheld jobs come back first on every poll: when they fill a page,
+	// read the next one without them (research/191 W-2).
+	for p := 0; ; p++ {
+		for _, c := range cands {
+			seen = append(seen, c.ID)
 		}
-		group := groups[tenantID]
-		group = s.gateWith(ctx, tenantID, subj, group).accepted(group)
-		group = s.recheckScope(ctx, tenantID, &sensorID, group)
-		group, rates := s.windowHold(ctx, tenantID, group)
-		group, r := s.programHold(ctx, tenantID, &sensorID, group)
-		group, l := s.settingsHold(ctx, tenantID, &sensorID, group)
-		for id, v := range withWindowRates(r, rates) {
-			rules[id] = v
+		out = append(out, s.holdShared(ctx, subj, sensorID, cands, allowed, rules, layers)...)
+		if !canPage || p+1 >= maxClaimPages || len(cands) < page || len(out) >= limit || scanCount(out) >= slots {
+			break
 		}
-		for id, v := range l {
-			layers[id] = v
+		claimPaged(claimModeShared)
+		if cands, err = pager.GetSharedPendingForSensorExcluding(ctx, sensorID, caps, page, seen); err != nil {
+			return nil, err
 		}
-		for _, c := range group {
-			kept[c.ID] = true
-		}
-	}
-	// Back to the dispatch order across organizations, then the caps.
-	out := cands[:0:0]
-	for _, c := range cands {
-		if kept[c.ID] {
-			out = append(out, c)
+		if len(cands) == 0 {
+			break
 		}
 	}
+	// The caps last.
+	out = capScanCommands(out, slots)
 	if len(out) > limit {
 		out = out[:limit]
 	}
-	out = capScanCommands(out, slots)
 	if len(out) == 0 {
 		return nil, nil
 	}
@@ -281,4 +274,59 @@ func (s *Service) HeldSharedJob(ctx context.Context, a *sensordom.Sensor, comman
 		return nil, shared.ErrNotFound
 	}
 	return cmd, nil
+}
+
+// SharedPendingPager reads the next page of a shared sensor's candidates,
+// without the ones already read (postgres.CommandRepository). Optional.
+type SharedPendingPager interface {
+	GetSharedPendingForSensorExcluding(ctx context.Context, sensorID shared.ID, capabilities []string, limit int, exclude []shared.ID) ([]*commanddom.Command, error)
+}
+
+// holdShared applies the access policy and the checks after the query to
+// one page of a shared sensor's candidates, per organization, and returns
+// the ones kept in the dispatch order; rules and layers collect what the
+// kept ones carry. allowed caches the access decision per organization for
+// the claim.
+func (s *Service) holdShared(ctx context.Context, subj gateSubject, sensorID shared.ID, cands []*commanddom.Command,
+	allowed map[shared.ID]bool, rules map[shared.ID]*bp.JobRules, layers map[shared.ID]settingsLayers,
+) []*commanddom.Command {
+	order, groups := byTenant(cands)
+	kept := map[shared.ID]bool{}
+	for _, tenantID := range order {
+		ok, decided := allowed[tenantID]
+		if !decided {
+			var why string
+			ok, why = s.sharedAccess(ctx, tenantID)
+			allowed[tenantID] = ok
+			if !ok {
+				s.logger.Debug("organization may not use shared sensors now; its shared jobs wait",
+					"tenant_id", tenantID.String(), "reason", why)
+			}
+		}
+		if !ok {
+			continue
+		}
+		group := groups[tenantID]
+		group = s.gateWith(ctx, tenantID, subj, group).accepted(group)
+		group = s.recheckScope(ctx, tenantID, &sensorID, group)
+		group, rates := s.windowHold(ctx, tenantID, group)
+		group, r := s.programHold(ctx, tenantID, &sensorID, group)
+		group, l := s.settingsHold(ctx, tenantID, &sensorID, group)
+		for id, v := range withWindowRates(r, rates) {
+			rules[id] = v
+		}
+		for id, v := range l {
+			layers[id] = v
+		}
+		for _, c := range group {
+			kept[c.ID] = true
+		}
+	}
+	out := cands[:0:0]
+	for _, c := range cands {
+		if kept[c.ID] {
+			out = append(out, c)
+		}
+	}
+	return out
 }

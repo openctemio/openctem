@@ -60,6 +60,12 @@ type RefreshTokenRepository interface {
 	// Update updates a refresh token.
 	Update(ctx context.Context, token *RefreshToken) error
 
+	// MarkUsedIfUnused spends a refresh token in one conditional statement:
+	// it sets used_at only when the token is neither used nor revoked and
+	// reports whether this call spent it. Two concurrent rotations of one
+	// token cannot both win; the loser is a reuse (research/189 B1a-2).
+	MarkUsedIfUnused(ctx context.Context, id shared.ID) (bool, error)
+
 	// Delete deletes a refresh token.
 	Delete(ctx context.Context, id shared.ID) error
 

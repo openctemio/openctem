@@ -15,7 +15,7 @@ import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import { useSuggestionStats, useSuggestions, useTasks } from '../api/use-remediation-hub'
-import { deadlineStatus } from '../lib/hub'
+import type { TaskState } from '../api/types'
 import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
 
 interface PlanRow {
@@ -29,20 +29,16 @@ interface PlanRow {
   taskRef?: Parameters<typeof DeadlinePill>[0]['task'] & Parameters<typeof TaskProgress>[0]['task']
 }
 
+const OPEN_STATES: TaskState[] = ['open', 'in_progress', 'verifying', 'on_hold']
+
 export function FixPlan() {
   const { t } = useTranslation()
-  const tasks = useTasks({
-    states: ['open', 'in_progress', 'verifying', 'on_hold'],
-    sort: 'risk',
-    perPage: 25,
-  })
+  const tasks = useTasks({ states: OPEN_STATES, sort: 'risk', perPage: 25 })
   const sugg = useSuggestions({ perPage: 25 })
   const stats = useSuggestionStats()
   const mine = useTasks({ mine: true, states: ['open', 'in_progress', 'verifying'], perPage: 1 })
-  const overdue = useMemo(
-    () => (tasks.data?.data ?? []).filter((x) => deadlineStatus(x.deadline) === 'overdue').length,
-    [tasks.data]
-  )
+  // Counted on the server over every open task, not over the rows on screen.
+  const overdue = useTasks({ states: OPEN_STATES, overdue: true, perPage: 1 })
 
   const rows = useMemo<PlanRow[]>(() => {
     const out: PlanRow[] = []
@@ -62,7 +58,7 @@ export function FixPlan() {
       if (s.kind !== 'new_group') continue
       out.push({
         id: s.id,
-        href: '/remediation/suggestions',
+        href: `/remediation/suggestions?suggestion=${encodeURIComponent(s.id)}`,
         title: s.title,
         risk: s.risk_points,
         findings: s.member_count,
@@ -72,26 +68,41 @@ export function FixPlan() {
     return out.sort((a, b) => b.risk - a.risk).slice(0, 30)
   }, [tasks.data, sugg.data])
 
+  // A number that has not arrived (or failed) is a dash, never a 0 that reads as good news.
+  const num = (q: { data?: { total: number } }) => (q.data ? q.data.total : '—')
+  const loading = [tasks, overdue, mine, stats].some((q) => q.isLoading && !q.data)
   const metrics: MetricStripItem[] = [
-    { key: 'open', label: t('remediationHub.plan.openTasks'), value: tasks.data?.total ?? 0 },
-    { key: 'overdue', label: t('remediationHub.plan.overdue'), value: overdue },
-    { key: 'review', label: t('remediationHub.plan.toReview'), value: stats.data?.proposed ?? 0 },
-    { key: 'mine', label: t('remediationHub.plan.mine'), value: mine.data?.total ?? 0 },
+    { key: 'open', label: t('remediationHub.plan.openTasks'), value: num(tasks) },
+    {
+      key: 'overdue',
+      label: t('remediationHub.plan.overdue'),
+      value: num(overdue),
+      tone: 'danger',
+    },
+    {
+      key: 'review',
+      label: t('remediationHub.plan.toReview'),
+      value: stats.data ? stats.data.proposed : '—',
+    },
+    { key: 'mine', label: t('remediationHub.plan.mine'), value: num(mine) },
   ]
 
-  if (tasks.error) {
+  const failed = [tasks, sugg, stats, mine, overdue].find((q) => q.error)
+  if (failed) {
     return (
       <ErrorState
         title={t('remediationHub.plan.loadError')}
-        error={tasks.error}
-        onRetry={() => void tasks.mutate()}
+        error={failed.error}
+        onRetry={() => {
+          for (const q of [tasks, sugg, stats, mine, overdue]) void q.mutate()
+        }}
       />
     )
   }
 
   return (
     <div className="space-y-4">
-      <MetricStrip items={metrics} />
+      <MetricStrip items={metrics} loading={loading} />
       {tasks.isLoading && !tasks.data ? (
         <Skeleton className="h-64 w-full" />
       ) : rows.length === 0 ? (
@@ -110,7 +121,10 @@ export function FixPlan() {
                 <Link href={r.href} className="font-medium break-words hover:underline">
                   {r.title}
                 </Link>
-                <div className="text-muted-foreground text-xs">
+                <div
+                  className="text-muted-foreground text-xs"
+                  title={t('remediationHub.risk.explain')}
+                >
                   {t('remediationHub.plan.row', undefined, { findings: r.findings, risk: r.risk })}
                 </div>
               </div>

@@ -38,6 +38,18 @@ export function placementSummary(p: RunTaskPlacement, t: Translate): string {
 }
 
 /**
+ * Whether the shared fleet was an option for a task none of the
+ * organization's sensors may take (research/191 W-1): the run would
+ * otherwise wait in silence until its timeout. Null when one of them may.
+ */
+export function sharedFleetNote(p: RunTaskPlacement, t: Translate): string | null {
+  if (!p.queued || p.platform || (p.eligible ?? 0) > 0) return null
+  if (p.shared_fleet === 'not_used') return t('scans.placement.sharedNotUsed')
+  if (p.shared_fleet === 'not_allowed') return t('scans.placement.sharedNotAllowed')
+  return null
+}
+
+/**
  * Why a task waits for its hosts, when it does: how many of its hosts other
  * tasks of the organization are scanning, and with which tool and step (the
  * task holding the most). Counts only, never host names. Null when the task
@@ -157,6 +169,9 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
       {data && (
         <>
           <p className="font-medium">{placementSummary(data, t)}</p>
+          {sharedFleetNote(data, t) && (
+            <p className="text-muted-foreground">{sharedFleetNote(data, t)}</p>
+          )}
           {(data.host_wait?.holders ?? [])
             .filter((h) => h.run_id && h.run_id !== runId)
             .slice(0, 1)

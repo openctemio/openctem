@@ -22,6 +22,7 @@ const ATTENTION_WORDS: Record<AttentionKind, string> = {
   tools: 'sensors.health.attention.tools',
   content: 'sensors.health.attention.content',
   preflight: 'sensors.health.attention.preflight',
+  posture: 'sensors.health.attention.posture',
   error: 'sensors.health.attention.error',
 }
 
