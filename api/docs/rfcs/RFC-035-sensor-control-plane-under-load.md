@@ -7,6 +7,10 @@
 >   `pkg/domain/sensor/liveness.go`), D3 and D6 (`heartbeat_due_at`, lease
 >   epochs). D5 is a sensor option (`SENSOR_PROTECT_FROM_OOM`). D4 was declined
 >   and D7 deferred (§6.1).
+> - Heartbeat soft state (2026-10): liveness in Redis with write-behind on
+>   change and a batched checkpoint, behind `SENSOR_LIVENESS_STORE`
+>   (shadow by default); leases renewed only below `max(lease/2, 2 × interval
+>   + 10 s)`. See [sensors.md, "Heartbeat soft state"](../architecture/sensors.md#heartbeat-soft-state).
 > Scope: sdk-go + api + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-023](RFC-023-scan-zones-and-scanners.md) §9.2a (heartbeat
 > doorbell), [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md)

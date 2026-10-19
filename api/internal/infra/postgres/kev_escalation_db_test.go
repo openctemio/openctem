@@ -11,17 +11,18 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// TestEscalateKEVFindings_FlagsAndEscalates proves the KEV reconciliation pass
-// against the real schema:
+// TestEscalateKEVFindings_FlagsWithoutRewritingSeverity proves the KEV
+// reconciliation pass against the real schema:
 //
-//   - a non-critical KEV finding is escalated to critical AND flagged is_in_kev.
+//   - a non-critical KEV finding is flagged is_in_kev and keeps its severity
+//     (KEV is exploitation evidence for the priority floor, not severity).
 //   - an ALREADY-critical KEV finding with is_in_kev=false is STILL flagged
 //     (proves the flag is not severity-gated — the historical bug).
 //   - a terminal-status (accepted) KEV finding is left untouched.
 //   - the tenant appears in the returned touched-tenant set.
 //
 // Skipped unless DATABASE_URL is set.
-func TestEscalateKEVFindings_FlagsAndEscalates(t *testing.T) {
+func TestEscalateKEVFindings_FlagsWithoutRewritingSeverity(t *testing.T) {
 	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
@@ -56,12 +57,12 @@ func TestEscalateKEVFindings_FlagsAndEscalates(t *testing.T) {
 		t.Fatalf("EscalateKEVFindings: %v", err)
 	}
 
-	// Non-critical KEV finding: escalated + flagged.
-	if sev, kev := readFinding(ctx, t, db, nonCritical); sev != "critical" || !kev {
-		t.Errorf("non-critical KEV finding: got severity=%q is_in_kev=%v, want critical/true", sev, kev)
+	// Non-critical KEV finding: flagged, severity kept.
+	if sev, kev := readFinding(ctx, t, db, nonCritical); sev != "high" || !kev {
+		t.Errorf("non-critical KEV finding: got severity=%q is_in_kev=%v, want high/true (severity is never rewritten)", sev, kev)
 	}
 
-	// Already-critical KEV finding: flag set even though escalation skips it.
+	// Already-critical KEV finding: flagged.
 	if sev, kev := readFinding(ctx, t, db, alreadyCritical); sev != "critical" || !kev {
 		t.Errorf("already-critical KEV finding: got severity=%q is_in_kev=%v, want critical/true (flag must not be severity-gated)", sev, kev)
 	}

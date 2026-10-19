@@ -11,8 +11,12 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,6 +43,15 @@ const (
 	// removed ("remove"), switched off ("disable") or no longer required
 	// ("require_idp_off").
 	ApprovalPlatformIdPRemove ApprovalAction = "platform_idp.remove"
+	// ApprovalPlatformIdPChange: the administrators' identity provider gets a
+	// new issuer or client, or new trusted ACR/AMR values that replace the
+	// console second factor. The target is the new configuration
+	// (PlatformIdPChangeTarget), so an approval covers exactly that change.
+	ApprovalPlatformIdPChange ApprovalAction = "platform_idp.change"
+	// ApprovalResetCredentials: another administrator's console second factor
+	// is removed ("admin:<id>"). Their next sign-in enrolls a new one, so one
+	// session alone must not be able to arrange that.
+	ApprovalResetCredentials ApprovalAction = "admin.reset_credentials"
 	// ApprovalSignupOpen: the sign-up policy opens beyond its current level
 	// ("mode=<mode>;accounts=<accounts>", the new policy).
 	ApprovalSignupOpen ApprovalAction = "signup.open"
@@ -56,21 +69,26 @@ var (
 	approvalSignupTarget = regexp.MustCompile(`^mode=(admin_only|self_service);accounts=(closed|domain|open)$`)
 )
 
+// maxApprovalTarget is the longest target (admin_approvals.target).
+const maxApprovalTarget = 320
+
 // ValidTarget reports whether target has the form this action uses.
 func (a ApprovalAction) ValidTarget(target string) bool {
-	if len(target) > 320 {
+	if len(target) > maxApprovalTarget {
 		return false
 	}
 	switch a {
 	case ApprovalGrantSuperAdmin:
 		return (approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "admin:")) ||
 			approvalEmailTarget.MatchString(target)
-	case ApprovalRevokeSuperAdmin:
+	case ApprovalRevokeSuperAdmin, ApprovalResetCredentials:
 		return approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "admin:")
 	case ApprovalConsoleMFAOff:
 		return target == "off"
 	case ApprovalPlatformIdPRemove:
 		return target == "remove" || target == "disable" || target == "require_idp_off"
+	case ApprovalPlatformIdPChange:
+		return validPlatformIdPChangeTarget(target)
 	case ApprovalSignupOpen:
 		return approvalSignupTarget.MatchString(target)
 	case ApprovalAuditChainRebaseline, ApprovalOrgPurge:
@@ -83,10 +101,57 @@ func (a ApprovalAction) ValidTarget(target string) bool {
 func (a ApprovalAction) IsValid() bool {
 	switch a {
 	case ApprovalGrantSuperAdmin, ApprovalRevokeSuperAdmin, ApprovalConsoleMFAOff,
-		ApprovalPlatformIdPRemove, ApprovalSignupOpen, ApprovalAuditChainRebaseline, ApprovalOrgPurge:
+		ApprovalPlatformIdPRemove, ApprovalSignupOpen, ApprovalAuditChainRebaseline, ApprovalOrgPurge,
+		ApprovalPlatformIdPChange, ApprovalResetCredentials:
 		return true
 	}
 	return false
+}
+
+// platformIdPChange is the canonical form of a platform IdP change target.
+type platformIdPChange struct {
+	Issuer   string   `json:"issuer"`
+	ClientID string   `json:"client_id"`
+	ACR      []string `json:"trusted_acr"`
+	AMR      []string `json:"trusted_amr"`
+}
+
+var approvalHashTarget = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// PlatformIdPChangeTarget is the approval target of a platform IdP change: the
+// canonical JSON of the new issuer, client id and trusted ACR/AMR values
+// (sorted), readable by the approver. When that is longer than a target may
+// be, it is the SHA-256 of the same JSON instead (the requester's reason then
+// has to describe the change).
+func PlatformIdPChangeTarget(issuer, clientID string, acr, amr []string) string {
+	c := platformIdPChange{Issuer: issuer, ClientID: clientID, ACR: sortedCopy(acr), AMR: sortedCopy(amr)}
+	raw, _ := json.Marshal(c) // strings and string slices always marshal
+	if len(raw) <= maxApprovalTarget {
+		return string(raw)
+	}
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func sortedCopy(v []string) []string {
+	out := append([]string{}, v...)
+	sort.Strings(out)
+	return out
+}
+
+// validPlatformIdPChangeTarget accepts only the exact output of
+// PlatformIdPChangeTarget: a hash, or canonical JSON that re-encodes to itself.
+func validPlatformIdPChangeTarget(target string) bool {
+	if approvalHashTarget.MatchString(target) {
+		return true
+	}
+	var c platformIdPChange
+	dec := json.NewDecoder(strings.NewReader(target))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil || c.Issuer == "" || c.ClientID == "" {
+		return false
+	}
+	return PlatformIdPChangeTarget(c.Issuer, c.ClientID, c.ACR, c.AMR) == target
 }
 
 // TargetID returns the id in an "admin:<id>" or "tenant:<id>" target.
