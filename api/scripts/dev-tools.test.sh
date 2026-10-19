@@ -20,7 +20,7 @@ run down-all --yes && grep -q 'down -all' "$d/calls" && ok "down-all --yes runs"
 
 # the secret-bearing legacy tool and script are gone / env only.
 [ ! -e "$api/scripts/dev-setup-admin.sh" ] && ok "dev-setup-admin.sh removed" || bad "dev-setup-admin.sh still present"
-! grep -qE 'flag\.String\("(key|db)"' "$api/cmd/encrypt-credentials/main.go" && ok "encrypt-credentials has no -db/-key flag" || bad "encrypt-credentials still takes a secret flag"
+! grep -qE 'flag\.String\("(key|db)"' "$api/cmd/encrypt-credentials/main.go" "$api/cmd/seed/main.go" && ok "encrypt-credentials and seed have no -db/-key flag" || bad "encrypt-credentials or seed still takes a secret flag"
 
 # dev compose: loopback only, no default password.
 if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
