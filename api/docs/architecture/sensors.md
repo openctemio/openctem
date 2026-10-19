@@ -422,7 +422,7 @@ minutes old, and the controller's grace covers the gap).
 (hash: last seen, due, interval, state digest, address, key use, last
 checkpoint, verdict flag; expires after 3 × the longest offline distance,
 garbage collection only), `oc:sl:due` (sorted set of `{tenant}:{sensor}` by
-due time), `oc:sl:gen` (generation) and `oc:sl:grace`. A shared sensor's
+due time), `oc:sl:gen` (generation), `oc:sl:grace` and `oc:sl:degraded` (below). A shared sensor's
 tenant part is `instance`. Every key is built on the server from the
 authenticated principal (the mTLS identity or the signed request's key row);
 nothing a sensor sends names a key. Every time comes from Redis's own clock
@@ -483,7 +483,9 @@ index.
 |---|---|
 | Redis restarted empty, emptied, or a new generation | the controller rebuilds the store from the Postgres checkpoint (a seed never overwrites a newer entry; every seeded deadline is at least the end of the grace) and holds every move for the cold-start grace (2 min, shared through `oc:sl:grace`). No mass offline. |
 | Redis unreachable | heartbeats fall back to Postgres, at most one per sensor per minute and 50 per second per replica (`openctem_sensor_heartbeat_writes_total{kind="fallback"}`, the rest `dropped`), except that a sensor which would reach stale before its next allowed write is written past the replica budget (the controller may still read the store from another replica, so a dropped sensor must not be walked to offline); the controller moves nobody until Redis is back, then rebuilds and holds for the grace. |
-| Failed Postgres write of a change | the digest is forgotten, so the next heartbeat writes again. |
+| Failed Postgres write of a change | the digest is forgotten, so the next heartbeat writes again, and the replica sets `oc:sl:degraded`. |
+| A replica cannot record heartbeats (store or Postgres write failing) | it sets `oc:sl:degraded` for 60 s (refreshed at most every 5 s while the failures last). The health controller, on whichever replica it runs, moves nobody down the ladder while the marker is set, and also holds when the marker cannot be read: sensors that heartbeated to the failing replica look silent from elsewhere. |
+| Redis `maxmemory-policy` is not `noeviction` | the API logs a warning at start (liveness entries are the only copy of a steady sensor's deadline; eviction makes healthy sensors look silent). Where `CONFIG` is disabled the check is skipped. |
 | Two replicas, one sensor | the script is the single decision point: one change is written once. |
 | Eviction | run Redis with `maxmemory-policy noeviction` (the job queue needs it too) and alert at 80 % of `maxmemory`; about 1 KB per sensor. |
 

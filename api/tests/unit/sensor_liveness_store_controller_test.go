@@ -24,16 +24,18 @@ import (
 
 // fakeLivenessStore is an in-memory sensor.LivenessStore.
 type fakeLivenessStore struct {
-	mu       sync.Mutex
-	snaps    map[shared.ID]sensor.LivenessSnapshot
-	down     bool
-	created  bool
-	grace    bool
-	refuse   bool // Judge answers "heartbeated since"
-	seeded   []sensor.LivenessSeed
-	unwatch  []sensor.LivenessKey
-	judged   int
-	graceSet int
+	mu          sync.Mutex
+	snaps       map[shared.ID]sensor.LivenessSnapshot
+	down        bool
+	created     bool
+	grace       bool
+	refuse      bool // Judge answers "heartbeated since"
+	seeded      []sensor.LivenessSeed
+	unwatch     []sensor.LivenessKey
+	judged      int
+	graceSet    int
+	degraded    bool
+	degradedErr bool
 }
 
 func newFakeLivenessStore() *fakeLivenessStore {
@@ -111,6 +113,20 @@ func (f *fakeLivenessStore) InGrace(context.Context) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.grace, f.err()
+}
+func (f *fakeLivenessStore) MarkDegraded(context.Context, time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.degraded = true
+	return f.err()
+}
+func (f *fakeLivenessStore) Degraded(context.Context) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degradedErr {
+		return false, errFakeDown
+	}
+	return f.degraded, nil
 }
 func (f *fakeLivenessStore) Watched(context.Context) (int64, error) {
 	return int64(len(f.snaps)), f.err()
@@ -273,5 +289,30 @@ func TestLivenessStore_ShadowCountsDisagreements(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(metrics.SensorLivenessDisagreementsTotal.WithLabelValues("online", "offline")) - before; got != 1 {
 		t.Fatalf("disagreements counted: %v, want 1", got)
+	}
+}
+
+// Another replica reports heartbeat writes failing (the marker is in the
+// store): nobody is convicted here, even a sensor silent everywhere; the
+// marker unreadable holds as well (fail safe); once it lapses the
+// conviction goes through.
+func TestLivenessStore_HoldsWhileAReplicaReportsWriteFailures(t *testing.T) {
+	_, a, store, ctrl, now := storeFixture(t)
+	store.snaps[a.ID] = sensor.LivenessSnapshot{SeenAt: now.Add(-8 * time.Minute), DueAt: now.Add(-7*time.Minute - 30*time.Second), Interval: 30 * time.Second}
+
+	store.degraded = true
+	reconcile(t, ctrl)
+	if a.Health == sensor.SensorHealthOffline {
+		t.Fatal("convicted while a replica reports heartbeat writes failing")
+	}
+	store.degraded, store.degradedErr = false, true
+	reconcile(t, ctrl)
+	if a.Health == sensor.SensorHealthOffline {
+		t.Fatal("convicted while the degraded marker cannot be read")
+	}
+	store.degradedErr = false
+	reconcile(t, ctrl)
+	if a.Health != sensor.SensorHealthOffline {
+		t.Fatalf("health = %s, want offline once the marker lapsed", a.Health)
 	}
 }

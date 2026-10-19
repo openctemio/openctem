@@ -264,3 +264,48 @@ func TestSensorLiveness_Unavailable(t *testing.T) {
 		t.Fatalf("error does not wrap ErrLivenessStoreUnavailable: %v", err)
 	}
 }
+
+// The degraded marker is shared through the store, and lapses with its TTL.
+func TestSensorLiveness_DegradedMarker(t *testing.T) {
+	rc := livenessTestRedis(t)
+	s := NewSensorLivenessStore(rc)
+	ctx := context.Background()
+	_ = rc.Del(ctx, livenessDegradedKey).Err()
+	if d, err := s.Degraded(ctx); err != nil || d {
+		t.Fatalf("degraded before any mark: %v %v", d, err)
+	}
+	if err := s.MarkDegraded(ctx, 300*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	// Another store instance (another replica) sees it.
+	if d, err := NewSensorLivenessStore(rc).Degraded(ctx); err != nil || !d {
+		t.Fatalf("marker not visible to another replica: %v %v", d, err)
+	}
+	time.Sleep(400 * time.Millisecond)
+	if d, _ := s.Degraded(ctx); d {
+		t.Fatal("marker did not lapse")
+	}
+}
+
+// An evicting maxmemory-policy is reported; noeviction is not.
+func TestEvictionPolicyWarning(t *testing.T) {
+	rc := livenessTestRedis(t)
+	ctx := context.Background()
+	prev, err := rc.ConfigGet(ctx, "maxmemory-policy").Result()
+	if err != nil {
+		t.Skipf("CONFIG not available: %v", err)
+	}
+	t.Cleanup(func() { _ = rc.ConfigSet(ctx, "maxmemory-policy", prev["maxmemory-policy"]).Err() })
+	if err := rc.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru").Err(); err != nil {
+		t.Skipf("CONFIG SET not available: %v", err)
+	}
+	if w := EvictionPolicyWarning(ctx, rc); w == "" {
+		t.Fatal("allkeys-lru not reported")
+	}
+	if err := rc.ConfigSet(ctx, "maxmemory-policy", "noeviction").Err(); err != nil {
+		t.Fatal(err)
+	}
+	if w := EvictionPolicyWarning(ctx, rc); w != "" {
+		t.Fatalf("noeviction reported: %s", w)
+	}
+}

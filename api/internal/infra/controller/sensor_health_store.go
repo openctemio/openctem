@@ -35,6 +35,24 @@ func (c *SensorHealthController) reconcileFromStore(ctx context.Context, hold st
 		return 0, nil
 	}
 
+	// Another replica cannot record heartbeats: its sensors look silent
+	// here. Hold every conviction while the marker is set, and when it
+	// cannot be read (fail safe).
+	if sig, ok := c.store.(sensor.LivenessDegradedSignal); ok {
+		degraded, derr := sig.Degraded(ctx)
+		if derr != nil {
+			metrics.SensorLivenessStoreErrorsTotal.WithLabelValues("degraded").Inc()
+			c.logger.Warn("sensor liveness degraded marker unreadable: no sensor is moved down the ladder until it is back",
+				"controller", "sensor-health", "error", derr)
+			return 0, nil
+		}
+		if degraded {
+			c.logger.Warn("a replica reports heartbeat writes failing: no sensor is moved down the ladder while the marker is set",
+				"controller", "sensor-health")
+			return 0, nil
+		}
+	}
+
 	var (
 		now        time.Time
 		candidates []sensor.LivenessCandidate
