@@ -49,6 +49,20 @@ const (
 	maxCAFileSz = 64 << 10
 )
 
+// revokedCAFingerprints are SHA-256 fingerprints (colon-separated upper-case
+// hex, as Fingerprint prints them) of CA certificates whose private key was
+// published. LoadCA refuses them whatever file they come from: a CA whose key
+// is public lets anyone impersonate the platform to sensors. The first entry
+// is the development CA that was committed under data/sensor-ca for a few days
+// in October 2026 and shipped in two release source archives.
+var revokedCAFingerprints = map[string]struct{}{
+	"F6:BD:9D:E7:0E:E4:06:1B:2B:7C:57:E7:F5:24:FA:29:D7:9B:73:23:06:E5:81:BA:44:05:72:E1:D4:3D:83:CD": {},
+}
+
+// ErrRevokedCA is returned when the configured sensor CA is on the
+// revoked list.
+var ErrRevokedCA = errors.New("sensor CA is a published development CA and is refused")
+
 // CA is the sensor certificate authority.
 type CA struct {
 	cert    *x509.Certificate
@@ -198,6 +212,12 @@ func parseCA(certPEM, keyPEM []byte) (*CA, error) {
 	if !cert.IsCA || cert.KeyUsage&x509.KeyUsageCertSign == 0 {
 		return nil, errors.New("sensor CA: the certificate is not a CA")
 	}
+	if fp := certFingerprint(cert); isRevokedCA(fp) {
+		return nil, fmt.Errorf("%w (fingerprint %s): its private key was published in the project's git history. "+
+			"Stop the API, delete the CA directory (SENSOR_MTLS_CA_DIR, default data/sensor-ca) or point "+
+			"SENSOR_MTLS_CA_CERT_FILE/SENSOR_MTLS_CA_KEY_FILE at your own CA, then start it again: a new CA is "+
+			"generated and sensors re-pin it on their next enrollment", ErrRevokedCA, fp)
+	}
 	var key crypto.Signer
 	for rest := keyPEM; ; {
 		var b *pem.Block
@@ -260,8 +280,15 @@ func (c *CA) CertificatePEM() string { return string(c.certPEM) }
 func (c *CA) Pool() *x509.CertPool { return c.pool }
 
 // Fingerprint is the SHA-256 of the CA certificate, colon-separated hex.
-func (c *CA) Fingerprint() string {
-	sum := sha256.Sum256(c.cert.Raw)
+func (c *CA) Fingerprint() string { return certFingerprint(c.cert) }
+
+func isRevokedCA(fp string) bool {
+	_, ok := revokedCAFingerprints[fp]
+	return ok
+}
+
+func certFingerprint(cert *x509.Certificate) string {
+	sum := sha256.Sum256(cert.Raw)
 	parts := make([]string, len(sum))
 	for i, v := range sum {
 		parts[i] = fmt.Sprintf("%02X", v)
