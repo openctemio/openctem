@@ -374,8 +374,9 @@ type CampaignRepository interface {
 	Update(ctx context.Context, campaign *Campaign) error
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	List(ctx context.Context, filter CampaignFilter, page pagination.Pagination) (pagination.Result[*Campaign], error)
-	// CountByStatus counts the campaigns the viewer may see, per status.
-	CountByStatus(ctx context.Context, tenantID shared.ID, viewer CampaignViewer) (map[CampaignStatus]int, error)
+	// CountByStatus counts the campaigns that match the filter (its status
+	// ignored), per status.
+	CountByStatus(ctx context.Context, filter CampaignFilter) (map[CampaignStatus]int, error)
 	// Visible reports whether the viewer may see the campaign.
 	Visible(ctx context.Context, tenantID, id shared.ID, viewer CampaignViewer) (bool, error)
 	// HasTaskOutsideScope reports whether a task of the campaign has a

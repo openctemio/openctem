@@ -50,7 +50,8 @@ type CreateRemCampaignRequest struct {
 }
 
 // UpdateRemCampaignRequest changes a campaign. Dates take an RFC 3339
-// timestamp, a date or null (clear); assignee and team take an id or "".
+// timestamp, a date or null (clear); assignee and team take an id, or null or
+// "" (clear).
 type UpdateRemCampaignRequest struct {
 	Name         *string         `json:"name,omitempty"`
 	Description  *string         `json:"description,omitempty"`
@@ -58,8 +59,8 @@ type UpdateRemCampaignRequest struct {
 	Tags         []string        `json:"tags,omitempty"`
 	StartDate    json.RawMessage `json:"start_date,omitempty" swaggertype:"string"`
 	DueDate      json.RawMessage `json:"due_date,omitempty" swaggertype:"string"`
-	AssignedTo   *string         `json:"assigned_to,omitempty"`
-	AssignedTeam *string         `json:"assigned_team,omitempty"`
+	AssignedTo   json.RawMessage `json:"assigned_to,omitempty" swaggertype:"string"`
+	AssignedTeam json.RawMessage `json:"assigned_team,omitempty" swaggertype:"string"`
 	Version      *int            `json:"version,omitempty"`
 }
 
@@ -152,7 +153,7 @@ func toRemediationCampaignResp(v exposure.CampaignView) RemediationCampaignRespo
 
 // List lists remediation campaigns.
 // @Summary      List remediation campaigns
-// @Description  The campaigns the caller may see (a restricted member: those they created or own, and those with a task holding a finding in their data scope), each with its summary derived from its tasks over the caller's scope, plus the count per status.
+// @Description  The campaigns the caller may see (a restricted member: those they created or own, and those with a task holding a finding in their data scope), each with its summary derived from its tasks over the caller's scope, plus the count per status (status_counts, with the same priority and search).
 // @Tags         Remediation
 // @Produce      json
 // @Param        status    query  string  false  "draft, active, completed or canceled"
@@ -188,7 +189,7 @@ func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request
 		h.handleError(w, err)
 		return
 	}
-	counts, err := h.service.CountCampaignsByStatus(r.Context(), tenantID)
+	counts, err := h.service.CountCampaignsByStatus(r.Context(), tenantID, remediation.CampaignFilter{Priority: filter.Priority, Search: filter.Search})
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -318,6 +319,14 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	assignedTo, ok := optionalDateField(w, "assigned_to", req.AssignedTo)
+	if !ok {
+		return
+	}
+	assignedTeam, ok := optionalDateField(w, "assigned_team", req.AssignedTeam)
+	if !ok {
+		return
+	}
 	v, err := h.service.UpdateCampaign(r.Context(), middleware.MustGetTenantID(r.Context()), chi.URLParam(r, "id"), exposure.UpdateRemediationCampaignInput{
 		Name:         req.Name,
 		Description:  req.Description,
@@ -325,8 +334,8 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		Tags:         req.Tags,
 		StartDate:    startDate,
 		DueDate:      dueDate,
-		AssignedTo:   req.AssignedTo,
-		AssignedTeam: req.AssignedTeam,
+		AssignedTo:   assignedTo,
+		AssignedTeam: assignedTeam,
 		Version:      req.Version,
 	}, h.buildAuditContext(r))
 	if err != nil {
@@ -485,8 +494,8 @@ func (h *RemediationCampaignHandler) handleError(w http.ResponseWriter, err erro
 	}
 }
 
-// optionalDateField reads a date field that may be absent (nil), null ("",
-// clear) or a string.
+// optionalDateField reads a string field that may be absent (nil), null
+// ("", clear) or a string: the dates, the assignee and the team.
 func optionalDateField(w http.ResponseWriter, field string, raw json.RawMessage) (*string, bool) {
 	if len(raw) == 0 {
 		return nil, true
@@ -497,7 +506,7 @@ func optionalDateField(w http.ResponseWriter, field string, raw json.RawMessage)
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
-		apierror.BadRequest(field + " must be an RFC 3339 timestamp, a date (YYYY-MM-DD) or null").WriteJSON(w)
+		apierror.BadRequest(field + " must be a string or null").WriteJSON(w)
 		return nil, false
 	}
 	return &s, true

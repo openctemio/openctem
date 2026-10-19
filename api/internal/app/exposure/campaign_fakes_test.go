@@ -63,7 +63,7 @@ func (r *fakeCampaignRepo) List(_ context.Context, _ remediation.CampaignFilter,
 	return pagination.NewResult(out, int64(len(out)), page), nil
 }
 
-func (r *fakeCampaignRepo) CountByStatus(context.Context, shared.ID, remediation.CampaignViewer) (map[remediation.CampaignStatus]int, error) {
+func (r *fakeCampaignRepo) CountByStatus(context.Context, remediation.CampaignFilter) (map[remediation.CampaignStatus]int, error) {
 	out := map[remediation.CampaignStatus]int{}
 	for _, c := range r.campaigns {
 		out[c.Status()]++

@@ -328,8 +328,9 @@ func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID
 	return pagination.NewResult(vs, res.Total, page), nil
 }
 
-// CountCampaignsByStatus counts the campaigns the caller may see, per status.
-func (s *RemediationCampaignService) CountCampaignsByStatus(ctx context.Context, tenantID string) (map[remediation.CampaignStatus]int, error) {
+// CountCampaignsByStatus counts the campaigns the caller may see, per status,
+// with the filter's priority and search (its status is ignored).
+func (s *RemediationCampaignService) CountCampaignsByStatus(ctx context.Context, tenantID string, filter remediation.CampaignFilter) (map[remediation.CampaignStatus]int, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -338,7 +339,8 @@ func (s *RemediationCampaignService) CountCampaignsByStatus(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.CountByStatus(ctx, tid, v)
+	filter.TenantID, filter.Status, filter.Viewer = &tid, nil, v
+	return s.repo.CountByStatus(ctx, filter)
 }
 
 // GetCampaign returns a campaign the caller may see.
