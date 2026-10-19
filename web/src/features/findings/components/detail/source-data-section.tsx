@@ -131,7 +131,8 @@ export function SourceDataSection({
   const l = data.lifecycle
   const sol = data.solution
   const vex = data.vex
-  const hasRecord = !!n || !!l || data.vulnerabilityIds.length > 0 || !!data.locationKey || !!data.rule
+  const hasRecord =
+    !!n || !!l || data.vulnerabilityIds.length > 0 || !!data.locationKey || !!data.rule
   return (
     <>
       {data.scores.length > 0 && (
@@ -281,7 +282,9 @@ export function SourceDataSection({
                   </span>
                   {data.rule?.pack && (
                     <span className="block text-xs text-muted-foreground">
-                      {data.rule.version ? `${data.rule.pack}@${data.rule.version}` : data.rule.pack}
+                      {data.rule.version
+                        ? `${data.rule.pack}@${data.rule.version}`
+                        : data.rule.pack}
                     </span>
                   )}
                   {data.rule?.path && (
