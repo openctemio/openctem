@@ -5,7 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
+
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -128,18 +129,18 @@ func (r *AttachmentRepository) LinkToContext(ctx context.Context, tenantID share
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	placeholders := make([]string, len(ids))
-	args := make([]any, 0, len(ids)+4)
-	args = append(args, tenantID.String(), uploaderID.String(), contextType, contextID)
+	// One array parameter: an IN list of one parameter per id failed past
+	// the bind-parameter limit.
+	idStrs := make([]string, len(ids))
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+5)
-		args = append(args, id.String())
+		idStrs[i] = id.String()
 	}
-	query := fmt.Sprintf(`UPDATE attachments
+	query := `UPDATE attachments
 		SET context_type = $3, context_id = $4
 		WHERE tenant_id = $1 AND uploaded_by = $2
 		AND (context_id = '' OR context_id IS NULL)
-		AND id IN (%s)`, strings.Join(placeholders, ","))
+		AND id = ANY($5::uuid[])`
+	args := []any{tenantID.String(), uploaderID.String(), contextType, contextID, pq.Array(idStrs)}
 	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("failed to link attachments: %w", err)
