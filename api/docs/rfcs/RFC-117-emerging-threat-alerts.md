@@ -182,3 +182,8 @@ vendor advisory grouping; signal-based early warnings (opt-in).
 - `pkg/domain/vulnevent`, `internal/app/vulnevent`,
   `internal/infra/postgres/vuln_event_repository.go`, migration `vuln_events`.
 - `internal/infra/controller/threat_intel_refresh.go` (hourly KEV, daily EPSS).
+- `pkg/domain/threatalert`, `internal/app/threatalert` (planner, delivery,
+  API service), `internal/infra/postgres/threat_alert_*.go`, migrations
+  `threat_alerts` and `findings_open_cve_index`, controller
+  `threat-alert-planner`, `/api/v1/emerging-threats`,
+  `/api/v1/organization/settings/emerging-threats`.

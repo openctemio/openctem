@@ -95,9 +95,14 @@ func TestApprovalRequested_SurvivesBothGatesOnDefaults(t *testing.T) {
 func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 	// Severity is a constant at the enqueue site, so filtering it is meaningless.
 	notFilterable := map[EventType]bool{
-		EventTypeApprovalRequested: true,
-		EventTypeApprovalApproved:  true,
-		EventTypeApprovalRejected:  true,
+		// Emerging-threat messages: an immediate alert is always sent as
+		// critical and the digest as info; the level, not a finding
+		// severity, decided to send them (RFC-117).
+		EventTypeEmergingThreat:       true,
+		EventTypeEmergingThreatDigest: true,
+		EventTypeApprovalRequested:    true,
+		EventTypeApprovalApproved:     true,
+		EventTypeApprovalRejected:     true,
 		// Fixed label set by the asset-discovery notifier (attack-surface
 		// growth, not a finding).
 		EventTypeNewAsset: true,

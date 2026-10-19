@@ -126,6 +126,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/ci/runs":                             {classScoped, "CI runs: SQL data-scope condition on the repository asset; by id out of scope is 404 (RFC-051)"},
 	"/api/v1/ci/code-scanning/settings":           {classConfig, "code scanning template: tenant configuration (RFC-091)"},
 	"/api/v1/ci/code-scanning/repositories":       {classScoped, "code scanning: repositories listed with an SQL data-scope condition; by id out of scope is 404 (RFC-091)"},
+	"/api/v1/emerging-threats":                    {classScoped, "emerging-threat alerts: listed and read only when an asset of the alert is in the caller's data scope (404 otherwise), counts, assets and findings in scope; not affected needs every asset in scope (RFC-117)"},
 	"/api/v1/ci/coverage":                         {classScoped, "CI coverage: repositories listed and marked only within the caller's data scope, 404 otherwise (RFC-051)"},
 	"/api/v1/ci/pipelines":                        {classScoped, "CI pipelines: SQL data-scope condition on the repository asset; by id out of scope is 404 (RFC-051)"},
 	"/api/v1/ci/oidc/exchange":                    {classSystem, "CI token exchange: the CI provider's OIDC token is the credential (RFC-051)"},

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
+
 	vulneventapp "github.com/openctemio/openctem/api/internal/app/vulnevent"
 
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
@@ -40,6 +42,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
@@ -713,6 +716,33 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// each organization's findings.
 	if svc.VulnMatch != nil {
 		w.ControllerManager.Register(controller.NewVulnMatchController(svc.VulnMatch, log.With("controller", "vuln-match")))
+	}
+
+	// Emerging-threat alerts (RFC-117): events and matched findings to
+	// alerts, immediate messages under the hourly cap and quiet hours, the
+	// daily digest (channels, in-app, the e-mail digest preference).
+	if svc.ThreatAlertPlanner != nil {
+		var mail threatalertapp.Mailer
+		if svc.Email != nil {
+			mail = emergingThreatMailer{email: svc.Email, log: log}
+		}
+		var scopes threatalertapp.ScopeResolver
+		if svc.DataScope != nil {
+			scopes = svc.DataScope
+		}
+		var inApp threatalertapp.InAppNotifier
+		if svc.Notification != nil {
+			inApp = svc.Notification
+		}
+		var ob threatalertapp.Enqueuer
+		if svc.Outbox != nil {
+			ob = svc.Outbox
+		}
+		svc.ThreatAlertPlanner.SetSinks(ob, inApp, repos.MemberLifecycle, scopes, mail, deps.Config.SMTP.BaseURL)
+		if svc.Module != nil {
+			svc.ThreatAlertPlanner.SetModules(middleware.NewModuleGate(svc.Module, time.Minute))
+		}
+		w.ControllerManager.Register(controller.NewThreatAlertPlannerController(svc.ThreatAlertPlanner, log.With("controller", "threat-alert-planner")))
 	}
 
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
