@@ -48,29 +48,49 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The denylist secrets are required on the main repository and fail
+      # closed when missing. Forks and Dependabot runs cannot read secrets, so
+      # they skip with a notice instead.
+      - name: Denylist secrets required?
+        id: denylist
+        env:
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          FORK: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          if [ "$REPO" = "openctemio/openctem" ] && [ "$FORK" != "true" ] && [ "$ACTOR" != "dependabot[bot]" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Denylist secrets are not required here (fork or Dependabot run); the checks skip when they are unset."
+          fi
+
       - name: Customer identifiers (self-test)
         run: bash .github/scripts/check-customer-identifiers.test.sh >/dev/null
 
       # Fails when a tracked file names a customer (case-insensitive fixed
       # strings from the CUSTOMER_DENYLIST secret, so the list is never
-      # committed) or carries the live LAN range outside tests. Prints only
-      # file:line. Passes with a notice when the secret is empty (forks).
+      # committed) or carries the live LAN range. Prints only
+      # file:line. Fails closed when the secret is missing on the main repository; passes with a notice on forks and Dependabot runs.
       - name: Customer identifiers
         env:
           CUSTOMER_DENYLIST: ${{ secrets.CUSTOMER_DENYLIST }}
+          REQUIRE_DENYLIST: ${{ steps.denylist.outputs.required }}
         run: bash .github/scripts/check-customer-identifiers.sh
 
       # Fails when a commit this pull request (or merge-queue group) adds has
       # an address from the COMMIT_EMAIL_DENYLIST secret as its author, its
       # committer or in a Co-authored-by trailer, so the list is never
-      # committed. Prints only the commit and the field. Passes with a notice
-      # when the secret is empty (forks) and on pushes and schedules.
+      # committed. Prints only the commit and the field. Fails closed when the
+      # secret is missing on the main repository; skips with a notice on forks,
+      # Dependabot, pushes and schedules.
       - name: Commit emails (self-test)
         run: bash .github/scripts/check-commit-emails.test.sh >/dev/null
 
       - name: Commit emails
         env:
           COMMIT_EMAIL_DENYLIST: ${{ secrets.COMMIT_EMAIL_DENYLIST }}
+          REQUIRE_DENYLIST: ${{ steps.denylist.outputs.required }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: bash .github/scripts/check-commit-emails.sh "${BASE_SHA:+$BASE_SHA..$HEAD_SHA}"
@@ -78,7 +98,7 @@ jobs:
       # Fails when a file this change adds or modifies holds a PEM/OpenSSH private
       # key block, is a key or keystore file (.key .p12 .pfx .jks), or lives under
       # data/ (runtime state). Throwaway keys under testdata/ are allowed. Betterleaks
-      # below reports only (--exit-code 0), so this is the step that blocks.
+      # below blocks on the PR range and reports only on full-history runs.
       - name: Private keys (self-test)
         run: bash .github/scripts/check-private-keys.test.sh >/dev/null
 
@@ -132,9 +152,12 @@ jobs:
         env:
           RANGE: ${{ steps.scope.outputs.range }}
         run: |
-          args=()
-          if [ -n "$RANGE" ]; then args=(--log-opts "$RANGE"); fi
-          ./betterleaks git --redact --no-banner --exit-code 0 \
+          # A pull request or merge group scans only the commits it adds and
+          # BLOCKS on any finding. The full-history run (push, weekly) stays
+          # report-only until a verified baseline ignore file covers history.
+          args=(--exit-code 0)
+          if [ -n "$RANGE" ]; then args=(--exit-code 1 --log-opts "$RANGE"); fi
+          ./betterleaks git --redact --no-banner \
             --report-format sarif --report-path betterleaks.sarif "${args[@]}" .
 
       - name: Upload Betterleaks results

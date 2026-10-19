@@ -25,6 +25,10 @@ if [[ -z "$range" ]]; then
   exit 0
 fi
 if [[ -z "${COMMIT_EMAIL_DENYLIST:-}" ]]; then
+  if [[ "${REQUIRE_DENYLIST:-}" == "true" ]]; then
+    echo "::error::COMMIT_EMAIL_DENYLIST is not set on a repository that requires it. Add the secret (comma- or newline-separated addresses); until then this check cannot run and fails closed."
+    exit 1
+  fi
   echo "::notice::COMMIT_EMAIL_DENYLIST is not set; the commit email check was skipped."
   exit 0
 fi
@@ -32,6 +36,10 @@ fi
 mapfile -t denied < <(printf '%s\n' "$COMMIT_EMAIL_DENYLIST" | tr ',' '\n' |
   sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]' | grep -v '^$' || true)
 if [[ ${#denied[@]} -eq 0 ]]; then
+  if [[ "${REQUIRE_DENYLIST:-}" == "true" ]]; then
+    echo "::error::COMMIT_EMAIL_DENYLIST is empty on a repository that requires it; failing closed."
+    exit 1
+  fi
   echo "::notice::COMMIT_EMAIL_DENYLIST is empty; the commit email check was skipped."
   exit 0
 fi
