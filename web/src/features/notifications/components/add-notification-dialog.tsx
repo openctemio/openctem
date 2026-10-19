@@ -53,6 +53,7 @@ import { useTenantEventTypes } from '@/features/integrations/api/use-event-types
 import { EventTypeSelector } from './event-type-selector'
 import { cn } from '@/lib/utils'
 import { useAppOrigin } from '@/hooks/use-app-origin'
+import { normalizePresetWebhookUrl } from '../lib/chat-presets'
 import { TEMPLATE_PRESETS, renderMessageTemplatePreview } from '../lib/message-template'
 import { SEVERITY_TEXT_COLORS, type SeverityLevel } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -127,6 +128,7 @@ interface AddNotificationDialogProps {
 const PROVIDERS = [
   {
     id: 'slack' as const,
+    provider: 'slack' as const,
     name: 'Slack',
     icon: MessageSquare,
     color: 'text-[#4A154B]',
@@ -137,6 +139,7 @@ const PROVIDERS = [
   },
   {
     id: 'teams' as const,
+    provider: 'teams' as const,
     name: 'Microsoft Teams',
     icon: MessageSquare,
     color: 'text-[#6264A7]',
@@ -146,7 +149,32 @@ const PROVIDERS = [
     credentialPlaceholder: 'https://outlook.office.com/webhook/...',
   },
   {
+    id: 'mattermost' as const,
+    provider: 'slack' as const, // Slack-format incoming webhook
+    name: 'Mattermost',
+    icon: MessageSquare,
+    color: 'text-[#1E325C]',
+    bgColor: 'bg-[#1E325C]/10',
+    descriptionKey: 'notificationPresets.mattermost.description',
+    description: 'Send notifications via a Mattermost incoming webhook',
+    credentialLabel: 'Webhook URL',
+    credentialPlaceholder: 'https://chat.example.com/hooks/...',
+  },
+  {
+    id: 'discord' as const,
+    provider: 'slack' as const, // Slack-compatible endpoint (/slack) of the webhook
+    name: 'Discord',
+    icon: MessageSquare,
+    color: 'text-[#5865F2]',
+    bgColor: 'bg-[#5865F2]/10',
+    descriptionKey: 'notificationPresets.discord.description',
+    description: 'Send notifications via a Discord webhook',
+    credentialLabel: 'Webhook URL',
+    credentialPlaceholder: 'https://discord.com/api/webhooks/...',
+  },
+  {
     id: 'telegram' as const,
+    provider: 'telegram' as const,
     name: 'Telegram',
     icon: Send,
     color: 'text-[#0088cc]',
@@ -157,6 +185,7 @@ const PROVIDERS = [
   },
   {
     id: 'webhook' as const,
+    provider: 'webhook' as const,
     name: 'Custom Webhook',
     icon: Webhook,
     color: 'text-gray-600',
@@ -167,6 +196,7 @@ const PROVIDERS = [
   },
   {
     id: 'email' as const,
+    provider: 'email' as const,
     name: 'Email (SMTP)',
     icon: Mail,
     color: 'text-blue-600',
@@ -258,7 +288,7 @@ export function AddNotificationDialog({
 
   const handleProviderSelect = (provider: (typeof PROVIDERS)[number]) => {
     setSelectedProvider(provider)
-    setValue('provider', provider.id)
+    setValue('provider', provider.provider)
     setStep('config')
   }
 
@@ -292,7 +322,10 @@ export function AddNotificationDialog({
   const onSubmit = async (data: FormValues) => {
     try {
       // Build credentials based on provider
-      let credentials = data.credentials || ''
+      let credentials = normalizePresetWebhookUrl(
+        selectedProvider?.id ?? '',
+        data.credentials || ''
+      )
       if (data.provider === 'email') {
         // For email, build JSON credentials
         const toEmailsList = (data.to_emails || '')
@@ -387,7 +420,9 @@ export function AddNotificationDialog({
                     </div>
                     <span className="font-medium text-sm">{provider.name}</span>
                     <span className="text-xs text-muted-foreground text-center">
-                      {provider.description}
+                      {provider.descriptionKey
+                        ? t(provider.descriptionKey, provider.description)
+                        : provider.description}
                     </span>
                   </button>
                 )
@@ -549,7 +584,8 @@ export function AddNotificationDialog({
                 </div>
               )}
 
-              {(selectedProvider?.id === 'slack' || selectedProvider?.id === 'teams') && (
+              {(selectedProvider?.provider === 'slack' ||
+                selectedProvider?.provider === 'teams') && (
                 <div className="space-y-2">
                   <Label htmlFor="channel_name">Channel Name (optional)</Label>
                   <Input
