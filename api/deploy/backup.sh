@@ -24,7 +24,8 @@
 #
 # Encryption: set BACKUP_AGE_RECIPIENT to an age public key (age1...) or to the
 # path of an age recipients file and every file above except VERSION is written
-# as <name>.age; no plaintext copy is left, also after a failed run. Whoever can
+# as <name>.age, encrypted as it is produced: no plaintext copy ever reaches
+# the disk, also when a run fails or is killed. Whoever can
 # read the backup directory then still cannot read the data without the private
 # key, which should not live on this host. verify and restore decrypt with
 # BACKUP_AGE_IDENTITY (path of the age identity file). Without a recipient the
@@ -72,10 +73,8 @@ warn_plain() { log "WARNING: BACKUP_AGE_RECIPIENT is not set: this backup (datab
 age_encrypt() { # stdin -> stdout
 	if [ -f "$BACKUP_AGE_RECIPIENT" ]; then age -R "$BACKUP_AGE_RECIPIENT"; else age -r "$BACKUP_AGE_RECIPIENT"; fi
 }
-seal() { # seal <file>: encrypt to <file>.age and remove the plaintext (no-op without a recipient)
-	[ -n "${BACKUP_AGE_RECIPIENT:-}" ] || return 0
-	age_encrypt <"$1" >"$1.age"
-	find "$1" -delete
+sink() { # sink <file>: stdin to <file>.age when encrypting (the plaintext never touches the disk, so a killed run leaves none), else to <file>
+	if [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then age_encrypt >"$1.age"; else cat >"$1"; fi
 }
 unseal() { # unseal <base>: plaintext of <base> (or <base>.age) on stdout; use in a pipeline (pipefail)
 	if [ -f "$1.age" ]; then
@@ -119,7 +118,7 @@ metrics() { # metrics <exit code>: the series deploy/observability alerts on
 }
 
 volume_tar() { # volume_tar <volume> <out.tar.gz>
-	docker run --rm --network none -v "${project}_$1:/v:ro" "$HELPER_IMAGE" tar -C /v -czf - . >"$2"
+	docker run --rm --network none -v "${project}_$1:/v:ro" "$HELPER_IMAGE" tar -C /v -czf - . | sink "$2"
 }
 
 do_backup() {
@@ -136,8 +135,15 @@ do_backup() {
 	fi
 
 	log "database ${db_name} -> ${dir}/openctem.dump"
-	dc exec -T postgres pg_dump -U "$db_super" -d "$db_name" -Fc --no-owner >"${dir}/openctem.dump"
-	docker run --rm -i --network none "$HELPER_IMAGE" pg_restore --list <"${dir}/openctem.dump" >/dev/null
+	# The archive is checked with pg_restore --list on the way through (tee -p:
+	# pg_restore stops reading after the table of contents).
+	local check="${dir}/.dump-check"
+	dc exec -T postgres pg_dump -U "$db_super" -d "$db_name" -Fc --no-owner |
+		tee -p >({ docker run --rm -i --network none "$HELPER_IMAGE" pg_restore --list >/dev/null 2>&1 && echo ok || echo bad; } >"$check") |
+		sink "${dir}/openctem.dump"
+	for _ in $(seq 1 60); do [ -s "$check" ] && break; sleep 1; done
+	[ "$(cat "$check" 2>/dev/null)" = ok ] || die "the database dump is not a readable pg_dump archive"
+	find "$check" -delete
 	log "volume api-data"
 	volume_tar api-data "${dir}/api-data.tar.gz"
 	log "volume gateway-data"
@@ -148,11 +154,8 @@ do_backup() {
 			volume_tar "$v" "${dir}/${v}.tar.gz"
 		fi
 	done
-	if [ -f .env ]; then tar -C "$here" -czf "${dir}/env.tar.gz" .env; fi
+	if [ -f .env ]; then tar -C "$here" -czf - .env | sink "${dir}/env.tar.gz"; fi
 	env_get OPENCTEM_VERSION >"${dir}/VERSION"
-	for f in "${dir}"/*; do
-		case "$f" in */VERSION) ;; *) seal "$f" ;; esac
-	done
 	chmod 0600 "${dir}"/*
 	trap - ERR
 

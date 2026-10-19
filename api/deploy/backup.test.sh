@@ -28,7 +28,10 @@ volume) [ "$3" = "stubproj_signer-state" ] && [ -n "${WITH_SIGNER:-}" ] || { [ "
 run)
 	case "$*" in
 	*-d\ --name*) ;;
-	*pg_restore*) cat >/dev/null ;;
+	*pg_restore*)
+		# --list stops after the table of contents: read one byte only.
+		head -c 1 >/dev/null
+		[ -z "${FAIL_DUMPCHECK:-}" ] ;;
 	*tar*)
 		[ -z "${FAIL_VOLUME:-}" ] || { echo boom >&2; exit 1; }
 		echo "PLAINTEXT-TAR" | gzip ;;
@@ -92,6 +95,11 @@ rc=0; (cd "$d/deploy" && env PATH="$d/bin:$PATH" BACKUP_DIR="$d/backups" bash ./
 [ "$rc" != 0 ] && grep -q 'BACKUP_AGE_IDENTITY' "$d/vout" && ok "verify refuses an encrypted backup without an identity" || bad "verify without identity: rc=$rc"
 rc=0; (cd "$d/deploy" && env PATH="$d/bin:$PATH" BACKUP_DIR="$d/backups" BACKUP_AGE_IDENTITY="$d/id.txt" bash ./backup.sh verify >"$d/vout" 2>&1) || true
 grep -q 'volume archives OK' "$d/vout" && ok "verify decrypts with the identity" || bad "verify with identity: $(tail -3 "$d/vout")"
+
+# 6. an unreadable dump fails the run (checked on the way through, no plaintext file needed).
+d="$(fixture)"
+rc="$(run_backup "$d" FAIL_DUMPCHECK=1 BACKUP_AGE_RECIPIENT=age1testrecipient)"
+[ "$rc" != 0 ] && grep -q 'not a readable pg_dump archive' "$d/out" && ok "unreadable dump fails the run" || bad "unreadable dump: rc=$rc"
 
 echo "passed: $pass failed: $failed"
 [ "$failed" = 0 ]
