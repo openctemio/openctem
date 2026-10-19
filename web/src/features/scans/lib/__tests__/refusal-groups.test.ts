@@ -85,4 +85,12 @@ describe('internalAddressOf', () => {
     expect(internalAddressOf(zone('fd00::1'))).toBe('fd00::1')
     expect(internalAddressOf(zone('intra.acme.io'))).toBeUndefined()
   })
+
+  it('puts a name that does not resolve in its own group, apart from private addresses', () => {
+    const groups = groupRefusals([
+      { target: 'gone.example.com', allowed: false, code: 'unresolved' },
+      zone('intra.example.com', ['10.0.0.1']),
+    ])
+    expect(groups.map((g) => g.kind)).toEqual(['zone', 'unresolved'])
+  })
 })
