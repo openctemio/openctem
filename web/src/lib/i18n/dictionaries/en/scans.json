@@ -2081,6 +2081,7 @@
   "scans.rules.help": "Choose whose rules this scan runs. Organization templates only needs at least one template, and waits for a sensor that supports it.",
   "scans.rules.noAccess": "You cannot view the organization's templates, so none can be picked here.",
   "scans.rules.loading": "Loading templates...",
+  "scans.rules.platformKept": "Platform rules only: the selected templates are kept and run again when you choose organization rules.",
   "scans.rules.empty": "The organization has no active templates of this kind.",
   "scans.rules.manage": "Manage templates",
   "scans.rules.templates": "Organization templates",

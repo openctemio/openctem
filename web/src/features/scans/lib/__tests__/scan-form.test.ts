@@ -572,7 +572,7 @@ describe('rule sources', () => {
     }
   })
 
-  it('create: sends custom_template_ids unless the choice is platform', () => {
+  it('create: sends custom_template_ids for every choice, platform included', () => {
     const ids = ['t1', 't2']
     expect(
       formDataToCreateRequest(nuclei({ ruleSources: 'tenant', customTemplateIds: ids }))
@@ -585,7 +585,7 @@ describe('rule sources', () => {
     expect(
       formDataToCreateRequest(nuclei({ ruleSources: 'platform', customTemplateIds: ids }))
         .scanner_config
-    ).toBeUndefined()
+    ).toEqual({ custom_template_ids: ids })
     expect(formDataToCreateRequest(nuclei({ ruleSources: 'both' })).scanner_config).toBeUndefined()
   })
 
@@ -648,6 +648,14 @@ describe('rule sources', () => {
     )
     expect(changed.rule_sources).toBe('both')
     expect(changed.scanner_config).toEqual({ custom_template_ids: ['t2', 't3'], severity: 'high' })
+    // platform rules only keeps the picked templates
+    const platformOnly = formDataToUpdateRequest(
+      { ...scanConfigToFormData(stored), ruleSources: 'platform' },
+      stored,
+      opts
+    )
+    expect(platformOnly.rule_sources).toBe('platform')
+    expect(platformOnly.scanner_config).toEqual({ custom_template_ids: ['t1'], severity: 'high' })
     // the stored config is not mutated
     expect(stored.scanner_config).toEqual({ custom_template_ids: ['t1'], severity: 'high' })
   })

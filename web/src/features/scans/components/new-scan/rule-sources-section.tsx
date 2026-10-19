@@ -44,8 +44,10 @@ export function RuleSourcesSection({
 }: RuleSourcesSectionProps) {
   const { t } = useTranslation()
   const canRead = useHasPermission(Permission.ScannerTemplatesRead)
-  const showList = ruleSources !== 'platform'
-  const enabled = canRead && showList
+  // Platform rules only keeps the picked templates (shown, not editable):
+  // they run again when the choice changes back.
+  const listDisabled = ruleSources === 'platform'
+  const enabled = canRead
   const { data, isLoading } = useScannerTemplates(
     enabled ? { template_type: templateType, status: 'active', per_page: 100 } : undefined,
     { revalidateOnFocus: false, isPaused: () => !enabled }
@@ -81,46 +83,53 @@ export function RuleSourcesSection({
       </Select>
       <p className="text-muted-foreground text-xs">{t('scans.rules.help')}</p>
 
-      {showList &&
-        (!canRead ? (
-          <p className="text-muted-foreground text-xs">{t('scans.rules.noAccess')}</p>
-        ) : isLoading ? (
-          <p className="text-muted-foreground text-xs">{t('scans.rules.loading')}</p>
-        ) : templates.length === 0 ? (
-          <p className="text-muted-foreground rounded-md border border-dashed p-3 text-xs">
-            {t('scans.rules.empty')}{' '}
-            <Link href={TEMPLATES_PAGE} className="text-primary underline">
-              {t('scans.rules.manage')}
-            </Link>
-          </p>
-        ) : (
-          <div
-            role="group"
-            aria-label={t('scans.rules.templates')}
-            className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2"
-          >
-            {templates.map((tpl) => {
-              const id = `rule-template-${tpl.id}`
-              return (
-                <label
-                  key={tpl.id}
-                  htmlFor={id}
-                  className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted/50"
-                >
-                  <Checkbox
-                    id={id}
-                    checked={customTemplateIds.includes(tpl.id)}
-                    onCheckedChange={(c) => toggle(tpl.id, c === true)}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{tpl.name}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {t('scans.rules.ruleCount', undefined, { count: tpl.rule_count })}
-                  </span>
-                </label>
-              )
-            })}
-          </div>
-        ))}
+      {listDisabled && canRead && customTemplateIds.length > 0 && (
+        <p className="text-muted-foreground text-xs">{t('scans.rules.platformKept')}</p>
+      )}
+      {!canRead ? (
+        <p className="text-muted-foreground text-xs">{t('scans.rules.noAccess')}</p>
+      ) : isLoading ? (
+        <p className="text-muted-foreground text-xs">{t('scans.rules.loading')}</p>
+      ) : templates.length === 0 ? (
+        <p className="text-muted-foreground rounded-md border border-dashed p-3 text-xs">
+          {t('scans.rules.empty')}{' '}
+          <Link href={TEMPLATES_PAGE} className="text-primary underline">
+            {t('scans.rules.manage')}
+          </Link>
+        </p>
+      ) : (
+        <div
+          role="group"
+          aria-label={t('scans.rules.templates')}
+          className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2"
+        >
+          {templates.map((tpl) => {
+            const id = `rule-template-${tpl.id}`
+            return (
+              <label
+                key={tpl.id}
+                htmlFor={id}
+                className={
+                  listDisabled
+                    ? 'flex cursor-not-allowed items-center gap-2 rounded px-1 py-1 text-sm opacity-60'
+                    : 'flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted/50'
+                }
+              >
+                <Checkbox
+                  id={id}
+                  checked={customTemplateIds.includes(tpl.id)}
+                  disabled={listDisabled}
+                  onCheckedChange={(c) => toggle(tpl.id, c === true)}
+                />
+                <span className="min-w-0 flex-1 truncate">{tpl.name}</span>
+                <span className="text-muted-foreground text-xs">
+                  {t('scans.rules.ruleCount', undefined, { count: tpl.rule_count })}
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-destructive text-xs">
           {error}
