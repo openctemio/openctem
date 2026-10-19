@@ -5,25 +5,25 @@ go 1.26.0
 toolchain go1.26.9
 
 require (
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hibiken/asynq v0.26.0
-	github.com/klauspost/compress v1.20.1
+	github.com/klauspost/compress v1.20.3
 	github.com/lib/pq v1.12.3
 	github.com/prometheus/client_golang v1.25.0
 	github.com/redis/go-redis/v9 v9.23.0
-	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.60.0
+	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.61.0
 	golang.org/x/time v0.16.0
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.47.2
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.8
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.2
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.3
+	github.com/aws/aws-sdk-go-v2 v1.47.3
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_model v0.6.3
@@ -34,7 +34,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/sync v0.24.0
-	golang.org/x/text v0.42.0
+	golang.org/x/text v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -43,14 +43,14 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.21 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.5 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.5 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.20 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.6 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.5 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.22 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.6 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.6 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.21 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.6 // indirect
 	github.com/beevik/etree v1.6.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
@@ -144,8 +144,8 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/term v0.46.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/term v0.47.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/grpc v1.84.0 // indirect
@@ -154,10 +154,10 @@ require (
 )
 
 require (
-	connectrpc.com/connect v1.21.0
-	github.com/aws/smithy-go v1.28.4
+	connectrpc.com/connect v1.21.1
+	github.com/aws/smithy-go v1.28.5
 	github.com/crewjam/saml v0.5.1
-	github.com/fxamacker/cbor/v2 v2.9.4
+	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/openctemio/ctis v1.6.1-0.20261015213517-1d0678577c43
@@ -167,7 +167,7 @@ require (
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/teambition/rrule-go v1.8.2
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
-	golang.org/x/mod v0.41.0
-	golang.org/x/tools v0.51.0
+	golang.org/x/mod v0.42.0
+	golang.org/x/tools v0.52.0
 	google.golang.org/protobuf v1.36.12
 )
