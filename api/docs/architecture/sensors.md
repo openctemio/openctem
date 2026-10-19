@@ -1671,9 +1671,24 @@ an organization sensor's job never take one host at once.
 jobs in class and age order), so one organization's deep or old queue never
 fills the candidate window or a poll, and an organization the claim skips
 (not allowed, or at its limit) cannot starve the others. Within a round:
-priority class (one class up per 30 minutes waited, never into critical),
-then the organization with the fewest shared jobs in flight (fair share),
-then queue priority and age.
+the organization with the fewest shared jobs in flight (fair share before
+priority, research/191 W-3), then priority class (one class up per 30
+minutes waited, never into critical), then queue priority and age. One job
+per organization and round may jump the fair-share order: its first job of
+the round when it is a verification (critical) job.
+
+**Withheld candidates.** The checks after the query (grant, local policy,
+scope re-check, scan windows, program rules, tool settings, the
+organization's shared access) record nothing, so withheld jobs come back
+first on every poll. When they fill a whole candidate page, the claim reads
+the next page without them, up to three pages (`command_claim_pages_total`),
+and applies the free-slot cap last; the same holds for an organization
+sensor's claim (research/191 W-2).
+
+**Routing auto.** A run step under routing `auto` goes to the shared fleet
+when no sensor of the organization can run the tool at all (none online
+with it) and the organization may use shared sensors now; an organization
+whose capable sensors are only busy keeps the work (research/191 W-1).
 
 **Limits.** Each organization's `platform_scans_concurrent` limit, read
 through the entitlement service by key: in the claim transaction, per

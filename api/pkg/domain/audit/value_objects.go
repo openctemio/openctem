@@ -241,6 +241,14 @@ const (
 	// ActionFindingDuplicateMarked records a user folding a finding into the
 	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
 	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
+	// ActionFindingsRefingerprinted records one run of the refingerprint
+	// command re-keying a tenant's findings to the current identity recipe:
+	// counts re-keyed and merged, and the run id. One entry per tenant per run.
+	ActionFindingsRefingerprinted Action = "findings.refingerprinted"
+	// ActionAssetsMerged records one run of the repomerge command folding a
+	// tenant's duplicate repository assets together: counts, and the run id.
+	// One entry per tenant per run.
+	ActionAssetsMerged Action = "assets.merged"
 	// ActionFindingSeverityChanged records a change of a finding's effective
 	// severity by a person: an override, a restore of the reported severity,
 	// or an approved request (old, new, reported severity, reason).
@@ -767,6 +775,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingsRefingerprinted, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
@@ -895,6 +904,7 @@ func (a Action) Category() string {
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingsRefingerprinted,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
@@ -1206,7 +1216,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
-		ActionAssetCreateMerged,
+		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
