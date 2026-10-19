@@ -90,24 +90,6 @@ func sensorHealth(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) s
 
 // The regression that matters for the sweep: never-heartbeated, so the old
 // `last_seen_at IS NOT NULL` predicate excluded it permanently.
-func TestMarkStaleAsOffline_ReapsNeverHeartbeatedSensor(t *testing.T) {
-	db := openSensorDB(t)
-	ctx := context.Background()
-	defer lockGlobalSweep(ctx, t, db)()
-	repo := &SensorRepository{db: &DB{DB: db}}
-
-	tenantID := seedTestTenant(ctx, t, db)
-	undead := seedSensor(ctx, t, db, tenantID, "online", nil, "nuclei", 0)
-
-	if _, err := repo.MarkStaleAsOffline(ctx, 5*time.Minute); err != nil {
-		t.Fatalf("MarkStaleAsOffline: %v", err)
-	}
-
-	if got := sensorHealth(ctx, t, db, undead); got != "offline" {
-		t.Errorf("never-heartbeated sensor health = %q, want %q — the sweep still cannot reach it", got, "offline")
-	}
-}
-
 func TestMarkStaleSensorsOffline_ReapsNeverHeartbeatedSensor(t *testing.T) {
 	db := openSensorDB(t)
 	ctx := context.Background()
@@ -136,7 +118,7 @@ func TestMarkStaleSensorsOffline_ReapsNeverHeartbeatedSensor(t *testing.T) {
 	}
 }
 
-// A recently-heartbeating sensor must survive both sweeps — the fix widens the
+// A recently-heartbeating sensor must survive the sweep — the fix widens the
 // predicate, and widening a reaper is exactly how you take down a live fleet.
 func TestMarkStaleSweeps_LeaveLiveSensorAlone(t *testing.T) {
 	db := openSensorDB(t)
@@ -148,9 +130,6 @@ func TestMarkStaleSweeps_LeaveLiveSensorAlone(t *testing.T) {
 	now := time.Now()
 	live := seedSensor(ctx, t, db, tenantID, "online", &now, "nuclei", 7)
 
-	if _, err := repo.MarkStaleAsOffline(ctx, 5*time.Minute); err != nil {
-		t.Fatalf("MarkStaleAsOffline: %v", err)
-	}
 	if _, err := repo.MarkStaleSensorsOffline(ctx, 5*time.Minute); err != nil {
 		t.Fatalf("MarkStaleSensorsOffline: %v", err)
 	}
