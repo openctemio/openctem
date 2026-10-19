@@ -1,0 +1,20 @@
+{
+  "description": "relay batch framing: per item u16 sensor length || sensor || u32 envelope length || envelope (big endian). Shared with sdk-go pkg/sensorproto/relay; both sides must keep this file byte-identical.",
+  "items": [
+    {
+      "sensor": "sensor-1",
+      "envelope_hex": "68656c6c6f"
+    },
+    {
+      "sensor": "",
+      "envelope_hex": "000102ff"
+    }
+  ],
+  "framed_hex": "000873656e736f722d310000000568656c6c6f000000000004000102ff",
+  "invalid_frames_hex": {
+    "truncated_envelope": "000873656e736f722d310000000568656c6c6f000000000004000102",
+    "empty_envelope": "000000000000",
+    "sensor_length_over_128": "0081",
+    "dotdot_sensor_id": "00022e2e0000000178"
+  }
+}
