@@ -311,7 +311,8 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "threat intel enriches findings"},
 		},
-		Routes: []string{"/api/v1/threat-actors"},
+		Routes: []string{"/api/v1/threat-actors", "/api/v1/emerging-threats"},
+		Jobs:   []string{"ThreatAlertPlannerController"},
 	},
 	{
 		ID: ModuleExposures, Slug: "exposures", Name: "Exposures",
