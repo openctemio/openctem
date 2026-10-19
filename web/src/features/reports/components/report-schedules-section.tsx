@@ -68,14 +68,22 @@ export function ReportSchedulesSection() {
       setPendingToggle(schedule.id)
       try {
         await toggleSchedule(schedule.id, !schedule.is_active)
-        toast.success(schedule.is_active ? 'Schedule paused' : 'Schedule activated')
+        toast.success(
+          schedule.is_active
+            ? t('reports.schedules.paused', 'Schedule paused')
+            : t('reports.schedules.activated', 'Schedule activated')
+        )
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update schedule')
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : t('reports.schedules.updateFailed', 'Failed to update schedule')
+        )
       } finally {
         setPendingToggle(null)
       }
     },
-    [toggleSchedule]
+    [toggleSchedule, t]
   )
 
   const handleDelete = useCallback(
@@ -84,27 +92,42 @@ export function ReportSchedulesSection() {
       try {
         await deleteSchedule(id)
         setPendingDelete(null)
-        toast.success('Schedule deleted')
+        toast.success(t('reports.schedules.deleted', 'Schedule deleted'))
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to delete schedule')
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : t('reports.schedules.deleteFailed', 'Failed to delete schedule')
+        )
       } finally {
         setDeletingId(null)
       }
     },
-    [deleteSchedule]
+    [deleteSchedule, t]
   )
 
   const columns: ColumnDef<ReportSchedule>[] = [
     {
       accessorKey: 'name',
       enableSorting: false,
-      header: 'Name',
+      header: t('reports.schedules.colName', 'Name'),
       cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span>,
+    },
+    {
+      id: 'owner',
+      enableSorting: false,
+      header: t('reports.schedules.colOwner', 'Owner'),
+      cell: ({ row }) =>
+        row.original.created_by_name ? (
+          <span className="text-sm">{row.original.created_by_name}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
     },
     {
       accessorKey: 'report_type',
       enableSorting: false,
-      header: 'Type',
+      header: t('reports.schedules.colType', 'Type'),
       cell: ({ row }) => (
         <span className="text-sm">
           {REPORT_TYPE_LABELS[row.original.report_type] ?? row.original.report_type}
@@ -114,7 +137,7 @@ export function ReportSchedulesSection() {
     {
       id: 'cadence',
       enableSorting: false,
-      header: 'Cadence',
+      header: t('reports.schedules.colCadence', 'Cadence'),
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span className="text-sm">{humanizeCron(row.original.cron_expression)}</span>
@@ -125,39 +148,58 @@ export function ReportSchedulesSection() {
     {
       id: 'recipients',
       enableSorting: false,
-      header: 'Recipients',
-      cell: ({ row }) => (
-        <span className="text-sm tabular-nums">{row.original.recipients?.length ?? 0}</span>
-      ),
+      header: t('reports.schedules.colRecipients', 'Recipients'),
+      cell: ({ row }) => {
+        const s = row.original
+        const emails = (s.recipients ?? []).map((r) => r.email).join(', ')
+        return (
+          <span className="text-sm tabular-nums" title={emails || undefined}>
+            {s.recipient_count ?? s.recipients?.length ?? 0}
+          </span>
+        )
+      },
     },
     {
       id: 'active',
       enableSorting: false,
-      header: 'Active',
+      header: t('reports.schedules.colActive', 'Active'),
       cell: ({ row }) => {
         const schedule = row.original
+        // Only the creator or a member who manages reports may pause or
+        // resume a schedule; everyone else sees its state.
+        if (!schedule.can_manage) {
+          return (
+            <Badge variant="outline">
+              {schedule.is_active
+                ? t('reports.schedules.stateActive', 'Active')
+                : t('reports.schedules.statePaused', 'Paused')}
+            </Badge>
+          )
+        }
         return (
-          <Can permission="reports:write" mode="disable" disabledTooltip="Requires reports:write">
-            <Switch
-              checked={schedule.is_active}
-              disabled={pendingToggle === schedule.id}
-              onCheckedChange={() => handleToggle(schedule)}
-              aria-label={schedule.is_active ? 'Deactivate schedule' : 'Activate schedule'}
-            />
-          </Can>
+          <Switch
+            checked={schedule.is_active}
+            disabled={pendingToggle === schedule.id}
+            onCheckedChange={() => handleToggle(schedule)}
+            aria-label={
+              schedule.is_active
+                ? t('reports.schedules.pauseLabel', 'Pause {name}', { name: schedule.name })
+                : t('reports.schedules.resumeLabel', 'Resume {name}', { name: schedule.name })
+            }
+          />
         )
       },
     },
     {
       id: 'last_run',
       enableSorting: false,
-      header: 'Last run',
+      header: t('reports.schedules.colLastRun', 'Last run'),
       cell: ({ row }) => <LastRunCell schedule={row.original} />,
     },
     {
       id: 'next_run',
       enableSorting: false,
-      header: 'Next run',
+      header: t('reports.schedules.colNextRun', 'Next run'),
       cell: ({ row }) =>
         row.original.next_run_at && row.original.is_active ? (
           <RelativeTime date={row.original.next_run_at} className="text-sm" />
@@ -170,21 +212,20 @@ export function ReportSchedulesSection() {
       enableHiding: false,
       cell: ({ row }) => {
         const schedule = row.original
+        if (!schedule.can_manage) return null
         return (
-          <Can permission="reports:write">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={deletingId === schedule.id}
-              aria-label={t('confirm.reportSchedule.deleteLabel', 'Delete {name}', {
-                name: schedule.name,
-              })}
-              onClick={() => setPendingDelete(schedule)}
-            >
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
-          </Can>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            disabled={deletingId === schedule.id}
+            aria-label={t('confirm.reportSchedule.deleteLabel', 'Delete {name}', {
+              name: schedule.name,
+            })}
+            onClick={() => setPendingDelete(schedule)}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
         )
       },
     },

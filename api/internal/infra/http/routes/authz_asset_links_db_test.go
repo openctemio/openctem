@@ -7,6 +7,7 @@ package routes
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -26,7 +27,8 @@ func TestAssetLinks_ControlUpdateDeleteTestNeedAllLinksInScope(t *testing.T) {
 		}
 		return "/api/v1/compensating-controls/" + c.String()
 	}
-	upd := map[string]any{"name": "renamed", "control_type": "segmentation", "reduction_factor": 0.9}
+	upd := map[string]any{"name": "renamed", "control_type": "segmentation", "reduction_factor": 0.9,
+		"expires_at": time.Now().Add(90 * 24 * time.Hour).UTC().Format(time.RFC3339)}
 
 	foreign := mk(h.assetB, shared.ID{})
 	foreignFinding := mk(h.assetA, h.findingB)
