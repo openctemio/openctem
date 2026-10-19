@@ -132,6 +132,15 @@ tenant, kind, canonical status, closure reason or key;
 `trg_lifecycle_scheme_versions_immutable`) keeps a published or superseded
 lifecycle version unchanged.
 
+### row_version - Optimistic Concurrency
+
+Trigger function `findings_bump_row_version()` (trigger
+`trg_findings_row_version`, `BEFORE UPDATE`, migration 002995) adds one to
+`row_version` on every update of the row, whichever writer runs it. The
+full-row write (`FindingRepository.Update`) carries
+`AND row_version = <version read>` and is refused with a conflict when the row
+moved on. See [finding-row-version.md](finding-row-version.md).
+
 ## Finding decision review functions
 
 - `finding_severity_rank(sev text) RETURNS integer` - severity order (critical 4 ... else 0) for comparisons in triggers.

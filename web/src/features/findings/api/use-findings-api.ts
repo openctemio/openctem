@@ -25,6 +25,7 @@ import type {
   AddCommentInput,
 } from './finding-api.types'
 import type { ApiApproval, ApprovalStatus } from '../types/finding.types'
+import { ifMatchRowVersion, splitRowVersion, type WithRowVersion } from '../lib/finding-conflict'
 import type { ApprovalEvaluation, ApprovalPolicy } from '../lib/approval-policy'
 
 // ============================================
@@ -245,8 +246,9 @@ export function useUpdateFindingStatusApi(findingId: string) {
   // Ensure user has a tenant before making requests
   return useSWRMutation(
     currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/status` : null,
-    async (url: string, { arg }: { arg: UpdateFindingStatusInput }) => {
-      return patch<ApiFinding>(url, arg)
+    async (url: string, { arg }: { arg: WithRowVersion<UpdateFindingStatusInput> }) => {
+      const [body, rowVersion] = splitRowVersion(arg)
+      return patch<ApiFinding>(url, body, ifMatchRowVersion(rowVersion))
     }
   )
 }
@@ -281,8 +283,9 @@ export function useUpdateFindingSeverityApi(findingId: string) {
 
   return useSWRMutation(
     currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/severity` : null,
-    async (url: string, { arg }: { arg: UpdateFindingSeverityInput }) => {
-      return patch<ApiFinding>(url, arg)
+    async (url: string, { arg }: { arg: WithRowVersion<UpdateFindingSeverityInput> }) => {
+      const [body, rowVersion] = splitRowVersion(arg)
+      return patch<ApiFinding>(url, body, ifMatchRowVersion(rowVersion))
     }
   )
 }
@@ -295,8 +298,9 @@ export function useAssignFindingApi(findingId: string) {
 
   return useSWRMutation(
     currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/assign` : null,
-    async (url: string, { arg }: { arg: AssignFindingInput }) => {
-      return post<ApiFinding>(url, arg)
+    async (url: string, { arg }: { arg: WithRowVersion<AssignFindingInput> }) => {
+      const [body, rowVersion] = splitRowVersion(arg)
+      return post<ApiFinding>(url, body, ifMatchRowVersion(rowVersion))
     }
   )
 }
@@ -309,8 +313,8 @@ export function useUnassignFindingApi(findingId: string) {
 
   return useSWRMutation(
     currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/unassign` : null,
-    async (url: string) => {
-      return post<ApiFinding>(url, {})
+    async (url: string, { arg }: { arg?: { rowVersion?: number } } = {}) => {
+      return post<ApiFinding>(url, {}, ifMatchRowVersion(arg?.rowVersion))
     }
   )
 }
