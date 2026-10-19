@@ -67,7 +67,7 @@ vi.mock('../../api/use-remediation-campaigns', async (orig) => ({
     isLoading: false,
     mutate: vi.fn(),
   }),
-  useCampaignStatusCounts: () => ({ data: state.counts }),
+  useCampaignStatusCounts: () => state.counts,
   useRemediationCampaign: () => ({ data: state.detail, isLoading: false, mutate: vi.fn() }),
   useRevalidateCampaigns: () => vi.fn(),
   useCreateCampaignTicket: () => ({ trigger: vi.fn(), isMutating: false }),
