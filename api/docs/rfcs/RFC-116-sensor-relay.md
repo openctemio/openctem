@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-19). Partly implemented: the relay (`cmd/sensor-relay`, `internal/sensorrelay`) and its wire contract (`pkg/sensorproto/relay`: tickets, batch framing) have shipped; the sensor-side envelope and local store are in sdk-go (`pkg/sealedmsg`, `pkg/localstore`). Designed: the platform relay connector, ticket issuing, key distribution in the signed hello, the pairing bundle and the console, store-and-forward (§8) |
+| Status | Accepted (2026-10-19). Partly implemented: the relay (`cmd/sensor-relay`, `internal/sensorrelay`), its wire contract (`pkg/sensorproto/relay`: tickets, batch framing), the platform's envelope (`pkg/sensorproto/sealed`) and the relay connector (`openctem-sensor-relay connector`) have shipped; the sensor-side envelope, relay transport and local store are in sdk-go (`pkg/sealedmsg`, `pkg/relayclient`, `pkg/localstore`). Designed: ticket issuing by the API, key distribution in the signed hello, the pairing bundle and the console, store-and-forward (§8) |
 | Scope | api (`cmd/sensor-relay`, `internal/sensorrelay`, `pkg/sensorproto/relay`; later the relay connector in the sensor-gateway role, `pkg/sensorproto/sealed`, relay tickets, encryption-key registration, hello fields), web (relays settings, pairing wizard mode step, sensor connection state), sdk-go (`pkg/sealedmsg`, relay transport, `pkg/localstore`) |
 | Related | RFC-040 (mutual distrust, sensor-gateway role), RFC-052 (pairing), RFC-030 (scan distribution), RFC-035 (heartbeat), RFC-061 (content packs), RFC-100 (shared sensors); `docs/architecture/sensor-relay.md` |
 
@@ -44,6 +44,27 @@ the HPKE info. Wire format and test vector: sdk-go `pkg/sealedmsg`.
 Because the inner request is the unchanged v2 request, the platform needs no
 new handlers: the relay connector replays it to the local v2 API, where the
 signature, nonce, clock, rate and tenant checks run as for a direct sensor.
+The request carries the sensor's encryption public key (`reply_key`) inside
+the sealed envelope; the connector seals the answer to it.
+
+### 3.1a Relay connector
+
+The connector runs next to the API on the private network and dials the
+relay with a certificate pinned for its realm. It holds the ingest and
+response keys (the API holds neither). For each envelope it:
+
+1. opens it with the ingest keys for the route `(realm, sensor)` the relay
+   attached from the ticket; an envelope sealed for another route or key
+   does not open and is dropped without an answer;
+2. refuses any path outside `/api/v2/sensor/` (also `..`, encoded dots or
+   slashes, `//`) with a sealed 403, without calling the API;
+3. forwards only an allowlist of request headers (signature, digest, content
+   and key headers; never `X-Forwarded-For`, `Forwarded`, `X-Real-IP` or
+   cookies) and returns only an allowlist of response headers (never
+   `Set-Cookie`);
+4. seals the API's answer, signed with the response key and bound to the
+   request envelope's digest, to the request's reply key, and posts it to the
+   sensor's mailbox. An unreachable API answers 502.
 
 ### 3.2 Relay
 
@@ -136,11 +157,18 @@ jitter. Each change is reported on the heartbeat (`transport.mode`,
 | Relay binary, mailboxes, quotas, metrics (`cmd/sensor-relay`, `internal/sensorrelay`) | shipped |
 | Wire contract: tickets, batch framing (`pkg/sensorproto/relay`) | shipped |
 | Sensor envelope (`sdk-go pkg/sealedmsg`), local store (`sdk-go pkg/localstore`) | opened in sdk-go |
-| Relay connector in the sensor-gateway role, `pkg/sensorproto/sealed`, ingest and response keys | designed |
-| Ticket issuing (`POST /api/v2/sensor/relay-ticket`), encryption-key registration, hello fields | designed |
-| Sensor relay transport and fallback chain (sdk-go) | designed |
+| Platform envelope (`pkg/sensorproto/sealed`, checked against sdk-go's vector) | shipped |
+| Relay connector (`openctem-sensor-relay connector`): sensor-route allowlist, header allowlists both ways, ingest and response keys from files; operator tools `ingest-keygen`, `response-keygen`, `ticket-keygen`, `ticket` | shipped |
+| Ticket issuing by the API (`POST /api/v2/sensor/relay-ticket`), keys in the signed hello, the API checking that the relayed request's sensor is the ticket's sensor | designed |
+| Sensor relay transport (sdk-go `pkg/relayclient`) | opened in sdk-go; wiring into sensorkit, mode selection and the fallback chain designed |
 | Console: relays settings, pairing wizard mode step, connection state | designed |
 | Store-and-forward backend | designed |
+
+Open points for the API side: relayed requests reach the API from the
+connector's address, so per-address limits and address allowlists see the
+connector, not the sensor (the sensor's own limits by key are unchanged);
+the API will compare the relayed request's authenticated sensor with the
+ticket's sensor (a header set by the connector) as defence in depth.
 
 ## 8. Later
 

@@ -11,11 +11,12 @@ both sides dial out to. It carries sealed envelopes it cannot read: the
 sensor's signed request sealed to the platform's ingest key, and the
 platform's signed response sealed to the sensor's key.
 
-**Shipped:** the relay itself and its wire contract. **Designed, not built
-yet:** the platform's relay connector, ticket issuing, key distribution, the
-sensor's relay transport, the console pages and store-and-forward
-(RFC-116 §7). Until the connector ships, a relay has no platform side to
-talk to.
+**Shipped:** the relay, its wire contract, the platform's envelope
+implementation and the relay connector, with operator tools for its keys
+and for minting tickets. **Designed, not built yet:** ticket issuing by the
+API, key distribution in the signed hello, the sensor's relay mode in
+sensorkit (the transport itself is in sdk-go `pkg/relayclient`), the console
+pages and store-and-forward (RFC-116 §7).
 
 ## Flow
 
@@ -61,6 +62,40 @@ limits:                          # all optional; defaults shown
 
 `openctem-sensor-relay check` validates the configuration;
 `openctem-sensor-relay pin -cert connector.pem` prints the pin to configure.
+
+## Relay connector (platform side)
+
+Runs next to the API, on the private network, as
+`openctem-sensor-relay connector`. It dials the relay; nothing dials it.
+
+```
+openctem-sensor-relay ingest-keygen   -out /keys/ingest.pem     # prints the public key for sensors
+openctem-sensor-relay response-keygen -out /keys/response.pem   # prints the public key for sensors
+openctem-sensor-relay ticket-keygen   -out /keys/ticket.pem     # prints the public key for relay.yaml
+openctem-sensor-relay pin -cert connector.pem                    # pin for relay.yaml connector_pins
+```
+
+| Variable | Meaning |
+|---|---|
+| `CONNECTOR_RELAY_URL` | the relay's https URL |
+| `CONNECTOR_RELAY_PIN` | hex SHA-256 of the relay certificate's public key (`pin -cert relay.pem`) |
+| `CONNECTOR_TLS_CERT`, `CONNECTOR_TLS_KEY` | the connector's client certificate (its pin is in the relay configuration) |
+| `CONNECTOR_REALM` | the realm the relay serves this connector |
+| `CONNECTOR_INGEST_KEYS` | comma-separated ingest key files (two during a rotation) |
+| `CONNECTOR_RESPONSE_KEY` | the response key file |
+| `CONNECTOR_API_URL` | the API on the private network, e.g. `http://api:8080` |
+| `CONNECTOR_HEALTH_LISTEN` | `/healthz` and `/metrics`, default `127.0.0.1:9091` |
+
+Key files are created 0400 and refused when others can read them. The
+connector forwards only `/api/v2/sensor/` requests, only allowlisted
+headers each way, never client-address headers or cookies.
+
+Until the API issues tickets, an operator mints one per sensor with
+`openctem-sensor-relay ticket -key /keys/ticket.pem -realm R -tenant T
+-sensor S -sensor-key <base64 identity public key> -relay ID -ttl 12h`
+(at most 24 h).
+
+Metric: `openctem_relay_connector_requests_total{outcome}`.
 
 ## Limits and behaviour
 
