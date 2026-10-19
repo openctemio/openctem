@@ -153,3 +153,24 @@ func TestComputeMaturity_TrivialCycleNearZero(t *testing.T) {
 	// Both active components score 0 here → composite is exactly 0.
 	approx(t, "score", b.Score, 0)
 }
+
+// A cycle that remediated nothing has no MTTR and no validation coverage
+// sample. mttr_trend must not read that as MTTR falling to 0 h (a perfect
+// 100), and validation coverage must not be scored on an empty sample.
+func TestComputeMaturity_NoRemediationIsNotMeasured(t *testing.T) {
+	now := time.Now().UTC()
+	cycles := []CycleMetrics{
+		{CycleID: shared.NewID(), Name: "prev", ClosedAt: now.Add(-30 * 24 * time.Hour),
+			Metrics: map[string]float64{MetricMTTRHours: 40, MetricFindingsOpened: 5, MetricFindingsResolved: 2, MetricValidationCoverage: 50}},
+		{CycleID: shared.NewID(), Name: "latest", ClosedAt: now,
+			Metrics: map[string]float64{MetricFindingsOpened: 5, MetricFindingsResolved: 0}},
+	}
+	b := ComputeMaturity(cycles)
+	for _, c := range b.Components {
+		switch c.Name {
+		case "mttr_trend", "validation_coverage":
+			approx(t, c.Name+".weight(no sample)", c.Weight, 0)
+			approx(t, c.Name+".contribution(no sample)", c.Contribution, 0)
+		}
+	}
+}
