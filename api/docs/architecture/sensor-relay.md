@@ -45,6 +45,7 @@ limits:                          # all optional; defaults shown
   mailbox_items: 64
   mailbox_bytes: 67108864        # 64 MiB per mailbox
   total_bytes: 2147483648        # 2 GiB held in total
+  realm_bytes: 536870912         # 512 MiB held per realm, both directions
   ttl: 10m
   sensor_rate: 10                # requests per second per sensor
   sensor_burst: 20
