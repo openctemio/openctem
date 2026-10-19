@@ -27,7 +27,7 @@ func TestFindingWhere_DataScopeAlwaysFailClosed(t *testing.T) {
 	if strings.Contains(where, "NOT EXISTS (SELECT 1 FROM user_accessible_assets") {
 		t.Errorf("the scope must have no NOT EXISTS bypass; got: %s", where)
 	}
-	if !strings.Contains(where, "asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa") {
+	if !strings.Contains(where, "asset_id = ANY (ARRAY(SELECT uaa.asset_id FROM user_accessible_assets uaa") {
 		t.Errorf("the scope must limit to the accessible assets; got: %s", where)
 	}
 	if !strings.Contains(where, "ph.program_only") {
