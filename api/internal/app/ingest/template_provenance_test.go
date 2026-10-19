@@ -120,3 +120,14 @@ func TestEvaluateCommandCoverage_TemplateDriftIsNotObserved(t *testing.T) {
 		t.Fatalf("drift lookup error: %+v resolved %v", out, base3.resolved)
 	}
 }
+
+// A sensor that reports the template file on its own disk gets only the
+// path inside the pack stored.
+func TestFindingTemplateProvenance_SensorLocalPath(t *testing.T) {
+	d := "sha256:" + strings.Repeat("c", 64)
+	abs := "/var/lib/openctem/content/nuclei-templates/versions/20261005T083220.302831790Z-7ae245/http/x.yaml"
+	got := findingTemplateProvenance(&ctis.Finding{Properties: ctis.Properties{"template_digest": d, "template_path": abs}}, nil)
+	if got.TemplatePath != "http/x.yaml" {
+		t.Fatalf("template path = %q", got.TemplatePath)
+	}
+}
