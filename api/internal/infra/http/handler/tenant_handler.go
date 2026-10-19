@@ -2460,6 +2460,86 @@ func (h *TenantHandler) UpdateFindingCorrelationSettings(w http.ResponseWriter, 
 	_ = json.NewEncoder(w).Encode(fc)
 }
 
+// AISettingsResponse is the organization's AI triage consent.
+type AISettingsResponse struct {
+	// Enabled: an administrator turned AI triage on; finding content may be
+	// sent to the AI provider (within the AI data policy).
+	Enabled bool `json:"enabled"`
+	// EnabledAt is when it was turned on.
+	EnabledAt *time.Time `json:"enabled_at,omitempty"`
+	// EnabledBy is the user who turned it on, or "upgrade" for an
+	// organization that used AI triage before consent existed.
+	EnabledBy string `json:"enabled_by,omitempty"`
+}
+
+// UpdateAISettingsRequest turns AI triage on or off.
+type UpdateAISettingsRequest struct {
+	Enabled *bool `json:"enabled" validate:"required"`
+}
+
+func toAISettingsResponse(ai *tenant.AISettings) AISettingsResponse {
+	return AISettingsResponse{Enabled: ai.OptedIn(), EnabledAt: ai.EnabledAt, EnabledBy: ai.EnabledBy}
+}
+
+// GetAISettings handles GET /api/v1/organization/settings/ai
+// @Summary      Read the organization's AI triage consent
+// @Description  Whether an administrator turned AI triage on for the organization, when and by whom. Until then no finding content is sent to an AI provider. Owners and administrators.
+// @Tags         Tenants
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  AISettingsResponse
+// @Router       /organization/settings/ai [get]
+func (h *TenantHandler) GetAISettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	ai, err := h.service.GetAISettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAI)
+	writeJSON(w, http.StatusOK, toAISettingsResponse(ai))
+}
+
+// UpdateAISettings handles PUT /api/v1/organization/settings/ai
+// @Summary      Turn AI triage on or off for the organization
+// @Description  Turning it on is the organization's consent to send finding content (within its AI data policy) to the AI provider the platform or the organization configured. Owners and administrators; needs a recent sign-in; audited as critical.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body UpdateAISettingsRequest true "Consent"
+// @Success      200  {object}  AISettingsResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Router       /organization/settings/ai [put]
+func (h *TenantHandler) UpdateAISettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	var req UpdateAISettingsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	ai, err := h.service.UpdateAIOptIn(settingsWriteCtx(r), tenantID.String(), *req.Enabled, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAI)
+	writeJSON(w, http.StatusOK, toAISettingsResponse(ai))
+}
+
 // GetPentestSettings handles GET /api/v1/tenants/{tenant}/settings/pentest
 func (h *TenantHandler) GetPentestSettings(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())

@@ -89,6 +89,8 @@ type fakeTriageRepo struct {
 	mu      sync.Mutex
 	rows    map[shared.ID]*aitriagedom.TriageResult
 	created int
+	// settings are the tenant settings the slot query joins in.
+	settings func() map[string]any
 }
 
 func newFakeTriageRepo() *fakeTriageRepo {
@@ -124,7 +126,11 @@ func (f *fakeTriageRepo) AcquireTriageSlot(_ context.Context, tenantID, id share
 	if err := r.MarkProcessing(); err != nil {
 		return nil, aitriagedom.ErrAlreadyProcessing
 	}
-	return &aitriagedom.TriageContext{Result: r, TenantSettings: map[string]any{}}, nil
+	settings := map[string]any{}
+	if f.settings != nil {
+		settings = f.settings()
+	}
+	return &aitriagedom.TriageContext{Result: r, TenantSettings: settings}, nil
 }
 
 type fakeEnqueuer struct{ n int }
@@ -156,6 +162,7 @@ func (f fakeOrgPolicy) MCPPolicy(context.Context, shared.ID) (tenant.MCPSettings
 
 type egressHarness struct {
 	svc      *AITriageService
+	tenant   *tenant.Tenant
 	llm      *fakeLLM
 	triage   *fakeTriageRepo
 	enqueuer *fakeEnqueuer
@@ -172,6 +179,9 @@ func newEgressHarness(t *testing.T) *egressHarness {
 	t.Helper()
 	tn, err := tenant.NewTenant("Org", "org-egress", "creator")
 	require.NoError(t, err)
+	ai := tn.TypedSettings().AI
+	ai.SetOptIn(true, "admin", time.Now()) // the organization opted in
+	require.NoError(t, tn.UpdateAISettings(ai))
 	h := &egressHarness{
 		llm:      &fakeLLM{resp: validTriageJSON},
 		triage:   newFakeTriageRepo(),
@@ -181,7 +191,9 @@ func newEgressHarness(t *testing.T) *egressHarness {
 		camps:    map[shared.ID]*pentestdom.Campaign{},
 	}
 	h.svc = NewAITriageService(h.triage, fakeFindings{byID: h.findings}, fakeTenants{t: tn}, nil,
-		nil, config.AITriageConfig{Enabled: true, AnthropicAPIKey: "test-only", MaxTokens: 100}, logger.NewNop())
+		nil, config.AITriageConfig{AnthropicAPIKey: "test-only", MaxTokens: 100}, logger.NewNop())
+	h.triage.settings = tn.Settings
+	h.tenant = tn
 	h.svc.llmFactory = fakeFactory{p: h.llm}
 	h.svc.SetJobEnqueuer(h.enqueuer)
 	h.svc.SetEgressPolicy(aipolicy.New(fakeOrgPolicy{}, fakeCampaignRepo{byID: h.camps}))
@@ -345,4 +357,25 @@ func TestPublicFailureCode_HidesLegacyText(t *testing.T) {
 	require.Equal(t, "", PublicFailureCode(""))
 	require.Equal(t, FailRateLimited, PublicFailureCode(FailRateLimited))
 	require.Equal(t, FailInternal, PublicFailureCode("failed to get finding: pq: relation \"findings\" does not exist"))
+}
+
+// Consent is checked again in the worker: an administrator who turns AI
+// triage off stops the jobs already queued, before anything is sent.
+func TestAITriage_ConsentWithdrawnStopsQueuedJobs(t *testing.T) {
+	ctx := context.Background()
+	h := newEgressHarness(t)
+	f := h.finding(t, vulnerability.FindingSourceDAST, nil)
+	row := h.pendingRow(t, f)
+
+	ai := h.tenant.TypedSettings().AI
+	ai.SetOptIn(false, "", time.Time{})
+	require.NoError(t, h.tenant.UpdateAISettings(ai))
+
+	err := h.svc.ProcessTriage(aitriagedom.WithRetriesLeft(ctx, true), row.ID(), h.tenantID, f.ID())
+	require.ErrorIs(t, err, aitriagedom.ErrTriageFailed)
+	require.Equal(t, FailAIDisabled, row.ErrorMessage())
+	require.Zero(t, h.llm.calls)
+
+	_, err = h.svc.RequestTriage(ctx, TriageRequest{TenantID: h.tenantID.String(), FindingID: f.ID().String(), TriageType: "manual"})
+	require.ErrorIs(t, err, ErrAIDisabled)
 }

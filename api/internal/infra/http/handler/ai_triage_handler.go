@@ -22,7 +22,14 @@ import (
 type AITriageHandler struct {
 	triageService *aitriage.AITriageService // May be nil if AI triage is not configured
 	logger        *logger.Logger
+	// bulkAllowance spends one rate-limit unit per finding of a bulk
+	// request beyond the first (nil: no limit).
+	bulkAllowance func(tenantID string, n int) bool
 }
+
+// SetBulkAllowance makes a bulk request count each finding against the
+// tenant's AI triage rate limit.
+func (h *AITriageHandler) SetBulkAllowance(f func(tenantID string, n int) bool) { h.bulkAllowance = f }
 
 // NewAITriageHandler creates a new AI triage handler.
 // triageService can be nil - handler will return 503 for operations that require the service.
@@ -341,6 +348,14 @@ func (h *AITriageHandler) RequestBulkTriage(w http.ResponseWriter, r *http.Reque
 			apierror.BadRequest("Invalid finding ID format at index " + strconv.Itoa(i)).WriteJSON(w)
 			return
 		}
+	}
+
+	// Each finding is one AI call: the request spent one unit of the
+	// tenant's allowance, the other findings spend the rest.
+	if h.bulkAllowance != nil && !h.bulkAllowance(tenantID, len(req.FindingIDs)-1) {
+		w.Header().Set("Retry-After", "60")
+		apierror.TooManyRequests("Too many AI triage requests: each finding of a bulk request counts toward the limit. Send fewer findings, or wait a minute.").WriteJSON(w)
+		return
 	}
 
 	h.logger.Info("Bulk AI triage requested",
