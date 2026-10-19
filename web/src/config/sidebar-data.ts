@@ -39,6 +39,7 @@ import {
   Package,
   // CTEM Phase 1 icons
   TrendingUp,
+  Siren,
   AlertTriangle,
   Fingerprint,
   // Access Control icons
@@ -349,6 +350,13 @@ export const sidebarData: SidebarData = {
           title: 'Threat Intel',
           url: '/threat-intel',
           icon: TrendingUp,
+          permission: Permission.VulnerabilitiesRead,
+          module: 'threat_intel',
+        },
+        {
+          title: 'Emerging Threats',
+          url: '/emerging-threats',
+          icon: Siren,
           permission: Permission.VulnerabilitiesRead,
           module: 'threat_intel',
         },
