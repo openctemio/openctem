@@ -234,27 +234,9 @@ func (h *FindingActionHandler) addTags(ctx context.Context, input *ActionInput) 
 			"tags", tagStrings,
 		)
 
-		// Use the actual SetFindingTags method from finding.VulnerabilityService
-		// Note: This sets tags, so we need to get existing tags first and merge
-		finding, err := h.vulnerabilityService.GetFinding(ctx, input.TenantID.String(), findingID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get finding: %w", err)
-		}
-
-		// Merge existing tags with new tags (remove duplicates)
-		existingTags := make(map[string]bool)
-		for _, t := range finding.Tags() { // Tags() is a method, not a field
-			existingTags[t] = true
-		}
-		for _, t := range tagStrings {
-			existingTags[t] = true
-		}
-		mergedTags := make([]string, 0, len(existingTags))
-		for t := range existingTags {
-			mergedTags = append(mergedTags, t)
-		}
-
-		_, err = h.vulnerabilityService.SetFindingTags(ctx, findingID, input.TenantID.String(), mergedTags)
+		// Merged with the tags as stored at write time (re-read on a lost
+		// race), so a concurrent tag change is kept.
+		_, err = h.vulnerabilityService.EditFindingTags(ctx, findingID, input.TenantID.String(), tagStrings, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add tags to finding: %w", err)
 		}
@@ -293,25 +275,7 @@ func (h *FindingActionHandler) removeTags(ctx context.Context, input *ActionInpu
 			"tags", tagStrings,
 		)
 
-		// Get existing finding to filter tags
-		finding, err := h.vulnerabilityService.GetFinding(ctx, input.TenantID.String(), findingID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get finding: %w", err)
-		}
-
-		// Remove specified tags from existing tags
-		tagsToRemove := make(map[string]bool)
-		for _, t := range tagStrings {
-			tagsToRemove[t] = true
-		}
-		remainingTags := make([]string, 0)
-		for _, t := range finding.Tags() {
-			if !tagsToRemove[t] {
-				remainingTags = append(remainingTags, t)
-			}
-		}
-
-		_, err = h.vulnerabilityService.SetFindingTags(ctx, findingID, input.TenantID.String(), remainingTags)
+		_, err = h.vulnerabilityService.EditFindingTags(ctx, findingID, input.TenantID.String(), nil, tagStrings)
 		if err != nil {
 			return nil, fmt.Errorf("failed to remove tags from finding: %w", err)
 		}

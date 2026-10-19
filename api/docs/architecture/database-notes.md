@@ -132,6 +132,15 @@ tenant, kind, canonical status, closure reason or key;
 `trg_lifecycle_scheme_versions_immutable`) keeps a published or superseded
 lifecycle version unchanged.
 
+### row_version - Optimistic Concurrency
+
+Trigger function `findings_bump_row_version()` (trigger
+`trg_findings_row_version`, `BEFORE UPDATE`, migration 003113) adds one to
+`row_version` on every update of the row, whichever writer runs it. The
+full-row write (`FindingRepository.Update`) carries
+`AND row_version = <version read>` and is refused with a conflict when the row
+moved on. See [finding-row-version.md](finding-row-version.md).
+
 ## Finding decision review functions
 
 - `finding_severity_rank(sev text) RETURNS integer` - severity order (critical 4 ... else 0) for comparisons in triggers.
@@ -171,6 +180,19 @@ Migration `002916_dashboard_fact_tables`; see [dashboards.md](dashboards.md#fact
   - `dash_asset_day_maintain() RETURNS TABLE (created, dropped, moved)` - `SECURITY DEFINER`, no input: creates the
     next 24 monthly partitions of `dash_asset_day`, drops those ending before `dash_history_start()`; not executable
     by `PUBLIC`.
+
+## Campaign conversion functions
+
+Migration `remediation_campaigns_hold_tasks` (docs/architecture/remediation-campaigns.md, "Conversion"):
+
+- `remediation_campaign_filter_parse(p_filter jsonb) RETURNS (ok, scoped, fix_key, severities, sources, cve_ids,
+  finding_ids, asset_id, tool_name, search_pattern)` - a legacy campaign `finding_filter` parsed as the API parsed
+  it: `ok` = it parses, `scoped` = it tracks findings (a fix key, a CVE, a finding id, an asset or a tool).
+- `remediation_campaigns_to_tasks(p_report_unchanged boolean) RETURNS integer` - turns the open findings each
+  running campaign tracks into tasks of the campaign (one finding, one campaign; findings already in a task stay),
+  writes the audit rows, task and finding timeline entries and owner notices, and returns how many campaigns it
+  reported. Idempotent. Not called by Go: the migration runs it, the contract step runs it once more and drops both
+  functions.
 
 ## Best Practices
 

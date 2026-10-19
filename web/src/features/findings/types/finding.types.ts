@@ -754,6 +754,8 @@ export interface Finding {
   verifiedAt?: string
   createdAt: string
   updatedAt: string
+  /** Version of the stored finding this copy was read at (If-Match on writes). */
+  rowVersion?: number
 
   // Extended: Risk Assessment
   isTriaged?: boolean

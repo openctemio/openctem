@@ -34,23 +34,6 @@ export type AgingBucketKey = 'upTo7' | 'd8to30' | 'd31to90' | 'over90'
 /** Past-due buckets by days since the deadline; together they cover every past-due finding. */
 export const AGING_BUCKET_KEYS: AgingBucketKey[] = ['upTo7', 'd8to30', 'd31to90', 'over90']
 
-const AGING_BOUNDS: Record<AgingBucketKey, { gt?: string; lte?: string }> = {
-  upTo7: { gt: '-P7D' },
-  d8to30: { lte: '-P7D', gt: '-P30D' },
-  d31to90: { lte: '-P30D', gt: '-P90D' },
-  over90: { lte: '-P90D' },
-}
-
-export function agingFilter(bucket: AgingBucketKey): ComplianceFilter {
-  const b = AGING_BOUNDS[bucket]
-  return {
-    state: 'open',
-    sla_statuses: PAST_DUE_STATUSES,
-    ...(b.gt ? { sla_deadline_gt: b.gt } : {}),
-    ...(b.lte ? { sla_deadline_lte: b.lte } : {}),
-  }
-}
-
 /** The Findings page URL that lists exactly what a stats read over `filter` counts. */
 export function findingsHref(filter: ComplianceFilter, extra?: { severity?: string }): string {
   const p = new URLSearchParams()
