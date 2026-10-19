@@ -216,8 +216,9 @@ the same transaction as the change.
   `observed_again` for a stale finding), template drift, feature-branch
   expiry, CI pipeline stale and retired, VEX in scan reports and VEX
   documents, the software vulnerability matcher, correlation link and release,
-  taint-source suspension, suppression re-link, and the bulk verify / reject by
-  filter.
+  taint-source suspension, suppression re-link, the bulk verify / reject by
+  filter, and the fix claim, verify and reject actions by id (one
+  status-guarded batch write each, actor = the person).
 - **Application paths acting for the platform** (validation verdicts, the IOC
   correlator, workflow `update_status`, auto-assign to owners) attach the
   transition to the request context (`vulnerability.WithStatusTransition`);
@@ -230,6 +231,40 @@ the same transaction as the change.
   recorded by its service with the person as the actor.
 - `TestFindingStatusSQL_EveryStatusWriteIsOnTheTimeline` fails when a file that
   writes `findings.status` records no timeline entry.
+
+## Side effects of a status change: one path
+
+Every route that changes a finding's status ends in one function,
+`afterStatusChange` (`internal/app/finding/status_effects.go`), with the
+findings its write actually moved: the status PATCH, bulk status (and the
+ticket webhooks through it), the fix claim, verify and reject actions by id
+and by filter, approved requests (two-person, single-person false positive,
+sole-member self-approval, group exceptions) and VEX statements. For each
+moved finding it fires, once:
+
+- the `finding_status_changed` workflow event;
+- the assignee's in-app notification (not when the assignee made the move);
+- a proof-of-fix re-check, for a finding that reached `fix_applied` (the
+  single status PATCH now queues one too).
+
+The outbound ticket status push of a linked finding is not fired afterwards:
+it is a durable job (`durable_jobs`) the status write queues in its own
+transaction, only for the findings it moved (`ticketSyncCtx` /
+`TicketSyncContext` put the candidates on the context; the status writes,
+approvals and VEX effects queue those that moved). A move made by a ticket
+webhook is not pushed back to the ticket.
+
+Batch writes are status-guarded and return the ids they changed
+(`StatusMoveWriter.MoveStatusBatch`, `UPDATE … RETURNING id`): a finding that
+changed between the read and the write is reported (`changed since it was
+read`) and gets no timeline entry and no side effect, and the result counts
+only the moved findings. Services outside the finding service (finding
+actions, VEX) are handed `VulnerabilityService.AfterStatusMoves` at the
+composition root. Reject by filter now reads its set first (at most 1000
+findings, like verify by filter) so the write names the findings it moves.
+
+Bulk assign records one `assigned` activity per finding and sends the
+assignee one notification for the batch (none for a self-assignment).
 
 ## Automatic signals never reverse a decision
 

@@ -447,3 +447,56 @@ func TestScoringVersions_PassNeverRevertsAConcurrentClose(t *testing.T) {
 		t.Fatalf("cross-tenant save wrote %d rows (err %v)", n, err)
 	}
 }
+
+// One SavePriorities call writes a whole page in one statement with the
+// same rules as the single-row write: a manual class override is kept, a
+// closed finding stays frozen, a repeated finding is written once, and
+// another tenant's findings are never written.
+func TestScoringVersions_SavePrioritiesBatch(t *testing.T) {
+	fx := newScoringFixture(t)
+	ctx := context.Background()
+	tid := fx.newTenant(t)
+	aid := fx.newAsset(t, tid, "github.com/acme/scoring-batch")
+	var batch []*vulnerability.Finding
+	ids := make([]shared.ID, 4)
+	for i := range ids {
+		ids[i] = fx.newFinding(t, tid, aid, vulnerability.SeverityHigh, "batch-"+string(rune('a'+i)))
+	}
+	fx.drain(t, aid)
+	// ids[2]: a person set P3 by hand; ids[3]: closed after the pass loaded it.
+	if _, err := fx.db.Exec(`UPDATE findings SET priority_class = 'P3', priority_class_override = TRUE WHERE id = $1`, ids[2].String()); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		f, err := fx.findings.GetByID(ctx, tid, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.SetPriorityClassification(vulnerability.PriorityP0, "batch computed")
+		batch = append(batch, f)
+	}
+	if _, err := fx.db.Exec(`UPDATE findings SET status = 'resolved', resolved_at = now(), priority_class = 'P3' WHERE id = $1`, ids[3].String()); err != nil {
+		t.Fatal(err)
+	}
+	batch = append(batch, batch[0]) // a repeated finding
+
+	n, err := fx.scoring.SavePriorities(ctx, tid, batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatalf("saved %d rows, want 3 (the three open findings, the repeat once)", n)
+	}
+	for i, want := range []string{"P0", "P0", "P3", "P3"} {
+		if got := fx.row(t, tid, ids[i]); got.class != want {
+			t.Fatalf("finding %d class = %s, want %s", i, got.class, want)
+		}
+	}
+	if got := fx.row(t, tid, ids[3]); got.status != "resolved" {
+		t.Fatalf("closed finding status = %s, want resolved", got.status)
+	}
+	other := fx.newTenant(t)
+	if n, err := fx.scoring.SavePriorities(ctx, other, batch); err != nil || n != 0 {
+		t.Fatalf("cross-tenant batch wrote %d rows (err %v)", n, err)
+	}
+}

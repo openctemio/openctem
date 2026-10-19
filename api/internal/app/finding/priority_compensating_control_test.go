@@ -155,7 +155,10 @@ func TestSetControlProtection(t *testing.T) {
 	}{
 		{0, false},
 		{-1, false},
-		{0.01, true},
+		// A token control below MinControlReduction changes nothing.
+		{0.01, false},
+		{0.24, false},
+		{0.25, true},
 		{1, true},
 	}
 	for _, tc := range cases {
