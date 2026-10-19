@@ -3169,6 +3169,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		if s.DomainVerify != nil {
+			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
+		}
 		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
