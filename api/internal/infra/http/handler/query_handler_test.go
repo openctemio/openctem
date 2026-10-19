@@ -86,3 +86,26 @@ func TestQueryHandler(t *testing.T) {
 		t.Fatalf("explain = %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestQueryFromFilters(t *testing.T) {
+	h := NewQueryHandler(queryapp.NewService(fakeQueryExec{}, nil, logger.NewNop()), logger.NewNop())
+	rec := queryRequest(t, h.FromFilters, `{"entity":"findings","params":"severity=critical,high&page=2&sort=-created_at&bogus=1"}`, false)
+	var body QueryFromFiltersResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusOK || !strings.HasPrefix(body.Query, "findings where severity in (") ||
+		!strings.Contains(body.Query, "critical") || len(body.Ignored) != 1 || body.Ignored[0] != "bogus" {
+		t.Fatalf("from-filters = %d %s", rec.Code, rec.Body)
+	}
+	// The text compiles back.
+	if _, err := querylang.Parse(body.Query); err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	rec = queryRequest(t, h.FromFilters, `{"entity":"assets","params":""}`, false)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("other entity = %d", rec.Code)
+	}
+	rec = queryRequest(t, h.FromFilters, `{"entity":"findings","params":"severity=bogus"}`, false)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad value = %d %s", rec.Code, rec.Body)
+	}
+}

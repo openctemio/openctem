@@ -11,6 +11,11 @@ import (
 // tenant (see middleware.TenantConcurrencyLimiter).
 const IngestMaxConcurrentPerTenant = 8
 
+// IngestMaxConcurrentPerSensor caps one sensor's result uploads in flight
+// (research/191 R-1): a sensor's outbox delivers one or two at a time, so
+// more is a misbehaving or hostile sensor holding memory.
+const IngestMaxConcurrentPerSensor = 2
+
 // ingestMiddlewareChain orders the ingest middlewares so the cheap rejections
 // (per-tenant rate limit, per-tenant concurrency cap) run BEFORE the body is
 // decompressed. Decompression buffers up to 100MB per request; when the limiter

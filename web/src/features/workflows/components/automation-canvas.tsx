@@ -18,6 +18,8 @@ import '@xyflow/react/dist/style.css'
 import { GitBranch, Mail, Play, Zap, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { useTranslation } from '@/context/i18n-provider'
+
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { makeIsValidConnection } from '@/components/flow/connection-rules'
 import { cn } from '@/lib/utils'
@@ -34,7 +36,8 @@ import { AutomationInspector } from './automation-inspector'
 
 interface Kind {
   type: WorkflowNodeType
-  label: string
+  /** Translation key and English fallback of the kind's name. */
+  labelKey: [string, string]
   icon: LucideIcon
   /** Theme-token classes: border, tint and handle. */
   border: string
@@ -46,7 +49,7 @@ interface Kind {
 const KINDS: Kind[] = [
   {
     type: 'trigger',
-    label: 'Trigger',
+    labelKey: ['automations.canvas.kindTrigger', 'Trigger'],
     icon: Zap,
     border: 'border-success',
     tint: 'bg-success/10',
@@ -55,7 +58,7 @@ const KINDS: Kind[] = [
   },
   {
     type: 'condition',
-    label: 'Condition',
+    labelKey: ['automations.canvas.kindCondition', 'Condition'],
     icon: GitBranch,
     border: 'border-warning',
     tint: 'bg-warning/10',
@@ -64,7 +67,7 @@ const KINDS: Kind[] = [
   },
   {
     type: 'action',
-    label: 'Action',
+    labelKey: ['automations.canvas.kindAction', 'Action'],
     icon: Play,
     border: 'border-info',
     tint: 'bg-info/10',
@@ -73,7 +76,7 @@ const KINDS: Kind[] = [
   },
   {
     type: 'notification',
-    label: 'Notification',
+    labelKey: ['automations.canvas.kindNotification', 'Notification'],
     icon: Mail,
     border: 'border-primary',
     tint: 'bg-primary/10',
@@ -84,6 +87,7 @@ const KINDS: Kind[] = [
 const KIND = new Map(KINDS.map((k) => [k.type, k]))
 
 function AutomationNodeView({ data, type, selected }: NodeProps<AutomationNode>) {
+  const { t } = useTranslation()
   const kind = KIND.get(type as WorkflowNodeType) ?? KINDS[2]
   const Icon = kind.icon
   return (
@@ -100,7 +104,9 @@ function AutomationNodeView({ data, type, selected }: NodeProps<AutomationNode>)
       )}
       <div className="mb-1 flex items-center gap-2">
         <Icon className={cn('h-4 w-4', kind.text)} />
-        <span className={cn('text-xs font-medium uppercase', kind.text)}>{kind.label}</span>
+        <span className={cn('text-xs font-medium uppercase', kind.text)}>
+          {t(kind.labelKey[0], kind.labelKey[1])}
+        </span>
       </div>
       <p className="text-sm font-medium">{data.label}</p>
       {type === 'condition' ? (
@@ -118,8 +124,8 @@ function AutomationNodeView({ data, type, selected }: NodeProps<AutomationNode>)
             className="!left-[70%] !h-3 !w-3 !bg-destructive"
           />
           <div className="mt-1 flex justify-between px-6 text-[10px] text-muted-foreground">
-            <span>Yes</span>
-            <span>No</span>
+            <span>{t('automations.canvas.yes', 'Yes')}</span>
+            <span>{t('automations.canvas.no', 'No')}</span>
           </div>
         </>
       ) : (
@@ -157,6 +163,7 @@ export function AutomationCanvas({
   onNodesChange: OnNodesChange<AutomationNode>
   onEdgesChange: OnEdgesChange
 }) {
+  const { t } = useTranslation()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = nodes.find((n) => n.id === selectedId) ?? null
 
@@ -216,7 +223,7 @@ export function AutomationCanvas({
   return (
     <div className="flex h-[600px] border-t">
       <div className="w-56 shrink-0 space-y-2 border-e bg-muted/30 p-4">
-        <h4 className="mb-2 font-medium">Add a step</h4>
+        <h4 className="mb-2 font-medium">{t('automations.canvas.addStep', 'Add a step')}</h4>
         {KINDS.map((k) => (
           <button
             key={k.type}
@@ -233,12 +240,14 @@ export function AutomationCanvas({
             )}
           >
             <k.icon className={cn('h-4 w-4', k.text)} />
-            {k.label}
+            {t(k.labelKey[0], k.labelKey[1])}
           </button>
         ))}
         <p className="pt-2 text-xs text-muted-foreground">
-          Click or drag a step onto the canvas, then connect it from a handle. Select a step to set
-          it up.
+          {t(
+            'automations.canvas.paletteHint',
+            'Click or drag a step onto the canvas, then connect it from a handle. Select a step to set it up.'
+          )}
         </p>
       </div>
 
@@ -280,7 +289,11 @@ export function AutomationCanvas({
         {unreachable.length > 0 && (
           <Alert>
             <AlertDescription className="text-xs">
-              Not connected to a trigger, so they would never run: {unreachable.join(', ')}.
+              {t(
+                'automations.canvas.unreachable',
+                'Not connected to a trigger, so they would never run: {names}.',
+                { names: unreachable.join(', ') }
+              )}
             </AlertDescription>
           </Alert>
         )}
@@ -292,7 +305,9 @@ export function AutomationCanvas({
             onDelete={() => removeNode(selected.id)}
           />
         ) : (
-          <p className="text-sm text-muted-foreground">Select a step to set it up.</p>
+          <p className="text-sm text-muted-foreground">
+            {t('automations.canvas.selectStep', 'Select a step to set it up.')}
+          </p>
         )}
       </div>
     </div>

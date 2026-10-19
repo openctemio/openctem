@@ -12,6 +12,7 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -37,7 +38,10 @@ type SensorService struct {
 	// (docs/architecture/organization-suspension.md); nil admits all.
 	orgGate tenantdom.AccessGate
 	// keyUse debounces the key-use writes of recordKeyUseAsync.
-	keyUse       keyUseDebouncer
+	keyUse keyUseDebouncer
+	// live is the liveness store wiring (SetLiveness); nil in postgres
+	// mode.
+	live         *livenessPlane
 	repo         sensordom.Repository
 	auditService *auditapp.AuditService
 	// declaredTools is where a manifest's declared tools join the
@@ -861,7 +865,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		localPolicy = nil
 	}
 
-	updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, sensordom.HeartbeatUpdate{
+	hbu := sensordom.HeartbeatUpdate{
 		TenantID:      a.TenantID,
 		Version:       version,
 		Hostname:      data.Hostname,
@@ -889,16 +893,25 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		LocalPolicy:    localPolicy,
 		// The digest the sensor holds: "" (none) marks a stored report stale.
 		ConfigReportDigest: sensordom.HeartbeatConfigDigest(data.ConfigReport),
-	})
-	if err != nil {
-		return err
 	}
-	if !updated {
-		// The sensor was disabled/revoked (or deleted) between authentication
-		// and this write. The guarded UPDATE left it untouched — which is the
-		// point — and there is no connect event to record.
-		s.logger.Debug("heartbeat ignored for non-active sensor", "sensor_id", a.ID.String())
-		return nil
+	// The liveness store records the heartbeat; Postgres gets it when it
+	// changes something (or always, outside redis mode).
+	write := s.planHeartbeatWrite(ctx, a, hbu, now)
+	metrics.SensorHeartbeatWritesTotal.WithLabelValues(write.kind).Inc()
+	if write.full {
+		updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, hbu)
+		if err != nil {
+			s.heartbeatWriteFailed(ctx, write)
+			return err
+		}
+		if !updated {
+			// The sensor was disabled/revoked (or deleted) between
+			// authentication and this write. The guarded UPDATE left it
+			// untouched — which is the point — and there is no connect
+			// event to record.
+			s.logger.Debug("heartbeat ignored for non-active sensor", "sensor_id", a.ID.String())
+			return nil
+		}
 	}
 
 	s.observeInstance(ctx, a, data.InstanceID, data.Hostname, now)
@@ -990,6 +1003,11 @@ func (s *SensorService) observeHeartbeat(ctx context.Context, a *sensordom.Senso
 	sample := sensordom.HeartbeatSample{TenantID: *a.TenantID, SensorID: a.ID, At: now, Gap: gap, Interval: interval}
 	if c := data.Control; c != nil {
 		sample.LagMillis, sample.Failures = c.LagMillis, c.Failures
+	}
+	if s.live.redis() {
+		// One batched write per sensor and bucket instead of one per beat.
+		s.live.addHistory(sample)
+		return
 	}
 	if err := s.history.RecordHeartbeat(ctx, sample); err != nil {
 		s.logger.Warn("heartbeat history not recorded", "sensor_id", a.ID.String(), "error", err)
@@ -1740,6 +1758,17 @@ func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, 
 		return
 	}
 	go func() {
+		// Redis mode: the key use is proof of life in the liveness store;
+		// Postgres records it only for a new address or a sensor without
+		// an entry (the per-key row once per checkpoint period).
+		if !s.touchLiveness(a, clientIP) {
+			if keyUsage != nil && s.live.keyRows.due(sensorID.String()+"|"+clientIP, usedAt) {
+				bg, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				keyUsage(bg, clientIP)
+				cancel()
+			}
+			return
+		}
 		bg, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if keyUsage != nil {

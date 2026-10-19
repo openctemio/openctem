@@ -487,7 +487,7 @@ export const sidebarData: SidebarData = {
           sections: REMEDIATION_SECTION_TABS,
         },
         {
-          title: 'SLA Compliance',
+          title: 'SLA compliance',
           url: '/sla',
           icon: Timer,
           permission: Permission.SLARead,

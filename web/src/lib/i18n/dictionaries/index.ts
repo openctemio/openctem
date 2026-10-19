@@ -58,6 +58,7 @@ import en_reports from './en/reports.json'
 import en_scanWindows from './en/scanWindows.json'
 import en_tenableSc from './en/tenableSc.json'
 import en_siemIntegration from './en/siemIntegration.json'
+import en_sla from './en/sla.json'
 import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
@@ -75,6 +76,8 @@ import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
 import en_remediationTasks from './en/remediationTasks.json'
 import en_remediationHub from './en/remediationHub.json'
+import en_remediationClaim from './en/remediationClaim.json'
+import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
 import vi_activity from './vi/activity.json'
 import vi_auditLog from './vi/auditLog.json'
@@ -127,6 +130,7 @@ import vi_reports from './vi/reports.json'
 import vi_scanWindows from './vi/scanWindows.json'
 import vi_tenableSc from './vi/tenableSc.json'
 import vi_siemIntegration from './vi/siemIntegration.json'
+import vi_sla from './vi/sla.json'
 import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
@@ -144,6 +148,8 @@ import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
 import vi_remediationTasks from './vi/remediationTasks.json'
 import vi_remediationHub from './vi/remediationHub.json'
+import vi_remediationClaim from './vi/remediationClaim.json'
+import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
 
 export type Dictionary = Record<string, string>
@@ -202,6 +208,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   scanWindows: en_scanWindows,
   tenableSc: en_tenableSc,
   siemIntegration: en_siemIntegration,
+  sla: en_sla,
   integrationsHub: en_integrationsHub,
   ticketMapping: en_ticketMapping,
   ticketingIntegration: en_ticketingIntegration,
@@ -218,6 +225,8 @@ export const enNamespaces: Record<string, Dictionary> = {
   workflowStages: en_workflowStages,
   remediationTasks: en_remediationTasks,
   remediationHub: en_remediationHub,
+  remediationClaim: en_remediationClaim,
+  remediationQuery: en_remediationQuery,
   myWork: en_myWork,
 }
 
@@ -274,6 +283,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   scanWindows: vi_scanWindows,
   tenableSc: vi_tenableSc,
   siemIntegration: vi_siemIntegration,
+  sla: vi_sla,
   integrationsHub: vi_integrationsHub,
   ticketMapping: vi_ticketMapping,
   ticketingIntegration: vi_ticketingIntegration,
@@ -290,6 +300,8 @@ export const viNamespaces: Record<string, Dictionary> = {
   workflowStages: vi_workflowStages,
   remediationTasks: vi_remediationTasks,
   remediationHub: vi_remediationHub,
+  remediationClaim: vi_remediationClaim,
+  remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
 }
 

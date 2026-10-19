@@ -151,6 +151,16 @@ describe('approval labels', () => {
       'Stop requiring the identity provider'
     )
   })
+  it('names a platform identity provider change by its new values', () => {
+    const target =
+      '{"issuer":"https://idp.example.com","client_id":"console","trusted_acr":[],"trusted_amr":["mfa","pwd"]}'
+    expect(approvalTargetLabel({ target }, t)).toBe(
+      'Issuer https://idp.example.com, client console; trusted ACR: none; trusted AMR: mfa, pwd'
+    )
+    expect(approvalTargetLabel({ target: 'sha256:' + 'a'.repeat(64) }, t)).toBe(
+      'Identity provider configuration aaaaaaaaaaaa (described in the reason)'
+    )
+  })
 })
 
 describe('second approval refusals', () => {

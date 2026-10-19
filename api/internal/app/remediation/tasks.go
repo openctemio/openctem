@@ -51,6 +51,13 @@ type TaskService struct {
 	moves      TaskMoveNotifier
 	exceptions TaskExceptionRequester
 	logger     *logger.Logger
+
+	// Tasks from a query (query_tasks.go).
+	queries       QueryTaskRepository
+	matcher       QueryMatcher
+	owners        QueryOwnerDirectory
+	queryNotifier QueryTaskNotifier
+	modules       ModuleGuard
 }
 
 // NewTaskService creates the service. Without SetAssigneeChecker naming an

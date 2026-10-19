@@ -8,7 +8,10 @@ set -e
 
 # Load environment variables
 if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
 fi
 
 # SECURITY: Fail if DB_PASSWORD not set (no default password)
@@ -66,6 +69,10 @@ case $COMMAND in
         migrate -path ${MIGRATIONS_DIR} -database "${DATABASE_URL}" down 1
         ;;
     down-all)
+        if [ "${2:-}" != "--yes" ]; then
+            echo "Error: down-all drops every table; rerun with: $0 down-all --yes"
+            exit 1
+        fi
         echo "Rolling back all migrations..."
         migrate -path ${MIGRATIONS_DIR} -database "${DATABASE_URL}" down -all
         ;;
@@ -89,7 +96,7 @@ case $COMMAND in
         echo "Commands:"
         echo "  up         - Run all pending migrations"
         echo "  down       - Rollback last migration"
-        echo "  down-all   - Rollback all migrations"
+        echo "  down-all --yes - Rollback all migrations (destructive, needs --yes)"
         echo "  force N    - Force set version to N"
         echo "  version    - Show current version"
         echo "  create N   - Create new migration with name N"

@@ -274,12 +274,12 @@ func (s *VulnerabilityService) visibleFindings(ctx context.Context, tenantID sha
 	for _, f := range findings {
 		assetIDs = append(assetIDs, f.AssetID())
 	}
-	inScope, err := s.dataScope.FilterForCaller(ctx, tenantID, assetIDs)
+	inScope, err := s.dataScope.FindingFilterForCaller(ctx, tenantID, assetIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve data scope: %w", err)
 	}
 	for _, f := range findings {
-		if inScope(f.AssetID()) {
+		if inScope(f.AssetID(), f.AssignedTo()) {
 			out[f.ID()] = f
 		}
 	}
