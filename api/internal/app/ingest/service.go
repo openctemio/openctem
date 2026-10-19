@@ -394,6 +394,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// SECURITY: mask a secret scanner's raw match wherever a finding
 	// repeats it (title, description, message, tags, properties), before
 	// anything is stored, fingerprinted, quarantined or logged.
+	// Partial-fingerprint keys only the server writes are refused from the
+	// report, and a raw secret the report carried is keyed (server HMAC)
+	// before the masking below hides it, so two secrets that mask alike
+	// stay two findings.
+	s.findingProcessor.keyRawSecrets(tenantID, report)
 	redactReportSecrets(report)
 	// Fill the normalized members a CTIS 1.4 report left empty from its
 	// typed ids and native identity (interop.go), before the CVE catalog

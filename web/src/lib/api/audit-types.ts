@@ -124,6 +124,9 @@ export type AuditAction =
   | 'finding.commented'
   | 'finding.bulk_updated'
   | 'finding.duplicate_marked'
+  | 'finding.severity_changed'
+  | 'finding.severity_requested'
+  | 'finding.severity_request_closed'
   // Branch actions
   | 'branch.created'
   | 'branch.updated'
@@ -324,6 +327,9 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'auth.failed': 'Authentication failed',
   'finding.bulk_updated': 'Findings bulk updated',
   'finding.duplicate_marked': 'Finding marked duplicate',
+  'finding.severity_changed': 'Finding severity changed',
+  'finding.severity_requested': 'Finding severity change requested',
+  'finding.severity_request_closed': 'Finding severity request closed',
   'branch.set_default': 'Default branch set',
   'sensor.key_regenerated': 'Sensor API key regenerated',
   'sensor.key_renewed': 'Sensor API key renewed',
