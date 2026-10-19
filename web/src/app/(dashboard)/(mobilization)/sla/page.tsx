@@ -1,11 +1,11 @@
 'use client'
 
-import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2, Timer } from 'lucide-react'
 
+import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
@@ -14,69 +14,106 @@ import {
   DataTableColumnHeader,
   EmptyState,
   SeverityBadge,
+  type MetricStripItem,
 } from '@/features/shared'
+import { ErrorState } from '@/features/shared/components/error-state'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { formatRelative } from '@/lib/format-date'
 import { SEVERITY_DOT_COLORS, SEVERITY_ORDER, type SeverityLevel } from '@/lib/severity-colors'
 
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
-import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
-import { AGING_BUCKETS, agingBucketFor, formatDueRelative, isBreach } from '@/features/sla/lib/sla'
+import { useSlaCompliance } from '@/features/sla/api/use-sla-compliance'
+import {
+  AGING_BUCKET_KEYS,
+  PAST_DUE_STATUSES,
+  daysPastDue,
+  findingsHref,
+  tileFilter,
+  type ComplianceTile,
+} from '@/features/sla/lib/compliance'
 
-// Terminal statuses are dropped: an SLA breach is only actionable while the
-// finding is still open.
-const OPEN_FINDINGS_FILTER = {
-  exclude_statuses: findingStatusesInCategory('closed'),
-  // MaxPerPage on the API is 100. There is no server-side sla_status filter yet
-  // (see note in the UI), so we score one prioritized page client-side rather
-  // than paginating the whole finding set.
-  per_page: 100,
-  page: 1,
-}
+const PAGE_SIZES = [10, 20, 50]
 
-export default function SlaBreachBoardPage() {
+export default function SlaCompliancePage() {
+  const { t } = useTranslation()
   const router = useRouter()
-  const { data, isLoading } = useFindingsApi(OPEN_FINDINGS_FILTER)
+  const sla = useSlaCompliance()
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
 
-  const findings = useMemo(() => data?.data ?? [], [data])
-  const loadedTotal = findings.length
-  const serverTotal = data?.total ?? 0
+  // The breached list is a server page over the same filter as the Past due tile.
+  const list = useFindingsApi(
+    {
+      state: 'open',
+      sla_statuses: PAST_DUE_STATUSES,
+      sort: 'sla_deadline',
+      page: pagination.pageIndex + 1,
+      per_page: pagination.pageSize,
+    },
+    { onError: () => undefined }
+  )
 
-  const counts = useMemo(() => {
-    const c = { exceeded: 0, overdue: 0, warning: 0, on_track: 0, not_applicable: 0 }
-    for (const f of findings) {
-      const s = (f.sla_status as keyof typeof c) || 'not_applicable'
-      if (s in c) c[s] += 1
+  const pastDueTotal = sla.tiles.pastDue.data?.total ?? 0
+  const failed = Boolean(sla.error || list.error)
+
+  const tileText: Record<ComplianceTile, { label: string; hint: string }> = {
+    pastDue: {
+      label: t('sla.tile.pastDue', 'Past due'),
+      hint: t('sla.tile.pastDueHint', 'Past the SLA deadline'),
+    },
+    dueSoon: {
+      label: t('sla.tile.dueSoon', 'Due soon'),
+      hint: t('sla.tile.dueSoonHint', 'Close to the SLA deadline'),
+    },
+    onTrack: {
+      label: t('sla.tile.onTrack', 'On track'),
+      hint: t('sla.tile.onTrackHint', 'Within the SLA'),
+    },
+    open: {
+      label: t('sla.tile.open', 'Open findings'),
+      hint: t('sla.tile.openHint', 'Everything open in your scope'),
+    },
+  }
+
+  const items: MetricStripItem[] = (['pastDue', 'dueSoon', 'onTrack', 'open'] as const).map(
+    (tile) => {
+      const q = sla.tiles[tile]
+      return {
+        key: tile,
+        label: tileText[tile].label,
+        // A failed read is "—", never a 0 that looks like good news.
+        value: q.data ? q.data.total : '—',
+        hint: tileText[tile].hint,
+        tone: tile === 'pastDue' ? 'danger' : tile === 'dueSoon' ? 'warning' : 'default',
+        onClick: () => router.push(findingsHref(tileFilter(tile))),
+      }
     }
-    return c
-  }, [findings])
+  )
 
-  const breached = useMemo(() => findings.filter((f) => isBreach(f.sla_status)), [findings])
+  const breachBySeverity = useMemo(
+    () =>
+      SEVERITY_ORDER.map((sev) => ({ sev, count: sla.bySeverity?.[sev] ?? 0 })).filter(
+        (r) => r.count > 0
+      ),
+    [sla.bySeverity]
+  )
 
-  const breachBySeverity = useMemo(() => {
-    const m = new Map<SeverityLevel, number>()
-    for (const f of breached) {
-      const sev = f.severity as SeverityLevel
-      m.set(sev, (m.get(sev) ?? 0) + 1)
-    }
-    return SEVERITY_ORDER.map((sev) => ({ sev, count: m.get(sev) ?? 0 })).filter((r) => r.count > 0)
-  }, [breached])
-
-  const agingCounts = useMemo(() => {
-    return AGING_BUCKETS.map((bucket) => ({
-      bucket,
-      count: breached.filter((f) => agingBucketFor(f.sla_deadline)?.label === bucket.label).length,
-    }))
-  }, [breached])
+  const agingLabel: Record<(typeof AGING_BUCKET_KEYS)[number], string> = {
+    upTo7: t('sla.aging.upTo7', 'Up to 7 days'),
+    d8to30: t('sla.aging.d8to30', '8-30 days'),
+    d31to90: t('sla.aging.d31to90', '31-90 days'),
+    over90: t('sla.aging.over90', 'Over 90 days'),
+  }
 
   const columns = useMemo<ColumnDef<ApiFinding>[]>(
     () => [
       {
         accessorKey: 'title',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Finding" />,
+        enableSorting: false,
+        header: () => t('sla.col.finding', 'Finding'),
         cell: ({ row }) => (
           <span className="line-clamp-1 font-medium">
             {row.original.title || row.original.message}
@@ -85,13 +122,14 @@ export default function SlaBreachBoardPage() {
       },
       {
         accessorKey: 'severity',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Severity" />,
+        enableSorting: false,
+        header: () => t('sla.col.severity', 'Severity'),
         cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
       },
       {
         id: 'asset',
-        header: 'Asset',
         enableSorting: false,
+        header: () => t('sla.col.asset', 'Asset'),
         cell: ({ row }) => (
           <span className="line-clamp-1 text-sm text-muted-foreground">
             {row.original.asset?.name || row.original.asset_id}
@@ -99,24 +137,26 @@ export default function SlaBreachBoardPage() {
         ),
       },
       {
-        accessorKey: 'sla_status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="SLA" />,
-        cell: ({ row }) => <SlaStatusBadge status={row.original.sla_status} />,
-      },
-      {
         id: 'due',
-        header: 'Overdue',
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="text-sm tabular-nums text-destructive">
-            {formatDueRelative(row.original.sla_deadline)}
-          </span>
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sla.col.pastDueBy', 'Past due by')} />
         ),
+        cell: ({ row }) => {
+          const days = daysPastDue(row.original.sla_deadline)
+          return (
+            <span className="text-sm tabular-nums text-destructive">
+              {days < 1
+                ? t('sla.underDay', 'Under a day')
+                : t('sla.days', '{n, plural, one {# day} other {# days}}', { n: days })}
+            </span>
+          )
+        },
       },
       {
         id: 'detected',
-        header: 'Detected',
         enableSorting: false,
+        header: () => t('sla.col.detected', 'Detected'),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {formatRelative(row.original.first_detected_at)}
@@ -124,65 +164,73 @@ export default function SlaBreachBoardPage() {
         ),
       },
     ],
-    []
+    [t]
   )
 
   return (
     <Main>
       <PageHeader
-        title="SLA compliance"
-        description="Open findings tracked against their remediation SLA deadlines."
+        title={t('sla.title', 'SLA compliance')}
+        description={t(
+          'sla.description',
+          'Open findings tracked against their remediation deadlines.'
+        )}
       />
 
-      <MetricStrip
-        className="mt-5"
-        loading={isLoading}
-        items={[
-          {
-            key: 'exceeded',
-            label: 'SLA exceeded',
-            value: counts.exceeded,
-            hint: 'well past deadline',
-            tone: 'danger',
-          },
-          {
-            key: 'overdue',
-            label: 'Overdue',
-            value: counts.overdue,
-            hint: 'past deadline',
-            tone: 'danger',
-          },
-          { key: 'warning', label: 'Warning', value: counts.warning, hint: 'due soon' },
-          { key: 'on_track', label: 'On track', value: counts.on_track, hint: 'within SLA' },
-        ]}
-      />
+      {failed ? (
+        <div className="mt-5">
+          <ErrorState
+            title={t('sla.loadError', 'SLA compliance')}
+            error={sla.error ?? list.error}
+            onRetry={() => {
+              sla.retry()
+              void list.mutate()
+            }}
+          />
+        </div>
+      ) : null}
+
+      <MetricStrip className="mt-5" loading={sla.isLoading} items={items} />
 
       <section className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Breaches by severity</CardTitle>
-            <CardDescription>Overdue and exceeded findings, by severity.</CardDescription>
+            <CardTitle>{t('sla.severity.title', 'Past due by severity')}</CardTitle>
+            <CardDescription>
+              {t('sla.severity.description', 'Open findings past their SLA deadline.')}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {sla.isLoading ? (
               <Skeleton className="h-24 w-full" />
+            ) : sla.error ? (
+              <p className="text-sm text-muted-foreground">—</p>
             ) : breachBySeverity.length === 0 ? (
               <EmptyState
                 card={false}
                 className="py-6"
                 icon={CheckCircle2}
-                title="No breached findings"
+                title={t('sla.severity.empty', 'Nothing is past due')}
               />
             ) : (
               <div className="space-y-3">
                 {breachBySeverity.map(({ sev, count }) => (
-                  <div key={sev} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={cn('h-2.5 w-2.5 rounded-full', SEVERITY_DOT_COLORS[sev])} />
-                      <span className="text-sm capitalize">{sev}</span>
-                    </div>
+                  <Link
+                    key={sev}
+                    href={findingsHref(tileFilter('pastDue'), { severity: sev })}
+                    className="flex items-center justify-between rounded-sm hover:underline"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'h-2.5 w-2.5 rounded-full',
+                          SEVERITY_DOT_COLORS[sev as SeverityLevel]
+                        )}
+                      />
+                      <span className="text-sm">{t(`severity.${sev}`, sev)}</span>
+                    </span>
                     <span className="text-sm font-medium tabular-nums">{count}</span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -191,18 +239,22 @@ export default function SlaBreachBoardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Aging of breaches</CardTitle>
-            <CardDescription>How long breached findings have been past due.</CardDescription>
+            <CardTitle>{t('sla.aging.title', 'How long past due')}</CardTitle>
+            <CardDescription>
+              {t('sla.aging.description', 'Past due findings by time since their deadline.')}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {sla.isLoading ? (
               <Skeleton className="h-24 w-full" />
             ) : (
               <div className="space-y-3">
-                {agingCounts.map(({ bucket, count }) => (
-                  <div key={bucket.label} className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{bucket.label}</span>
-                    <span className="text-sm font-medium tabular-nums">{count}</span>
+                {AGING_BUCKET_KEYS.map((key) => (
+                  <div key={key} className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{agingLabel[key]}</span>
+                    <span className="text-sm font-medium tabular-nums">
+                      {sla.aging[key].data ? sla.aging[key].data.total : '—'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -212,26 +264,47 @@ export default function SlaBreachBoardPage() {
       </section>
 
       <section className="mt-5 space-y-3">
-        <div>
-          <h2 className="text-base font-semibold">Breached findings</h2>
-          <p className="text-sm text-muted-foreground">
-            Scored from the top {loadedTotal} of {serverTotal} open findings by priority.
-          </p>
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold">{t('sla.list.title', 'Past due findings')}</h2>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'sla.list.description',
+                '{n, plural, one {# finding} other {# findings}} past the SLA deadline, oldest deadline first.',
+                { n: list.data?.total ?? pastDueTotal }
+              )}
+            </p>
+          </div>
+          <Link
+            href={findingsHref(tileFilter('pastDue'))}
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            {t('sla.list.openInFindings', 'Open in Findings')}
+          </Link>
         </div>
-        {isLoading ? (
+        {list.isLoading && !list.data ? (
           <Skeleton className="h-64 w-full" />
-        ) : breached.length === 0 ? (
+        ) : list.error ? null : (list.data?.total ?? 0) === 0 ? (
           <EmptyState
             icon={Timer}
-            title="No SLA breaches"
-            description="No open findings are past their remediation deadline in the current scope."
+            title={t('sla.list.emptyTitle', 'Nothing is past due')}
+            description={t(
+              'sla.list.emptyDescription',
+              'No open finding in your scope is past its remediation deadline.'
+            )}
           />
         ) : (
           <DataTable
             columns={columns}
-            data={breached}
-            searchKey="title"
-            searchPlaceholder="Search findings..."
+            data={list.data?.data ?? []}
+            getRowId={(f) => f.id}
+            showSearch={false}
+            showColumnToggle={false}
+            manualPagination
+            rowCount={list.data?.total ?? 0}
+            pagination={pagination}
+            onPaginationChange={setPagination}
+            pageSizeOptions={PAGE_SIZES}
             onRowClick={(row) => router.push(`/findings/${row.id}`)}
           />
         )}
