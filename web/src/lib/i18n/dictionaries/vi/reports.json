@@ -1,5 +1,22 @@
 {
   "reports.schedulesHint": "Bản tóm tắt phát hiện gửi qua email cho người nhận theo lịch.",
   "reports.executiveHint": "Rủi ro, phát hiện, SLA và MTTR cấp chương trình trong khoảng thời gian đã chọn.",
-  "reports.schedule.newDescription": "Theo chu kỳ đã chọn, {product} tạo bản tóm tắt phát hiện và gửi email cho những người nhận bên dưới. Không lưu tệp để tải xuống."
+  "reports.schedule.newDescription": "Theo chu kỳ đã chọn, {product} tạo bản tóm tắt phát hiện và gửi email cho những người nhận bên dưới. Không lưu tệp để tải xuống.",
+  "reports.schedules.paused": "Đã tạm dừng lịch",
+  "reports.schedules.activated": "Đã bật lịch",
+  "reports.schedules.updateFailed": "Không cập nhật được lịch",
+  "reports.schedules.deleted": "Đã xoá lịch",
+  "reports.schedules.deleteFailed": "Không xoá được lịch",
+  "reports.schedules.colName": "Tên",
+  "reports.schedules.colOwner": "Người tạo",
+  "reports.schedules.colType": "Loại",
+  "reports.schedules.colCadence": "Tần suất",
+  "reports.schedules.colRecipients": "Người nhận",
+  "reports.schedules.colActive": "Hoạt động",
+  "reports.schedules.colLastRun": "Lần chạy gần nhất",
+  "reports.schedules.colNextRun": "Lần chạy tiếp theo",
+  "reports.schedules.stateActive": "Đang bật",
+  "reports.schedules.statePaused": "Tạm dừng",
+  "reports.schedules.pauseLabel": "Tạm dừng {name}",
+  "reports.schedules.resumeLabel": "Bật lại {name}"
 }

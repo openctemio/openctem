@@ -9,12 +9,34 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
+
+// scimVerifiedDomain records domain as a DNS-verified SSO domain of tenantID
+// and returns the real verified-domain service, as cmd/server wires it.
+func scimVerifiedDomain(t *testing.T, db *postgres.DB, tenantID shared.ID, domain string) *domainverify.Service {
+	t.Helper()
+	repo := postgres.NewVerifiedDomainRepository(db)
+	vd, err := verifieddomain.New(shared.NewID(), tenantID, domain, "tok")
+	if err != nil {
+		t.Fatalf("verified domain: %v", err)
+	}
+	vd.WithPurpose(verifieddomain.PurposeSSO)
+	if err := repo.Create(context.Background(), vd); err != nil {
+		t.Fatalf("create verified domain: %v", err)
+	}
+	vd.MarkVerified(time.Now())
+	if err := repo.Update(context.Background(), vd); err != nil {
+		t.Fatalf("mark verified: %v", err)
+	}
+	return domainverify.NewService(repo, nil, logger.NewNop())
+}
 
 // scimMemberMgr adapts the real TenantService to scim.MembershipManager,
 // mirroring cmd/server's scimMembershipAdapter (zero inviter = system).
@@ -50,7 +72,8 @@ func TestSCIMProvisioning_RoundTrip_RealDB(t *testing.T) {
 	ctx := context.Background()
 
 	tenantID := createTestTenant(t, sqlDB, "scim")
-	email := fmt.Sprintf("scim-%d@example.com", time.Now().UnixNano())
+	domain := fmt.Sprintf("scim-%d.example", time.Now().UnixNano())
+	email := "user@" + domain
 	t.Cleanup(func() {
 		cleanupTestData(sqlDB, tenantID)
 		_, _ = sqlDB.Exec("DELETE FROM users WHERE email = $1", email)
@@ -61,6 +84,7 @@ func TestSCIMProvisioning_RoundTrip_RealDB(t *testing.T) {
 	tokenRepo := postgres.NewScimTokenRepository(db)
 	tenantSvc := tenant.NewTenantService(tenantRepo, log)
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
+	prov.SetDomainVerifier(scimVerifiedDomain(t, db, tenantID, domain))
 	tokenSvc := scim.NewTokenService(tokenRepo, "test-pepper", log)
 
 	// 1. Provision a brand-new user. This is the api#199 bug path: AddMember
@@ -154,7 +178,8 @@ func TestSCIMProvisioning_CrossTenantIsolation_RealDB(t *testing.T) {
 
 	tenantA := createTestTenant(t, sqlDB, "scim-a")
 	tenantB := createTestTenant(t, sqlDB, "scim-b")
-	email := fmt.Sprintf("scim-xt-%d@example.com", time.Now().UnixNano())
+	domainB := fmt.Sprintf("scim-xt-%d.example", time.Now().UnixNano())
+	email := "user@" + domainB
 	t.Cleanup(func() {
 		cleanupTestData(sqlDB, tenantA, tenantB)
 		_, _ = sqlDB.Exec("DELETE FROM users WHERE email = $1", email)
@@ -164,6 +189,7 @@ func TestSCIMProvisioning_CrossTenantIsolation_RealDB(t *testing.T) {
 	tenantRepo := postgres.NewTenantRepository(db)
 	tenantSvc := tenant.NewTenantService(tenantRepo, log)
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
+	prov.SetDomainVerifier(scimVerifiedDomain(t, db, tenantB, domainB))
 
 	// Provision the user into tenant B only.
 	res, _, err := prov.CreateOrActivate(ctx, tenantB, scim.ProvisionInput{
@@ -206,5 +232,58 @@ func TestSCIMProvisioning_CrossTenantIsolation_RealDB(t *testing.T) {
 	}
 	if status != "active" {
 		t.Errorf("tenant B membership must remain active after cross-tenant attempts, got %q", status)
+	}
+}
+
+// TestSCIMProvisioning_UnverifiedDomain_NoAccount_RealDB: an organization that
+// has not DNS-verified an email domain cannot use SCIM to create the global
+// account for an address on it (account squatting). Nothing is written: no
+// users row, no membership. A domain verified by ANOTHER organization does not
+// count either.
+func TestSCIMProvisioning_UnverifiedDomain_NoAccount_RealDB(t *testing.T) {
+	sqlDB := setupTestDB(t)
+	db := &postgres.DB{DB: sqlDB}
+	log := logger.NewNop()
+	ctx := context.Background()
+
+	attacker := createTestTenant(t, sqlDB, "scim-squat")
+	owner := createTestTenant(t, sqlDB, "scim-owner")
+	stamp := time.Now().UnixNano()
+	unverified := fmt.Sprintf("victim@unverified-%d.example", stamp)
+	othersDomain := fmt.Sprintf("owned-%d.example", stamp)
+	others := "staff@" + othersDomain
+	t.Cleanup(func() {
+		cleanupTestData(sqlDB, attacker, owner)
+		_, _ = sqlDB.Exec("DELETE FROM users WHERE email = ANY($1)", fmt.Sprintf("{%s,%s}", unverified, others))
+	})
+
+	userRepo := postgres.NewUserRepository(db)
+	tenantRepo := postgres.NewTenantRepository(db)
+	prov := scim.NewProvisioningService(userRepo, tenantRepo, scimMemberMgr{svc: tenant.NewTenantService(tenantRepo, log)}, log)
+	// The domain is verified, but by the owner organization, not the attacker.
+	prov.SetDomainVerifier(scimVerifiedDomain(t, db, owner, othersDomain))
+
+	for _, email := range []string{unverified, others} {
+		_, created, err := prov.CreateOrActivate(ctx, attacker, scim.ProvisionInput{UserName: email, Active: true})
+		if !errors.Is(err, scim.ErrNewAccountNeedsVerifiedDomain) || created {
+			t.Fatalf("%s: want ErrNewAccountNeedsVerifiedDomain and created=false, got created=%v err=%v", email, created, err)
+		}
+		var n int
+		if qerr := sqlDB.QueryRow(`SELECT COUNT(*) FROM users WHERE email = $1`, email).Scan(&n); qerr != nil {
+			t.Fatal(qerr)
+		}
+		if n != 0 {
+			t.Fatalf("%s: a refused provision must not create a users row (got %d)", email, n)
+		}
+	}
+	var members int
+	if qerr := sqlDB.QueryRow(`SELECT COUNT(*) FROM tenant_members WHERE tenant_id = $1`, attacker.String()).Scan(&members); qerr != nil {
+		t.Fatal(qerr)
+	}
+	// createTestTenant may seed an owner; the refused provisions add nobody.
+	var owners int
+	_ = sqlDB.QueryRow(`SELECT COUNT(*) FROM tenant_members WHERE tenant_id = $1 AND role = 'owner'`, attacker.String()).Scan(&owners)
+	if members != owners {
+		t.Fatalf("refused provisions must not add members: %d members, %d owners", members, owners)
 	}
 }

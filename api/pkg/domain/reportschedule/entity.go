@@ -307,6 +307,17 @@ func ValidateRecipients(recipients []Recipient) error {
 	return nil
 }
 
+// ManageableBy reports whether userID may pause, resume or delete the
+// schedule and see its recipients: its creator, or a holder of the manage
+// permission (canManageAll). A schedule without a recorded creator is
+// managed only through the permission.
+func (s *ReportSchedule) ManageableBy(userID string, canManageAll bool) bool {
+	if canManageAll {
+		return true
+	}
+	return s.createdBy != nil && userID != "" && s.createdBy.String() == userID
+}
+
 // SetCreatedBy sets the creator.
 func (s *ReportSchedule) SetCreatedBy(userID shared.ID) { s.createdBy = &userID }
 
