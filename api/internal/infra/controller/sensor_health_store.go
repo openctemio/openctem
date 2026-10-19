@@ -14,7 +14,7 @@ import (
 
 // livenessByID is the fast path's read of a few rows.
 type livenessByID interface {
-	ListLivenessCandidatesByID(ctx context.Context, ids []shared.ID) (time.Time, []sensor.LivenessCandidate, error)
+	ListLivenessCandidatesByIDForPlatform(ctx context.Context, ids []shared.ID) (time.Time, []sensor.LivenessCandidate, error)
 }
 
 // reconcileFromStore walks the ladder with the store's deadlines merged in
@@ -118,7 +118,7 @@ func (c *SensorHealthController) overdueCandidates(ctx context.Context) (time.Ti
 	for i, o := range overdue {
 		ids[i] = o.Key.Sensor
 	}
-	now, candidates, err := byID.ListLivenessCandidatesByID(ctx, ids)
+	now, candidates, err := byID.ListLivenessCandidatesByIDForPlatform(ctx, ids)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
