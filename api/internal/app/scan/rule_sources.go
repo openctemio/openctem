@@ -118,7 +118,7 @@ func (s *Service) customTemplatesFor(ctx context.Context, sc *scan.Scan, rs scan
 	}
 	if len(templates) > 0 {
 		s.logger.Info("embedded custom templates in scan command",
-			"scan_id", sc.ID.String(), "template_count", len(templates), "rule_sources", string(rs))
+			"scan_id", sc.ID.String(), "template_count", len(templates), "tenant_only", rs == scannertemplate.RuleSourcesTenant)
 	}
 	return templates, nil
 }

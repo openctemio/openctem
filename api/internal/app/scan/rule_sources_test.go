@@ -315,3 +315,40 @@ func TestWithRequiredFeatureKeepsOthersAndAddsOnce(t *testing.T) {
 		t.Fatalf("features = %v", got)
 	}
 }
+
+// The approval definition carries the rule sources a run would use: a
+// profile switched from platform to both changes it, so an approved scan
+// that inherits the profile cannot start sending the organization's
+// templates without a new approval.
+func TestGovernanceDefinitionFollowsTheProfilesRuleSources(t *testing.T) {
+	tenant := shared.NewID()
+	prof := &scanprofile.ScanProfile{ID: shared.NewID(), TenantID: tenant, RuleSources: scannertemplate.RuleSourcesPlatform}
+	profiles := &tenantProfiles{byID: map[shared.ID]*scanprofile.ScanProfile{prof.ID: prof}}
+	svc, _ := ruleSourcesService(&tenantTemplates{}, profiles)
+	ctx := context.Background()
+	sc := nucleiScan(tenant)
+	sc.ProfileID = &prof.ID
+
+	approved, _, err := svc.GovernanceSubjectOf(ctx, sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.RuleSources != "platform" {
+		t.Fatalf("definition rule sources = %q, want the profile's platform", approved.RuleSources)
+	}
+	prof.RuleSources = scannertemplate.RuleSourcesBoth
+	widened, _, err := svc.GovernanceSubjectOf(ctx, sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if widened.RuleSources == approved.RuleSources {
+		t.Fatal("switching the profile to both left the approved definition unchanged")
+	}
+	if widened.RuleSources != "" {
+		t.Fatalf("both = %q, want it left out so existing approvals keep matching", widened.RuleSources)
+	}
+	profiles.err = errors.New("db down")
+	if _, _, err := svc.GovernanceSubjectOf(ctx, sc); err == nil {
+		t.Fatal("a profile read error was ignored for the definition")
+	}
+}
