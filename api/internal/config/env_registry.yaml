@@ -1906,6 +1906,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: display name of the backup administrator."
+  - name: SUDO_USER
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`)."
   - name: ADMIN_EMAIL
     component: tool
     group: "Administration tools"
