@@ -46,6 +46,26 @@ The organization owner mints a SCIM token (shown once); the IdP presents it as
   Attaching an existing account needs its owner's consent, the same rule as
   administrator-created accounts; without it any organization could enroll any
   person by email (and learn their user id).
+- **New accounts need a verified domain.** SCIM creates a *global* account, so
+  it does so only for an email on a domain the organization has DNS-verified
+  (an SSO-purpose verified domain, the same proof administrator-created
+  accounts and SSO just-in-time provisioning need). For any other domain the
+  response is `400 invalidValue` ("the email domain is not a verified domain of
+  this organization; verify the domain or invite the person") and nothing is
+  written: no account, no membership. A domain verified by another organization
+  does not count. Without the verified-domain service wired, SCIM creates and
+  attaches no one (fail closed); it only reconciles people who are already
+  members. We refuse rather than keep a tenant-local pending identity: a
+  pending row would still reserve someone else's address, and refusing is the
+  smallest rule with no state to clean up. People on other domains join by
+  invitation, which needs their consent.
+- **A provisioned account cannot capture a social sign-in.** A passwordless
+  account is claimed by its owner's first Google, GitHub or Microsoft sign-in
+  only when every organization it belongs to (active or suspended membership)
+  has verified the email domain (`OAuthService.claimVouched`). An account that
+  an organization provisioned without that proof (for example by SCIM before
+  the rule above) is refused with "registered with a different login method",
+  so the address's real owner never lands in that organization.
 - **Deactivate** (`PATCH active:false`, `DELETE`): suspends the membership via
   `TenantService.SuspendMember`, which **revokes the user's sessions immediately
   and clears the permission cache** — true 0-second offboarding. The global user
