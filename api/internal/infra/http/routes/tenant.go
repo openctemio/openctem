@@ -121,6 +121,11 @@ func registerTenantRoutes(
 		r.PATCH("/settings/general", h.UpdateGeneralSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.PATCH("/settings/branding", h.UpdateBrandingSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 
+		// AI triage consent (admin+): turning it on lets finding content go to
+		// the AI provider, so it needs a recent sign-in and is audited.
+		r.GET("/settings/ai", h.GetAISettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		r.PUT("/settings/ai", h.UpdateAISettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUp())
+
 		// Pentest settings (admin+)
 		r.GET("/settings/pentest", h.GetPentestSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
 		r.PATCH("/settings/pentest", h.UpdatePentestSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))

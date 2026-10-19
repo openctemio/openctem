@@ -1145,6 +1145,17 @@ func NewAITriageRateLimiter(cfg AITriageRateLimitConfig, log *logger.Logger) *AI
 	}
 }
 
+// AllowExtra spends n more units of the tenant's AI triage allowance (the
+// request itself spent one in RequestMiddleware), so a bulk request counts
+// each finding. It reports whether they were available; when not, nothing is
+// spent.
+func (a *AITriageRateLimiter) AllowExtra(tenantID string, n int) bool {
+	if a == nil || n <= 0 {
+		return true
+	}
+	return a.requestLimiter.getVisitor("ai_triage:tenant:"+tenantID).AllowN(time.Now(), n)
+}
+
 // Stop gracefully shuts down the rate limiter.
 func (a *AITriageRateLimiter) Stop() {
 	a.requestLimiter.Stop()

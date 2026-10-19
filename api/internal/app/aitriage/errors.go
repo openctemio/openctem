@@ -29,6 +29,7 @@ var (
 const (
 	FailInternal            = "internal_error"
 	FailPolicyRestricted    = "ai_policy_restricted"
+	FailAIDisabled          = "ai_disabled"
 	FailNotConfigured       = "provider_not_configured"
 	FailRateLimited         = "provider_rate_limited"
 	FailAuth                = "provider_auth_failed"
@@ -48,7 +49,7 @@ const (
 )
 
 var failureCodes = map[string]bool{
-	FailInternal: true, FailPolicyRestricted: true, FailNotConfigured: true, FailRateLimited: true,
+	FailInternal: true, FailPolicyRestricted: true, FailAIDisabled: true, FailNotConfigured: true, FailRateLimited: true,
 	FailAuth: true, FailQuota: true, FailTimeout: true, FailUnavailable: true, FailContentBlocked: true,
 	FailInputTooLarge: true, FailInvalidResponse: true, FailEmptyResponse: true, FailBudgetExhausted: true,
 	FailBudgetUnavailable: true, FailTokenLimit: true, FailEnqueue: true, FailStuck: true,

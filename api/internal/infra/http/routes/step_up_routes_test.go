@@ -83,6 +83,8 @@ var stepUpRoutes = []string{
 	// Risk scoring settings decide every asset's risk band and, with the
 	// ownership floor, finding priorities (docs/architecture/scoring-versions.md).
 	"PATCH /api/v1/tenants/acme/settings/risk-scoring",
+	// Turning AI triage on lets finding content go to the AI provider.
+	"PUT /api/v1/tenants/acme/settings/ai",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
 	// A domain's sign-up policy decides who may join and who must use SSO.
 	"PUT /api/v1/organization/settings/domains/{id}/signup-policy",
