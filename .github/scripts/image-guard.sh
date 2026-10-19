@@ -24,7 +24,8 @@ case "$comp" in
   openctem-api)     budget=150 ;;  # 131 MB
   openctem-web)     budget=300 ;;  # 253 MB (node alone is ~145 MB)
   openctem-console) budget=260 ;;  # node (~145 MB) + a 59 MB standalone build
-  openctem)         budget=560 ;;  # 423 MB + the platform console (~60 MB standalone, RFC-022 rev. 21)
+  openctem)         budget=560     # 423 MB + the platform console (~60 MB standalone, RFC-022 rev. 21)
+                    root_ok="the supervisor starts as root only to run each process under its own uid without capabilities (deploy/allinone/supervise.sh)" ;;
   openctem-gateway) budget=75 ;;   # 63 MB (runs as uid 1000)
   migrations)       budget=25 ;;   # 18 MB
   seed)             budget=25 ;;   # 17 MB

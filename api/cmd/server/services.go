@@ -987,12 +987,11 @@ func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, m
 
 // ServiceDeps contains dependencies needed to create services.
 type ServiceDeps struct {
-	Config           *config.Config
-	Log              *logger.Logger
-	DB               *sql.DB
-	Repos            *Repositories
-	RedisClient      *redis.Client
-	SensorStateStore *redis.SensorStateStore
+	Config      *config.Config
+	Log         *logger.Logger
+	DB          *sql.DB
+	Repos       *Repositories
+	RedisClient *redis.Client
 }
 
 // NewServices initializes all services.
@@ -1215,6 +1214,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One remediation-group key applier for every path that creates findings
 	// (scan ingest, CVE matching, manual, license policy).
 	remediationKeys := remediation.NewKeyApplier(repos.FindingRemediationKey, log)
+	remediationKeys.SetAuditWriter(repos.Audit)
+	remediationKeys.SetBackfillActor("remediation key rules upgrade")
 	s.LicensePolicy = licapp.NewService(repos.LicensePolicy, repos.Finding, repos.Tenant, log)
 	s.LicensePolicy.SetRemediationKeyApplier(remediationKeys)
 	s.SBOMImport.SetLicenseEvaluator(s.LicensePolicy)
@@ -1246,6 +1247,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
@@ -1278,6 +1280,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// resolves) queues a proof-of-fix re-check per finding, like the
 	// dedicated fix-applied action.
 	s.Vulnerability.SetProofOfFixQueuer(s.FindingActions.QueueProofOfFix)
+	// One path for the side effects of a status change (finding actions, VEX).
+	s.FindingActions.SetStatusEffects(s.Vulnerability)
+	s.VEX.SetStatusEffects(s.Vulnerability)
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
@@ -1735,6 +1740,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.RemediationSuggest.SetTasks(s.RemediationTask)
+	// Keys derived by older key rules are derived again before a run uses them.
+	s.RemediationSuggest.SetKeyRederiver(remediationKeys)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -2289,7 +2296,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Capability = capability.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize sensor selector for load balancing
-	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
+	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, log)
 	// Same SENSOR_LB_* weights drive job placement, so tuning them changes
 	// scheduling and not just the reported score.
 	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())

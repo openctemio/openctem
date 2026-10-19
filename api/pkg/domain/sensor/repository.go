@@ -208,12 +208,6 @@ type Repository interface {
 	// Returns the least-loaded sensor that has the required tool.
 	FindAvailableWithTool(ctx context.Context, tenantID shared.ID, tool string) (*Sensor, error)
 
-	// MarkStaleAsOffline marks sensors as offline (health) if they haven't sent heartbeat within the timeout.
-	// Note: This updates Health (automatic), not Status (admin-controlled).
-	// Sensors can still authenticate if their Status is 'active', regardless of Health.
-	// Returns the number of sensors marked as offline.
-	MarkStaleAsOffline(ctx context.Context, timeout time.Duration) (int64, error)
-
 	// FindAvailableWithCapacity finds the online daemon sensors that could run
 	// the job (capabilities, tool), most free slots first. A busy sensor is
 	// still returned, so "is there a capable sensor" gates never refuse work

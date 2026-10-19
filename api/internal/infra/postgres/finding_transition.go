@@ -143,6 +143,40 @@ func (db *DB) execStatusWrite(ctx context.Context, query string, args ...any) (s
 	return res, err
 }
 
+// queryStatusWriteIDs is execStatusWrite for a status write that ends in
+// RETURNING id: it returns the ids of the rows the statement changed.
+func (db *DB) queryStatusWriteIDs(ctx context.Context, attempted []shared.ID, query string, args ...any) ([]shared.ID, error) {
+	var ids []shared.ID
+	err := db.Transaction(ctx, func(tx *sql.Tx) error {
+		if err := markStatusWriteTx(ctx, tx); err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			parsed, err := shared.IDFromString(id)
+			if err != nil {
+				return err
+			}
+			ids = append(ids, parsed)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		// The ticket status pushes of the findings this write moved, with
+		// the moves.
+		return enqueueContextJobsForTx(ctx, tx, attempted, ids)
+	})
+	return ids, err
+}
+
 // markStatusWriteTx marks tx like execStatusWrite marks its own transaction
 // (the platform transition or a person's move carried by ctx), for a status
 // write that runs inside a caller's transaction.

@@ -62,7 +62,21 @@ type Service struct {
 	audit  AuditLogger
 	logger *logger.Logger
 	now    func() time.Time
+	// statusEffects is the shared side-effect path of a finding status
+	// change (ticket status push queued with the move, workflow event,
+	// assignee notification); nil = none.
+	statusEffects StatusEffects
 }
+
+// StatusEffects is the shared side-effect path of a finding status change
+// (finding.VulnerabilityService implements it).
+type StatusEffects interface {
+	TicketSyncContext(ctx context.Context, tenantID shared.ID, ids []shared.ID) context.Context
+	AfterStatusMoves(ctx context.Context, tenantID shared.ID, actorID string, moves []vulnerability.StatusMove) int
+}
+
+// SetStatusEffects wires the shared side effects of a finding status change.
+func (s *Service) SetStatusEffects(e StatusEffects) { s.statusEffects = e }
 
 // NewService creates the service. scope nil leaves reads and writes
 // tenant-wide (tests and internal callers).
@@ -539,7 +553,19 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 			effects = append(effects, *e)
 		}
 	}
-	moved, requested, err := s.repo.WriteEffects(ctx, tenantID, effects)
+	writeCtx := ctx
+	if s.statusEffects != nil {
+		moving := make([]shared.ID, 0, len(effects))
+		for i := range effects {
+			if effects[i].Changes() {
+				moving = append(moving, effects[i].FindingID)
+			}
+		}
+		// The ticket status push of each linked finding the write moves is
+		// queued in the write's transaction.
+		writeCtx = s.statusEffects.TicketSyncContext(ctx, tenantID, moving)
+	}
+	moved, requested, err := s.repo.WriteEffects(writeCtx, tenantID, effects)
 	if err != nil {
 		return res, err
 	}
@@ -548,11 +574,14 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 	for _, id := range moved {
 		movedSet[id] = true
 	}
+	statusMoves := make([]vulnerability.StatusMove, 0, len(moved))
 	for i := range effects {
 		e := &effects[i]
 		if !movedSet[e.FindingID] {
 			continue
 		}
+		statusMoves = append(statusMoves, vulnerability.StatusMove{FindingID: e.FindingID,
+			Old: vulnerability.FindingStatus(e.OldStatus), New: vulnerability.FindingStatus(e.NewStatus)})
 		if e.NewStatus == string(vulnerability.FindingStatusFalsePositive) || e.NewStatus == string(vulnerability.FindingStatusResolved) {
 			res.Closed++
 		} else {
@@ -561,6 +590,10 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 		if len(res.FindingIDs) < maxAuditedIDs {
 			res.FindingIDs = append(res.FindingIDs, e.FindingID.String())
 		}
+	}
+	// The statement is the actor of these moves, not a person.
+	if s.statusEffects != nil && len(statusMoves) > 0 {
+		s.statusEffects.AfterStatusMoves(ctx, tenantID, "", statusMoves)
 	}
 	return res, nil
 }

@@ -83,6 +83,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "dashboard:read",
+		Jobs:       []string{"DashboardFactsController", "DashboardFactReconcileController"},
 	},
 	{
 		ID: ModuleAssets, Slug: "assets", Name: "Assets",
@@ -667,7 +668,7 @@ var Registry = []Definition{
 		Category:    "settings", DisplayOrder: 61, Release: ReleaseStatusReleased,
 		Core:       true,
 		Permission: "sensors:read",
-		Jobs:       []string{"SensorHealthController", "SensorEventRetentionController", "HeartbeatHistoryRetentionController"},
+		Jobs:       []string{"SensorHealthController", "SensorLegacyKeysController", "SensorEventRetentionController", "HeartbeatHistoryRetentionController"},
 	},
 	{
 		ID: ModuleTeam, Slug: "team", Name: "Team",

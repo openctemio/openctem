@@ -382,8 +382,17 @@ func TestAssetRiskModel_ExploitSignalAndControls(t *testing.T) {
 		t.Fatal("linking a control did not queue the asset")
 	}
 	fx.drain(t, aid)
+	// Untested, no review date: a control nobody verified reduces nothing.
+	if got := fx.get(t, tid, aid).RiskScore(); got != 70 {
+		t.Fatalf("with an untested control = %d, want 70", got)
+	}
+	if _, err := fx.db.Exec(`UPDATE compensating_controls SET test_result = 'pass', last_tested_at = now(),
+		expires_at = now() + interval '90 days' WHERE tenant_id = $1 AND id = $2`, tid.String(), cid); err != nil {
+		t.Fatal(err)
+	}
+	fx.drain(t, aid)
 	if got := fx.get(t, tid, aid).RiskScore(); got != 35 {
-		t.Fatalf("with a 50%% control = %d, want 35", got)
+		t.Fatalf("with a tested 50%% control = %d, want 35", got)
 	}
 	// The control fails its test: no longer effective.
 	if _, err := fx.db.Exec(`UPDATE compensating_controls SET test_result = 'fail' WHERE tenant_id = $1 AND id = $2`, tid.String(), cid); err != nil {
