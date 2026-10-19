@@ -20,6 +20,7 @@ import en_assetTimeline from './en/assetTimeline.json'
 import en_attackSurface from './en/attackSurface.json'
 import en_brand from './en/brand.json'
 import en_easmReview from './en/easmReview.json'
+import en_threatIntel from './en/threatIntel.json'
 import en_emergingThreats from './en/emergingThreats.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
@@ -88,6 +89,7 @@ import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_attackSurface from './vi/attackSurface.json'
 import vi_brand from './vi/brand.json'
 import vi_easmReview from './vi/easmReview.json'
+import vi_threatIntel from './vi/threatIntel.json'
 import vi_emergingThreats from './vi/emergingThreats.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
@@ -161,6 +163,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   attackSurface: en_attackSurface,
   brand: en_brand,
   easmReview: en_easmReview,
+  threatIntel: en_threatIntel,
   emergingThreats: en_emergingThreats,
   auth: en_auth,
   automations: en_automations,
@@ -232,6 +235,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   attackSurface: vi_attackSurface,
   brand: vi_brand,
   easmReview: vi_easmReview,
+  threatIntel: vi_threatIntel,
   emergingThreats: vi_emergingThreats,
   auth: vi_auth,
   automations: vi_automations,
