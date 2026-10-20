@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"testing"
-
 )
 
 // A daily EPSS feed moves the percentile of almost every CVE but the score of
