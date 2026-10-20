@@ -4,10 +4,9 @@ import (
 	"strings"
 )
 
-// Scheme names how a version is compared. Only SchemeGeneric has a
-// comparator so far; a range is compared only with a version of the same
-// scheme, so a version under another scheme never matches until its
-// comparator exists.
+// Scheme names how a version is compared (scheme.go). A range is compared
+// with a version of the same scheme, or, when the range is generic (ranges
+// from CPE-based sources carry no scheme), under the version's scheme.
 type Scheme string
 
 // Version schemes (RFC-066 §5.1).
@@ -29,7 +28,14 @@ func Schemes() []Scheme {
 }
 
 // Comparable reports whether versions of the scheme can be compared.
-func (s Scheme) Comparable() bool { return s == SchemeGeneric }
+func (s Scheme) Comparable() bool {
+	for _, k := range Schemes() {
+		if s == k {
+			return true
+		}
+	}
+	return false
+}
 
 // Range is one affected-version statement of a vulnerability for one
 // product: an exact version, or a start and an end bound (either may be
@@ -87,6 +93,11 @@ const AllVersionsCap = 40
 const (
 	AdjustEditionUnknown   = -10
 	AdjustConditionUnknown = -20
+	// AdjustBackportPossible applies when a distribution package version is
+	// matched against an upstream range: the distribution may have
+	// backported the fix without changing the upstream version, so the
+	// match is never "likely" on its own.
+	AdjustBackportPossible = -30
 )
 
 // Reason codes recorded with a match.
@@ -94,6 +105,7 @@ const (
 	ReasonAllVersions      = "all_versions"
 	ReasonEditionUnknown   = "edition_unverified"
 	ReasonConditionUnknown = "platform_condition_unverified"
+	ReasonBackportPossible = "backport_possible"
 )
 
 // Result is one vulnerability that applies to a version.
@@ -120,25 +132,43 @@ func (r Result) Findable() bool { return !r.AllVersions }
 // covered by several ranges is returned once, with the most specific one
 // (bounded before "all versions", then the smallest adjustment, then no
 // platform condition); results keep the order of each vulnerability's first
-// covering range. A version that does not parse, or whose scheme has no
-// comparator, matches nothing.
+// covering range. A version that does not parse under its scheme matches
+// nothing.
+//
+// A range applies when its scheme is the version's scheme, or when it is
+// generic (an empty scheme counts as generic): its bounds are then read
+// under the version's scheme, and a bound that does not parse there makes
+// the range not apply. A range of another specific scheme never applies.
+// A distribution package version (deb, rpm, apk) matched by a range that
+// is not of its own scheme carries ReasonBackportPossible.
 func MatchVersion(o Observed, ranges []Range) []Result {
 	if !o.Scheme.Comparable() {
 		return nil
 	}
-	v, ok := ParseVersion(o.Version)
+	v, ok := ParseSchemeVersion(o.Scheme, o.Version)
 	if !ok {
 		return nil
 	}
 	out := make([]Result, 0, 4)
 	index := map[string]int{}
 	for _, r := range ranges {
-		if r.VulnID == "" || r.Scheme != o.Scheme {
+		if r.VulnID == "" {
+			continue
+		}
+		rs := r.Scheme
+		if rs == "" {
+			rs = SchemeGeneric
+		}
+		if rs != o.Scheme && rs != SchemeGeneric {
 			continue
 		}
 		res, ok := matchOne(v, o, r)
 		if !ok {
 			continue
+		}
+		if o.Scheme.IsDistro() && rs != o.Scheme {
+			res.Adjustment += AdjustBackportPossible
+			res.Reasons = append(res.Reasons, ReasonBackportPossible)
 		}
 		if i, seen := index[r.VulnID]; seen {
 			if better(res, out[i]) {
@@ -152,7 +182,7 @@ func MatchVersion(o Observed, ranges []Range) []Result {
 	return out
 }
 
-func matchOne(v Version, o Observed, r Range) (Result, bool) {
+func matchOne(v SchemeVersion, o Observed, r Range) (Result, bool) {
 	res := Result{VulnID: r.VulnID, Range: r}
 	for _, q := range [][2]string{{r.Edition, o.Edition}, {r.Target, o.Target}} {
 		want, have := qualifier(q[0]), qualifier(q[1])
@@ -165,7 +195,13 @@ func matchOne(v Version, o Observed, r Range) (Result, bool) {
 			return Result{}, false
 		}
 	}
-	applies, all := Applies(v, r)
+	applies, all := appliesBy(func(bound string) (int, bool) {
+		b, ok := ParseSchemeVersion(v.Scheme(), bound)
+		if !ok {
+			return 0, false
+		}
+		return v.Compare(b)
+	}, r)
 	if !applies {
 		return Result{}, false
 	}
@@ -211,10 +247,22 @@ func Confidence(base int, r Result, conditionMet bool) (int, Label, []string) {
 	return c, LabelFor(c), reasons
 }
 
-// Applies reports whether version v is inside range r, and whether r is an
-// "all versions" statement. A bound that does not parse makes the range not
-// apply: an unreadable bound must not widen a range.
+// Applies reports whether generic version v is inside range r, and whether
+// r is an "all versions" statement. A bound that does not parse makes the
+// range not apply: an unreadable bound must not widen a range.
 func Applies(v Version, r Range) (applies, allVersions bool) {
+	return appliesBy(func(bound string) (int, bool) {
+		b, ok := ParseVersion(bound)
+		if !ok {
+			return 0, false
+		}
+		return v.Compare(b), true
+	}, r)
+}
+
+// appliesBy evaluates range r with cmp, which compares the version with a
+// bound and reports false for a bound it cannot read.
+func appliesBy(cmp func(bound string) (int, bool), r Range) (applies, allVersions bool) {
 	exact := strings.TrimSpace(r.Exact)
 	start := strings.TrimSpace(r.Start)
 	end := strings.TrimSpace(r.End)
@@ -222,29 +270,21 @@ func Applies(v Version, r Range) (applies, allVersions bool) {
 		return false, false
 	}
 	if exact != "" && exact != Any {
-		e, ok := ParseVersion(exact)
-		return ok && v.Compare(e) == 0, false
+		c, ok := cmp(exact)
+		return ok && c == 0, false
 	}
 	if start == "" && end == "" {
 		return true, true
 	}
 	if start != "" {
-		s, ok := ParseVersion(start)
-		if !ok {
-			return false, false
-		}
-		c := v.Compare(s)
-		if c < 0 || (c == 0 && !r.StartIncl) {
+		c, ok := cmp(start)
+		if !ok || c < 0 || (c == 0 && !r.StartIncl) {
 			return false, false
 		}
 	}
 	if end != "" {
-		e, ok := ParseVersion(end)
-		if !ok {
-			return false, false
-		}
-		c := v.Compare(e)
-		if c > 0 || (c == 0 && !r.EndIncl) {
+		c, ok := cmp(end)
+		if !ok || c > 0 || (c == 0 && !r.EndIncl) {
 			return false, false
 		}
 	}

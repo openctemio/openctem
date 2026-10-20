@@ -83,10 +83,21 @@ RUN printf '%s\n' 'package main' \
 # `chown -R` afterwards, which stored the whole web and API a second (and
 # third) time in new layers.
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS final
-RUN apk add --no-cache tini bash ca-certificates tzdata wget postgresql17-client \
+# One user per process (supervise.sh starts each child under its own uid):
+# nextjs = web, openctem-api, openctem-console, openctem-gateway,
+# openctem-signer (the job signer: the only user that can read its key).
+RUN apk add --no-cache tini bash ca-certificates tzdata wget postgresql17-client setpriv \
       libstdc++ libgcc libatomic \
  && addgroup -S -g 1001 nodejs \
- && adduser -S -D -H -u 1001 -G nodejs -h /opt/openctem nextjs
+ && adduser -S -D -H -u 1001 -G nodejs -h /opt/openctem nextjs \
+ && addgroup -S -g 1002 openctem-api \
+ && adduser -S -D -H -u 1002 -G openctem-api -h /opt/openctem/api openctem-api \
+ && addgroup -S -g 1003 openctem-console \
+ && adduser -S -D -H -u 1003 -G openctem-console -h /opt/openctem/console openctem-console \
+ && addgroup -S -g 1004 openctem-gateway \
+ && adduser -S -D -H -u 1004 -G openctem-gateway -h /opt/openctem openctem-gateway \
+ && addgroup -S -g 1005 openctem-signer \
+ && adduser -S -D -H -u 1005 -G openctem-signer -h /data/signer openctem-signer
 COPY --from=web /usr/local/bin/node /usr/local/bin/node
 RUN node --version
 
@@ -100,6 +111,8 @@ COPY --from=console --chown=0:0 /app /opt/openctem/console
 # (the API image's operator commands are links to the server binary, see
 # api/Dockerfile; this image keeps bootstrap-admin, linked below)
 COPY --from=api --chown=0:0 /app/server /opt/openctem/api/
+# The job signer (docs/architecture/job-signing.md), started by supervise.sh.
+COPY --from=api --chown=0:0 /app/openctem-signer /opt/openctem/api/
 COPY --from=api --chown=0:0 /app/migrations /opt/openctem/api/migrations
 COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 # The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).
@@ -110,12 +123,13 @@ COPY --from=api --chown=0:0 --chmod=0755 /app/migrate-entrypoint.sh /usr/local/b
 # the file capability is set in the caddy stage and COPY keeps it (setting it
 # here would store the binary a second time in a new layer).
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
-# The writable paths, owned by the runtime user: /data and /config (see VOLUME
-# below), and the Next.js cache (.next/cache, the only place the web server
-# writes besides /tmp).
+# The writable paths: /data and /config (see VOLUME below), and the Next.js
+# caches (.next/cache, the only place the web servers write besides /tmp).
+# Owned by uid 1001 here for the one-uid mode (--user 1001); started as root,
+# the supervisor gives each its process's user (supervise.sh, own()).
 RUN ln -s server /opt/openctem/api/bootstrap-admin \
- && mkdir -p /data/ca /config /certs /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache \
- && chown nextjs:nodejs /data /data/ca /config /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache
+ && mkdir -p /data/ca /data/gateway /config /certs /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache \
+ && chown nextjs:nodejs /data /data/ca /data/gateway /config /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache
 
 # The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + admin/ + entrypoint.sh).
 # admin/ holds the console-site snippets the Caddyfile imports (off.* is the default).
@@ -128,6 +142,7 @@ COPY --from=gateway sensors /etc/caddy/sensors
 COPY --from=gateway admin /etc/caddy/admin
 COPY --chmod=0755 supervise.sh /usr/local/bin/openctem-supervise
 COPY --chmod=0644 console-plan.sh /usr/local/bin/openctem-console-plan
+COPY --chmod=0644 child-env.sh /usr/local/bin/openctem-child-env
 COPY --chmod=0755 healthcheck.sh /usr/local/bin/openctem-healthcheck
 
 ENV GATEWAY=on \
@@ -137,7 +152,7 @@ ENV GATEWAY=on \
     BACKEND_API_URL=http://127.0.0.1:8080 \
     STORAGE_LOCAL_PATH=/data/attachments \
     SENSOR_MTLS_CA_DIR=/data/sensor-ca \
-    XDG_DATA_HOME=/data \
+    XDG_DATA_HOME=/data/gateway \
     XDG_CONFIG_HOME=/config \
     OPENCTEM_TLS_MODE=internal \
     OPENCTEM_GATEWAY_DIR=/etc/caddy \
@@ -164,7 +179,11 @@ VOLUME ["/data"]
 # it on 127.0.0.1:3001 for an operator who fronts it in the same network
 # namespace. Never publish 3001.
 EXPOSE 443 8443
-USER nextjs
+# The supervisor starts as root only to prepare /data and start each process
+# under its own uid with no capabilities (supervise.sh); it serves nothing
+# itself. `--user 1001` still works and runs everything as one uid (one trust
+# domain, evaluation and small single-tenant installs only).
+USER root
 WORKDIR /opt/openctem
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \

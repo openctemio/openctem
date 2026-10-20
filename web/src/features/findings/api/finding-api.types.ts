@@ -335,6 +335,8 @@ export interface ApiFinding {
   metadata?: Record<string, unknown>
   created_at: string
   updated_at: string
+  /** Optimistic-concurrency version: send it back as If-Match on a write. */
+  row_version?: number
 
   // Extended fields from SARIF/scanner output
   confidence?: number // 0-100 confidence score
@@ -363,6 +365,12 @@ export interface ApiFinding {
   priority_class_reason?: string
   priority_class_override?: boolean
   is_reachable?: boolean // reachable from attack entry points
+
+  // Severity provenance: severity is the effective value; source_severity is
+  // what the tools reported, severity_override the analyst's decision.
+  source_severity?: Severity
+  severity_override?: ApiSeverityOverride
+  pending_severity_request?: ApiSeverityRequest
   reachable_from_count?: number
   is_internet_accessible?: boolean // the finding's asset is reachable from the internet
   verified_at?: string
@@ -540,6 +548,16 @@ export interface ApiFindingSourceData {
     as_of?: string
   }
   source_extra?: Record<string, string>
+  rule?: {
+    pack?: string
+    version?: string
+    path?: string
+    /** platform | tenant (the organization's own rules) */
+    source?: 'platform' | 'tenant'
+    template_id?: string
+    template_name?: string
+    template_version?: string
+  }
   location_key?: string
 }
 
@@ -597,9 +615,35 @@ export interface UpdateFindingStatusInput {
 }
 
 export interface UpdateFindingSeverityInput {
-  severity: Severity
-  cvss_score?: number
-  cvss_vector?: string
+  /** The new effective severity; omitted with restore. */
+  severity?: Severity
+  /** End the analyst override: the reported severity applies. */
+  restore?: boolean
+  /** Why the severity changes (required, at most 1000 characters). */
+  reason: string
+}
+
+/** An analyst's override of a finding's severity. */
+export interface ApiSeverityOverride {
+  reason: string
+  overridden_by?: string
+  overridden_at: string
+}
+
+/** A severity downgrade waiting for the approval the organization's policy asks for. */
+export interface ApiSeverityRequest {
+  id: string
+  requested_severity: Severity
+  previous_severity: Severity
+  restore: boolean
+  reason: string
+  requested_by?: string
+  status: string
+  tier: string
+  required_approvals: number
+  approvals_collected: number
+  decide_by: string
+  created_at: string
 }
 
 export interface AssignFindingInput {
@@ -679,6 +723,10 @@ export interface FindingApiFilters {
   /** SLA status filter — sent as `sla_status` (comma-separated). Backend accepts
    *  on_track | warning | overdue | exceeded | not_applicable. */
   sla_statuses?: string[]
+  /** SLA due date bounds, sent as `sla_deadline_gt` / `sla_deadline_lte`: RFC 3339, a date, or a
+   *  duration back from now such as `-P7D`. With `sla_statuses` they bucket breaches by age. */
+  sla_deadline_gt?: string
+  sla_deadline_lte?: string
   epss_min?: number
   /** Restrict to a specific set of finding IDs (e.g. a remediation task's linked findings). */
   finding_ids?: string[]
@@ -695,6 +743,8 @@ export interface FindingApiFilters {
   asset_owner_id?: string
   /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
   asset_owner_unassigned?: boolean
+  /** Findings on the members of an asset group (the group page's links). Sent as `asset_group_id`. */
+  asset_group_id?: string
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */
   sort?: string
   page?: number
@@ -722,4 +772,16 @@ export interface FindingStatsResponse {
   open_by_severity?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
   /** Fixes claimed by an owner (fix_applied), waiting for a verifier. */
   awaiting_verification?: number
+  /** Present when the request sets sla_breakdown=true. */
+  sla?: FindingSlaBreakdown
+}
+
+/** The filtered findings split by SLA standing, in one read. */
+export interface FindingSlaBreakdown {
+  past_due: number
+  due_soon: number
+  on_track: number
+  /** Past due by days past the deadline; adds up to past_due. */
+  past_due_by_age: { up_to_7: number; d8_to_30: number; d31_to_90: number; over_90: number }
+  past_due_by_severity: Record<string, number>
 }

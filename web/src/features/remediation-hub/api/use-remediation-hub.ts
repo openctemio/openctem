@@ -12,6 +12,7 @@ import { get, post, patch } from '@/lib/api/client'
 import type {
   AcceptResult,
   BulkAcceptItem,
+  ConflictResolution,
   DismissReason,
   MarkFixedResult,
   MovePreview,
@@ -21,6 +22,7 @@ import type {
   RemediationTask,
   SuggestionCounts,
   SuggestionKind,
+  SuggestionMember,
   TaskEvent,
   TaskMember,
   TaskState,
@@ -32,10 +34,16 @@ const SUGGESTIONS = '/api/v1/remediation/suggestions'
 export interface TaskListFilters {
   states?: TaskState[]
   mine?: boolean
+  /** Only tasks whose deadline has passed (counted on the server). */
+  overdue?: boolean
   search?: string
   sort?: 'deadline' | 'risk' | 'updated' | 'created'
   findingId?: string
   actionId?: string
+  /** Tasks of one campaign. */
+  campaignId?: string
+  /** Tasks in no campaign (the campaign "Add tasks" picker). */
+  noCampaign?: boolean
   page?: number
   perPage?: number
 }
@@ -44,10 +52,13 @@ export function taskListUrl(f: TaskListFilters): string {
   const p = new URLSearchParams()
   if (f.states?.length) p.set('state', f.states.join(','))
   if (f.mine) p.set('assignee', 'me')
+  if (f.overdue) p.set('overdue', 'true')
   if (f.search?.trim()) p.set('search', f.search.trim())
   if (f.sort) p.set('sort', f.sort)
   if (f.findingId) p.set('finding_id', f.findingId)
   if (f.actionId) p.set('action_id', f.actionId)
+  if (f.campaignId) p.set('campaign_id', f.campaignId)
+  if (f.noCampaign) p.set('no_campaign', 'true')
   p.set('page', String(f.page ?? 1))
   p.set('per_page', String(f.perPage ?? 25))
   return `${TASKS}?${p.toString()}`
@@ -125,8 +136,13 @@ export function useSuggestionStats(enabled = true) {
   return useSWR<SuggestionCounts>(enabled ? `${SUGGESTIONS}/stats` : null, get)
 }
 
+/** One suggestion by id (a deep link may name one that is not on the page). */
+export function useSuggestion(id: string | undefined) {
+  return useSWR<RemediationSuggestion>(id ? `${SUGGESTIONS}/${id}` : null, get)
+}
+
 export function useSuggestionMembers(id: string | undefined, page: number, perPage = 50) {
-  return useSWR<Page<TaskMember>>(
+  return useSWR<Page<SuggestionMember>>(
     id ? `${SUGGESTIONS}/${id}/members?page=${page}&per_page=${perPage}` : null,
     get,
     { keepPreviousData: true }
@@ -170,7 +186,13 @@ export const hubApi = {
     assignee_group_id?: string
     deadline?: string
     action_id?: string
+    campaign_id?: string
+    conflicts?: ConflictResolution
   }) => post<RemediationTask>(TASKS, body),
+  addMembers: (
+    id: string,
+    body: { version: number; finding_ids: string[]; conflicts?: ConflictResolution }
+  ) => post<RemediationTask>(`${TASKS}/${id}/members`, body),
   resolveTask: (id: string, body: { version: number; note: string }) =>
     post<MarkFixedResult>(`${TASKS}/${id}/resolve`, body),
   splitTask: (
@@ -217,4 +239,6 @@ export interface ApproveBody {
   owners?: { index: number; assignee_user_id?: string; assignee_group_id?: string }[]
   deadline?: string
   auto_join?: boolean
+  /** Resolves findings another active task took since the suggestion was made. */
+  conflicts?: ConflictResolution
 }

@@ -35,12 +35,11 @@ interface AssetChangeResponse {
 
 interface AttackSurfaceStatsResponse {
   total_assets: number
-  exposed_services: number
-  critical_exposures: number
+  internet_facing_assets: number
+  critical_internet_facing_assets: number
   risk_score: number
   total_assets_change: number
-  exposed_services_change: number
-  critical_exposures_change: number
+  newly_exposed: number
   trend_window_days?: number
   asset_breakdown: AssetTypeBreakdownResponse[]
   exposed_services_list: ExposedServiceResponse[]
@@ -77,15 +76,16 @@ export interface AssetChange {
 
 export interface AttackSurfaceStats {
   totalAssets: number
-  exposedServices: number
-  criticalExposures: number
+  /** Internet-facing assets (exposure public or reported reachable). */
+  internetFacingAssets: number
+  /** The same, limited to critical/high criticality. A population, not a problem count. */
+  criticalInternetFacingAssets: number
   riskScore: number
   /** Assets added in the last `trendWindowDays` days (never negative). */
   totalAssetsChange: number
-  /** Public assets added, or newly made public, in the window. */
-  exposedServicesChange: number
-  /** The same, limited to critical/high criticality. */
-  criticalExposuresChange: number
+  /** "Became internet-facing" changes in the window: the same number as
+   * Assets > What changed > Newly exposed. */
+  newlyExposed: number
   trendWindowDays: number
   assetBreakdown: AssetTypeBreakdown[]
   exposedServicesList: ExposedService[]
@@ -99,12 +99,11 @@ export interface AttackSurfaceStats {
 function transformResponse(data: AttackSurfaceStatsResponse): AttackSurfaceStats {
   return {
     totalAssets: data.total_assets,
-    exposedServices: data.exposed_services,
-    criticalExposures: data.critical_exposures,
+    internetFacingAssets: data.internet_facing_assets,
+    criticalInternetFacingAssets: data.critical_internet_facing_assets,
     riskScore: data.risk_score,
     totalAssetsChange: data.total_assets_change,
-    exposedServicesChange: data.exposed_services_change,
-    criticalExposuresChange: data.critical_exposures_change,
+    newlyExposed: data.newly_exposed,
     trendWindowDays: data.trend_window_days ?? 7,
     assetBreakdown:
       data.asset_breakdown?.map((item) => ({

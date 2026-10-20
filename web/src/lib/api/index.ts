@@ -167,7 +167,6 @@ export {
   runnerEndpoints,
   credentialEndpoints,
   pentestEndpoints,
-  remediationEndpoints,
   analyticsEndpoints,
   reportEndpoints,
   integrationEndpoints,
@@ -252,13 +251,6 @@ export {
   useCredentialStats,
 
   // Remediation hooks
-  useRemediationTasks,
-  useRemediationTask,
-  useRemediationStats,
-  useOverdueTasks,
-  usePriorityTasks,
-  useCreateRemediationTask,
-  useUpdateRemediationTask,
 
   // Pentest hooks
   usePentestCampaigns,
@@ -664,7 +656,6 @@ export {
 
 export type {
   ScanProfile,
-  ToolConfig,
   QualityGate,
   QualityGateResult,
   QualityGateBreach,
@@ -674,31 +665,20 @@ export type {
   CreateScanProfileRequest,
   UpdateScanProfileRequest,
   UpdateQualityGateRequest,
-  Intensity,
-  Severity,
-  TemplateMode,
-  ScanProfileTool,
   CloneScanProfileRequest,
 } from './scan-profile-types'
 
 export {
-  SCAN_PROFILE_TOOLS,
-  TOOL_DISPLAY_NAMES,
-  INTENSITY_DISPLAY_NAMES,
-  INTENSITY_DESCRIPTIONS,
-  SEVERITY_DISPLAY_NAMES,
   DEFAULT_QUALITY_GATE,
   createDefaultQualityGate,
   isUnlimited,
-  TEMPLATE_MODE_DISPLAY_NAMES,
-  TEMPLATE_MODE_DESCRIPTIONS,
   // Preset profiles
-  PRESET_PROFILES,
+  PRESET_QUALITY_GATES,
   PRESET_PROFILE_TYPES,
   getPresetProfileRequest,
 } from './scan-profile-types'
 
-export type { PresetProfileType, PresetProfile } from './scan-profile-types'
+export type { PresetProfileType } from './scan-profile-types'
 
 // ============================================
 // SCAN PROFILE ENDPOINTS

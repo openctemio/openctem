@@ -1,5 +1,0 @@
-### Security: asset scope is enforced on compensating controls, business services and team activation
-
-- A compensating control can only be linked to assets and findings the caller can see; updating, deleting or testing a control, and updating or deleting a business service, need every linked asset in the caller's data scope. A business service's `asset_count` counts only in-scope links.
-- An API key with no user no longer reads every asset of the tenant: authentication refuses it and the data scope resolves to no rows. Migration `002895` revokes the remaining user-less keys. **Upgrade note:** mint a new key (it is bound to its creator) to replace any revoked organization key.
-- `PUT /groups/{id}` with `is_active` applies the group scope cap and the security pool step-up. Switching a team on re-grants its bound roles, so it now passes the binding ceiling, the owner and step-up rule for privileged roles, and the self-membership rule. Switching a team off or deleting it drops its members' cached permissions at once.

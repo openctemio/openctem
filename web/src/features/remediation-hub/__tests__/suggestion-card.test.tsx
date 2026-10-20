@@ -61,9 +61,46 @@ describe('SuggestionCard', () => {
   it('shows the fix, its reach, the owner and the risk parts', () => {
     renderCard()
     expect(screen.getByRole('heading', { name: 'Upgrade django to 4.2.30' })).toBeInTheDocument()
-    expect(screen.getByText(/2 findings on 1 assets · risk 6/)).toBeInTheDocument()
-    expect(screen.getByText(/P1 1 · P2 1/)).toBeInTheDocument()
+    expect(screen.getByText(/2 findings · 1 asset ·/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '6 risk points: what they mean' })
+    ).toBeInTheDocument()
     expect(screen.getByText(/Hoa N\./)).toBeInTheDocument()
+    expect(screen.getByText('Exact fix')).toBeInTheDocument()
+    // The raw fix key is not on the card.
+    expect(screen.queryByText(/upgrade:pypi:django/)).not.toBeInTheDocument()
+  })
+
+  it('counts with the right plural and names the confidence of a text match', () => {
+    renderCard({
+      member_count: 1,
+      partitions: [
+        { owner_user_id: 'u1', owner_rule: 'asset_owner', finding_ids: ['a'], risk_points: 2 },
+      ],
+      risk_parts: { p0: 0, p1: 0, p2: 1, p3: 0, unclassified: 0, kev: 0, assets: 3 },
+      key_kind: 'sol',
+      confidence: 0.7,
+    })
+    expect(screen.getByText(/^1 finding · 3 assets ·/)).toBeInTheDocument()
+    expect(screen.getByText(/Hoa N\. · 1 finding/)).toBeInTheDocument()
+    expect(screen.getByText('Medium confidence')).toBeInTheDocument()
+  })
+
+  it('opens the detail panel from the title', async () => {
+    const onOpen = vi.fn()
+    render(
+      <SuggestionCard
+        suggestion={base}
+        canWrite
+        onAccept={vi.fn()}
+        onEdit={vi.fn()}
+        onDismiss={vi.fn()}
+        onSnooze={vi.fn()}
+        onOpen={onOpen}
+      />
+    )
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Upgrade django to 4.2.30' }))
+    expect(onOpen).toHaveBeenCalled()
   })
 
   it('explains why it was grouped, with the command to copy', async () => {
@@ -72,6 +109,8 @@ describe('SuggestionCard', () => {
     expect(screen.getByTestId('suggestion-explain')).toHaveTextContent(
       'same package to the same version'
     )
+    // The key stays under "Technical details".
+    expect(screen.getByText('Technical details')).toBeInTheDocument()
     expect(screen.getByTestId('fix-steps')).toHaveTextContent('pip install "django>=4.2.30"')
   })
 

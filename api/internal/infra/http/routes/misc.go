@@ -6,6 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
@@ -156,6 +157,24 @@ func registerDashboardRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerDashboardDataRoutes registers "Rebuild dashboard data"
+// (docs/architecture/dashboards.md, "Facts maintainer"): the organization's
+// owners and administrators read the status of its dashboard facts and ask
+// for a full rebuild, at most once per hour (429 with Retry-After). The
+// rebuild recomputes derived data only and changes no identity, privilege or
+// trust, so it takes no step-up; the request is audited.
+func registerDashboardDataRoutes(
+	router Router,
+	h *handler.DashboardFactsHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	router.Group("/api/v1/dashboard-data", func(r Router) {
+		r.GET("/", h.Status, middleware.RequireAdmin())
+		r.POST("/rebuild", h.RequestRebuild, middleware.RequireAdmin())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerAuditRoutes registers audit log endpoints.
 // Audit logs are tenant-scoped (tenant from JWT token).
 // Permission model:
@@ -282,7 +301,10 @@ func registerIntegrationRoutes(
 		r.POST("/notifications", h.CreateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Test credentials without creating (must be before /{id} routes)
-		r.POST("/test-credentials", h.TestCredentials, middleware.Require(permission.IntegrationsManage))
+		// A probe of a caller-chosen URL answers differently for reachable and
+		// unreachable hosts, so it is rate limited per tenant.
+		r.POST("/test-credentials", h.TestCredentials, middleware.Require(permission.IntegrationsManage),
+			newTestCredentialsLimiter().TenantMiddleware())
 
 		// Per-tenant GitHub inbound-webhook secret (static paths; must be
 		// before /{id} routes). Gated by IntegrationsManage because the
@@ -352,7 +374,9 @@ func registerIntegrationRoutes(
 			}
 			r.POST("/{id}/scans/run", scanNow.ConnectorScanNow, mws...)
 		}
-		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage))
+		// Enabling restarts outbound data to the destination, so it needs a
+		// recent sign-in like creating or disabling the integration.
+		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage), requireStepUp())
 		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Inbound Jira webhook of one integration: its URL and whether a
@@ -609,4 +633,15 @@ func includeProgramAssets(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// newTestCredentialsLimiter limits connection tests to 10 a minute per tenant
+// (burst 5): enough for a setup wizard, too slow to scan ports.
+func newTestCredentialsLimiter() *middleware.RateLimiter {
+	return middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled:         true,
+		RequestsPerSec:  10.0 / 60.0,
+		Burst:           5,
+		CleanupInterval: 5 * time.Minute,
+	}, nil)
 }

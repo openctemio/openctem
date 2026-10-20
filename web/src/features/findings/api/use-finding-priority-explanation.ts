@@ -32,6 +32,8 @@ export interface PriorityFactors {
   epss_score?: number
   epss_percentile?: number
   is_in_kev: boolean
+  /** The latest validation re-check reproduced the finding. */
+  validated_exploitable?: boolean
   is_reachable: boolean
   is_internet_accessible: boolean
   is_network_accessible: boolean
@@ -66,9 +68,21 @@ export interface PriorityExplanation {
   finding_id: string
   priority_class: string
   reason: string
-  /** "auto" (default classifier) | "rule" (tenant override matched). */
+  /** "auto" (default classifier) | "rule" (tenant rule) | "manual" (a person's override). */
   source: string
   rule_name?: string
+  /** Set when a person set the class by hand. */
+  override?: { by?: string; at?: string }
+  /** What the engine computes now (rules and platform floors included). */
+  computed_class?: string
+  computed_reason?: string
+  /** What the finding holds now ("" when never classified). */
+  stored_class?: string
+  stored_reason?: string
+  /** The automatic class differs from computed_class (recompute pending, or closed). */
+  stale?: boolean
+  /** Priority model version the computed class comes from. */
+  model_version?: number
   factors: PriorityFactors
   score_breakdown?: PriorityScoreBreakdown
 }

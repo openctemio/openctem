@@ -169,13 +169,15 @@ func ValidateWithPolicy(password string, policy Policy) error {
 }
 
 // GenerateSecureToken generates a cryptographically secure random token.
-// The token is URL-safe base64 encoded.
+// The token is URL-safe base64 without padding: a trailing "=" is cut from
+// links by some mail clients and chat tools. Tokens are verified by hashing
+// the string as given, so tokens issued earlier with padding still verify.
 func GenerateSecureToken(length int) (string, error) {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
+	return base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
 // GenerateResetToken generates a password reset token.

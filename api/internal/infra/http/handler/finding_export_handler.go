@@ -187,6 +187,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
 // @Param  related_to  query  string  false  "related to equals"  Enums(me)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
@@ -196,6 +197,10 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  first_detected_at_lte  query  string  false  "first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  first_detected_at_gt  query  string  false  "first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  first_detected_at_lt  query  string  false  "first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  sla_deadline_gte  query  string  false  "sla deadline at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  sla_deadline_lte  query  string  false  "sla deadline at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  sla_deadline_gt  query  string  false  "sla deadline greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  sla_deadline_lt  query  string  false  "sla deadline less than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  last_seen_at_gte  query  string  false  "last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  last_seen_at_lte  query  string  false  "last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  last_seen_at_gt  query  string  false  "last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"

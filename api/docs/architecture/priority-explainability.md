@@ -10,22 +10,33 @@
 GET /api/v1/findings/{id}/priority-explanation      (permission: findings:read)
 ```
 
-Returns the classification the engine would compute for the finding **right
-now**, without mutating it or emitting events. Response:
+Returns the class the finding holds and the classification the engine would
+compute for it **right now**, without mutating it or emitting events. When a
+person overrode the class, the decision fields report that override
+(`source: "manual"`) and the engine's verdict stays visible in
+`computed_class`. Response:
 
 ```jsonc
 {
   "finding_id": "…",
   "priority_class": "P0",
   "reason": "In CISA KEV (known exploited) and reachable (from 1 entry points)",
-  "source": "auto",              // "auto" (default classifier) or "rule" (tenant override)
+  "source": "auto",              // "auto" (default classifier), "rule" (tenant rule) or "manual" (a person's override)
   "rule_name": null,             // set when source == "rule"
+  "override": null,              // {"by": "<user id>", "at": "<time>"} when a person set the class
+  "computed_class": "P0",        // what the engine computes now (rules and platform floors included)
+  "computed_reason": "…",
+  "stored_class": "P0",          // what the finding holds now ("" when never classified)
+  "stored_reason": "…",
+  "stale": false,                // automatic class differs from computed_class: a recompute is pending, or the finding is closed (frozen)
+  "model_version": 2,            // priority model version of this build (scoring-versions.md)
   "factors": {
     "severity": "critical",
     "cve_id": "CVE-2021-44228",
     "epss_score": 0.97,
     "epss_percentile": 99.9,        // 0–100 rank (canonical scale everywhere); epss_score is the 0–1 probability
     "is_in_kev": true,
+    "validated_exploitable": false, // the latest validation re-check reproduced the finding
     "is_reachable": false,
     "is_internet_accessible": true,
     "is_network_accessible": false,
@@ -61,8 +72,53 @@ now**, without mutating it or emitting events. Response:
 2. Build the `PriorityContext` (severity, EPSS, KEV, reachability, asset
    criticality/exposure/crown-jewel).
 3. Apply compensating-control reduction (`is_protected` / `control_reduction_pct`).
+   A control counts only when it is active, has a passing test, its review
+   date (`expires_at`, at most 366 days ahead, 90 days when a control is created without one; an update cannot clear it) has not passed, and
+   its reduction is at least 0.25. It then lowers the class by at most one
+   level, never raises it, and never takes a CISA KEV finding below P1; the
+   reason names the step ("lowered one level to P2 (was P1): compensating
+   control, 40% reduction").
 4. Evaluate tenant **override rules** first (first match wins → `source: "rule"`,
    `rule_name`); otherwise the default `ClassifyPriority` (`source: "auto"`).
+   Rules are evaluated by `evaluation_order` (highest first), ties broken by
+   creation time then id, so the same rule wins on every pass.
+5. Apply the platform floors to the result, rule results included (below).
+6. When the finding carries a manual class override, report it as the
+   decision (`source: "manual"`, `override`), keeping the computed class
+   beside it.
+
+## Platform floors (priority model v2)
+
+Some classes are platform rules, not tenant settings. They run after the
+base class, compensating controls, the business-impact bump, the AI
+false-positive step and every tenant rule:
+
+- **Exploitation floor** (`vulnerability.ApplyExploitationFloor`): a finding
+  with exploitation evidence (its CVE is in CISA KEV, or the latest
+  validation re-check reproduced it, `validation_outcome = reproducible`) is
+  at least **P1**, whatever the exposure, scanner severity, controls or
+  rules. The reason adds "floor applied: raised to P1 from P3, in CISA KEV
+  (known exploited)". Only the attribution cap (P2 until the asset is
+  confirmed as the tenant's) runs after it.
+- **AI triage never changes the class**: an AI verdict reads scanner output
+  an attacker can influence, so it is a suggestion for a person. A confident
+  "likely false positive" on a medium or low finding becomes a pending
+  false-positive request; the priority class is never lowered by it
+  ([AI triage](ai-triage.md)).
+- **Rules raise freely, lower only to the floors**: a rule result passes
+  through the exploitation floor and the attribution cap
+  (`ruleClassification`). Creating, changing or deleting a rule needs a
+  recent sign-in (step-up, [step-up re-authentication](step-up-reauth.md)).
+  The rule dry run (`POST /api/v1/priority-rules/dry-run`) classifies the
+  tenant's open findings with the real engine, floors included, up to 20,000
+  findings: `open_findings` is the tenant total, `capped` marks a sample, and
+  `floored` counts matches a floor keeps above the rule's class. It is rate
+  limited to 6 per minute per tenant.
+
+KEV membership no longer rewrites a finding's severity: KEV is exploitation
+evidence and reaches priority through the floor, so the scanner's or an
+analyst's severity stands and KEV is not counted twice. Severities raised to
+critical by earlier versions are kept (forward only).
 
 The two **derived** booleans (`reachable`, `critical_asset`) are surfaced
 because they are what the P0/P1 gates actually test — exposing them makes the

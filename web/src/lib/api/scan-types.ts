@@ -107,6 +107,12 @@ export interface RunTargetExpansion {
 /**
  * Scan Configuration entity
  */
+/**
+ * Which detection rules a scan runs: the platform's, the organization's own
+ * templates, or both. A scan's own value overrides its scan profile's.
+ */
+export type RuleSources = 'both' | 'platform' | 'tenant'
+
 export interface ScanConfig {
   id: string
   tenant_id: string
@@ -127,6 +133,8 @@ export interface ScanConfig {
   scanner_config?: Record<string, unknown>
   /** scanner_config values that look like secrets (never blocks a save). */
   scanner_config_warnings?: ScannerConfigWarning[]
+  /** Rule sources the scan sets itself; '' or absent = the scan profile's. */
+  rule_sources?: RuleSources | ''
   targets_per_job: number
   schedule_type: ScheduleType
   schedule_cron?: string
@@ -185,8 +193,17 @@ export interface ScanLastRun {
   created_at: string
   started_at?: string
   completed_at?: string
-  /** 0-100 for a live run (finished tasks of all tasks). */
+  /** 0-100 for a live run (finished steps of the steps the run planned). */
   progress?: number
+  /** Chunks inside the steps; no task started while every task is queued. */
+  task_summary?: {
+    total: number
+    queued: number
+    running: number
+    completed: number
+    failed: number
+    canceled: number
+  }
   /** Why a blocked run was refused, and the message of a blocked or failed run. */
   refusal_code?: string
   error_message?: string
@@ -226,6 +243,8 @@ export interface CreateScanConfigRequest {
   scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
+  /** Omitted or '' = the scan profile's (both without a profile). */
+  rule_sources?: RuleSources | ''
   targets_per_job?: number
   schedule_type?: ScheduleType
   schedule_cron?: string
@@ -281,6 +300,8 @@ export interface UpdateScanConfigRequest {
   scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
+  /** Omitted = unchanged; '' = inherit the scan profile's. */
+  rule_sources?: RuleSources | ''
   targets_per_job?: number
   schedule_type?: ScheduleType
   schedule_cron?: string

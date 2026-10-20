@@ -28,6 +28,7 @@ import {
 } from '@/features/shared/components/detail-sheet'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import Link from '@/components/link'
 import type { FindingSourceData, FindingSourceScore } from '../../types'
 
 type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
@@ -119,13 +120,20 @@ function ScoreRow({ score }: { score: FindingSourceScore }) {
   )
 }
 
-export function SourceDataSection({ data }: { data: FindingSourceData }) {
+export function SourceDataSection({
+  data,
+  ruleName,
+}: {
+  data: FindingSourceData
+  ruleName?: string
+}) {
   const { t } = useTranslation()
   const n = data.native
   const l = data.lifecycle
   const sol = data.solution
   const vex = data.vex
-  const hasRecord = !!n || !!l || data.vulnerabilityIds.length > 0 || !!data.locationKey
+  const hasRecord =
+    !!n || !!l || data.vulnerabilityIds.length > 0 || !!data.locationKey || !!data.rule
   return (
     <>
       {data.scores.length > 0 && (
@@ -262,6 +270,55 @@ export function SourceDataSection({ data }: { data: FindingSourceData }) {
                       <span key={`${text}-${i}`}>{text}</span>
                     )
                   })}
+                </span>
+              ) : null}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.detectionRule', 'Detection rule')} full>
+              {data.rule || n?.vulnId ? (
+                <span className="space-y-0.5" data-testid="source-detection-rule">
+                  <span className="block text-sm">
+                    {[n?.vulnId, ruleName && ruleName !== n?.vulnId ? ruleName : undefined]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                  {data.rule?.source && (
+                    <Badge variant="outline" className="text-xs" data-testid="source-rule-source">
+                      {data.rule.source === 'tenant'
+                        ? t('findings.sourceData.ruleSourceTenant', 'Organization template')
+                        : t('findings.sourceData.ruleSourcePlatform', 'Platform rules')}
+                    </Badge>
+                  )}
+                  {data.rule?.source === 'tenant' && (
+                    <span
+                      className="block text-xs text-muted-foreground"
+                      data-testid="source-rule-template"
+                    >
+                      {data.rule.template_name ? (
+                        <Link
+                          href={`/settings/scanning/templates?q=${encodeURIComponent(data.rule.template_name)}`}
+                          className="underline-offset-2 hover:underline"
+                        >
+                          {data.rule.template_version
+                            ? `${data.rule.template_name}@${data.rule.template_version}`
+                            : data.rule.template_name}
+                        </Link>
+                      ) : (
+                        t('findings.sourceData.ruleTemplateDeleted', 'Template deleted')
+                      )}
+                    </span>
+                  )}
+                  {data.rule?.pack && (
+                    <span className="block text-xs text-muted-foreground">
+                      {data.rule.version
+                        ? `${data.rule.pack}@${data.rule.version}`
+                        : data.rule.pack}
+                    </span>
+                  )}
+                  {data.rule?.path && (
+                    <span className="block">
+                      <Mono>{data.rule.path}</Mono>
+                    </span>
+                  )}
                 </span>
               ) : null}
             </DetailField>

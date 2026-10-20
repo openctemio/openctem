@@ -53,11 +53,6 @@ type PriorityClassificationService struct {
 	// (legacy behaviour, unsafe on noisy tenants). Classification
 	// itself is NEVER altered by the guard — only the event emission.
 	priorityFloodGuard *PriorityFloodGuard
-	// aiTriage feeds a high-confidence AI "likely false positive" verdict into
-	// classification so it can DE-ESCALATE a finding by one bounded level. The
-	// ONLY signal permitted to lower priority. Optional — nil keeps classification
-	// unchanged (no AI signal → never a downgrade). See priority_ai_triage.go.
-	aiTriage AITriageVerdictLookup
 	// assetOwner reports, per asset, whether an owner is assigned (batch,
 	// tenant-scoped). It backs the CTEM "ownership unknown defaults to P2
 	// minimum" floor: a finding on an unowned asset is never below P2. Optional —
@@ -148,14 +143,16 @@ func (s *PriorityClassificationService) SetThreatModelOracle(o ThreatModelOracle
 }
 
 // setControlProtection applies a single asset's effective reduction factor to a
-// priority context. A 0 factor is the compensating_controls column default and
-// means "no measured reduction", so it does NOT mark the asset as protected —
-// otherwise a control saved without a factor would silently suppress P1.
+// priority context. Only a measured reduction of at least
+// vulnerability.MinControlReduction marks the asset as protected; a smaller
+// factor (or the column default 0) changes nothing, so a token control cannot
+// move a finding. The lookup already counts only active, tested-pass,
+// unexpired controls.
 //
 // This is the one place the "protected" rule is expressed; both the per-finding
 // and the batch classification paths go through it.
 func setControlProtection(pctx *vulnerability.PriorityContext, reduction float64) {
-	if reduction <= 0 {
+	if reduction < vulnerability.MinControlReduction {
 		return
 	}
 	pctx.IsProtected = true
@@ -374,14 +371,13 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	// Build priority context (with attack-path reachability + threat-model
 	// signal, if wired). Both oracle lookups are tenant-scoped and cached.
 	reachable := s.reachableSet(ctx, tenantID)
-	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{finding.ID()})
 	// Owner presence feeds the CTEM ownership floor, but only when the tenant
 	// opted in — otherwise we skip the lookup entirely (no floor, no query).
 	var hasOwner map[shared.ID]bool
 	if s.ownershipFloorEnabled(ctx, tenantID) {
 		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(assetEntity))
 	}
-	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
+	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID), hasOwner)
 	if assetEntity != nil {
 		pctx.AttributionUnconfirmed = s.unconfirmedAssets(ctx, tenantID, []shared.ID{assetEntity.ID()})[assetEntity.ID()]
 	}
@@ -762,14 +758,6 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		hasOwner = s.ownerPresence(ctx, tenantID, ownerAssetIDs)
 	}
 
-	// AI-triage false-positive verdicts for the whole batch — ONE tenant-scoped
-	// query for every finding id, no per-finding N+1 (mirrors the preloads above).
-	findingIDs := make([]shared.ID, 0, len(findings))
-	for _, f := range findings {
-		findingIDs = append(findingIDs, f.ID())
-	}
-	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, findingIDs)
-
 	// Attribution of every asset in the batch: one tenant-scoped query.
 	attrAssetIDs := make([]shared.ID, 0, len(assets))
 	for aid := range assets {
@@ -806,7 +794,7 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		// Business-aligned effective criticality from the preloaded batch map.
 		effCrit, critReason := asset.EffectiveCriticality(a.Criticality(), businessCtx[f.AssetID()])
 
-		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, aiFP, hasOwner)
+		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, hasOwner)
 		pctx.AttributionUnconfirmed = unconfirmed[f.AssetID()]
 		// Same rule as applyControlProtection, fed from the batch map above so
 		// the sweep stays one query for the whole batch instead of per finding.
@@ -847,7 +835,6 @@ func (s *PriorityClassificationService) buildPriorityContext(
 	effCrit asset.Criticality,
 	reachable map[string]bool,
 	threatened map[string]bool,
-	aiFP map[shared.ID]AIFalsePositiveVerdict,
 	hasOwner map[shared.ID]bool,
 ) vulnerability.PriorityContext {
 	ctx := vulnerability.PriorityContext{
@@ -856,6 +843,7 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		EPSSScore:            f.EPSSScore(),
 		EPSSPercentile:       f.EPSSPercentile(),
 		IsInKEV:              f.IsInKEV(),
+		ValidatedExploitable: f.ValidationOutcome() == vulnerability.ValidationOutcomeReproducible,
 		IsReachable:          f.IsReachable(),
 		ReachableFromCount:   f.ReachableFromCount(),
 		IsInternetAccessible: f.IsInternetAccessible(),
@@ -960,15 +948,6 @@ func (s *PriorityClassificationService) buildPriorityContext(
 	ctx.ReachabilityUnknown = unknownExposure && !ctx.IsReachable && !ctx.IsInternetAccessible &&
 		!ctx.IsNetworkAccessible && !ctx.OnOpenThreatPath
 
-	// AI-triage de-escalation signal (keyed by finding, not asset): a
-	// high-confidence "likely false positive" verdict lets the classifier lower
-	// this finding by one bounded level. This is the ONLY input that can reduce
-	// priority; a missing/low-confidence verdict is the zero value → no effect.
-	if v, ok := aiFP[f.ID()]; ok && v.Likely {
-		ctx.AIFalsePositiveLikely = true
-		ctx.AIFalsePositiveLikelihood = v.Likelihood
-	}
-
 	return ctx
 }
 
@@ -988,12 +967,16 @@ func persistReachability(f *vulnerability.Finding, pctx vulnerability.PriorityCo
 	f.SetReachability(pctx.IsInternetAccessible, pctx.ReachableFromCount)
 }
 
-// Default caps for a priority-rule dry run. Evaluation is bounded to the most
-// recent open findings so a large tenant can't turn a preview into an unbounded
-// scan; the sample returned to the UI is bounded separately.
+// Default caps for a priority-rule dry run. The dry run reads the tenant's
+// open findings in pages, newest first, up to DefaultDryRunCap: below it the
+// counts cover the whole tenant; above it the result says it is a sample
+// (Capped, with OpenFindings the tenant total), so a large tenant cannot turn
+// a preview into an unbounded scan. The sample returned to the UI is bounded
+// separately.
 const (
-	DefaultDryRunCap        = 1000
+	DefaultDryRunCap        = 20000
 	DefaultDryRunSampleSize = 25
+	dryRunPage              = 1000
 )
 
 // DryRunResult is the outcome of evaluating a DRAFT priority rule against the
@@ -1001,8 +984,10 @@ const (
 // informational — nothing is mutated or persisted.
 type DryRunResult struct {
 	Evaluated    int            // findings actually evaluated (asset-backed, non-override)
+	OpenFindings int            // the tenant's open findings (evaluated or not)
 	Matched      int            // how many the draft rule matched
-	Capped       bool           // true when more open findings exist than were evaluated
+	Floored      int            // matched findings a platform floor kept above the rule's class
+	Capped       bool           // true when more open findings exist than were read (a sample)
 	Cap          int            // the evaluation cap applied
 	Sample       []DryRunSample // a bounded preview of matched findings
 	Distribution map[string]int // would-be priority-class histogram (P0..P3)
@@ -1020,14 +1005,17 @@ type DryRunSample struct {
 // DryRunRule evaluates a DRAFT (possibly unsaved) priority override rule against
 // the tenant's OPEN findings (new/confirmed/in_progress/fix_applied) using the
 // SAME enrichment + engine the classifier uses, and returns exact match counts,
-// a would-be class distribution, and a bounded sample of matched findings.
+// a would-be class distribution, and a bounded sample of matched findings. The
+// would-be class is what the rule really yields: the platform floors and the
+// attribution cap apply to it (ruleClassification), and Floored counts the
+// matches a floor kept above the rule's class.
 //
 // It is strictly READ-ONLY: findings are enriched in memory via
-// enrichAndContextualize (never persisted) and no rule is stored. Evaluation is
-// capped at the `cap` most-recent open findings (a non-positive cap falls back to
-// DefaultDryRunCap); when the tenant has more open findings than the cap, the
-// result's Capped flag is set. sampleSize (non-positive → DefaultDryRunSampleSize)
-// bounds the returned sample.
+// enrichAndContextualize (never persisted) and no rule is stored. It reads up
+// to cap open findings, newest first, in pages (a non-positive cap falls back
+// to DefaultDryRunCap); when the tenant has more, Capped is set and the counts
+// are a sample. sampleSize (non-positive → DefaultDryRunSampleSize) bounds the
+// returned sample.
 func (s *PriorityClassificationService) DryRunRule(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -1041,77 +1029,97 @@ func (s *PriorityClassificationService) DryRunRule(
 	if sampleSize <= 0 {
 		sampleSize = DefaultDryRunSampleSize
 	}
+	result := DryRunResult{
+		Cap:          cap,
+		Distribution: map[string]int{"P0": 0, "P1": 0, "P2": 0, "P3": 0},
+	}
+	draftClass := draft.PriorityClass()
 
-	// Load the tenant's OPEN findings, most-recent first, capped.
 	filter := vulnerability.NewFindingFilter().WithTenantID(tenantID)
 	filter.Statuses = vulnerability.ActiveFindingStatuses()
 	sort := pagination.NewSortOption(vulnerability.FindingAllowedSortFields()).Parse("-created_at")
 	opts := vulnerability.NewFindingListOptions().WithSort(sort)
-	page := pagination.Pagination{Page: 1, PerPage: cap}
-
-	res, err := s.findingRepo.List(ctx, filter, opts, page)
-	if err != nil {
-		return DryRunResult{}, fmt.Errorf("list open findings: %w", err)
+	assets := map[shared.ID]*asset.Asset{}
+	read := 0
+	for pageNum := 1; read < cap; pageNum++ {
+		if err := ctx.Err(); err != nil {
+			return DryRunResult{}, err
+		}
+		perPage := min(dryRunPage, cap-read)
+		res, err := s.findingRepo.List(ctx, filter, opts, pagination.Pagination{Page: pageNum, PerPage: perPage})
+		if err != nil {
+			return DryRunResult{}, fmt.Errorf("list open findings: %w", err)
+		}
+		result.OpenFindings = int(res.Total)
+		findings := res.Data
+		read += len(findings)
+		pageAssets, err := s.dryRunAssets(ctx, tenantID, findings, assets)
+		if err != nil {
+			return DryRunResult{}, err
+		}
+		// Reuse the SAME batch enrichment the classifier uses — no reimplementation.
+		for _, fc := range s.enrichAndContextualize(ctx, tenantID, findings, pageAssets) {
+			s.tallyDryRun(&result, fc, draft, draftClass, sampleSize)
+		}
+		if len(findings) < perPage || int64(read) >= res.Total {
+			break
+		}
 	}
-	findings := res.Data
+	result.Capped = result.OpenFindings > read
+	return result, nil
+}
 
-	// Load the distinct assets for those findings (deduped; one GetByID per
-	// asset, mirroring the reclassify sweep). A missing asset is skipped — the
-	// enrichment step then drops the finding.
-	assets := make(map[shared.ID]*asset.Asset, len(findings))
+// dryRunAssets loads the distinct assets of findings once per dry run (cache
+// shared across pages). A missing asset is skipped — the enrichment step then
+// drops the finding.
+func (s *PriorityClassificationService) dryRunAssets(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, cache map[shared.ID]*asset.Asset) (map[shared.ID]*asset.Asset, error) {
+	page := make(map[shared.ID]*asset.Asset, len(findings))
 	for _, f := range findings {
 		aid := f.AssetID()
 		if aid.IsZero() {
 			continue
 		}
-		if _, ok := assets[aid]; ok {
-			continue
-		}
-		a, aerr := s.assetRepo.GetByID(ctx, tenantID, aid)
-		if aerr != nil {
-			if errors.Is(aerr, shared.ErrNotFound) {
-				continue
+		a, seen := cache[aid]
+		if !seen {
+			loaded, err := s.assetRepo.GetByID(ctx, tenantID, aid)
+			if err != nil && !errors.Is(err, shared.ErrNotFound) {
+				return nil, fmt.Errorf("load asset %s: %w", aid.String(), err)
 			}
-			return DryRunResult{}, fmt.Errorf("load asset %s: %w", aid.String(), aerr)
+			a = loaded
+			cache[aid] = a
 		}
-		assets[aid] = a
-	}
-
-	// Reuse the SAME batch enrichment the classifier uses — no reimplementation.
-	contexts := s.enrichAndContextualize(ctx, tenantID, findings, assets)
-
-	result := DryRunResult{
-		Cap:          cap,
-		Capped:       res.Total > int64(len(findings)),
-		Distribution: map[string]int{"P0": 0, "P1": 0, "P2": 0, "P3": 0},
-	}
-	draftClass := string(draft.PriorityClass())
-
-	for _, fc := range contexts {
-		f := fc.finding
-		result.Evaluated++
-
-		current := s.currentClass(f, fc.pctx)
-		wouldBe := current
-		matched := draft.Matches(fc.pctx)
-		if matched {
-			result.Matched++
-			wouldBe = draftClass
-		}
-		result.Distribution[wouldBe]++
-
-		if matched && len(result.Sample) < sampleSize {
-			result.Sample = append(result.Sample, DryRunSample{
-				FindingID:    f.ID().String(),
-				Title:        f.Title(),
-				Severity:     string(f.Severity()),
-				CurrentClass: current,
-				WouldBeClass: draftClass,
-			})
+		if a != nil {
+			page[aid] = a
 		}
 	}
+	return page, nil
+}
 
-	return result, nil
+// tallyDryRun counts one evaluated finding into a dry-run result.
+func (s *PriorityClassificationService) tallyDryRun(result *DryRunResult, fc findingContext, draft *vulnerability.PriorityOverrideRule, draftClass vulnerability.PriorityClass, sampleSize int) {
+	f := fc.finding
+	result.Evaluated++
+	current := s.currentClass(f, fc.pctx)
+	wouldBe := current
+	matched := draft.Matches(fc.pctx)
+	if matched {
+		result.Matched++
+		c := ruleClassification(draft, fc.pctx, false).Class
+		wouldBe = string(c)
+		if fc.pctx.HasExploitationEvidence() && (draftClass == vulnerability.PriorityP2 || draftClass == vulnerability.PriorityP3) {
+			result.Floored++
+		}
+	}
+	result.Distribution[wouldBe]++
+	if matched && len(result.Sample) < sampleSize {
+		result.Sample = append(result.Sample, DryRunSample{
+			FindingID:    f.ID().String(),
+			Title:        f.Title(),
+			Severity:     string(f.Severity()),
+			CurrentClass: current,
+			WouldBeClass: wouldBe,
+		})
+	}
 }
 
 // currentClass reports the finding's current priority class: its persisted class

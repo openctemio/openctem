@@ -58,7 +58,20 @@ func (r *CTEMIDRepository) UpsertBatch(ctx context.Context, entries []*ctemid.CT
 	// wins), mirroring the KEV/EPSS refresh this sync is modeled on.
 	entries = dedupeCTEMID(entries)
 
-	const cols = 9 // id, ctem_id, category, title, description, severity, source_url, published_at, raw
+	// One statement per chunk that fits under the bind-parameter limit (the
+	// whole feed used to go in one statement and fail past 7281 entries).
+	return forEachStatementChunk(len(entries), ctemIDUpsertColumns, 0, 0, func(start, end int) error {
+		return r.upsertChunk(ctx, entries[start:end])
+	})
+}
+
+// ctemIDUpsertColumns: id, ctem_id, category, title, description, severity,
+// source_url, published_at, raw.
+const ctemIDUpsertColumns = 9
+
+// upsertChunk upserts one deduplicated chunk of catalog entries.
+func (r *CTEMIDRepository) upsertChunk(ctx context.Context, entries []*ctemid.CTEMID) error {
+	const cols = ctemIDUpsertColumns
 	valueStrings := make([]string, 0, len(entries))
 	args := make([]any, 0, len(entries)*cols)
 	for i, e := range entries {

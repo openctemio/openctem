@@ -110,3 +110,24 @@ func TestClient_HelloCarriesTheKeySet(t *testing.T) {
 		t.Fatalf("hello JSON %s", b)
 	}
 }
+
+// RootKeyID is the root of the key set the signer serves, for the install
+// snippets; "" without a key set.
+func TestClient_RootKeyID(t *testing.T) {
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	rootPub, root, _ := ed25519.GenerateKey(rand.Reader)
+	if got := func() string {
+		c, _ := newTestClient(t, &fakeSignerAPI{pub: pub})
+		return c.RootKeyID(context.Background())
+	}(); got != "" {
+		t.Fatalf("without a key set: %q", got)
+	}
+	env, _, err := jobsign.SignKeySet(root, 1, time.Now(), 24*time.Hour, []ed25519.PublicKey{pub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := newTestClient(t, &fakeSignerAPI{pub: pub, keyset: env})
+	if got := c.RootKeyID(context.Background()); got != jobsign.KeyID(rootPub) {
+		t.Fatalf("root %q, want %q", got, jobsign.KeyID(rootPub))
+	}
+}

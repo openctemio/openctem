@@ -39,6 +39,7 @@ import {
   Package,
   // CTEM Phase 1 icons
   TrendingUp,
+  Siren,
   AlertTriangle,
   Fingerprint,
   // Access Control icons
@@ -353,6 +354,13 @@ export const sidebarData: SidebarData = {
           module: 'threat_intel',
         },
         {
+          title: 'Emerging Threats',
+          url: '/emerging-threats',
+          icon: Siren,
+          permission: Permission.VulnerabilitiesRead,
+          module: 'threat_intel',
+        },
+        {
           // IOC catalogue — bound to its own `iocs` module (not the parent's
           // threat_intel) so the ModuleIOCs toggle gates this page end-to-end.
           // permission threat_intel:read matches the backend on /api/v1/iocs.
@@ -479,7 +487,7 @@ export const sidebarData: SidebarData = {
           sections: REMEDIATION_SECTION_TABS,
         },
         {
-          title: 'SLA Compliance',
+          title: 'SLA compliance',
           url: '/sla',
           icon: Timer,
           permission: Permission.SLARead,

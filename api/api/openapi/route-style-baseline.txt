@@ -191,7 +191,6 @@ R5 POST /api/v1/relationships/suggestions/approve-all
 R5 POST /api/v1/relationships/suggestions/approve-batch
 R5 POST /api/v1/relationships/suggestions/generate
 R5 POST /api/v1/relationships/suggestions/{id}/dismiss
-R5 POST /api/v1/remediation/campaigns/{id}/refresh
 R5 POST /api/v1/scanner-templates/validate
 R5 POST /api/v1/scan-profiles/{id}/clone
 R5 POST /api/v1/scan-profiles/{id}/evaluate-quality-gate
@@ -350,6 +349,8 @@ R3 GET /api/v1/admin/tenants/{tenantId}/scan-approval-policy
 R3 PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy
 R3 GET /api/v1/admin/tenants/{tenantId}/idle
 R3 PUT /api/v1/admin/tenants/{tenantId}/idle/policy
+R3 GET /api/v1/admin/tenants/{tenantId}/dashboard-data
+R3 POST /api/v1/admin/tenants/{tenantId}/dashboard-data/rebuild
 # Team member end dates (RFC-050 W22): the /groups subtree keeps {groupId}/{userId} (chi needs one name per position).
 R3 PATCH /api/v1/groups/{groupId}/members/{userId}
 # Team role bindings (decisions G1-G12): the /groups subtree keeps {groupId}; a role id next to it follows the subtree style.

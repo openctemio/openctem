@@ -8,7 +8,7 @@ deployed today.
 
 | Part | Where | What it does |
 |------|-------|--------------|
-| Console app | `web/console/` (Next.js), image `ghcr.io/openctemio/openctem-console` | The console's pages at the root of its site (`/`, `/login`, `/organizations`, `/users`, `/security/…`, `/operations`, `/system/…`, `/scanning/…`, `/requests`), its API proxy `/api/v1/admin/*` and `/api/health`. Shares `web/`'s packages and imports shared code from `web/src`; contains no tenant route. |
+| Console app | `web/console/` (Next.js), image `ghcr.io/openctemio/openctem-console` | The console's pages at the root of its site (`/`, `/login`, `/organizations`, `/users`, `/requests`, `/support`, `/scanning/…`, `/security/…`, `/system/…` for the settings pages, `/health`), its API proxy `/api/v1/admin/*` and `/api/health`. Shares `web/`'s packages and imports shared code from `web/src`; contains no tenant route. |
 | Tenant web app | `web/src/` (Next.js), image `openctem-web` | No console route, page or client; refuses to proxy `/api/v1/admin` however the path is spelled. |
 | Gateway console site | `api/deploy/gateway/admin/on.site` | `https://<host>:<OPENCTEM_ADMIN_PORT>` (port mode, default 8443) or `https://<OPENCTEM_ADMIN_HOST>` (host mode); admits only `OPENCTEM_ADMIN_ALLOWED_CIDRS`; proxies to `OPENCTEM_CONSOLE_UPSTREAM`. The main site answers 404 for `/api/v1/admin` (`admin/on.tenant`). |
 | Console API listener | `ADMIN_LISTEN_ADDR` (Compose: `<api>:8081`) | Serves only `/api/v1/admin` and `/health`; the main listener answers 404 for the console API. |
@@ -28,9 +28,9 @@ doing:
 | Group | Pages |
 |-------|-------|
 | (top) | Overview |
-| Customers | Organizations, Users, Access requests, Support access |
+| Customers | Organizations, Users, Access requests, Sign-ups, Support access |
 | Scanning | Scan approval, Platform scanning (policy, fleet, queue, zones, egress, anomalies), Target mappings, Content packs, Content catalog, Threat intelligence |
-| Security | Administrators, Sessions, Admin sign-in, Admin activity |
+| Security | Administrators, Sessions, Approvals, Admin sign-in, Admin activity |
 | Settings | Configuration, Sign-up, Limits, CAPTCHA, E-mail, Legal, Announcements, Alerts, AI provider, AI applications |
 | Monitoring | Health (services, storage, backup, certificates, schema, version, queues, sensors, jobs), Software updates |
 
@@ -134,9 +134,10 @@ How each applies without a restart:
   and the webhook. The address is treated as a credential (only its host is
   shown); delivery never follows the address into a log or error.
 - AI provider: the AI client reads the console provider per request when no
-  environment key is set; AI triage is always available for organizations
-  that bring their own key, and platform mode is refused with a clear message
-  until a provider is on.
+  environment key is set; platform mode is refused with a clear message
+  (`AI_PLATFORM_NOT_CONFIGURED`) until a provider is on. A provider sends
+  nothing by itself: each organization turns AI triage on in Settings > AI
+  ([AI triage](ai-triage.md)).
 
 ## Installer settings
 
@@ -207,6 +208,8 @@ Shipped (design: [RFC-022 revision 24](../rfcs/RFC-022-platform-admin-console.md
 | Remove a super admin | an active super admin demoted, deactivated, marked break-glass or removed |
 | Stop requiring security keys | the security-key policy goes from on to off |
 | Remove or relax the administrators' identity provider | removed, switched off, or no longer required |
+| Change the administrators' identity provider or the second factor it is trusted for | a new issuer or client id on an existing provider, or any trusted ACR/AMR value not trusted before (also on a first configuration); the target is the new issuer, client and trusted values |
+| Reset another administrator's console second factor | always (their next sign-in enrolls a new factor) |
 | Open sign-up | the stored sign-up policy opens wider than before |
 | Re-sign an organization's audit chain | always |
 
@@ -227,8 +230,31 @@ actions run on the super admin's own step-up, each recorded as critical
 (`approval.single_admin`) and e-mailed to every administrator; the
 Approvals page explains how to add a second super admin. Once two exist,
 removing either needs the other's approval. If the other super admin is
-unavailable, end their console sessions and reset their console sign-in from
-the console, and change the roster with `bootstrap-admin` on the server.
+unavailable, end their console sessions from the console and change the
+roster with `bootstrap-admin` on the server. Resetting an administrator's
+console second factor needs another super admin too: an administrator who lost
+their authenticator signs in with a recovery code, or the operator re-creates
+the account with `bootstrap-admin -force` on the server.
+That command is not a silent side door: every administrator it creates,
+replaces (`-force`, `-force-backup`) or links (`-link`) is written in the same
+transaction as a high-severity entry in the administrators' audit log
+(`admin.created`, `admin.replaced`, `admin.relinked`; actor `bootstrap-admin`,
+with the OS user and host), and every other active administrator gets the
+roster-change e-mail. `-force` replaces only the named administrator, keeps
+its role unless `-role` is given, refuses to bring back an inactive one
+without `-role`, refuses to leave no active super admin, and asks for the
+email to be typed back (or `-yes`).
+
+IdP binding: the first platform IdP sign-in of an unbound administrator (matched
+by verified e-mail) binds the identity only after that administrator proves
+their own console second factor on the pending session; a trusted ACR/AMR
+value skips the console factor only for an identity bound that way. An
+unbound administrator with no console factor yet (never signed in, or reset)
+is refused on the IdP while the password path is open: they enroll on the
+password path first. Only while "require IdP" closes the password path is the
+IdP their sole first factor and the console factor enrolled after it. Whoever
+can mint an IdP token carrying another administrator's e-mail therefore cannot
+sign in as them and approve their own requests.
 
 API: `GET /api/v1/admin/approvals`, `POST /api/v1/admin/approvals`
 (step-up), `POST /api/v1/admin/approvals/{id}/approve` (fresh step-up),

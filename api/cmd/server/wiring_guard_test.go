@@ -162,6 +162,7 @@ var guardedInertSeams = []struct {
 	{".Tenant", "SetOwnershipTransferRepository", "ownership transfer"},
 	{".Module", "SetWSBroadcaster", "module.updated WebSocket push on module toggle"},
 	{".SCIMProvisioning", "SetDomainVerifier", "SCIM attaches existing accounts only on a verified domain"},
+	{".OAuth", "SetClaimGuard", "a social sign-in adopts a provisioned account only when its organizations verified the domain"},
 }
 
 // TestInertWiringSeams_StayWired asserts each previously-dead Set* seam is
@@ -308,11 +309,16 @@ var optionalServiceSetters = map[string]string{
 	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
 	"PermVersion.Set":                   "cache operation, not a seam",
 	"Role.SetUserRoles":                 "request operation, called by the role handler",
+	"RemediationTask.SetQueryAutoState": "request operation, called by the task query handler",
 	"SCIMGroups.SetRoleMappings":        "request operation, called by the SCIM token handler",
 	"SCIMProvisioning.SetActive":        "SCIM PATCH operation, not a seam",
 	"ScanProfile.SetDefaultScanProfile": "request operation, called by the scan profile handler",
 	"ThreatIntel.SetSyncEnabled":        "request operation, called by the threat-intel handler",
 	"UserDashboard.SetDefault":          "request operation, called by the dashboard handler",
+	"UserDashboard.SetOrgAudience":      "request operation, called by the dashboard handler",
+	"UserDashboard.SetOrgDefault":       "request operation, called by the dashboard handler",
+	"UserDashboard.SetOrgSchedule":      "request operation, called by the dashboard handler",
+	"UserDashboard.SetPersonalSchedule": "request operation, called by the dashboard handler",
 	"Vulnerability.SetFindingTags":      "request operation, called by the finding handler",
 	"Sensor.SetBearerKeysAllowed":       "request operation, called by the sensor identity-policy handler",
 	"Sensor.SetKeyBindRequiresApproval": "request operation, called by the sensor identity-policy handler",

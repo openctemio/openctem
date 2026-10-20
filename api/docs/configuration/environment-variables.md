@@ -25,7 +25,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
-| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
+| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
 | `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Set: pins the region (the console cannot change it). Unset: a super admin may set it once in the console (Settings > Configuration) before the first organization exists. |
 
 ### Brand
@@ -164,8 +164,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SCOPE_PUBLIC_CODE_HOSTS_EXTRA` | list | empty |  |  | Comma-separated code hosts shared by many organizations, in addition to the built-in list (github.com, gitlab.com, bitbucket.org and others). A repository scope entry on such a host must name a namespace (host/namespace/*), never the whole host. |
 | `SCOPE_MAX_PUBLIC_CIDR_V4` | int | `16` |  |  | Largest public IPv4 range (prefix length) one scope entry may cover. Private ranges are not capped. |
 | `SCOPE_MAX_PUBLIC_CIDR_V6` | int | `32` |  |  | Largest public IPv6 range one scope entry may cover. |
-| `SIGNUP_MODE` | string | `disabled` |  |  | The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`. |
-| `SIGNUP_CAPTCHA` | string | empty |  |  | Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`. |
+| `SIGNUP_MODE` | string | `disabled` |  |  | The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (Console > Settings > E-mail) at start and verify every self-registered address; `open` in production also needs a CAPTCHA: until one is configured (Console > Settings > CAPTCHA, or the `CAPTCHA_TURNSTILE_*` keys), open sign-up stays closed at runtime. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`. |
+| `SIGNUP_CAPTCHA` | string | empty |  |  | Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: the API starts, but open sign-up in production stays closed until a CAPTCHA is configured (Console > Settings > CAPTCHA, or `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`). |
 | `CAPTCHA_TURNSTILE_SECRET` | string | empty |  | yes | Cloudflare Turnstile secret for registration, request access and sign-in after repeated failures. Set: pins the CAPTCHA keys (the console shows them locked). Unset: the keys are set in the console (Settings > CAPTCHA), or there is no CAPTCHA (the rate limits still apply). Set together with `CAPTCHA_TURNSTILE_SITE_KEY`. |
 | `CAPTCHA_TURNSTILE_SITE_KEY` | string | empty |  |  | Cloudflare Turnstile site key (public) shown on the sign-up, request-access and sign-in forms. Set together with `CAPTCHA_TURNSTILE_SECRET`; both pin the console setting. |
 
@@ -290,8 +290,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_LB_NETWORK_WEIGHT` | float | `0.05` |  |  | Weight of network I/O. |
 | `SENSOR_PUBLIC_API_URL` | string | empty |  |  | URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`. |
 | `SENSOR_SLIM_HEARTBEAT` | bool | `true` |  |  | Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats. |
-| `WORKER_HEALTH_CHECK_ENABLED` | bool | `false` |  |  | Legacy sensor health checker. Keep it off: the sensor health controller owns liveness and the legacy checker marks every sensor offline right after an API restart. |
-| `WORKER_HEALTH_CHECK_INTERVAL` | duration | `1m` |  |  | Interval of the legacy checker. |
+| `SENSOR_LIVENESS_STORE` | string | `shadow` |  |  | Where heartbeat liveness lives. `postgres`: every heartbeat updates the sensor row. `shadow`: as postgres, and Redis records every heartbeat too so `openctem_sensor_liveness_disagreements_total` compares the two. `redis`: Redis holds liveness; Postgres gets state changes and a batched checkpoint every 10 minutes. Switch to `redis` after a week of zero disagreements. |
 | `WORKER_HEARTBEAT_TIMEOUT` | duration | `5m` |  |  | No heartbeat for this long marks a sensor inactive. Advised heartbeat intervals stay below half of it. |
 | `SCAN_ZONE_RESOLVER` | string | empty |  |  | DNS resolver scan-zone routing resolves host names with: `system` (the platform's own resolver, which may know internal names) or `host[:port]` of a recursive resolver. Unset: a public resolver when organizations are self-service, otherwise `system`. |
 | `SENSOR_MTLS_CA_CERT_FILE` | path | empty |  |  | Sensor CA certificate (PEM) for protocol v3 client certificates. Set together with `SENSOR_MTLS_CA_KEY_FILE`; unset, the CA is created once in `SENSOR_MTLS_CA_DIR`. |
@@ -304,6 +303,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` | duration | `24h` |  |  | How often reviewed quarantined sensor results older than the retention are deleted. Pending items are never purged. |
 | `SENSOR_RESULT_QUARANTINE_RETENTION` | duration | `720h` |  |  | How long a reviewed quarantined sensor result is kept. |
 | `SENSOR_TRANSPORT_V3` | auto \| off | `auto` |  |  | `auto` serves sensor protocol v3 and picks its bindings itself (HTTPS always, gRPC once the sensor CA loads and its self-probe passes). `off` is the emergency switch: every sensor falls back to v2 at its next call. |
+| `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS` | bool | `false` |  |  | Lets a production API start without `SIGNER_SOCKET`: sensor jobs are then not signed, and sensors paired from then on refuse to start. Development only. |
 | `SIGNER_SOCKET` | path | empty |  |  | Unix socket of the job signer (`cmd/signer`). Set: every job handed to a sensor is signed, and a job the signer refuses is not handed out. Unset: jobs are not signed. |
 | `SIGNER_TIMEOUT` | duration | `2s` |  |  | Timeout of one call to the job signer. |
 
@@ -387,7 +387,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SELF_SERVICE_START_LIMITS` | string | empty |  |  | Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{"seats":5,"assets":500,"orgs_per_user":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API. |
+| `SELF_SERVICE_START_LIMITS` | string | empty |  |  | Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > Settings > Limits: a JSON object of limit keys, for example `{"seats":5,"assets":500,"orgs_per_user":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`SIGNUP_MODE=open`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API. |
 
 ### Metrics
 
@@ -433,7 +433,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `ADMIN_PUBLIC_URL` | string | `the origin of APP_URL` |  |  | Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8444` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off. |
+| `ADMIN_PUBLIC_URL` | string | `the origin of APP_URL` |  |  | Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8443` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off. |
 
 ### Audit log retention
 
@@ -455,16 +455,16 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AI_PLATFORM_MODEL` | string | `claude-sonnet-4-20250514` |  |  | Model name passed to the provider. |
 | `AI_PLATFORM_PROVIDER` | string | `claude` |  |  | Provider used for organizations in platform mode: `claude`, `openai` or `gemini`. |
 | `AI_RATE_LIMIT_RPM` | int | `60` |  |  | Completions per minute per API key. `0` or less turns the cap off. |
+| `AI_RATE_LIMIT_TENANT_RPM` | int | `20` |  |  | Each organization's share of the platform key's completions per minute (a bucket per organization in front of `AI_RATE_LIMIT_RPM`), so one organization cannot starve the others. `0` turns it off. Organizations with their own key have their own allowance. |
 | `AI_TEMPERATURE` | float | `0.1` |  |  | Sampling temperature (0.0 to 1.0). |
 | `AI_TIMEOUT_SECONDS` | int | `30` |  |  | Timeout of one provider call. |
-| `AI_TRIAGE_BUDGET_DEFAULT_TOKENS` | int | `0` |  |  | Monthly token budget of an organization without its own. |
-| `AI_TRIAGE_BUDGET_ENABLED` | bool | `false` |  |  | Enforce the per-organization monthly token budget. |
+| `AI_TRIAGE_BUDGET_DEFAULT_TOKENS` | int | `2000000` |  |  | Monthly platform AI token budget of an organization, set on its month's budget row when the row is created. `0` means unlimited. |
+| `AI_TRIAGE_BUDGET_ENABLED` | bool | `true` |  |  | Enforce the per-organization monthly token budget for platform AI (organizations with their own key are not counted). |
 | `AI_TRIAGE_BUDGET_STRICT` | bool | `false` |  |  | With the budget on: refuse triage when the budget store cannot be read (otherwise log and continue). |
-| `AI_TRIAGE_ENABLED` | bool | `false` |  |  | Deprecated and ignored: availability follows the provider keys and the AI triage module. |
 | `AI_TRIAGE_RECOVERY_BATCH_SIZE` | int | `50` |  |  | Jobs recovered per run. |
-| `AI_TRIAGE_RECOVERY_ENABLED` | bool | `true` |  |  | Requeue triage jobs stuck in processing. |
+| `AI_TRIAGE_RECOVERY_ENABLED` | bool | `true` |  |  | Mark triage jobs stuck in pending or processing as failed (stuck_timeout). Transient provider errors are retried by the job queue before that. |
 | `AI_TRIAGE_RECOVERY_INTERVAL` | duration | `5m` |  |  | How often stuck jobs are looked for. |
-| `AI_TRIAGE_RECOVERY_STUCK_DURATION` | duration | `15m` |  |  | Age after which a processing job counts as stuck. |
+| `AI_TRIAGE_RECOVERY_STUCK_DURATION` | duration | `15m` |  |  | Age after which a pending or processing job counts as stuck. |
 | `ANTHROPIC_API_KEY` | string | empty |  | yes | Platform key for the `claude` provider. Any platform key pins the platform AI provider to the environment (the console shows it locked); without one, a super admin sets the provider and key in the console (Settings > AI provider), off by default. |
 | `GEMINI_API_KEY` | string | empty |  | yes | Platform key for the `gemini` provider. |
 | `OPENAI_API_KEY` | string | empty |  | yes | Platform key for the `openai` provider. |
@@ -475,15 +475,26 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `BOOTSTRAP_SMTP_HOST` | string | empty |  |  | `bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (System > E-mail). |
+| `BOOTSTRAP_SMTP_HOST` | string | empty |  |  | `bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (Console > Settings > E-mail). |
 | `BOOTSTRAP_SMTP_PORT` | string | empty |  |  | `bootstrap-admin`: SMTP port (default 587). |
 | `BOOTSTRAP_SMTP_USER` | string | empty |  |  | `bootstrap-admin`: SMTP user name. |
 | `BOOTSTRAP_SMTP_PASSWORD` | string | empty |  | yes | `bootstrap-admin`: SMTP password, stored encrypted with `APP_ENCRYPTION_KEY`. |
 | `BOOTSTRAP_SMTP_FROM` | string | empty |  |  | `bootstrap-admin`: sender address. |
+| `RELAY_TLS_CERT` | path | empty | yes |  | `openctem-sensor-relay`: path to the relay's server certificate (PEM) presented to sensors. The relay does not start without it. See the sensor relay architecture note. |
+| `RELAY_TLS_KEY` | path | empty | yes | yes | `openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it. |
+| `CONNECTOR_RELAY_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: https URL of the sensor relay the connector takes requests from. |
+| `CONNECTOR_RELAY_PIN` | string | empty |  |  | `openctem-sensor-relay connector`: hex SHA-256 of the relay's public key. When set, the relay's certificate is accepted only if its key matches. |
+| `CONNECTOR_TLS_CERT` | path | empty | yes |  | `openctem-sensor-relay connector`: path to the connector's client certificate (PEM), pinned on the relay. |
+| `CONNECTOR_TLS_KEY` | path | empty | yes | yes | `openctem-sensor-relay connector`: path to the private key (PEM) of `CONNECTOR_TLS_CERT`. |
+| `CONNECTOR_REALM` | string | empty | yes |  | `openctem-sensor-relay connector`: the realm whose requests the connector takes. |
+| `CONNECTOR_INGEST_KEYS` | list | empty | yes | yes | `openctem-sensor-relay connector`: comma-separated paths of the ingest private key files that open the sensors' sealed requests. |
+| `CONNECTOR_RESPONSE_KEY` | path | empty | yes | yes | `openctem-sensor-relay connector`: path to the Ed25519 key that signs the responses. |
+| `CONNECTOR_API_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to. |
 | `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM). |
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
+| `SUDO_USER` | string | empty |  |  | `bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`). |
 | `ADMIN_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the first platform administrator (or `-email`). |
 | `ADMIN_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the first platform administrator. |
 | `DATABASE_URL` | string | built from `DB_*` |  |  | Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset. A password in it must be percent-encoded (`@` is `%40`, `:` is `%3A`, `/` is `%2F`, `%` is `%25`); the URL built from `DB_*` is encoded for you. |
@@ -495,11 +506,13 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `REKEY_NEW_KEY_FORMAT` | string | empty |  |  | `rekey`: format of `REKEY_NEW_KEY`. Unset: detected. |
 | `REKEY_OLD_KEY` | string | empty |  | yes | `rekey`: the encryption key being retired. |
 | `REKEY_OLD_KEY_FORMAT` | string | empty |  |  | `rekey`: format of `REKEY_OLD_KEY` (`hex`, `base64` or `raw`). Unset: detected. |
+| `SIGNER_GENERATE_KEY` | bool | `false` |  |  | `openctem-signer serve`: `true` creates the signing key on first start when `SIGNER_KEY_FILE` does not exist (never replaces one) and logs its id. The default compose file sets it. |
 | `SIGNER_KEYSET_FILE` | string | empty |  |  | `openctem-signer`: the root-signed keyset the signer serves to sensors. |
 | `SIGNER_KEY_FILE` | string | empty |  |  | `openctem-signer`: the job-signing private key (PEM, mode 0400). |
 | `SIGNER_LEDGER` | string | empty |  |  | `openctem-signer`: scope ledger mode (`enforce`, `audit` or `off`). |
 | `SIGNER_LEDGER_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a scope change. |
 | `SIGNER_LEDGER_T2_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a tier-2 scope change. |
+| `SIGNER_PUBLISH_DIR` | string | empty |  |  | `openctem-signer serve`: a directory (a volume only the signer writes and the bundled sensor mounts read-only) where the signer writes its public key as `signer.pub` at every start, for the sensor to pin (`SENSOR_JOB_SIGNING_KEYS_FILE`). Unset: nothing is published. |
 | `SIGNER_SENSOR_BURST` | string | empty |  |  | `openctem-signer`: burst of `SIGNER_SENSOR_RATE`. |
 | `SIGNER_SENSOR_RATE` | string | empty |  |  | `openctem-signer`: signatures per second allowed per sensor. |
 | `SIGNER_STATE_DIR` | string | empty |  |  | `openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys). |
@@ -546,7 +559,8 @@ Read by the bundled Caddy gateway (`api/deploy/gateway`).
 | `GATEWAY_MAX_BODY_SIZE` | string | `256MB` |  |  | Largest request body the gateway accepts. The API enforces the per-route limits. |
 | `AUTH_COOKIE_NAME` | string | `auth_token` |  |  | Session cookie name used by the routing rule that sends token clients to the API. |
 | `OPENCTEM_GATEWAY_DIR` | string | `/etc/caddy` |  |  | Directory with `Caddyfile`, `planes.caddy` and `modes/`. |
-| `XDG_DATA_HOME` | string | `/data` |  |  | Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. |
+| `XDG_DATA_HOME` | string | `/data` |  |  | Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. The all-in-one image uses `/data/gateway` (it moves an older `/data/caddy` there on start). |
+| `OPENCTEM_CADDY_ADMIN` | string | `127.0.0.1:2019` |  |  | Address of Caddy's admin API. The all-in-one image sets a unix socket only the gateway's uid can open (`unix/<dir>/admin.sock\|0600`), because every process there shares one network namespace. |
 | `OPENCTEM_API_UPSTREAM` | string | `api:8080` |  |  | Address of the API. |
 | `OPENCTEM_WEB_UPSTREAM` | string | `web:3000` |  |  | Address of the web console. |
 | `OPENCTEM_CONSOLE_UPSTREAM` | string | `console:3000` |  |  | Address of the platform console service, which the console's site (`OPENCTEM_ADMIN_SITE`) serves at its root. |
@@ -629,19 +643,22 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `APP_DEBUG` | unset it; it switched nothing on (use LOG_LEVEL=debug outside production) |
 | `GRPC_PORT` | unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR |
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
+| `WORKER_HEALTH_CHECK_ENABLED` | unset it; the sensor health controller owns sensor liveness and the legacy checker was removed |
+| `WORKER_HEALTH_CHECK_INTERVAL` | unset it; the sensor health controller owns sensor liveness and the legacy checker was removed |
 | `AI_MAX_CONCURRENT_JOBS` | unset it; it limited nothing, AI triage jobs run on the background job queue |
-| `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > System > Sign-up) |
+| `AI_TRIAGE_ENABLED` | unset it; a provider key (environment or console) makes platform AI available, and each organization turns AI triage on in Settings > AI |
+| `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > Settings > Sign-up) |
 | `TENANT_CREATION_MODE` | unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open |
-| `SMTP_ENABLED` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_HOST` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_PORT` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_USER` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_PASSWORD` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_FROM` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_FROM_NAME` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_TLS` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_SKIP_VERIFY` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `SMTP_TIMEOUT` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_ENABLED` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_HOST` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_PORT` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_USER` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_PASSWORD` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_FROM` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_FROM_NAME` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_TLS` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_SKIP_VERIFY` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_TIMEOUT` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `APP_ALLOW_PLAINTEXT_CREDENTIALS` | unset it; credentials are always encrypted (development uses the key in api/.env.example) |
 | `CTEM_ENFORCE_COVERAGE_SLO` | unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles) |
 | `AUTH_ACCESS_TOKEN_COOKIE_NAME` | unset it; the session cookie is always auth_token |

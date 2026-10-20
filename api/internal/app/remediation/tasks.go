@@ -50,8 +50,27 @@ type TaskService struct {
 	guard      TaskBulkGuard
 	moves      TaskMoveNotifier
 	exceptions TaskExceptionRequester
+	campaigns  TaskCampaignGate
 	logger     *logger.Logger
+
+	// Tasks from a query (query_tasks.go).
+	queries       QueryTaskRepository
+	matcher       QueryMatcher
+	owners        QueryOwnerDirectory
+	queryNotifier QueryTaskNotifier
+	modules       ModuleGuard
 }
+
+// TaskCampaignGate decides whether the caller may move a task out of one
+// campaign and into another (nil = no campaign): both must be campaigns the
+// caller may change, and the target must take tasks. The campaign service
+// implements it.
+type TaskCampaignGate interface {
+	CheckTaskCampaignChange(ctx context.Context, tenantID shared.ID, from, to *shared.ID) error
+}
+
+// SetCampaignGate wires the campaign side of a task's campaign change.
+func (s *TaskService) SetCampaignGate(g TaskCampaignGate) { s.campaigns = g }
 
 // NewTaskService creates the service. Without SetAssigneeChecker naming an
 // owner is refused (fail closed).
@@ -104,6 +123,8 @@ type CreateTaskInput struct {
 	AssigneeGroupID *shared.ID
 	CampaignID      *shared.ID
 	Deadline        *time.Time
+	// Conflicts resolves findings of another active task.
+	Conflicts remediationdom.ConflictResolution
 }
 
 // CreateTask creates a task with its findings as primary members.
@@ -130,7 +151,7 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 	if err := s.checkOwner(ctx, in.TenantID, in.AssigneeUserID, in.AssigneeGroupID); err != nil {
 		return nil, err
 	}
-	if err := s.checkCampaign(ctx, in.TenantID, in.CampaignID); err != nil {
+	if err := s.checkCampaignChange(ctx, in.TenantID, nil, in.CampaignID); err != nil {
 		return nil, err
 	}
 
@@ -156,18 +177,24 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 			Title: title, Origin: remediationdom.ActionOriginManual, CreatedBy: in.ActorID,
 		}
 	}
-	if err := s.repo.CreateTask(ctx, rec); err != nil {
+	if rec.Conflicts, err = s.prepareConflicts(ctx, in.TenantID, members, in.Conflicts, true, nil); err != nil {
 		return nil, err
+	}
+	if err := s.repo.CreateTask(ctx, rec); err != nil {
+		return nil, s.describeConflicts(ctx, in.TenantID, err, true)
 	}
 	task, err := s.repo.GetTask(ctx, in.TenantID, taskID)
 	if err != nil {
 		return nil, err
 	}
+	s.recordClaimMoves(ctx, actx, in.TenantID, rec.Claimed, in.ActorID)
+	members = rec.Members
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskCreated, auditdom.ResourceTypeRemediationTask, taskID.String()).
 		WithResourceName(title).
 		WithMessage(fmt.Sprintf("Remediation task %q created with %d finding(s)", title, len(members))).
 		WithMetadata("findings", len(members)).WithMetadata("related", len(related)).
-		WithMetadata("action_id", task.ActionID.String()))
+		WithMetadata("action_id", task.ActionID.String()).
+		WithMetadata("skipped", len(rec.Claimed.Skipped)))
 	return task, nil
 }
 
@@ -244,9 +271,16 @@ func (s *TaskService) checkOwner(ctx context.Context, tenantID shared.ID, user, 
 	return nil
 }
 
+// checkCampaign checks the campaign a new task joins: through the campaign
+// gate when wired (a draft or active campaign the caller may change), so
+// every create path (create, accept, from a query) gets the same check;
+// else that it is a campaign of the tenant.
 func (s *TaskService) checkCampaign(ctx context.Context, tenantID shared.ID, campaignID *shared.ID) error {
 	if campaignID == nil {
 		return nil
+	}
+	if s.campaigns != nil {
+		return s.campaigns.CheckTaskCampaignChange(ctx, tenantID, nil, campaignID)
 	}
 	ok, err := s.repo.CampaignInTenant(ctx, tenantID, *campaignID)
 	if err != nil {
@@ -256,6 +290,16 @@ func (s *TaskService) checkCampaign(ctx context.Context, tenantID shared.ID, cam
 		return ErrTaskCampaignNotFound
 	}
 	return nil
+}
+
+// checkCampaignChange checks a task's move between campaigns: through the
+// campaign gate when wired (the caller must be able to change both campaigns),
+// else that the target is a campaign of the tenant.
+func (s *TaskService) checkCampaignChange(ctx context.Context, tenantID shared.ID, from, to *shared.ID) error {
+	if s.campaigns != nil {
+		return s.campaigns.CheckTaskCampaignChange(ctx, tenantID, from, to)
+	}
+	return s.checkCampaign(ctx, tenantID, to)
 }
 
 // GetTask returns a task as the caller may see it: a restricted caller sees
@@ -381,6 +425,8 @@ type AddMembersInput struct {
 	Version    int
 	FindingIDs []shared.ID
 	Role       remediationdom.MemberRole
+	// Conflicts resolves primary findings of another active task.
+	Conflicts remediationdom.ConflictResolution
 }
 
 // AddMembers adds findings to a task, as primary or related members.
@@ -412,10 +458,19 @@ func (s *TaskService) AddMembers(ctx context.Context, in AddMembersInput, actx a
 	if err := s.checkFindings(ctx, in.TenantID, ids, primary); err != nil {
 		return nil, err
 	}
-	t, err := s.repo.AddMembers(ctx, in.TenantID, in.TaskID, in.Version, ids, role, remediationdom.JoinSourceManual, in.ActorID)
-	if err != nil {
-		return nil, err
+	req := remediationdom.AddMembersRequest{TenantID: in.TenantID, TaskID: in.TaskID, ExpectedVersion: in.Version, FindingIDs: ids,
+		Role: role, Source: remediationdom.JoinSourceManual, ActorID: in.ActorID}
+	if role == remediationdom.MemberRolePrimary {
+		var err error
+		if req.Conflicts, err = s.prepareConflicts(ctx, in.TenantID, ids, in.Conflicts, true, &in.TaskID); err != nil {
+			return nil, err
+		}
 	}
+	t, rep, err := s.repo.AddMembers(ctx, req)
+	if err != nil {
+		return nil, s.describeConflicts(ctx, in.TenantID, err, true)
+	}
+	s.recordClaimMoves(ctx, actx, in.TenantID, *rep, in.ActorID)
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskMembersAdded, auditdom.ResourceTypeRemediationTask, t.ID.String()).
 		WithResourceName(t.Title).
 		WithMessage(fmt.Sprintf("%d finding(s) added to remediation task %q as %s", len(ids), t.Title, role)).
@@ -506,8 +561,8 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 		changes.Set("manual_deadline", timeStr(before.ManualDeadline), timeStr(*in.Deadline))
 		data["manual_deadline"] = timeStr(*in.Deadline)
 	}
-	if in.CampaignID != nil {
-		if err := s.checkCampaign(ctx, in.TenantID, *in.CampaignID); err != nil {
+	if in.CampaignID != nil && idStr(*in.CampaignID) != idStr(before.CampaignID) {
+		if err := s.checkCampaignChange(ctx, in.TenantID, before.CampaignID, *in.CampaignID); err != nil {
 			return nil, err
 		}
 		ch.CampaignID = in.CampaignID

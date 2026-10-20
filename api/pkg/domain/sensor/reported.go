@@ -81,6 +81,14 @@ const CapabilityHTTPIdentity = "http.identity@1"
 // whether a sensor reaches a job's targets.
 const CapabilityReachProbe = "reach.probe@1"
 
+// CapabilityRuleSources is the capability of a sensor whose scanners honor
+// a scan job's rule sources (sdk-go core.CapabilityRuleSources): platform
+// only, the organization's templates only, or both in one run. A job that
+// runs only the organization's templates requires it
+// (command.PayloadKeyRequiredFeatures): an older sensor would also run the
+// platform's rules. Same value as scannertemplate.SensorCapabilityRuleSources.
+const CapabilityRuleSources = "rule.sources@1"
+
 // ToolReachProbe is the sensor's built-in reach probe (its scanner name).
 // It is a sensor service the platform requests, like validate, not a scan
 // tool tenants choose, so it has no tool catalog row: sensorServiceTools
@@ -103,6 +111,7 @@ var sensorWideCapabilities = []string{
 	CapabilityNetConfined,
 	CapabilityHTTPIdentity,
 	CapabilityReachProbe,
+	CapabilityRuleSources,
 }
 
 // Tool kinds a sensor reports (sdk-go core.ToolKind).

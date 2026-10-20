@@ -113,6 +113,7 @@ jobs:
             echo "- [ ] Read the changelog preview below. A feature merged with a \`fix:\` title counts as a patch: override the version if needed."
             echo "- [ ] [Run Release Train](${run_url}) (\`dry_run\` first if you want to see the plan). Use the workflow from \`develop\` until a release has brought it to \`main\`."
             echo "- [ ] The release PR merges through the merge queue (merge commit, never squash)."
+            echo "- [ ] Run \`python3 api/scripts/changelog.py release ${VERSION}\` in the follow-up PR to develop, so every fragment in \`api/changelog.d/\` is folded into \`api/CHANGELOG.md\` and deleted."
             echo "- [ ] Merge the follow-up PRs: develop (versions.yaml, main merged back) and helm-charts (appVersion)."
             echo "- [ ] Release notes or an upgrade page in openctemio/docs, if this release needs one."
             echo

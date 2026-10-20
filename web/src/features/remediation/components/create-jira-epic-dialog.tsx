@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   Dialog,
   DialogContent,
@@ -30,32 +31,44 @@ interface CreateJiraEpicDialogProps {
  * (already_existed=true) rather than opening a duplicate.
  */
 export function CreateJiraEpicDialog({ campaign, onOpenChange }: CreateJiraEpicDialogProps) {
+  const { t } = useTranslation()
   const [projectKey, setProjectKey] = useState('')
   const { trigger, isMutating } = useCreateCampaignTicket(campaign?.id ?? '')
 
   const handleCreate = async () => {
     const key = projectKey.trim().toUpperCase()
     if (!key) {
-      toast.error('Project key is required (e.g. SEC)')
+      toast.error(t('remediationCampaigns.jira.keyRequired'))
       return
     }
     try {
       const info = await trigger({ project_key: key })
       if (info?.already_existed) {
-        toast.info(`Campaign already linked to ${info.issue_key}`, {
-          description: info.issue_url,
-        })
+        toast.info(
+          t('remediationCampaigns.jira.alreadyLinked', undefined, { key: info.issue_key }),
+          {
+            description: info.issue_url,
+          }
+        )
       } else {
-        toast.success(`Jira epic ${info?.issue_key} created`, {
-          description: info?.issue_url,
-        })
+        toast.success(
+          t('remediationCampaigns.jira.created', undefined, { key: info?.issue_key ?? '' }),
+          {
+            description: info?.issue_url,
+          }
+        )
       }
       setProjectKey('')
       onOpenChange(false)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to create Jira epic'))
+      toast.error(getErrorMessage(err, t('remediationCampaigns.jira.failed')))
     }
   }
+
+  // The campaign name renders in bold inside the translated sentence.
+  const [descBefore, descAfter = ''] = t('remediationCampaigns.jira.description', undefined, {
+    name: '{name}',
+  }).split('{name}')
 
   return (
     <Dialog open={campaign !== null} onOpenChange={onOpenChange}>
@@ -63,18 +76,18 @@ export function CreateJiraEpicDialog({ campaign, onOpenChange }: CreateJiraEpicD
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ExternalLink className="h-4 w-4" />
-            Create Jira Epic
+            {t('remediationCampaigns.jira.title')}
           </DialogTitle>
           <DialogDescription>
-            Track <span className="font-medium">{campaign?.name}</span> as a Jira epic. Campaign
-            progress and completion sync to the epic; moving the epic to Done in Jira completes the
-            campaign.
+            {descBefore}
+            <span className="font-medium">{campaign?.name}</span>
+            {descAfter}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody>
           <div className="space-y-2">
-            <Label htmlFor="jira-project-key">Jira project key</Label>
+            <Label htmlFor="jira-project-key">{t('remediationCampaigns.jira.projectKey')}</Label>
             <Input
               id="jira-project-key"
               placeholder="SEC"
@@ -85,18 +98,18 @@ export function CreateJiraEpicDialog({ campaign, onOpenChange }: CreateJiraEpicD
                 if (e.key === 'Enter') handleCreate()
               }}
             />
-            <p className="text-muted-foreground text-xs">
-              The epic is created in this project. Requires a connected Jira integration.
-            </p>
+            <p className="text-muted-foreground text-xs">{t('remediationCampaigns.jira.hint')}</p>
           </div>
         </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isMutating}>
-            Cancel
+            {t('remediationCampaigns.jira.cancel')}
           </Button>
           <Button onClick={handleCreate} disabled={isMutating || !projectKey.trim()}>
-            {isMutating ? 'Creating…' : 'Create Epic'}
+            {isMutating
+              ? t('remediationCampaigns.jira.creating')
+              : t('remediationCampaigns.jira.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

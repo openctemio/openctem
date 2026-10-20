@@ -83,13 +83,17 @@ func NewPriorityRuleRepository(db *DB) *PriorityRuleRepository {
 	return &PriorityRuleRepository{db: db}
 }
 
+// ListActiveByTenant returns the tenant's active rules in evaluation order:
+// highest evaluation_order first, ties broken by creation time then id, so
+// two overlapping rules with the same order always pick the same winner
+// (the class of a finding never flips between passes).
 func (r *PriorityRuleRepository) ListActiveByTenant(ctx context.Context, tenantID shared.ID) ([]*vulnerability.PriorityOverrideRule, error) {
 	query := `
-		SELECT id, tenant_id, name, description, priority_class, conditions,
+		SELECT id, tenant_id, name, COALESCE(description, ''), priority_class, conditions,
 			is_active, evaluation_order, created_by, updated_by, created_at, updated_at
 		FROM priority_override_rules
 		WHERE tenant_id = $1 AND is_active = true
-		ORDER BY evaluation_order DESC
+		ORDER BY evaluation_order DESC, created_at, id
 	`
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {
@@ -298,7 +302,9 @@ func NewCompensatingControlLookupRepo(db *sql.DB) *CompensatingControlLookupRepo
 }
 
 // GetEffectiveForAssets returns max reduction_factor per asset with active,
-// tested-passing, non-expired controls.
+// tested-passing, non-expired controls. An untested control, a partial or
+// failed test, and a control without a review date (expires_at) count as no
+// reduction: a control nobody has verified must not lower a priority.
 func (r *CompensatingControlLookupRepo) GetEffectiveForAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]float64, error) {
 	if len(assetIDs) == 0 {
 		return map[shared.ID]float64{}, nil
@@ -316,8 +322,9 @@ func (r *CompensatingControlLookupRepo) GetEffectiveForAssets(ctx context.Contex
 		WHERE cc.tenant_id = $1
 		  AND cca.asset_id = ANY($2)
 		  AND cc.status = 'active'
-		  AND (cc.test_result IS NULL OR cc.test_result != 'fail')
-		  AND (cc.expires_at IS NULL OR cc.expires_at > NOW())
+		  AND cc.test_result = 'pass'
+		  AND cc.last_tested_at IS NOT NULL
+		  AND cc.expires_at > NOW()
 		GROUP BY cca.asset_id
 	`
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(idStrings))

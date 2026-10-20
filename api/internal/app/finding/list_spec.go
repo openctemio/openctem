@@ -25,6 +25,9 @@ type FilterCaller struct {
 	TenantID string
 	UserID   string
 	IsAdmin  bool
+	// APIKey marks a request authenticated with an API key: a key never
+	// inherits its holder's full-data role (datascope.Caller.APIKey).
+	APIKey bool
 	// Has reports the caller's permissions (for permission-gated fields).
 	Has func(permission string) bool
 }
@@ -60,16 +63,23 @@ func filterActor(ctx context.Context, e *datascope.Enforcer, c FilterCaller) (fi
 	}
 	var scope *shared.DataScope
 	switch {
-	case !c.IsAdmin && c.UserID != "":
+	case c.UserID == "":
+		// Every caller of this path is a request. A caller with no user is
+		// not trusted as internal work: it compiles with an empty scope and
+		// reads no scoped rows (fail closed). Background work uses
+		// filterspec.SystemActor instead.
+		scope = &shared.DataScope{TenantID: tenantID}
+	case !c.IsAdmin:
 		if e == nil {
 			return filterspec.Actor{}, errors.New("data scope enforcer not configured")
 		}
-		scope, err = e.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: false})
-	case c.UserID != "" && e != nil:
+		// An API key never inherits its holder's full-data role.
+		scope, err = e.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: false, APIKey: c.APIKey})
+	case e != nil:
 		// An administrator is not narrowed to scope rows, but private
 		// program assets stay hidden unless they are an owner or a member
 		// (RFC-065 §15.3).
-		scope, err = e.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: true, IsOwner: e.CallerOf(ctx).IsOwner})
+		scope, err = e.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: true, IsOwner: e.CallerOf(ctx).IsOwner, APIKey: c.APIKey})
 	}
 	if err != nil {
 		return filterspec.Actor{}, fmt.Errorf("resolve data scope: %w", err)
@@ -116,6 +126,28 @@ func (s *VulnerabilityService) GetFindingStatsBySpec(ctx context.Context, c Filt
 		return nil, err
 	}
 	return repo.GetStatsWhere(ctx, where)
+}
+
+type findingSLARepo interface {
+	GetSLABreakdownWhere(ctx context.Context, w *filterspec.Where) (*vulnerability.SLABreakdown, error)
+}
+
+// GetFindingSLABreakdownBySpec splits the findings a decoded filter selects by
+// SLA standing, as the caller: the same compiled WHERE as the list and stats.
+func (s *VulnerabilityService) GetFindingSLABreakdownBySpec(ctx context.Context, c FilterCaller, spec *filterspec.Spec) (*vulnerability.SLABreakdown, error) {
+	repo, ok := s.findingRepo.(findingSLARepo)
+	if !ok {
+		return nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetSLABreakdownWhere(ctx, where)
 }
 
 // groupsArgOffset is the first placeholder the grouped-view queries leave to

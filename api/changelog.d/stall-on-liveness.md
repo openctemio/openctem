@@ -1,5 +1,0 @@
-### Changed: a task is stalled only when nothing moves, and its sensor hands back what it finished
-
-- The heartbeat's per-command progress also carries liveness counters (`records`, `output_bytes`, `cpu_ms`; migration `002099_command_liveness`). A running task is stalled only when none of finished targets, records, output bytes or CPU time (by at least 2 s since it last counted) moved for its stall window, so a slow but working batch tool (a large httpx list, naabu, nuclei) is never cut. This replaces the rule that a task was stalled only after it finished a target.
-- A stalled task is no longer re-queued at once: its sensor is asked to stop it and hand back what it finished (`stop_command_ids` in the heartbeat answer). The task completes partial and only its unfinished targets run again. With no answer within 5 minutes (a sensor that cannot stop it) it is re-queued as before. A task that stops with nothing finished is re-queued, not failed.
-- The overrun cap (twice the task budget plus 5 minutes) is unchanged and applies whatever the signals say: they are hints that can delay a stall decision, never the overrun cap or the run's deadline.

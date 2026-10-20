@@ -645,6 +645,7 @@
   "sensors.pair.getCode": "Get a code",
   "sensors.pair.runOnHost": "Run this on the sensor host:",
   "sensors.pair.pairCommand": "Pair command",
+  "sensors.pair.signingRootNote": "The command carries the job-signing root: the sensor checks the platform's job signer against it and refuses to pair if they differ.",
   "sensors.pair.expired": "The code expired. Get a new one.",
   "sensors.pair.rejected": "This pairing request was rejected.",
   "sensors.pair.waiting": "Waiting for the sensor to connect · expires in {time}",
@@ -1363,5 +1364,15 @@
   "sensors.jobSafety.loosen.privateTargets": "Private targets may go to sensors without a local policy.",
   "sensors.jobSafety.loosen.interactsh": "Scan jobs may use out-of-band callbacks to an external server.",
   "sensors.jobSafety.loosen.customTemplates": "Scan jobs may carry custom templates.",
-  "sensors.jobSafety.loosen.insecureTls": "Scan tools may accept invalid TLS certificates."
+  "sensors.jobSafety.loosen.insecureTls": "Scan tools may accept invalid TLS certificates.",
+  "sensors.checks.label.setup": "Setup",
+  "sensors.checks.label.posture": "Security posture",
+  "sensors.checks.setup.text": "The sensor reports setup checks that need attention. Open Setup & health for the details.",
+  "sensors.checks.issue.setup": "Setup needs attention",
+  "sensors.checks.issue.posture": "Runs unhardened",
+  "sensors.health.attention.posture": "unhardened",
+  "sensors.pair.getSensor.title": "Don't have the sensor yet?",
+  "sensors.pair.getSensor.body": "Install the sensor on the host first. It needs only the platform URL (and the platform CA fingerprint if you use a private CA). No key is copied: the sensor makes its own when it pairs.",
+  "sensors.pair.getSensor.pull": "Get the sensor image",
+  "sensors.pair.getSensor.guide": "Open the sensor installation guide"
 }

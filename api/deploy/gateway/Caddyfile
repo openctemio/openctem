@@ -48,8 +48,10 @@
 # layer4 module (deploy/gateway/Dockerfile). Default off (sensors/off.wrappers).
 # =============================================================================
 {
-	# Admin API stays inside the container (the healthcheck uses it).
-	admin 127.0.0.1:2019
+	# Admin API stays inside the container (the healthcheck uses it). The
+	# all-in-one image, where every process shares one network namespace, sets
+	# OPENCTEM_CADDY_ADMIN to a unix socket only the gateway's uid can open.
+	admin {$OPENCTEM_CADDY_ADMIN:127.0.0.1:2019}
 
 	# Runtime log: plain text, not JSON, so `docker logs` is readable.
 	log default {
@@ -234,3 +236,16 @@ import modes/{$OPENCTEM_TLS_MODE}.site
 
 # The platform console's own site, or nothing (OPENCTEM_ADMIN_SITE).
 import admin/{$OPENCTEM_ADMIN_SITE_FILE:off}.site
+
+# The gateway's health for the platform console's Health page
+# (SYSTEM_GATEWAY_HEALTH_URL, http://gateway:2020/health in the compose file).
+# Plain HTTP on a port that is never published: only containers on the
+# stack's network reach it. It says nothing but that the gateway answers.
+http://:2020 {
+	handle /health {
+		respond "ok" 200
+	}
+	handle {
+		respond 404
+	}
+}

@@ -37,6 +37,8 @@ func assetReferenceColumns(t *testing.T, db *sql.DB) map[string]string {
 		WHERE col.table_schema = 'public' AND tb.table_type = 'BASE TABLE'
 		  AND (col.column_name LIKE '%asset_id' OR col.column_name LIKE '%asset_ids')
 		  AND col.udt_name IN ('uuid', '_uuid')
+		  -- a partition is covered by its parent table
+		  AND NOT EXISTS (SELECT 1 FROM pg_inherits i WHERE i.inhrelid = to_regclass(quote_ident(col.table_name)))
 		  AND NOT EXISTS (
 			SELECT 1 FROM pg_constraint k
 			JOIN pg_attribute ka ON ka.attrelid = k.conrelid AND ka.attnum = ANY(k.conkey)
@@ -117,6 +119,9 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	}
 	T, M, K, O, U := tenant.String(), merge.String(), keep.String(), other.String(), user.String()
 	exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'merge test')`, U, "merge-"+U+"@example.test")
+	// An active member: as a primary owner they see the asset (and so the
+	// kept one after the merge).
+	exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, U, T)
 
 	// Parents of the referencing rows.
 	ids := map[string]string{}
@@ -145,7 +150,7 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		`INSERT INTO runtime_telemetry_events (tenant_id, event_type, observed_at, endpoint_asset_id) VALUES ($1,'process_start',NOW(),$2)`,
 		`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($2,$4,'primary')`,
 		`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($3,$4,'primary')`, // conflict
-		`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($4,$1,$2)`,
+		`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($4,$1,$2) ON CONFLICT DO NOTHING`,
 		`INSERT INTO asset_coverage (asset_id, tenant_id, capability) VALUES ($2,$1,'scan.ports')`,
 		`INSERT INTO asset_coverage (asset_id, tenant_id, capability) VALUES ($3,$1,'scan.ports')`, // conflict
 		`INSERT INTO asset_services (tenant_id, asset_id, port, protocol) VALUES ($1,$2,8080,'tcp')`,
@@ -174,6 +179,14 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		VALUES ($1,$2,$3,$4,$5,'/m','package',100,'transitive')`, newID("link2"), T, M, ids["prod"], ids["comp2"])
 	exec(`INSERT INTO asset_software_edges (tenant_id, asset_id, parent_id, child_id) VALUES ($1,$2,$3,$4)`, T, M, ids["link1"], ids["link2"])
 	exec(`INSERT INTO pentest_campaigns (tenant_id, name, asset_ids) VALUES ($1,'pc',$2)`, T, pq.Array([]string{M, O}))
+	// Dashboard facts of both assets (derived data: rebuilt from the moved
+	// findings by the facts loop).
+	facts := postgres.NewDashboardFactsRepository(&postgres.DB{DB: db})
+	for _, a := range []shared.ID{merge, keep} {
+		if _, err := facts.RecomputeAsset(ctx, tenant, a); err != nil {
+			t.Fatalf("recompute facts: %v", err)
+		}
+	}
 
 	// Repository data: the merged repo has branches main (the kept repo has
 	// one too) and feature; a finding sits on its main.
@@ -210,6 +223,14 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	for ref := range assetReferenceColumns(t, db) {
 		table, col, _ := strings.Cut(ref, ".")
 		if table == "asset_merge_log" || table == "asset_dedup_review" {
+			continue
+		}
+		if table == "dash_dirty_assets" {
+			// Deleting the merged asset marks it (reason 2 only), which the
+			// facts loop consumes without a recompute; no other mark may stay.
+			if n := count(`SELECT count(*) FROM dash_dirty_assets WHERE asset_id = $1 AND reasons <> 2`, M); n != 0 {
+				t.Errorf("dash_dirty_assets keeps %d marks of the merged asset besides its delete", n)
+			}
 			continue
 		}
 		var q string
@@ -259,6 +280,11 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	}
 	if got := count(`SELECT count(*) FROM asset_dedup_review WHERE tenant_id = $1 AND status = 'pending'`, T); got != 0 {
 		t.Errorf("stale pending review about the merged asset was kept (%d pending)", got)
+	}
+	// The kept asset is marked so the facts loop recomputes it from the
+	// findings it received.
+	if got := count(`SELECT count(*) FROM dash_dirty_assets WHERE tenant_id = $1 AND asset_id = $2 AND reasons & 1 = 1`, T, K); got == 0 {
+		t.Errorf("kept asset not marked for a dashboard fact recompute")
 	}
 	if got := count(`SELECT count(*) FROM assets WHERE id = $1`, M); got != 0 {
 		t.Errorf("merged asset still exists")

@@ -18,6 +18,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
@@ -30,9 +31,11 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// EmailJobEnqueuer defines the interface for enqueueing email jobs.
+// EmailJobEnqueuer builds the durable job that sends an invitation e-mail
+// (the link token sealed). The invitation write queues it in its own
+// transaction, so the e-mail is never lost to a queue outage.
 type EmailJobEnqueuer interface {
-	EnqueueTeamInvitation(ctx context.Context, payload TeamInvitationJobPayload) error
+	TeamInvitationJob(payload TeamInvitationJobPayload) (durablejob.Job, error)
 }
 
 // MemberStatusEmailNotifier sends transactional emails when a
@@ -1133,24 +1136,15 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	return nil
 }
 
-// invalidateUserPermissions clears permission cache and version for a user.
-// Called when user is removed from tenant to immediately revoke access.
+// invalidateUserPermissions clears the user's cached permissions and bumps
+// their permission version. Called when a user is removed, suspended or
+// demoted to revoke access at once. The version is bumped, never deleted:
+// cached permission sets are keyed by version, and dropping the key would
+// make the user read the "no version" entry again, which may still hold a
+// set cached before their first version. Bumping also closes their live
+// sockets (change listener).
 func (s *TenantService) invalidateUserPermissions(ctx context.Context, tenantID, userID string) {
-	// Invalidate permission cache
-	if s.permCacheSvc != nil {
-		s.permCacheSvc.Invalidate(ctx, tenantID, userID)
-	}
-
-	// Delete permission version (cleanup stale version data)
-	if s.permVersionSvc != nil {
-		if err := s.permVersionSvc.Delete(ctx, tenantID, userID); err != nil {
-			s.logger.Warn("failed to delete permission version",
-				"tenant_id", tenantID,
-				"user_id", userID,
-				"error", err,
-			)
-		}
-	}
+	s.bumpPermissionVersion(ctx, tenantID, userID)
 
 	s.logger.Debug("user permissions invalidated on member removal",
 		"tenant_id", tenantID,
@@ -1400,7 +1394,17 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	rawToken := invitation.Token()
 	invitation.SetToken(crypto.HashToken(rawToken))
 
-	if err := s.repo.CreateInvitation(ctx, invitation); err != nil {
+	// The invitation e-mail is queued in the invitation's transaction. A job
+	// that cannot be built leaves the invitation without an e-mail (logged);
+	// the creator still gets the link and can resend.
+	createCtx, jobErr := s.withInvitationEmail(ctx, invitationEmail{
+		tenantID: parsedID, invitationID: invitation.ID(), invitedBy: inviterUserID,
+		email: input.Email, rawToken: rawToken, expiresIn: 7 * 24 * time.Hour,
+	})
+	if jobErr != nil {
+		s.logger.Error("invitation email not queued", "invitation_id", invitation.ID().String(), "error", jobErr)
+	}
+	if err := s.repo.CreateInvitation(createCtx, invitation); err != nil {
 		return nil, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
@@ -1431,48 +1435,52 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	}
 	s.logAudit(ctx, actx, event)
 
-	// Enqueue email job if email enqueuer is configured
-	if s.emailEnqueuer != nil {
-		// Get inviter name
-		inviterName := "A team member"
-		if s.userInfoProvider != nil {
-			if name, err := s.userInfoProvider.GetUserNameByID(ctx, inviterUserID); err == nil && name != "" {
-				inviterName = name
-			}
-		}
-
-		// Get tenant name
-		teamName := "the team"
-		if t, err := s.repo.GetByID(ctx, parsedID); err == nil && t != nil {
-			teamName = t.Name()
-		}
-
-		// Enqueue the email job
-		payload := TeamInvitationJobPayload{
-			RecipientEmail: input.Email,
-			InviterName:    inviterName,
-			TeamName:       teamName,
-			Token:          invitation.Token(),
-			ExpiresIn:      7 * 24 * time.Hour, // 7 days
-			InvitationID:   invitation.ID().String(),
-			TenantID:       tenantID,
-		}
-		if err := s.emailEnqueuer.EnqueueTeamInvitation(ctx, payload); err != nil {
-			// Log error but don't fail the invitation creation
-			s.logger.Error("failed to enqueue invitation email",
-				"email", input.Email,
-				"invitation_id", invitation.ID().String(),
-				"error", err,
-			)
-		} else {
-			s.logger.Info("invitation email queued",
-				"email", logger.SanitizeValue(input.Email),
-				"invitation_id", invitation.ID().String(),
-			)
-		}
+	if s.emailEnqueuer != nil && jobErr == nil {
+		s.logger.Info("invitation email queued",
+			"email", logger.SanitizeValue(input.Email),
+			"invitation_id", invitation.ID().String(),
+		)
 	}
 
 	return invitation, nil
+}
+
+// invitationEmail is what an invitation e-mail job needs.
+type invitationEmail struct {
+	tenantID, invitationID, invitedBy shared.ID
+	email, rawToken                   string
+	expiresIn                         time.Duration
+}
+
+// withInvitationEmail returns ctx carrying the invitation e-mail job for the
+// invitation write to queue (unchanged when e-mail is not configured).
+func (s *TenantService) withInvitationEmail(ctx context.Context, e invitationEmail) (context.Context, error) {
+	if s.emailEnqueuer == nil {
+		return ctx, nil
+	}
+	inviterName := "A team member"
+	if s.userInfoProvider != nil {
+		if name, err := s.userInfoProvider.GetUserNameByID(ctx, e.invitedBy); err == nil && name != "" {
+			inviterName = name
+		}
+	}
+	teamName := "the team"
+	if t, err := s.repo.GetByID(ctx, e.tenantID); err == nil && t != nil {
+		teamName = t.Name()
+	}
+	job, err := s.emailEnqueuer.TeamInvitationJob(TeamInvitationJobPayload{
+		RecipientEmail: e.email,
+		InviterName:    inviterName,
+		TeamName:       teamName,
+		Token:          e.rawToken,
+		ExpiresIn:      e.expiresIn,
+		InvitationID:   e.invitationID.String(),
+		TenantID:       e.tenantID.String(),
+	})
+	if err != nil {
+		return ctx, err
+	}
+	return durablejob.WithEnqueue(ctx, job), nil
 }
 
 // requireAllowedEmailDomain enforces the organization's Security.AllowedDomains
@@ -1755,34 +1763,16 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 		return fmt.Errorf("failed to rotate invitation token: %w", rerr)
 	}
 	inv.SetToken(crypto.HashToken(rawToken))
-	if err := s.repo.UpdateInvitation(ctx, inv); err != nil {
+	// The e-mail of the new token is queued in the rotation's transaction.
+	updateCtx, err := s.withInvitationEmail(ctx, invitationEmail{
+		tenantID: parsedTenantID, invitationID: inv.ID(), invitedBy: inv.InvitedBy(),
+		email: inv.Email(), rawToken: rawToken, expiresIn: time.Until(inv.ExpiresAt()), // remaining TTL
+	})
+	if err != nil {
+		return fmt.Errorf("failed to queue invitation email: %w", err)
+	}
+	if err := s.repo.UpdateInvitation(updateCtx, inv); err != nil {
 		return fmt.Errorf("failed to persist rotated invitation token: %w", err)
-	}
-	inv.SetToken(rawToken) // raw token for the email payload below
-
-	// Look up inviter name + tenant name for the email template
-	inviterName := "A team member"
-	if s.userInfoProvider != nil {
-		if name, nerr := s.userInfoProvider.GetUserNameByID(ctx, inv.InvitedBy()); nerr == nil && name != "" {
-			inviterName = name
-		}
-	}
-	teamName := "the team"
-	if t, terr := s.repo.GetByID(ctx, parsedTenantID); terr == nil && t != nil {
-		teamName = t.Name()
-	}
-
-	payload := TeamInvitationJobPayload{
-		RecipientEmail: inv.Email(),
-		InviterName:    inviterName,
-		TeamName:       teamName,
-		Token:          inv.Token(),
-		ExpiresIn:      time.Until(inv.ExpiresAt()), // remaining TTL, not the original 7 days
-		InvitationID:   inv.ID().String(),
-		TenantID:       tenantID,
-	}
-	if err := s.emailEnqueuer.EnqueueTeamInvitation(ctx, payload); err != nil {
-		return fmt.Errorf("failed to enqueue invitation email: %w", err)
 	}
 
 	s.logger.Info("invitation email resent",
@@ -2715,6 +2705,62 @@ func (s *TenantService) GetMCPSettings(ctx context.Context, tenantID string) (*t
 	}
 	ms := t.TypedSettings().MCP
 	return &ms, nil
+}
+
+// GetAISettings returns the organization's AI triage settings, including
+// whether an administrator turned AI triage on (docs/architecture/ai-triage.md).
+func (s *TenantService) GetAISettings(ctx context.Context, tenantID string) (*tenantdom.AISettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	ai := t.TypedSettings().AI
+	return &ai, nil
+}
+
+// UpdateAIOptIn turns AI triage on (the organization's consent to send finding
+// content to the AI provider) or off, and audits the change as critical.
+// Turning it on again keeps the original consent; nothing changes and
+// nothing is audited when the state is already the requested one.
+func (s *TenantService) UpdateAIOptIn(ctx context.Context, tenantID string, on bool, actx auditapp.AuditContext) (*tenantdom.AISettings, error) {
+	if on && actx.ActorID == "" {
+		return nil, fmt.Errorf("%w: turning AI triage on needs a signed-in administrator", shared.ErrValidation)
+	}
+	var before tenantdom.AISettings
+	changed := false
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAI, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().AI
+		if before.OptedIn() == on {
+			return nil
+		}
+		changed = true
+		ai := before
+		ai.SetOptIn(on, actx.ActorID, time.Now())
+		return t.UpdateAISettings(ai)
+	})
+	if err != nil {
+		return nil, err
+	}
+	after := t.TypedSettings().AI
+	if changed {
+		msg := "AI triage turned off: finding content is no longer sent to the AI provider"
+		if on {
+			msg = "AI triage turned on: finding content may be sent to the AI provider"
+		}
+		actx.TenantID = tenantID
+		event := auditapp.NewSuccessEvent(audit.ActionAISettingsUpdated, audit.ResourceTypeTenant, tenantID).
+			WithChanges(auditapp.DiffChanges(
+				map[string]any{"enabled": before.OptedIn()},
+				map[string]any{"enabled": after.OptedIn()})).
+			WithMessage(msg).
+			WithSeverity(audit.SeverityCritical)
+		s.logAudit(ctx, actx, event)
+	}
+	return &after, nil
 }
 
 // UpdateMCPSettings replaces the tenant's MCP policy and audits the change.

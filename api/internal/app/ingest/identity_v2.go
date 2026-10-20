@@ -30,6 +30,10 @@ const (
 	// partialSensorFingerprint keeps the sensor's own fingerprint as a
 	// sighting key (D1).
 	partialSensorFingerprint = "sensor/fingerprint"
+	// partialServerSecretHMAC carries the server's keyed hash of a raw
+	// secret a report carried unmasked, taken before the value is masked
+	// (keyRawSecrets). Server-only: refused from reports, never stored.
+	partialServerSecretHMAC = "server/secretHMAC/v1"
 )
 
 // identityKind tells which v2 recipe applies to a CTIS finding, or "" when

@@ -39,6 +39,18 @@
 #   allow unprivileged user namespaces (the kernel default; on Ubuntu 24.04
 #   the AppArmor userns restriction applies to unconfined processes only).
 #   On a host that cannot confine, the sensor refuses to start and says why.
+# - Network: the sensor sits on its own bridge, sensor-net, and nowhere else.
+#   Only the api service is attached to both networks, so the sensor resolves
+#   and reaches `api` (its one platform endpoint) and the internet for public
+#   scans. It cannot resolve or connect to postgres, redis, the signer, the
+#   gateway or the console: a hostile scan response that takes over the
+#   sensor process finds no datastore to talk to. sensor-enrollment keeps the
+#   openctem network because it writes the token hash to Postgres; it is a
+#   one-shot job and not reachable from the sensor.
+# - Limits: SENSOR_MEMORY_LIMIT (default 2g), SENSOR_CPUS (default 2) and
+#   SENSOR_PIDS_LIMIT (default 512) bound a runaway scanner. The sensor image
+#   has no health probe command yet, so there is no container healthcheck;
+#   restart: unless-stopped and the console's sensor status cover liveness.
 # - A shared sensor takes no organization's jobs until a super administrator
 #   turns shared sensors on (Console > System > Platform scanning).
 # - Token expired before the sensor enrolled: put a new value in .env
@@ -50,7 +62,7 @@
 # and start this overlay (its sensor-data volume is a fresh identity).
 services:
   sensor-enrollment:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.11.0}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
     entrypoint: ["/app/bootstrap-admin"]
     command:
       - "sensor-token"
@@ -93,6 +105,12 @@ services:
       SENSOR_NAME: ${SENSOR_NAME:-bundled-sensor}
       SENSOR_REGION: ${SENSOR_REGION:-default}
       SENSOR_INSTANCE_ENROLLMENT_TOKEN: ${SENSOR_INSTANCE_ENROLLMENT_TOKEN:?SENSOR_INSTANCE_ENROLLMENT_TOKEN is required (setup.sh writes it)}
+      # The job signer's public key, written by the signer to a volume the
+      # API does not mount: the sensor pins it instead of trusting the key
+      # the API serves first. A sensor older than the release that reads
+      # *_FILE ignores this variable and keeps its current behaviour. For
+      # production use the offline root instead (SENSOR_JOB_SIGNING_ROOT).
+      SENSOR_JOB_SIGNING_KEYS_FILE: /etc/openctem/signer-pub/signer.pub
       SENSOR_STATE_DIR: /var/lib/openctem/state
       SENSOR_CONTENT_DIR: /var/lib/openctem/content
       SENSOR_OUTBOX_DIR: /var/lib/openctem/outbox
@@ -110,7 +128,7 @@ services:
       api:
         condition: service_healthy
     networks:
-      - openctem
+      - sensor-net
     restart: unless-stopped
     volumes:
       # The sensor's identity (state/), queued results (outbox/) and scanner
@@ -118,6 +136,9 @@ services:
       - sensor-data:/var/lib/openctem
       # The network owner's local policy, read-only.
       - ./sensor/sensor-policy.yaml:/etc/openctem/sensor-policy.yaml:ro
+      # The signer's public key (signer.pub), read-only. Only the signer
+      # writes this volume; the API never mounts it.
+      - signer-pub:/etc/openctem/signer-pub:ro
     tmpfs:
       - /tmp
     read_only: true
@@ -125,11 +146,28 @@ services:
     security_opt:
       - no-new-privileges:true
       - seccomp=./sensor/seccomp.json
+    deploy:
+      resources:
+        limits:
+          memory: ${SENSOR_MEMORY_LIMIT:-2g}
+          cpus: ${SENSOR_CPUS:-2}
+          pids: ${SENSOR_PIDS_LIMIT:-512}
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "5"
 
+  # The API answers the sensor on both networks; the sensor's network holds
+  # nothing else of the stack.
+  api:
+    networks:
+      sensor-net: {}
+
+networks:
+  sensor-net:
+    driver: bridge
+
 volumes:
   sensor-data:
+  signer-pub:

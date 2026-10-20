@@ -10,6 +10,9 @@ import (
 	"net"
 	"time"
 
+	queryapp "github.com/openctemio/openctem/api/internal/app/query"
+	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
+
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
@@ -25,6 +28,7 @@ import (
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/audit"
@@ -318,50 +322,6 @@ func (r taskIssueReader) OpenMemberIDs(ctx context.Context, tenantID, taskID sha
 	return ids, nil
 }
 
-// campaignKeyResolver serves campaigns scoped to a remediation-group key (a
-// solution family): progress from the side-table rollup, resolution via the
-// same guarded group-resolve path as the standalone "resolve group" action.
-// Kept here so exposure needn't import the remediation group service or the
-// key repository.
-type campaignKeyResolver struct {
-	keys  *postgres.FindingRemediationKeyRepository
-	group *remediation.GroupService
-}
-
-func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, int64, error) {
-	closed := vulnerability.ClosedFindingStatuses()
-	closedStrs := make([]string, len(closed))
-	for i, s := range closed {
-		closedStrs[i] = string(s)
-	}
-	return a.keys.CountByKeyInScope(ctx, tenantID, key, closedStrs, scope)
-}
-
-func (a campaignKeyResolver) CountVerifiedByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, error) {
-	_, verified, err := a.keys.CountByKeyInScope(ctx, tenantID, key, []string{string(vulnerability.FindingStatusResolved)}, scope)
-	return verified, err
-}
-
-func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (*exposure.CampaignResolveResult, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, err
-	}
-	res, err := a.group.ResolveGroup(ctx, tid, remediation.ResolveGroupInput{
-		Key:                   key,
-		Status:                in.Status,
-		Resolution:            in.Resolution,
-		ActorID:               in.ActorID,
-		HasVerifyPermission:   in.HasVerifyPermission,
-		HasFixApplyPermission: in.HasFixApplyPermission,
-		OperatorApproved:      in.Approved,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return remediation.CampaignResolveResult(res), nil
-}
-
 // httpDataScopeCaller reads the acting user and the admin decision from the
 // HTTP auth context for the Layer 2 data-scope enforcer.
 func httpDataScopeCaller(ctx context.Context) datascope.Caller {
@@ -369,7 +329,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
 		IsOwner: middleware.IsOwner(ctx),
-		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
+		APIKey:  middleware.IsDelegatedCredential(ctx),
 	}
 }
 
@@ -419,6 +379,13 @@ func (r workflowMemberReader) IsActiveTenantMember(ctx context.Context, tenantID
 // workflowPermissionReader reads the automation principal's permissions
 // from the database (the union of their roles), never from a cache.
 type workflowPermissionReader struct{ roles *postgres.RoleRepository }
+
+// queryTaskOwners reads the owner of an auto-mode task query outside a
+// request: membership, role and permissions.
+type queryTaskOwners struct {
+	workflowMemberReader
+	workflowPermissionReader
+}
 
 func (r workflowPermissionReader) GetUserPermissions(ctx context.Context, tenantID, userID string) ([]string, error) {
 	tid, err := role.ParseID(tenantID)
@@ -645,7 +612,11 @@ type Services struct {
 	FindingActions  *finding.FindingActionsService
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
-	CTEMID          *ctemidapp.Service
+	// ThreatAlertPlanner plans and delivers emerging-threat alerts (RFC-117).
+	ThreatAlertPlanner *threatalertapp.Planner
+	// ThreatAlerts is the emerging-threat alert API.
+	ThreatAlerts *threatalertapp.Service
+	CTEMID       *ctemidapp.Service
 	// VersionCheck is the release feed check (RFC-105); never nil with a database.
 	VersionCheck *versioncheck.Service
 	CertMonitor  *certmonitorapp.Service
@@ -826,8 +797,11 @@ type Services struct {
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
 	RemediationTask     *remediation.TaskService
-	RemediationSuggest  *remediation.SuggestionService
-	RemediationGroup    *remediation.GroupService
+	// Query runs custom queries (one instance: its concurrency caps are
+	// per process).
+	Query              *queryapp.Service
+	RemediationSuggest *remediation.SuggestionService
+	RemediationGroup   *remediation.GroupService
 
 	// Business Units
 	BusinessUnit *asset.BusinessUnitService
@@ -987,12 +961,11 @@ func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, m
 
 // ServiceDeps contains dependencies needed to create services.
 type ServiceDeps struct {
-	Config           *config.Config
-	Log              *logger.Logger
-	DB               *sql.DB
-	Repos            *Repositories
-	RedisClient      *redis.Client
-	SensorStateStore *redis.SensorStateStore
+	Config      *config.Config
+	Log         *logger.Logger
+	DB          *sql.DB
+	Repos       *Repositories
+	RedisClient *redis.Client
 }
 
 // NewServices initializes all services.
@@ -1070,10 +1043,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
-	// D6: a restricted viewer holding dashboard:aggregate is counted over the
+	// D6: a restricted viewer holding dashboards:org:view is counted over the
 	// organization by the dashboard figures (ViewerScope).
 	s.DataScope.SetAggregateCheck(func(ctx context.Context) bool {
-		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+		return middleware.HasPermission(ctx, permission.DashboardsOrgView.String())
 	})
 	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
@@ -1222,6 +1195,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
+	s.UserDashboard.SetAuditService(s.Audit)
+	s.UserDashboard.SetLimitReader(s.Entitlement)
+	s.UserDashboard.SetMembershipReader(repos.Tenant)
+	s.UserDashboard.SetSettingsStore(s.Tenant)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
@@ -1242,6 +1219,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
@@ -1274,6 +1252,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// resolves) queues a proof-of-fix re-check per finding, like the
 	// dedicated fix-applied action.
 	s.Vulnerability.SetProofOfFixQueuer(s.FindingActions.QueueProofOfFix)
+	// One path for the side effects of a status change (finding actions, VEX).
+	s.FindingActions.SetStatusEffects(s.Vulnerability)
+	s.VEX.SetStatusEffects(s.Vulnerability)
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
@@ -1292,7 +1273,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 		OnFeed: learnComponentReleases,
 	}, log)
-	// System > Software updates switches the daily check without a restart;
+	// Monitoring > Software updates switches the daily check without a restart;
 	// VERSION_CHECK_ENABLED=false stays a ceiling.
 	if repos.PlatformSetting != nil {
 		s.VersionCheck.SetSettings(repos.PlatformSetting)
@@ -1378,7 +1359,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize dashboard service
 	s.Dashboard = module.NewDashboardService(repos.Dashboard, log)
 	s.Dashboard.SetDataScope(s.DataScope)
-	// D6 (dashboard:aggregate) is decided once, by s.DataScope.ViewerScope.
+	// D6 (dashboards:org:view) is decided once, by s.DataScope.ViewerScope.
 
 	// Initialize SLA service
 	s.SLA = sla.NewService(repos.SLA, log)
@@ -1448,12 +1429,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PriorityClassification.SetThreatModelOracle(
 			newThreatModelOracle(repos.ThreatModel, defaultThreatScoreThreshold, 5*time.Minute))
 	}
-
-	// AI-triage de-escalation: feed a high-confidence "likely false positive"
-	// verdict into prioritization so it can LOWER a finding by one bounded level
-	// (the only signal that reduces priority). Batch-first, tenant-scoped, nil-safe
-	// — no verdict / low confidence → no effect, never an escalation.
-	s.PriorityClassification.SetAITriageVerdictLookup(postgres.NewAITriagePriorityLookupRepo(deps.DB))
 
 	// Finding-priority recompute wiring:
 	//   producers → ControlChangePublisher → finding_priority_queue (DB;
@@ -1703,34 +1678,38 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
-	// Wire the finding counter so campaign progress (finding_count/resolved_count/
-	// progress) is computed from live finding data instead of staying at zero.
-	s.RemediationCampaign.SetFindingCounter(repos.Finding)
-	s.RemediationCampaign.SetFindingLister(repos.Finding)
-	// A restricted reader sees progress over their own findings (L-18).
+	// A campaign holds tasks: what a restricted caller sees and may change of
+	// it follows their data scope over its tasks' findings.
 	s.RemediationCampaign.SetDataScope(s.DataScope)
-	// Creates, edits, status changes and deletes go to audit_logs.
+	// Creates, edits, task adds and removals, status changes and deletes go
+	// to audit_logs.
 	s.RemediationCampaign.SetAuditLogger(s.Audit)
 	s.RemediationCampaign.SetAssigneeChecker(repos.AccessControl) // a campaign owner must be an active member (21b C2)
-	// Phase 3: let a campaign actively resolve its open findings (reuses the
-	// finding bulk path + abuse guard).
-	s.RemediationCampaign.SetFindingResolver(remediation.NewCampaignFilterResolver(s.Vulnerability, s.BulkGuard))
 	// Remediation tasks (RFC-098): who fixes an action and by when; state,
 	// deadline and counters derived from the member findings.
 	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
 	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Campaign <-> task: the campaign checks every task it takes; a task's
+	// own campaign change goes through the campaign's write check.
+	s.RemediationCampaign.SetTasks(s.RemediationTask.CampaignTasks())
+	s.RemediationTask.SetCampaignGate(s.RemediationCampaign)
 	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
 	// own findings, proof-of-fix queued) behind the abuse guard.
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// One exception over a task's open findings (RFC-111 §7).
 	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
+	if deps.DB != nil {
+		s.Query = queryapp.NewService(postgres.NewQueryExecutor(&postgres.DB{DB: deps.DB}, postgres.InteractiveQueryTimeout), s.DataScope, log)
+	}
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.RemediationSuggest.SetTasks(s.RemediationTask)
+	// Keys derived by older key rules are derived again before a run uses them.
+	s.RemediationSuggest.SetKeyRederiver(remediationKeys)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -1765,10 +1744,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
-		// On triage completion, enqueue an asset-scoped reclassify so a
-		// high-confidence false-positive verdict de-escalates the finding's
-		// priority, through the finding-priority queue (wired above).
-		s.AITriage.SetReclassifyEnqueuer(aiTriageReclassifyEnqueuer{pub: s.ControlChangePub})
+		// The organization's AI data-egress policy, shared with MCP: pentest
+		// findings above the TLP limit for AI, or of a campaign with AI off,
+		// never reach the model.
+		s.AITriage.SetEgressPolicy(aipolicy.New(mcpPolicyReader{tenants: s.Tenant}, repos.PentestCampaign))
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
 		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
@@ -1860,10 +1839,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// integration's own Jira site; previews load objects through the caller's
 	// data scope.
 	if repos.TicketMapping != nil {
-		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User, campaigns: repos.RemediationCampaign}
-		if s.RemediationCampaign != nil {
-			objects.members = s.RemediationCampaign
-		}
+		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User,
+			tasks: s.RemediationTask, taskRepo: repos.RemediationTask}
 		s.TicketMapping = appticketmap.NewService(repos.TicketMapping, infrajira.NewMappingTrackerResolver(jiraResolver),
 			ticketMappingScope{e: s.DataScope}, objects, cfg.SMTP.BaseURL, log)
 		// Published profiles drive issue creation and status moves for their
@@ -1876,7 +1853,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.RemediationCampaign != nil {
 		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
 		// Inbound: a Jira webhook moving the campaign's epic to Done marks the
-		// campaign's findings fixed (a fix claim; verification closes them).
+		// campaign's live tasks fixed (a fix claim per finding; verification
+		// closes them).
 		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
@@ -1923,9 +1901,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// PriorityClassification setters because s.Outbox does not exist yet at
 	// that point. The publisher itself filters to escalations only (see its
 	// doc comment) so ingest does not double-notify alongside "new_finding".
-	s.PriorityClassification.SetChangePublisher(
-		finding.NewOutboxPriorityChangePublisher(s.Outbox, log),
-	)
+	priorityPublisher := finding.NewOutboxPriorityChangePublisher(s.Outbox, log)
+	if repos.ThreatAlert != nil {
+		// A KEV addition on an alerted CVE is announced once, by the alert.
+		priorityPublisher.SetAlertCoverage(repos.ThreatAlert)
+	}
+	s.PriorityClassification.SetChangePublisher(priorityPublisher)
 	// A recompute caused by a scoring change sends one summary per change
 	// instead of one escalation per finding (docs/architecture/scoring-versions.md).
 	if s.Reclassifier != nil {
@@ -2012,6 +1993,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Heartbeat gaps: the fleet histogram and each tenant sensor's 48 h
 	// history (the Control channel sparkline; RFC-035).
 	s.Sensor.SetHeartbeatHistory(repos.SensorHeartbeatHistory)
+	// Heartbeat soft state (SENSOR_LIVENESS_STORE): shadow by default, so
+	// the Redis verdict is compared with Postgres before the switch.
+	if mode, err := sensordom.ParseLivenessMode(cfg.SensorConfig.LivenessStore); err == nil && mode != sensordom.LivenessPostgres && deps.RedisClient != nil {
+		store := redis.NewSensorLivenessStore(deps.RedisClient.Client())
+		s.Sensor.SetLiveness(mode, store, repos.Sensor, repos.SensorHeartbeatHistory)
+		if mode == sensordom.LivenessRedis {
+			// Postgres holds checkpoints only: every read of a sensor
+			// overlays the live deadline.
+			repos.Sensor.SetLivenessOverlay(store)
+		}
+		log.Info("sensor liveness store", "mode", string(mode))
+		if w := redis.EvictionPolicyWarning(context.Background(), deps.RedisClient.Client()); w != "" {
+			log.Warn(w)
+		}
+	}
 	s.Sensor.SetHeartbeatGapObserver(telemetry.SensorHeartbeatMetrics{})
 	// Command leases (RFC-035 D6): a claim holds for SENSOR_COMMAND_LEASE
 	// and every heartbeat renews what the sensor holds; job recovery takes
@@ -2084,6 +2080,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// (widenings before they are saved), which signs only inside it.
 		s.Scope.SetLedger(s.JobSigner)
 		log.Info("sensor jobs are signed by the job signer", "socket", sock)
+		// The pairing command carries the key set's root, so a sensor
+		// checks the platform's signer against it (research/191 A-1).
+		if s.SensorPairing != nil {
+			s.SensorPairing.SetJobSigningRoot(s.JobSigner.RootKeyID)
+		}
+	} else if !cfg.IsDevelopment() {
+		log.Warn("SECURITY: sensor jobs are NOT signed (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS); a compromised API or database can hand any sensor any job, and sensors paired from now on refuse to start")
 	}
 	// research/122: completed scan commands teach per-target durations.
 	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
@@ -2178,6 +2181,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
+	// Emerging-threat alerts (RFC-117): matched findings are announced by
+	// their alert. The delivery sinks are wired with the workers.
+	if repos.ThreatAlert != nil {
+		s.ThreatAlertPlanner = threatalertapp.NewPlanner(repos.ThreatAlert, repos.Tenant, log)
+		s.VulnMatch.SetAlertQueue(s.ThreatAlertPlanner)
+		s.ThreatAlerts = threatalertapp.NewService(repos.ThreatAlert, s.Audit, log)
+	}
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
@@ -2285,7 +2295,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Capability = capability.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize sensor selector for load balancing
-	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
+	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, log)
 	// Same SENSOR_LB_* weights drive job placement, so tuning them changes
 	// scheduling and not just the reported score.
 	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
@@ -2710,14 +2720,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 	s.RemediationGroup.SetDataScope(s.DataScope)
 
-	// A remediation campaign can be scoped to a group key (solution family): its
-	// progress + resolve then run off the side-table / group-resolve path rather
-	// than a generic finding filter. Wired here (not at campaign construction)
-	// because it needs the group service built above.
-	if s.RemediationCampaign != nil {
-		s.RemediationCampaign.SetKeyResolver(campaignKeyResolver{keys: repos.FindingRemediationKey, group: s.RemediationGroup})
-	}
-
 	// Wire engine and finding repo to assignment rule service for TestRule
 	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)
 	s.AssignmentRule.SetFindingRepository(repos.Finding)
@@ -2953,7 +2955,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
-	// The sign-up policy (Console > System > Sign-up), a runtime switch below
+	// The sign-up policy (Console > Settings > Sign-up), a runtime switch below
 	// the deployment ceiling SIGNUP_MODE. The ceiling seeds it on the first
 	// start only; afterwards the console value wins, clamped to the ceiling.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
@@ -3142,6 +3144,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		if s.DomainVerify != nil {
+			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
+		}
 		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
@@ -3194,6 +3199,16 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	if s.Scan != nil {
 		s.Scan.SetOwnerNotifications(repos.MemberLifecycle, s.Notification)
 	}
+	// Tasks from a query: the query runs as the creator; auto mode re-reads
+	// the owner's membership and permissions on every run and tells them
+	// of additions and suspensions.
+	if s.RemediationTask != nil && s.Query != nil {
+		s.RemediationTask.SetQueryTasks(repos.RemediationTask, s.Query, queryTaskOwners{
+			workflowMemberReader{tenants: repos.Tenant, access: repos.AccessControl},
+			workflowPermissionReader{roles: repos.Role},
+		}, s.Notification)
+		s.RemediationTask.SetModuleGuard(s.Module)
+	}
 
 	// Scope entries: settings, the approval count and the widening notice to
 	// every administrator (RFC-054 §7).
@@ -3213,7 +3228,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 }
 
 // InitEmailServices builds the e-mail service on the platform e-mail
-// settings (admin console, System > E-mail). It always exists once those
+// settings (admin console, Settings > E-mail). It always exists once those
 // settings can be read; whether it can send is decided per message, so a
 // change in the console applies without a restart.
 func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) error {
@@ -3224,7 +3239,7 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.Brand.DisplayName(), log)
 	s.Email.SetBranding(email.Branding{FooterText: cfg.Brand.EmailFooter, PoweredBy: cfg.Brand.ShowPoweredBy()})
 	if !s.Email.IsConfigured() {
-		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
+		log.Info("platform e-mail not configured yet: set it in the admin console (Settings > E-mail)")
 	}
 	return s.guardPublicSignupMail(cfg, log)
 }
@@ -3240,7 +3255,7 @@ func (s *Services) guardPublicSignupMail(cfg *config.Config, log *logger.Logger)
 		return nil
 	}
 	if s.Email == nil || !s.Email.IsConfigured() {
-		return fmt.Errorf("SIGNUP_MODE=%s needs the platform e-mail to verify sign-ups: set it with bootstrap-admin (BOOTSTRAP_SMTP_*) or start with SIGNUP_MODE=disabled, set it in the admin console (System > E-mail) and restart", cfg.Auth.SignupMode)
+		return fmt.Errorf("SIGNUP_MODE=%s needs the platform e-mail to verify sign-ups: set it with bootstrap-admin (BOOTSTRAP_SMTP_*) or start with SIGNUP_MODE=disabled, set it in the admin console (Settings > E-mail) and restart", cfg.Auth.SignupMode)
 	}
 	if s.Signup != nil {
 		email := s.Email
@@ -3385,11 +3400,11 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 //
 // Every argument except cfg and log is optional; a nil dependency only disables
 // its own handler. In particular a nil emailService must NOT stop the worker
-// from being built: the AI-triage, Jira sync and GitHub sync handlers live on
-// the same asynq server, their tasks are enqueued whether or not SMTP is on,
-// and SMTP_ENABLED defaults to false. Returning early here (as this used to)
+// from being built: the AI-triage handlers live on the same asynq server,
+// their tasks are enqueued whether or not SMTP is on, and SMTP_ENABLED
+// defaults to false. Returning early here (as this used to)
 // left those queues with no consumer in a default deployment.
-func NewJobWorker(cfg *config.Config, emailService *auth.EmailService, aiTriageService *aitriage.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
+func NewJobWorker(cfg *config.Config, emailService *auth.EmailService, aiTriageService *aitriage.AITriageService, log *logger.Logger) (*jobs.Worker, error) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	redisTLS, err := redis.TLSConfig(&cfg.Redis)
 	if err != nil {
@@ -3407,12 +3422,6 @@ func NewJobWorker(cfg *config.Config, emailService *auth.EmailService, aiTriageS
 	var opts []jobs.WorkerOption
 	if aiTriageService != nil {
 		opts = append(opts, jobs.WithAITriageProcessor(aiTriageService))
-	}
-	if jiraSyncer != nil {
-		opts = append(opts, jobs.WithJiraStatusSyncer(jiraSyncer))
-	}
-	if githubSyncer != nil {
-		opts = append(opts, jobs.WithGitHubStatusSyncer(githubSyncer))
 	}
 
 	worker, err := jobs.NewWorker(workerCfg, emailService, log, opts...)

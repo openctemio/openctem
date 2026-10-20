@@ -121,6 +121,9 @@ type CreateScanRequest struct {
 	TenantRunner     bool       `json:"run_on_tenant_runner"`
 	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	ProfileID        string     `json:"profile_id" validate:"omitempty,uuid"`
+	// RuleSources is which detection rules the scan runs: both, platform or
+	// tenant; empty inherits the profile's (both without a profile).
+	RuleSources string `json:"rule_sources" validate:"omitempty,oneof=both platform tenant"`
 	// ScanZoneID pins every target to one scan zone; empty = Automatic routing.
 	ScanZoneID          string `json:"scan_zone_id" validate:"omitempty,uuid"`
 	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
@@ -165,6 +168,10 @@ type UpdateScanRequest struct {
 	TenantRunner     *bool      `json:"run_on_tenant_runner"`
 	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	ProfileID        *string    `json:"profile_id" validate:"omitempty"`
+	// RuleSources: omitted = unchanged, "" = inherit the profile's, else
+	// both, platform or tenant. The domain setter validates the value: a
+	// oneof tag here would reject "" (validator checks the pointed-to value).
+	RuleSources *string `json:"rule_sources" validate:"omitempty"`
 	// ScanZoneID: omitted = unchanged, "" = Automatic routing, id = pin to that zone.
 	ScanZoneID          *string `json:"scan_zone_id" validate:"omitempty"`
 	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=0,max=86400"`
@@ -304,11 +311,13 @@ type ScanDetailResponse struct {
 	RunOnTenantRunner     bool                       `json:"run_on_tenant_runner"`
 	SensorPreference      string                     `json:"sensor_preference"`
 	ProfileID             *string                    `json:"profile_id,omitempty"`
-	ScanZoneID            *string                    `json:"scan_zone_id"` // null = Automatic routing
-	TimeoutSeconds        int                        `json:"timeout_seconds"`
-	MaxRetries            int                        `json:"max_retries"`
-	RetryBackoffSeconds   int                        `json:"retry_backoff_seconds"`
-	Status                string                     `json:"status"`
+	// RuleSources is the scan's own setting; empty inherits the profile's.
+	RuleSources         string  `json:"rule_sources"`
+	ScanZoneID          *string `json:"scan_zone_id"` // null = Automatic routing
+	TimeoutSeconds      int     `json:"timeout_seconds"`
+	MaxRetries          int     `json:"max_retries"`
+	RetryBackoffSeconds int     `json:"retry_backoff_seconds"`
+	Status              string  `json:"status"`
 	// AdHoc: an unsaved quick scan (not listed as a configuration until saved).
 	AdHoc          bool    `json:"ad_hoc"`
 	LastRunID      *string `json:"last_run_id,omitempty"`
@@ -448,6 +457,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		TenantRunner:        req.TenantRunner,
 		SensorPreference:    req.SensorPreference,
 		ProfileID:           req.ProfileID,
+		RuleSources:         req.RuleSources,
 		ScanZoneID:          req.ScanZoneID,
 		TimeoutSeconds:      req.TimeoutSeconds,
 		MaxRetries:          req.MaxRetries,
@@ -669,6 +679,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TenantRunner:        req.TenantRunner,
 		SensorPreference:    req.SensorPreference,
 		ProfileID:           req.ProfileID,
+		RuleSources:         req.RuleSources,
 		ScanZoneID:          req.ScanZoneID,
 		TimeoutSeconds:      req.TimeoutSeconds,
 		MaxRetries:          req.MaxRetries,
@@ -1052,7 +1063,7 @@ func (h *ScanHandler) CoverageStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The estate counted follows the viewer (D6): a restricted member counts
-	// the assets of their own scope, dashboard:aggregate and unrestricted
+	// the assets of their own scope, dashboards:org:view and unrestricted
 	// callers the organization.
 	scope, _, err := h.dataScope.ViewerScope(r.Context(), tenantID)
 	if err != nil {
@@ -1296,7 +1307,7 @@ type ScanLastRunResponse struct {
 	CreatedAt   string  `json:"created_at"`
 	StartedAt   *string `json:"started_at,omitempty"`
 	CompletedAt *string `json:"completed_at,omitempty"`
-	// Progress is 0-100 for a live run: finished tasks of all tasks.
+	// Progress is 0-100 for a live run: finished steps of the planned steps.
 	Progress int `json:"progress"`
 	// RefusalCode and ErrorMessage say why a blocked or failed run ended.
 	RefusalCode  string                  `json:"refusal_code,omitempty"`
@@ -1489,6 +1500,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		Tags:                  s.Tags,
 		RunOnTenantRunner:     s.RunOnTenantRunner,
 		SensorPreference:      string(s.SensorPreference),
+		RuleSources:           string(s.RuleSources),
 		TimeoutSeconds:        s.TimeoutSeconds,
 		MaxRetries:            s.MaxRetries,
 		RetryBackoffSeconds:   s.RetryBackoffSeconds,

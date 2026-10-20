@@ -73,8 +73,9 @@ import { FixStepsBlock } from './fix-steps'
 import { MovePalette, type MoveTarget } from './move-palette'
 import { apiMessage } from './suggestions-inbox'
 import { CancelTaskDialog, MarkFixedDialog, SplitDialog } from './task-dialogs'
-import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
+import { DeadlinePill, TaskCampaignLink, TaskProgress, TaskStatePill } from './task-bits'
 import { useTaskException } from './task-exception'
+import { TaskQueryPanel } from './task-query-panel'
 import { VirtualRows } from './virtual-rows'
 
 const MEMBER_PAGE = 200
@@ -360,7 +361,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
             <span className="text-muted-foreground">
               {t('remediationHub.detail.owner', undefined, { owner })}
             </span>
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground" title={t('remediationHub.risk.explain')}>
               {t('remediationHub.detail.risk', undefined, { risk: task.counts.risk_points })}
             </span>
           </div>
@@ -377,6 +378,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
               </Link>
             </p>
           )}
+          {task.campaign_id && <TaskCampaignLink campaignId={task.campaign_id} />}
         </div>
         {writable && (
           <div className="flex flex-wrap items-center gap-2">
@@ -429,6 +431,8 @@ export function TaskDetail({ taskId }: { taskId: string }) {
           {t('remediationHub.detail.hidden', undefined, { n: task.hidden_members })}
         </p>
       )}
+
+      <TaskQueryPanel taskId={task.id} writable={writable} onChanged={() => void mutate()} />
 
       <section className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-2 rounded-lg border p-4">

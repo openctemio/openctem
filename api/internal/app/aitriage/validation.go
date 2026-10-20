@@ -411,11 +411,6 @@ const filteredMarker = "[FILTERED]"
 // fenceMarkerReplacement replaces fence-like markup found inside untrusted text.
 const fenceMarkerReplacement = "[fence-marker-removed]"
 
-// injectionCappedFPLikelihood is the false-positive likelihood an analysis is
-// capped to when its input attempted prompt injection: just below
-// aitriageFPReclassifyThreshold, so it cannot trigger automatic de-escalation.
-const injectionCappedFPLikelihood = aitriageFPReclassifyThreshold - 0.01
-
 // fenceMarkerRe matches tags that look like a prompt fence: the per-request
 // <untrusted-...> family (any nonce, any case, optional whitespace or
 // attributes) and the legacy static <user_input> tag. Ordinary code such as

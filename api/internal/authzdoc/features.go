@@ -35,7 +35,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
 			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes",
-			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes",
+			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
 	},
@@ -144,7 +144,7 @@ var Features = []Feature{
 		ID: "threat-intel", Title: "Threat intelligence",
 		Description: "EPSS, KEV, threat actors and indicators of compromise.",
 		Stages:      []string{StagePrioritization},
-		Registers:   []string{"registerThreatIntelRoutes", "registerThreatActorRoutes", "registerIOCRoutes"},
+		Registers:   []string{"registerThreatIntelRoutes", "registerThreatActorRoutes", "registerIOCRoutes", "registerEmergingThreatRoutes"},
 	},
 	{
 		ID: "compliance", Title: "Compliance",
@@ -156,7 +156,7 @@ var Features = []Feature{
 		ID: "dashboards-reports", Title: "Dashboards and reports",
 		Description: "Dashboards, personal dashboards and scheduled reports.",
 		Stages:      []string{StageMobilization},
-		Registers:   []string{"registerDashboardRoutes", "registerUserDashboardRoutes", "registerReportScheduleRoutes"},
+		Registers:   []string{"registerDashboardRoutes", "registerDashboardDataRoutes", "registerUserDashboardRoutes", "registerReportScheduleRoutes"},
 	},
 	{
 		ID: "integrations", Title: "Integrations and API keys",
@@ -181,7 +181,7 @@ var Features = []Feature{
 		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), its limits, support access grants and the audit log.",
 		Registers: []string{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSecurityOverviewRoutes", "registerOrganizationSupportAccessRoutes",
-			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
+			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerEmergingThreatSettingsRoutes", "registerAISettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
 			"registerSharedSensorsSettingsRoutes",
 		},

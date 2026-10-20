@@ -746,6 +746,8 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				COUNT(*) AS total,
 				COUNT(*) FILTER (WHERE priority_class = 'P0') AS p0,
 				COUNT(*) FILTER (WHERE priority_class = 'P1') AS p1,
+				COUNT(*) FILTER (WHERE priority_class = 'P2') AS p2,
+				COUNT(*) FILTER (WHERE priority_class = 'P3') AS p3,
 				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached,
 				COUNT(*) FILTER (WHERE sla_status IS NOT NULL AND sla_status <> 'not_applicable') AS sla_tracked
 			FROM findings
@@ -820,6 +822,8 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P0'),
 			oa.p1,
 			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P1'),
+			oa.p2,
+			oa.p3,
 			CASE WHEN oa.sla_tracked > 0
 				THEN (oa.sla_tracked - oa.sla_breached) * 100.0 / oa.sla_tracked
 				END,
@@ -836,6 +840,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 
 	summary := &module.ExecutiveSummary{
 		Period: fmt.Sprintf("%d days", days),
+		Scoped: scope.Restricted(),
 	}
 
 	var totalResolved int
@@ -850,6 +855,8 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		&summary.P0Resolved,
 		&summary.P1Open,
 		&summary.P1Resolved,
+		&summary.P2Open,
+		&summary.P3Open,
 		&sla,
 		&summary.SLABreached,
 		&mcMean, &mcMed, &mcP90, &summary.MTTRCriticalSample,

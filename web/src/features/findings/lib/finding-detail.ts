@@ -289,6 +289,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     verifiedAt: api.verified_at,
     createdAt: api.created_at,
     updatedAt: api.updated_at,
+    rowVersion: api.row_version,
     activities: mapActivities(api),
     commentsCount: api.comments_count,
 
@@ -310,6 +311,9 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     priorityClass: api.priority_class as PriorityClass | undefined,
     priorityClassReason: api.priority_class_reason,
     priorityClassOverride: api.priority_class_override,
+    sourceSeverity: api.source_severity,
+    severityOverride: api.severity_override,
+    pendingSeverityRequest: api.pending_severity_request,
     isReachable: api.is_reachable,
     reachableFromCount: api.reachable_from_count,
     isInternetAccessible: api.is_internet_accessible,
@@ -597,6 +601,10 @@ export function mapFindingSourceData(
         }
       : undefined,
     sourceExtra: Object.entries(api.source_extra ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+    rule:
+      api.rule && (api.rule.path || api.rule.pack || api.rule.source === 'tenant')
+        ? api.rule
+        : undefined,
     locationKey: api.location_key || undefined,
   }
   const empty =
@@ -607,6 +615,7 @@ export function mapFindingSourceData(
     !data.solution &&
     !data.vex &&
     data.sourceExtra.length === 0 &&
+    !data.rule &&
     !data.locationKey
   return empty ? undefined : data
 }

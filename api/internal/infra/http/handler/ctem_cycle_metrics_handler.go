@@ -107,10 +107,12 @@ func (h *CTEMCycleHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 
 // trendSeriesPoint is one (cycle, value) sample in a metric's series.
 type trendSeriesPoint struct {
-	CycleID  string  `json:"cycle_id"`
-	Name     string  `json:"name"`
-	ClosedAt string  `json:"closed_at"`
-	Value    float64 `json:"value"`
+	CycleID  string `json:"cycle_id"`
+	Name     string `json:"name"`
+	ClosedAt string `json:"closed_at"`
+	// Value is null when the cycle has no sample for the metric (MTTR or
+	// validation coverage of a cycle that remediated nothing).
+	Value *float64 `json:"value"`
 }
 
 // MetricsTrend returns, across the tenant's closed cycles, each metric's
@@ -155,7 +157,7 @@ func (h *CTEMCycleHandler) MetricsTrend(w http.ResponseWriter, r *http.Request) 
 				CycleID:  c.CycleID.String(),
 				Name:     c.Name,
 				ClosedAt: closedAt,
-				Value:    c.Value(key),
+				Value:    metricValue(c, key),
 			})
 		}
 		summaries = append(summaries, map[string]any{
@@ -256,7 +258,7 @@ func (h *CTEMCycleHandler) parseIDs(tenantID, cycleID string) (shared.ID, shared
 }
 
 // allowOrgMetrics: the cycle metrics are computed over the whole
-// organization, so a restricted member needs dashboard:aggregate (or full
+// organization, so a restricted member needs dashboards:org:view (or full
 // data access) to see them; they cannot be narrowed to their scope. It writes
 // the refusal and reports false when the caller may not read them.
 func (h *CTEMCycleHandler) allowOrgMetrics(w http.ResponseWriter, r *http.Request, tenantID shared.ID) bool {
@@ -267,14 +269,16 @@ func (h *CTEMCycleHandler) allowOrgMetrics(w http.ResponseWriter, r *http.Reques
 		return false
 	}
 	if !ok {
-		apierror.Forbidden("cycle metrics cover the whole organization: they need the dashboard:aggregate permission or full data access").WriteJSON(w)
+		apierror.Forbidden("cycle metrics cover the whole organization: they need the dashboards:org:view permission or full data access").
+			WithDetails(middleware.PermissionDeniedDetails{AnyOf: orgFiguresPermissions()}).
+			WriteJSON(w)
 		return false
 	}
 	return true
 }
 
 // orgMetricsVisible is the rule behind allowOrgMetrics: an unrestricted
-// viewer, or one holding dashboard:aggregate, may read figures computed over
+// viewer, or one holding dashboards:org:view, may read figures computed over
 // the whole organization. An unwired enforcer is an error (fail closed).
 func (h *CTEMCycleHandler) orgMetricsVisible(ctx context.Context, tenantID shared.ID) (bool, error) {
 	scope, _, err := h.dataScope.ViewerScope(ctx, tenantID)
@@ -304,4 +308,12 @@ func (h *CTEMCycleHandler) withVisibleEvaluation(ctx context.Context, tenantID s
 	}
 	c.CharterEvaluation = nil
 	return c
+}
+
+// metricValue is the cycle's value for key, or nil when it has none.
+func metricValue(c ctemcycle.CycleMetrics, key string) *float64 {
+	if v, ok := c.Lookup(key); ok {
+		return &v
+	}
+	return nil
 }

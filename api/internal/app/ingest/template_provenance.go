@@ -11,6 +11,7 @@ package ingest
 
 import (
 	"context"
+	"strings"
 
 	"github.com/openctemio/ctis"
 
@@ -49,15 +50,31 @@ func reportTemplateRelease(tool *ctis.Tool) (version, digest string) {
 }
 
 // findingTemplateProvenance is the sanitized provenance of one finding of a
-// report; Empty when the finding names no template digest.
+// report; Empty when the finding names no template digest and is not one
+// of the organization's own rules.
 func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.TemplateProvenance {
-	if f == nil || f.Properties == nil {
+	if f == nil {
 		return vulnerability.TemplateProvenance{}
 	}
 	p := vulnerability.TemplateProvenance{}
 	p.TemplateDigest, _ = f.Properties["template_digest"].(string)
-	p.TemplatePath, _ = f.Properties["template_path"].(string)
+	if raw, _ := f.Properties["template_path"].(string); raw != "" {
+		// A sensor may report the file on its own disk: keep the path
+		// inside the template pack only. Any other absolute path (a
+		// temporary directory, a workspace) names no pack template and is
+		// dropped, not stored as its tail.
+		switch n := vulnerability.NormalizeTemplatePath(raw); n.Kind {
+		case vulnerability.SensorPathTemplate, vulnerability.SensorPathRelative:
+			p.TemplatePath = n.Rel
+		}
+	}
 	p.TemplatesVersion, p.TemplatesDigest = reportTemplateRelease(tool)
+	// The organization's own rules: the sensor prefixes their ids and marks
+	// nuclei results (rule_source). The store links the template.
+	if rs, _ := f.Properties["rule_source"].(string); rs == vulnerability.RuleSourceTenant || strings.HasPrefix(f.RuleID, vulnerability.TenantRulePrefix) {
+		p.RuleSource = vulnerability.RuleSourceTenant
+		p.RuleID = f.RuleID
+	}
 	return p.Sanitize()
 }
 

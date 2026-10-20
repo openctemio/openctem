@@ -345,7 +345,7 @@ func (h *ThreatIntelHandler) GetThreatIntelStats(w http.ResponseWriter, r *http.
 	}
 
 	// The exposure counts follow the viewer (D6): a restricted member counts
-	// their own scope, dashboard:aggregate and unrestricted callers the
+	// their own scope, dashboards:org:view and unrestricted callers the
 	// organization.
 	scope, _, err := h.dataScope.ViewerScope(ctx, tenantID)
 	if err != nil {

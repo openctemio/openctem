@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 
+	queryapp "github.com/openctemio/openctem/api/internal/app/query"
+
 	"context"
 	"database/sql"
 	"errors"
@@ -12,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/app/supportaccess"
@@ -44,6 +47,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -106,6 +110,19 @@ func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatMod
 		return nil
 	}
 	return handler.NewThreatModelHandler(svc.ThreatModel, log)
+}
+
+// newQueryHandler wires custom queries (docs/architecture/query-language.md):
+// nil without a database.
+func newQueryHandler(db *postgres.DB, svc *Services, log *logger.Logger) *handler.QueryHandler {
+	if db == nil {
+		return nil
+	}
+	if svc != nil && svc.Query != nil {
+		return handler.NewQueryHandler(svc.Query, log)
+	}
+	exec := postgres.NewQueryExecutor(db, postgres.InteractiveQueryTimeout)
+	return handler.NewQueryHandler(queryapp.NewService(exec, svc.DataScope, log), log)
 }
 
 // HandlerDeps contains dependencies needed to create handlers.
@@ -272,6 +289,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// hello and pick it up (RFC-040 §5.6).
 	if svc.JobSigner != nil {
 		doorbell.SetKeySetVersion(svc.JobSigner.KeySetVersion)
+	}
+	// The platform decides the interval: ±10 % jitter on every advice, and
+	// an idle interval that stretches with the live fleet (the liveness
+	// store's count) so heartbeats stay inside the platform's budget.
+	doorbell.SetJitter(0.10)
+	if store := svc.Sensor.LivenessStore(); store != nil {
+		doorbell.SetFleetSize(store.Watched, nil)
 	}
 	ingestHandler.SetDoorbell(doorbell)
 	// Heartbeat latency feeds the health controller's platform-health guard
@@ -516,6 +540,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
+		Query:                  newQueryHandler(deps.DB, svc, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetSoftware:          handler.NewAssetSoftwareHandler(svc.VulnMatch, repos.Asset, log).SetDataScope(svc.DataScope),
@@ -526,7 +551,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
-		ReportSchedule:         newReportScheduleHandler(svc, log),
+		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
@@ -548,11 +573,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		GitHubWebhook:        githubWebhookHandler,
 		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
+		EmergingThreat:       emergingThreatHandler(svc, log),
 		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
+		DashboardFacts: handler.NewDashboardFactsHandler(
+			dashfactsapp.NewService(repos.DashboardFacts, svc.Audit, log), log),
 		Branch: func() *handler.BranchHandler {
 			h := handler.NewBranchHandler(svc.Branch, v, log)
 			// S-2: wire AssetService so branch handler can verify repo ownership.
@@ -688,7 +716,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			svc.Module,
 			svc.Tenant,
 			log,
-		),
+		).WithModulesETagKey(handler.DeriveModulesETagKey(cfg.Auth.JWTSecret)),
 
 		// Docs
 		Docs: handler.NewDocsHandler("api/openapi/swagger.yaml"),
@@ -815,6 +843,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Outbox.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.Integration.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.PriorityRule.SetAuditService(svc.Audit)
+	handlers.CompensatingControl.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.AssetOwner.SetAttributeLocker(svc.Asset)
@@ -936,7 +965,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Instance scan zones (RFC-100 §6.1): console routes, the trigger's
 	// zone lookup and the zone in a shared job's signed statement.
 	handlers.AdminInstanceScanZone = wireInstanceScanZones(svc, repos, deps.DB, adminConsoleSvc, log)
-	// Console > System > Shared sensors (RFC-100 §12): the fleet, queue
+	// Console > Scanning > Platform scanning (RFC-100 §12): the fleet, queue
 	// aggregates, job metadata, the audited job view and remote actions.
 	handlers.AdminSharedFleet = handler.NewAdminSharedFleetHandler(sensor.NewSharedFleetService(
 		postgres.NewSharedFleetRepository(deps.DB), repos.CommandLog, repos.AdminAuditLog, log), log)
@@ -1009,6 +1038,9 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, r
 		repos.Command.SetChangeNotifier(srv.Hub())
 		svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
 	}
+
+	// An open control stream is proof of life for the liveness store.
+	srv.SetPresence(svc.Sensor)
 
 	adv := setupSensorGRPC(cfg, srv, svc, log)
 	srv.SetAdvertiser(adv)
@@ -1540,9 +1572,10 @@ func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Servi
 
 // newReportScheduleHandler builds the report schedule handler with its audit
 // trail.
-func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
+func newReportScheduleHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
 	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
 	h.SetAuditService(svc.Audit)
+	h.SetCreatorNames(tenantapp.NewUserDisplayNames(repos.User))
 	return h
 }
 
@@ -1872,4 +1905,14 @@ func platformSettings(repos *Repositories) platformsetting.Repository {
 		return nil
 	}
 	return repos.PlatformSetting
+}
+
+// emergingThreatHandler builds the emerging-threat alert API (nil without
+// the service or the data scope enforcer: the routes stay unmounted rather
+// than unscoped).
+func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingThreatHandler {
+	if svc.ThreatAlerts == nil || svc.DataScope == nil {
+		return nil
+	}
+	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
 }

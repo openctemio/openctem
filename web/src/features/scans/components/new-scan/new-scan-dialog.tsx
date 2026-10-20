@@ -37,6 +37,7 @@ import { ScheduleStep } from './schedule-step'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
 import {
   basicInfoError,
+  optionsError,
   directTargets,
   formDataToCreateRequest,
   targetsError,
@@ -220,8 +221,14 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         }
         return true
       }
-      case 'options':
+      case 'options': {
+        const problem = optionsError(formData, t)
+        if (problem) {
+          toast.error(problem)
+          return false
+        }
         return true
+      }
       case 'schedule': {
         const problem = scheduleError(formData, undefined, t)
         if (problem) {

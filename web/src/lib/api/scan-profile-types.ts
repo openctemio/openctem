@@ -4,26 +4,7 @@
  * TypeScript types for Scan Profile Management
  */
 
-// Intensity levels
-export type Intensity = 'low' | 'medium' | 'high'
-
-// Severity levels for tool findings
-export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical'
-
-// Template modes for scanner templates
-export type TemplateMode = 'default' | 'custom' | 'both'
-
-/**
- * Tool configuration within a scan profile
- */
-export interface ToolConfig {
-  enabled: boolean
-  severity?: Severity
-  timeout?: number
-  options?: Record<string, unknown>
-  template_mode?: TemplateMode // "default", "custom", "both"
-  custom_template_ids?: string[] // IDs of custom templates to use
-}
+import type { RuleSources } from './scan-types'
 
 /**
  * Quality Gate configuration for CI/CD pass/fail decisions
@@ -81,13 +62,11 @@ export interface ScanProfile {
   description?: string
   is_default: boolean
   is_system: boolean
-  tools_config: Record<string, ToolConfig>
-  intensity: Intensity
-  max_concurrent_scans: number
-  timeout_seconds: number
   tags: string[]
   metadata: Record<string, unknown>
   quality_gate: QualityGate
+  /** Which detection rules scans of this profile run. */
+  rule_sources: RuleSources
   created_by?: string
   created_at: string
   updated_at: string
@@ -99,13 +78,11 @@ export interface ScanProfile {
 export interface CreateScanProfileRequest {
   name: string
   description?: string
-  tools_config?: Record<string, ToolConfig>
-  intensity?: Intensity
-  max_concurrent_scans?: number
-  timeout_seconds?: number
   tags?: string[]
   is_default?: boolean
   quality_gate?: QualityGate
+  /** Default both. */
+  rule_sources?: RuleSources
 }
 
 /**
@@ -114,12 +91,10 @@ export interface CreateScanProfileRequest {
 export interface UpdateScanProfileRequest {
   name?: string
   description?: string
-  tools_config?: Record<string, ToolConfig>
-  intensity?: Intensity
-  max_concurrent_scans?: number
-  timeout_seconds?: number
   tags?: string[]
   quality_gate?: QualityGate
+  /** Omitted = unchanged. */
+  rule_sources?: RuleSources
 }
 
 /**
@@ -166,57 +141,6 @@ export interface ScanProfileListFilters {
   per_page?: number
 }
 
-// Available tools for scan profiles
-export const SCAN_PROFILE_TOOLS = [
-  'opengrep',
-  'semgrep',
-  'trivy',
-  'nuclei',
-  'betterleaks',
-  'checkov',
-  'tfsec',
-  'grype',
-  'syft',
-] as const
-
-export type ScanProfileTool = (typeof SCAN_PROFILE_TOOLS)[number]
-
-// Tool display names
-export const TOOL_DISPLAY_NAMES: Record<ScanProfileTool, string> = {
-  opengrep: 'Opengrep',
-  semgrep: 'Semgrep',
-  trivy: 'Trivy',
-  nuclei: 'Nuclei',
-  betterleaks: 'Betterleaks',
-  checkov: 'Checkov',
-  tfsec: 'Tfsec',
-  grype: 'Grype',
-  syft: 'Syft',
-}
-
-// Intensity display names
-export const INTENSITY_DISPLAY_NAMES: Record<Intensity, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-}
-
-// Intensity descriptions
-export const INTENSITY_DESCRIPTIONS: Record<Intensity, string> = {
-  low: 'Fast scans with basic checks',
-  medium: 'Balanced scans with standard checks',
-  high: 'Comprehensive scans with all checks',
-}
-
-// Severity display names
-export const SEVERITY_DISPLAY_NAMES: Record<Severity, string> = {
-  info: 'Info',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  critical: 'Critical',
-}
-
 // Default Quality Gate configuration
 export const DEFAULT_QUALITY_GATE: QualityGate = {
   enabled: false,
@@ -247,127 +171,11 @@ export function isUnlimited(value: number): boolean {
   return value < 0
 }
 
-// Template mode display names
-export const TEMPLATE_MODE_DISPLAY_NAMES: Record<TemplateMode, string> = {
-  default: 'Default',
-  custom: 'Custom Only',
-  both: 'Both',
-}
-
-// Template mode descriptions
-export const TEMPLATE_MODE_DESCRIPTIONS: Record<TemplateMode, string> = {
-  default: 'Use only official/built-in templates',
-  custom: 'Use only tenant-uploaded custom templates',
-  both: 'Run both default and custom templates',
-}
-
 // ============================================
 // PRESET SCAN PROFILES
 // ============================================
 
 export type PresetProfileType = 'discovery' | 'quick' | 'full' | 'compliance'
-
-export interface PresetProfile {
-  type: PresetProfileType
-  name: string
-  description: string
-  icon: string
-  intensity: Intensity
-  tools_config: Record<string, ToolConfig>
-  timeout_seconds: number
-  quality_gate: QualityGate
-  tags: string[]
-}
-
-/**
- * Preset scan profile configurations
- * These can be used to quickly create common scan profiles
- */
-export const PRESET_PROFILES: Record<PresetProfileType, Omit<PresetProfile, 'type'>> = {
-  discovery: {
-    name: 'Discovery Scan',
-    description: 'Fast discovery-focused scan for asset enumeration and basic reconnaissance',
-    icon: 'radar',
-    intensity: 'low',
-    tools_config: {
-      nuclei: { enabled: true, severity: 'info', timeout: 300 },
-      syft: { enabled: true, timeout: 180 },
-    },
-    timeout_seconds: 1800, // 30 min
-    quality_gate: { ...DEFAULT_QUALITY_GATE, enabled: false },
-    tags: ['discovery', 'recon', 'fast'],
-  },
-  quick: {
-    name: 'Quick Security Check',
-    description: 'Fast security assessment for critical vulnerabilities only',
-    icon: 'zap',
-    intensity: 'low',
-    tools_config: {
-      semgrep: { enabled: true, severity: 'high', timeout: 300 },
-      trivy: { enabled: true, severity: 'high', timeout: 300 },
-      betterleaks: { enabled: true, timeout: 180 },
-      nuclei: { enabled: true, severity: 'critical', timeout: 300 },
-    },
-    timeout_seconds: 1800, // 30 min
-    quality_gate: {
-      ...DEFAULT_QUALITY_GATE,
-      enabled: true,
-      fail_on_critical: true,
-      max_critical: 0,
-    },
-    tags: ['quick', 'critical', 'ci-cd'],
-  },
-  full: {
-    name: 'Full Security Scan',
-    description: 'Comprehensive security assessment with all available scanners',
-    icon: 'shield-check',
-    intensity: 'high',
-    tools_config: {
-      semgrep: { enabled: true, severity: 'low', timeout: 600 },
-      trivy: { enabled: true, severity: 'low', timeout: 600 },
-      nuclei: { enabled: true, severity: 'low', timeout: 900 },
-      betterleaks: { enabled: true, timeout: 300 },
-      checkov: { enabled: true, timeout: 600 },
-      tfsec: { enabled: true, timeout: 300 },
-      grype: { enabled: true, severity: 'low', timeout: 600 },
-      syft: { enabled: true, timeout: 300 },
-    },
-    timeout_seconds: 7200, // 2 hours
-    quality_gate: {
-      ...DEFAULT_QUALITY_GATE,
-      enabled: true,
-      fail_on_critical: true,
-      fail_on_high: true,
-      max_critical: 0,
-      max_high: 5,
-    },
-    tags: ['full', 'comprehensive', 'thorough'],
-  },
-  compliance: {
-    name: 'Compliance Audit',
-    description: 'Security checks focused on compliance requirements (PCI DSS, SOC2, ISO 27001)',
-    icon: 'clipboard-check',
-    intensity: 'medium',
-    tools_config: {
-      semgrep: { enabled: true, severity: 'medium', timeout: 600 },
-      trivy: { enabled: true, severity: 'medium', timeout: 600 },
-      checkov: { enabled: true, timeout: 600 },
-      tfsec: { enabled: true, timeout: 300 },
-      betterleaks: { enabled: true, timeout: 300 },
-    },
-    timeout_seconds: 3600, // 1 hour
-    quality_gate: {
-      ...DEFAULT_QUALITY_GATE,
-      enabled: true,
-      fail_on_critical: true,
-      fail_on_high: true,
-      max_critical: 0,
-      max_high: 0,
-      max_medium: 10,
-    },
-    tags: ['compliance', 'audit', 'pci-dss', 'soc2'],
-  },
-}
 
 export const PRESET_PROFILE_TYPES: PresetProfileType[] = [
   'discovery',
@@ -377,18 +185,49 @@ export const PRESET_PROFILE_TYPES: PresetProfileType[] = [
 ]
 
 /**
- * Get a preset profile configuration ready for API submission
+ * Pass/fail rule of each preset. The name and description are i18n keys
+ * (scans.profiles.preset.<type>.name / .description).
  */
-export function getPresetProfileRequest(type: PresetProfileType): CreateScanProfileRequest {
-  const preset = PRESET_PROFILES[type]
+export const PRESET_QUALITY_GATES: Record<PresetProfileType, QualityGate> = {
+  discovery: { ...DEFAULT_QUALITY_GATE, enabled: false },
+  quick: {
+    ...DEFAULT_QUALITY_GATE,
+    enabled: true,
+    fail_on_critical: true,
+    max_critical: 0,
+  },
+  full: {
+    ...DEFAULT_QUALITY_GATE,
+    enabled: true,
+    fail_on_critical: true,
+    fail_on_high: true,
+    max_critical: 0,
+    max_high: 5,
+  },
+  compliance: {
+    ...DEFAULT_QUALITY_GATE,
+    enabled: true,
+    fail_on_critical: true,
+    fail_on_high: true,
+    max_critical: 0,
+    max_high: 0,
+    max_medium: 10,
+  },
+}
+
+/**
+ * Get a preset profile ready for API submission. The name and description
+ * are already translated by the caller.
+ */
+export function getPresetProfileRequest(
+  type: PresetProfileType,
+  name: string,
+  description: string
+): CreateScanProfileRequest {
   return {
-    name: preset.name,
-    description: preset.description,
-    tools_config: preset.tools_config,
-    intensity: preset.intensity,
-    timeout_seconds: preset.timeout_seconds,
-    quality_gate: preset.quality_gate,
-    tags: preset.tags,
+    name,
+    description,
+    quality_gate: PRESET_QUALITY_GATES[type],
     is_default: false,
   }
 }

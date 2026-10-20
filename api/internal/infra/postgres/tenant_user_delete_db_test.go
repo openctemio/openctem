@@ -248,6 +248,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"scopes": "{findings}", "reason": "seeded support grant", "access_level": "read",
 			"starts_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
 	},
+	// A tenant row of the alias table is an observed alias.
+	"software_product_aliases": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "name", "value": "seeded", "source": "observed"}
+	},
 	"signup_events": func(*schemaSeeder) map[string]any {
 		return map[string]any{"kind": "account_created", "source": "password"}
 	},
@@ -360,6 +364,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"sensors":                  func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
 	"scan_window_policies": func(*schemaSeeder) map[string]any {
 		return map[string]any{"kind": "allow", "timezone": "UTC", "slots": `[{"days":[1],"start":"09:00","end":"17:00"}]`}
+	},
+	// A severity request carries a reason, a tier and severities (CHECKs).
+	"finding_severity_requests": func(*schemaSeeder) map[string]any {
+		return map[string]any{"reason": "probe", "tier": "peer", "requested_severity": "low", "previous_severity": "high", "status": "pending"}
 	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}

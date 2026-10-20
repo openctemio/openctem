@@ -83,6 +83,8 @@ var stepUpRoutes = []string{
 	// Risk scoring settings decide every asset's risk band and, with the
 	// ownership floor, finding priorities (docs/architecture/scoring-versions.md).
 	"PATCH /api/v1/tenants/acme/settings/risk-scoring",
+	// Turning AI triage on lets finding content go to the AI provider.
+	"PUT /api/v1/organization/settings/ai",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
 	// A domain's sign-up policy decides who may join and who must use SSO.
 	"PUT /api/v1/organization/settings/domains/{id}/signup-policy",
@@ -103,6 +105,7 @@ var stepUpRoutes = []string{
 	"PUT /api/v1/integrations/{id}",
 	"DELETE /api/v1/integrations/{id}",
 	"POST /api/v1/integrations/{id}/disable",
+	"POST /api/v1/integrations/{id}/enable",
 	"PUT /api/v1/integrations/{id}/notification",
 	// The group mapping decides which role a directory group's members get.
 	"PUT /api/v1/scim-tokens/group-mappings",
@@ -151,6 +154,11 @@ var stepUpRoutes = []string{
 	"PATCH /api/v1/lifecycles/{id}",
 	"DELETE /api/v1/lifecycles/{id}",
 	"DELETE /api/v1/lifecycle-sub-statuses/{id}",
+	// A priority rule re-classes findings across the tenant, down to the
+	// platform floors (docs/architecture/priority-explainability.md).
+	"POST /api/v1/priority-rules",
+	"PUT /api/v1/priority-rules/{id}",
+	"DELETE /api/v1/priority-rules/{id}",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -211,6 +219,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
+			registerAISettingsRoutes(router, &handler.TenantHandler{}, auth, nil)
 			registerUserRoutes(router, &handler.UserHandler{}, nil, auth, nil, config.AuthProviderLocal)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil, &handler.TicketMappingHandler{})
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
@@ -221,6 +230,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			registerFindingLifecycleRoutes(router, &handler.FindingLifecycleHandler{}, auth, nil)
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
+			registerPriorityRuleRoutes(router, &handler.PriorityRuleHandler{}, auth, nil, chain())
 			scanH := &handler.ScanHandler{}
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})
 			registerScanRoutes(router, scanH, auth, nil, nil)

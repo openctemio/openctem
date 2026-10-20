@@ -68,6 +68,7 @@
   "nav.item.priority-rules": "Priority Rules",
   "nav.item.profiles": "Profiles",
   "nav.item.relationships": "Relationships",
+  "nav.item.remediation": "Remediation",
   "nav.item.remediation-tasks": "Remediation Tasks",
   "nav.item.reports": "Reports",
   "nav.item.repositories": "Repositories",
@@ -86,6 +87,7 @@
   "nav.item.secret-store": "Secret Store",
   "nav.item.services": "Services",
   "nav.item.settings": "Settings",
+  "nav.item.sla-compliance": "SLA compliance",
   "nav.item.siem": "SIEM",
   "nav.item.storage": "Storage",
   "nav.item.teams": "Teams",
@@ -112,5 +114,6 @@
   "nav.item.approvals": "Approvals",
   "nav.item.fix-plan": "Fix plan",
   "nav.item.suggestions": "Suggestions",
-  "nav.item.tasks": "Tasks"
+  "nav.item.tasks": "Tasks",
+  "nav.item.emerging-threats": "Emerging Threats"
 }

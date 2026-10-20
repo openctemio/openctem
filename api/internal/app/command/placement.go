@@ -72,7 +72,21 @@ type Placement struct {
 	// how many of them other tasks of the organization hold and which tasks
 	// (at most commanddom.MaxHostHolders). Nil otherwise.
 	HostWait *HostWait
+	// SharedFleet says, for a task none of the organization's sensors may
+	// take, whether the shared fleet was an option: SharedFleetNotUsed (the
+	// organization may use shared sensors, but this task was routed to its
+	// own sensors), SharedFleetNotAllowed (it may not now; SharedFleetReason
+	// is the access policy's reason, English). "" when a sensor of the
+	// organization may take it.
+	SharedFleet       string
+	SharedFleetReason string
 }
+
+// SharedFleet values of Placement.
+const (
+	SharedFleetNotUsed    = "not_used"
+	SharedFleetNotAllowed = "not_allowed"
+)
 
 // HostWait is why a command waits for its hosts: Held of its Total hosts
 // are held by the Holders (the tasks holding the most of them first), and
@@ -129,6 +143,19 @@ func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shar
 		out.Sensors = append(out.Sensors, sp)
 	}
 	out.summarize()
+	if out.Eligible == 0 {
+		// Nobody of the organization can take it: say whether the shared
+		// fleet could have (research/191 W-1), so the run does not wait in
+		// silence until its timeout.
+		out.SharedFleet = SharedFleetNotAllowed
+		if s.sharedAccess != nil {
+			if ok, reason := s.sharedAccess(ctx, tenantID); ok {
+				out.SharedFleet, out.SharedFleetReason = SharedFleetNotUsed, ""
+			} else {
+				out.SharedFleetReason = reason
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -282,6 +309,9 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 		}
 	}
 	sp.Reasons = append(sp.Reasons, claimReasons(c)...)
+	if !c.FeaturesOK {
+		sp.Reasons = append(sp.Reasons, missingFeatureReasons(cmd, sn)...)
+	}
 	if len(sp.Reasons) > 0 {
 		return sp, nil
 	}
@@ -321,8 +351,44 @@ func claimReasons(c commanddom.SensorClaim) []string {
 	if !c.CapabilityOK {
 		out = append(out, commanddom.PlacementCapabilityMissing)
 	}
-	if !c.FeaturesOK {
-		// required_features holds only net.confined@1 today.
+	return out
+}
+
+// featurePlacement is the placement code of each feature a command can
+// require (command.PayloadKeyRequiredFeatures).
+var featurePlacement = map[string]string{
+	sensordom.CapabilityNetConfined: commanddom.PlacementNotConfined,
+	sensordom.CapabilityRuleSources: commanddom.PlacementRuleSourcesUnsupported,
+}
+
+// missingFeatureReasons names the features cmd requires that sn did not
+// report (every required one when the sensor is unknown). A feature with
+// no code of its own counts as not confined, the first such feature.
+func missingFeatureReasons(cmd *commanddom.Command, sn *sensordom.Sensor) []string {
+	var p struct {
+		Required []string `json:"required_features"`
+	}
+	if cmd != nil {
+		_ = json.Unmarshal(cmd.Payload, &p)
+	}
+	var reported []string
+	if sn != nil {
+		reported = sn.Reported.Capabilities
+	}
+	var out []string
+	for _, f := range p.Required {
+		if slices.Contains(reported, f) {
+			continue
+		}
+		code, ok := featurePlacement[f]
+		if !ok {
+			code = commanddom.PlacementNotConfined
+		}
+		if !slices.Contains(out, code) {
+			out = append(out, code)
+		}
+	}
+	if len(out) == 0 {
 		out = append(out, commanddom.PlacementNotConfined)
 	}
 	return out

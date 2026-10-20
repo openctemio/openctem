@@ -30,8 +30,17 @@ manual states (on hold, canceled).
 
 ## Membership rules
 
-- Creating a task or adding primary members refuses a finding that is already the primary member of another
-  active task: `409` with `code: FINDINGS_IN_OTHER_TASK` and the `finding_ids`.
+- Creating a task, adding primary members and accepting a suggestion claim their findings (RFC-098 §6.1,
+  `claimFindingsInTx` in `remediation_claim.go`). A finding that is already the primary member of another
+  active task refuses the request: `409` with `code: FINDINGS_IN_OTHER_TASK` and `details.conflicts`, one entry
+  per finding (`finding_id`, `finding_title`, `task_id`, and `task_title`, `assignee_user_id`,
+  `assignee_group_id` only when the caller can read that task, else null; `can_move`).
+- The request resolves conflicts with `"conflicts": {"skip": true}` (leave them out) or
+  `{"move": [ids], "move_reason": "..."}` (move those, skip the others). Moving needs write access to the
+  holding task (visible, no finding outside the caller's scope; else `403`), ends the old membership with
+  `left_reason = 'moved'`, keeps the SLA, writes timeline entries on both tasks, recomputes (and, when emptied,
+  archives) the source, tells both trackers and writes one `remediation_task.findings_moved` audit row per source
+  task. Of two concurrent claims of one finding exactly one wins; the other answers `409`.
 - Closed findings never join as primary members; another tenant's finding, a missing one and one outside the
   caller's scope answer the same `404`.
 - Canceling a task (a reason is required) releases its findings (`left_reason = canceled`), so they may join
@@ -50,6 +59,10 @@ manual states (on hold, canceled).
 | `GET /api/v1/remediation/tasks/{task_id}/members` | `findings:remediation:read` + `findings:read` |
 | `POST /api/v1/remediation/tasks/{task_id}/members` | `findings:remediation:write` |
 | `GET /api/v1/remediation/tasks/{task_id}/timeline` | `findings:remediation:read` |
+| `POST /api/v1/remediation/tasks/query/preview`, `POST /api/v1/remediation/tasks/query` | `findings:remediation:write` + `findings:read`, query rate limit |
+| `GET /api/v1/remediation/tasks/{task_id}/query` | `findings:remediation:read` |
+| `POST /api/v1/remediation/tasks/{task_id}/query/{run,preview}` | `findings:remediation:write` + `findings:read`, query rate limit |
+| `POST /api/v1/remediation/tasks/{task_id}/query/auto` | `findings:remediation:write` |
 
 All routes are in the `remediation` module. `assignee=me` lists tasks assigned to the caller or to one of their
 groups. Every change carries the task's `version`; a stale one answers `409`.
@@ -106,8 +119,9 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   secondary owner, directly or through a group (`asset_owners`, joined through `assets.tenant_id`). A new fix
   (`new_group`) stays with `findings:remediation:write`. The audit event carries `as_owner`. Owning an asset is
   not a scope grant: the data scope check applies on top.
-- Findings that closed or joined another task since the suggestion are left out and returned in `dropped`; with
-  none left the accept answers 400.
+- Findings that closed since the suggestion are left out and returned in `dropped`; findings another active task
+  took since answer `409 FINDINGS_IN_OTHER_TASK` unless `conflicts` skips them (returned in `skipped`) or moves
+  them (counted in `moved`); with none left the accept answers 400.
 - `POST /api/v1/remediation/suggestions/approve` accepts up to 50 suggestions (5000 findings) as they are, each
   on its own.
 - Auto-join (`remediation_actions.auto_join`, `PATCH /api/v1/remediation/actions/{id}`): exact keys only
@@ -198,12 +212,42 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 | `/remediation/suggestions` | the inbox: cards with the fix, reach, risk parts, proposed owners and "Why?" (key, algorithm, fix steps); accept, edit then accept, dismiss with a reason (undo), snooze 7 days (undo), bulk accept; keyboard j/k, a, e, d, s, x, ? |
 | `/remediation/tasks` | views (all open, mine, verifying, on hold, closed, all), search and sort; a server-paged table or a board by state where only "on hold" moves by drag |
 | `/remediation/tasks/{id}` | header (state, deadline and its source, owner, risk left), fix steps with the command to copy, progress, findings grouped by asset in a windowed list that loads as it scrolls, select and Move to… (palette with the server's compatibility warnings) or drag onto a task of the same fix, Split, Mark fixed, Request exception (or the pending exception), hold/resume/cancel, timeline; every move offers Undo |
-| `/remediation/campaigns` | the campaigns (formerly the page at `/remediation`) |
+| `/remediation/campaigns` | the campaigns: programs of tasks (remediation-campaigns.md) |
 
 Strings are in the `remediationHub` dictionary (en, vi). Write actions show only with
 `findings:remediation:write` (Mark fixed also `findings:fix_apply`); the API stays the authority. A member with only
 `findings:remediation:read` sees "Accept as owner" (and the `a` key) on `join` and `task_route` suggestions, and
 nothing else; the API decides whether they own the task and the assets.
+
+## Tasks from a query
+
+Design: RFC-098 §13. The flow:
+
+```
+query text --(caller: tenant, user, admin flag, permissions from the request)--> query.Service.MatchFindings
+   plan (pkg/querylang: tenant, data scope, pentest member rule, mandatory exclusions)
+   + task rules (pgsql.MatchOptions: closed and pentest findings out; unclaimed only for re-run and auto)
+   --> QueryExecutor.Match (READ ONLY, 5 s, work_mem cap): count + first 1000 ids
+preview: PrimaryHolders (conflicts, shown per the caller's read/write on the holding task) + QueryPreviewStats
+create:  CreateTask (members join with source "query", remediation_task_queries row in the same transaction)
+re-run / auto: ClaimQueryFindings (lock task, lock findings in id order, keep only free open findings,
+         trim to the cap, insert ON CONFLICT DO NOTHING: the primary unique index settles races)
+```
+
+The auto include worker (`RemediationTaskQueryController`, every 5 minutes, each task at most every 15)
+resolves the stored owner outside a request (active membership, role, permissions) and suspends the task
+with a reason instead of running when the owner is gone or lacks `findings:read` +
+`findings:remediation:write`, when the task closed, or when the query no longer compiles. Additions and
+suspensions are audited (`remediation_task.query_auto_added`, `.query_auto_state_changed`) and the owner gets
+an in-app notification (type `remediation_task`).
+
+Console: `CreateTaskFromQueryDialog` (Tasks: "New task from query"; Findings toolbar: "Task from filters",
+which converts the list's query string through `POST /api/v1/query/from-filters` and names the params it
+could not carry over), with `QueryBox` (field and value completion from `GET /api/v1/query/schema`, live
+check through `POST /api/v1/query/explain`), `QueryPreviewPanel` and the shared `ClaimConflictStep` (skip by
+default, move with a reason). The task page shows `TaskQueryPanel`: the stored query as plain text, the mode,
+the auto state with the suspension reason, pause / resume, and "Re-run query" (adds only after the
+confirmation dialog). Strings: the `remediationQuery` dictionary (en, vi).
 
 ## Shipped and planned
 
@@ -220,7 +264,8 @@ are in the `myWork` dictionary (en, vi).
 
 - `api/migrations/*_remediation_tasks.up.sql`, `*_remediation_task_activity_type*.sql` (finding activity type)
 - `api/pkg/domain/remediation/task.go`, `task_repository.go`
-- `api/internal/infra/postgres/remediation_task_repository.go`
+- `api/internal/infra/postgres/remediation_task_repository.go`, `remediation_claim.go` (claim conflicts)
+- `api/pkg/domain/remediation/claim.go`, `api/internal/app/remediation/claims.go`
 - `api/internal/app/remediation/tasks.go`
 - `api/internal/infra/http/handler/remediation_task_handler.go`, `routes/remediation.go`
 - `api/internal/infra/controller/remediation_tasks.go`
@@ -229,4 +274,9 @@ are in the `myWork` dictionary (en, vi).
   `api/internal/infra/postgres/remediation_suggestion_repository.go`,
   `api/internal/infra/http/handler/remediation_suggestion_handler.go`,
   `api/internal/infra/controller/remediation_suggestions.go`
-- `api/tests/integration/remediation_tasks_test.go`, `remediation_suggestions_test.go`
+- `api/tests/integration/remediation_tasks_test.go`, `remediation_suggestions_test.go`, `remediation_claim_test.go`
+- Tasks from a query: `api/migrations/*_remediation_task_queries.*.sql`, `api/pkg/domain/remediation/task_query.go`,
+  `api/internal/app/remediation/query_tasks.go`, `api/internal/app/query/match.go`, `api/pkg/querylang/pgsql/match.go`,
+  `api/internal/infra/postgres/remediation_task_query_repository.go`,
+  `api/internal/infra/http/handler/remediation_task_query_handler.go`, `query_from_filters_handler.go`,
+  `api/internal/infra/controller/remediation_task_query.go`, `api/tests/integration/remediation_task_query_test.go`

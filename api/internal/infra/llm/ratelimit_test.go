@@ -175,7 +175,6 @@ func TestFactory_AppliesRateLimit(t *testing.T) {
 	t.Parallel()
 
 	base := config.AITriageConfig{
-		Enabled:          true,
 		PlatformProvider: "claude",
 		PlatformModel:    "claude-sonnet-4-20250514",
 		AnthropicAPIKey:  "sk-ant-test",
@@ -210,4 +209,67 @@ func TestFactory_AppliesRateLimit(t *testing.T) {
 			t.Fatal("AI_RATE_LIMIT_RPM=0 must mean no cap, but the provider was wrapped")
 		}
 	})
+}
+
+// Fair share: in platform mode each organization has its own bucket in front
+// of the platform key's shared one, so one organization cannot use up the
+// whole allowance. An organization with its own key has only its own bucket.
+func TestFactory_PlatformTenantShare(t *testing.T) {
+	t.Parallel()
+	f := NewFactory(config.AITriageConfig{
+		PlatformProvider: "claude", AnthropicAPIKey: "sk-ant-test", TimeoutSeconds: 30,
+		RateLimitRPM: 60, RateLimitTenantRPM: 2,
+	})
+	platform := tenant.AISettings{Mode: tenant.AIModePlatform}
+	share := func(tenantID string) (*rateLimitedProvider, *rateLimitedProvider) {
+		t.Helper()
+		p, err := f.CreateProviderForTenant(tenantID, platform)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outer, ok := p.(*rateLimitedProvider)
+		if !ok {
+			t.Fatalf("platform provider is not rate limited: %T", p)
+		}
+		inner, ok := outer.Provider.(*rateLimitedProvider)
+		if !ok {
+			t.Fatalf("the shared platform bucket is missing behind the tenant share: %T", outer.Provider)
+		}
+		return outer, inner
+	}
+	aOuter, aInner := share("tenant-a")
+	bOuter, bInner := share("tenant-b")
+	aAgain, _ := share("tenant-a")
+	if aOuter.rpm != 2 || aInner.rpm != 60 {
+		t.Fatalf("rpm: share %d, shared %d; want 2 and 60", aOuter.rpm, aInner.rpm)
+	}
+	if aOuter.limiter == bOuter.limiter {
+		t.Fatal("two organizations share one fair-share bucket")
+	}
+	if aOuter.limiter != aAgain.limiter {
+		t.Fatal("an organization's bucket must be reused across calls")
+	}
+	if aInner.limiter != bInner.limiter {
+		t.Fatal("the platform key's bucket must be shared")
+	}
+	// The share drains independently: A's two tokens leave B's untouched.
+	aOuter.limiter.AllowN(time.Now(), 2)
+	if aOuter.limiter.Allow() {
+		t.Fatal("tenant A's share should be used up")
+	}
+	if !bOuter.limiter.Allow() {
+		t.Fatal("tenant B must still be served")
+	}
+
+	// A share above the platform allowance is capped at it; 0 turns it off.
+	capped := NewFactory(config.AITriageConfig{PlatformProvider: "claude", AnthropicAPIKey: "k", RateLimitRPM: 5, RateLimitTenantRPM: 50})
+	p, _ := capped.CreateProviderForTenant("t", platform)
+	if p.(*rateLimitedProvider).rpm != 5 {
+		t.Fatalf("share above the platform allowance not capped: %d", p.(*rateLimitedProvider).rpm)
+	}
+	off := NewFactory(config.AITriageConfig{PlatformProvider: "claude", AnthropicAPIKey: "k", RateLimitRPM: 60})
+	p, _ = off.CreateProviderForTenant("t", platform)
+	if _, nested := p.(*rateLimitedProvider).Provider.(*rateLimitedProvider); nested {
+		t.Fatal("RateLimitTenantRPM=0 must not add a share bucket")
+	}
 }

@@ -413,6 +413,22 @@ func (r *AuditLogRepository) selectQuery() string {
 
 // Create creates a new audit log entry.
 func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) error {
+	return insertAdminAuditLog(ctx, r.db, log)
+}
+
+// CreateAdminAuditLogTx writes an administrators' audit entry inside the
+// caller's transaction, so the entry commits or rolls back with the change it
+// records. The database's BEFORE INSERT trigger links it into the hash chain,
+// as for every other writer.
+func CreateAdminAuditLogTx(ctx context.Context, tx *sql.Tx, log *admin.AuditLog) error {
+	return insertAdminAuditLog(ctx, tx, log)
+}
+
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func insertAdminAuditLog(ctx context.Context, q rowQuerier, log *admin.AuditLog) error {
 	query := `
 		INSERT INTO admin_audit_logs (
 			id, admin_id, admin_email, action, resource_type, resource_id, resource_name,
@@ -430,7 +446,7 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 
 	var position int64
 	var prevHash, hash string
-	err = r.db.QueryRowContext(ctx, query,
+	err = q.QueryRowContext(ctx, query,
 		log.ID.String(),
 		nullIDString(log.AdminID),
 		log.AdminEmail,

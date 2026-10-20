@@ -198,3 +198,16 @@ func TestRunTaskList_HostWait(t *testing.T) {
 		t.Fatalf("a host name in the list: %s", b)
 	}
 }
+
+// research/191 W-1: the answer says whether the shared fleet was an option
+// when no sensor of the organization may take the task.
+func TestGetRunTaskPlacement_SharedFleet(t *testing.T) {
+	h, f := newPlacementHandler(t)
+	f.p.SharedFleet, f.p.SharedFleetReason = commandapp.SharedFleetNotAllowed, "opted out"
+	w := httptest.NewRecorder()
+	h.GetRunTaskPlacement(w, placementRequest(f.tenant, f.run.String(), f.task.String()))
+	got := decodePlacement(t, w)
+	if got.SharedFleet != "not_allowed" || got.SharedFleetReason != "opted out" {
+		t.Fatalf("shared fleet %q reason %q", got.SharedFleet, got.SharedFleetReason)
+	}
+}

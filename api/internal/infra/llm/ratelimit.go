@@ -77,6 +77,9 @@ const (
 	// its own LLM bill, so it gets its own allowance and cannot be starved by
 	// (or starve) anyone else.
 	byokBudgetScopePrefix = "byok:"
+	// platformTenantScopePrefix is joined with the tenant ID: an
+	// organization's share of the platform allowance.
+	platformTenantScopePrefix = "platform:tenant:"
 )
 
 // budgetScope returns the limiter key for a tenant's AI mode. It is

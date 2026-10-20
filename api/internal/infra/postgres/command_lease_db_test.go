@@ -77,7 +77,7 @@ func TestCommandLease_ClaimRenewRequeue(t *testing.T) {
 	// Both leases run out; the heartbeat lists only "kept": it is renewed.
 	expireLease(ctx, t, sqlDB, kept)
 	expireLease(ctx, t, sqlDB, lost)
-	if n, err := cmds.RenewLeases(ctx, tenant, a, []string{kept.String()}, false); err != nil || n != 1 {
+	if n, err := cmds.RenewLeases(ctx, tenant, a, []string{kept.String()}, false, 30*time.Second); err != nil || n != 1 {
 		t.Fatalf("renew: %d %v", n, err)
 	}
 	rq, err := cmds.RequeueExpiredLeases(ctx)
@@ -104,11 +104,60 @@ func TestCommandLease_ClaimRenewRequeue(t *testing.T) {
 
 	// A sensor that does not report what it runs renews all it holds.
 	expireLease(ctx, t, sqlDB, kept)
-	if n, err := cmds.RenewLeases(ctx, tenant, a, nil, true); err != nil || n != 1 {
+	if n, err := cmds.RenewLeases(ctx, tenant, a, nil, true, 30*time.Second); err != nil || n != 1 {
 		t.Fatalf("renew all: %d %v", n, err)
 	}
 	if rq, err := cmds.RequeueExpiredLeases(ctx); err != nil || requeuedIDs(rq)[kept.String()].ID == kept {
 		t.Fatalf("a wholesale-renewed lease was re-queued: %v", err)
+	}
+}
+
+// A heartbeat renews a lease only once less than LeaseRenewBefore is left:
+// a fresh lease is not written on every beat, one past the threshold is.
+func TestCommandLease_RenewOnlyBelowThreshold(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, sqlDB)()
+	db := &DB{DB: sqlDB}
+	cmds := NewCommandRepository(db)
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	a := seedZoneSensor(ctx, t, sqlDB, &tenant, "a", zoneSensorOpts{tools: []string{"nuclei"}})
+	id := newLeaseTestCommand(ctx, t, cmds, tenant)
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, id, a.String()); err != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, err)
+	}
+	busy := 5 * time.Second // threshold: max(3 min / 2, 2 × 5 s + 10 s) = 90 s
+
+	// Just claimed: almost the whole lease left, nothing is written.
+	if n, err := cmds.RenewLeases(ctx, tenant, a, []string{id.String()}, false, busy); err != nil || n != 0 {
+		t.Fatalf("a fresh lease was renewed: %d %v", n, err)
+	}
+	if n, err := cmds.RenewLeases(ctx, tenant, a, nil, true, busy); err != nil || n != 0 {
+		t.Fatalf("a fresh lease was renewed (all): %d %v", n, err)
+	}
+
+	// Less than the threshold left: renewed to a full lease.
+	if _, err := sqlDB.ExecContext(ctx, `UPDATE commands SET lease_expires_at = NOW() + interval '80 seconds' WHERE id = $1`, id.String()); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := cmds.RenewLeases(ctx, tenant, a, []string{id.String()}, false, busy); err != nil || n != 1 {
+		t.Fatalf("a lease below the threshold was not renewed: %d %v", n, err)
+	}
+	got, err := cmds.GetByTenantAndID(ctx, tenant, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LeaseExpiresAt == nil || time.Until(*got.LeaseExpiresAt) < 2*time.Minute {
+		t.Fatalf("renewed lease: %v", got.LeaseExpiresAt)
+	}
+
+	// Another tenant's sensor id never renews it, whatever is left.
+	other := seedTestTenant(ctx, t, sqlDB)
+	if _, err := sqlDB.ExecContext(ctx, `UPDATE commands SET lease_expires_at = NOW() + interval '5 seconds' WHERE id = $1`, id.String()); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := cmds.RenewLeases(ctx, other, a, []string{id.String()}, false, busy); err != nil || n != 0 {
+		t.Fatalf("a lease was renewed under another tenant: %d %v", n, err)
 	}
 }
 
@@ -201,5 +250,66 @@ func TestCommandLease_NoCompletionAfterRequeue(t *testing.T) {
 	// Completed: nothing re-queues it, whatever its lease.
 	if rq, err := cmds.RequeueExpiredLeases(ctx); err != nil || requeuedIDs(rq)[id.String()].ID == id {
 		t.Fatalf("a completed command was re-queued: %v", err)
+	}
+}
+
+// A lease that expires puts an unpinned command back for every eligible
+// sensor, and a command addressed to one sensor on purpose back for that
+// sensor only: sensor_id doubles as the holder, so the pin is recorded at
+// the claim.
+func TestCommandLease_RequeueKeepsAddressedPin(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, sqlDB)()
+	db := &DB{DB: sqlDB}
+	cmds := NewCommandRepository(db)
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	a := seedZoneSensor(ctx, t, sqlDB, &tenant, "a", zoneSensorOpts{tools: []string{"nuclei"}})
+	b := seedZoneSensor(ctx, t, sqlDB, &tenant, "b", zoneSensorOpts{tools: []string{"nuclei"}})
+
+	unpinned := newLeaseTestCommand(ctx, t, cmds, tenant)
+	raw, _ := json.Marshal(map[string]any{"scanner": "nuclei", "target": uniqueTestHost()})
+	addr, err := command.NewCommand(tenant, command.CommandTypeScan, command.CommandPriorityNormal, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr.SetSensorID(a)
+	if err := cmds.Create(ctx, addr); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []shared.ID{unpinned, addr.ID} {
+		if ok, err := cmds.ClaimForSensor(ctx, tenant, id, a.String()); err != nil || !ok {
+			t.Fatalf("claim %s: %v %v", id, ok, err)
+		}
+		expireLease(ctx, t, sqlDB, id)
+	}
+	if _, err := cmds.RequeueExpiredLeases(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := cmds.GetByTenantAndID(ctx, tenant, unpinned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != command.CommandStatusPending || got.SensorID != nil {
+		t.Fatalf("unpinned command: status %s sensor %v", got.Status, got.SensorID)
+	}
+	got, err = cmds.GetByTenantAndID(ctx, tenant, addr.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != command.CommandStatusPending || got.SensorID == nil || *got.SensorID != a {
+		t.Fatalf("addressed command: status %s sensor %v", got.Status, got.SensorID)
+	}
+
+	// Another sensor claims the unpinned command, never the addressed one.
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, addr.ID, b.String()); err != nil || ok {
+		t.Fatalf("another sensor claimed an addressed command: %v %v", ok, err)
+	}
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, unpinned, b.String()); err != nil || !ok {
+		t.Fatalf("unpinned command not claimable by another sensor: %v %v", ok, err)
+	}
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, addr.ID, a.String()); err != nil || !ok {
+		t.Fatalf("addressed command not claimable by its sensor: %v %v", ok, err)
 	}
 }
