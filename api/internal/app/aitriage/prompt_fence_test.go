@@ -96,15 +96,9 @@ func TestTriagePrompt_FlagsInjectionAttempt(t *testing.T) {
 	require.False(t, suspicious, "ordinary code with < and > is not an injection attempt")
 }
 
-func TestApplyInjectionGuard_CannotAutoDeEscalate(t *testing.T) {
+func TestApplyInjectionGuard_FlagsForReview(t *testing.T) {
 	a := &aitriagedom.TriageAnalysis{FalsePositiveLikelihood: 0.99, SeverityAssessment: "info"}
 	applyInjectionGuard(a)
-	require.Less(t, a.FalsePositiveLikelihood, aitriageFPReclassifyThreshold,
-		"an injected 'false positive' verdict must not reach the de-escalation threshold")
 	require.NotEmpty(t, a.ValidationWarnings, "the result must be flagged for human review")
-
-	low := &aitriagedom.TriageAnalysis{FalsePositiveLikelihood: 0.2}
-	applyInjectionGuard(low)
-	require.InDelta(t, 0.2, low.FalsePositiveLikelihood, 1e-9, "a below-threshold value is left alone")
-	require.NotEmpty(t, low.ValidationWarnings)
+	require.InDelta(t, 0.99, a.FalsePositiveLikelihood, 1e-9, "the model's value is kept; it changes nothing on its own")
 }

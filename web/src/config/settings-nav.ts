@@ -36,6 +36,7 @@ import {
   Bot,
   Boxes,
   Bug,
+  Siren,
   Building,
   CalendarClock,
   Clock,
@@ -64,6 +65,7 @@ import {
   Settings2,
   Shield,
   SlidersHorizontal,
+  Sparkles,
   ShieldAlert,
   ShieldCheck,
   ShieldHalf,
@@ -336,6 +338,20 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
       },
       {
+        // The organization's consent to AI triage (api: GET/PUT
+        // /organization/settings/ai, owners and administrators; the PUT
+        // needs a recent sign-in). Nothing goes to an AI provider until it is on.
+        id: 'ai',
+        title: 'AI',
+        description: 'Whether findings may be sent to an AI provider for triage.',
+        url: '/settings/ai',
+        icon: Sparkles,
+        permission: Permission.SettingsRead,
+        module: 'ai_triage',
+        keywords: ['ai', 'llm', 'triage', 'consent', 'opt in', 'provider', 'data', 'privacy'],
+        anchors: [{ id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] }],
+      },
+      {
         id: 'audit-log',
         title: 'Audit log',
         description: 'Who did what, and when, across the organization.',
@@ -484,6 +500,15 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Bug,
         permission: Permission.TeamUpdate,
         keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
+      },
+      {
+        id: 'emerging-threats',
+        title: 'Emerging threats',
+        description: 'When new or newly exploited CVEs alert you, and how.',
+        url: '/settings/emerging-threats',
+        icon: Siren,
+        permission: Permission.TeamUpdate,
+        keywords: ['cve', 'kev', 'epss', 'alert', 'digest', 'quiet hours', 'exploited', 'zero-day'],
       },
       {
         id: 'license-policy',

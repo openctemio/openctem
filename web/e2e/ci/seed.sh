@@ -45,8 +45,9 @@ call() {
 
 log "organization and owner"
 # Capture the output even when bootstrap-admin fails, so its error is printed.
-setup=$(docker run --rm --network "$NETWORK" "${ADMIN_IMAGE:?set ADMIN_IMAGE}" \
-  -db="$DATABASE_URL" \
+# The output is captured, so -print-secrets; the URL goes in the environment.
+setup=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL "${ADMIN_IMAGE:?set ADMIN_IMAGE}" \
+  -print-secrets \
   -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
   -org-name="E2E Org $RUN" -org-slug="$SLUG" -org-owner-email="$EMAIL" 2>&1) || {
   log "bootstrap-admin failed:"
@@ -153,8 +154,8 @@ log "a scan with a run in progress"
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
 
-log "remediation task"
-call POST /api/v1/remediation/campaigns '{"name":"E2E remediation task","description":"e2e","priority":"high"}'
+log "remediation campaign"
+call POST /api/v1/remediation/campaigns '{"name":"E2E remediation campaign","description":"e2e","priority":"high"}'
 
 # Ingest is asynchronous: wait until the findings are listed.
 for _ in $(seq 1 30); do

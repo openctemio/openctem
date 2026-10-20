@@ -299,66 +299,6 @@ export function useCredentialStats(config?: SWRConfiguration) {
 }
 
 // ============================================
-// REMEDIATION HOOKS
-// ============================================
-
-export function useRemediationTasks(
-  filters?: PaginationParams & { status?: string; priority?: string; assignee?: string },
-  config?: SWRConfiguration
-) {
-  const endpoint = securityEndpoints.remediation.list(filters)
-  return useSWR<PaginatedResponse<unknown>>(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useRemediationTask(taskId: string | null, config?: SWRConfiguration) {
-  const endpoint = taskId ? securityEndpoints.remediation.get(taskId) : null
-  return useSWR(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useRemediationStats(config?: SWRConfiguration) {
-  const endpoint = securityEndpoints.remediation.stats()
-  return useSWR(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useOverdueTasks(config?: SWRConfiguration) {
-  const endpoint = securityEndpoints.remediation.overdue()
-  return useSWR(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function usePriorityTasks(config?: SWRConfiguration) {
-  const endpoint = securityEndpoints.remediation.priority()
-  return useSWR(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useCreateRemediationTask() {
-  return useSWRMutation(securityEndpoints.remediation.create(), (url, { arg }: { arg: unknown }) =>
-    post(url, arg)
-  )
-}
-
-export function useUpdateRemediationTask(taskId: string) {
-  return useSWRMutation(
-    securityEndpoints.remediation.update(taskId),
-    (url, { arg }: { arg: unknown }) => put(url, arg)
-  )
-}
-
-// ============================================
 // PENTEST HOOKS
 // ============================================
 

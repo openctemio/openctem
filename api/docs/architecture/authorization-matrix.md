@@ -1877,11 +1877,15 @@ MTTR (`GET /dashboard/mttr` and
 (velocity, data quality, risk trend, program, process and executive metrics)
 move the same way in a follow-up; until then they stay in the table below.
 
-Remediation campaign progress follows the reader too (research 15 L-18,
-research 24): a restricted member reading a campaign (`GET`, list, and the
-responses of update, status and refresh) sees the finding and resolved counts
-of their own in-scope findings. The stored counts stay organization-wide,
-because auto-complete reads them; a restricted read never persists its view.
+Remediation campaigns hold tasks, never findings (remediation-campaigns.md):
+a restricted member sees a campaign they created or own, or one with a task
+holding a finding in their scope; its summary counts only those tasks and
+findings (`hidden_tasks` counts the rest). They change a campaign only when no
+task of it has a finding outside their scope, add only tasks they may change,
+and move a task out of another campaign only when they may change that one.
+Completion and the reconcile read the organization-wide summary; a read never
+stores anything.
+
 ### Scheduled report recipients
 
 A scheduled report mails organization posture out, so its recipients are
@@ -2507,7 +2511,7 @@ from a custom role to deny that one action.
 | `scans:execute` | `POST /scans/{id}/trigger`, `POST /scans/quick`, `POST /assets/{id}/scan` | `scans:write` / `assets:write` |
 | `scans:workflows:execute` | `POST /scan-workflows/{id}/runs` | `scans:workflows:write` |
 | `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
-| `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15) | `findings:write` |
+| `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15; also `findings:bulk_update`). Both work only once an organization administrator turned AI triage on (`PUT /tenants/{tenant}/settings/ai`, team admin, `settings:write`, step-up) | `findings:write` |
 | `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
 | `findings:exposures:write` | `POST /exposures`, `/ingest`, `PUT /{id}/ctem-id` | `findings:write` |
 | `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate` (with `findings:write`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |

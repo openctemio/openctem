@@ -5,18 +5,7 @@
 
 import type { PillTone } from '@/features/shared/components/tone-pill'
 import { upgradeCommands, type FixCommand } from '@/features/findings/lib/fix-guidance'
-import type { RemediationSuggestion, RemediationTask, TaskMember, TaskState } from '../api/types'
-
-export const STATE_TONE: Record<TaskState, PillTone> = {
-  open: 'info',
-  in_progress: 'warning',
-  verifying: 'info',
-  done: 'success',
-  closed_unverified: 'muted',
-  on_hold: 'muted',
-  canceled: 'muted',
-  archived: 'muted',
-}
+import type { RemediationSuggestion, RemediationTask, TaskMember } from '../api/types'
 
 export type DeadlineStatus = 'none' | 'overdue' | 'due_soon' | 'on_track'
 

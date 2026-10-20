@@ -1782,6 +1782,12 @@ vars:
     type: int
     default: "60"
     description: "Completions per minute per API key. `0` or less turns the cap off."
+  - name: AI_RATE_LIMIT_TENANT_RPM
+    component: api
+    group: "AI triage"
+    type: int
+    default: "20"
+    description: "Each organization's share of the platform key's completions per minute (a bucket per organization in front of `AI_RATE_LIMIT_RPM`), so one organization cannot starve the others. `0` turns it off. Organizations with their own key have their own allowance."
   - name: AI_TEMPERATURE
     component: api
     group: "AI triage"
@@ -1798,26 +1804,20 @@ vars:
     component: api
     group: "AI triage"
     type: int
-    default: "0"
-    description: "Monthly token budget of an organization without its own."
+    default: "2000000"
+    description: "Monthly platform AI token budget of an organization, set on its month's budget row when the row is created. `0` means unlimited."
   - name: AI_TRIAGE_BUDGET_ENABLED
     component: api
     group: "AI triage"
     type: bool
-    default: "false"
-    description: "Enforce the per-organization monthly token budget."
+    default: "true"
+    description: "Enforce the per-organization monthly token budget for platform AI (organizations with their own key are not counted)."
   - name: AI_TRIAGE_BUDGET_STRICT
     component: api
     group: "AI triage"
     type: bool
     default: "false"
     description: "With the budget on: refuse triage when the budget store cannot be read (otherwise log and continue)."
-  - name: AI_TRIAGE_ENABLED
-    component: api
-    group: "AI triage"
-    type: bool
-    default: "false"
-    description: "Deprecated and ignored: availability follows the provider keys and the AI triage module."
   - name: AI_TRIAGE_RECOVERY_BATCH_SIZE
     component: api
     group: "AI triage"
@@ -1829,7 +1829,7 @@ vars:
     group: "AI triage"
     type: bool
     default: "true"
-    description: "Requeue triage jobs stuck in processing."
+    description: "Mark triage jobs stuck in pending or processing as failed (stuck_timeout). Transient provider errors are retried by the job queue before that."
   - name: AI_TRIAGE_RECOVERY_INTERVAL
     component: api
     group: "AI triage"
@@ -1841,7 +1841,7 @@ vars:
     group: "AI triage"
     type: duration
     default: "15m"
-    description: "Age after which a processing job counts as stuck."
+    description: "Age after which a pending or processing job counts as stuck."
   - name: ANTHROPIC_API_KEY
     component: api
     group: "AI triage"
@@ -1899,6 +1899,56 @@ vars:
     required: yes
     secret: true
     description: "`openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it."
+  - name: CONNECTOR_RELAY_URL
+    component: tool
+    group: "Administration tools"
+    type: url
+    required: yes
+    description: "`openctem-sensor-relay connector`: https URL of the sensor relay the connector takes requests from."
+  - name: CONNECTOR_RELAY_PIN
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`openctem-sensor-relay connector`: hex SHA-256 of the relay's public key. When set, the relay's certificate is accepted only if its key matches."
+  - name: CONNECTOR_TLS_CERT
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    description: "`openctem-sensor-relay connector`: path to the connector's client certificate (PEM), pinned on the relay."
+  - name: CONNECTOR_TLS_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: path to the private key (PEM) of `CONNECTOR_TLS_CERT`."
+  - name: CONNECTOR_REALM
+    component: tool
+    group: "Administration tools"
+    type: string
+    required: yes
+    description: "`openctem-sensor-relay connector`: the realm whose requests the connector takes."
+  - name: CONNECTOR_INGEST_KEYS
+    component: tool
+    group: "Administration tools"
+    type: list
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: comma-separated paths of the ingest private key files that open the sensors' sealed requests."
+  - name: CONNECTOR_RESPONSE_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: path to the Ed25519 key that signs the responses."
+  - name: CONNECTOR_API_URL
+    component: tool
+    group: "Administration tools"
+    type: url
+    required: yes
+    description: "`openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to."
   - name: BOOTSTRAP_SMTP_FROM_NAME
     component: tool
     group: "Administration tools"
@@ -1919,6 +1969,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: display name of the backup administrator."
+  - name: SUDO_USER
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`)."
   - name: ADMIN_EMAIL
     component: tool
     group: "Administration tools"

@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestMigrationRemediationCampaignsHoldTasks(t *testing.T) {
 	const dir = "../../migrations"
 	v := testdb.MigrationVersion(t, dir, "remediation_campaigns_hold_tasks")
 	db := testdb.PrivateDatabase(t, "migcamp", dir)
-	testdb.Migrate(t, db, dir, v, v, true)
+	testdb.Migrate(t, db, dir, v, math.MaxInt, true)
 
 	exec := func(q string, args ...any) {
 		t.Helper()

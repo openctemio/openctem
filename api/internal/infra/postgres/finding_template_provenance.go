@@ -19,13 +19,21 @@ var _ vulnerability.TemplateProvenanceStore = (*FindingRepository)(nil)
 
 // RecordTemplateSightings stores each sighting's (sanitized) provenance on
 // the tenant's finding with that fingerprint. Sightings without a template
-// digest are skipped: they leave the finding's baseline as it was.
+// digest that are not the organization's own rules are skipped: they leave
+// the finding's baseline as it was.
+//
+// The rule source and the organization's template are decided here, in the
+// finding's tenant only: a digest of one of the tenant's scanner templates
+// (or, without a digest, a rule the sensor marked as the organization's
+// whose id one template defines) links that template and makes the source
+// "tenant"; any other digest is the platform's. Another tenant's template
+// is never matched, whatever its content.
+var _ vulnerability.RuleProvenanceReader = (*FindingRepository)(nil)
+
 func (r *FindingRepository) RecordTemplateSightings(ctx context.Context, tenantID shared.ID, sightings []vulnerability.TemplateSighting) (int64, error) {
-	fps := make([]string, 0, len(sightings))
-	tds := make([]string, 0, len(sightings))
-	tps := make([]string, 0, len(sightings))
-	tvs := make([]string, 0, len(sightings))
-	tsds := make([]string, 0, len(sightings))
+	n := len(sightings)
+	fps, tds, tps, tvs, tsds := make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n)
+	rss, rids := make([]string, 0, n), make([]string, 0, n)
 	for _, s := range sightings {
 		p := s.Provenance.Sanitize()
 		if p.Empty() || s.Fingerprint == "" {
@@ -36,24 +44,63 @@ func (r *FindingRepository) RecordTemplateSightings(ctx context.Context, tenantI
 		tps = append(tps, p.TemplatePath)
 		tvs = append(tvs, p.TemplatesVersion)
 		tsds = append(tsds, p.TemplatesDigest)
+		rss = append(rss, p.RuleSource)
+		rids = append(rids, p.RuleID)
 	}
 	if len(fps) == 0 {
 		return 0, nil
 	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE findings f
-		SET template_digest = v.td,
+		SET template_digest = NULLIF(v.td, ''),
 		    template_path = NULLIF(v.tp, ''),
 		    templates_version = NULLIF(v.tv, ''),
 		    templates_digest = NULLIF(v.tsd, ''),
-		    template_seen_at = NOW()
-		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS v(fp, td, tp, tv, tsd)
+		    template_seen_at = NOW(),
+		    rule_source = CASE WHEN v.rs = 'tenant' OR st.id IS NOT NULL THEN 'tenant'
+		                       WHEN v.td <> '' THEN 'platform' END,
+		    custom_template_id = st.id,
+		    custom_template_version = st.version
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[])
+		       AS v(fp, td, tp, tv, tsd, rs, rid)
+		LEFT JOIN LATERAL (
+			SELECT t.id, t.version
+			FROM scanner_templates t
+			WHERE t.tenant_id = $1
+			  AND ((v.td <> '' AND t.content_hash = substr(v.td, 8))
+			    OR (v.td = '' AND v.rs = 'tenant' AND v.rid <> ''
+			        AND (t.metadata->>'id' = v.rid OR COALESCE(t.metadata->'rule_ids', '[]'::jsonb) ? v.rid)))
+			ORDER BY t.updated_at DESC
+			LIMIT 1
+		) st ON TRUE
 		WHERE f.tenant_id = $1 AND f.fingerprint = v.fp`,
-		tenantID.String(), pq.Array(fps), pq.Array(tds), pq.Array(tps), pq.Array(tvs), pq.Array(tsds))
+		tenantID.String(), pq.Array(fps), pq.Array(tds), pq.Array(tps), pq.Array(tvs), pq.Array(tsds),
+		pq.Array(rss), pq.Array(rids))
 	if err != nil {
 		return 0, fmt.Errorf("record template sightings: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// RuleProvenance returns which rules found the finding at its last
+// sighting, with the organization's template's current name (the template
+// is read in the finding's tenant only; "" when it was deleted).
+func (r *FindingRepository) RuleProvenance(ctx context.Context, tenantID, findingID shared.ID) (vulnerability.RuleProvenance, error) {
+	var src, tid, tver, tname sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT f.rule_source, f.custom_template_id::text, f.custom_template_version, t.name
+		FROM findings f
+		LEFT JOIN scanner_templates t ON t.id = f.custom_template_id AND t.tenant_id = f.tenant_id
+		WHERE f.tenant_id = $1 AND f.id = $2`,
+		tenantID.String(), findingID.String()).Scan(&src, &tid, &tver, &tname)
+	if errors.Is(err, sql.ErrNoRows) {
+		return vulnerability.RuleProvenance{}, shared.ErrNotFound
+	}
+	if err != nil {
+		return vulnerability.RuleProvenance{}, fmt.Errorf("read rule provenance: %w", err)
+	}
+	return vulnerability.RuleProvenance{Source: src.String, TemplateID: tid.String,
+		TemplateName: tname.String, TemplateVersion: tver.String}, nil
 }
 
 // TemplateBaseline returns the provenance of the finding's last sighting.

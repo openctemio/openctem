@@ -6,7 +6,9 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { AlertTriangle, Shield, Target, FileWarning, Clock, Bot, XCircle } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { TriageStatusBadge } from './triage-status-badge'
+import { triageFailureMessage } from '../lib/messages'
 import { SEVERITY_BADGE_LIGHT, type SeverityLevel } from '@/lib/severity-colors'
 import type { AITriageResult, Exploitability } from '../types'
 import { EXPLOITABILITY_CONFIG, EFFORT_CONFIG } from '../types'
@@ -17,6 +19,7 @@ interface TriageResultCardProps {
 }
 
 export function TriageResultCard({ result, className }: TriageResultCardProps) {
+  const { t } = useTranslation()
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString()
   }
@@ -70,7 +73,7 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
             <XCircle className="h-12 w-12 text-red-500 mb-4" />
             <h3 className="text-lg font-medium mb-2">Triage Failed</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              {result.errorMessage || 'An error occurred during AI analysis.'}
+              {triageFailureMessage(t, result.errorCode)}
             </p>
             <TriageStatusBadge status={result.status} />
           </div>

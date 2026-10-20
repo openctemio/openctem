@@ -100,11 +100,11 @@ false-positive step and every tenant rule:
   rules. The reason adds "floor applied: raised to P1 from P3, in CISA KEV
   (known exploited)". Only the attribution cap (P2 until the asset is
   confirmed as the tenant's) runs after it.
-- **AI triage never lowers urgent work**: a high-confidence AI "likely false
-  positive" verdict reads scanner output an attacker can influence, so it may
-  only lower a P2 to P3. A P0/P1 finding, or one with exploitation evidence,
-  keeps its class and the reason adds "review suggested, priority not
-  lowered".
+- **AI triage never changes the class**: an AI verdict reads scanner output
+  an attacker can influence, so it is a suggestion for a person. A confident
+  "likely false positive" on a medium or low finding becomes a pending
+  false-positive request; the priority class is never lowered by it
+  ([AI triage](ai-triage.md)).
 - **Rules raise freely, lower only to the floors**: a rule result passes
   through the exploitation floor and the attribution cap
   (`ruleClassification`). Creating, changing or deleting a rule needs a
