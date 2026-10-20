@@ -237,8 +237,6 @@ alike:
   when an installed app indexes them. A mapping profile that sends no labels
   gets the property only (a create screen without labels would refuse the
   issue), so such creates are not looked up.
-- **Secret redaction** (#135): secret-leak findings never copy the raw value into
-  a ticket; descriptions are run through redaction patterns as defense-in-depth.
 - **Secret redaction** (#135): secret-leak findings never copy the raw value, the
   masked preview, the snippet or the fingerprint into a ticket (outbound gate);
   descriptions are run through redaction patterns as defense-in-depth.
