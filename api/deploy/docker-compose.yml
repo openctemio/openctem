@@ -502,6 +502,11 @@ services:
       SIGNER_GENERATE_KEY: "true"
       SIGNER_SOCKET: /run/openctem-signer/signer.sock
       SIGNER_STATE_DIR: /var/lib/openctem-signer/state
+      # The public key goes to signer-pub, which only this container writes
+      # and only the bundled sensor mounts (read-only, docker-compose.sensor.yml):
+      # the sensor pins it, so a compromised API cannot choose the key the
+      # sensor trusts. Never mount signer-pub into the API.
+      SIGNER_PUBLISH_DIR: /var/lib/openctem-signer-pub
       # Scope ledger: the signer signs only inside the scope people approved.
       # A new signer enforces it at once, so on an install that already has
       # scopes run the ledger bootstrap first (docker-compose.job-signer.yml)
@@ -512,6 +517,7 @@ services:
       - signer-keys:/var/lib/openctem-signer/keys
       - signer-state:/var/lib/openctem-signer/state
       - signer-socket:/run/openctem-signer
+      - signer-pub:/var/lib/openctem-signer-pub
       # - ./keyset.json:/etc/openctem-signer/keyset.json:ro
     healthcheck:
       test: ["CMD", "/app/openctem-signer", "healthcheck"]
@@ -737,6 +743,7 @@ volumes:
   signer-keys:
   signer-state:
   signer-socket:
+  signer-pub:
 
 networks:
   openctem:
