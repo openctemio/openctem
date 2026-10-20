@@ -586,6 +586,7 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `UI_IMAGE` | string | `ghcr.io/openctemio/openctem-web` |  |  | Image repository of the web console. |
 | `CONSOLE_IMAGE` | string | `ghcr.io/openctemio/openctem-console` |  |  | Image repository of the platform console. |
 | `MIGRATIONS_IMAGE` | string | `ghcr.io/openctemio/migrations` |  |  | Image repository of the migrations job. |
+| `GATEWAY_IMAGE` | string | `ghcr.io/openctemio/openctem-gateway` |  |  | Image repository of the gateway (Caddy with the layer4 module). |
 | `API_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `UI_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `CONSOLE_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
@@ -598,6 +599,8 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `CADDY_VERSION` | string | `2.11.4-alpine` |  |  | Image tag of the bundled gateway. |
 | `POSTGRES_VERSION` | string | `17` |  |  | Image tag of the bundled PostgreSQL. |
 | `REDIS_VERSION` | string | `7-alpine` |  |  | Image tag of the bundled Redis. |
+| `POSTGRES_IMAGE` | string | `postgres` |  |  | Image repository of the bundled PostgreSQL (and of the one-shot jobs that use its tools), for a private registry: `registry.example.internal/library/postgres`. The tag is `POSTGRES_VERSION`. |
+| `REDIS_IMAGE` | string | `redis` |  |  | Image repository of the bundled Redis, for a private registry. The tag is `REDIS_VERSION`. |
 | `DB_SUPERUSER` | string | `DB_USER` |  |  | PostgreSQL superuser, used only by `initdb` and the `db-roles` job. |
 | `DB_SUPERUSER_PASSWORD` | string | `DB_PASSWORD` |  | yes | Password of `DB_SUPERUSER`. |
 | `DB_MIGRATE_USER` | string | `unset` |  |  | Schema-owner role the migrations run as. Set to turn on the least-privilege layout. |

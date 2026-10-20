@@ -18,8 +18,9 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | One job for govulncheck + Trivy (fs) + license check; Semgrep; Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
 | Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | One job for npm audit + Trivy (fs) + ESLint security rules; Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
 | API Fuzz (`api-fuzz.yml`) | Nightly (03:17 UTC), manual | 10 minutes of `FuzzStrictCTIS` (the protocol-v2 results decoder); uploads a crasher artifact on failure | — |
-| Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)) | — |
-| Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
+| Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)); on a production release also the offline image bundle | — |
+| Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with the release archives (via Release archives), their SBOMs, the signed `checksums-sha256.txt`, build provenance, and the image pull lines | — |
+| Release archives (`release-dist.yml`) | Called by Release; PRs touching its inputs (`paths:`) | Builds the archives with `.github/scripts/release/build-dist.sh`; on a PR builds linux/amd64 only and runs `smoke-dist.sh` (versions, `-check-config` of the example settings, `systemd-analyze verify`/`security`, gateway Caddyfile, web/console health, the image kit's Dockerfiles), publishing nothing | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z` (with one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`), opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
@@ -535,12 +536,33 @@ cosign verify ghcr.io/openctemio/openctem:vX.Y.Z \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-### Release binaries
+### Release archives
 
-`release.yml` builds `bootstrap-admin` for linux/amd64, linux/arm64,
-darwin/amd64, darwin/arm64 and windows/amd64, published as
-`bootstrap-admin-<version>-<os>-<arch>.tar.gz` (`.zip` on Windows) with
-`checksums-sha256.txt`. The release notes are generated, plus the image pull lines.
+`release.yml` calls `release-dist.yml`, which runs
+`.github/scripts/release/build-dist.sh` (the same script a pull request
+dry-runs) for:
+
+- `openctem-server`, `openctem-gateway`, `openctem-web`, `openctem-console`
+  archives for linux/amd64 and linux/arm64 (web and console on a native runner
+  per arch: their bundles hold native modules);
+- `bootstrap-admin` for linux, darwin (amd64, arm64) and windows/amd64;
+- `openctem-image-kit` (`deploy/airgap`).
+
+Go builds are static (CGO off), `-trimpath`, with the commit time as build
+time and as every archive entry's time: the same tag gives byte-identical
+archives. golang-migrate, Caddy (with layer4) and swag are built at the
+versions their Dockerfiles pin. Release then writes an SPDX SBOM per archive
+(syft), `checksums-sha256.txt` over archives and SBOMs, signs it keyless
+(`checksums-sha256.txt.sigstore.json`, identity
+`.github/workflows/release.yml@refs/tags/vX.Y.Z`) and attests SLSA build
+provenance for every archive (`gh attestation verify <archive> --owner openctemio`).
+Install guide: [binary-install.md](../deployment/binary-install.md).
+
+Docker Publish adds, on a production release, the offline image bundle: one
+`openctem-image-<name>-<version>.oci.tar` per image (an OCI layout with the
+multi-arch index and its signature and attestations, under the 2 GiB release
+asset limit) and `openctem-images-<version>.txt` with its Sigstore bundle
+([air-gapped.md](../deployment/air-gapped.md)).
 
 ## Local equivalents
 
