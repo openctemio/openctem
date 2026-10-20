@@ -11,7 +11,9 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,6 +129,19 @@ func acceptBody(days int) string {
 	return `{"requested_status":"accepted","closure_reason":"risk_accepted","justification":"no maintenance window until 1 December for this fleet","expires_at":"` + end + `"}`
 }
 
+// acceptBodyAt is acceptBody with the task's current version, as a client that
+// just read the task sends it (a request names the version it was based on).
+func (h *groupExceptionHarness) acceptBodyAt(task string, days int) string {
+	h.t.Helper()
+	// The open findings of the task are decided at this version; moves bump
+	// it, so a stale view is refused.
+	var v int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT version FROM remediation_tasks WHERE id = $1`, task).Scan(&v); err != nil {
+		h.t.Fatalf("read task version: %v", err)
+	}
+	return strings.Replace(acceptBody(days), `{"requested_status"`, fmt.Sprintf(`{"version":%d,"requested_status"`, v), 1)
+}
+
 func TestGroupException_RequestApproveCaps_DB(t *testing.T) {
 	h := newGroupExceptionHarness(t)
 	org, other := h.org(), h.org()
@@ -166,12 +181,12 @@ func TestGroupException_RequestApproveCaps_DB(t *testing.T) {
 	h.expect(outsider, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception/preview", acceptBody(120), http.StatusNotFound)
 
 	var b batchOut
-	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(120), http.StatusCreated)), &b)
+	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", h.acceptBodyAt(task, 120), http.StatusCreated)), &b)
 	if b.Status != "pending" || b.Tier != "dual" || b.Members != 3 {
 		t.Fatalf("batch: %+v", b)
 	}
 	// One pending exception per task.
-	h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(120), http.StatusConflict)
+	h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", h.acceptBodyAt(task, 120), http.StatusConflict)
 
 	// A member request cannot be decided alone.
 	var memberID string
@@ -234,7 +249,7 @@ func TestGroupException_RejectCancelOwnersAndMoves_DB(t *testing.T) {
 	f2, _ := h.findingOnAsset(org, "medium")
 	task := h.task(org, f1, f2)
 	var b batchOut
-	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(30), http.StatusCreated)), &b)
+	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", h.acceptBodyAt(task, 30), http.StatusCreated)), &b)
 	if b.Tier != "peer" {
 		t.Fatalf("low/medium group tier %s", b.Tier)
 	}
@@ -246,7 +261,7 @@ func TestGroupException_RejectCancelOwnersAndMoves_DB(t *testing.T) {
 	h.expect(a2, http.MethodPost, "/api/v1/approvals/batches/"+b.ID+"/approve", "", http.StatusConflict)
 
 	// Cancel: only the requester.
-	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(30), http.StatusCreated)), &b)
+	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", h.acceptBodyAt(task, 30), http.StatusCreated)), &b)
 	h.expect(a1, http.MethodPost, "/api/v1/approvals/batches/"+b.ID+"/cancel", "", http.StatusForbidden)
 	h.expect(requester, http.MethodPost, "/api/v1/approvals/batches/"+b.ID+"/cancel", "", http.StatusOK)
 
@@ -259,7 +274,7 @@ func TestGroupException_RejectCancelOwnersAndMoves_DB(t *testing.T) {
 		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM asset_owners WHERE asset_id = $1`, asset)
 	})
 	task2 := h.task(org, g1, g2)
-	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task2+"/exception", acceptBody(30), http.StatusCreated)), &b)
+	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task2+"/exception", h.acceptBodyAt(task2, 30), http.StatusCreated)), &b)
 	_, body := h.do(owner, http.MethodPost, "/api/v1/approvals/batches/"+b.ID+"/approve", "")
 	if code, reason := refusalReason(t, body); code != "APPROVER_NOT_ELIGIBLE" || reason != "asset_owner" {
 		t.Fatalf("owner of one member's asset: %s", body)
@@ -296,7 +311,7 @@ func TestGroupException_FindingThatLeftTheTaskIsNotDecided_DB(t *testing.T) {
 	leaves, _ := h.findingOnAsset(org, "low")
 	task := h.task(org, stays, leaves)
 	var b batchOut
-	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(30), http.StatusCreated)), &b)
+	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", h.acceptBodyAt(task, 30), http.StatusCreated)), &b)
 	if b.Members != 2 || b.Required != 1 {
 		t.Fatalf("batch: %+v", b)
 	}
@@ -331,7 +346,7 @@ func TestGroupException_ListFiltersBySource_DB(t *testing.T) {
 	f2, _ := h.findingOnAsset(org, "low")
 	t1, t2 := h.task(org, f1), h.task(org, f2)
 	for _, task := range []string{t1, t2} {
-		h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(30), http.StatusCreated)
+		h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", h.acceptBodyAt(task, 30), http.StatusCreated)
 	}
 	var list struct {
 		Data []struct {
@@ -348,4 +363,27 @@ func TestGroupException_ListFiltersBySource_DB(t *testing.T) {
 		t.Fatalf("unfiltered list: %+v", list)
 	}
 	h.expect(requester, http.MethodGet, "/api/v1/approvals/batches?source_id=not-an-id", "", http.StatusBadRequest)
+}
+
+// An exception request names the task version it was based on: none is a 400,
+// a stale one a 409, and nothing is created for either.
+func TestGroupException_RequestNeedsCurrentTaskVersion_DB(t *testing.T) {
+	h := newGroupExceptionHarness(t)
+	org := h.org()
+	requester := h.member(org, "admin")
+	low, _ := h.findingOnAsset(org, "low")
+	task := h.task(org, low)
+	url := "/api/v1/remediation/tasks/" + task + "/exception"
+
+	h.expect(requester, http.MethodPost, url, acceptBody(30), http.StatusBadRequest)
+	stale := strings.Replace(acceptBody(30), `{"requested_status"`, `{"version":999,"requested_status"`, 1)
+	h.expect(requester, http.MethodPost, url, stale, http.StatusConflict)
+	var n int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM approval_batches WHERE source_id = $1`, task).Scan(&n); err != nil {
+		t.Fatalf("count batches: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("a refused request created %d batch(es)", n)
+	}
+	h.expect(requester, http.MethodPost, url, h.acceptBodyAt(task, 30), http.StatusCreated)
 }

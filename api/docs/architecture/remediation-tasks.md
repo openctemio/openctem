@@ -65,7 +65,11 @@ manual states (on hold, canceled).
 | `POST /api/v1/remediation/tasks/{task_id}/query/auto` | `findings:remediation:write` |
 
 All routes are in the `remediation` module. `assignee=me` lists tasks assigned to the caller or to one of their
-groups. Every change carries the task's `version`; a stale one answers `409`.
+groups. Every change carries the task's `version`; a missing one answers `400`, a stale one `409`. The check runs
+inside the transaction that reads or changes the task, under a lock on the task row: edit, add members, move, merge,
+split, mark fixed (the open findings it claims are the ones at that version), exception requests (a preview may omit
+it), query re-run and pause/resume of auto include (`POST .../query/run` and `.../query/auto` take a JSON body with
+`version`). Only the platform's own background work (reconcile, auto include, auto-join) runs without one.
 
 ## Data scope
 
