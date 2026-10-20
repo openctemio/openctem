@@ -488,3 +488,98 @@ func TestWriteNewFile_RemovesPartialFileOnError(t *testing.T) {
 		t.Fatalf("retry after failed write: %v", err)
 	}
 }
+
+func TestWriteNewFile_CrashLeavesNoFinalFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "signer.pem")
+	// A write that fails after writing half: the final path never appears
+	// and the temp is removed.
+	err := writeNewFile(path, []byte("0123456789"), func(f *os.File, b []byte) error {
+		_, _ = f.Write(b[:5])
+		return errors.New("killed")
+	})
+	if err == nil {
+		t.Fatal("write error swallowed")
+	}
+	left, _ := os.ReadDir(dir)
+	if len(left) != 0 {
+		t.Fatalf("files left behind: %v", left)
+	}
+}
+
+func TestGenerateKey_CleansStaleTempAndSucceeds(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "signer.pem")
+	stale := filepath.Join(dir, ".signer.pem.tmp-deadbeef")
+	other := filepath.Join(dir, ".other.pem.tmp-deadbeef")
+	fresh := filepath.Join(dir, ".signer.pem.tmp-cafe")
+	for _, p := range []string{stale, other, fresh} {
+		if err := os.WriteFile(p, []byte("partial"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-time.Hour)
+	for _, p := range []string{stale, other} {
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := GenerateKey(path); err != nil {
+		t.Fatalf("generate with stale temp: %v", err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("stale temp not cleaned")
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatal("unrelated file removed")
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatal("recent temp (possible live generator) removed")
+	}
+	if _, err := LoadKey(path); err != nil {
+		t.Fatalf("load generated key: %v", err)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o400 {
+		t.Fatalf("mode %v", fi.Mode().Perm())
+	}
+}
+
+func TestGenerateKey_NeverOverwritesExistingKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signer.pem")
+	if _, err := GenerateKey(path); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	if _, err := GenerateKey(path); err == nil {
+		t.Fatal("second generate succeeded")
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Fatal("existing key overwritten")
+	}
+	left, _ := os.ReadDir(filepath.Dir(path))
+	if len(left) != 1 {
+		t.Fatalf("temp left behind: %v", left)
+	}
+}
+
+func TestLoadKey_CorruptFileIsClearError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signer.pem")
+	if _, err := GenerateKey(path); err != nil {
+		t.Fatal(err)
+	}
+	full, _ := os.ReadFile(path)
+	for name, content := range map[string][]byte{
+		"empty":     {},
+		"truncated": full[:len(full)/2],
+		"garbage":   []byte("not a pem"),
+	} {
+		p := filepath.Join(t.TempDir(), name+".pem")
+		if err := os.WriteFile(p, content, 0o400); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadKey(p); !errors.Is(err, ErrKeyFileCorrupt) {
+			t.Fatalf("%s: want ErrKeyFileCorrupt, got %v", name, err)
+		}
+	}
+}
