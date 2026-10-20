@@ -1,0 +1,60 @@
+# Kyverno policy: admit OpenCTEM images only when they carry the release's
+# cosign signature (keyless, GitHub OIDC, issued to this repository's
+# docker-publish workflow at a release tag), and rewrite tags to digests.
+# Guide: api/docs/deployment/air-gapped.md, "Enforce signatures in the cluster".
+#
+# The release signs with cosign's Sigstore bundle format (stored as OCI
+# referrers), hence `type: SigstoreBundle` (Kyverno 1.13 or later; checked
+# with the Kyverno 1.19 CLI: a release image passes, and the same policy with
+# another workflow's identity rejects it). Kyverno 1.19 marks kyverno.io/v1
+# ClusterPolicy as deprecated in favour of ImageValidatingPolicy; it still
+# enforces.
+#
+# Edit `imageReferences` to your registry's path. Inside an air gap the
+# Sigstore trust root and the transparency log are not reachable: the
+# `rekor.url`/`ctlog` settings below verify the transparency-log entry
+# embedded in each signature (no online lookup); supply the Sigstore trusted
+# root through Kyverno's TUF settings (`--tufRoot`/`--tufMirror` on the
+# Kyverno admission controller, pointing at an internal copy).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-openctem-images
+  annotations:
+    policies.kyverno.io/title: Verify OpenCTEM image signatures
+    policies.kyverno.io/description: >-
+      OpenCTEM images must be signed by the openctemio/openctem release
+      workflow (docker-publish.yml at a v* tag) and are pinned by digest.
+spec:
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  background: false
+  rules:
+    - name: openctem-release-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - type: SigstoreBundle
+          imageReferences:
+            - "registry.example.internal/openctem-trusted/openctem-*"
+            - "registry.example.internal/openctem-trusted/openctem:*"
+            - "registry.example.internal/openctem-trusted/openctem@*"
+            - "registry.example.internal/openctem-trusted/migrations*"
+            - "registry.example.internal/openctem-trusted/admin-cli*"
+            - "registry.example.internal/openctem-trusted/seed*"
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    subjectRegExp: '^https://github\.com/openctemio/openctem/\.github/workflows/docker-publish\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
+                    issuer: https://token.actions.githubusercontent.com
+                    rekor:
+                      url: https://rekor.sigstore.dev
+                      ignoreTlog: false
+                    ctlog:
+                      ignoreSCT: false

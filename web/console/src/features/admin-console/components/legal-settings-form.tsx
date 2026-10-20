@@ -13,7 +13,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { LegalSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveLegalSettings } from '../api/use-legal-settings'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 type TextKey =
   | 'terms_url'
@@ -267,22 +267,13 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
           )
         }
       >
-        <div className="space-y-2">
-          <Label htmlFor={`${id}-code`}>
-            {t('admin.legal.code', 'Code from your authenticator')}
-          </Label>
-          <Input
-            id={`${id}-code`}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={8}
-            aria-invalid={!!codeError}
-          />
-          <StepUpCodeHint optional={codeOptional} />
-          {codeError && <p className="text-sm text-destructive">{codeError}</p>}
-        </div>
+        <StepUpCodeField
+          id={`${id}-code`}
+          value={code}
+          onChange={setCode}
+          optional={codeOptional}
+          error={codeError}
+        />
       </ConfirmDialog>
     </>
   )

@@ -387,6 +387,9 @@ func (r *CIRunRepository) RetirePipeline(ctx context.Context, tenantID, pipeline
 		return nil, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return nil, nil, err
+	}
 	p, err := scanCIPipeline(tx.QueryRowContext(ctx, `SELECT `+ciPipelineColumns+` FROM ci_pipelines
 		WHERE tenant_id = $1 AND id = $2 FOR UPDATE`, tenantID.String(), pipelineID.String()))
 	if errors.Is(err, sql.ErrNoRows) {

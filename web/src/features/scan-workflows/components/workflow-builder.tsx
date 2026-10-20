@@ -13,6 +13,7 @@ import {
   useEdgesState,
   type Connection,
   type Edge,
+  type EdgeTypes,
   type Node,
   type NodeTypes,
   type OnNodesChange,
@@ -32,10 +33,13 @@ import { toast } from 'sonner'
 import { ScannerNode, StartNode, EndNode, type ScannerNodeData } from './scanner-node'
 import type { ScanWorkflowStep, UIPosition } from '@/lib/api'
 import { makeIsValidConnection } from '@/components/flow/connection-rules'
+import { useTranslation } from '@/context/i18n-provider'
+import { DataFlowEdge } from './data-flow-edge'
 import {
   EMPTY_TABLE,
   capabilityForStep,
   checkStepConnection,
+  describeEdge,
   stepEdges,
   type CapabilityTable,
 } from '../lib/capability-graph'
@@ -184,7 +188,20 @@ function calculateAutoLayout(steps: ScanWorkflowStep[]): Map<string, { x: number
   return positions
 }
 
-function stepsToEdges(steps: ScanWorkflowStep[]): Edge[] {
+// Structural edges (Start, End) in theme tokens; data edges are drawn by
+// DataFlowEdge. No edge is animated: a dashed line is kept for meaning.
+const START_STROKE = 'var(--success)'
+const END_STROKE = 'var(--destructive)'
+const DATA_STROKE = 'var(--info)'
+const IDLE_STROKE = 'var(--muted-foreground)'
+
+function arrow(color: string) {
+  return { type: MarkerType.ArrowClosed, color, width: 20, height: 20 }
+}
+
+type Translate = ReturnType<typeof useTranslation>['t']
+
+function stepsToEdges(steps: ScanWorkflowStep[], table: CapabilityTable, t: Translate): Edge[] {
   const edges: Edge[] = []
 
   // Find root nodes (steps with no dependencies)
@@ -196,37 +213,27 @@ function stepsToEdges(steps: ScanWorkflowStep[]): Edge[] {
       id: `${START_NODE_ID}-${step.id}`,
       source: START_NODE_ID,
       target: step.id,
-      animated: true,
-      style: { stroke: '#10b981' }, // emerald-500
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#10b981',
-        width: 20,
-        height: 20,
-      },
+      style: { stroke: START_STROKE },
+      markerEnd: arrow(START_STROKE),
     })
   })
 
-  // Add edges based on depends_on
+  // Step-to-step edges (depends_on), labelled with what they carry
   steps.forEach((step) => {
-    if (step.depends_on && step.depends_on.length > 0) {
-      step.depends_on.forEach((dependsOnKey) => {
-        const sourceStep = steps.find((s) => s.step_key === dependsOnKey)
-        if (sourceStep) {
-          edges.push({
-            id: `${sourceStep.id}-${step.id}`,
-            source: sourceStep.id,
-            target: step.id,
-            animated: true,
-            style: { stroke: '#3b82f6' }, // blue-500
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: '#3b82f6',
-              width: 20,
-              height: 20,
-            },
-          })
-        }
+    for (const dependsOnKey of step.depends_on ?? []) {
+      const sourceStep = steps.find((s) => s.step_key === dependsOnKey)
+      if (!sourceStep) continue
+      const description = describeEdge(table, sourceStep, step, t)
+      const state = description?.flow.state ?? 'data'
+      const color = state === 'invalid' ? END_STROKE : state === 'order' ? IDLE_STROKE : DATA_STROKE
+      edges.push({
+        id: `${sourceStep.id}-${step.id}`,
+        source: sourceStep.id,
+        target: step.id,
+        type: 'dataFlow',
+        data: { description },
+        ...(description ? { ariaLabel: description.text } : {}),
+        markerEnd: arrow(color),
       })
     }
   })
@@ -244,14 +251,8 @@ function stepsToEdges(steps: ScanWorkflowStep[]): Edge[] {
       id: `${step.id}-${END_NODE_ID}`,
       source: step.id,
       target: END_NODE_ID,
-      animated: true,
-      style: { stroke: '#ef4444' }, // red-500
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#ef4444',
-        width: 20,
-        height: 20,
-      },
+      style: { stroke: END_STROKE },
+      markerEnd: arrow(END_STROKE),
     })
   })
 
@@ -261,14 +262,8 @@ function stepsToEdges(steps: ScanWorkflowStep[]): Edge[] {
       id: `${START_NODE_ID}-${END_NODE_ID}`,
       source: START_NODE_ID,
       target: END_NODE_ID,
-      animated: true,
-      style: { stroke: '#94a3b8', strokeDasharray: '5,5' }, // slate-400 dashed
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#94a3b8',
-        width: 20,
-        height: 20,
-      },
+      style: { stroke: IDLE_STROKE },
+      markerEnd: arrow(IDLE_STROKE),
     })
   }
 
@@ -299,6 +294,7 @@ function WorkflowBuilderInner({
   readOnly = false,
   className,
 }: WorkflowBuilderProps) {
+  const { t } = useTranslation()
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const { screenToFlowPosition } = useReactFlow()
@@ -359,7 +355,10 @@ function WorkflowBuilderInner({
     return buildAllNodes([], startEndPositions.start, startEndPositions.end)
   }, [buildAllNodes, startEndPositions])
 
-  const initialEdges = useMemo(() => stepsToEdges(steps), [steps])
+  const initialEdges = useMemo(
+    () => stepsToEdges(steps, capabilityTable, t),
+    [steps, capabilityTable, t]
+  )
 
   const [nodes, setNodes] = useNodesState(initialNodes)
   const [edges, setEdges] = useEdgesState(initialEdges)
@@ -456,7 +455,7 @@ function WorkflowBuilderInner({
       return buildAllNodes(scannerNodes, startPos, endPos)
     })
 
-    setEdges(stepsToEdges(steps))
+    setEdges(stepsToEdges(steps, capabilityTable, t))
 
     // Force update node internals to trigger re-render of node components
     // This is needed because ReactFlow caches node components and may not re-render when only data changes
@@ -476,6 +475,7 @@ function WorkflowBuilderInner({
     buildAllNodes,
     startEndPositions,
     updateNodeInternals,
+    t,
   ])
 
   // Define node types
@@ -487,6 +487,8 @@ function WorkflowBuilderInner({
     }),
     []
   )
+
+  const edgeTypes: EdgeTypes = useMemo(() => ({ dataFlow: DataFlowEdge }), [])
 
   // Handle node changes (position, selection, etc.)
   const onNodesChange: OnNodesChange<WorkflowNode> = useCallback(
@@ -663,21 +665,9 @@ function WorkflowBuilderInner({
         )
         if (!verdict.ok) return
         if (verdict.warning) toast.warning(verdict.warning)
+        // Drawn at once; the steps update below redraws it with its label.
         setEdges((eds) =>
-          addEdge(
-            {
-              ...connection,
-              animated: true,
-              style: { stroke: '#3b82f6' },
-              markerEnd: {
-                type: MarkerType.ArrowClosed,
-                color: '#3b82f6',
-                width: 20,
-                height: 20,
-              },
-            },
-            eds
-          )
+          addEdge({ ...connection, type: 'dataFlow', markerEnd: arrow(DATA_STROKE) }, eds)
         )
 
         // Update depends_on for the target step
@@ -779,9 +769,9 @@ function WorkflowBuilderInner({
 
   // MiniMap node color based on node type
   const nodeColor = useCallback((node: Node) => {
-    if (node.type === 'start') return '#10b981' // emerald-500
-    if (node.type === 'end') return '#ef4444' // red-500
-    return '#64748b' // slate-500
+    if (node.type === 'start') return START_STROKE
+    if (node.type === 'end') return END_STROKE
+    return IDLE_STROKE
   }, [])
 
   return (
@@ -804,6 +794,7 @@ function WorkflowBuilderInner({
         onDragOver={onDragOver}
         onDrop={onDrop}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ padding: 0.3 }}
         minZoom={0.1}
@@ -815,7 +806,6 @@ function WorkflowBuilderInner({
         deleteKeyCode={readOnly ? null : ['Delete', 'Backspace']}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
-          animated: true,
           markerEnd: {
             type: MarkerType.ArrowClosed,
             width: 20,

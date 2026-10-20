@@ -1,0 +1,25 @@
+#!/usr/sbin/nft -f
+# nftables on the registry host (Harbor) or CI mirror runner: no direct
+# internet; HTTPS only to the egress proxy (squid-egress-allowlist.conf),
+# which enforces the host-name allowlist. Name-based rules belong in the
+# proxy: the IP addresses behind ghcr.io and the GitHub CDN change.
+# Guide: api/docs/deployment/air-gapped.md, "Security of the egress exception".
+define proxy = 10.20.30.1
+define proxy_port = 3128
+define internal = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }
+
+table inet openctem_egress {
+	chain output {
+		type filter hook output priority 0; policy drop;
+		oifname "lo" accept
+		ct state established,related accept
+		# DNS to the internal resolvers only.
+		ip daddr $internal udp dport 53 accept
+		ip daddr $internal tcp dport 53 accept
+		# The egress proxy.
+		ip daddr $proxy tcp dport $proxy_port accept
+		# Internal services (registry clients, storage, LDAP, ...).
+		ip daddr $internal accept
+		counter log prefix "openctem-egress-drop " drop
+	}
+}

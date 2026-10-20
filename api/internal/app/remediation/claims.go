@@ -97,7 +97,7 @@ func (s *TaskService) describeConflicts(ctx context.Context, tenantID shared.ID,
 			switch {
 			case gerr == nil:
 				v.task = t
-				v.writable = canWrite && t.HiddenMembers == 0 && !t.State.IsTerminal()
+				v.writable = canWrite && !t.HasHidden() && !t.State.IsTerminal()
 			case errors.Is(gerr, shared.ErrNotFound):
 				// Not readable: the caller learns only that it is taken.
 			default:
