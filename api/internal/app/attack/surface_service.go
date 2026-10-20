@@ -134,8 +134,9 @@ type SurfaceService struct {
 	history     RecentChangeLister
 	attribution AttributionRecords
 	findingRisk FindingRiskCounter
-	dataScope   *datascope.Enforcer // Layer 2 narrowing of member-facing reads (nil = unrestricted)
-	chains      *chainCache         // per-tenant exposure-chain results, shared by every reader
+	dataScope   *datascope.Enforcer               // Layer 2 narrowing of member-facing reads (nil = unrestricted)
+	chains      *tenantCache[ExposureChainResult] // per-tenant exposure-chain results, shared by every reader
+	scores      *tenantCache[PathScoringResult]   // per-tenant attack-path scores
 	logger      *logger.Logger
 }
 
@@ -144,7 +145,8 @@ func NewSurfaceService(assetRepo asset.Repository, relRepo asset.RelationshipRep
 	return &SurfaceService{
 		assetRepo: assetRepo,
 		relRepo:   relRepo,
-		chains:    newChainCache(chainCacheTTL),
+		chains:    newTenantCache(chainCacheTTL, cloneChainResult),
+		scores:    newTenantCache(scoreCacheTTL, cloneScoreResult),
 		logger:    log.With("service", "attack_surface"),
 	}
 }
@@ -162,9 +164,13 @@ func (s *SurfaceService) SetFindingRiskCounter(c FindingRiskCounter) {
 	s.findingRisk = c
 }
 
-// GetAttackPathScores computes attack path scoring for the tenant.
+// GetAttackPathScores returns attack path scoring for the tenant from a
+// short-lived per-tenant cache; concurrent callers share one computation, which
+// runs under a deadline. The returned value is the caller's own copy.
 func (s *SurfaceService) GetAttackPathScores(ctx context.Context, tenantID shared.ID) (*PathScoringResult, error) {
-	return s.ComputeAttackPathScores(ctx, tenantID, s.relRepo)
+	return s.scores.get(ctx, tenantID, func(ctx context.Context) (*PathScoringResult, error) {
+		return s.ComputeAttackPathScores(ctx, tenantID, s.relRepo)
+	})
 }
 
 // GetStats returns attack surface statistics for a tenant.
