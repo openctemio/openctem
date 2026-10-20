@@ -96,6 +96,15 @@ func (m *mockScanRepo) GetByName(_ context.Context, tenantID shared.ID, name str
 	return nil, shared.ErrNotFound
 }
 
+func (m *mockScanRepo) GetManaged(_ context.Context, tenantID shared.ID, by scan.ManagedBy, key string) (*scan.Scan, error) {
+	for _, s := range m.scans {
+		if s.TenantID == tenantID && s.ManagedBy == by && s.ManagedKey == key {
+			return s, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
 func (m *mockScanRepo) List(_ context.Context, filter scan.Filter, page pagination.Pagination) (pagination.Result[*scan.Scan], error) {
 	m.lastListFilter = filter
 	if m.listErr != nil {
@@ -1657,6 +1666,25 @@ func TestScanService_ListScans_WithFilters(t *testing.T) {
 	}
 	if result.Total != 3 {
 		t.Errorf("expected total 3, got %d", result.Total)
+	}
+}
+
+func TestScanService_ListScans_Origin(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	createTestScanInRepo(deps, tenantID, "Scan A", scan.ScanTypeSingle)
+
+	for _, o := range []string{"user", "system"} {
+		if _, err := svc.ListScans(context.Background(), scanservice.ListScansInput{TenantID: tenantID.String(), Origin: o, Page: 1, PerPage: 10}); err != nil {
+			t.Fatalf("origin %s: %v", o, err)
+		}
+		if got := string(deps.scanRepo.lastListFilter.Origin); got != o {
+			t.Errorf("repository filter origin = %q, want %q", got, o)
+		}
+	}
+	_, err := svc.ListScans(context.Background(), scanservice.ListScansInput{TenantID: tenantID.String(), Origin: "everything", Page: 1, PerPage: 10})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("unknown origin err = %v, want a validation error", err)
 	}
 }
 
