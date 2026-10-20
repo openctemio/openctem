@@ -114,6 +114,10 @@ grouped view, KEV escalation, SLA escalation and the threat-intel exposure
 lists all use it. The web console's copy is
 `web/src/features/findings/lib/list-defaults.ts`.
 
+The repository branch counters are kept by a database trigger on `findings`. It fires
+only when a finding's `branch_id`, `severity` or `status` really changes, so a rescan
+that re-sees a finding without changing them does not recount the branch.
+
 `TestNoHandWrittenFindingStatusLists` (`internal/infra/postgres`) fails when Go
 code hand-writes a SQL list of two or more finding statuses; the few lists that
 are a different set (a pentest report's published findings, the mean time to
