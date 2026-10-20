@@ -22,7 +22,8 @@ func NewTicketLinkRepository(db *DB) *TicketLinkRepository { return &TicketLinkR
 var _ ticketlink.Repository = (*TicketLinkRepository)(nil)
 
 const tlCols = `id, tenant_id, integration_id, provider, finding_id, campaign_id, task_id, external_id, external_key,
-	project_key, url, role, state, source, created_by, last_status, last_pushed_state, last_synced_at, sync_error, created_at, updated_at`
+	project_key, url, role, state, source, created_by, last_status, last_pushed_state, last_synced_at, sync_error, created_at, updated_at,
+	external_assignee_id, external_assignee_name, external_status_category, external_updated_at`
 
 func optID(s sql.NullString) *shared.ID {
 	if !s.Valid {
@@ -42,10 +43,16 @@ func scanTicketLink(s rowScanner) (*ticketlink.Link, error) {
 		fid, cid     sql.NullString
 		taskID, by   sql.NullString
 		synced       sql.NullTime
+		extAt        sql.NullTime
 	)
 	if err := s.Scan(&id, &tid, &iid, &l.Provider, &fid, &cid, &taskID, &l.ExternalID, &l.ExternalKey, &l.ProjectKey, &l.URL,
-		&l.Role, &l.State, &l.Source, &by, &l.LastStatus, &l.LastPushedState, &synced, &l.SyncError, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		&l.Role, &l.State, &l.Source, &by, &l.LastStatus, &l.LastPushedState, &synced, &l.SyncError, &l.CreatedAt, &l.UpdatedAt,
+		&l.External.AssigneeID, &l.External.AssigneeName, &l.External.StatusCategory, &extAt); err != nil {
 		return nil, err
+	}
+	if extAt.Valid {
+		t := extAt.Time
+		l.External.UpdatedAt = &t
 	}
 	l.ID, _ = shared.IDFromString(id)
 	l.TenantID, _ = shared.IDFromString(tid)
@@ -62,10 +69,12 @@ func scanTicketLink(s rowScanner) (*ticketlink.Link, error) {
 // ErrAlreadyLinked.
 func (r *TicketLinkRepository) Create(ctx context.Context, l *ticketlink.Link) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ticket_links (`+tlCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
 		l.ID.String(), l.TenantID.String(), l.IntegrationID.String(), l.Provider, nullID(l.FindingID), nullID(l.CampaignID),
 		nullID(l.TaskID), l.ExternalID, l.ExternalKey, l.ProjectKey, l.URL, l.Role, l.State, l.Source, nullID(l.CreatedBy),
-		l.LastStatus, l.LastPushedState, l.LastSyncedAt, l.SyncError, l.CreatedAt, l.UpdatedAt)
+		l.LastStatus, l.LastPushedState, l.LastSyncedAt, l.SyncError, l.CreatedAt, l.UpdatedAt,
+		ticketlink.SanitizeExternalID(l.External.AssigneeID), ticketlink.SanitizeExternalName(l.External.AssigneeName),
+		l.External.StatusCategory, l.External.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ticketlink.ErrAlreadyLinked
@@ -133,12 +142,15 @@ func (r *TicketLinkRepository) FindByIssue(ctx context.Context, tenantID, integr
 		ORDER BY created_at LIMIT $4`, tenantID.String(), integrationID.String(), key, ticketlink.MaxLinksPerIssue)
 }
 
-// SetState moves a link to unlinked or deleted.
+// SetState moves a link to unlinked or deleted and clears its external
+// assignee.
 func (r *TicketLinkRepository) SetState(ctx context.Context, tenantID, id shared.ID, state string) error {
 	if state != ticketlink.StateUnlinked && state != ticketlink.StateDeleted {
 		return fmt.Errorf("%w: invalid link state", shared.ErrValidation)
 	}
-	res, err := r.db.ExecContext(ctx, `UPDATE ticket_links SET state = $3, updated_at = now()
+	// A link that is no longer active keeps no tracker account: the
+	// external assignee (personal data) is cleared with it.
+	res, err := r.db.ExecContext(ctx, `UPDATE ticket_links SET state = $3, external_assignee_id = '', external_assignee_name = '', updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND state = 'active'`, tenantID.String(), id.String(), state)
 	if err != nil {
 		return fmt.Errorf("update ticket link: %w", err)
@@ -187,6 +199,38 @@ func (r *TicketLinkRepository) RecordPush(ctx context.Context, tenantID, id shar
 		return ticketlink.ErrNotFound
 	}
 	return nil
+}
+
+// RecordExternal stores a change read from the tracker on the active links
+// of one issue of an integration: matched by the issue's id, or by key for
+// links that recorded no id (or when the change carries no id). The values
+// are sanitized here as well (the store's own guard). A change older than
+// the stored one is ignored, so a late retry never rolls an assignee back.
+func (r *TicketLinkRepository) RecordExternal(ctx context.Context, tenantID, integrationID shared.ID, externalID, key string, ch ticketlink.ExternalChange) ([]*ticketlink.Link, error) {
+	switch ch.StatusCategory {
+	case "", ticketlink.StatusCategoryTodo, ticketlink.StatusCategoryInProgress, ticketlink.StatusCategoryDone:
+	default:
+		ch.StatusCategory = ""
+	}
+	if externalID == "" && key == "" {
+		return []*ticketlink.Link{}, nil
+	}
+	at := ch.At.UTC()
+	if ch.At.IsZero() {
+		at = time.Now().UTC()
+	}
+	return r.list(ctx, `UPDATE ticket_links SET
+			external_assignee_id     = CASE WHEN $5 THEN $6 ELSE external_assignee_id END,
+			external_assignee_name   = CASE WHEN $5 THEN $7 ELSE external_assignee_name END,
+			external_status_category = CASE WHEN $8 <> '' THEN $8 ELSE external_status_category END,
+			external_updated_at      = $9,
+			updated_at               = now()
+		WHERE tenant_id = $1 AND integration_id = $2 AND state = 'active'
+		  AND (($3 <> '' AND external_id = $3) OR ($4 <> '' AND external_key = $4 AND (external_id = '' OR $3 = '')))
+		  AND (external_updated_at IS NULL OR external_updated_at <= $9)
+		RETURNING `+tlCols,
+		tenantID.String(), integrationID.String(), externalID, key, ch.AssigneeSet,
+		ticketlink.SanitizeExternalID(ch.AssigneeID), ticketlink.SanitizeExternalName(ch.AssigneeName), ch.StatusCategory, at)
 }
 
 // TaskLinksBehindForPlatform lists active task links (own issues) whose task state

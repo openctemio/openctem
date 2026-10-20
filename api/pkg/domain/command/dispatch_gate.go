@@ -13,9 +13,14 @@ type DispatchGate struct {
 	// stage may resolve names nobody confirmed yet).
 	Passive bool `json:"passive,omitempty"`
 	// ActScope: the targets are limited to what Actor may scan. Actor is
-	// the user the job acts for ("" with ActScope is the system).
+	// the user the job acts for ("" with ActScope and no SystemPolicy is withheld).
 	ActScope bool   `json:"act_scope,omitempty"`
 	Actor    string `json:"actor,omitempty"`
+	// SystemPolicy: the platform policy the job runs for (coverage,
+	// enrichment): the claim re-check applies the same explicit system
+	// authority instead of an actor's act scope. ActScope with neither an
+	// Actor nor a SystemPolicy is withheld at the claim.
+	SystemPolicy string `json:"system_policy,omitempty"`
 	// Validated: the targets passed the scan target validator at dispatch
 	// (validate, retest and connector commands), so the claim applies it
 	// again. Off, only its private-range rule applies (scan targets include

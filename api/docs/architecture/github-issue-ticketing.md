@@ -73,12 +73,15 @@ Parallel to Jira, intentionally:
   and the campaign epic description are written by people, but they get the
   same redaction, a length cap (`safetext.MaxBriefRunes`) and the same block
   encoding as finding text, so they cannot add links or mentions either. Secret
-  findings additionally **omit the raw description entirely** and surface only
-  the masked value plus a pointer to the platform — the credential is never
-  written into a third-party tracker.
+  findings additionally **omit the raw description and the masked preview**
+  and surface only the location plus a pointer to the platform. Pentest,
+  TLP and data-exposure rules come from the shared outbound gate
+  (`ticketing-integration.md`, "Outbound gate"): the generic and workflow
+  routes refuse pentest findings, and status pushes stop for a campaign above
+  the organization's tracker TLP limit.
 - **Output encoding** (RFC-040 §5.4). Finding text is attacker-influenced, and
   the issue body is GitHub-flavored markdown. After redaction:
-  - One-line values (location, masked value) go into a code span
+  - One-line values (location) go into a code span
     (`safetext.MarkdownInline`).
   - The description goes into a fenced code block (`safetext.MarkdownBlock`).
   - Each fence is longer than any backtick run in the text, so the text cannot
