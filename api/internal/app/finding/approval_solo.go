@@ -13,8 +13,8 @@ package finding
 //   - a fresh code from the owner's authenticator app (a stolen cookie or
 //     password alone is not enough; a used code cannot be replayed) and a
 //     reason;
-//   - an accepted risk ends much sooner than one another person approved
-//     (vulnerability.SoloAcceptanceLimit);
+//   - a false positive only: an accepted risk is never self-approved (risk
+//     acceptance is always four-eyes) and waits for a second member;
 //   - marked self_approved on the request and the timeline, audited at high
 //     severity, announced on the organization's channels and emailed to the
 //     backup contact when one is configured.
@@ -146,6 +146,10 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 		return nil, fmt.Errorf("%w: the requested acceptance end has passed; submit a new request", shared.ErrValidation)
 	case a.RequestedBy.IsZero() || a.RequestedBy != uid:
 		return nil, vulnerability.ErrSoloApprovalNotAllowed
+	case vulnerability.FindingStatus(a.RequestedStatus) != vulnerability.FindingStatusFalsePositive:
+		// Risk acceptance is always four-eyes: refused before the sole-member
+		// check and before any authenticator code is spent.
+		return nil, vulnerability.ErrSoloApprovalFalsePositiveOnly
 	}
 	if err := s.checkSoleMember(ctx, tid, in.UserID); err != nil {
 		return nil, err
@@ -175,14 +179,6 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 	if err := a.SelfApprove(uid, reason); err != nil {
 		return nil, err
 	}
-	shortened := false
-	if status == vulnerability.FindingStatusAccepted {
-		limit := now.Add(vulnerability.SoloAcceptanceLimit(f))
-		if a.ExpiresAt == nil || a.ExpiresAt.After(limit) {
-			a.ExpiresAt = &limit
-			shortened = true
-		}
-	}
 	changes := map[string]any{
 		"approval_id":      a.ID.String(),
 		"requested_status": a.RequestedStatus,
@@ -204,7 +200,7 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 	s.afterApplied(ctx, tid, in.UserID, []*vulnerability.Finding{f}, status)
 	s.announceSelfApproval(ctx, a, f.Title(), reason)
 	s.logger.Warn("finding request self-approved by the sole member", "approval_id", a.ID.String())
-	return &SelfApproveResult{Approval: a, EndShortened: shortened}, nil
+	return &SelfApproveResult{Approval: a}, nil
 }
 
 // announceSelfApproval puts the self-approval on the organization's

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -2629,19 +2630,24 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 		return
 	}
 
-	var req tenant.RiskScoringSettings
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// A PATCH merges: a field or block the body omits keeps its stored value
+	// (the body is decoded into the stored settings inside the write, so a
+	// concurrent save is not overwritten). Decoding into an empty struct would
+	// turn an omitted block into zeros. The service validates the merged
+	// result (ValidateForSave) before saving.
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-
-	if err := req.Validate(); err != nil {
-		apierror.BadRequest(err.Error()).WriteJSON(w)
-		return
-	}
-
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateRiskScoringSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
+	settings, err := h.service.PatchRiskScoringSettings(settingsWriteCtx(r), tenantID.String(),
+		func(cur *tenant.RiskScoringSettings) error {
+			if err := json.Unmarshal(body, cur); err != nil {
+				return fmt.Errorf("%w: invalid request body", shared.ErrValidation)
+			}
+			return nil
+		}, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -3039,13 +3045,20 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 		return
 	}
 
-	var req tenant.RiskScoringSettings
+	// The preview shows what the save would do, so it reads the body the same
+	// way: omitted fields keep the stored value.
+	current, err := h.service.GetRiskScoringSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	req := *current
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateForSave(); err != nil {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
@@ -3060,11 +3073,6 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 
 	// Of the risk scoring settings only the ownership floor feeds finding
 	// priority: preview the open findings when it would change.
-	current, err := h.service.GetRiskScoringSettings(r.Context(), tenantID.String())
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
 	if current.FloorUnownedAtP2 != req.FloorUnownedAtP2 && h.priorityPreview != nil {
 		findings, perr := h.priorityPreview.PreviewOwnershipFloor(r.Context(), tenantID, req.FloorUnownedAtP2, h.previewDeadlines(r.Context(), tenantID))
 		if perr != nil {

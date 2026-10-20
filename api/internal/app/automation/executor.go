@@ -670,6 +670,7 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 		ActionConfig: node.Config.ActionConfig,
 		TriggerData:  execCtx.TriggerData,
 		Context:      e.buildNodeInput(execCtx, node),
+		Principal:    execCtx.PrincipalID,
 	}
 
 	// Execute the action as the run principal. The events the step causes

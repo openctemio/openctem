@@ -24,6 +24,12 @@ func TestRunTrigger(t *testing.T) {
 			TriggeredBy: "workflow:" + auto.String(),
 			Context:     map[string]any{"automation_cause": map[string]any{"workflow_id": auto.String(), "run_id": autoRun.String(), "node_key": "rescan", "chain_depth": 1}}},
 			RunTrigger{Type: "automation", ID: auto.String(), RunID: autoRun.String(), NodeKey: "rescan"}},
+		// The scan an automation step starts acts as the automation's owner
+		// (triggered_by is that person); the cause still labels it.
+		{"an automation step acting as its owner", scanrun.Run{TriggerType: scanworkflow.TriggerTypeAutomation,
+			TriggeredBy: user.String(),
+			Context:     map[string]any{"automation_cause": map[string]any{"workflow_id": auto.String(), "run_id": autoRun.String(), "node_key": "scan", "chain_depth": 1}}},
+			RunTrigger{Type: "automation", ID: auto.String(), RunID: autoRun.String(), NodeKey: "scan"}},
 		{"an automation (triggered_by only)", scanrun.Run{TriggerType: scanworkflow.TriggerTypeManual, TriggeredBy: "workflow:" + auto.String()},
 			RunTrigger{Type: "automation", ID: auto.String()}},
 		{"an automation run without a cause", scanrun.Run{TriggerType: scanworkflow.TriggerTypeAutomation},
@@ -58,5 +64,24 @@ func TestWithRunTriggerLabel(t *testing.T) {
 	auto := withRunTriggerLabel(&RunResponse{TriggeredBy: "workflow:" + user, Trigger: &RunTrigger{Type: "automation", ID: user}}, names)
 	if auto.Trigger.Label != "" {
 		t.Fatalf("automation trigger labeled with a user name: %+v", auto.Trigger)
+	}
+}
+
+// The run response carries the counts the run recorded in its context (an int
+// in memory, a float64 after the JSON round trip), never negative ones.
+func TestToRunResponse_UnreachableAndSkippedCounts(t *testing.T) {
+	r := scanrun.Run{TenantID: shared.NewID(), Context: map[string]any{
+		"unreachable_target_count": 3, "skipped_target_count": float64(2),
+	}}
+	got := toRunResponse(&r)
+	if got.UnreachableTargetCount != 3 || got.SkippedTargetCount != 2 {
+		t.Fatalf("counts = %d / %d, want 3 / 2", got.UnreachableTargetCount, got.SkippedTargetCount)
+	}
+	neg := scanrun.Run{TenantID: shared.NewID(), Context: map[string]any{"unreachable_target_count": -4, "skipped_target_count": "7"}}
+	if g := toRunResponse(&neg); g.UnreachableTargetCount != 0 || g.SkippedTargetCount != 0 {
+		t.Fatalf("hostile counts = %d / %d, want 0 / 0", g.UnreachableTargetCount, g.SkippedTargetCount)
+	}
+	if g := toRunResponse(&scanrun.Run{TenantID: shared.NewID()}); g.UnreachableTargetCount != 0 || g.SkippedTargetCount != 0 {
+		t.Fatalf("no context: %d / %d", g.UnreachableTargetCount, g.SkippedTargetCount)
 	}
 }
