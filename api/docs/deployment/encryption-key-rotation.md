@@ -211,3 +211,41 @@ refingerprint -clear-legacy-secret-fingerprints -apply
   the older finding once it is no longer seen.
 - Run `refingerprint -remediation-keys -apply` afterwards, so the remediation
   groups of secrets follow the new fingerprints.
+
+## Secret fingerprints derived from a mask
+
+Until the rotation-group fix, the fingerprint of a secret finding was derived
+from the scanner's mask, not from the secret. Every short secret of a
+tenant masks to the same word (`REDACTED`) and every AWS key to the same
+prefix, so unrelated secrets shared one rotation group and one rotation
+suggestion. Since the fix, a rotation group is derived only from the keyed hash
+of the raw secret (the producer's `secretHMAC/v1`); a secret reported only as a
+mask has no rotation group. Rows written before the fix keep the old value
+until you reset them. A mask cannot be turned back into the secret, so the
+reset only removes the values. Run it once, right after deploying the fix:
+
+```
+refingerprint -reset-mask-secret-fingerprints -before <deploy time, RFC 3339>            # dry run: counts
+refingerprint -reset-mask-secret-fingerprints -before <deploy time, RFC 3339> -apply
+```
+
+- `-before` is required: the time the fix was deployed. A fingerprint written
+  at or after it comes from the raw secret and is kept. `-tenant <id>` limits
+  the run to one organization; `-json` prints the same counts as JSON.
+- For every tenant that has such rows it clears `type_details.secret.fingerprint`
+  of secret findings created before `-before`, and removes a stored preview
+  that reads `RE…ED` (the word `REDACTED` shortened). The finding page then
+  shows no value for them; the next scan that sends a safe preview fills it.
+  Nothing else on the finding changes, and only `finding_type = secret` rows of
+  the tenant are touched.
+- It then re-derives the remediation keys of the changed findings, so they
+  leave the shared `rotate:secret:` group and each gets its own rotation task
+  (a secret without a keyed hash has no rotation group).
+- The output is counts per tenant only: fingerprints cleared, previews cleared,
+  and rotation tasks that group more than one affected finding. Those tasks keep
+  their history but lose auto-join; nothing is split automatically, so review
+  them by hand. An applying run writes one tenant audit entry
+  (`findings.refingerprinted`) with the counts.
+- It works in batches (`-batch`, default 500) that skip rows another transaction
+  holds; run it again if it reports rows still held. Running it again with the
+  same `-before` is safe.

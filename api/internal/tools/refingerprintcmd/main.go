@@ -37,6 +37,18 @@
 //	                                   batched, resumable; the next sighting
 //	                                   writes the keyed value. Re-derive the
 //	                                   remediation keys afterwards
+//	refingerprint -reset-mask-secret-fingerprints -before <time> [-tenant <id>] [-apply] [-json]
+//	                                   one-off after the rotation-group fix:
+//	                                   clear the secret fingerprints derived from
+//	                                   a mask (every short secret masks to the
+//	                                   same word, so unrelated secrets shared one
+//	                                   rotation group), turn stored "RE…ED"
+//	                                   previews into none, and re-derive the
+//	                                   remediation keys of what changed. -before
+//	                                   is the time the fix was deployed. Dry run
+//	                                   (default) and output are counts only, per
+//	                                   tenant, with the number of rotation tasks
+//	                                   that group several affected findings
 //	refingerprint -correlate [-apply]  one-time cross-rule correlation of
 //	                                   existing DAST findings (injection points
 //	                                   from stored evidence); dry run reports
@@ -94,6 +106,7 @@ func Main() {
 	remediationKeys := flag.Bool("remediation-keys", false, "re-derive remediation group keys instead of re-keying identities")
 	clearLegacy := flag.Bool("clear-legacy-secret-fingerprints", false, "clear the unverifiable secret fingerprints written before the keyed fingerprint (the next sighting rewrites them)")
 	before := flag.String("before", "", "with -clear-legacy-secret-fingerprints: clear fingerprints of findings created before this RFC 3339 time (default: when the keyed fingerprint was introduced)")
+	resetMask := flag.Bool("reset-mask-secret-fingerprints", false, "clear the secret fingerprints derived from a mask, empty RE…ED previews and re-derive the rotation keys (needs -before)")
 	foldRules := flag.String("fold-dast-rules", "", "comma-separated DAST rules whose fixed request paths are one issue per origin (with -dast-repair)")
 	flag.Parse()
 
@@ -121,6 +134,9 @@ func Main() {
 	store := postgres.NewFindingRekeyRepository(&postgres.DB{DB: sqlDB})
 	svc := refingerprint.NewService(store)
 
+	if *resetMask {
+		os.Exit(runResetMaskSecretFingerprints(ctx, sqlDB, *tenantFlag, *before, *apply, *asJSON, *batch))
+	}
 	if *clearLegacy {
 		os.Exit(runClearLegacySecretFingerprints(ctx, sqlDB, *tenantFlag, *before, *apply, *batch))
 	}
