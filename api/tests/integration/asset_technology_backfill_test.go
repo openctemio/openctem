@@ -289,3 +289,13 @@ func TestAssetTechnologyBackfill_ReportOnlyAndGuards(t *testing.T) {
 		t.Fatalf("recorded removals = %d (%v), want 2", recorded, err)
 	}
 }
+
+// A tenant deleted between the pending list and the mark has nothing left to
+// mark: the mark is a no-op instead of an error that stops the whole run.
+func TestAssetTechnologyBackfill_MarkSkipsDeletedTenant(t *testing.T) {
+	g := newTechRig(t)
+	repo := postgres.NewAssetTechnologyBackfillRepository(&postgres.DB{DB: g.r.db})
+	if err := repo.MarkBackfilled(context.Background(), shared.NewID(), assettechapp.BackfillVersion, true, assettechapp.BackfillStats{}); err != nil {
+		t.Fatalf("marking a deleted tenant = %v, want nil", err)
+	}
+}
