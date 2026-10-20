@@ -60,13 +60,13 @@ const taskCreateLock = 30 * time.Second
 
 // CreateTaskIssueInput asks for a task's issue.
 type CreateTaskIssueInput struct {
-	TenantID   shared.ID
-	TaskID     shared.ID
+	TenantID shared.ID
+	TaskID   shared.ID
 	// IntegrationID names the Jira integration to create the issue on; the
 	// zero id means the tenant's default integration.
 	IntegrationID shared.ID
 	ProjectKey    string // "" = the integration's default project
-	By         *shared.ID
+	By            *shared.ID
 }
 
 // CreateTaskIssue creates the task's issue in the tracker and records the
