@@ -18,7 +18,9 @@ import (
 var _ vulnerability.TemplateProvenanceStore = (*FindingRepository)(nil)
 
 // RecordTemplateSightings stores each sighting's (sanitized) provenance on
-// the tenant's finding with that fingerprint. Sightings without a template
+// the tenant's finding with that fingerprint, only when it differs from what
+// the finding already stores (template_seen_at then means "the provenance
+// last changed"; a re-seen finding keeps one row version per ingest). Sightings without a template
 // digest that are not the organization's own rules are skipped: they leave
 // the finding's baseline as it was.
 //
@@ -73,7 +75,13 @@ func (r *FindingRepository) RecordTemplateSightings(ctx context.Context, tenantI
 			ORDER BY t.updated_at DESC
 			LIMIT 1
 		) st ON TRUE
-		WHERE f.tenant_id = $1 AND f.fingerprint = v.fp`,
+		WHERE f.tenant_id = $1 AND f.fingerprint = v.fp
+		  AND (f.template_digest, f.template_path, f.templates_version, f.templates_digest,
+		       f.rule_source, f.custom_template_id, f.custom_template_version)
+		      IS DISTINCT FROM
+		      (NULLIF(v.td, ''), NULLIF(v.tp, ''), NULLIF(v.tv, ''), NULLIF(v.tsd, ''),
+		       CASE WHEN v.rs = 'tenant' OR st.id IS NOT NULL THEN 'tenant'
+		                       WHEN v.td <> '' THEN 'platform' END, st.id, st.version)`,
 		tenantID.String(), pq.Array(fps), pq.Array(tds), pq.Array(tps), pq.Array(tvs), pq.Array(tsds),
 		pq.Array(rss), pq.Array(rids))
 	if err != nil {

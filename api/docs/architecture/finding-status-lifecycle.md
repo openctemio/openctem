@@ -114,6 +114,10 @@ grouped view, KEV escalation, SLA escalation and the threat-intel exposure
 lists all use it. The web console's copy is
 `web/src/features/findings/lib/list-defaults.ts`.
 
+The repository branch counters are kept by a database trigger on `findings`. It fires
+only when a finding's `branch_id`, `severity` or `status` really changes, so a rescan
+that re-sees a finding without changing them does not recount the branch.
+
 `TestNoHandWrittenFindingStatusLists` (`internal/infra/postgres`) fails when Go
 code hand-writes a SQL list of two or more finding statuses; the few lists that
 are a different set (a pentest report's published findings, the mean time to
@@ -195,6 +199,14 @@ endpoint and the bulk change mark their transaction
 it (migration `002205`). The drawer offers Undo only for moves that do not
 close the finding; reopening a resolved finding is a deliberate move from the
 status control.
+
+Moving a finding out of an approved false positive or an accepted risk is a
+reversal of a decision, so the transition engine asks for `findings:approve`
+(the permission that made the decision), not only `findings:status`; the
+status route and the bulk route answer 403 without it. A workflow action or a
+ticket webhook is refused outright (`decided_status` block) for a false
+positive, an accepted risk or a duplicate, and a workflow also for a resolved
+finding: automation never undoes a person's decision.
 
 ## Every move is on the timeline
 
@@ -524,16 +536,18 @@ instead).
   approver's data scope and naming at most five titles; without a data-scope
   check nobody is told (`DispatchVEXRequestNotices`, `NotifyVEXRequests`).
 - **Sole member.** An organization with one person has nobody to ask. Its
-  owner may approve their own pending request
+  owner may approve their own pending false-positive request
   (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while
   the organization has exactly one active person (an active, unexpired
   membership of an active `person` account; checked in the database at
   decision time, `ScopeActorRepository.IsSoleActiveOwner`) and no member was
   suspended, offboarded, deleted, expired or demoted, and no role changed, in
   the last 7 days (`recentApproverChange`, memberships and audit log), with a fresh
-  authenticator code (`VerifyFreshTOTP`, single use) and a reason. An accepted
-  risk then ends within `vulnerability.SoloAcceptanceLimit` (7 days for P0 or
-  KEV, 45 for P1, 90 otherwise). The request carries `self_approved` and the
+  authenticator code (`VerifyFreshTOTP`, single use) and a reason. Only a
+  **false positive** can be approved this way: risk acceptance is always
+  four-eyes, so a sole member's accepted-risk request is refused with 403
+  `SELF_APPROVAL_FALSE_POSITIVE_ONLY` (audited as a refusal, no code spent)
+  and stays pending until a second member approves it. The request carries `self_approved` and the
   reason; the audit row is `finding_approval.self_approved` (high); every
   refusal is `finding_approval.self_approval_refused`; the organization's
   channels get a security alert and the backup contact
