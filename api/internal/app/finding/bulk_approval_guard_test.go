@@ -105,9 +105,10 @@ func TestBulkUpdateStatus_NonApproval_StillUpdates(t *testing.T) {
 	svc := newBulkTestService(repo)
 
 	res, err := svc.BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
-		FindingIDs: []string{f.ID().String()},
-		Status:     vulnerability.FindingStatusConfirmed.String(),
-		ActorID:    shared.NewID().String(),
+		FindingIDs:          []string{f.ID().String()},
+		Status:              vulnerability.FindingStatusConfirmed.String(),
+		HasStatusPermission: true,
+		ActorID:             shared.NewID().String(),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -131,9 +132,10 @@ func TestBulkUpdateStatus_PerFindingTolerant(t *testing.T) {
 	svc := newBulkTestService(repo)
 
 	res, err := svc.BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
-		FindingIDs: []string{ok.ID().String(), shared.NewID().String()}, // 2nd id: not found
-		Status:     vulnerability.FindingStatusConfirmed.String(),
-		ActorID:    shared.NewID().String(),
+		FindingIDs:          []string{ok.ID().String(), shared.NewID().String()}, // 2nd id: not found
+		Status:              vulnerability.FindingStatusConfirmed.String(),
+		HasStatusPermission: true,
+		ActorID:             shared.NewID().String(),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

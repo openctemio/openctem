@@ -78,6 +78,8 @@ func (s *Service) StartEnrichment(ctx context.Context, in EnrichmentInput) (*Enr
 		return nil, fmt.Errorf("failed to set workflow: %w", err)
 	}
 	sc.SetTags([]string{EnrichmentTag})
+	// Each enrichment batch is its own scan; its key is its own id.
+	sc.ManagedBy, sc.ManagedKey = scan.ManagedByEnrichment, sc.ID.String()
 	if err := s.applyIntensity(ctx, sc, string(scan.IntensityPassive)); err != nil {
 		return nil, err
 	}
