@@ -324,6 +324,16 @@ func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.
 		claimed = append(claimed, k)
 	}
 
+	// The tracker side of the issue (assignee, status category) is recorded
+	// on the integration's links for every delivery, status change or not.
+	if err := h.service.RecordExternalChange(r.Context(), tenantID, integrationID, payload); err != nil {
+		release()
+		h.logger.Error("jira webhook: recording the tracker state failed",
+			"tenant_id", tenantID.String(), "integration_id", integrationID.String(), "error", err)
+		apierror.InternalServerError("webhook processing failed").WriteJSON(w)
+		return
+	}
+
 	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, payload); err != nil {
 		// Released, so Jira's retry of this delivery is processed.
 		release()

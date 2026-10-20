@@ -293,6 +293,34 @@ An inbound change goes through the finding service, never a direct row write
 > [RFC-006 Phase 3 §3.6.1](../rfcs/RFC-006-phase-3-bidirectional-sync.md) for the
 > full status-model rationale.
 
+### External assignee (tracker side of a link)
+
+Every inbound delivery of a Jira integration, with or without a status
+change, records on the issue's active links of **that integration** (matched
+by the issue's id, or by key for links that recorded no id):
+
+- `external_assignee_id` / `external_assignee_name`: the Jira account the
+  issue is assigned to (from the changelog's `assignee` item: `to` and the
+  display name; an unassign clears both), and
+- `external_status_category` (`todo`, `in_progress`, `done`, from
+  `fields.status.statusCategory.key`) and `external_updated_at` (the payload
+  timestamp; an older delivery never overwrites a newer one).
+
+The display name is untrusted text: HTML tags and angle brackets, control,
+bidi and zero-width characters are removed, whitespace folded, length capped
+at 255 (`ticketlink.SanitizeExternalName`), and it is still escaped wherever it
+is rendered. The account is a **label only**: it is never written as a
+platform assignee, never counted as a member and grants no data access; the
+task or finding owner stays accountable. The API returns it on every ticket
+link (`GET /findings/{id}/ticket-links`, `GET /remediation/tasks/{task_id}/ticket-links`)
+as `external_assignee {account_id, display_name}`, `external_status_category`
+and `external_updated_at`.
+
+Personal data: only the account id and display name are stored. Unlinking a
+link (or the issue being deleted) clears them; deleting the organization
+deletes its links. A tracker account is not a member, so member erasure has
+nothing to remove; erasure on a tracker-side signal comes with OAuth.
+
 ## Roadmap (RFC-006)
 
 | Phase | Scope | Status |

@@ -37,7 +37,21 @@ type TicketLinkResponse struct {
 	LastStatus    string  `json:"last_status,omitempty"`
 	LastSyncedAt  *string `json:"last_synced_at,omitempty"`
 	SyncError     string  `json:"sync_error,omitempty"`
-	CreatedAt     string  `json:"created_at"`
+	// ExternalAssignee is the tracker's assignee of the issue (a label: never
+	// a platform user); absent when unassigned or not seen yet. Plain text:
+	// escape it when rendering.
+	ExternalAssignee *TicketExternalAssignee `json:"external_assignee,omitempty"`
+	// ExternalStatusCategory is the issue's status category in the tracker:
+	// todo, in_progress or done; absent when not seen yet.
+	ExternalStatusCategory string  `json:"external_status_category,omitempty"`
+	ExternalUpdatedAt      *string `json:"external_updated_at,omitempty"`
+	CreatedAt              string  `json:"created_at"`
+}
+
+// TicketExternalAssignee is a tracker account shown on a ticket link.
+type TicketExternalAssignee struct {
+	AccountID   string `json:"account_id"`
+	DisplayName string `json:"display_name"`
 }
 
 func toTicketLinkResponse(l *ticketlink.Link) TicketLinkResponse {
@@ -47,6 +61,14 @@ func toTicketLinkResponse(l *ticketlink.Link) TicketLinkResponse {
 	if l.LastSyncedAt != nil {
 		s := l.LastSyncedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
 		out.LastSyncedAt = &s
+	}
+	if l.External.AssigneeID != "" {
+		out.ExternalAssignee = &TicketExternalAssignee{AccountID: l.External.AssigneeID, DisplayName: l.External.AssigneeName}
+	}
+	out.ExternalStatusCategory = l.External.StatusCategory
+	if l.External.UpdatedAt != nil {
+		s := l.External.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+		out.ExternalUpdatedAt = &s
 	}
 	return out
 }
