@@ -217,6 +217,7 @@ var assetMergeSpecialRefs = map[string]string{
 
 // assetMergeLeftAlone are references a merge deliberately does not move.
 var assetMergeLeftAlone = map[string]string{
+	"asset_risk_requests.asset_id":               "a request names the merged asset's own previous values and cannot apply to the kept asset; it is removed with the merged asset (ON DELETE CASCADE)",
 	"asset_state_history.asset_id":               "immutable audit log (UPDATE is blocked by a trigger); removed with the merged asset",
 	"asset_merge_log.kept_asset_id":              "the merge record itself",
 	"asset_merge_log.merged_asset_id":            "the merge record itself",
