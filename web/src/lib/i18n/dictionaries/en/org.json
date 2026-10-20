@@ -428,5 +428,8 @@
   "org.dashboardData.lastRebuilt": "Last full rebuild",
   "org.dashboardData.pendingChanges": "Changes waiting",
   "org.dashboardData.rebuild": "Rebuild dashboard data",
-  "org.dashboardData.nextAt": "Next rebuild possible at {time}"
+  "org.dashboardData.nextAt": "Next rebuild possible at {time}",
+  "org.lifecycle.serviceAccountKeys": "Service account keys",
+  "org.lifecycle.serviceAccountKeysNote": "Keys this member minted for service accounts. They are revoked when the member is offboarded or loses the administrator role.",
+  "org.lifecycle.offboarded": "{name} offboarded: {keys} key(s) revoked, {serviceKeys} service account key(s) revoked, {groups} group(s) removed"
 }

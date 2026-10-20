@@ -52,10 +52,14 @@ type AccessReport struct {
 	Status       MemberStatus `json:"status"`
 
 	// Access sources.
-	Roles     []LifecycleRef `json:"roles"`
-	Groups    []LifecycleRef `json:"groups"`
-	APIKeys   []LifecycleRef `json:"api_keys"`
-	Campaigns []LifecycleRef `json:"campaigns"`
+	Roles   []LifecycleRef `json:"roles"`
+	Groups  []LifecycleRef `json:"groups"`
+	APIKeys []LifecycleRef `json:"api_keys"`
+	// ServiceAccountKeys are the active keys the member minted for service
+	// accounts (detail: the account's name). They keep working after the
+	// member leaves, so offboarding and demotion from administrator revoke them.
+	ServiceAccountKeys []LifecycleRef `json:"service_account_keys"`
+	Campaigns          []LifecycleRef `json:"campaigns"`
 	// DirectGrants is the number of per-user asset grants.
 	DirectGrants int `json:"direct_grants"`
 	// VisibleAssets is the number of materialized scope rows (0 while the
@@ -140,15 +144,18 @@ func (r *DisableResult) Paused() int {
 
 // OffboardResult reports what an offboarding changed.
 type OffboardResult struct {
-	Report              *AccessReport `json:"report"`
-	RevokedKeys         int           `json:"revoked_keys"`
-	RemovedGroups       int           `json:"removed_groups"`
-	RemovedGrants       int           `json:"removed_grants"`
-	RemovedCampaigns    int           `json:"removed_campaigns"`
-	ReassignedSchedules int           `json:"reassigned_schedules"`
-	ReassignedFindings  int           `json:"reassigned_findings"`
-	ReassignedAssets    int           `json:"reassigned_assets"`
-	OffboardedAt        time.Time     `json:"offboarded_at"`
+	Report      *AccessReport `json:"report"`
+	RevokedKeys int           `json:"revoked_keys"`
+	// RevokedServiceAccountKeys counts the service-account keys the member
+	// minted, revoked with the offboarding.
+	RevokedServiceAccountKeys int       `json:"revoked_service_account_keys"`
+	RemovedGroups             int       `json:"removed_groups"`
+	RemovedGrants             int       `json:"removed_grants"`
+	RemovedCampaigns          int       `json:"removed_campaigns"`
+	ReassignedSchedules       int       `json:"reassigned_schedules"`
+	ReassignedFindings        int       `json:"reassigned_findings"`
+	ReassignedAssets          int       `json:"reassigned_assets"`
+	OffboardedAt              time.Time `json:"offboarded_at"`
 }
 
 // ReassignmentError carries the categories an offboarding plan left uncovered.
@@ -188,6 +195,10 @@ type LifecycleRepository interface {
 	// reassigns owned work, strips every access source and turns the
 	// membership into a tombstone.
 	Offboard(ctx context.Context, m *Membership, actor *shared.ID, plan OffboardPlan) (*OffboardResult, error)
+	// RevokeServiceAccountKeys revokes the active service-account keys the
+	// user minted in the tenant and returns how many it revoked. revokedBy is
+	// the acting administrator (nil for a system path).
+	RevokeServiceAccountKeys(ctx context.Context, tenantID, userID shared.ID, revokedBy *shared.ID) (int, error)
 	// Rejoin re-activates an offboarded tombstone with a new role (from zero).
 	Rejoin(ctx context.Context, m *Membership) error
 	// ErasePersonalData anonymises the user's name and email and clears

@@ -9,7 +9,7 @@ import "github.com/openctemio/openctem/api/pkg/domain/tenant"
 // changing who is in a team that carries one, is for the owner only, with a
 // recent sign-in.
 var privilegedPermissions = []Permission{
-	MembersInvite, MembersWrite,
+	MembersInvite, MembersWrite, ServiceAccountsManage,
 	GroupsWrite, GroupsMembers, GroupsAssets,
 	RolesWrite, RolesDelete, RolesAssign,
 	APIKeysWrite,

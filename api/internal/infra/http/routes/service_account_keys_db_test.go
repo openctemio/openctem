@@ -62,7 +62,7 @@ func TestServiceAccountKeys(t *testing.T) {
 
 	// The caller: a delegated member (not an administrator) who holds
 	// findings:read and assets:read but not findings:verify.
-	callerPerms := []string{"findings:read", "assets:read", "integrations:api_keys:write", "integrations:api_keys:read", "integrations:api_keys:delete", "team:members:write", "team:members:read"}
+	callerPerms := []string{"findings:read", "assets:read", "assets:write", "integrations:api_keys:write", "integrations:api_keys:read", "integrations:api_keys:delete", "team:members:write", "team:members:read"}
 	call := func(tenant shared.ID, method, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		c := context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String())
@@ -99,9 +99,13 @@ func TestServiceAccountKeys(t *testing.T) {
 		t.Fatalf("the key carries %v, want only what both the caller granted and the account holds", perms)
 	}
 
-	// A scope the caller does not hold is refused, even though the account holds it.
-	if w := mint(h.tenant, a.ID, `"findings:verify"`); w.Code != http.StatusForbidden {
+	// A scope the caller does not hold is refused (the account's own role is irrelevant).
+	if w := mint(h.tenant, a.ID, `"scans:read"`); w.Code != http.StatusForbidden {
 		t.Errorf("a scope the caller lacks: %d %s", w.Code, w.Body)
+	}
+	// Keys are read-only: a write scope is refused even for a caller who holds it.
+	if w := mint(h.tenant, a.ID, `"findings:read","assets:write"`); w.Code != http.StatusBadRequest {
+		t.Errorf("a write scope: %d %s", w.Code, w.Body)
 	}
 	// No scope at all is refused.
 	if w := mint(h.tenant, a.ID, ``); w.Code != http.StatusBadRequest {

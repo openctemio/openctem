@@ -428,5 +428,8 @@
   "org.dashboardData.lastRebuilt": "Lần dựng lại toàn bộ gần nhất",
   "org.dashboardData.pendingChanges": "Thay đổi đang chờ",
   "org.dashboardData.rebuild": "Dựng lại dữ liệu dashboard",
-  "org.dashboardData.nextAt": "Có thể dựng lại lần tiếp theo lúc {time}"
+  "org.dashboardData.nextAt": "Có thể dựng lại lần tiếp theo lúc {time}",
+  "org.lifecycle.serviceAccountKeys": "Khóa của tài khoản dịch vụ",
+  "org.lifecycle.serviceAccountKeysNote": "Các khóa thành viên này đã tạo cho tài khoản dịch vụ. Chúng bị thu hồi khi thành viên bị ngừng hoạt động hoặc mất vai trò quản trị viên.",
+  "org.lifecycle.offboarded": "Đã ngừng hoạt động {name}: đã thu hồi {keys} khóa, {serviceKeys} khóa tài khoản dịch vụ, đã gỡ {groups} nhóm"
 }

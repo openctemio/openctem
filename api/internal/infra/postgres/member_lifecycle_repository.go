@@ -82,6 +82,12 @@ func accessReport(ctx context.Context, q lifecycleQueryer, m *tenant.Membership)
 			FROM api_keys
 			WHERE tenant_id = $1 AND user_id = $2 AND status IN ('active', 'suspended')
 			ORDER BY name`},
+		{&rep.ServiceAccountKeys, `
+			SELECT k.id::text, k.name, k.status, u.name
+			FROM api_keys k
+			JOIN users u ON u.id = k.user_id AND u.kind = 'service' AND u.service_tenant_id = k.tenant_id
+			WHERE k.tenant_id = $1 AND k.created_by = $2 AND k.status IN ('active', 'suspended')
+			ORDER BY u.name, k.name`},
 		{&rep.Campaigns, `
 			SELECT c.id::text, c.name, c.status, pcm.role
 			FROM pentest_campaign_members pcm JOIN pentest_campaigns c ON c.id = pcm.campaign_id
@@ -416,6 +422,30 @@ func reassignOwnedWork(ctx context.Context, tx *sql.Tx, tid, uid string, plan te
 	return nil
 }
 
+// revokeServiceAccountKeysSQL revokes the active keys a person minted for the
+// service accounts of one organization. A service account's key outlives its
+// creator otherwise: it is an organization secret nobody is accountable for.
+const revokeServiceAccountKeysSQL = `
+	UPDATE api_keys k SET status = 'revoked', revoked_at = NOW(), revoked_by = $3, updated_at = NOW()
+	FROM users u
+	WHERE u.id = k.user_id AND u.kind = 'service' AND u.service_tenant_id = k.tenant_id
+	  AND k.tenant_id = $1 AND k.created_by = $2 AND k.status IN ('active', 'suspended')`
+
+// RevokeServiceAccountKeys revokes the service-account keys userID minted in
+// tenantID (an administrator who was demoted or removed).
+func (r *MemberLifecycleRepository) RevokeServiceAccountKeys(ctx context.Context, tenantID, userID shared.ID, revokedBy *shared.ID) (int, error) {
+	var by any
+	if revokedBy != nil && !revokedBy.IsZero() {
+		by = revokedBy.String()
+	}
+	res, err := r.db.ExecContext(ctx, revokeServiceAccountKeysSQL, tenantID.String(), userID.String(), by)
+	if err != nil {
+		return 0, fmt.Errorf("revoke service account keys: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 // stripAccess revokes the member's keys and removes every access source:
 // group memberships, grants, engagement memberships, roles and invitations.
 func stripAccess(ctx context.Context, tx *sql.Tx, tid, uid string, actorArg any, out *tenant.OffboardResult) error {
@@ -428,6 +458,7 @@ func stripAccess(ctx context.Context, tx *sql.Tx, tid, uid string, actorArg any,
 		{&out.RevokedKeys, "revoke api keys", `
 			UPDATE api_keys SET status = 'revoked', revoked_at = NOW(), revoked_by = $3, updated_at = NOW()
 			WHERE tenant_id = $1 AND user_id = $2 AND status IN ('active', 'suspended')`, []any{tid, uid, actorArg}},
+		{&out.RevokedServiceAccountKeys, "revoke service account keys", revokeServiceAccountKeysSQL, []any{tid, uid, actorArg}},
 		{&out.RemovedGroups, "remove group memberships", `
 			DELETE FROM group_members gm USING groups g
 			WHERE g.id = gm.group_id AND g.tenant_id = $1 AND gm.user_id = $2`, []any{tid, uid}},

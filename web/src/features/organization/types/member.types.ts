@@ -235,6 +235,7 @@ export interface MemberAccessReport {
   roles: LifecycleRef[]
   groups: LifecycleRef[]
   api_keys: LifecycleRef[]
+  service_account_keys?: LifecycleRef[]
   campaigns: LifecycleRef[]
   direct_grants: number
   visible_assets: number
@@ -256,6 +257,7 @@ export interface OffboardMemberInput {
 export interface OffboardResult {
   report: MemberAccessReport
   revoked_keys: number
+  revoked_service_account_keys?: number
   removed_groups: number
   removed_grants: number
   removed_campaigns: number

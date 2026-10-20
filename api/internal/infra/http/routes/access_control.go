@@ -223,13 +223,13 @@ func registerServiceAccountRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/service-accounts", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.MembersRead))
-		r.POST("/", h.Create, middleware.Require(permission.MembersWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.MembersWrite))
-		// Its API keys: each action needs both the member and the API key
-		// permission; minting and deleting need a recent sign-in, as they do
+		r.POST("/", h.Create, middleware.Require(permission.ServiceAccountsManage))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ServiceAccountsManage))
+		// Its API keys: each action needs both the service-account and the API
+		// key permission; minting and deleting need a recent sign-in, as they do
 		// for your own keys.
 		r.GET("/{id}/api-keys", h.ListKeys, middleware.RequireAll(permission.MembersRead, permission.APIKeysRead))
-		r.POST("/{id}/api-keys", h.CreateKey, middleware.RequireAll(permission.MembersWrite, permission.APIKeysWrite), requireStepUp())
-		r.DELETE("/{id}/api-keys/{key_id}", h.DeleteKey, middleware.RequireAll(permission.MembersWrite, permission.APIKeysDelete), requireStepUp())
+		r.POST("/{id}/api-keys", h.CreateKey, middleware.RequireAll(permission.ServiceAccountsManage, permission.APIKeysWrite), requireStepUp())
+		r.DELETE("/{id}/api-keys/{key_id}", h.DeleteKey, middleware.RequireAll(permission.ServiceAccountsManage, permission.APIKeysDelete), requireStepUp())
 	}, tenantMiddlewares...)
 }

@@ -25,6 +25,10 @@ are separate credentials and are not covered here.
 | `expires_at`, `status` | Expiry and revocation. |
 | `last_used_at`, `last_used_ip`, `use_count` | Updated on every authenticated request. |
 
+Keys are read-only, so a key may carry **read scopes only** (`*:read`, `*:view`):
+minting with any other scope answers 400 even for a caller who holds it, and the
+console offers read scopes only.
+
 Who sees which keys: owners and administrators list every key of the
 organization; anyone else (`integrations:api_keys:read` without the admin
 bypass) lists only the keys whose `user_id` is their own, and another user's

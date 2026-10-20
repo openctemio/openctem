@@ -2602,13 +2602,21 @@ accountable for it (`service_owner_id`, the creator), and never signs in.
 | Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member |
 | Starts with nothing | created with no role: roles come from the role APIs (grant ceiling) and teams; data scope from teams |
 | Acts through keys | keys are minted for it with `POST /api/v1/service-accounts/{id}/api-keys` (`user_id` = the account); each scope must be held by the person minting it, and at request time a key carries only the scopes the account still holds, within its data scope; keys are read-only on the REST API, and no key reaches `/api/v1/service-accounts` |
+| Keys outlive their minter? No | the active keys a person minted for service accounts are revoked (audited, `revoked_by` = the acting administrator) when that person is offboarded or leaves, or is demoted from administrator or owner to member or viewer; the access report lists them first (`service_account_keys`) and the offboarding result and the audit event count them (`revoked_service_account_keys`) |
 | Removal | `DELETE /api/v1/service-accounts/{id}` removes the account with its roles, team memberships and keys at once |
 
+A team binding is held to the same ceiling in both orders: binding a full-data
+role to a team that has a service account, and adding a service account to a
+team that has one bound, are refused by the service and by triggers on
+`group_role_bindings` and `group_members`.
+
 Routes: `GET /api/v1/service-accounts` (`team:members:read`), `POST` and
-`DELETE /{id}` (`team:members:write`). Its keys:
+`DELETE /{id}` (`service_accounts:manage`, held by owners and administrators; a
+custom role may carry it, and team:members:write alone no longer creates or
+deletes an integration identity). Its keys:
 `GET /{id}/api-keys` (`team:members:read` and `integrations:api_keys:read`),
-`POST /{id}/api-keys` (`team:members:write` and `integrations:api_keys:write`, recent
-sign-in) and `DELETE /{id}/api-keys/{key_id}` (`team:members:write` and
+`POST /{id}/api-keys` (`service_accounts:manage` and `integrations:api_keys:write`, recent
+sign-in) and `DELETE /{id}/api-keys/{key_id}` (`service_accounts:manage` and
 `integrations:api_keys:delete`, recent sign-in). Another organization's account, a person,
 or a key that is not the account's reads as not found. Creation and deletion
 are audited (`user.created` / `user.deleted`, metadata `kind=service`;

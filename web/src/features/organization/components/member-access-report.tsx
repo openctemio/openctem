@@ -7,6 +7,7 @@
  */
 
 import { CalendarClock, KeyRound, Shield, Swords, Users, Workflow } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DetailChipList, DetailSection, DetailStat, DetailStatGrid } from '@/features/shared'
 import type { LifecycleRef, MemberAccessReport } from '../types/member.types'
@@ -34,6 +35,7 @@ export function MemberAccessReportView({
   isLoading,
   ownedOnly = false,
 }: MemberAccessReportViewProps) {
+  const { t } = useTranslation()
   if (isLoading) {
     return (
       <div className="space-y-2" aria-busy="true" aria-label="Loading access report">
@@ -72,6 +74,22 @@ export function MemberAccessReportView({
           </DetailSection>
           <DetailSection title="API keys" icon={KeyRound} count={report.api_keys?.length ?? 0}>
             <DetailChipList chips={chips(report.api_keys)} label="API keys" />
+          </DetailSection>
+          <DetailSection
+            title={t('org.lifecycle.serviceAccountKeys', 'Service account keys')}
+            icon={KeyRound}
+            count={report.service_account_keys?.length ?? 0}
+          >
+            <p className="mb-2 text-xs text-muted-foreground">
+              {t(
+                'org.lifecycle.serviceAccountKeysNote',
+                'Keys this member minted for service accounts. They are revoked when the member is offboarded or loses the administrator role.'
+              )}
+            </p>
+            <DetailChipList
+              chips={chips(report.service_account_keys)}
+              label={t('org.lifecycle.serviceAccountKeys', 'Service account keys')}
+            />
           </DetailSection>
           <DetailSection
             title="Pentest engagements"

@@ -943,6 +943,25 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 			fmt.Sprintf("membership role raised from %s to %s", oldRole, role))
 	}
 
+	// An administrator who is demoted no longer answers for the service
+	// accounts' keys they minted: those keys are organization secrets that
+	// outlive the role. Revoke them and say so in the audit event.
+	revokedSAKeys := 0
+	if tenantdom.PrivilegeRank(role) < tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) &&
+		tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) >= tenantdom.PrivilegeRank(tenantdom.RoleAdmin) &&
+		s.lifecycle != nil {
+		var by *shared.ID
+		if id, perr := shared.IDFromString(actx.ActorID); perr == nil {
+			by = &id
+		}
+		n, rerr := s.lifecycle.RevokeServiceAccountKeys(ctx, membership.TenantID(), membership.UserID(), by)
+		if rerr != nil {
+			s.logger.Error("failed to revoke service account keys of a demoted administrator",
+				"membership_id", logger.SanitizeValue(membershipID), "error", rerr)
+		}
+		revokedSAKeys = n
+	}
+
 	// Log audit event
 	actx.TenantID = membership.TenantID().String()
 	changes := audit.NewChanges().Set("role", oldRole, input.Role)
@@ -950,6 +969,9 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		WithChanges(changes).
 		WithSeverity(audit.SeverityHigh).
 		WithMessage(fmt.Sprintf("Member role changed from %s to %s", oldRole, input.Role))
+	if revokedSAKeys > 0 {
+		event = event.WithMetadata("revoked_service_account_keys", revokedSAKeys)
+	}
 	s.logAudit(ctx, actx, event)
 
 	return membership, nil
