@@ -57,7 +57,6 @@
   "confirm.assignmentRule.deleteTitle": "Delete the assignment rule \"{name}\"?",
   "confirm.attackerProfile.deleteDesc": "This cannot be undone.",
   "confirm.attackerProfile.deleteTitle": "Delete the attacker profile \"{name}\"?",
-  "confirm.auditChain.code": "Code from your authenticator",
   "confirm.auditChain.rebaseline": "Rebaseline",
   "confirm.auditChain.rebaselineCheck": "The server checks the chain again and refuses if anything is unexplained or the chain changed since this review. The action is recorded in the organization audit log and the platform audit log.",
   "confirm.auditChain.rebaselineDesc": "This re-signs all {total} entries of the audit chain from the current audit log. The {explained} explained breaks will verify afterwards, and so would any edit made before now: it is irreversible.",
