@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { enTranslate } from '@/features/scans/lib/translate'
 import type { ScanWorkflowStep } from '@/lib/api'
 import { makeIsValidConnection, wouldCreateCycle } from '@/components/flow/connection-rules'
 import {
   issueMessagesByStep,
   capabilityForStep,
   checkStepConnection,
+  compactEdgeTypes,
+  describeEdge,
+  edgeFlow,
+  EMPTY_TABLE,
   insertAdapterStep,
   issuesForStep,
   stepEdges,
@@ -241,5 +246,91 @@ describe('issueMessagesByStep', () => {
       ])
     ).toEqual({ ports: ['m1. do x'], crawl: ['m2'] })
     expect(issueMessagesByStep(undefined)).toEqual({})
+  })
+})
+
+describe('edgeFlow', () => {
+  it('carries the types the source gives that the target takes, in the source order', () => {
+    expect(edgeFlow(table, step('http', 'httpx'), step('vt', 'nuclei'))).toEqual({
+      state: 'data',
+      types: ['url', 'ip'],
+    })
+    expect(edgeFlow(table, step('subs', 'subfinder'), step('http', 'httpx'))).toEqual({
+      state: 'data',
+      types: ['hostname'],
+    })
+  })
+  it('is invalid when no type meets, or the target is intrusive', () => {
+    expect(edgeFlow(table, step('subs', 'subfinder'), step('crawl', 'katana'))).toEqual({
+      state: 'invalid',
+      types: [],
+      reason: 'no_match',
+    })
+    expect(edgeFlow(table, step('crawl', 'katana'), step('dast', 'zap'))).toEqual({
+      state: 'invalid',
+      types: [],
+      reason: 'intrusive',
+    })
+  })
+  it('only orders two steps when one has no typed ports', () => {
+    expect(edgeFlow(table, step('custom', 'my-scanner'), step('http', 'httpx'))?.state).toBe(
+      'order'
+    )
+    expect(edgeFlow(table, step('http', 'httpx'), step('custom', 'my-scanner'))?.state).toBe(
+      'order'
+    )
+  })
+  it('says nothing before the catalog loads or for an unknown step', () => {
+    expect(edgeFlow(EMPTY_TABLE, step('http', 'httpx'), step('vt', 'nuclei'))).toBeNull()
+    expect(edgeFlow(table, undefined, step('vt', 'nuclei'))).toBeNull()
+  })
+  it('agrees with the connection rule: a connection it allows carries data or orders', () => {
+    const steps = [
+      step('subs', 'subfinder'),
+      step('http', 'httpx'),
+      step('crawl', 'katana'),
+      step('vt', 'nuclei'),
+      step('dast', 'zap'),
+      step('custom', 'my-scanner'),
+    ]
+    for (const a of steps) {
+      for (const b of steps) {
+        if (a.id === b.id) continue
+        const allowed = checkStepConnection(table, steps, [], a.id, b.id).ok
+        const state = edgeFlow(table, a, b)?.state
+        expect(allowed, `${a.id} -> ${b.id}`).toBe(state !== 'invalid')
+      }
+    }
+  })
+})
+
+describe('compactEdgeTypes', () => {
+  it('writes out two types and counts the rest', () => {
+    expect(compactEdgeTypes(['url'])).toEqual({ shown: ['url'], more: 0 })
+    expect(compactEdgeTypes(['url', 'ip'])).toEqual({ shown: ['url', 'ip'], more: 0 })
+    expect(compactEdgeTypes(['url', 'service', 'hostname', 'ip'])).toEqual({
+      shown: ['url', 'service'],
+      more: 2,
+    })
+  })
+})
+
+describe('describeEdge', () => {
+  const http = { ...step('http', 'httpx'), name: 'HTTP probe' }
+  const vt = { ...step('vt', 'nuclei'), name: 'Vulnerability templates' }
+  it('labels a data connection with type ids and says it in words', () => {
+    const d = describeEdge(table, http, vt, enTranslate)
+    expect(d?.label).toBe('url · ip')
+    expect(d?.text).toBe('HTTP probe passes URL, IP address to Vulnerability templates')
+  })
+  it('names the state when nothing passes', () => {
+    const crawl = { ...step('crawl', 'katana'), name: 'Web crawl' }
+    const subs = { ...step('subs', 'subfinder'), name: 'Subdomain discovery' }
+    expect(describeEdge(table, subs, crawl, enTranslate)?.label).toBe('no matching type')
+    expect(describeEdge(table, subs, crawl, enTranslate)?.text).toBe(
+      'Web crawl takes none of the types Subdomain discovery gives'
+    )
+    const custom = { ...step('custom', 'my-scanner'), name: 'Custom' }
+    expect(describeEdge(table, custom, http, enTranslate)?.label).toBe('order only')
   })
 })
