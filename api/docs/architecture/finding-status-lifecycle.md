@@ -326,7 +326,7 @@ Actors:
 The engine only adds constraints to the lifecycle map. `TestEvaluateTransition_NeverWiderThanTheLifecycle` proves that, for every actor and status pair, no allowed move is off the map. It also proves that no disposition is direct, no resolve lacks `findings:verify`, and no ticket closes a finding.
 
 The paths that use the engine:
-- `PATCH /findings/{id}/status` and `POST /findings/bulk/status`. Bulk refuses on the target first (`EvaluateTransitionRequest`), then refuses finding by finding.
+- `PATCH /findings/{id}/status` and `POST /findings/bulk/status`. Bulk refuses on the target first (`EvaluateTransitionRequest`), then refuses finding by finding. The write is a compare-and-set: each row is written only while it is still in the status it was read in (one guarded batch per read status), so a row an approval, a retest or another person changed in between is never overwritten. The response lists every row not updated in `rows` (`skipped`, `failed` or `conflict`, with a reason); a conflict also counts in `failed`.
 - `/actions/fix-applied`, `/actions/verify` and `/actions/reject-fix`, plus their by-filter variants.
 - Approval requests and decisions.
 - Remediation group and campaign resolves (through bulk), workflow `update_status`, and the Jira and GitHub webhooks.

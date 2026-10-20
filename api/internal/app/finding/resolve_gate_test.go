@@ -28,6 +28,12 @@ func (r *methodStubRepo) UpdateStatusBatch(ctx context.Context, tid shared.ID, i
 	return r.bulkStubRepo.UpdateStatusBatch(ctx, tid, ids, st, res, by, m)
 }
 
+func (r *methodStubRepo) UpdateStatusBatchFrom(ctx context.Context, tid shared.ID, ids []shared.ID, _ []vulnerability.FindingStatus,
+	st vulnerability.FindingStatus, res string, by *shared.ID, m vulnerability.Closure,
+) error {
+	return r.UpdateStatusBatch(ctx, tid, ids, st, res, by, m)
+}
+
 func fixAppliedFinding(t *testing.T, tenantID shared.ID) *vulnerability.Finding {
 	t.Helper()
 	return fixAppliedFindingOf(t, tenantID, vulnerability.SeverityMedium)
