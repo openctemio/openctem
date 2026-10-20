@@ -26,6 +26,7 @@ type TransitionPermissions struct {
 	FixApply bool // findings:fix_apply
 	Triage   bool // findings:triage
 	Write    bool // findings:write
+	Approve  bool // findings:approve
 }
 
 // transitionActor is the engine actor of a request: a workflow when the
@@ -34,7 +35,7 @@ type TransitionPermissions struct {
 func transitionActor(ctx context.Context, actorID string, p TransitionPermissions) vulnerability.TransitionActor {
 	a := vulnerability.TransitionActor{
 		Kind:      vulnerability.TransitionActorAPIKey,
-		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write,
+		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write, CanApprove: p.Approve,
 	}
 	// A verified Jira/GitHub webhook is the ticket actor: the engine lets it
 	// report work state only (never a close).
@@ -94,7 +95,7 @@ func transitionFactsOf(f *vulnerability.Finding) vulnerability.TransitionFacts {
 func personActor(uid shared.ID, p TransitionPermissions) vulnerability.TransitionActor {
 	return vulnerability.TransitionActor{
 		Kind: vulnerability.TransitionActorPerson, UserID: uid,
-		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write,
+		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write, CanApprove: p.Approve,
 	}
 }
 
@@ -132,7 +133,9 @@ func transitionError(d vulnerability.TransitionDecision, note string) error {
 		return ErrResolveRequiresVerify
 	case has(vulnerability.BlockMissingPermission, "findings:fix_apply"):
 		return ErrFixApplyRequiresPermission
-	case has(vulnerability.BlockTicketCannotClose, ""), has(vulnerability.BlockNotALifecycleMove, ""):
+	case has(vulnerability.BlockMissingPermission, "findings:approve"):
+		return ErrRevokeRequiresApprove
+	case has(vulnerability.BlockTicketCannotClose, ""), has(vulnerability.BlockNotALifecycleMove, ""), has(vulnerability.BlockDecidedStatus, ""):
 		return d.Err()
 	}
 	for _, r := range d.Requires {
