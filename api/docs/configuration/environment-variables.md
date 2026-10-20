@@ -455,16 +455,16 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AI_PLATFORM_MODEL` | string | `claude-sonnet-4-20250514` |  |  | Model name passed to the provider. |
 | `AI_PLATFORM_PROVIDER` | string | `claude` |  |  | Provider used for organizations in platform mode: `claude`, `openai` or `gemini`. |
 | `AI_RATE_LIMIT_RPM` | int | `60` |  |  | Completions per minute per API key. `0` or less turns the cap off. |
+| `AI_RATE_LIMIT_TENANT_RPM` | int | `20` |  |  | Each organization's share of the platform key's completions per minute (a bucket per organization in front of `AI_RATE_LIMIT_RPM`), so one organization cannot starve the others. `0` turns it off. Organizations with their own key have their own allowance. |
 | `AI_TEMPERATURE` | float | `0.1` |  |  | Sampling temperature (0.0 to 1.0). |
 | `AI_TIMEOUT_SECONDS` | int | `30` |  |  | Timeout of one provider call. |
-| `AI_TRIAGE_BUDGET_DEFAULT_TOKENS` | int | `0` |  |  | Monthly token budget of an organization without its own. |
-| `AI_TRIAGE_BUDGET_ENABLED` | bool | `false` |  |  | Enforce the per-organization monthly token budget. |
+| `AI_TRIAGE_BUDGET_DEFAULT_TOKENS` | int | `2000000` |  |  | Monthly platform AI token budget of an organization, set on its month's budget row when the row is created. `0` means unlimited. |
+| `AI_TRIAGE_BUDGET_ENABLED` | bool | `true` |  |  | Enforce the per-organization monthly token budget for platform AI (organizations with their own key are not counted). |
 | `AI_TRIAGE_BUDGET_STRICT` | bool | `false` |  |  | With the budget on: refuse triage when the budget store cannot be read (otherwise log and continue). |
-| `AI_TRIAGE_ENABLED` | bool | `false` |  |  | Deprecated and ignored: availability follows the provider keys and the AI triage module. |
 | `AI_TRIAGE_RECOVERY_BATCH_SIZE` | int | `50` |  |  | Jobs recovered per run. |
-| `AI_TRIAGE_RECOVERY_ENABLED` | bool | `true` |  |  | Requeue triage jobs stuck in processing. |
+| `AI_TRIAGE_RECOVERY_ENABLED` | bool | `true` |  |  | Mark triage jobs stuck in pending or processing as failed (stuck_timeout). Transient provider errors are retried by the job queue before that. |
 | `AI_TRIAGE_RECOVERY_INTERVAL` | duration | `5m` |  |  | How often stuck jobs are looked for. |
-| `AI_TRIAGE_RECOVERY_STUCK_DURATION` | duration | `15m` |  |  | Age after which a processing job counts as stuck. |
+| `AI_TRIAGE_RECOVERY_STUCK_DURATION` | duration | `15m` |  |  | Age after which a pending or processing job counts as stuck. |
 | `ANTHROPIC_API_KEY` | string | empty |  | yes | Platform key for the `claude` provider. Any platform key pins the platform AI provider to the environment (the console shows it locked); without one, a super admin sets the provider and key in the console (Settings > AI provider), off by default. |
 | `GEMINI_API_KEY` | string | empty |  | yes | Platform key for the `gemini` provider. |
 | `OPENAI_API_KEY` | string | empty |  | yes | Platform key for the `openai` provider. |
@@ -482,10 +482,19 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `BOOTSTRAP_SMTP_FROM` | string | empty |  |  | `bootstrap-admin`: sender address. |
 | `RELAY_TLS_CERT` | path | empty | yes |  | `openctem-sensor-relay`: path to the relay's server certificate (PEM) presented to sensors. The relay does not start without it. See the sensor relay architecture note. |
 | `RELAY_TLS_KEY` | path | empty | yes | yes | `openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it. |
+| `CONNECTOR_RELAY_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: https URL of the sensor relay the connector takes requests from. |
+| `CONNECTOR_RELAY_PIN` | string | empty |  |  | `openctem-sensor-relay connector`: hex SHA-256 of the relay's public key. When set, the relay's certificate is accepted only if its key matches. |
+| `CONNECTOR_TLS_CERT` | path | empty | yes |  | `openctem-sensor-relay connector`: path to the connector's client certificate (PEM), pinned on the relay. |
+| `CONNECTOR_TLS_KEY` | path | empty | yes | yes | `openctem-sensor-relay connector`: path to the private key (PEM) of `CONNECTOR_TLS_CERT`. |
+| `CONNECTOR_REALM` | string | empty | yes |  | `openctem-sensor-relay connector`: the realm whose requests the connector takes. |
+| `CONNECTOR_INGEST_KEYS` | list | empty | yes | yes | `openctem-sensor-relay connector`: comma-separated paths of the ingest private key files that open the sensors' sealed requests. |
+| `CONNECTOR_RESPONSE_KEY` | path | empty | yes | yes | `openctem-sensor-relay connector`: path to the Ed25519 key that signs the responses. |
+| `CONNECTOR_API_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to. |
 | `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM). |
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
+| `SUDO_USER` | string | empty |  |  | `bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`). |
 | `ADMIN_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the first platform administrator (or `-email`). |
 | `ADMIN_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the first platform administrator. |
 | `DATABASE_URL` | string | built from `DB_*` |  |  | Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset. A password in it must be percent-encoded (`@` is `%40`, `:` is `%3A`, `/` is `%2F`, `%` is `%25`); the URL built from `DB_*` is encoded for you. |
@@ -636,6 +645,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `WORKER_HEALTH_CHECK_ENABLED` | unset it; the sensor health controller owns sensor liveness and the legacy checker was removed |
 | `WORKER_HEALTH_CHECK_INTERVAL` | unset it; the sensor health controller owns sensor liveness and the legacy checker was removed |
 | `AI_MAX_CONCURRENT_JOBS` | unset it; it limited nothing, AI triage jobs run on the background job queue |
+| `AI_TRIAGE_ENABLED` | unset it; a provider key (environment or console) makes platform AI available, and each organization turns AI triage on in Settings > AI |
 | `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > Settings > Sign-up) |
 | `TENANT_CREATION_MODE` | unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open |
 | `SMTP_ENABLED` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |

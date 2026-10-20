@@ -302,11 +302,16 @@ services:
   # ---------------------------------------------------------------------------
   migrate:
     image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION:-v0.11.0}}
+    # No password in the URL: the command line is readable by every host user
+    # (ps, /proc/<pid>/cmdline) and kept in the container's Cmd. The postgres
+    # driver (lib/pq) takes the password from PGPASSWORD.
     command:
       - "-path=/migrations"
       - "-database"
-      - "postgres://${DB_MIGRATE_USER:-${DB_USER:-openctem}}:${DB_MIGRATE_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required}}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-openctem}?sslmode=${DB_SSLMODE:-require}"
+      - "postgres://${DB_MIGRATE_USER:-${DB_USER:-openctem}}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-openctem}?sslmode=${DB_SSLMODE:-require}"
       - "up"
+    environment:
+      PGPASSWORD: ${DB_MIGRATE_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -551,6 +556,8 @@ services:
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required (openssl rand -hex 32)}
       # The owner's set-password link points at the public address.
       APP_URL: ${OPENCTEM_PUBLIC_URL:-https://${OPENCTEM_HOSTNAME}}
+    # Running this service runs the migrate service first, so pending
+    # migrations are applied before the tool starts.
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -561,7 +568,11 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    logging: *default-logging
+    # The one-time credentials it prints must not be kept in a container log
+    # (json-file keeps them on the host until the container is removed, and a
+    # log shipper copies them): `run` still shows them on the terminal.
+    logging:
+      driver: none
 
   # ---------------------------------------------------------------------------
   # Postgres and Redis: internal only, TLS on the internal network

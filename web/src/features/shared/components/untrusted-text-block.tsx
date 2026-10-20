@@ -30,13 +30,18 @@ export interface UntrustedTextBlockProps {
 
 export function UntrustedTextBlock({ text, label, className }: UntrustedTextBlockProps) {
   const [copied, setCopied] = React.useState(false)
+  const timer = React.useRef<number | undefined>(undefined)
+  // A pending reset must not fire after the block is gone (it ran in a torn
+  // down test window and failed the whole run with an unhandled error).
+  React.useEffect(() => () => window.clearTimeout(timer.current), [])
   const shown = React.useMemo(() => toDisplayBlock(text), [text])
   const hidden = React.useMemo(() => hasHiddenCharacters(text.replace(/\r?\n|\t/g, '')), [text])
 
   const onCopy = async () => {
     if (await copyToClipboard(text)) {
       setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
+      window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => setCopied(false), 1500)
     }
   }
 

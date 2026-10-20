@@ -3,30 +3,13 @@ package exposure
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
 )
-
-// ticketCampaignRepo embeds the interface (merge-safe vs. future methods) and
-// overrides only GetByID.
-type ticketCampaignRepo struct {
-	remediation.CampaignRepository
-	c *remediation.Campaign
-}
-
-func (r *ticketCampaignRepo) GetByID(_ context.Context, _ shared.ID, _ shared.ID) (*remediation.Campaign, error) {
-	if r.c == nil {
-		return nil, remediation.ErrCampaignNotFound
-	}
-	return r.c, nil
-}
-
-func (r *ticketCampaignRepo) Update(_ context.Context, _ *remediation.Campaign) error { return nil }
 
 type fakeTicketRepo struct {
 	remediation.CampaignTicketRepository
@@ -83,30 +66,13 @@ func (f *fakeEpicCreator) TransitionEpic(_ context.Context, _ shared.ID, _, targ
 	return nil
 }
 
-func newCampaign(t *testing.T) *remediation.Campaign {
-	t.Helper()
-	c, err := remediation.NewCampaign(shared.NewID(), "Fix Log4j", remediation.CampaignPriorityHigh)
-	if err != nil {
-		t.Fatalf("NewCampaign: %v", err)
-	}
-	return c
-}
-
-func newTicketSvc(c *remediation.Campaign, tr remediation.CampaignTicketRepository, epic CampaignEpicCreator) *RemediationCampaignService {
-	s := NewRemediationCampaignService(&ticketCampaignRepo{c: c}, logger.NewNop())
-	if tr != nil || epic != nil {
-		s.SetTicketing(tr, epic)
-	}
-	return s
-}
-
 func TestCreateTicket_CreatesEpicAndLink(t *testing.T) {
 	c := newCampaign(t)
 	tr := &fakeTicketRepo{}
 	epic := &fakeEpicCreator{key: "SEC-42", url: "https://x.atlassian.net/browse/SEC-42"}
 	svc := newTicketSvc(c, tr, epic)
 
-	info, err := svc.CreateTicket(context.Background(), shared.NewID().String(), c.ID().String(), "SEC")
+	info, err := svc.CreateTicket(context.Background(), c.TenantID().String(), c.ID().String(), "SEC")
 	if err != nil {
 		t.Fatalf("CreateTicket: %v", err)
 	}
@@ -131,7 +97,7 @@ func TestCreateTicket_IdempotentWhenLinkExists(t *testing.T) {
 	epic := &fakeEpicCreator{key: "SEC-99", url: "https://x/browse/SEC-99"}
 	svc := newTicketSvc(c, tr, epic)
 
-	info, err := svc.CreateTicket(context.Background(), shared.NewID().String(), c.ID().String(), "SEC")
+	info, err := svc.CreateTicket(context.Background(), c.TenantID().String(), c.ID().String(), "SEC")
 	if err != nil {
 		t.Fatalf("CreateTicket: %v", err)
 	}
@@ -146,7 +112,7 @@ func TestCreateTicket_IdempotentWhenLinkExists(t *testing.T) {
 func TestCreateTicket_NotConfigured(t *testing.T) {
 	c := newCampaign(t)
 	svc := newTicketSvc(c, nil, nil) // ticketing not wired
-	_, err := svc.CreateTicket(context.Background(), shared.NewID().String(), c.ID().String(), "SEC")
+	_, err := svc.CreateTicket(context.Background(), c.TenantID().String(), c.ID().String(), "SEC")
 	if !errors.Is(err, ErrTicketingNotConfigured) {
 		t.Fatalf("expected ErrTicketingNotConfigured, got %v", err)
 	}
@@ -155,7 +121,7 @@ func TestCreateTicket_NotConfigured(t *testing.T) {
 func TestCreateTicket_RequiresProjectKey(t *testing.T) {
 	c := newCampaign(t)
 	svc := newTicketSvc(c, &fakeTicketRepo{}, &fakeEpicCreator{})
-	_, err := svc.CreateTicket(context.Background(), shared.NewID().String(), c.ID().String(), "")
+	_, err := svc.CreateTicket(context.Background(), c.TenantID().String(), c.ID().String(), "")
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
 	}
@@ -171,8 +137,9 @@ func TestUpdateCampaignStatus_CompletionTransitionsEpic(t *testing.T) {
 	epic := &fakeEpicCreator{}
 	svc := newTicketSvc(c, tr, epic)
 
-	if _, err := svc.UpdateCampaignStatusAt(context.Background(), c.TenantID().String(), c.ID().String(),
-		string(remediation.CampaignStatusCompleted), CampaignStatusOptions{CloseWithOpenMembers: true}, auditapp.AuditContext{}); err != nil {
+	svc.repo.(*fakeCampaignRepo).whole = remediation.CampaignSummary{Tasks: 1, DoneTasks: 1}
+	if _, err := svc.UpdateCampaignStatus(context.Background(), c.TenantID().String(), c.ID().String(),
+		string(remediation.CampaignStatusCompleted), nil, auditapp.AuditContext{}); err != nil {
 		t.Fatalf("UpdateCampaignStatus: %v", err)
 	}
 	if epic.transitionCalls != 1 || epic.lastTransition != "Done" {
@@ -188,8 +155,9 @@ func TestUpdateCampaignStatus_NoEpicLink_NoTransition(t *testing.T) {
 	epic := &fakeEpicCreator{}
 	svc := newTicketSvc(c, &fakeTicketRepo{}, epic) // no existing link
 
-	if _, err := svc.UpdateCampaignStatusAt(context.Background(), c.TenantID().String(), c.ID().String(),
-		string(remediation.CampaignStatusCompleted), CampaignStatusOptions{CloseWithOpenMembers: true}, auditapp.AuditContext{}); err != nil {
+	svc.repo.(*fakeCampaignRepo).whole = remediation.CampaignSummary{Tasks: 1, DoneTasks: 1}
+	if _, err := svc.UpdateCampaignStatus(context.Background(), c.TenantID().String(), c.ID().String(),
+		string(remediation.CampaignStatusCompleted), nil, auditapp.AuditContext{}); err != nil {
 		t.Fatalf("UpdateCampaignStatus: %v", err)
 	}
 	if epic.transitionCalls != 0 {
@@ -236,9 +204,8 @@ func TestCampaignTicketsFor_Batch(t *testing.T) {
 // Jira Done on a campaign's epic is a fix claim for the campaign's findings
 // (marked fixed through the campaign resolve, the integration as the actor);
 // it never completes the campaign. A non-epic issue is not handled.
-func TestHandleEpicStatusChange_DoneClaimsFixNeverCompletes(t *testing.T) {
+func TestHandleEpicStatusChange_DoneClaimsTasksFixedNeverCompletes(t *testing.T) {
 	c := newCampaign(t)
-	c.SetFindingFilter(map[string]any{"severity": "high", "tool_name": "trivy"})
 	if err := c.Activate(); err != nil {
 		t.Fatal(err)
 	}
@@ -247,23 +214,24 @@ func TestHandleEpicStatusChange_DoneClaimsFixNeverCompletes(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := newTicketSvc(c, &fakeTicketRepo{existing: link}, nil)
-	res := &fakeResolver{n: 3}
-	svc.SetFindingResolver(res)
+	tasks := svc.tasks.(*fakeTasks)
+	t1, t2 := shared.NewID(), shared.NewID()
+	tasks.live = []shared.ID{t1, t2}
+	tasks.refusals = map[shared.ID][]string{t2: {"f-1: not your finding"}}
 
 	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "Done", "acct-1")
-	if err != nil || !handled || len(refusals) != 0 {
+	if err != nil || !handled || len(refusals) != 1 || refusals[0] != "f-1: not your finding" {
 		t.Fatalf("Done: refusals=%v handled=%v err=%v", refusals, handled, err)
 	}
-	if !res.called || res.gotStatus != "fix_applied" {
-		t.Fatalf("resolver called=%v status=%q, want a fix claim", res.called, res.gotStatus)
+	if len(tasks.claimed) != 2 || !strings.Contains(tasks.lastNote, "SEC-7") {
+		t.Fatalf("claimed %v note %q, want both live tasks claimed fixed", tasks.claimed, tasks.lastNote)
 	}
 	if c.Status() != remediation.CampaignStatusActive {
 		t.Fatalf("campaign status = %s, want still active", c.Status())
 	}
-
-	res.called = false
-	if _, handled, _ := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "In Progress", ""); !handled || res.called {
-		t.Fatalf("In Progress on the epic: handled=%v resolver called=%v", handled, res.called)
+	tasks.claimed = nil
+	if _, handled, _ := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "In Progress", ""); !handled || len(tasks.claimed) != 0 {
+		t.Fatalf("In Progress on the epic: handled=%v claimed=%v", handled, tasks.claimed)
 	}
 	other := newTicketSvc(c, &fakeTicketRepo{}, nil)
 	if _, handled, _ := other.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-8", "Done", ""); handled {
@@ -271,24 +239,20 @@ func TestHandleEpicStatusChange_DoneClaimsFixNeverCompletes(t *testing.T) {
 	}
 }
 
-type failingResolver struct{}
-
-func (failingResolver) ResolveOpenByFilter(context.Context, string, vulnerability.FindingFilter, CampaignResolveInput) (*CampaignResolveResult, error) {
-	return nil, errors.New("pq: relation internal_secret_table does not exist")
-}
-
 // The epic comment never carries internal error text.
 func TestHandleEpicStatusChange_FailureCommentIsFixed(t *testing.T) {
 	c := newCampaign(t)
-	c.SetFindingFilter(map[string]any{"severity": "high", "tool_name": "trivy"})
 	link, err := remediation.NewCampaignTicket(c.TenantID(), c.ID(), "jira", "SEC-9", "https://x.atlassian.net/browse/SEC-9")
 	if err != nil {
 		t.Fatal(err)
 	}
 	svc := newTicketSvc(c, &fakeTicketRepo{existing: link}, nil)
-	svc.SetFindingResolver(failingResolver{})
+	tasks := svc.tasks.(*fakeTasks)
+	tk := shared.NewID()
+	tasks.live = []shared.ID{tk}
+	tasks.claimErr = errors.New("pq: relation internal_secret_table does not exist")
 	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-9", "Done", "")
-	if !handled || err == nil || len(refusals) != 1 || refusals[0] != campaignEpicClaimFailed {
+	if !handled || err != nil || len(refusals) != 1 || refusals[0] != tk.String()+": "+campaignEpicClaimFailed {
 		t.Fatalf("refusals=%q handled=%v err=%v, want the fixed message", refusals, handled, err)
 	}
 }

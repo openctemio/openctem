@@ -27,9 +27,6 @@ type ReclassifyReasonKind string
 const (
 	ReasonControlChange ReclassifyReasonKind = "control_change"
 	ReasonAssetChange   ReclassifyReasonKind = "asset_change"
-	// ReasonAITriage is queued when an AI triage completes for a finding, so a
-	// high-confidence "likely false positive" verdict can de-escalate it.
-	ReasonAITriage ReclassifyReasonKind = "ai_triage"
 )
 
 // ReclassifyRequest describes assets whose open findings need a new

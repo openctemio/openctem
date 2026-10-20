@@ -42,8 +42,7 @@ func (p *ControlChangePublisher) PublishChange(
 
 // PublishAssetReclassify enqueues an asset-scoped reclassify request under an
 // explicit reason kind. Generalizes PublishChange (which is always
-// ReasonControlChange) so other producers — e.g. AI triage completion
-// (ReasonAITriage) — drive the same asset-scoped sweep. Errors are logged, never
+// ReasonControlChange) so other producers drive the same asset-scoped sweep. Errors are logged, never
 // returned: a failed enqueue must not roll back the write that triggered it.
 func (p *ControlChangePublisher) PublishAssetReclassify(
 	ctx context.Context,

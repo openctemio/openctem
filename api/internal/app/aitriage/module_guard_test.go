@@ -17,7 +17,7 @@ func (aiTriageOff) TenantDisabledModules(context.Context, string) map[string]boo
 // With the ai_triage module off, auto-triage never starts: it answers no
 // before reading the organization settings (a nil repository here).
 func TestShouldAutoTriage_ModuleOff(t *testing.T) {
-	s := &AITriageService{platformCfg: config.AITriageConfig{Enabled: true}}
+	s := &AITriageService{platformCfg: config.AITriageConfig{AnthropicAPIKey: "test-only"}}
 	s.SetModuleGuard(aiTriageOff{})
 	ok, err := s.ShouldAutoTriage(context.Background(), shared.NewID(), "critical")
 	if err != nil || ok {

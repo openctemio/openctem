@@ -34,6 +34,7 @@ import { ScheduleStep } from './new-scan/schedule-step'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../types'
 import {
   basicInfoError,
+  optionsError,
   formDataToUpdateRequest,
   scanConfigToFormData,
   targetsError,
@@ -136,6 +137,14 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       }
       case 'targets': {
         const problem = targetsError(formData, t)
+        if (problem) {
+          toast.error(problem)
+          return false
+        }
+        return true
+      }
+      case 'options': {
+        const problem = optionsError(formData, t)
         if (problem) {
           toast.error(problem)
           return false

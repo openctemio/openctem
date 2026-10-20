@@ -345,6 +345,18 @@ func (r *TriageResult) MarkCompleted(result TriageAnalysis) error {
 	return nil
 }
 
+// ReleaseForRetry puts a processing triage back to pending after a transient
+// failure, so the job queue's next attempt can acquire it again.
+func (r *TriageResult) ReleaseForRetry() error {
+	if r.status != TriageStatusProcessing {
+		return shared.NewDomainError("INVALID_STATE", "can only release a processing triage", shared.ErrConflict)
+	}
+	r.status = TriageStatusPending
+	r.startedAt = nil
+	r.updatedAt = time.Now().UTC()
+	return nil
+}
+
 // MarkFailed marks the triage as failed with an error message.
 func (r *TriageResult) MarkFailed(errMsg string) error {
 	now := time.Now().UTC()

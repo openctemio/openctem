@@ -57,6 +57,8 @@ type Settings struct {
 	FindingApprovals FindingApprovalSettings `json:"finding_approvals,omitempty"`
 	// Dashboards are the dashboard defaults (docs/architecture/dashboards.md).
 	Dashboards DashboardSettings `json:"dashboards,omitempty"`
+	// EmergingThreats is the emerging-threat alert policy (RFC-117).
+	EmergingThreats EmergingThreatSettings `json:"emerging_threats,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of
@@ -395,6 +397,42 @@ type AISettings struct {
 	// Usage Limits
 	MonthlyTokenLimit   int `json:"monthly_token_limit,omitempty"` // Optional cost control (0 = unlimited)
 	TokensUsedThisMonth int `json:"tokens_used_this_month"`        // Tracked internally
+
+	// Consent. Finding content goes to an AI provider only after an
+	// organization administrator turned AI triage on: EnabledAt is when,
+	// EnabledBy is who (a user id, or AIEnabledByUpgrade for organizations
+	// that used AI triage before consent existed). nil EnabledAt: off.
+	EnabledAt *time.Time `json:"enabled_at,omitempty"`
+	EnabledBy string     `json:"enabled_by,omitempty"`
+}
+
+// AIEnabledByUpgrade marks the consent of an organization that already used
+// AI triage when organization consent was introduced (migration).
+const AIEnabledByUpgrade = "upgrade"
+
+// OptedIn reports whether an organization administrator turned AI triage on.
+func (s AISettings) OptedIn() bool { return s.EnabledAt != nil }
+
+// EffectiveMode is the mode that applies: disabled until the organization
+// opted in, platform when no mode was chosen.
+func (s AISettings) EffectiveMode() AIMode {
+	if !s.OptedIn() || s.Mode == AIModeDisabled {
+		return AIModeDisabled
+	}
+	if s.Mode == "" {
+		return AIModePlatform
+	}
+	return s.Mode
+}
+
+// SetOptIn records the organization's consent (on) or withdraws it (off).
+func (s *AISettings) SetOptIn(on bool, by string, at time.Time) {
+	if !on {
+		s.EnabledAt, s.EnabledBy = nil, ""
+		return
+	}
+	at = at.UTC()
+	s.EnabledAt, s.EnabledBy = &at, by
 }
 
 // =============================================================================
@@ -837,6 +875,9 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.LicensePolicy.Normalize(); err != nil {
 		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
+	if err := s.EmergingThreats.Validate(); err != nil {
+		return err
 	}
 	if err := s.VulnMatching.Validate(); err != nil {
 		return fmt.Errorf("vuln_matching settings: %w", err)

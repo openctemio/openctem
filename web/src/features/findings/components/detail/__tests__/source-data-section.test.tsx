@@ -115,4 +115,60 @@ describe('SourceDataSection', () => {
     expect(screen.getByText('41')).toBeTruthy()
     expect(screen.getByTestId('source-vuln-ids').textContent).toContain('USN-6859-1')
   })
+
+  it('shows the detection rule from the pack, never a sensor path', () => {
+    const d = mapFindingSourceData({
+      native: { scheme: 'nuclei', vuln_id: 'wordpress-click2shell' },
+      rule: {
+        pack: 'nuclei-templates',
+        version: '2026-10-05 (7ae245)',
+        path: 'http/vulnerabilities/wordpress/wordpress-click2shell.yaml',
+      },
+      source_extra: { target: 'https://example.com' },
+    })!
+    const { container } = render(<SourceDataSection data={d} ruleName="WordPress Click2Shell" />)
+    const rule = screen.getByTestId('source-detection-rule').textContent ?? ''
+    expect(rule).toContain('wordpress-click2shell · WordPress Click2Shell')
+    expect(rule).toContain('nuclei-templates@2026-10-05 (7ae245)')
+    expect(rule).toContain('http/vulnerabilities/wordpress/wordpress-click2shell.yaml')
+    expect(container.textContent).not.toContain('/var/lib')
+    expect(container.textContent).not.toContain('template_path')
+  })
+
+  it('shows the organization template, its version and a link to it', () => {
+    const d = mapFindingSourceData({
+      native: { scheme: 'nuclei', vuln_id: 'tenant:login-panel' },
+      rule: {
+        source: 'tenant',
+        template_id: 't1',
+        template_name: 'login-panel.yaml',
+        template_version: '1.2.0',
+      },
+    })!
+    render(<SourceDataSection data={d} />)
+    expect(screen.getByTestId('source-rule-source').textContent).toBe('Organization template')
+    const link = screen.getByRole('link', { name: 'login-panel.yaml@1.2.0' })
+    expect(link.getAttribute('href')).toBe('/settings/scanning/templates?q=login-panel.yaml')
+  })
+
+  it('says when the organization template was deleted, and marks platform rules', () => {
+    const tenant = mapFindingSourceData({ rule: { source: 'tenant', template_id: 't1' } })!
+    const { unmount } = render(<SourceDataSection data={tenant} />)
+    expect(screen.getByTestId('source-rule-template').textContent).toBe('Template deleted')
+    expect(screen.queryByRole('link')).toBeNull()
+    unmount()
+    const platform = mapFindingSourceData({
+      rule: {
+        source: 'platform',
+        pack: 'nuclei-templates',
+        version: 'v10.4.9',
+        path: 'http/x.yaml',
+      },
+    })!
+    render(<SourceDataSection data={platform} />)
+    expect(screen.getByTestId('source-rule-source').textContent).toBe('Platform rules')
+    expect(screen.getByTestId('source-detection-rule').textContent).toContain(
+      'nuclei-templates@v10.4.9'
+    )
+  })
 })

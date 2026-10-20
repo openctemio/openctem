@@ -53,8 +53,11 @@ type CreateScanInput struct {
 	TenantRunner     bool       `json:"run_on_tenant_runner"`
 	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
 	ProfileID        string     `json:"profile_id" validate:"omitempty,uuid"`                              // Optional scan profile (tool configs, quality gates)
-	ScanZoneID       string     `json:"scan_zone_id" validate:"omitempty,uuid"`                            // Optional: pin targets to one scan zone ("" = Automatic)
-	TimeoutSeconds   int        `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max duration (0 = none: the platform 24 h cap applies; min 30, max 86400)
+	// RuleSources is which detection rules the scan runs: both, platform or
+	// tenant; "" inherits the profile's (both without a profile).
+	RuleSources    string `json:"rule_sources" validate:"omitempty,oneof=both platform tenant"`
+	ScanZoneID     string `json:"scan_zone_id" validate:"omitempty,uuid"`                // Optional: pin targets to one scan zone ("" = Automatic)
+	TimeoutSeconds int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"` // Max duration (0 = none: the platform 24 h cap applies; min 30, max 86400)
 	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
@@ -236,6 +239,14 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 			}
 		}
 		sc.SetProfileID(&profileID)
+	}
+
+	// Rule sources: tenant-only needs the scan's own templates.
+	if err := sc.SetRuleSources(input.RuleSources); err != nil {
+		return nil, err
+	}
+	if err := checkScanRuleSources(sc); err != nil {
+		return nil, err
 	}
 
 	// Set created by. A scheduled scan's runs act as its owner, so one
@@ -797,6 +808,9 @@ type UpdateScanInput struct {
 	//   pointer to "" = unlink profile
 	//   pointer to id = link to profile
 	ProfileID *string `json:"profile_id" validate:"omitempty"`
+	// RuleSources: nil = leave unchanged, pointer to "" = inherit the
+	// profile's, otherwise both, platform or tenant.
+	RuleSources *string `json:"rule_sources" validate:"omitempty"`
 	// ScanZoneID: nil = leave unchanged, pointer to "" = Automatic routing,
 	// pointer to id = pin the scan's targets to that zone.
 	ScanZoneID *string `json:"scan_zone_id" validate:"omitempty"`
@@ -1021,6 +1035,17 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			}
 			sc.SetProfileID(&profileID)
 		}
+	}
+
+	// Rule sources: nil leaves them; tenant-only needs the scan's own
+	// templates, whichever of the two changed.
+	if input.RuleSources != nil {
+		if err := sc.SetRuleSources(*input.RuleSources); err != nil {
+			return nil, err
+		}
+	}
+	if err := checkScanRuleSources(sc); err != nil {
+		return nil, err
 	}
 
 	// Save to repository

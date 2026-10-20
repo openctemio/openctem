@@ -1,16 +1,29 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Sparkles, Loader2, AlertCircle, RotateCcw } from 'lucide-react'
+import { Sparkles, Loader2, AlertCircle, RotateCcw, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
+import { useTenant } from '@/context/tenant-provider'
+import { ApiClientError } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
 import { devLog } from '@/lib/logger'
 import { useHasModule } from '@/features/integrations/api/use-tenant-modules'
 import { useTriageChannel } from '@/hooks/use-websocket'
 import { useRequestTriage, useTriageResult, useAIConfig } from '../api'
+import {
+  aiUnavailableMessage,
+  triageFailureMessage,
+  triageRequestErrorMessage,
+} from '../lib/messages'
 import type { TriageStatus } from '../types'
+
+/** Where an organization administrator turns AI triage on. */
+export const AI_SETTINGS_URL = '/settings/ai'
 
 /** WebSocket triage event structure from backend */
 interface WSTriageEvent {
@@ -20,7 +33,8 @@ interface WSTriageEvent {
     finding_id: string
     tenant_id: string
     status: TriageStatus
-    error_message?: string
+    /** Failure code of a failed triage (never raw error text). */
+    error_code?: string
   }
 }
 
@@ -79,6 +93,10 @@ export function AITriageButton({
   disabled,
   forceShow = false,
 }: AITriageButtonProps) {
+  const { t } = useTranslation()
+  const { currentTenant } = useTenant()
+  // Owners and administrators turn AI triage on; members are told to ask.
+  const canManageAI = currentTenant?.role === 'owner' || currentTenant?.role === 'admin'
   const [isRequesting, setIsRequesting] = useState(false)
   const [shouldPoll, setShouldPoll] = useState(false)
   const [pollInterval, setPollInterval] = useState(2000)
@@ -91,8 +109,8 @@ export function AITriageButton({
     useHasModule(AI_TRIAGE_MODULE)
 
   // Check if AI is actually configured (LLM provider set up)
-  const { data: aiConfig, isLoading: isLoadingConfig } = useAIConfig()
-  const isAIConfigured = aiConfig?.isEnabled === true
+  const { data: aiConfig, isLoading: isLoadingConfig, mutate: mutateConfig } = useAIConfig()
+  const isAIAvailable = aiConfig?.isEnabled === true
 
   const { trigger: requestTriage } = useRequestTriage(findingId)
 
@@ -106,26 +124,21 @@ export function AITriageButton({
         setWsStatus(newStatus)
 
         // Show toast for status transitions
-        if (event.type === 'triage_started') {
-          toast.info('AI Triage Processing', {
-            id: `triage-progress-${findingId}`,
-            description: 'AI is now analyzing this finding...',
-          })
-        } else if (event.type === 'triage_completed') {
-          // Dismiss progress toast
-          toast.dismiss(`triage-progress-${findingId}`)
-          toast.success('AI Triage Completed', {
-            id: `triage-result-${findingId}`,
-            description: 'Analysis is ready to view.',
+        // One toast per run, updated in place (queued, then done or failed).
+        if (event.type === 'triage_completed') {
+          toast.success(t('findings.aiTriage.toast.completed', 'AI analysis ready'), {
+            id: `triage-${findingId}`,
+            description: t(
+              'findings.aiTriage.toast.completedDesc',
+              'The analysis is on the Overview tab.'
+            ),
           })
           onTriageCompleted?.()
           setShouldPoll(false)
         } else if (event.type === 'triage_failed') {
-          // Dismiss progress toast
-          toast.dismiss(`triage-progress-${findingId}`)
-          toast.error('AI Triage Failed', {
-            id: `triage-result-${findingId}`,
-            description: event.triage.error_message || 'Please try again.',
+          toast.error(t('findings.aiTriage.toast.failed', 'AI analysis failed'), {
+            id: `triage-${findingId}`,
+            description: triageFailureMessage(t, event.triage.error_code),
           })
           onTriageCompleted?.()
           setShouldPoll(false)
@@ -204,17 +217,20 @@ export function AITriageButton({
     // Use toast ID to deduplicate (prevent showing same toast from both WebSocket and polling)
     if (isNewCompletion) {
       if (prevStatus === 'pending' || prevStatus === 'processing') {
-        toast.success('AI Triage Completed', {
-          id: `triage-result-${findingId}`,
-          description: 'Analysis is ready to view.',
+        toast.success(t('findings.aiTriage.toast.completed', 'AI analysis ready'), {
+          id: `triage-${findingId}`,
+          description: t(
+            'findings.aiTriage.toast.completedDesc',
+            'The analysis is on the Overview tab.'
+          ),
         })
       }
       onTriageCompleted?.()
     } else if (isNewFailure) {
       if (prevStatus === 'pending' || prevStatus === 'processing') {
-        toast.error('AI Triage Failed', {
-          id: `triage-result-${findingId}`,
-          description: triageResult?.errorMessage || 'Please try again.',
+        toast.error(t('findings.aiTriage.toast.failed', 'AI analysis failed'), {
+          id: `triage-${findingId}`,
+          description: triageFailureMessage(t, triageResult?.errorCode),
         })
       }
       onTriageCompleted?.()
@@ -223,11 +239,12 @@ export function AITriageButton({
     previousStatusRef.current = currentStatus ?? null
   }, [
     currentStatus,
-    triageResult?.errorMessage,
+    triageResult?.errorCode,
     onTriageCompleted,
     shouldPoll,
     wsConnected,
     findingId,
+    t,
   ])
 
   // Start polling when status becomes pending/processing (only if WebSocket not connected)
@@ -259,8 +276,12 @@ export function AITriageButton({
       const result = await requestTriage({ mode: 'quick' })
 
       if (result) {
-        toast.success('AI Triage Started', {
-          description: "Analysis has been queued. We'll notify you when it completes.",
+        toast.info(t('findings.aiTriage.toast.queued', 'AI analysis queued'), {
+          id: `triage-${findingId}`,
+          description: t(
+            'findings.aiTriage.toast.queuedDesc',
+            'You will be notified here when it is ready.'
+          ),
         })
         // Only start polling if WebSocket is not connected
         if (!wsConnected) {
@@ -272,20 +293,37 @@ export function AITriageButton({
         mutate()
       }
     } catch (error) {
-      toast.error('Failed to start AI triage', {
-        description: error instanceof Error ? error.message : 'Please try again.',
+      const code = error instanceof ApiClientError ? error.code : undefined
+      // AI became unavailable since the page loaded: show the new state.
+      if (code === 'AI_DISABLED' || code === 'AI_PLATFORM_NOT_CONFIGURED') {
+        void mutateConfig()
+      }
+      toast.error(t('findings.aiTriage.toast.notStarted', 'AI analysis did not start'), {
+        id: `triage-${findingId}`,
+        description:
+          triageRequestErrorMessage(t, code) ??
+          t('findings.aiTriage.toast.notStartedDesc', 'Try again later.'),
       })
     } finally {
       setIsRequesting(false)
     }
-  }, [isDisabled, requestTriage, onTriageRequested, mutate, wsConnected])
+  }, [
+    isDisabled,
+    requestTriage,
+    onTriageRequested,
+    mutate,
+    mutateConfig,
+    wsConnected,
+    findingId,
+    t,
+  ])
 
   const getButtonContent = () => {
     if (isRequesting || currentStatus === 'processing') {
       return (
         <>
           <Loader2 className="h-4 w-4 me-2 animate-spin" />
-          Analyzing...
+          {t('findings.aiTriage.button.analyzing', 'Analyzing...')}
         </>
       )
     }
@@ -294,7 +332,7 @@ export function AITriageButton({
       return (
         <>
           <Loader2 className="h-4 w-4 me-2 animate-spin" />
-          Queued...
+          {t('findings.aiTriage.button.queued', 'Queued...')}
         </>
       )
     }
@@ -303,7 +341,7 @@ export function AITriageButton({
       return (
         <>
           <RotateCcw className="h-4 w-4 me-2" />
-          Re-analyze
+          {t('findings.aiTriage.button.reanalyze', 'Re-analyze')}
         </>
       )
     }
@@ -312,7 +350,7 @@ export function AITriageButton({
       return (
         <>
           <AlertCircle className="h-4 w-4 me-2" />
-          Retry
+          {t('findings.aiTriage.button.retry', 'Retry')}
         </>
       )
     }
@@ -320,22 +358,25 @@ export function AITriageButton({
     return (
       <>
         <Sparkles className="h-4 w-4 me-2" />
-        AI Triage
+        {t('findings.aiTriage.button.label', 'AI triage')}
       </>
     )
   }
 
   const getTooltipContent = () => {
     if (currentStatus === 'pending') {
-      return 'AI triage is queued and waiting to process'
+      return t('findings.aiTriage.tooltip.pending', 'The analysis is queued')
     }
     if (currentStatus === 'processing') {
-      return 'AI is currently analyzing this finding'
+      return t('findings.aiTriage.tooltip.processing', 'AI is analyzing this finding')
     }
     if (currentStatus === 'completed') {
-      return 'Run AI triage again to get updated analysis'
+      return t('findings.aiTriage.tooltip.completed', 'Run the analysis again')
     }
-    return 'Analyze this finding with AI to get severity assessment, risk score, and remediation guidance'
+    return t(
+      'findings.aiTriage.tooltip.idle',
+      'Ask AI for a severity assessment, exploitability, false-positive likelihood and remediation steps. A suggestion only: nothing on the finding changes.'
+    )
   }
 
   // Determine button styling based on state and variant
@@ -372,19 +413,50 @@ export function AITriageButton({
     return className
   }
 
-  // Don't render if module is not enabled or AI is not configured (unless forceShow is true)
-  if (
-    !forceShow &&
-    !isCheckingModule &&
-    !isLoadingConfig &&
-    (!hasAITriageModule || !isAIConfigured)
-  ) {
+  // Module off: no button at all.
+  if (!forceShow && !isCheckingModule && !hasAITriageModule) {
     return null
   }
 
-  // Show subtle loading state while checking module access / AI config
+  // Show nothing while checking module access / AI config (prevents a flash).
   if (!forceShow && (isCheckingModule || isLoadingConfig)) {
-    return null // Don't show anything while checking - prevents flash
+    return null
+  }
+
+  // AI not available for this organization: a disabled-looking button that
+  // explains why and links to where it is turned on (never a permission error).
+  if (!forceShow && !isAIAvailable) {
+    const reason = aiConfig?.reason
+    const showSettingsLink = canManageAI && reason === 'not_enabled'
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size={size}
+            aria-disabled="true"
+            className={cn('cursor-help opacity-60', className)}
+          >
+            <Sparkles className="h-4 w-4 me-2" />
+            {t('findings.aiTriage.button.label', 'AI triage')}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="space-y-3 text-sm">
+          <p className="font-medium">
+            {t('findings.aiTriage.unavailable.title', 'AI triage is not available')}
+          </p>
+          <p className="text-muted-foreground">{aiUnavailableMessage(t, reason, canManageAI)}</p>
+          {showSettingsLink && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={AI_SETTINGS_URL}>
+                <Settings2 className="h-4 w-4 me-2" aria-hidden />
+                {t('findings.aiTriage.unavailable.openSettings', 'Open Settings > AI')}
+              </Link>
+            </Button>
+          )}
+        </PopoverContent>
+      </Popover>
+    )
   }
 
   return (

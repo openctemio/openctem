@@ -144,7 +144,7 @@ var Features = []Feature{
 		ID: "threat-intel", Title: "Threat intelligence",
 		Description: "EPSS, KEV, threat actors and indicators of compromise.",
 		Stages:      []string{StagePrioritization},
-		Registers:   []string{"registerThreatIntelRoutes", "registerThreatActorRoutes", "registerIOCRoutes"},
+		Registers:   []string{"registerThreatIntelRoutes", "registerThreatActorRoutes", "registerIOCRoutes", "registerEmergingThreatRoutes"},
 	},
 	{
 		ID: "compliance", Title: "Compliance",
@@ -181,7 +181,7 @@ var Features = []Feature{
 		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), its limits, support access grants and the audit log.",
 		Registers: []string{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSecurityOverviewRoutes", "registerOrganizationSupportAccessRoutes",
-			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
+			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerEmergingThreatSettingsRoutes", "registerAISettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
 			"registerSharedSensorsSettingsRoutes",
 		},

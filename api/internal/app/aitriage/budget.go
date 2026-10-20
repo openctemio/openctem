@@ -118,6 +118,9 @@ func NewBudgetService(repo BudgetRepository, cfg BudgetServiceConfig, log *logge
 	return &BudgetService{repo: repo, cfg: cfg, log: log.With("service", "ai-triage-budget")}
 }
 
+// Enabled reports whether the budget is enforced.
+func (s *BudgetService) Enabled() bool { return s != nil && s.cfg.Enabled }
+
 // Check is invoked BEFORE the LLM call. estimatedTokens is the
 // caller's best-effort guess for (prompt + expected completion) so
 // that Check can reject a call whose estimate would push the tenant

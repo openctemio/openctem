@@ -21,7 +21,30 @@ var (
 
 	// ErrDuplicateRequest is returned when a triage request already exists for the finding.
 	ErrDuplicateRequest = errors.New("triage request already in progress for this finding")
+
+	// ErrTriageFailed wraps the error of an attempt that failed the triage
+	// for good: the job queue must not retry it.
+	ErrTriageFailed = errors.New("triage failed")
+
+	// ErrTriageRetry wraps the error of an attempt that failed transiently
+	// and released the row: the job queue retries it.
+	ErrTriageRetry = errors.New("triage attempt failed, retry")
 )
+
+type retriesLeftKey struct{}
+
+// WithRetriesLeft records on ctx whether the job queue will run another
+// attempt when this one returns an error.
+func WithRetriesLeft(ctx context.Context, left bool) context.Context {
+	return context.WithValue(ctx, retriesLeftKey{}, left)
+}
+
+// RetriesLeft reports what WithRetriesLeft recorded; false when nothing was
+// recorded (a direct call fails at once, as before the queue existed).
+func RetriesLeft(ctx context.Context) bool {
+	left, _ := ctx.Value(retriesLeftKey{}).(bool)
+	return left
+}
 
 // Repository defines the interface for triage result persistence.
 type Repository interface {

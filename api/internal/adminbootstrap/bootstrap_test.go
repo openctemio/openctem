@@ -10,13 +10,15 @@ func TestOptionsRequireABackup(t *testing.T) {
 		o       Options
 		wantErr string
 	}{
-		"backup required":   {Options{Email: "a@x.io"}, "break-glass backup administrator is required"},
-		"same email":        {Options{Email: "a@x.io", BackupEmail: "A@x.io"}, "different email"},
-		"both flags":        {Options{Email: "a@x.io", BackupEmail: "b@x.io", NoBackup: true}, "mutually exclusive"},
-		"bad role":          {Options{Email: "a@x.io", NoBackup: true, Role: "root"}, "invalid role"},
-		"explicit opt-out":  {Options{Email: "a@x.io", NoBackup: true}, ""},
-		"with backup":       {Options{Email: "a@x.io", BackupEmail: "b@x.io"}, ""},
-		"link needs no bkp": {Options{Email: "a@x.io", LinkOnly: true}, ""},
+		"backup required":         {Options{Email: "a@x.io"}, "break-glass backup administrator is required"},
+		"same email":              {Options{Email: "a@x.io", BackupEmail: "A@x.io"}, "different email"},
+		"both flags":              {Options{Email: "a@x.io", BackupEmail: "b@x.io", NoBackup: true}, "mutually exclusive"},
+		"bad role":                {Options{Email: "a@x.io", NoBackup: true, Role: "root"}, "invalid role"},
+		"explicit opt-out":        {Options{Email: "a@x.io", NoBackup: true}, ""},
+		"with backup":             {Options{Email: "a@x.io", BackupEmail: "b@x.io"}, ""},
+		"link needs no bkp":       {Options{Email: "a@x.io", LinkOnly: true}, ""},
+		"force-backup, no backup": {Options{Email: "a@x.io", NoBackup: true, ForceBackup: true}, "mutually exclusive"},
+		"force with link":         {Options{Email: "a@x.io", LinkOnly: true, Force: true}, "-link"},
 	}
 	for name, c := range cases {
 		o := c.o
@@ -91,5 +93,17 @@ func TestConsoleAddress(t *testing.T) {
 	got := consoleAddress("  ")
 	if !strings.Contains(got, "8443") || strings.Contains(got, "/login") {
 		t.Errorf("default text must name the console's own site, got %q", got)
+	}
+}
+
+// -role given (even with the default value) is explicit; no -role is not.
+func TestOptionsRoleExplicit(t *testing.T) {
+	o := Options{Email: "a@x.io", NoBackup: true}
+	if err := o.Normalize(); err != nil || o.RoleExplicit || o.Role != "super_admin" {
+		t.Fatalf("default role: %+v %v", o, err)
+	}
+	o = Options{Email: "a@x.io", NoBackup: true, Role: "super_admin"}
+	if err := o.Normalize(); err != nil || !o.RoleExplicit {
+		t.Fatalf("explicit role: %+v %v", o, err)
 	}
 }

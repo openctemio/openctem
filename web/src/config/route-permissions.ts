@@ -96,6 +96,7 @@ export const Module = {
   ScanWorkflows: 'scan_workflows',
   AttackSimulation: 'attack_simulation',
   ControlTesting: 'control_testing',
+  AITriage: 'ai_triage',
 } as const
 
 /**
@@ -349,6 +350,15 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.Iocs,
   },
   '/threat-intel/**': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.ThreatIntel,
+  },
+  // Emerging threats: new or newly exploited CVEs that match the organization's software.
+  '/emerging-threats': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.ThreatIntel,
+  },
+  '/emerging-threats/**': {
     permission: Permission.VulnerabilitiesRead,
     module: Module.ThreatIntel,
   },
@@ -720,6 +730,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/api-keys': {
     permission: Permission.ApiKeysRead,
   },
+  // AI triage consent: owners and administrators read and change it (api
+  // RequireTeamAdmin + settings:read / settings:write).
+  '/settings/ai': {
+    permission: Permission.SettingsRead,
+    module: Module.AITriage,
+  },
   // MCP access is issued as API keys (oct_ keys).
   '/settings/mcp': {
     permission: Permission.ApiKeysRead,
@@ -801,6 +817,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
 
   // Vulnerability matching policy (RFC-066): owners and admins.
   '/settings/vulnerability-matching': {
+    permission: Permission.TeamUpdate,
+  },
+  // Emerging-threat alert policy: owners and admins.
+  '/settings/emerging-threats': {
     permission: Permission.TeamUpdate,
   },
   // Finding approvals: settings:read to see, settings:write (+ step-up) to save.

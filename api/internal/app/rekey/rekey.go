@@ -248,6 +248,7 @@ var registry = []location{
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"secret_key"}, where: "key = 'storage_config'"},
 	jsonField{table: "tenants", pk: "id", col: "settings", path: []string{"ai", "api_key"}, prefix: "enc:v1:"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"password_encrypted"}, where: "key = 'email.smtp'"},
+	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"key_encrypted"}, where: "key = 'ai.platform'"},
 	leakedSecret{},
 	secretStore{},
 	templateSignature{},

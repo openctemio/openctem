@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTenant } from '@/context/tenant-provider'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { useThreatIntelStats, enrichCVE } from '@/features/threat-intel/hooks'
 import {
@@ -38,6 +39,7 @@ import { SafeExternalLink } from '@/components/safe-external-link'
 const TABS = ['overview', 'actors', 'lookup', 'sync']
 
 export default function ThreatIntelPage() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id || null
 
@@ -61,10 +63,7 @@ export default function ThreatIntelPage() {
 
   return (
     <Main>
-      <PageHeader
-        title="Threat intelligence"
-        description="Exploit likelihood (EPSS), known-exploited CVEs (CISA KEV) and tracked threat actors."
-      >
+      <PageHeader title={t('threatIntel.title')} description={t('threatIntel.description')}>
         <CompactSyncStatus statuses={syncStatuses} />
         <Button variant="outline" size="sm" onClick={handleRefreshAll} disabled={isLoading}>
           {isLoading ? (
@@ -72,17 +71,17 @@ export default function ThreatIntelPage() {
           ) : (
             <RefreshCw className="h-4 w-4 sm:me-2" />
           )}
-          <span className="sr-only sm:not-sr-only">Refresh</span>
+          <span className="sr-only sm:not-sr-only">{t('threatIntel.refresh')}</span>
         </Button>
       </PageHeader>
 
       {/* The active tab lives in the URL (?tab=) so each view can be linked. */}
       <Tabs value={activeTab} onValueChange={setTab} className="mt-4">
         <TabsList>
-          <TabsTrigger value="overview">Threat landscape</TabsTrigger>
-          <TabsTrigger value="actors">Threat actors</TabsTrigger>
-          <TabsTrigger value="lookup">CVE lookup</TabsTrigger>
-          <TabsTrigger value="sync">Sync status</TabsTrigger>
+          <TabsTrigger value="overview">{t('threatIntel.tabs.overview')}</TabsTrigger>
+          <TabsTrigger value="actors">{t('threatIntel.tabs.actors')}</TabsTrigger>
+          <TabsTrigger value="lookup">{t('threatIntel.tabs.lookup')}</TabsTrigger>
+          <TabsTrigger value="sync">{t('threatIntel.tabs.sync')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-5 space-y-5">
@@ -95,18 +94,20 @@ export default function ThreatIntelPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <InfoCard
-              title="What is EPSS?"
+              title={t('threatIntel.info.epssTitle')}
               icon={TrendingUp}
-              description="The Exploit Prediction Scoring System (EPSS) provides a probability score (0-1) indicating the likelihood that a vulnerability will be exploited in the next 30 days."
-              links={[{ label: 'FIRST EPSS', url: 'https://www.first.org/epss/' }]}
+              description={t('threatIntel.info.epssDescription')}
+              links={[
+                { label: t('threatIntel.info.epssLink'), url: 'https://www.first.org/epss/' },
+              ]}
             />
             <InfoCard
-              title="What is CISA KEV?"
+              title={t('threatIntel.info.kevTitle')}
               icon={AlertOctagon}
-              description="The CISA Known Exploited Vulnerabilities (KEV) catalog lists vulnerabilities that are being actively exploited in the wild and require immediate remediation attention."
+              description={t('threatIntel.info.kevDescription')}
               links={[
                 {
-                  label: 'CISA KEV catalog',
+                  label: t('threatIntel.info.kevLink'),
                   url: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog',
                 },
               ]}
@@ -168,6 +169,7 @@ function InfoCard({ title, icon: Icon, description, links }: InfoCardProps) {
 }
 
 function CVELookup() {
+  const { t } = useTranslation()
   const [cveId, setCveId] = useState('')
   const [isLookingUp, setIsLookingUp] = useState(false)
   const [result, setResult] = useState<CVEEnrichment | null>(null)
@@ -175,14 +177,14 @@ function CVELookup() {
 
   const handleLookup = async () => {
     if (!cveId.trim()) {
-      toast.error('Please enter a CVE ID')
+      toast.error(t('threatIntel.lookup.enterId'))
       return
     }
 
     // Validate CVE format
     const cveRegex = /^CVE-\d{4}-\d{4,}$/i
     if (!cveRegex.test(cveId.trim())) {
-      toast.error('Invalid CVE format. Expected: CVE-YYYY-NNNNN')
+      toast.error(t('threatIntel.lookup.invalidFormat'))
       return
     }
 
@@ -194,7 +196,7 @@ function CVELookup() {
       const enrichment = await enrichCVE(cveId.trim().toUpperCase())
       setResult(enrichment)
     } catch (err) {
-      setError('CVE not found or enrichment data unavailable')
+      setError(t('threatIntel.lookup.notFound'))
       console.error(err)
     } finally {
       setIsLookingUp(false)
@@ -206,16 +208,16 @@ function CVELookup() {
       {/* Search Input */}
       <Card>
         <CardHeader>
-          <CardTitle>CVE lookup</CardTitle>
-          <CardDescription>Look up the EPSS score and KEV status of any CVE.</CardDescription>
+          <CardTitle>{t('threatIntel.lookup.title')}</CardTitle>
+          <CardDescription>{t('threatIntel.lookup.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-3">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="CVE ID, e.g. CVE-2021-44228"
-                aria-label="CVE ID"
+                placeholder={t('threatIntel.lookup.placeholder')}
+                aria-label={t('threatIntel.lookup.idLabel')}
                 value={cveId}
                 onChange={(e) => setCveId(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
@@ -228,7 +230,7 @@ function CVELookup() {
               ) : (
                 <Search className="me-2 h-4 w-4" />
               )}
-              Lookup
+              {t('threatIntel.lookup.button')}
             </Button>
           </div>
         </CardContent>
@@ -238,12 +240,12 @@ function CVELookup() {
       {error && (
         <Alert variant="destructive">
           <Info />
-          <AlertTitle>Lookup failed</AlertTitle>
+          <AlertTitle>{t('threatIntel.lookup.failed')}</AlertTitle>
           <AlertDescription>
             <p>{error}</p>
             <Button variant="outline" size="sm" className="mt-2" onClick={handleLookup}>
               <RefreshCw className="me-2 h-4 w-4" />
-              Retry
+              {t('threatIntel.lookup.retry')}
             </Button>
           </AlertDescription>
         </Alert>
@@ -283,7 +285,9 @@ function CVELookup() {
                 </div>
               </div>
               <CardDescription>
-                Enriched {new Date(result.enriched_at).toLocaleString()}
+                {t('threatIntel.lookup.enriched', undefined, {
+                  time: new Date(result.enriched_at).toLocaleString(),
+                })}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -294,34 +298,42 @@ function CVELookup() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                  EPSS score
+                  {t('threatIntel.lookup.epssScore')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <div>
-                    <p className="text-sm text-muted-foreground">Score</p>
+                    <p className="text-sm text-muted-foreground">{t('threatIntel.lookup.score')}</p>
                     <p className="text-2xl font-semibold tabular-nums">
                       {formatEpssScore(result.epss.score, 2)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Probability of exploitation in next 30 days
+                      {t('threatIntel.lookup.scoreHint')}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Percentile</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t('threatIntel.lookup.percentile')}
+                    </p>
                     <p className="text-2xl font-semibold tabular-nums">
                       {formatEpssPercentile(result.epss.percentile)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatEpssTopPercent(result.epss.percentile)} of all CVEs
+                      {t('threatIntel.lookup.percentileHint', undefined, {
+                        top: formatEpssTopPercent(result.epss.percentile),
+                      })}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Model version</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t('threatIntel.lookup.modelVersion')}
+                    </p>
                     <p className="text-lg font-medium">{result.epss.model_version}</p>
                     <p className="text-xs text-muted-foreground">
-                      Score date: {new Date(result.epss.score_date).toLocaleDateString()}
+                      {t('threatIntel.lookup.scoreDate', undefined, {
+                        date: new Date(result.epss.score_date).toLocaleDateString(),
+                      })}
                     </p>
                   </div>
                 </div>
@@ -336,7 +348,7 @@ function CVELookup() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <AlertOctagon className="h-4 w-4 text-muted-foreground" />
-                  CISA KEV entry
+                  {t('threatIntel.lookup.kevEntry')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -352,21 +364,23 @@ function CVELookup() {
 
                 <div className="space-y-3 border-t pt-4">
                   <div>
-                    <p className="text-sm font-medium">Vendor / product</p>
+                    <p className="text-sm font-medium">{t('threatIntel.lookup.vendorProduct')}</p>
                     <p className="text-sm text-muted-foreground">
                       {result.kev.vendor_project} - {result.kev.product}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Vulnerability name</p>
+                    <p className="text-sm font-medium">{t('threatIntel.lookup.vulnName')}</p>
                     <p className="text-sm text-muted-foreground">{result.kev.vulnerability_name}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Description</p>
+                    <p className="text-sm font-medium">
+                      {t('threatIntel.lookup.descriptionLabel')}
+                    </p>
                     <p className="text-sm text-muted-foreground">{result.kev.short_description}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Required action</p>
+                    <p className="text-sm font-medium">{t('threatIntel.lookup.requiredAction')}</p>
                     <p className="text-sm text-muted-foreground">{result.kev.required_action}</p>
                   </div>
                 </div>
@@ -377,7 +391,7 @@ function CVELookup() {
               <CardContent>
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
                   <Shield className="h-5 w-5" />
-                  <span>This CVE is not in the CISA KEV catalog</span>
+                  <span>{t('threatIntel.lookup.notInKev')}</span>
                 </div>
               </CardContent>
             </Card>
@@ -385,7 +399,7 @@ function CVELookup() {
 
           {/* No Data State */}
           {!result.epss && !result.kev && (
-            <EmptyState icon={Info} title="No threat intelligence data available for this CVE" />
+            <EmptyState icon={Info} title={t('threatIntel.lookup.noData')} />
           )}
         </div>
       )}

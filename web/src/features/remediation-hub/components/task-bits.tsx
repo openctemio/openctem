@@ -4,23 +4,26 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { TonePill } from '@/features/shared/components/tone-pill'
+import { StatusChip } from '@/features/shared/components/status-chip'
+import Link from '@/components/link'
 import { cn } from '@/lib/utils'
+import { useRemediationCampaign } from '@/features/remediation/api/use-remediation-campaigns'
 import type { RemediationTask, TaskState } from '../api/types'
-import { DEADLINE_TONE, STATE_TONE, deadlineStatus, progressParts } from '../lib/hub'
+import { DEADLINE_TONE, deadlineStatus, progressParts } from '../lib/hub'
 
 export function useTaskStateLabel() {
   const { t } = useTranslation()
   return (s: TaskState) => t(`remediationHub.state.${s}`)
 }
 
+/** A task state from the one status registry (lib/status-tones.ts). */
 export function TaskStatePill({ state, className }: { state: TaskState; className?: string }) {
   const { t } = useTranslation()
   return (
-    <TonePill
-      tone={STATE_TONE[state]}
-      label={t(`remediationHub.state.${state}`)}
+    <StatusChip
+      domain="remediationTask"
+      value={state}
       title={t(`remediationHub.stateHint.${state}`)}
-      state={state}
       className={className}
     />
   )
@@ -89,5 +92,20 @@ export function TaskProgress({
         <span className="bg-info" style={{ width: pct(p.claimed) }} />
       </div>
     </div>
+  )
+}
+
+/** The campaign a task belongs to, as a link (its name once it loads). */
+export function TaskCampaignLink({ campaignId }: { campaignId: string }) {
+  const { t } = useTranslation()
+  const { data } = useRemediationCampaign(campaignId)
+  return (
+    <p className="mt-1 text-xs">
+      <Link href={`/remediation/campaigns/${campaignId}`} className="underline">
+        {data?.name
+          ? t('remediationCampaigns.taskLink.named', undefined, { name: data.name })
+          : t('remediationCampaigns.taskLink.unnamed')}
+      </Link>
+    </p>
   )
 }
