@@ -79,6 +79,8 @@ func TestFindingAssign_AssigneeMustBeActiveMember_DB(t *testing.T) {
 
 	asset := shared.NewID().String()
 	exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, 'fam.example.com', 'domain', 'public', 'high')`, asset, tenantA)
+	// The member can read the asset (an assignee must be able to read the finding).
+	exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`, member, tenantA, asset)
 	finding, legacy := shared.NewID().String(), shared.NewID().String()
 	for _, f := range []string{finding, legacy} {
 		exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, severity, message, fingerprint)

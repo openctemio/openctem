@@ -20,11 +20,11 @@ type fakeRetentionStore struct {
 	noOp, orphaned int64
 	purgeCalls     int
 	purgeErr       error
-	countResult int64
-	countErr    error
-	deleteCalls int
-	deleteErr   error
-	lastCutoff  time.Time
+	countResult    int64
+	countErr       error
+	deleteCalls    int
+	deleteErr      error
+	lastCutoff     time.Time
 }
 
 func (f *fakeRetentionStore) CountOlderThan(_ context.Context, before time.Time) (int64, error) {

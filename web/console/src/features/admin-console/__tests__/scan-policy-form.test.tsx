@@ -42,7 +42,7 @@ describe('ScanPolicyForm', () => {
     await user.click(screen.getByLabelText(/^Strict/))
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await user.type(await screen.findByLabelText('Reason'), 'regulated customer')
-    await user.type(screen.getByLabelText('Code from your authenticator'), '123456')
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith('strict', 'regulated customer', '123456')
@@ -66,7 +66,7 @@ describe('ScanPolicyForm', () => {
     await user.click(screen.getByLabelText(/Follow the platform default/))
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await user.type(await screen.findByLabelText('Reason'), 'back to default')
-    await user.type(screen.getByLabelText('Code from your authenticator'), '654321')
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '654321')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(null, 'back to default', '654321'))
   })

@@ -73,7 +73,7 @@ export function PendingTaskException({ batch }: { batch: ApprovalBatch }) {
  * is the task page's own rule (open task, every finding visible, remediation
  * write); the request also needs findings:write.
  */
-export function useTaskException(taskId: string, writable: boolean) {
+export function useTaskException(taskId: string, taskVersion: number, writable: boolean) {
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const canRead = hasPermission(Permission.FindingsRead)
@@ -94,6 +94,7 @@ export function useTaskException(taskId: string, writable: boolean) {
   const dialog = canRequest ? (
     <GroupExceptionDialog
       taskId={taskId}
+      taskVersion={taskVersion}
       open={open}
       onOpenChange={setOpen}
       onCreated={() => void mutate()}

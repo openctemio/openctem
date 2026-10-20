@@ -320,5 +320,11 @@
   "scope.strip.waiting": "Waiting for approval",
   "scope.strip.waitingHint": "authorize nothing until approved",
   "scope.tabs.entries": "Entries",
-  "scope.tabs.exclusions": "Exclusions"
+  "scope.tabs.exclusions": "Exclusions",
+  "scope.selfApprove.title": "Approve your own entry",
+  "scope.selfApprove.description": "Nobody else in your organization can approve {pattern}. As an owner you may approve it yourself. This is recorded in the audit log and every administrator is told.",
+  "scope.selfApprove.reason": "Why may it take effect without a second person?",
+  "scope.selfApprove.submit": "Approve",
+  "scope.selfApprove.done": "{pattern} is in effect",
+  "scope.selfApprove.failed": "Could not approve the entry."
 }

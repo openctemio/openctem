@@ -15,6 +15,7 @@ package actscope
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -28,7 +29,17 @@ import (
 // (*datascope.Enforcer).
 type ActEnforcer interface {
 	CanActOnAssets(ctx context.Context, tenantID shared.ID, fallbackUser *shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, bool, error)
+	// HasActor reports whether the context carries a user the check can act
+	// as: without one (and without a fallback user) CanActOnAssets would
+	// answer "the system, unrestricted".
+	HasActor(ctx context.Context) bool
 }
+
+// ErrActorRequired is returned when a check that must be made for a person
+// has no person: no user in the context and no fallback user. Nothing may be
+// dispatched then; a missing actor never means "unrestricted". A platform
+// policy asks for the system authority explicitly (Input.System).
+var ErrActorRequired = errors.New("act-scope check has no actor: nothing dispatched")
 
 // AssetNames finds the tenant's assets by name (*postgres.AssetRepository).
 type AssetNames interface {
@@ -52,6 +63,13 @@ type Input struct {
 	FallbackUser *shared.ID
 	Targets      []string    // free-text targets, as typed
 	AssetIDs     []shared.ID // inventory assets (asset-group members)
+	// System is the explicit authority of a platform policy (continuous
+	// coverage, enrichment): no member's act scope applies, the tenant's
+	// scope entries still do. It excludes FallbackUser.
+	System bool
+	// RequireActor refuses the check when it has neither a user in the
+	// context, a FallbackUser nor System, instead of acting as the system.
+	RequireActor bool
 }
 
 // Decision lists what the actor may not scan, with the reason.
@@ -146,6 +164,12 @@ func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
 	if in.TenantID.IsZero() {
 		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
+	if in.System && in.FallbackUser != nil {
+		return nil, fmt.Errorf("%w: a system check names no user", shared.ErrValidation)
+	}
+	if in.RequireActor && !in.System && in.FallbackUser == nil && !c.enforcer.HasActor(ctx) {
+		return nil, ErrActorRequired
+	}
 	out := &Decision{RefusedTargets: map[string]string{}, RefusedAssets: map[shared.ID]bool{}}
 
 	// Free-text targets that name an inventory asset are checked as that asset.
@@ -158,9 +182,11 @@ func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
 	for _, id := range byTarget {
 		ids = append(ids, id)
 	}
-	canAct, unrestricted, err := c.enforcer.CanActOnAssets(ctx, in.TenantID, in.FallbackUser, ids)
-	if err != nil {
-		return nil, err
+	canAct, unrestricted := func(shared.ID) bool { return true }, true
+	if !in.System {
+		if canAct, unrestricted, err = c.enforcer.CanActOnAssets(ctx, in.TenantID, in.FallbackUser, ids); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, id := range in.AssetIDs {
