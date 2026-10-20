@@ -143,6 +143,8 @@ var stepUpRoutes = []string{
 	"PUT /api/v1/programs/{id}/org-channels",
 	// Approving a custom template version for sensors (RFC-040 §11.5).
 	"POST /api/v1/scanner-templates/{id}/approve",
+	// Approving an intrusive retest check of a finding.
+	"POST /api/v1/findings/{id}/retest-check/approve",
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
@@ -226,6 +228,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
 			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())
+			registerFindingRetestCheckRoutes(router, &handler.FindingRetestCheckHandler{}, auth, nil)
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			registerFindingLifecycleRoutes(router, &handler.FindingLifecycleHandler{}, auth, nil)

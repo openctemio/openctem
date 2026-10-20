@@ -102,6 +102,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
+	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
@@ -223,6 +224,22 @@ func (v validationSensorAvailability) HasRetestSensor(ctx context.Context, tenan
 		return false, nil
 	}
 	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, []string{validation.RetestCapability(tool)}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(sensors) > 0, nil
+}
+
+// HasRetestTemplatesSensor reports whether a sensor of the tenant is online,
+// with capacity, whose retest handler for tool runs delivered templates
+// (both "retest:<tool>" and "retest-templates:<tool>"), what a retest with
+// a custom check requires.
+func (v validationSensorAvailability) HasRetestTemplatesSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
+	if !validation.ValidRetestTool(tool) {
+		return false, nil
+	}
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID,
+		[]string{validation.RetestCapability(tool), validation.RetestTemplatesCapability(tool)}, "")
 	if err != nil {
 		return false, err
 	}
@@ -819,6 +836,8 @@ type Services struct {
 	ValidationEvidence *validation.EvidenceIngestService
 	// Retest runs continuous retests (RFC-039): Retest now, settle, auto ticks.
 	Retest *retestapp.Service
+	// RetestCheck manages findings' custom retest checks.
+	RetestCheck *retestcheckapp.Service
 	// Evidence: masked finding evidence, encrypted secret values, audited reveal.
 	Evidence *evidenceapp.Service
 
@@ -2299,6 +2318,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Scope.SetLedgerTemplates(s.ScannerTemplate)
 	}
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
+
+	// A finding's custom retest check: content in the template library
+	// above, run by the retest service.
+	s.RetestCheck = retestcheckapp.NewService(repos.FindingRetestCheck, repos.Finding,
+		retestcheckapp.LibraryTemplates{Svc: s.ScannerTemplate}, s.Audit, log)
+	s.Retest.SetCheckSource(retestcheckapp.RetestSource{Svc: s.RetestCheck})
 
 	// Initialize credential service for template sources
 	// Decode hex key to bytes (64 hex chars -> 32 bytes for AES-256)
