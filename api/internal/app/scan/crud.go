@@ -688,6 +688,9 @@ type ListScansInput struct {
 	// IncludeAdHoc also lists unsaved quick scans (Scan.AdHoc); by default the
 	// list holds saved configurations only.
 	IncludeAdHoc bool `json:"include_ad_hoc"`
+	// Origin narrows the list to people's scans ("user") or to the scans the
+	// platform manages ("system"); empty applies no origin filter.
+	Origin string `json:"origin" validate:"omitempty,oneof=user system"`
 	// Sort is one sort key, `field` or `-field` (scan.ListSortFields); an
 	// unknown field is a validation error.
 	Sort    string `json:"sort"`
@@ -707,11 +710,16 @@ func (s *Service) ListScans(ctx context.Context, input ListScansInput) (paginati
 		return pagination.Result[*scan.Scan]{}, err
 	}
 
+	origin := scan.Origin(input.Origin)
+	if !origin.Valid() {
+		return pagination.Result[*scan.Scan]{}, fmt.Errorf("%w: origin must be user or system", shared.ErrValidation)
+	}
 	filter := scan.Filter{
 		TenantID:     &tenantID,
 		Tags:         input.Tags,
 		Search:       input.Search,
 		ExcludeAdHoc: !input.IncludeAdHoc,
+		Origin:       origin,
 		Sort:         sort,
 	}
 
