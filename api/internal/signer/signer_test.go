@@ -473,3 +473,18 @@ func TestSigningLog_RefusalsAreBounded(t *testing.T) {
 	}
 	newService(t, dir, key, nil) // the log verifies
 }
+
+func TestWriteNewFile_RemovesPartialFileOnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signer.pem")
+	err := writeNewFile(path, []byte("data"), func(*os.File, []byte) error { return errors.New("disk full") })
+	if err == nil {
+		t.Fatal("write error swallowed")
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("partial key file left behind: %v", statErr)
+	}
+	// A retry is not blocked by the failed attempt.
+	if _, err := GenerateKey(path); err != nil {
+		t.Fatalf("retry after failed write: %v", err)
+	}
+}

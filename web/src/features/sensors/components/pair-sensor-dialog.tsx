@@ -367,10 +367,17 @@ function ExpectPanel({
   }
 
   const code = view.code ? formatPairingCode(view.code) : (created?.code ?? '')
+  // The job-signing root travels with the command (research/191 A-1): the
+  // sensor checks the platform's signer against it while pairing.
+  const root = view.job_signing_root ?? ''
+  const pairCommand = root
+    ? `SENSOR_JOB_SIGNING_ROOT=${root} openctemio-sensor pair ${code}`
+    : `openctemio-sensor pair ${code}`
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{t('sensors.pair.runOnHost')}</p>
-      <Snippet text={`openctemio-sensor pair ${code}`} label={t('sensors.pair.pairCommand')} />
+      <Snippet text={pairCommand} label={t('sensors.pair.pairCommand')} />
+      {root && <p className="text-xs text-muted-foreground">{t('sensors.pair.signingRootNote')}</p>}
       {expired ? (
         <p role="alert" className="text-sm text-destructive">
           {t('sensors.pair.expired')}

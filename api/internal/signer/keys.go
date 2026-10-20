@@ -69,20 +69,36 @@ func GenerateKey(path string) (ed25519.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400) // #nosec G304 -- operator-supplied path
-	if err != nil {
-		return nil, fmt.Errorf("signer key: %w", err)
-	}
-	if err := pem.Encode(f, &pem.Block{Type: pemTypePrivateKey, Bytes: der}); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	if err := f.Close(); err != nil {
+	data := pem.EncodeToMemory(&pem.Block{Type: pemTypePrivateKey, Bytes: der})
+	if err := writeNewFile(path, data, func(f *os.File, b []byte) error { _, err := f.Write(b); return err }); err != nil {
 		return nil, err
 	}
 	return pub, nil
+}
+
+// writeNewFile creates path (never overwriting) with mode 0400 and writes
+// data. A file left half-written would be refused by the loader yet block a
+// retry (the path exists), so on any failure after the create it is removed;
+// that is safe because O_EXCL means this call made it.
+func writeNewFile(path string, data []byte, write func(*os.File, []byte) error) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400) // #nosec G304 -- operator-supplied path
+	if err != nil {
+		return fmt.Errorf("signer key: %w", err)
+	}
+	fail := func(err error) error {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return fmt.Errorf("signer key: %w", err)
+	}
+	if err := write(f, data); err != nil {
+		return fail(err)
+	}
+	if err := f.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("signer key: %w", err)
+	}
+	return nil
 }

@@ -36,6 +36,9 @@ has web NEXT_PUBLIC_APP_URL yes; has web BACKEND_API_URL yes; has web LEGAL_PAGE
 has web HTTPS_PROXY no; has web OPENCTEM_HOSTNAME no
 has console ADMIN_API_URL yes; has console NEXT_PUBLIC_APP_URL yes; has console LEGAL_PAGES_ENABLED no
 has gateway OPENCTEM_HOSTNAME yes; has gateway OPENCTEM_CADDY_ADMIN yes; has gateway ACME_EMAIL yes; has gateway TLS_CERT_FILE yes
+SIGNER_KEY_FILE=/data/signer/keys/signer.pem; export SIGNER_KEY_FILE
+has signer SIGNER_KEY_FILE yes; has signer DB_PASSWORD no; has signer APP_ENCRYPTION_KEY no; has signer AUTH_JWT_SECRET no; has api SIGNER_KEY_FILE yes
+has gateway SIGNER_KEY_FILE no; has web SIGNER_KEY_FILE no
 has gateway XDG_DATA_HOME yes; has gateway HTTPS_PROXY yes; has gateway NODE_ENV no; has gateway BACKEND_API_URL no
 [ "$fail" = 0 ] && echo "child-env: OK"
 exit "$fail"

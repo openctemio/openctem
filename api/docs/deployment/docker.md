@@ -160,6 +160,7 @@ whose Caddy binds 443 through a file capability) `no-new-privileges`:
 | web console | 1001 `nextjs` | its own `NEXT_*`, cookie and legal settings, `BACKEND_API_URL` | its `.next/cache` |
 | platform console | 1003 `openctem-console` | the same, plus `ADMIN_API_URL` | its `.next/cache` |
 | gateway | 1004 `openctem-gateway` | `OPENCTEM_*`, TLS, ACME, proxies | `/data/gateway`, `/data/ca`, `/config` |
+| job signer | 1005 `openctem-signer` | `SIGNER_*` only | `/data/signer` (key and ledger, 0700: the API cannot read them; it reaches the signer through a group-shared socket) |
 
 The lists are in `deploy/allinone/child-env.sh`. No database password,
 `APP_ENCRYPTION_KEY`, `FINGERPRINT_KEY` or JWT secret reaches the web, console
