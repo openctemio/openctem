@@ -14,11 +14,13 @@ import (
 // are always computed over every asset; only what is shown to a restricted
 // member is narrowed:
 //
-//   - attack paths: TopAssets keeps only in-scope assets and the summary is
-//     recomputed over them (a viewer with dashboards:org:view keeps the
-//     organization summary, no rows);
-//   - exposure chains: a chain is shown only when every hop is in scope, so
-//     no out-of-scope asset name or id is revealed along the way;
+//   - attack paths: the in-scope assets are ranked and then the top 50 are
+//     taken (scope before cap); the summary is recomputed over them (a viewer
+//     with dashboards:org:view keeps the organization summary, no rows);
+//   - exposure chains: a chain is shown when its target is in scope, ranked
+//     and capped among those; a step the viewer may not see is returned as a
+//     hidden step with no id, name or type, so an owner learns that their
+//     asset is reachable without learning what lies in between;
 //   - the exposure-chain summary is recomputed from the chains kept; the
 //     attack-path summary likewise.
 //
@@ -48,17 +50,15 @@ func (s *SurfaceService) AttackPathScoresForCaller(ctx context.Context, tenantID
 	}
 	basis := res.basis
 	res.basis = nil
-	var all []AssetPathScore
+	// Scope first, then the top-50 cap: the ranked list of every asset is
+	// narrowed to the viewer's assets and only then cut, so a restricted member
+	// whose assets rank below 50 tenant-wide still sees them.
+	ranked := res.TopAssets
 	if basis != nil {
-		all = basis.all
+		ranked = basis.all
 	}
-	ids := make([]shared.ID, 0, len(all)+len(res.TopAssets))
-	for _, a := range all {
-		if id, perr := shared.IDFromString(a.AssetID); perr == nil {
-			ids = append(ids, id)
-		}
-	}
-	for _, a := range res.TopAssets {
+	ids := make([]shared.ID, 0, len(ranked))
+	for _, a := range ranked {
 		if id, perr := shared.IDFromString(a.AssetID); perr == nil {
 			ids = append(ids, id)
 		}
@@ -67,8 +67,11 @@ func (s *SurfaceService) AttackPathScoresForCaller(ctx context.Context, tenantID
 	if err != nil {
 		return nil, err
 	}
-	top := make([]AssetPathScore, 0, len(res.TopAssets))
-	for _, a := range res.TopAssets {
+	top := make([]AssetPathScore, 0, attackPathTopN)
+	for _, a := range ranked {
+		if len(top) == attackPathTopN {
+			break
+		}
 		if id, perr := shared.IDFromString(a.AssetID); perr == nil && keep(id) {
 			top = append(top, a)
 		}
@@ -130,39 +133,74 @@ func (s *SurfaceService) ExposureChainsForCaller(ctx context.Context, tenantID s
 		res.Chains = capChains(res.Chains)
 		return res, nil
 	}
-	var ids []shared.ID
+	// Scope first, then the cap, then the hops. A chain is shown when its
+	// TARGET is in scope (an owner learns that their asset is reachable); the
+	// steps on the way that the caller may not see are returned as hidden
+	// steps without id, name or type.
+	targetIDs := make([]shared.ID, 0, len(res.Chains))
 	for _, c := range res.Chains {
-		for _, h := range c.Hops {
-			if id, perr := shared.IDFromString(h.AssetID); perr == nil {
-				ids = append(ids, id)
-			}
+		if id, perr := shared.IDFromString(c.TargetID); perr == nil {
+			targetIDs = append(targetIDs, id)
 		}
 	}
-	keep, err := s.dataScope.Filter(ctx, scope, ids)
+	keepTarget, err := s.dataScope.Filter(ctx, scope, targetIDs)
 	if err != nil {
 		return nil, err
 	}
-	chains := make([]ExposureChain, 0, len(res.Chains))
-	for _, c := range res.Chains {
-		if chainInScope(c, keep) {
-			chains = append(chains, c)
-		}
-	}
-	res.Chains = chains
-	// The summary follows the rows the caller may see: counts over the whole
-	// graph would show how much exists outside their scope.
+	visible := make([]ExposureChain, 0, len(res.Chains))
 	entries, targets := map[string]struct{}{}, map[string]struct{}{}
-	for _, c := range chains {
+	for _, c := range res.Chains {
+		if id, perr := shared.IDFromString(c.TargetID); perr != nil || !keepTarget(id) || len(c.Hops) == 0 {
+			continue
+		}
+		visible = append(visible, c)
 		entries[c.EntryPointID] = struct{}{}
 		targets[c.TargetID] = struct{}{}
 	}
-	res.Summary.TotalChains = len(chains)
+	// The summary follows the rows the caller may see. The entry-point figure
+	// is a count of distinct entries behind those rows (no identity), like
+	// reachable_from on the attack-path scores.
+	res.Summary.TotalChains = len(visible)
 	res.Summary.EntryPoints = len(entries)
 	res.Summary.TargetsAtRisk = len(targets)
-	// The cap comes last: it bounds the rows shown, from the chains this
-	// caller may see, never the chains considered.
-	res.Chains = capChains(res.Chains)
+
+	shown := capChains(visible)
+	var hopIDs []shared.ID
+	for _, c := range shown {
+		for _, h := range c.Hops {
+			if id, perr := shared.IDFromString(h.AssetID); perr == nil {
+				hopIDs = append(hopIDs, id)
+			}
+		}
+	}
+	keepHop, err := s.dataScope.Filter(ctx, scope, hopIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ExposureChain, len(shown))
+	for i, c := range shown {
+		out[i] = redactChain(c, keepHop)
+	}
+	res.Chains = out
 	return res, nil
+}
+
+// redactChain returns c with every hop keep rejects replaced by a hidden step.
+// The hop slice is copied: the input shares its hops with the cache.
+func redactChain(c ExposureChain, keep func(shared.ID) bool) ExposureChain {
+	hops := make([]ChainHop, len(c.Hops))
+	for i, h := range c.Hops {
+		if id, err := shared.IDFromString(h.AssetID); err == nil && keep(id) {
+			hops[i] = h
+			continue
+		}
+		hops[i] = ChainHop{Hidden: true}
+	}
+	c.Hops = hops
+	if id, err := shared.IDFromString(c.EntryPointID); err != nil || !keep(id) {
+		c.EntryPointID, c.EntryPointName = "", ""
+	}
+	return c
 }
 
 // capChains keeps the highest-ranked exposureChainCap chains (the list is
@@ -172,17 +210,4 @@ func capChains(chains []ExposureChain) []ExposureChain {
 		return chains[:exposureChainCap]
 	}
 	return chains
-}
-
-func chainInScope(c ExposureChain, keep func(shared.ID) bool) bool {
-	if len(c.Hops) == 0 {
-		return false
-	}
-	for _, h := range c.Hops {
-		id, err := shared.IDFromString(h.AssetID)
-		if err != nil || !keep(id) {
-			return false
-		}
-	}
-	return true
 }
