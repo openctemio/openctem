@@ -20,7 +20,7 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import { ClipboardList, LayoutGrid, Table2 } from 'lucide-react'
+import { ClipboardList, LayoutGrid, SquareCode, Table2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
@@ -47,6 +47,7 @@ import {
   useTasks,
 } from '../api/use-remediation-hub'
 import { useOwnerNames } from '../api/use-owner-names'
+import { CreateTaskFromQueryDialog } from './create-task-from-query-dialog'
 import { apiMessage } from './suggestions-inbox'
 import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
 
@@ -69,6 +70,9 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
   const params = useSearchParams()
   const { hasPermission } = usePermissions()
   const canWrite = hasPermission(Permission.RemediationWrite)
+  // Creating a task from a query runs the query: findings read too.
+  const canQueryCreate = canWrite && hasPermission(Permission.FindingsRead)
+  const [queryOpen, setQueryOpen] = useState(false)
   const owners = useOwnerNames()
   const revalidate = useRevalidateHub()
   const view = (params.get('view') as TaskView) || defaultView
@@ -157,7 +161,9 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
         id: 'risk',
         header: t('remediationHub.tasks.columns.risk'),
         cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.counts.risk_points}</span>
+          <span className="font-mono text-sm" title={t('remediationHub.risk.explain')}>
+            {row.original.counts.risk_points}
+          </span>
         ),
       },
     ],
@@ -258,8 +264,15 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
               <LayoutGrid className="size-4" aria-hidden />
             </Button>
           </div>
+          {canQueryCreate && (
+            <Button size="sm" onClick={() => setQueryOpen(true)}>
+              <SquareCode className="size-4" aria-hidden />
+              {t('remediationQuery.create.entry')}
+            </Button>
+          )}
         </div>
       </div>
+      {canQueryCreate && <CreateTaskFromQueryDialog open={queryOpen} onOpenChange={setQueryOpen} />}
 
       {error ? (
         <ErrorState
@@ -380,10 +393,18 @@ function DraggableTask({
   )
 }
 
-export function TaskCard({ task, owner }: { task: RemediationTask; owner: string }) {
+export function TaskCard({
+  task,
+  owner,
+  className,
+}: {
+  task: RemediationTask
+  owner: string
+  className?: string
+}) {
   const { t } = useTranslation()
   return (
-    <div className="bg-card rounded-md border p-3 text-sm">
+    <div className={cn('bg-card rounded-md border p-3 text-sm', className)}>
       <Link href={`/remediation/tasks/${task.id}`} className="font-medium hover:underline">
         {task.title}
       </Link>

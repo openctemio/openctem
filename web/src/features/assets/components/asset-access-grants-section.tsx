@@ -1,9 +1,9 @@
 'use client'
 
 /**
- * Who can see this asset besides its groups: explicit per-user data-scope
- * grants. Being an owner gives no access (owner decision O1); a group
- * assignment or one of these grants does. Shown to team:groups:read, edited
+ * Who can see this asset besides its groups and its primary / secondary
+ * owners: explicit per-user data-scope grants (manual, migration, or the
+ * member who created the asset). Shown to team:groups:read, edited
  * with team:groups:write, the permissions that already manage data scope.
  */
 
@@ -199,6 +199,17 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
                       )}
                     >
                       {t('assets.grants.fromOwnership', 'From ownership')}
+                    </Badge>
+                  )}
+                  {g.source === 'creator' && (
+                    <Badge
+                      variant="outline"
+                      title={t(
+                        'assets.grants.creatorHint',
+                        'Added when this member created the asset'
+                      )}
+                    >
+                      {t('assets.grants.creator', 'Created it')}
                     </Badge>
                   )}
                 </div>

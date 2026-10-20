@@ -430,3 +430,22 @@ func TestPairing_CapsDenyExpiry_DB(t *testing.T) {
 		t.Fatalf("lookup lockout: %v", err)
 	}
 }
+
+// The view carries the job signer's key set root (research/191 A-1): the
+// pairing command passes it as SENSOR_JOB_SIGNING_ROOT, so the sensor checks
+// the platform's signer against it. Without a signer, no root.
+func TestPairing_ViewCarriesTheJobSigningRoot_DB(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	a := f.org("org-root")
+	exp, err := f.svc.Expect(ctx, a, sensorpairing.ExpectInput{Name: "no-signer"})
+	if err != nil || exp.JobSigningRoot != "" {
+		t.Fatalf("without a signer: %v %q", err, exp.JobSigningRoot)
+	}
+	const root = "SHA256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	f.svc.SetJobSigningRoot(func(context.Context) string { return root })
+	exp, err = f.svc.Expect(ctx, a, sensorpairing.ExpectInput{Name: "with-signer"})
+	if err != nil || exp.JobSigningRoot != root {
+		t.Fatalf("with a signer: %v %q", err, exp.JobSigningRoot)
+	}
+}

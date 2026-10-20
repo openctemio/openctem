@@ -208,7 +208,7 @@ export function PlatformIdPForm({
                 id="idp-name"
                 required
                 maxLength={100}
-                placeholder={t('admin.platformIdpForm.contosoEntraId', 'Contoso Entra ID')}
+                placeholder={t('admin.platformIdpForm.displayNamePlaceholder', 'Corporate SSO')}
                 value={form.displayName}
                 onChange={(e) => set('displayName', e.target.value)}
               />

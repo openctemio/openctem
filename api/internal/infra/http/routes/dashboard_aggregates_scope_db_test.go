@@ -3,6 +3,7 @@ package routes
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -12,13 +13,13 @@ import (
 // /dashboard/stats: weekly velocity, the executive summary totals and the data
 // quality scorecard count a restricted member's own scope; the figures kept
 // for the whole organization (risk trend history, program metrics) are not
-// shown to them without dashboard:aggregate. memberA is restricted to asset
+// shown to them without dashboards:org:view. memberA is restricted to asset
 // A1; the organization has two assets and two findings.
 func TestDashboardAggregates_FollowTheViewer_DB(t *testing.T) {
 	h := newDSHarness(t)
 	h.exec(`INSERT INTO risk_snapshots (tenant_id, snapshot_date, risk_score_avg, findings_open) VALUES ($1, CURRENT_DATE, 42, 2)`, h.tenant.String())
 	t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM risk_snapshots WHERE tenant_id = $1`, h.tenant.String()) })
-	aggPerms := append(append([]string{}, dsMemberPerms...), permission.DashboardAggregate.String())
+	aggPerms := append(append([]string{}, dsMemberPerms...), permission.DashboardsOrgView.String())
 
 	get := func(who string, path string) (int, string) {
 		switch who {
@@ -84,6 +85,11 @@ func TestDashboardAggregates_FollowTheViewer_DB(t *testing.T) {
 		status, body := get(who, "/api/v1/dashboard/program-metrics")
 		if wantStatus := map[bool]int{true: http.StatusForbidden, false: http.StatusOK}[who == "member"]; status != wantStatus {
 			t.Errorf("program metrics as %s = %d %.200s, want %d", who, status, body, wantStatus)
+		}
+		// The refusal names the grant, so the web shows "no access" with who
+		// can grant it rather than "module not enabled" or a raw error.
+		if who == "member" && (!strings.Contains(body, `"any_of"`) || !strings.Contains(body, "dashboards:org:view")) {
+			t.Errorf("program metrics refusal does not name the grant: %.300s", body)
 		}
 		if status, body := get(who, "/api/v1/dashboard/process-metrics"); status != http.StatusOK {
 			t.Errorf("process metrics as %s = %d %.200s", who, status, body)

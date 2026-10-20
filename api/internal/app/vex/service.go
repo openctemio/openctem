@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -47,6 +48,9 @@ const applyBatch = 1000
 // maxAuditedIDs bounds the finding ids an audit event lists.
 const maxAuditedIDs = 100
 
+// ErrVerifyRequired refuses writing a fixed statement without findings:verify.
+var ErrVerifyRequired = fmt.Errorf("%w: a fixed statement resolves findings and needs the findings:verify permission", shared.ErrForbidden)
+
 // ErrFullDataRequired refuses a statement for every asset from a member
 // restricted to part of the tenant.
 var ErrFullDataRequired = fmt.Errorf("%w: a statement for every asset needs access to every asset; choose an asset", shared.ErrForbidden)
@@ -58,7 +62,21 @@ type Service struct {
 	audit  AuditLogger
 	logger *logger.Logger
 	now    func() time.Time
+	// statusEffects is the shared side-effect path of a finding status
+	// change (ticket status push queued with the move, workflow event,
+	// assignee notification); nil = none.
+	statusEffects StatusEffects
 }
+
+// StatusEffects is the shared side-effect path of a finding status change
+// (finding.VulnerabilityService implements it).
+type StatusEffects interface {
+	TicketSyncContext(ctx context.Context, tenantID shared.ID, ids []shared.ID) context.Context
+	AfterStatusMoves(ctx context.Context, tenantID shared.ID, actorID string, moves []vulnerability.StatusMove) int
+}
+
+// SetStatusEffects wires the shared side effects of a finding status change.
+func (s *Service) SetStatusEffects(e StatusEffects) { s.statusEffects = e }
 
 // NewService creates the service. scope nil leaves reads and writes
 // tenant-wide (tests and internal callers).
@@ -110,6 +128,11 @@ type Input struct {
 	ImpactStatement string
 	ActionStatement string
 	ExpiresAt       *time.Time
+	// CanVerify is set by the caller's transport when the caller holds
+	// findings:verify. A fixed statement resolves findings tenant-wide with
+	// verification "vex_statement", which is a verification act, so it is
+	// refused without it. The zero value refuses.
+	CanVerify bool
 }
 
 // Patch is an edit of a statement's content; nil fields keep their value.
@@ -123,6 +146,8 @@ type Patch struct {
 	ActionStatement *string
 	ExpiresAt       *time.Time
 	ClearExpiry     bool
+	// CanVerify: see Input.CanVerify.
+	CanVerify bool
 }
 
 func (p *Patch) apply(st *vexdom.Statement) {
@@ -265,6 +290,9 @@ func (s *Service) Create(ctx context.Context, tenantID shared.ID, in Input, actx
 	if err := s.authorizeSubject(ctx, tenantID, assetID); err != nil {
 		return nil, ApplyResult{}, err
 	}
+	if vexdom.Status(in.Status) == vexdom.StatusFixed && !in.CanVerify {
+		return nil, ApplyResult{}, ErrVerifyRequired
+	}
 	productID, err := s.resolveProduct(ctx, tenantID, in)
 	if err != nil {
 		return nil, ApplyResult{}, err
@@ -313,6 +341,9 @@ func (s *Service) Update(ctx context.Context, tenantID shared.ID, id string, in 
 	if err := st.Normalize(s.now()); err != nil {
 		return nil, ApplyResult{}, err
 	}
+	if !in.CanVerify && fixedReach(&before, st) {
+		return nil, ApplyResult{}, ErrVerifyRequired
+	}
 	if err := s.repo.Update(ctx, st); err != nil {
 		return nil, ApplyResult{}, err
 	}
@@ -328,6 +359,27 @@ func (s *Service) Update(ctx context.Context, tenantID shared.ID, id string, in 
 		return st, res, fmt.Errorf("apply vex statement: %w", err)
 	}
 	return st, res, nil
+}
+
+// fixedReach reports whether an edit gives a fixed statement more reach than
+// the caller already approved: the statement becomes fixed, or it was fixed
+// and its versions, range or expiry change.
+func fixedReach(before, after *vexdom.Statement) bool {
+	if after.Status != vexdom.StatusFixed {
+		return false
+	}
+	if before.Status != vexdom.StatusFixed {
+		return true
+	}
+	return !slices.Equal(before.Versions, after.Versions) || before.VersionRange != after.VersionRange ||
+		!sameTime(before.ExpiresAt, after.ExpiresAt)
+}
+
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
 }
 
 // Delete removes a statement; the findings it closed reopen unless another
@@ -501,7 +553,19 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 			effects = append(effects, *e)
 		}
 	}
-	moved, requested, err := s.repo.WriteEffects(ctx, tenantID, effects)
+	writeCtx := ctx
+	if s.statusEffects != nil {
+		moving := make([]shared.ID, 0, len(effects))
+		for i := range effects {
+			if effects[i].Changes() {
+				moving = append(moving, effects[i].FindingID)
+			}
+		}
+		// The ticket status push of each linked finding the write moves is
+		// queued in the write's transaction.
+		writeCtx = s.statusEffects.TicketSyncContext(ctx, tenantID, moving)
+	}
+	moved, requested, err := s.repo.WriteEffects(writeCtx, tenantID, effects)
 	if err != nil {
 		return res, err
 	}
@@ -510,11 +574,14 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 	for _, id := range moved {
 		movedSet[id] = true
 	}
+	statusMoves := make([]vulnerability.StatusMove, 0, len(moved))
 	for i := range effects {
 		e := &effects[i]
 		if !movedSet[e.FindingID] {
 			continue
 		}
+		statusMoves = append(statusMoves, vulnerability.StatusMove{FindingID: e.FindingID,
+			Old: vulnerability.FindingStatus(e.OldStatus), New: vulnerability.FindingStatus(e.NewStatus)})
 		if e.NewStatus == string(vulnerability.FindingStatusFalsePositive) || e.NewStatus == string(vulnerability.FindingStatusResolved) {
 			res.Closed++
 		} else {
@@ -523,6 +590,10 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 		if len(res.FindingIDs) < maxAuditedIDs {
 			res.FindingIDs = append(res.FindingIDs, e.FindingID.String())
 		}
+	}
+	// The statement is the actor of these moves, not a person.
+	if s.statusEffects != nil && len(statusMoves) > 0 {
+		s.statusEffects.AfterStatusMoves(ctx, tenantID, "", statusMoves)
 	}
 	return res, nil
 }

@@ -48,7 +48,7 @@ vars:
     group: "Application"
     type: bool
     default: "false"
-    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
+    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
   - name: DEPLOYMENT_REGION
     component: api
     group: "Application"
@@ -630,12 +630,12 @@ vars:
     group: "Organizations and scope guardrails"
     type: string
     default: "disabled"
-    description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
+    description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (Console > Settings > E-mail) at start and verify every self-registered address; `open` in production also needs a CAPTCHA: until one is configured (Console > Settings > CAPTCHA, or the `CAPTCHA_TURNSTILE_*` keys), open sign-up stays closed at runtime. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
   - name: SIGNUP_CAPTCHA
     component: api
     group: "Organizations and scope guardrails"
     type: string
-    description: "Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`."
+    description: "Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: the API starts, but open sign-up in production stays closed until a CAPTCHA is configured (Console > Settings > CAPTCHA, or `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`)."
   - name: CAPTCHA_TURNSTILE_SECRET
     component: api
     group: "Organizations and scope guardrails"
@@ -1183,18 +1183,12 @@ vars:
     type: bool
     default: "true"
     description: "Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats."
-  - name: WORKER_HEALTH_CHECK_ENABLED
+  - name: SENSOR_LIVENESS_STORE
     component: api
     group: "Sensors"
-    type: bool
-    default: "false"
-    description: "Legacy sensor health checker. Keep it off: the sensor health controller owns liveness and the legacy checker marks every sensor offline right after an API restart."
-  - name: WORKER_HEALTH_CHECK_INTERVAL
-    component: api
-    group: "Sensors"
-    type: duration
-    default: "1m"
-    description: "Interval of the legacy checker."
+    type: string
+    default: "shadow"
+    description: "Where heartbeat liveness lives. `postgres`: every heartbeat updates the sensor row. `shadow`: as postgres, and Redis records every heartbeat too so `openctem_sensor_liveness_disagreements_total` compares the two. `redis`: Redis holds liveness; Postgres gets state changes and a batched checkpoint every 10 minutes. Switch to `redis` after a week of zero disagreements."
   - name: WORKER_HEARTBEAT_TIMEOUT
     component: api
     group: "Sensors"
@@ -1263,6 +1257,12 @@ vars:
     values: [auto, off]
     default: "auto"
     description: "`auto` serves sensor protocol v3 and picks its bindings itself (HTTPS always, gRPC once the sensor CA loads and its self-probe passes). `off` is the emergency switch: every sensor falls back to v2 at its next call."
+  - name: SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS
+    component: api
+    group: "Sensors"
+    type: bool
+    default: "false"
+    description: "Lets a production API start without `SIGNER_SOCKET`: sensor jobs are then not signed, and sensors paired from then on refuse to start. Development only."
   - name: SIGNER_SOCKET
     component: api
     group: "Sensors"
@@ -1593,7 +1593,7 @@ vars:
     component: api
     group: "Organizations"
     type: string
-    description: "Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{\"seats\":5,\"assets\":500,\"orgs_per_user\":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API."
+    description: "Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > Settings > Limits: a JSON object of limit keys, for example `{\"seats\":5,\"assets\":500,\"orgs_per_user\":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`SIGNUP_MODE=open`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API."
   - name: METRICS_PUBLIC
     component: api
     group: "Metrics"
@@ -1715,7 +1715,7 @@ vars:
     type: string
     default: "the origin of APP_URL"
     example: "https://admin.ctem.example.com"
-    description: "Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8444` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off."
+    description: "Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8443` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off."
   - name: ADMIN_SESSION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"
@@ -1782,6 +1782,12 @@ vars:
     type: int
     default: "60"
     description: "Completions per minute per API key. `0` or less turns the cap off."
+  - name: AI_RATE_LIMIT_TENANT_RPM
+    component: api
+    group: "AI triage"
+    type: int
+    default: "20"
+    description: "Each organization's share of the platform key's completions per minute (a bucket per organization in front of `AI_RATE_LIMIT_RPM`), so one organization cannot starve the others. `0` turns it off. Organizations with their own key have their own allowance."
   - name: AI_TEMPERATURE
     component: api
     group: "AI triage"
@@ -1798,26 +1804,20 @@ vars:
     component: api
     group: "AI triage"
     type: int
-    default: "0"
-    description: "Monthly token budget of an organization without its own."
+    default: "2000000"
+    description: "Monthly platform AI token budget of an organization, set on its month's budget row when the row is created. `0` means unlimited."
   - name: AI_TRIAGE_BUDGET_ENABLED
     component: api
     group: "AI triage"
     type: bool
-    default: "false"
-    description: "Enforce the per-organization monthly token budget."
+    default: "true"
+    description: "Enforce the per-organization monthly token budget for platform AI (organizations with their own key are not counted)."
   - name: AI_TRIAGE_BUDGET_STRICT
     component: api
     group: "AI triage"
     type: bool
     default: "false"
     description: "With the budget on: refuse triage when the budget store cannot be read (otherwise log and continue)."
-  - name: AI_TRIAGE_ENABLED
-    component: api
-    group: "AI triage"
-    type: bool
-    default: "false"
-    description: "Deprecated and ignored: availability follows the provider keys and the AI triage module."
   - name: AI_TRIAGE_RECOVERY_BATCH_SIZE
     component: api
     group: "AI triage"
@@ -1829,7 +1829,7 @@ vars:
     group: "AI triage"
     type: bool
     default: "true"
-    description: "Requeue triage jobs stuck in processing."
+    description: "Mark triage jobs stuck in pending or processing as failed (stuck_timeout). Transient provider errors are retried by the job queue before that."
   - name: AI_TRIAGE_RECOVERY_INTERVAL
     component: api
     group: "AI triage"
@@ -1841,7 +1841,7 @@ vars:
     group: "AI triage"
     type: duration
     default: "15m"
-    description: "Age after which a processing job counts as stuck."
+    description: "Age after which a pending or processing job counts as stuck."
   - name: ANTHROPIC_API_KEY
     component: api
     group: "AI triage"
@@ -1864,7 +1864,7 @@ vars:
     component: tool
     group: "Administration tools"
     type: string
-    description: "`bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (System > E-mail)."
+    description: "`bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (Console > Settings > E-mail)."
   - name: BOOTSTRAP_SMTP_PORT
     component: tool
     group: "Administration tools"
@@ -1886,6 +1886,69 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: sender address."
+  - name: RELAY_TLS_CERT
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    description: "`openctem-sensor-relay`: path to the relay's server certificate (PEM) presented to sensors. The relay does not start without it. See the sensor relay architecture note."
+  - name: RELAY_TLS_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay`: path to the private key (PEM) of `RELAY_TLS_CERT`. The relay does not start without it."
+  - name: CONNECTOR_RELAY_URL
+    component: tool
+    group: "Administration tools"
+    type: url
+    required: yes
+    description: "`openctem-sensor-relay connector`: https URL of the sensor relay the connector takes requests from."
+  - name: CONNECTOR_RELAY_PIN
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`openctem-sensor-relay connector`: hex SHA-256 of the relay's public key. When set, the relay's certificate is accepted only if its key matches."
+  - name: CONNECTOR_TLS_CERT
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    description: "`openctem-sensor-relay connector`: path to the connector's client certificate (PEM), pinned on the relay."
+  - name: CONNECTOR_TLS_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: path to the private key (PEM) of `CONNECTOR_TLS_CERT`."
+  - name: CONNECTOR_REALM
+    component: tool
+    group: "Administration tools"
+    type: string
+    required: yes
+    description: "`openctem-sensor-relay connector`: the realm whose requests the connector takes."
+  - name: CONNECTOR_INGEST_KEYS
+    component: tool
+    group: "Administration tools"
+    type: list
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: comma-separated paths of the ingest private key files that open the sensors' sealed requests."
+  - name: CONNECTOR_RESPONSE_KEY
+    component: tool
+    group: "Administration tools"
+    type: path
+    required: yes
+    secret: true
+    description: "`openctem-sensor-relay connector`: path to the Ed25519 key that signs the responses."
+  - name: CONNECTOR_API_URL
+    component: tool
+    group: "Administration tools"
+    type: url
+    required: yes
+    description: "`openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to."
   - name: BOOTSTRAP_SMTP_FROM_NAME
     component: tool
     group: "Administration tools"
@@ -1906,6 +1969,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: display name of the backup administrator."
+  - name: SUDO_USER
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`)."
   - name: ADMIN_EMAIL
     component: tool
     group: "Administration tools"
@@ -1964,6 +2032,12 @@ vars:
     group: "Administration tools"
     type: string
     description: "`rekey`: format of `REKEY_OLD_KEY` (`hex`, `base64` or `raw`). Unset: detected."
+  - name: SIGNER_GENERATE_KEY
+    component: tool
+    group: "Administration tools"
+    type: bool
+    default: "false"
+    description: "`openctem-signer serve`: `true` creates the signing key on first start when `SIGNER_KEY_FILE` does not exist (never replaces one) and logs its id. The default compose file sets it."
   - name: SIGNER_KEYSET_FILE
     component: tool
     group: "Administration tools"
@@ -1989,6 +2063,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: approvals the ledger requires for a tier-2 scope change."
+  - name: SIGNER_PUBLISH_DIR
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`openctem-signer serve`: a directory (a volume only the signer writes and the bundled sensor mounts read-only) where the signer writes its public key as `signer.pub` at every start, for the sensor to pin (`SENSOR_JOB_SIGNING_KEYS_FILE`). Unset: nothing is published."
   - name: SIGNER_SENSOR_BURST
     component: tool
     group: "Administration tools"
@@ -2176,7 +2255,13 @@ vars:
     group: "Gateway"
     type: string
     default: "/data"
-    description: "Caddy storage: certificates, ACME account, internal CA. Keep it on a volume."
+    description: "Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. The all-in-one image uses `/data/gateway` (it moves an older `/data/caddy` there on start)."
+  - name: OPENCTEM_CADDY_ADMIN
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "127.0.0.1:2019"
+    description: "Address of Caddy's admin API. The all-in-one image sets a unix socket only the gateway's uid can open (`unix/<dir>/admin.sock|0600`), because every process there shares one network namespace."
   - name: OPENCTEM_API_UPSTREAM
     component: gateway
     group: "Gateway"

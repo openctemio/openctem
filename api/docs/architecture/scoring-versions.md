@@ -31,6 +31,18 @@ EPSS only, so it does not depend on a scoring version.
 - one **tenant** row per change of the risk scoring settings, priority rules
   or SLA policies (`source = risk_settings | priority_rules | sla_policy`).
 
+Model history:
+
+| Kind | Version | Change |
+|---|---|---|
+| finding priority | 1 | P0 to P3 classification |
+| finding priority | 2 | Exploitation floor: a KEV or validated (reproduced) finding is at least P1 after controls and tenant rules; an AI triage verdict never changes the class; KEV no longer rewrites severity ([priority explainability](priority-explainability.md#platform-floors-priority-model-v2)) |
+
+Bumping a constant needs no migration: the start-up registration records the
+new platform row and every open finding is recomputed once, in the
+background, through the durable queue (forward only, deadlines only tighten,
+closed findings stay frozen).
+
 The row id is the version. The current version of a tenant for a kind is the
 newest platform or tenant row (`scoring_version(tenant, kind, model)`). A value
 whose stored version is missing or older is **stale**.
@@ -72,12 +84,20 @@ work on restart and was per replica.
 
 Rows are written by:
 
-- triggers: a new open finding, a reopen, a severity or asset change, an
-  asset's criticality, exposure or crown-jewel flag (or restore), business
-  unit and business service membership and criticality, and the settings
-  triggers above;
-- producers: compensating control changes, attribution decisions, AI triage
-  verdicts and the threat-intel refresh (`ControlChangePublisher`).
+- triggers: a new open finding, a reopen, a severity or asset change, a
+  change of a finding's CVE, catalog link, CVSS score, internet or network
+  accessibility, exposure vector, data exposure risk or compliance impact (an
+  open finding only; a write that leaves the value as it was queues nothing),
+  an asset's criticality, exposure, crown-jewel flag (or restore) or CIA impact
+  ratings, an owner added to, removed from or moved between assets (any owner
+  row; the worker re-reads owner presence, so the ownership floor follows at
+  once), business unit and business service membership and criticality, and
+  the settings triggers above. The columns the worker writes itself
+  (`is_reachable`, `reachable_from_count`, EPSS, KEV and the SLA columns) are
+  not watched. `PriorityContext` has a guard test that lists every input and
+  what requeues it, so a new input without a trigger fails the build;
+- producers: compensating control changes, attribution decisions and the
+  threat-intel refresh (`ControlChangePublisher`).
 
 The **finding-priority** worker (`internal/app/reclassify`, every 10 s) claims
 up to 200 assets per pass, at most 50 of one tenant, so one tenant's large
@@ -121,12 +141,16 @@ automatic recomputes only tighten:
 | SLA policy shortened | `min(old, now + new days)` |
 | SLA policy lengthened | kept; new findings use the new policy |
 | finding closed | kept as it was when closed |
+| analyst severity downgrade the approval policy allowed | `first_detected_at + SLA(new class)` when that is later: the one explicit extension, never counted from now ([severity override](finding-severity-override.md)) |
 
 A deadline that moves later by itself would hide overdue work, so an
 extension is an explicit decision (a regression or an expired acceptance
 starts a new clock with its own `sla_restarted` entry), never a side effect.
 The ingest upsert and the recompute writer (`SavePriorities`) apply the same
 rule (`LEAST` of the stored and incoming deadline for an open finding).
+`SavePriorities` writes the changed findings of a recompute page in one
+statement (`UPDATE ... FROM (VALUES ...)`, up to 1,000 rows), not one
+statement per finding.
 
 The database enforces it for every writer: the BEFORE UPDATE trigger
 `trg_findings_sla_deadline_guard` (migration `sla_deadline_guard`) keeps the stored deadline (and the SLA
@@ -151,7 +175,9 @@ Saving risk scoring settings in the console opens a review first:
 `POST /tenants/{tenant}/settings/risk-scoring/preview` (team admin,
 `settings:write`) runs a dry run over **every** live asset of the
 organization with the same engine and inputs the asset-risk-score worker uses
-after the change, and nothing is written:
+after the change, and nothing is written. Assets are read in id order, 500
+at a time (`asset.ForEachPage`, keyset paging), so the counts cover every
+asset however large the organization is:
 
 - assets: total, how many scores change (up, down), band moves (from, to,
   count) and the 50 largest changes. Counts cover the whole organization; an

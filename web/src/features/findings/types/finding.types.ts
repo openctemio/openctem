@@ -754,6 +754,8 @@ export interface Finding {
   verifiedAt?: string
   createdAt: string
   updatedAt: string
+  /** Version of the stored finding this copy was read at (If-Match on writes). */
+  rowVersion?: number
 
   // Extended: Risk Assessment
   isTriaged?: boolean
@@ -777,6 +779,12 @@ export interface Finding {
   isReachable?: boolean
   reachableFromCount?: number
   isInternetAccessible?: boolean
+
+  // Severity provenance: what the tools reported, the analyst's override
+  // (severity is the effective value) and a downgrade waiting for approval.
+  sourceSeverity?: string
+  severityOverride?: import('../api/finding-api.types').ApiSeverityOverride
+  pendingSeverityRequest?: import('../api/finding-api.types').ApiSeverityRequest
 
   // Extended: Security Context
   exposureVector?: string // network/local/adjacent/physical
@@ -1175,6 +1183,17 @@ export interface FindingSourceData {
     asOf?: string
   }
   sourceExtra: [string, string][]
+  /** The detection rule (template) as the content pack names it; never a sensor path. */
+  rule?: {
+    pack?: string
+    version?: string
+    path?: string
+    /** platform | tenant (the organization's own rules) */
+    source?: 'platform' | 'tenant'
+    template_id?: string
+    template_name?: string
+    template_version?: string
+  }
   locationKey?: string
 }
 

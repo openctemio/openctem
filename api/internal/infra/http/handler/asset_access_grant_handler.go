@@ -14,9 +14,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Explicit per-user data-scope grants on an asset. Being an owner of an asset
-// does not let a user see it; a group assignment or one of these grants does.
-// The routes are gated with team:groups:read / team:groups:write, the
+// Explicit per-user data-scope grants on an asset. A user sees an asset
+// through a group assignment, one of these grants, or by being its primary or
+// secondary owner (accesscontrol.UserOwnerGrantsScope). The routes are gated with team:groups:read / team:groups:write, the
 // permissions that already manage group data scope.
 
 // AssetAccessGrantResponse is one explicit access grant.
@@ -25,7 +25,7 @@ type AssetAccessGrantResponse struct {
 	UserID        string    `json:"user_id"`
 	UserName      string    `json:"user_name,omitempty"`
 	UserEmail     string    `json:"user_email,omitempty"`
-	Source        string    `json:"source" enums:"manual,migration"`
+	Source        string    `json:"source" enums:"manual,migration,creator"`
 	GrantedByName string    `json:"granted_by_name,omitempty"`
 	GrantedAt     time.Time `json:"granted_at"`
 }
@@ -77,7 +77,7 @@ func (h *AssetOwnerHandler) auditGrant(r *http.Request, action auditdom.Action, 
 
 // ListAccessGrants handles GET /api/v1/assets/{id}/access-grants
 // @Summary      List an asset's access grants
-// @Description  Lists the users given explicit data-scope access to the asset. Owners are not listed: being an owner gives no access.
+// @Description  Lists the users given explicit data-scope access to the asset (manual, migration, or creator: the member who created it). Primary and secondary owners also see the asset; they are listed under owners.
 // @Tags         Assets
 // @Produce      json
 // @Security     BearerAuth

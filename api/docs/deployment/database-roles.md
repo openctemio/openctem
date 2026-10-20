@@ -39,6 +39,7 @@ These were checked against the code and against the full test suite run as
 | `LISTEN`/`NOTIFY` | not used (job notifications use Redis pub/sub) | none |
 | Extensions `pgcrypto`, `pg_trgm`, `uuid-ossp` | migrations | created by the bootstrap script as the superuser; the migrations' `CREATE EXTENSION IF NOT EXISTS` is then a no-op |
 | Runtime DDL | none in the server. `CREATE INDEX CONCURRENTLY` and every `ALTER`/`CREATE` live in migrations | migrator only |
+| Owner-rights functions | two `SECURITY DEFINER` functions, each doing one fixed job as the schema owner: `admin_audit_prune` (administrators' audit retention) and `dash_asset_day_maintain` (no input: creates the coming monthly partitions of `dash_asset_day` and drops those past the 13-month window; names come from dates only). Both pin `search_path`; `EXECUTE` is revoked from `PUBLIC`, and the console role does not get `dash_asset_day_maintain` | `EXECUTE` on those functions only; the app still cannot create or drop anything itself |
 
 If a future change needs something the app does not have, the API fails with
 `permission denied` (SQLSTATE 42501). Move the DDL into a migration; grant a
@@ -106,7 +107,9 @@ session or credential, or swap the platform identity provider.
 The console's organization, member and settings screens run on the app pool
 (the same services as the tenant plane); only the repositories above use the
 console pool. `bootstrap-admin` and `rekey` connect as the schema owner
-(`DB_MIGRATE_USER`): they create or delete the sign-in account in `users` and
+(`DB_MIGRATE_USER`; in Compose run `docker compose run --rm bootstrap-admin ...`, a one-off
+container that receives the owner credentials from `.env`, never `exec api`, whose
+container must not hold them): they create or delete the sign-in account in `users` and
 re-encrypt every location, which the console role cannot do. The script reruns after the migrations (`db-grants` in compose), so a
 console table a release adds is moved before the API starts. If
 `DB_ADMIN_USER` is set but the script did not run with `admin_user`, the API
@@ -190,3 +193,10 @@ The live order is:
   - with `admin_user`: asserts the app reads `admin_users` and nothing more of
     the console's tables, and the console role writes them but cannot alter the
     admin audit log or the schema.
+
+## Upgrading to v0.11.0
+
+v0.11.0 adds the console table `admin_approvals` (the second-administrator
+approvals). An installation that uses `DB_ADMIN_USER` re-runs the grant script
+after upgrading so the console role can write it; the shipped Compose stack does
+this itself through `db-grants`.

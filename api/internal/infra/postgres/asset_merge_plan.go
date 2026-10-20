@@ -86,6 +86,10 @@ var assetMergeRefs = []mergeRef{
 	// same location is dropped.
 	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
+	// Emerging-threat alert assets (RFC-117): the kept asset's row in an
+	// alert wins; the next plan recomputes the alert from the kept asset.
+	{table: "threat_alert_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"alert_id"}}}},
 	// Detected technologies (RFC-112): the kept asset's row for a name wins.
 	{table: "asset_technologies", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"name_key"}}}},
@@ -201,6 +205,10 @@ var assetMergeSpecialRefs = map[string]string{
 	"relationship_suggestions.source_asset_id": "edge",
 	"relationship_suggestions.target_asset_id": "edge",
 	"pentest_campaigns.asset_ids":              "array: merged ids replaced by the kept id",
+	"dash_asset_state.asset_id":                "derived dashboard facts: the merged asset's are deleted and the kept asset is marked for a recompute",
+	"dash_asset_day.asset_id":                  "derived dashboard facts: the merged asset's are deleted and the kept asset is marked for a recompute",
+	"dash_asset_rank.asset_id":                 "derived dashboard facts: the merged asset's are deleted and the kept asset is marked for a recompute",
+	"dash_dirty_assets.asset_id":               "the merged asset's change marks are deleted; the kept asset is marked",
 	"asset_dedup_review.keep_asset_id":         "other pending reviews about a merged asset are dropped",
 	"asset_dedup_review.merge_asset_ids":       "other pending reviews about a merged asset are dropped",
 	"asset_attributions.asset_id":              "the kept asset keeps the most recent human decision of any merged asset; automatic records of merged assets are dropped (the moved evidence re-derives them)",
@@ -252,7 +260,28 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 			return err
 		}
 	}
-	return repointNonFKRefs(ctx, tx, tenantID, reviewID, keepID, mergeIDs)
+	if err := repointNonFKRefs(ctx, tx, tenantID, reviewID, keepID, mergeIDs); err != nil {
+		return err
+	}
+	return mergeDashboardFacts(ctx, tx, tenantID, keepID, mergeIDs)
+}
+
+// mergeDashboardFacts drops the merged assets' dashboard facts and change
+// marks (derived data, keyed by asset) and marks the kept asset, so the facts
+// loop recomputes it from the findings it received. Runs last: moving the
+// findings above marked the merged assets too.
+func mergeDashboardFacts(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	for _, table := range []string{"dash_asset_state", "dash_asset_day", "dash_asset_rank", "dash_dirty_assets"} {
+		//nolint:gosec // G201: table names come from the fixed list above.
+		q := fmt.Sprintf(`DELETE FROM %s WHERE tenant_id = $1 AND asset_id = ANY($2)`, table)
+		if _, err := tx.ExecContext(ctx, q, tenantID, pq.Array(mergeIDs)); err != nil {
+			return fmt.Errorf("merge dashboard facts (%s): %w", table, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT dash_mark_asset($1, $2, 1::smallint)`, tenantID, keepID); err != nil {
+		return fmt.Errorf("mark kept asset for dashboard facts: %w", err)
+	}
+	return nil
 }
 
 // checkMergeTenant refuses a merge whose assets are not all in the tenant.

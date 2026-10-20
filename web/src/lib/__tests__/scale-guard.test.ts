@@ -40,15 +40,7 @@ const NOT_A_SCALE = new Map<string, string>([
     'compliance control priority (pkg/domain/compliance Priority), no info level',
   ],
   [
-    'features/remediation/types/remediation.types.ts|critical,high,medium,low',
-    'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
-  ],
-  [
-    'features/remediation/components/link-findings-dialog.tsx|critical,high,medium,low',
-    'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
-  ],
-  [
-    'app/(dashboard)/(mobilization)/remediation/campaigns/[id]/page.tsx|critical,high,medium,low',
+    'features/remediation/api/use-remediation-campaigns.ts|critical,high,medium,low',
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],
   [
@@ -66,10 +58,6 @@ const NOT_A_SCALE = new Map<string, string>([
   [
     'features/attack-surface/components/easm-overview.tsx|critical,high,medium,low,info,none',
     'EASM exposure severity includes none (chk_exposures_severity); typed by ExposureSeverity',
-  ],
-  [
-    'features/scan-profiles/schemas/scan-profile-schema.ts|info,low,medium,high,critical',
-    'a scan tool minimum-severity threshold (the tool flag), least severe first by design',
   ],
   [
     'app/(dashboard)/settings/audit-log/page.tsx|info,low,medium,high,critical',

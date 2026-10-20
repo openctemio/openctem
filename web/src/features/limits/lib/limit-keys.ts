@@ -17,6 +17,7 @@ export const LIMIT_KEYS = [
   'lifecycle_schemes',
   'storage_mb',
   'orgs_per_user',
+  'dashboard_refresh_floor_minutes',
 ] as const
 export type LimitKey = (typeof LIMIT_KEYS)[number]
 
@@ -43,6 +44,7 @@ export const LIMIT_KEY_LABEL: Record<LimitKey, string> = {
   lifecycle_schemes: 'Finding lifecycles',
   storage_mb: 'Storage (MiB)',
   orgs_per_user: 'Organizations per person',
+  dashboard_refresh_floor_minutes: 'Dashboard refresh floor (minutes)',
 }
 
 export function isLimitKey(k: string | undefined): k is LimitKey {

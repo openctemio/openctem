@@ -1,5 +1,0 @@
-### Fixed: a running task is no longer taken back before the deadline its sensor was given
-
-- The platform re-queued a running scan task at twice its time budget even when its step allowed it more time (the step timeout, for example one hour), while the sensor was still working within that timeout. Each re-queue threw the task's progress away and counted a dispatch attempt, so a slow but healthy task (an HTTP probe over 71 hosts) was restarted three times and then failed with "Max dispatch attempts exceeded".
-- The overrun re-queue now waits for the deadline the sensor enforces: the step's timeout when the task carries one (at most 24 hours), else twice its time budget, plus the 5-minute grace. The stall rule (nothing moves within the stall window: the sensor is asked to stop and hand back what it finished) is unchanged and still catches a hung task.
-- Hand-backs that only mean "not now" (hosts busy on this sensor, no free slot) and a task waiting for its hosts never count a dispatch attempt; tests now pin this.

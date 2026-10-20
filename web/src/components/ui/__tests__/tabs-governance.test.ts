@@ -49,3 +49,21 @@ describe('tab counts', () => {
     expect(offenders).toEqual([])
   })
 })
+
+/**
+ * Governance: one tab row per screen. Tabs switch between different things
+ * (objects, sections); a status is a filter and goes in the list toolbar as a
+ * <SegmentedLens>. Two stacked tab rows read as two levels of navigation and
+ * made the approvals page hard to scan. This fails if a file renders more than
+ * one <TabsList>.
+ */
+describe('tab rows', () => {
+  it('a file renders at most one <TabsList>', () => {
+    const offenders: string[] = []
+    for (const file of tsxFiles(SRC)) {
+      const n = (readFileSync(file, 'utf8').match(/<TabsList\b/g) ?? []).length
+      if (n > 1) offenders.push(`${relative(SRC, file)}: ${n} tab rows`)
+    }
+    expect(offenders).toEqual([])
+  })
+})

@@ -132,6 +132,15 @@ tenant, kind, canonical status, closure reason or key;
 `trg_lifecycle_scheme_versions_immutable`) keeps a published or superseded
 lifecycle version unchanged.
 
+### row_version - Optimistic Concurrency
+
+Trigger function `findings_bump_row_version()` (trigger
+`trg_findings_row_version`, `BEFORE UPDATE`, migration 003113) adds one to
+`row_version` on every update of the row, whichever writer runs it. The
+full-row write (`FindingRepository.Update`) carries
+`AND row_version = <version read>` and is refused with a conflict when the row
+moved on. See [finding-row-version.md](finding-row-version.md).
+
 ## Finding decision review functions
 
 - `finding_severity_rank(sev text) RETURNS integer` - severity order (critical 4 ... else 0) for comparisons in triggers.
@@ -141,6 +150,49 @@ lifecycle version unchanged.
   `self_approved`). Called by the triggers `trg_findings_single_person_fp_review` (severity raised, KEV added)
   and `trg_finding_evidence_single_person_fp_review` (new evidence). See
   [finding status lifecycle](finding-status-lifecycle.md#false-positive-approval-level).
+
+## Dashboard fact functions
+
+Migration `002916_dashboard_fact_tables`; see [dashboards.md](dashboards.md#fact-layer).
+
+- `dash_recompute_asset(p_tenant uuid, p_asset uuid) RETURNS integer` - recomputes F1 (`dash_asset_state`),
+  F2 (`dash_asset_day`) and F3 (`dash_asset_rank`) of one asset from its findings, writing only differences;
+  returns the fact rows changed. The all-zero asset id means findings without an asset.
+- `dash_rebuild_tenant_batch(p_tenant uuid, p_after uuid, p_limit integer) RETURNS uuid` - one step of a
+  tenant rebuild; NULL after the final step. Go: `DashboardFactsRepository.RebuildTenant`.
+- `dash_mark_aged_assets(p_tenant uuid, p_since timestamptz, p_until timestamptz) RETURNS integer` - marks
+  assets whose open findings crossed an age band.
+- `dash_asset_day_ensure_partitions(from_month date, months integer) RETURNS integer` - creates F2 monthly
+  partitions.
+- Helpers shared by recompute and reads: `dash_finding_lens(text)`, `dash_sla_state(text)`,
+  `dash_age_band(text, timestamptz)`, `dash_fix_hours_bucket(double precision)`, `dash_history_start()`.
+- Trigger functions: `dash_mark_from_finding_rows`, `dash_mark_from_finding_update`, `dash_mark_from_asset_rows`,
+  `dash_mark_asset_update`, `dash_mark_from_member_rows`, and `dash_mark_asset(uuid, uuid, smallint)`.
+- Facts maintainer (migration `dashboard_facts_maintainer`, docs/architecture/dashboards.md "Facts maintainer"):
+  - `dash_process_dirty(p_tenant uuid, p_limit integer) RETURNS TABLE (claimed, assets, recomputed, changed,
+    oldest_marked_at)` - claims up to `p_limit` dirty rows of the tenant (`FOR UPDATE SKIP LOCKED`), recomputes
+    assets whose ORed reasons include 1 or 16, deletes exactly the claimed rows; one transaction.
+  - `dash_reconcile_asset(p_tenant uuid, p_asset uuid) RETURNS integer` - recomputes one asset and returns the fact
+    rows corrected without a pending mark or an unmarked age-band crossing (drift).
+  - `dash_fact_run_step(p_tenant uuid, p_limit integer) RETURNS TABLE (done, run_kind, step_drift)` - one resumable
+    step of a full run started by setting `dash_fact_status.run_kind`; Go: `DashboardFactsRepository.StartRun`,
+    `RunStep`.
+  - `dash_asset_day_maintain() RETURNS TABLE (created, dropped, moved)` - `SECURITY DEFINER`, no input: creates the
+    next 24 monthly partitions of `dash_asset_day`, drops those ending before `dash_history_start()`; not executable
+    by `PUBLIC`.
+
+## Campaign conversion functions
+
+Migration `remediation_campaigns_hold_tasks` (docs/architecture/remediation-campaigns.md, "Conversion"):
+
+- `remediation_campaign_filter_parse(p_filter jsonb) RETURNS (ok, scoped, fix_key, severities, sources, cve_ids,
+  finding_ids, asset_id, tool_name, search_pattern)` - a legacy campaign `finding_filter` parsed as the API parsed
+  it: `ok` = it parses, `scoped` = it tracks findings (a fix key, a CVE, a finding id, an asset or a tool).
+- `remediation_campaigns_to_tasks(p_report_unchanged boolean) RETURNS integer` - turns the open findings each
+  running campaign tracks into tasks of the campaign (one finding, one campaign; findings already in a task stay),
+  writes the audit rows, task and finding timeline entries and owner notices, and returns how many campaigns it
+  reported. Idempotent. Not called by Go: the migration runs it, the contract step runs it once more and drops both
+  functions.
 
 ## Best Practices
 

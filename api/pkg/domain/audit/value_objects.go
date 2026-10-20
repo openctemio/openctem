@@ -241,6 +241,24 @@ const (
 	// ActionFindingDuplicateMarked records a user folding a finding into the
 	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
 	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
+	// ActionFindingsRefingerprinted records one run of the refingerprint
+	// command re-keying a tenant's findings to the current identity recipe:
+	// counts re-keyed and merged, and the run id. One entry per tenant per run.
+	ActionFindingsRefingerprinted Action = "findings.refingerprinted"
+	// ActionAssetsMerged records one run of the repomerge command folding a
+	// tenant's duplicate repository assets together: counts, and the run id.
+	// One entry per tenant per run.
+	ActionAssetsMerged Action = "assets.merged"
+	// ActionFindingSeverityChanged records a change of a finding's effective
+	// severity by a person: an override, a restore of the reported severity,
+	// or an approved request (old, new, reported severity, reason).
+	ActionFindingSeverityChanged Action = "finding.severity_changed"
+	// ActionFindingSeverityRequested records a severity downgrade that waits
+	// for the approval the organization's policy asks for.
+	ActionFindingSeverityRequested Action = "finding.severity_requested"
+	// ActionFindingSeverityRequestClosed records a severity request rejected
+	// by an approver or withdrawn by its requester.
+	ActionFindingSeverityRequestClosed Action = "finding.severity_request_closed"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -517,6 +535,8 @@ const (
 	ActionReportScheduleCreated   Action = "report_schedule.created"
 	ActionReportScheduleActivated Action = "report_schedule.activated"
 	ActionReportScheduleDeleted   Action = "report_schedule.deleted"
+	// A paused schedule stops the digest its recipients rely on.
+	ActionReportScheduleDeactivated Action = "report_schedule.deactivated"
 	// EASM seeds (RFC-036 §6.3): what discovery expands from.
 	ActionEASMSeedCreated Action = "easm_seed.created"
 	ActionEASMSeedUpdated Action = "easm_seed.updated"
@@ -604,6 +624,9 @@ const (
 	ActionRemediationCampaignUpdated       Action = "remediation_campaign.updated"
 	ActionRemediationCampaignStatusChanged Action = "remediation_campaign.status_changed"
 	ActionRemediationCampaignDeleted       Action = "remediation_campaign.deleted"
+	// ActionRemediationCampaignMigrated: written once per campaign by the
+	// migration that turned what a campaign tracked into its tasks.
+	ActionRemediationCampaignMigrated Action = "remediation_campaign.migrated"
 
 	// Scan config actions
 	ActionScanConfigCreated   Action = "scan_config.created"
@@ -755,6 +778,8 @@ func (a Action) IsValid() bool {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingsRefingerprinted, ActionAssetsMerged,
+		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted,
@@ -802,7 +827,7 @@ func (a Action) IsValid() bool {
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
-		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
@@ -842,7 +867,7 @@ func (a Action) IsValid() bool {
 		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
 		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged,
 		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
-		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted, ActionRemediationCampaignMigrated,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
 		ActionAuditChainRebaselined, ActionAuditLogExported:
 		return true
@@ -881,7 +906,9 @@ func (a Action) Category() string {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingsRefingerprinted,
+		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
 		return "saved_view"
@@ -937,7 +964,7 @@ func (a Action) Category() string {
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused:
 		return "exposure"
-	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
+	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated:
 		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved:
@@ -961,7 +988,7 @@ func (a Action) Category() string {
 		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged:
 		return "pentest_campaign"
 	case ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
-		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted:
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted, ActionRemediationCampaignMigrated:
 		return "remediation_campaign"
 	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
@@ -1192,7 +1219,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
-		ActionAssetCreateMerged,
+		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
@@ -1214,7 +1241,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
-		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,

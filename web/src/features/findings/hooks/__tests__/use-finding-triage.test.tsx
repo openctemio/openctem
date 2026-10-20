@@ -17,10 +17,14 @@ import type { FindingUser } from '../../types'
 // The API mutation hooks: never actually called in these tests, but the hook
 // wires them up on mount.
 const updateStatus = vi.fn()
+const updateSeverity = vi.fn()
+const swrMutate = vi.fn()
+vi.mock('swr', () => ({ mutate: (...args: unknown[]) => swrMutate(...args) }))
 vi.mock('../../api/use-findings-api', () => ({
   invalidateFindingsCache: vi.fn(),
+  findingDetailKey: (id: string) => `/api/v1/findings/${id}`,
   useUpdateFindingStatusApi: () => ({ trigger: updateStatus, isMutating: false }),
-  useUpdateFindingSeverityApi: () => ({ trigger: vi.fn(), isMutating: false }),
+  useUpdateFindingSeverityApi: () => ({ trigger: updateSeverity, isMutating: false }),
   useAssignFindingApi: () => ({ trigger: vi.fn(), isMutating: false }),
   useUnassignFindingApi: () => ({ trigger: vi.fn(), isMutating: false }),
 }))
@@ -34,7 +38,7 @@ vi.mock('../../api/use-finding-lifecycles', () => ({
   subStatusName: (s: { name: string }) => s.name,
 }))
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 
 const user = (id: string, name = id): FindingUser => ({
   id,
@@ -226,5 +230,75 @@ describe('useFindingTriage — organization lifecycle moves', () => {
       resolution: undefined,
       sub_status_id: 'sub-wait',
     })
+  })
+})
+
+describe('useFindingTriage — severity', () => {
+  it('asks for a reason first, then writes the recomputed priority and SLA into the cache', async () => {
+    updateSeverity.mockResolvedValue({
+      id: 'f1',
+      severity: 'critical',
+      source_severity: 'high',
+      severity_override: { reason: 'exploited', overridden_at: '2026-10-18T00:00:00Z' },
+      priority_class: 'P1',
+      priority_class_reason: 'Critical severity, reachable',
+      sla_deadline: '2026-10-25T00:00:00Z',
+      sla_status: 'on_track',
+    })
+    const { result } = renderHook(() => useFindingTriage(target({ severity: 'high' })))
+    act(() => result.current.changeSeverity('critical'))
+    // Nothing is sent before the reason.
+    expect(updateSeverity).not.toHaveBeenCalled()
+    const { getByLabelText, getByRole } = render(<>{result.current.dialogs}</>)
+    fireEvent.change(getByLabelText(/Reason/), { target: { value: 'exploited' } })
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Change severity' }))
+    })
+    expect(updateSeverity).toHaveBeenCalledWith({ severity: 'critical', reason: 'exploited' })
+    expect(result.current.severity).toBe('critical')
+    // The cached finding takes the answer's priority, reason and deadline.
+    const [key, update] = swrMutate.mock.calls[0] as [string, (cur: object) => object]
+    expect(key).toBe('/api/v1/findings/f1')
+    expect(update({ id: 'f1', priority_class: 'P2', title: 'kept' })).toMatchObject({
+      title: 'kept',
+      priority_class: 'P1',
+      priority_class_reason: 'Critical severity, reachable',
+      sla_deadline: '2026-10-25T00:00:00Z',
+      source_severity: 'high',
+    })
+  })
+
+  it('keeps the severity when the downgrade waits for approval', async () => {
+    const { toast } = await import('sonner')
+    updateSeverity.mockResolvedValue({
+      id: 'f1',
+      severity: 'high',
+      pending_severity_request: { id: 'r1', requested_severity: 'low' },
+    })
+    const { result } = renderHook(() => useFindingTriage(target({ severity: 'high' })))
+    act(() => result.current.changeSeverity('low'))
+    const { getByLabelText, getByRole } = render(<>{result.current.dialogs}</>)
+    fireEvent.change(getByLabelText(/Reason/), { target: { value: 'test host only' } })
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Change severity' }))
+    })
+    expect(result.current.severity).toBe('high')
+    expect(toast.info).toHaveBeenCalled()
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('restores the source severity with a reason', async () => {
+    updateSeverity.mockResolvedValue({ id: 'f1', severity: 'medium' })
+    const { result } = renderHook(() =>
+      useFindingTriage(target({ severity: 'high', sourceSeverity: 'medium' }))
+    )
+    act(() => result.current.restoreSeverity())
+    const { getByLabelText, getByRole } = render(<>{result.current.dialogs}</>)
+    fireEvent.change(getByLabelText(/Reason/), { target: { value: 'scanner was right' } })
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Restore' }))
+    })
+    expect(updateSeverity).toHaveBeenCalledWith({ restore: true, reason: 'scanner was right' })
+    expect(result.current.severity).toBe('medium')
   })
 })

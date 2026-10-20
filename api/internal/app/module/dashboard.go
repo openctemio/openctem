@@ -171,7 +171,7 @@ const dashboardKFloor = 5
 
 // countScope decides whose data the dashboard counts through the
 // enforcer's ViewerScope: nil (the whole organization) for an unrestricted
-// viewer or a restricted viewer holding dashboard:aggregate, else the
+// viewer or a restricted viewer holding dashboards:org:view, else the
 // viewer's scope. aggregated is true in the second case (apply the k-floor).
 // An unwired enforcer fails closed (datascope.ErrNotConfigured).
 func (s *DashboardService) countScope(ctx context.Context, tenantID shared.ID) (scope *shared.DataScope, aggregated bool, err error) {
@@ -215,7 +215,7 @@ func NewDashboardService(repo DashboardStatsRepository, log *logger.Logger) *Das
 func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*DashboardStats, error) {
 	ctx = s.withFindingViewer(ctx)
 	// Owner decision D6: the counts follow the viewer. A restricted viewer
-	// counts their own scope, unless they hold dashboard:aggregate (then
+	// counts their own scope, unless they hold dashboards:org:view (then
 	// organization totals with the k-floor on breakdowns).
 	countScope, aggregated, err := s.countScope(ctx, tenantID)
 	if err != nil {
@@ -305,10 +305,10 @@ func (s *DashboardService) GetRiskVelocity(ctx context.Context, tenantID shared.
 }
 
 // ErrAggregateRequired: a number that is only kept for the whole organization
-// is shown to a restricted viewer only when they hold dashboard:aggregate.
-var ErrAggregateRequired = fmt.Errorf("%w: these figures cover the whole organization; they need the dashboard:aggregate permission or full data access", shared.ErrForbidden)
+// is shown to a restricted viewer only when they hold dashboards:org:view.
+var ErrAggregateRequired = fmt.Errorf("%w: these figures cover the whole organization; they need the dashboards:org:view permission or full data access", shared.ErrForbidden)
 
-// orgWideOnly refuses a restricted viewer without dashboard:aggregate: the
+// orgWideOnly refuses a restricted viewer without dashboards:org:view: the
 // figure cannot be computed for their scope.
 func (s *DashboardService) orgWideOnly(ctx context.Context, tenantID shared.ID) error {
 	scope, _, err := s.countScope(ctx, tenantID)
@@ -334,7 +334,7 @@ func (s *DashboardService) GetDataQualityScorecard(ctx context.Context, tenantID
 
 // GetRiskTrend returns risk snapshot time-series (RFC-005 Gap 4).
 // The snapshots are computed per organization, so a restricted viewer without
-// dashboard:aggregate gets an empty series, not the organization's history.
+// dashboards:org:view gets an empty series, not the organization's history.
 func (s *DashboardService) GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]RiskTrendPoint, error) {
 	if err := s.orgWideOnly(ctx, tenantID); err != nil {
 		if errors.Is(err, ErrAggregateRequired) {
@@ -388,6 +388,14 @@ type ExecutiveSummary struct {
 	P0Resolved       int `json:"p0_resolved_period"`
 	P1Open           int `json:"p1_open"`
 	P1Resolved       int `json:"p1_resolved_period"`
+	// P2Open and P3Open complete the live open counts by priority class
+	// (P0Open..P3Open), over the same population as FindingsTotal.
+	P2Open int `json:"p2_open"`
+	P3Open int `json:"p3_open"`
+	// Scoped is true when the figures are counted over the viewer's data
+	// scope rather than the whole organization. The stored trend history is
+	// organization-wide, so a scoped viewer has no trend to compare with.
+	Scoped bool `json:"scoped"`
 	// SLACompliancePct is the share of the open findings that carry an SLA and
 	// are not past it ("open within SLA"). Nil when no open finding carries
 	// an SLA: there is nothing to be compliant with, so the figure is "not
@@ -641,7 +649,7 @@ type OwnerAcceptanceMetric struct {
 
 // GetProgramMetrics returns the CTEM program metrics for a tenant.
 // The figures (cycles, control coverage, time to detect) are kept for the
-// whole organization, so a restricted viewer needs dashboard:aggregate.
+// whole organization, so a restricted viewer needs dashboards:org:view.
 func (s *DashboardService) GetProgramMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProgramMetrics, error) {
 	ctx = s.withFindingViewer(ctx)
 	if err := s.orgWideOnly(ctx, tenantID); err != nil {
@@ -663,7 +671,7 @@ func (s *DashboardService) GetProcessMetrics(ctx context.Context, tenantID share
 
 // GetExecutiveSummary returns executive-level metrics for a time period.
 // The totals follow the viewer (countScope): a restricted member without
-// dashboard:aggregate sees their own scope. TopRisks (finding titles and
+// dashboards:org:view sees their own scope. TopRisks (finding titles and
 // asset names) is row data and keeps only in-scope assets whatever the
 // aggregate permission.
 func (s *DashboardService) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error) {

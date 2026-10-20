@@ -27,6 +27,8 @@ type Repositories struct {
 	WebEndpoint             *postgres.WebEndpointRepository             // Web surface: endpoints under origin assets (RFC-056)
 	Software                *postgres.SoftwareRepository                // Software catalog and asset links (RFC-066)
 	CVECorpus               *postgres.CVECorpusRepository               // CVE corpus for inventory matching (RFC-066)
+	VulnEvent               *postgres.VulnEventRepository               // material vulnerability changes (RFC-117)
+	ThreatAlert             *postgres.ThreatAlertRepository             // emerging-threat alerts (RFC-117)
 	SoftwareMatch           *postgres.SoftwareMatchRepository           // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources   *postgres.AssetAttributeSourceRepository    // Per-source asset attribute values (RFC-069)
 	AssetFreshness          *postgres.AssetFreshnessRepository          // Last observation per attribute class (RFC-075)
@@ -36,6 +38,7 @@ type Repositories struct {
 	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository        // Names that resolve only through a wildcard (RFC-088 A4)
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
+	DashboardFacts          *postgres.DashboardFactsRepository          // Dashboard fact layer upkeep
 	APISpec                 *postgres.APISpecRepository                 // API descriptions of web origins (RFC-056)
 	AssetStateHistory       *postgres.AssetStateHistoryRepository       // CTEM: State change audit log
 	AssetRelationship       *postgres.AssetRelationshipRepository       // CTEM: Asset topology graph
@@ -49,6 +52,7 @@ type Repositories struct {
 	FindingComment   *postgres.FindingCommentRepository
 	CommentReaction  *postgres.CommentReactionRepository
 	FindingApproval  *postgres.FindingApprovalRepository
+	SeverityRequest  *postgres.SeverityRequestRepository
 	FindingActivity  *postgres.FindingActivityRepository
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
 	AITriageBudget   *postgres.AITriageBudgetRepository        // Per-tenant LLM token budget (RFC-008)
@@ -378,6 +382,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		WebEndpoint:             postgres.NewWebEndpointRepository(db),
 		Software:                postgres.NewSoftwareRepository(db),
 		CVECorpus:               postgres.NewCVECorpusRepository(db),
+		VulnEvent:               postgres.NewVulnEventRepository(db),
+		ThreatAlert:             postgres.NewThreatAlertRepository(db),
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
@@ -387,6 +393,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
+		DashboardFacts:          postgres.NewDashboardFactsRepository(db),
 		APISpec:                 postgres.NewAPISpecRepository(db),
 		AssetStateHistory:       postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:       postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
@@ -400,6 +407,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		FindingComment:   postgres.NewFindingCommentRepository(db),
 		CommentReaction:  postgres.NewCommentReactionRepository(db),
 		FindingApproval:  postgres.NewFindingApprovalRepository(db),
+		SeverityRequest:  postgres.NewSeverityRequestRepository(db),
 		FindingActivity:  postgres.NewFindingActivityRepository(db),
 		AITriage:         postgres.NewAITriageRepository(db),              // AI-powered vulnerability triage
 		AITriageBudget:   postgres.NewAITriageBudgetRepository(db),        // RFC-008 monthly LLM token budget

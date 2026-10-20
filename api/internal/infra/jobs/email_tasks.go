@@ -15,22 +15,10 @@ import (
 
 // Task types for email jobs
 const (
-	TypeEmailTeamInvitation = "email:team_invitation"
-	TypeEmailWelcome        = "email:welcome"
-	TypeEmailVerification   = "email:verification"
-	TypeEmailPasswordReset  = "email:password_reset"
+	TypeEmailWelcome       = "email:welcome"
+	TypeEmailVerification  = "email:verification"
+	TypeEmailPasswordReset = "email:password_reset"
 )
-
-// TeamInvitationPayload contains data for sending team invitation emails.
-type TeamInvitationPayload struct {
-	RecipientEmail string        `json:"recipient_email"`
-	InviterName    string        `json:"inviter_name"`
-	TeamName       string        `json:"team_name"`
-	Token          string        `json:"token"`
-	ExpiresIn      time.Duration `json:"expires_in"`
-	InvitationID   string        `json:"invitation_id"`
-	TenantID       string        `json:"tenant_id"`
-}
 
 // WelcomeEmailPayload contains data for sending welcome emails.
 type WelcomeEmailPayload struct {
@@ -56,21 +44,6 @@ type PasswordResetPayload struct {
 	ExpiresIn time.Duration `json:"expires_in"`
 	IPAddress string        `json:"ip_address"`
 	UserID    string        `json:"user_id"`
-}
-
-// NewTeamInvitationTask creates a new team invitation email task.
-func NewTeamInvitationTask(payload TeamInvitationPayload) (*asynq.Task, error) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal team invitation payload: %w", err)
-	}
-	return asynq.NewTask(
-		TypeEmailTeamInvitation,
-		data,
-		asynq.MaxRetry(3),
-		asynq.Timeout(30*time.Second),
-		asynq.Queue("email"),
-	), nil
 }
 
 // NewWelcomeEmailTask creates a new welcome email task.
@@ -130,43 +103,6 @@ func NewEmailTaskHandler(emailService *auth.EmailService, log *logger.Logger) *E
 		emailService: emailService,
 		logger:       log.With("handler", "email_tasks"),
 	}
-}
-
-// HandleTeamInvitation processes team invitation email tasks.
-func (h *EmailTaskHandler) HandleTeamInvitation(ctx context.Context, t *asynq.Task) error {
-	var payload TeamInvitationPayload
-	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
-	}
-
-	h.logger.Info("processing team invitation email",
-		"email", payload.RecipientEmail,
-		"team", payload.TeamName,
-		"invitation_id", payload.InvitationID,
-	)
-
-	err := h.emailService.SendTeamInvitationEmail(
-		ctx,
-		payload.RecipientEmail,
-		payload.InviterName,
-		payload.TeamName,
-		payload.Token,
-		payload.ExpiresIn,
-		payload.TenantID, // Per-tenant SMTP support
-	)
-	if err != nil {
-		h.logger.Error("failed to send team invitation email",
-			"email", payload.RecipientEmail,
-			"error", err,
-		)
-		return err
-	}
-
-	h.logger.Info("team invitation email sent successfully",
-		"email", payload.RecipientEmail,
-		"team", payload.TeamName,
-	)
-	return nil
 }
 
 // HandleWelcomeEmail processes welcome email tasks.

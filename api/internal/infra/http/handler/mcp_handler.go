@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
 
+	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -170,9 +171,9 @@ type MCPHandler struct {
 	// modules answers whether a module is on for the organization (the
 	// route module gate). nil: every module counts as on (tests, stub builds).
 	modules mcpModuleChecker
-	// aiPolicy reads the organization's TLP limit for AI applications
-	// (SetAIPolicy). nil: the default limit (amber).
-	aiPolicy mcpAIPolicyReader
+	// aiPolicy is the organization's AI egress policy (SetAIPolicy). nil:
+	// the default limit (amber).
+	aiPolicy *aipolicy.Egress
 }
 
 // mcpModuleChecker is the route module gate (*middleware.ModuleGate).

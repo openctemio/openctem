@@ -89,9 +89,16 @@ control_tests
 credentials
 ct_monitor_state
 ctem_cycles
+dash_asset_day
+dash_asset_rank
+dash_asset_state
+dash_dirty_assets
+dash_fact_status
+dashboard_audience
 definition_identifiers
 definition_relations
 definition_taxonomy
+durable_jobs
 easm_alert_throttle
 easm_dns_name_state
 easm_evidence
@@ -122,6 +129,7 @@ finding_rekey_runs
 finding_remediation_keys
 finding_retest_cursors
 finding_retests
+finding_severity_requests
 finding_status_approvals
 finding_verification_checklists
 findings
@@ -171,6 +179,7 @@ remediation_suggestion_runs
 remediation_suggestions
 remediation_task_events
 remediation_task_members
+remediation_task_queries
 remediation_tasks
 report_schedules
 risk_snapshots
@@ -243,6 +252,10 @@ tenant_sensor_products
 tenant_tool_configs
 tenant_tool_settings
 threat_actors
+threat_alert_assets
+threat_alert_queue
+threat_alert_tenant_state
+threat_alerts
 threat_model_threats
 threat_models
 ticket_links

@@ -26,17 +26,15 @@ func NewScanProfileService(repo scanprofile.Repository, log *logger.Logger) *Sca
 
 // CreateScanProfileInput represents the input for creating a scan profile.
 type CreateScanProfileInput struct {
-	TenantID           string                            `json:"tenant_id" validate:"required,uuid"`
-	UserID             string                            `json:"user_id" validate:"omitempty,uuid"`
-	Name               string                            `json:"name" validate:"required,min=1,max=100"`
-	Description        string                            `json:"description" validate:"max=500"`
-	ToolsConfig        map[string]scanprofile.ToolConfig `json:"tools_config"`
-	Intensity          string                            `json:"intensity" validate:"omitempty,oneof=low medium high"`
-	MaxConcurrentScans int                               `json:"max_concurrent_scans" validate:"omitempty,min=1,max=100"`
-	TimeoutSeconds     int                               `json:"timeout_seconds" validate:"omitempty,min=60,max=86400"`
-	Tags               []string                          `json:"tags" validate:"max=20,dive,max=50"`
-	IsDefault          bool                              `json:"is_default"`
-	QualityGate        *scanprofile.QualityGate          `json:"quality_gate"`
+	TenantID    string                   `json:"tenant_id" validate:"required,uuid"`
+	UserID      string                   `json:"user_id" validate:"omitempty,uuid"`
+	Name        string                   `json:"name" validate:"required,min=1,max=100"`
+	Description string                   `json:"description" validate:"max=500"`
+	Tags        []string                 `json:"tags" validate:"max=20,dive,max=50"`
+	IsDefault   bool                     `json:"is_default"`
+	QualityGate *scanprofile.QualityGate `json:"quality_gate"`
+	// RuleSources: both (default when empty), platform or tenant.
+	RuleSources string `json:"rule_sources"`
 }
 
 // CreateScanProfile creates a new scan profile.
@@ -57,35 +55,29 @@ func (s *ScanProfileService) CreateScanProfile(ctx context.Context, input Create
 		createdBy = &uid
 	}
 
-	intensity := scanprofile.Intensity(input.Intensity)
-	if !intensity.IsValid() {
-		intensity = scanprofile.IntensityMedium
-	}
-
 	profile, err := scanprofile.NewScanProfile(
 		tenantID,
 		input.Name,
 		input.Description,
-		input.ToolsConfig,
-		intensity,
+		nil,
+		scanprofile.IntensityMedium,
 		createdBy,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Apply optional settings
-	if input.MaxConcurrentScans > 0 {
-		profile.MaxConcurrentScans = input.MaxConcurrentScans
-	}
-	if input.TimeoutSeconds > 0 {
-		profile.TimeoutSeconds = input.TimeoutSeconds
-	}
+	// The removed settings (tools, intensity, timeout, concurrency) keep the
+	// entity defaults: the columns stay until a later release drops them, and
+	// nothing reads them.
 	if input.Tags != nil {
 		profile.Tags = input.Tags
 	}
 	if input.QualityGate != nil {
 		profile.QualityGate = *input.QualityGate
+	}
+	if err := profile.SetRuleSources(input.RuleSources); err != nil {
+		return nil, err
 	}
 
 	// Handle default flag
@@ -204,16 +196,14 @@ func (s *ScanProfileService) ListScanProfiles(ctx context.Context, input ListSca
 
 // UpdateScanProfileInput represents the input for updating a scan profile.
 type UpdateScanProfileInput struct {
-	TenantID           string                            `json:"tenant_id" validate:"required,uuid"`
-	ProfileID          string                            `json:"profile_id" validate:"required,uuid"`
-	Name               string                            `json:"name" validate:"omitempty,min=1,max=100"`
-	Description        string                            `json:"description" validate:"max=500"`
-	ToolsConfig        map[string]scanprofile.ToolConfig `json:"tools_config"`
-	Intensity          string                            `json:"intensity" validate:"omitempty,oneof=low medium high"`
-	MaxConcurrentScans int                               `json:"max_concurrent_scans" validate:"omitempty,min=1,max=100"`
-	TimeoutSeconds     int                               `json:"timeout_seconds" validate:"omitempty,min=60,max=86400"`
-	Tags               []string                          `json:"tags" validate:"max=20,dive,max=50"`
-	QualityGate        *scanprofile.QualityGate          `json:"quality_gate"`
+	TenantID    string                   `json:"tenant_id" validate:"required,uuid"`
+	ProfileID   string                   `json:"profile_id" validate:"required,uuid"`
+	Name        string                   `json:"name" validate:"omitempty,min=1,max=100"`
+	Description string                   `json:"description" validate:"max=500"`
+	Tags        []string                 `json:"tags" validate:"max=20,dive,max=50"`
+	QualityGate *scanprofile.QualityGate `json:"quality_gate"`
+	// RuleSources: nil = unchanged.
+	RuleSources *string `json:"rule_sources"`
 }
 
 // UpdateScanProfile updates an existing scan profile.
@@ -238,10 +228,10 @@ func (s *ScanProfileService) UpdateScanProfile(ctx context.Context, input Update
 	err = profile.Update(
 		input.Name,
 		input.Description,
-		input.ToolsConfig,
-		scanprofile.Intensity(input.Intensity),
-		input.MaxConcurrentScans,
-		input.TimeoutSeconds,
+		nil,
+		"",
+		0,
+		0,
 		input.Tags,
 	)
 	if err != nil {
@@ -251,6 +241,11 @@ func (s *ScanProfileService) UpdateScanProfile(ctx context.Context, input Update
 	// Update quality gate if provided
 	if input.QualityGate != nil {
 		if err := profile.UpdateQualityGate(*input.QualityGate); err != nil {
+			return nil, err
+		}
+	}
+	if input.RuleSources != nil {
+		if err := profile.SetRuleSources(*input.RuleSources); err != nil {
 			return nil, err
 		}
 	}

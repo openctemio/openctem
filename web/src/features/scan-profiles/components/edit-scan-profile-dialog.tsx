@@ -22,7 +22,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -30,25 +29,17 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 
 import {
   updateScanProfileSchema,
   type UpdateScanProfileFormData,
-  INTENSITY_OPTIONS,
-  TOOL_OPTIONS,
 } from '../schemas/scan-profile-schema'
 import { useUpdateScanProfile, invalidateScanProfilesCache } from '@/lib/api/scan-profile-hooks'
-import type { ScanProfile, ToolConfig } from '@/lib/api/scan-profile-types'
+import type { QualityGate, ScanProfile } from '@/lib/api/scan-profile-types'
+import type { RuleSources } from '@/lib/api/scan-types'
+import { QualityGateFields } from './quality-gate-fields'
+import { RuleSourcesField } from './rule-sources-field'
 
 interface EditScanProfileDialogProps {
   open: boolean
@@ -64,77 +55,32 @@ export function EditScanProfileDialog({
   onSuccess,
 }: EditScanProfileDialogProps) {
   const { t } = useTranslation()
-  const [enabledTools, setEnabledTools] = useState<Record<string, boolean>>({})
+  const [gate, setGate] = useState<QualityGate>(profile.quality_gate)
+  const [ruleSources, setRuleSources] = useState<RuleSources>(profile.rule_sources ?? 'both')
 
   const form = useForm<UpdateScanProfileFormData>({
     resolver: zodResolver(updateScanProfileSchema),
-    defaultValues: {
-      name: profile.name,
-      description: profile.description || '',
-      intensity: profile.intensity,
-      max_concurrent_scans: profile.max_concurrent_scans,
-      timeout_seconds: profile.timeout_seconds,
-      tags: profile.tags || [],
-    },
+    defaultValues: { name: profile.name, description: profile.description || '' },
   })
 
   const { trigger: updateProfile, isMutating } = useUpdateScanProfile(profile.id)
 
-  // Initialize enabled tools from profile
+  // Reset the form when another profile is opened.
   useEffect(() => {
-    const tools: Record<string, boolean> = {}
-    Object.entries(profile.tools_config || {}).forEach(([tool, config]) => {
-      tools[tool] = config.enabled
-    })
-    setEnabledTools(tools)
-
-    // Reset form when profile changes
-    form.reset({
-      name: profile.name,
-      description: profile.description || '',
-      intensity: profile.intensity,
-      max_concurrent_scans: profile.max_concurrent_scans,
-      timeout_seconds: profile.timeout_seconds,
-      tags: profile.tags || [],
-    })
+    setGate(profile.quality_gate)
+    setRuleSources(profile.rule_sources ?? 'both')
+    form.reset({ name: profile.name, description: profile.description || '' })
   }, [profile, form])
 
-  const handleToolToggle = (toolValue: string, checked: boolean) => {
-    setEnabledTools((prev) => ({
-      ...prev,
-      [toolValue]: checked,
-    }))
-  }
-
   const onSubmit = async (data: UpdateScanProfileFormData) => {
-    // Build tools config from enabled tools
-    const tools_config: Record<string, ToolConfig> = {}
-    Object.entries(enabledTools).forEach(([tool, enabled]) => {
-      // Preserve existing config or create new. The backend replaces the whole
-      // tools_config map on save, so spread the existing tool config first to
-      // carry through keys the dialog doesn't model (template_mode,
-      // custom_template_ids, …) instead of wiping them.
-      const existingConfig = profile.tools_config?.[tool]
-      tools_config[tool] = {
-        ...existingConfig,
-        enabled,
-        severity: existingConfig?.severity || 'medium',
-        timeout: existingConfig?.timeout || 300,
-        options: existingConfig?.options,
-      }
-    })
-
     try {
-      await updateProfile({
-        ...data,
-        tools_config,
-      })
-      toast.success(`Profile "${data.name || profile.name}" updated`)
+      await updateProfile({ ...data, quality_gate: gate, rule_sources: ruleSources })
+      toast.success(t('scans.profiles.updated', undefined, { name: data.name || profile.name }))
       await invalidateScanProfilesCache()
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to update profile'))
+      toast.error(getErrorMessage(err, t('scans.profiles.updateFailed')))
     }
   }
 
@@ -144,17 +90,14 @@ export function EditScanProfileDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Edit Scan Profile</DialogTitle>
+          <DialogTitle>{t('scans.profiles.editTitle')}</DialogTitle>
           <DialogDescription>
-            {isSystemProfile
-              ? 'System profiles cannot be modified.'
-              : 'Update scan configuration and tool settings.'}
+            {isSystemProfile ? t('scans.profiles.systemReadOnly') : t('scans.profiles.editDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
           <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
-            {/* Basic Info */}
             <DialogBody className="space-y-6">
               <div className="space-y-4">
                 <FormField
@@ -162,9 +105,13 @@ export function EditScanProfileDialog({
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Name</FormLabel>
+                      <FormLabel>{t('scans.profiles.name')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Quick Scan" disabled={isSystemProfile} {...field} />
+                        <Input
+                          placeholder={t('scans.profiles.namePlaceholder')}
+                          disabled={isSystemProfile}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -176,10 +123,10 @@ export function EditScanProfileDialog({
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description</FormLabel>
+                      <FormLabel>{t('scans.profiles.description')}</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Fast scan with basic security checks"
+                          placeholder={t('scans.profiles.descriptionPlaceholder')}
                           className="resize-none"
                           disabled={isSystemProfile}
                           {...field}
@@ -193,129 +140,24 @@ export function EditScanProfileDialog({
 
               <Separator />
 
-              {/* Scan Settings */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium">Scan Settings</h4>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="intensity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Intensity</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                          disabled={isSystemProfile}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select intensity" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {INTENSITY_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                <div>
-                                  <div>{option.label}</div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {option.description}
-                                  </div>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="timeout_seconds"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Timeout (minutes)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={1440}
-                            disabled={isSystemProfile}
-                            {...field}
-                            value={Math.floor((field.value || 3600) / 60)}
-                            onChange={(e) => field.onChange(parseInt(e.target.value, 10) * 60)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="max_concurrent_scans"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Max Concurrent Scans</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={100}
-                          disabled={isSystemProfile}
-                          {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Maximum number of scans that can run simultaneously
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">{t('scans.profiles.gate.title')}</h4>
+                <QualityGateFields
+                  value={gate}
+                  onChange={setGate}
+                  disabled={isSystemProfile}
+                  idPrefix="edit-profile"
                 />
               </div>
 
               <Separator />
 
-              {/* Tools Configuration */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium">Tools</h4>
-                <p className="text-sm text-muted-foreground">
-                  Select which tools should be enabled for scans using this profile.
-                </p>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {TOOL_OPTIONS.map((tool) => (
-                    <div
-                      key={tool.value}
-                      className="flex items-start space-x-3 rounded-lg border p-3"
-                    >
-                      <Checkbox
-                        id={`edit-${tool.value}`}
-                        checked={enabledTools[tool.value] || false}
-                        disabled={isSystemProfile}
-                        onCheckedChange={(checked) =>
-                          handleToolToggle(tool.value, checked as boolean)
-                        }
-                      />
-                      <div className="grid gap-0.5 leading-none">
-                        <Label
-                          htmlFor={`edit-${tool.value}`}
-                          className="cursor-pointer text-sm font-medium"
-                        >
-                          {tool.label}
-                        </Label>
-                        <p className="text-xs text-muted-foreground">{t(tool.descriptionKey)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <RuleSourcesField
+                value={ruleSources}
+                onChange={setRuleSources}
+                disabled={isSystemProfile}
+                idPrefix="edit-profile"
+              />
             </DialogBody>
 
             <DialogFooter>
@@ -325,12 +167,15 @@ export function EditScanProfileDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={isMutating}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
-              <Button type="submit" disabled={isMutating || isSystemProfile}>
-                {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                Save Changes
-              </Button>
+              {/* A system profile is read-only: no save action to offer. */}
+              {!isSystemProfile && (
+                <Button type="submit" disabled={isMutating}>
+                  {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                  {t('scans.profiles.save')}
+                </Button>
+              )}
             </DialogFooter>
           </DialogForm>
         </Form>

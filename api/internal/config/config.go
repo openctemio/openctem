@@ -523,6 +523,15 @@ type SensorConfigConfig struct {
 	// answers say omit_inventory false and a slim heartbeat is asked for the
 	// manifest again, so the sensor goes back to full heartbeats.
 	SlimHeartbeat bool
+	// LivenessStore is where heartbeat liveness lives
+	// (SENSOR_LIVENESS_STORE: postgres, shadow or redis; default shadow).
+	// See docs/architecture/sensors.md, "Heartbeat soft state".
+	LivenessStore string
+
+	// AllowUnsignedJobs lets a production API start without SIGNER_SOCKET
+	// (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS): jobs are then not signed.
+	// Development and tests never need it.
+	AllowUnsignedJobs bool
 
 	// SignerSocket is the Unix socket of the job signer (cmd/signer,
 	// RFC-040 §5.6, docs/architecture/job-signing.md): SIGNER_SOCKET.
@@ -958,7 +967,7 @@ func (c *OAuthConfig) HasAnyProvider() bool {
 
 // SMTPConfig is what the e-mail templates need from the deployment: the base
 // URL of links. The SMTP server itself is the platform e-mail setting in the
-// admin console (System > E-mail, RFC-079), not an environment variable.
+// admin console (Settings > E-mail, RFC-079), not an environment variable.
 type SMTPConfig struct {
 	BaseURL string // Frontend base URL for email links (e.g., https://app.openctem.io)
 }
@@ -1108,20 +1117,6 @@ type SensorConfig struct {
 	// HeartbeatTimeout is the duration after which a sensor is marked as inactive
 	// if no heartbeat is received. Default: 5 minutes.
 	HeartbeatTimeout time.Duration
-
-	// HealthCheckInterval is how often to check for stale sensors.
-	// Default: 1 minute.
-	HealthCheckInterval time.Duration
-
-	// Enabled turns on the legacy sensor health checker (jobs.SensorHealthChecker,
-	// WORKER_HEALTH_CHECK_ENABLED). Default: false. The sensor health controller
-	// (internal/infra/controller/sensor_health.go, RFC-035 §5.6) owns liveness:
-	// it applies the late/stale/offline ladder and holds convictions during its
-	// startup grace and while the platform itself is slow. The legacy checker
-	// knows none of that and sweeps the moment the API starts, so with it on an
-	// API restart convicted every sensor that could not heartbeat while the API
-	// was down. Keep it off unless the health controller is not running.
-	Enabled bool
 
 	// SCMSyncInterval is how often the scheduled SCM repository/branch sync runs.
 	// 0 (default) disables it — repositories are then only imported on demand via
@@ -1384,9 +1379,6 @@ func (c *EncryptionConfig) IsConfigured() bool {
 // This is the platform-level configuration. Tenant-specific settings
 // are stored in tenant.Settings.AI.
 type AITriageConfig struct {
-	// Enabled controls whether AI triage feature is available platform-wide.
-	Enabled bool
-
 	// Platform AI Provider Configuration
 	// Used when tenants choose "platform" mode (don't provide their own keys)
 	PlatformProvider string // "claude", "openai", or "gemini"
@@ -1396,9 +1388,13 @@ type AITriageConfig struct {
 	GeminiAPIKey     string // Platform's Google Gemini API key
 
 	// Rate Limiting
-	RateLimitRPM   int // Rate limit per minute
-	TimeoutSeconds int // Timeout for AI API calls
-	MaxTokens      int // Max tokens per request
+	RateLimitRPM int // Rate limit per minute, per provider key
+	// RateLimitTenantRPM is each organization's share of the platform key's
+	// allowance: a bucket per organization in front of the shared one, so
+	// one organization cannot starve the others. 0 turns it off.
+	RateLimitTenantRPM int
+	TimeoutSeconds     int // Timeout for AI API calls
+	MaxTokens          int // Max tokens per request
 
 	// LLM Parameters
 	Temperature float64 // Temperature for LLM (0.0-1.0, lower = more deterministic)
@@ -1414,10 +1410,8 @@ type AITriageConfig struct {
 	RecoveryStuckDuration time.Duration // How long before a job is considered stuck (default: 15 minutes)
 	RecoveryBatchSize     int           // Max jobs to recover per run (default: 50)
 
-	// Per-tenant LLM token budget (RFC-008 Phase 1).
-	// BudgetEnabled defaults to false — the budget service is wired
-	// but Check() returns nil so no tenant is blocked. Flip to true
-	// per RFC-008 Phase 2 rollout after backfill + dashboards ship.
+	// Per-tenant monthly LLM token budget for platform AI (RFC-008). On by
+	// default: the platform's key is a shared cost.
 	BudgetEnabled bool
 	// BudgetStrict controls the fail-mode when the budget repo is
 	// unreachable. In production (strict=true) a repo outage blocks
@@ -1425,18 +1419,28 @@ type AITriageConfig struct {
 	// staging (strict=false) we log and proceed. Defaults to false
 	// to match "flag off = zero behaviour change" on first deploy.
 	BudgetStrict bool
-	// BudgetDefaultTokensPerMonth is the fallback ceiling applied when
-	// a tenant has no row in ai_triage_budgets for the current month
-	// AND no per-plan override. 0 = unlimited (back-compat). A paying
-	// SaaS deployment typically sets this at plan-onboarding time,
-	// not here.
+	// BudgetDefaultTokensPerMonth is the ceiling of a month's budget row
+	// when it is created (one row per organization and month). 0 =
+	// unlimited.
 	BudgetDefaultTokensPerMonth int64
 }
 
-// IsConfigured returns true if AI triage is properly configured.
-// This checks if at least one LLM provider API key is set.
-// Note: The Enabled field is deprecated - feature availability is now controlled
-// by the module's is_active field in the database.
+// TenantShareRPM is an organization's share of the platform allowance per
+// minute: AI_RATE_LIMIT_TENANT_RPM, never above AI_RATE_LIMIT_RPM. 0: off.
+func (c *AITriageConfig) TenantShareRPM() int {
+	if c.RateLimitTenantRPM <= 0 {
+		return 0
+	}
+	if c.RateLimitRPM > 0 && c.RateLimitTenantRPM > c.RateLimitRPM {
+		return c.RateLimitRPM
+	}
+	return c.RateLimitTenantRPM
+}
+
+// IsConfigured reports whether an environment provider key is set: such a
+// key makes platform AI available and pins the provider (the console's
+// platform AI applies otherwise). Each organization still turns AI triage on
+// itself.
 func (c *AITriageConfig) IsConfigured() bool {
 	// Need at least one provider API key configured
 	return c.AnthropicAPIKey != "" || c.OpenAIAPIKey != "" || c.GeminiAPIKey != ""
@@ -1512,7 +1516,9 @@ func Load() (*Config, error) {
 
 			KeyRenewBefore:        getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
 			SlimHeartbeat:         getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
+			LivenessStore:         getEnv("SENSOR_LIVENESS_STORE", "shadow"),
 			SignerSocket:          getEnv("SIGNER_SOCKET", ""),
+			AllowUnsignedJobs:     getEnvBool("SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS", false),
 			SignerTimeout:         getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
 			HeartbeatInterval:     getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
 			HeartbeatBusyInterval: getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
@@ -1701,9 +1707,7 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: SensorConfig{
-			Enabled:                           getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
 			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:               getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
 			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
@@ -1843,13 +1847,13 @@ func Load() (*Config, error) {
 			BatchSize:     getEnvInt("ADMIN_AUDIT_RETENTION_BATCH_SIZE", 10000),
 		},
 		AITriage: AITriageConfig{
-			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),
 			PlatformProvider:            getEnv("AI_PLATFORM_PROVIDER", "claude"),
 			PlatformModel:               getEnv("AI_PLATFORM_MODEL", "claude-sonnet-4-20250514"),
 			AnthropicAPIKey:             getEnv("ANTHROPIC_API_KEY", ""),
 			OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 			GeminiAPIKey:                getEnv("GEMINI_API_KEY", ""),
 			RateLimitRPM:                getEnvInt("AI_RATE_LIMIT_RPM", 60),
+			RateLimitTenantRPM:          getEnvInt("AI_RATE_LIMIT_TENANT_RPM", 20),
 			TimeoutSeconds:              getEnvInt("AI_TIMEOUT_SECONDS", 30),
 			MaxTokens:                   getEnvInt("AI_MAX_TOKENS", 4096),
 			Temperature:                 getEnvFloat("AI_TEMPERATURE", 0.1),
@@ -1860,10 +1864,9 @@ func Load() (*Config, error) {
 			RecoveryInterval:            getEnvDuration("AI_TRIAGE_RECOVERY_INTERVAL", 5*time.Minute),
 			RecoveryStuckDuration:       getEnvDuration("AI_TRIAGE_RECOVERY_STUCK_DURATION", 15*time.Minute),
 			RecoveryBatchSize:           getEnvInt("AI_TRIAGE_RECOVERY_BATCH_SIZE", 50),
-			// RFC-008 Phase 1: budget service wired but OFF by default.
-			BudgetEnabled:               getEnvBool("AI_TRIAGE_BUDGET_ENABLED", false),
+			BudgetEnabled:               getEnvBool("AI_TRIAGE_BUDGET_ENABLED", true),
 			BudgetStrict:                getEnvBool("AI_TRIAGE_BUDGET_STRICT", false),
-			BudgetDefaultTokensPerMonth: int64(getEnvInt("AI_TRIAGE_BUDGET_DEFAULT_TOKENS", 0)),
+			BudgetDefaultTokensPerMonth: int64(getEnvInt("AI_TRIAGE_BUDGET_DEFAULT_TOKENS", 2000000)),
 		},
 	}
 
@@ -1932,6 +1935,11 @@ func (c *Config) Validate() error {
 	}
 	if err := c.InternalAPI.validate(); err != nil {
 		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(c.SensorConfig.LivenessStore)) {
+	case "", "postgres", "shadow", "redis":
+	default:
+		return fmt.Errorf("SENSOR_LIVENESS_STORE=%q must be postgres, shadow or redis", c.SensorConfig.LivenessStore)
 	}
 	if err := validateAccountPortalURL(c.AccountPortalURL); err != nil {
 		return err
@@ -2482,7 +2490,21 @@ func (c *Config) validateProduction() error {
 	if err := c.validateProductionAuth(); err != nil {
 		return err
 	}
-	return nil
+	return c.validateProductionJobSigning()
+}
+
+// validateProductionJobSigning: in production every job a sensor runs is
+// signed by the separate job signer (RFC-040 §5.6; research/191 A-1,
+// owner decision D2). Without SIGNER_SOCKET a compromised API or database
+// could hand any sensor any job, so the API refuses to start, unless the
+// operator accepts that explicitly (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS).
+func (c *Config) validateProductionJobSigning() error {
+	if strings.TrimSpace(c.SensorConfig.SignerSocket) != "" || c.SensorConfig.AllowUnsignedJobs {
+		return nil
+	}
+	return fmt.Errorf("SIGNER_SOCKET must be set in production: sensor jobs are signed by the job signer " +
+		"(the signer service of the default compose file); to run without it set SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS=true " +
+		"(sensors paired from now on refuse to start without a signer)")
 }
 
 // validateProductionAuth validates auth configuration for production.
@@ -2682,7 +2704,7 @@ func (r retiredName) instead() string {
 }
 
 // smtpMoved is the hint for the SMTP_* variables.
-const smtpMoved = "unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
+const smtpMoved = "unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
 
 // removedEnv lists settings that were removed without a replacement
 // variable. Startup refuses to run while one is set, saying what to do
@@ -2692,8 +2714,11 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
 	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
+	{"WORKER_HEALTH_CHECK_ENABLED", "unset it; the sensor health controller owns sensor liveness and the legacy checker was removed"},
+	{"WORKER_HEALTH_CHECK_INTERVAL", "unset it; the sensor health controller owns sensor liveness and the legacy checker was removed"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
-	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	{"AI_TRIAGE_ENABLED", "unset it; a provider key (environment or console) makes platform AI available, and each organization turns AI triage on in Settings > AI"},
+	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > Settings > Sign-up)"},
 	{"TENANT_CREATION_MODE", "unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open"},
 	// The platform SMTP server is set in the admin console (RFC-079).
 	{"SMTP_ENABLED", smtpMoved},

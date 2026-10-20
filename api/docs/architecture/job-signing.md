@@ -66,6 +66,7 @@ Signer (`openctem-signer serve`):
 | `SIGNER_SOCKET` | Unix socket path | required |
 | `SIGNER_STATE_DIR` | `seq/` and `signing.log` | required |
 | `SIGNER_KEYSET_FILE` | the key set signed by the offline root, served at `GET /v1/keyset`; read at start and on `SIGHUP` (see "Key sets and the offline root") | unset: no key set |
+| `SIGNER_PUBLISH_DIR` | a directory where the signer writes its public key as `signer.pub` (0644, atomically, at every start) for the bundled sensor to pin ([The bundled sensor's pin](#the-bundled-sensors-pin)); it must exist | unset: nothing published |
 | `SIGNER_TENANT_RATE` / `SIGNER_TENANT_BURST` | signing ceiling per organization (token bucket) | 50/s, 500 |
 | `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
 | `SIGNER_LEDGER` | scope ledger mode: `enforce`, `audit` or `off` ([Scope ledger](#scope-ledger)) | the recorded default: `enforce` on a signer that had never signed, `audit` on one upgraded to the ledger |
@@ -76,11 +77,50 @@ API:
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `SIGNER_SOCKET` | the signer's socket. Unset: no signing, claims as before | unset |
+| `SIGNER_SOCKET` | the signer's socket. Unset: no signing; a production API then refuses to start | set by the default compose file |
+| `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS` | lets a production API start without `SIGNER_SOCKET` (development only; logged as a security warning) | false |
 | `SIGNER_TIMEOUT` | bound of one call to the signer | 2s |
 
-Compose: `deploy/docker-compose.job-signer.yml` (an opt-in overlay with
-setup steps). Helm is not covered yet.
+Signer: `SIGNER_GENERATE_KEY=true` creates the signing key on first start
+when the key file does not exist (never replaces one) and logs its id.
+
+### On by default (research/191 A-1)
+
+Signed jobs are the default posture (owner decision D2, Community
+included):
+
+- `deploy/docker-compose.yml` runs the `signer` service (own container,
+  own user, no network, key volume never mounted into the API) and sets
+  `SIGNER_SOCKET` on the API. The key is created on first start; back up the
+  `signer-keys` volume offline. `docker-compose.job-signer.yml` now only
+  repeats it and documents the key set and scope ledger steps.
+- The all-in-one image starts the signer as a separate process with its own
+  key file under `/data/signer` (same container, so weaker separation than
+  the split deployment; `OPENCTEM_SIGNER=off` or an external
+  `SIGNER_SOCKET` replaces it).
+- A production API refuses to start without `SIGNER_SOCKET` unless
+  `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS=true`.
+- **Scope ledger on an existing install:** a new signer enforces the
+  ledger at once, so jobs outside it (an empty ledger: every job) are
+  refused. Run the ledger bootstrap ([Scope ledger](#scope-ledger)) or set
+  `SIGNER_LEDGER=audit` until it is done.
+- Sensors (sdk-go): a newly paired identity records `require_signed_jobs`
+  and requires signed jobs whatever the platform served; with nothing
+  pinned it does not start until `SENSOR_JOB_SIGNING_ROOT` or
+  `SENSOR_JOB_SIGNING_KEYS` is set, and `SENSOR_REQUIRE_SIGNED_JOBS=false`
+  cannot lower it.
+- **Root out of band:** with a key set, the console's pairing command is
+  `SENSOR_JOB_SIGNING_ROOT=<root id> openctemio-sensor pair <code>` (the
+  pairing view's `job_signing_root`). The sensor pins that root only when
+  the key set the platform serves is signed by it, and refuses to pair
+  otherwise. The value comes from the signer's key set, which the database
+  cannot change, but the console receives it from the API: a compromised API
+  can show a root of its own, so the console's value is trust on first use
+  of the API, not out of band. The out-of-band form is the root id the
+  operator recorded at `root keygen`, compared with (or used instead of) the
+  console's value.
+
+Helm is not covered yet.
 
 ## Key sets and the offline root (K3)
 
@@ -174,6 +214,38 @@ The API fetches the key set from the signer (`GET /v1/keyset`, cached 5
 minutes, passed on only when it is signed by the root it names) and
 carries it in hello as `signed_jobs.keyset`. A change of key set changes
 the doorbell's `config_version`, so sensors re-read hello.
+
+## The bundled sensor's pin
+
+A sensor that pins nothing trusts the key set or keys the API serves the
+first time it pairs, so a compromised API could plant its own signer for
+it. The default Compose install therefore delivers the pin outside the
+API's reach:
+
+- The signer (`SIGNER_PUBLISH_DIR=/var/lib/openctem-signer-pub`) writes
+  its **public** key to `signer.pub` on the `signer-pub` volume: one line,
+  standard base64 of the 32-byte Ed25519 key, mode 0644, written to a
+  temporary file and renamed. It is rewritten at every start, so a rotated
+  signer key is republished (restart the sensor to read it).
+- `signer-pub` is mounted read-write into the signer only and read-only
+  into the bundled sensor (`docker-compose.sensor.yml`). The API never
+  mounts it, so it cannot change what the sensor pins.
+- The sensor reads it through `SENSOR_JOB_SIGNING_KEYS_FILE` (sdk-go). A pin
+  read from a file is exclusive: the keys and root the sensor took from the
+  platform when it paired are not trusted next to it. The file must not be
+  writable by group or others and must not be a symlink that leaves its
+  directory. Setting both `SENSOR_JOB_SIGNING_KEYS` and the `_FILE` form
+  stops the sensor. `SENSOR_INSTANCE_ENROLLMENT_TOKEN_FILE` and
+  `SENSOR_JOB_SIGNING_ROOT_FILE` follow the same rules.
+- A sensor release older than the one that reads `*_FILE` ignores the new
+  variable and keeps trusting the first key the API serves.
+
+This pins the signer's own key, which is the default for installs that have
+not done the offline-root ceremony. It does not survive a signer key
+change without a sensor restart. Production installs (Helm, regulated
+sites) pin the **offline root** (`SENSOR_JOB_SIGNING_ROOT`, or its `_FILE`
+form) as described above: then a key rotation is a new key set and nothing
+on the sensor changes.
 
 ## Signer API
 

@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -23,7 +24,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -198,9 +198,6 @@ func run() int {
 	defer closeWithLog(redisClient, "redis", log)
 	log.Info("redis connected")
 
-	sensorStateStore := redis.NewSensorStateStore(redisClient, log)
-	log.Info("sensor state store initialized")
-
 	jobNotifier := redis.NewJobNotifier(redisClient, log)
 	if err := jobNotifier.StartListener(ctx); err != nil {
 		log.Error("failed to start job notifier", "error", err)
@@ -223,6 +220,14 @@ func run() int {
 	// ==========================================================================
 	// Repositories
 	// ==========================================================================
+	// The byte budget of sensor result uploads in flight, from this
+	// replica's memory limit: a quarter, at most 1 GiB (research/191 R-1).
+	// Set once, before anything serves.
+	if mem := middleware.ContainerMemoryLimit(); mem > 0 {
+		middleware.SetV2DecodeBudget(middleware.V2DecodeBudgetForMemory(mem))
+		log.Info("sensor result upload memory budget", "bytes", middleware.V2DecodeBudgetBytes, "memory_limit", mem)
+	}
+
 	repos := NewRepositories(db)
 	repos.UseAdminDB(adminDB)
 	repos.InitIntegrationExtensions(db)
@@ -232,12 +237,11 @@ func run() int {
 	// Services
 	// ==========================================================================
 	services, err := NewServices(&ServiceDeps{
-		Config:           cfg,
-		Log:              log,
-		DB:               db.DB,
-		Repos:            repos,
-		RedisClient:      redisClient,
-		SensorStateStore: sensorStateStore,
+		Config:      cfg,
+		Log:         log,
+		DB:          db.DB,
+		Repos:       repos,
+		RedisClient: redisClient,
 	})
 	if err != nil {
 		log.Error("failed to initialize services", "error", err)
@@ -300,27 +304,12 @@ func run() int {
 	}
 	defer closeWithLog(jobClient, "job client", log)
 
-	// Outbound Jira status sync (RFC-006 Phase 3c): when a finding's status
-	// changes via the API, enqueue a background push to its linked Jira issue.
-	// The worker no-ops unless the tenant opted in (config.ticketing.sync_enabled).
+	// Outbound ticket status sync (RFC-006): a status change of a linked
+	// finding queues a durable job in the status write's transaction; the
+	// durable-jobs controller pushes it (workers no-op unless the tenant
+	// opted in, config.ticketing.sync_enabled).
 	if services.Vulnerability != nil {
-		services.Vulnerability.SetJiraStatusSyncHook(func(ctx context.Context, tenantID, findingID shared.ID) {
-			if err := jobClient.EnqueueJiraSyncFindingStatus(ctx, jobs.JiraSyncFindingStatusPayload{
-				TenantID:  tenantID.String(),
-				FindingID: findingID.String(),
-			}); err != nil {
-				log.Warn("failed to enqueue jira status sync", "error", err)
-			}
-			// The same status-change trigger drives outbound GitHub Issues sync;
-			// the worker no-ops when the finding isn't linked to a GitHub issue.
-			// A finding links to at most one provider, so only the matching push acts.
-			if err := jobClient.EnqueueGitHubSyncFindingStatus(ctx, jobs.GitHubSyncFindingStatusPayload{
-				TenantID:  tenantID.String(),
-				FindingID: findingID.String(),
-			}); err != nil {
-				log.Warn("failed to enqueue github status sync", "error", err)
-			}
-		})
+		services.Vulnerability.EnableTicketStatusSync()
 	}
 
 	// The tenant service is built once, in NewServices, with everything it can
@@ -328,7 +317,8 @@ func run() int {
 	// added here, on that same instance. It used to be rebuilt here instead,
 	// which silently dropped every setter NewServices had applied (session,
 	// membership cache, SSO checker, role service, data-scope store, ...).
-	services.Tenant.SetEmailEnqueuer(jobs.NewEmailEnqueuerAdapter(jobClient))
+	// Invitation e-mails are durable jobs queued with the invitation.
+	services.Tenant.SetEmailEnqueuer(jobs.NewInvitationEmailJobs(services.Encryptor))
 	// Suspend/reactivate emails need the email service, built above.
 	if services.Email != nil {
 		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
@@ -609,6 +599,11 @@ func run() int {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown error", "error", err)
 		return 1
+	}
+	// Last sensor liveness checkpoint and heartbeat history batch, once no
+	// heartbeat can arrive any more.
+	if services.Sensor != nil {
+		services.Sensor.FlushLiveness(shutdownCtx)
 	}
 
 	log.Info("application stopped")

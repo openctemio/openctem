@@ -900,7 +900,7 @@ func TestAITriage_RequestTriage_InvalidTenantID(t *testing.T) {
 	svc := aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(),
 		nil, nil, nil, nil,
-		config.AITriageConfig{Enabled: true},
+		config.AITriageConfig{AnthropicAPIKey: "test-only"},
 		log,
 	)
 
@@ -924,7 +924,7 @@ func TestAITriage_RequestTriage_InvalidFindingID(t *testing.T) {
 	svc := aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(),
 		nil, nil, nil, nil,
-		config.AITriageConfig{Enabled: true},
+		config.AITriageConfig{AnthropicAPIKey: "test-only"},
 		log,
 	)
 
@@ -1072,7 +1072,7 @@ func TestAITriage_ShouldAutoTriage_PlatformDisabled(t *testing.T) {
 	svc := aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(),
 		nil, nil, nil, nil,
-		config.AITriageConfig{Enabled: false},
+		config.AITriageConfig{},
 		log,
 	)
 
@@ -1106,7 +1106,7 @@ func TestAITriage_ShouldAutoTriage_TenantDisabled(t *testing.T) {
 	svc := aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(),
 		nil, tenantRepo, nil, nil,
-		config.AITriageConfig{Enabled: true},
+		config.AITriageConfig{AnthropicAPIKey: "test-only"},
 		log,
 	)
 
@@ -1140,7 +1140,7 @@ func TestAITriage_ShouldAutoTriage_AutoTriageDisabled(t *testing.T) {
 	svc := aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(),
 		nil, tenantRepo, nil, nil,
-		config.AITriageConfig{Enabled: true},
+		config.AITriageConfig{AnthropicAPIKey: "test-only"},
 		log,
 	)
 
@@ -1164,6 +1164,7 @@ func TestAITriage_ShouldAutoTriage_SeverityMatch(t *testing.T) {
 		map[string]any{
 			"ai": map[string]any{
 				"mode":                   "platform",
+				"enabled_at":             "2026-01-01T00:00:00Z",
 				"auto_triage_enabled":    true,
 				"auto_triage_severities": []any{"critical", "high"},
 			},
@@ -1175,7 +1176,7 @@ func TestAITriage_ShouldAutoTriage_SeverityMatch(t *testing.T) {
 	svc := aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(),
 		nil, tenantRepo, nil, nil,
-		config.AITriageConfig{Enabled: true},
+		config.AITriageConfig{AnthropicAPIKey: "test-only"},
 		log,
 	)
 
@@ -1218,6 +1219,7 @@ func newAutoTriageDefaultsSvc(
 	now := time.Now().UTC()
 	settings := map[string]any{"general": map[string]any{"timezone": "UTC"}}
 	if aiSettings != nil {
+		aiSettings["enabled_at"] = "2026-01-01T00:00:00Z" // the organization opted in
 		settings["ai"] = aiSettings
 	}
 
@@ -1226,7 +1228,7 @@ func newAutoTriageDefaultsSvc(
 		tenantID, "test", "test", "", "", settings, "creator", now, now,
 	)
 
-	platform.Enabled = true
+	platform.AnthropicAPIKey = "test-only"
 	return aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(), nil, tenantRepo, nil, nil, platform, logger.NewNop(),
 	), tenantID
@@ -1332,7 +1334,7 @@ func TestAITriage_ShouldAutoTriage_TenantNotFound(t *testing.T) {
 	svc := aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(),
 		nil, tenantRepo, nil, nil,
-		config.AITriageConfig{Enabled: true},
+		config.AITriageConfig{AnthropicAPIKey: "test-only"},
 		log,
 	)
 
@@ -1415,7 +1417,8 @@ func TestAITriage_GetAIConfig_PlatformMode(t *testing.T) {
 		tenantID, "test", "test", "", "",
 		map[string]any{
 			"ai": map[string]any{
-				"mode": "platform",
+				"mode":       "platform",
+				"enabled_at": "2026-01-01T00:00:00Z",
 			},
 		},
 		"creator", now, now,
@@ -1428,6 +1431,7 @@ func TestAITriage_GetAIConfig_PlatformMode(t *testing.T) {
 		config.AITriageConfig{
 			PlatformProvider: "openai",
 			PlatformModel:    "gpt-4o",
+			OpenAIAPIKey:     "test-only",
 		},
 		log,
 	)
@@ -1447,7 +1451,9 @@ func TestAITriage_GetAIConfig_PlatformMode(t *testing.T) {
 	}
 }
 
-func TestAITriage_GetAIConfig_PlatformMode_DefaultProvider(t *testing.T) {
+// An organization that opted in to platform AI on an installation without a
+// provider is told so (the button says where to set it up), not shown as on.
+func TestAITriage_GetAIConfig_PlatformNotConfigured(t *testing.T) {
 	t.Parallel()
 
 	tenantID := shared.NewID()
@@ -1457,26 +1463,65 @@ func TestAITriage_GetAIConfig_PlatformMode_DefaultProvider(t *testing.T) {
 		tenantID, "test", "test", "", "",
 		map[string]any{
 			"ai": map[string]any{
-				"mode": "platform",
+				"mode":       "platform",
+				"enabled_at": "2026-01-01T00:00:00Z",
 			},
 		},
 		"creator", now, now,
 	)
 
-	log := logger.NewNop()
 	svc := aitriagesvc.NewAITriageService(
 		newMockAITriageRepo(),
 		nil, tenantRepo, nil, nil,
 		config.AITriageConfig{}, // No platform provider set
-		log,
+		logger.NewNop(),
 	)
 
 	info, err := svc.GetAIConfig(context.Background(), tenantID.String())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if info.Provider != "claude" {
-		t.Errorf("expected default provider 'claude', got %q", info.Provider)
+	if info.IsEnabled || info.Reason != aitriagesvc.ConfigReasonPlatformNotConfigured {
+		t.Errorf("IsEnabled=%v reason=%q, want false %q", info.IsEnabled, info.Reason, aitriagesvc.ConfigReasonPlatformNotConfigured)
+	}
+}
+
+// An organization that never opted in is off, whatever its mode says.
+func TestAITriage_GetAIConfig_NotOptedIn(t *testing.T) {
+	t.Parallel()
+
+	tenantID := shared.NewID()
+	now := time.Now().UTC()
+	tenantRepo := newMockAITriageTenantRepo()
+	tenantRepo.tenants[tenantID.String()] = tenant.Reconstitute(
+		tenantID, "test", "test", "", "",
+		map[string]any{"ai": map[string]any{"mode": "platform"}},
+		"creator", now, now,
+	)
+
+	svc := aitriagesvc.NewAITriageService(
+		newMockAITriageRepo(),
+		nil, tenantRepo, nil, nil,
+		config.AITriageConfig{AnthropicAPIKey: "test-only"},
+		logger.NewNop(),
+	)
+
+	info, err := svc.GetAIConfig(context.Background(), tenantID.String())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.IsEnabled || info.Reason != aitriagesvc.ConfigReasonNotEnabled || info.Mode != "disabled" {
+		t.Errorf("IsEnabled=%v reason=%q mode=%q, want false %q disabled", info.IsEnabled, info.Reason, info.Mode, aitriagesvc.ConfigReasonNotEnabled)
+	}
+	ok, err := svc.ShouldAutoTriage(context.Background(), tenantID, "critical")
+	if err != nil || ok {
+		t.Errorf("ShouldAutoTriage = %v, %v; want false before the organization opts in", ok, err)
+	}
+	_, err = svc.RequestTriage(context.Background(), aitriagesvc.TriageRequest{
+		TenantID: tenantID.String(), FindingID: shared.NewID().String(), TriageType: "manual",
+	})
+	if !errors.Is(err, aitriagesvc.ErrAIDisabled) {
+		t.Errorf("RequestTriage error = %v, want ErrAIDisabled", err)
 	}
 }
 
@@ -1491,6 +1536,7 @@ func TestAITriage_GetAIConfig_BYOKMode(t *testing.T) {
 		map[string]any{
 			"ai": map[string]any{
 				"mode":           "byok",
+				"enabled_at":     "2026-01-01T00:00:00Z",
 				"provider":       "openai",
 				"model_override": "gpt-4-turbo",
 			},
@@ -1544,8 +1590,9 @@ func TestAITriage_GetAIConfig_BYOKMode_DefaultModels(t *testing.T) {
 				tenantID, "test", "test", "", "",
 				map[string]any{
 					"ai": map[string]any{
-						"mode":     "byok",
-						"provider": p.provider,
+						"mode":       "byok",
+						"enabled_at": "2026-01-01T00:00:00Z",
+						"provider":   p.provider,
 					},
 				},
 				"creator", now, now,
@@ -1580,7 +1627,8 @@ func TestAITriage_GetAIConfig_AgentMode(t *testing.T) {
 		tenantID, "test", "test", "", "",
 		map[string]any{
 			"ai": map[string]any{
-				"mode": "agent",
+				"mode":       "agent",
+				"enabled_at": "2026-01-01T00:00:00Z",
 			},
 		},
 		"creator", now, now,

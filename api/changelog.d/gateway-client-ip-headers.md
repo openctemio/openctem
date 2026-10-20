@@ -1,7 +1,0 @@
-### Security: the API records the real client behind a proxy in front of the gateway
-
-- Behind a proxy in `OPENCTEM_TRUSTED_PROXIES` (a Cloudflare Tunnel connector, a load balancer), the gateway resolved the client correctly but passed the API the proxy's `X-Forwarded-For` list with the proxy's own address appended. The API, which reads `X-Forwarded-For` first and trusts only the gateway, recorded the proxy as the client of every request: audit addresses showed the proxy, and every per-IP limit (sign-in throttling, the CI token exchange) counted all clients as one.
-- The gateway now overwrites `X-Forwarded-For` and `X-Real-IP` with the one client address it resolved, and does not pass `Cf-Connecting-Ip` or `True-Client-Ip` on.
-- New gateway setting `OPENCTEM_CLIENT_IP_HEADERS` (default `X-Forwarded-For`): the header a trusted front proxy carries the client in, e.g. `Cf-Connecting-Ip` behind a Cloudflare Tunnel connector. It is read only when the connecting peer is in `OPENCTEM_TRUSTED_PROXIES`; the entrypoint refuses names other than `X-Forwarded-For`, `Cf-Connecting-Ip` and `True-Client-Ip`.
-- **Upgrade note:** deployments with `OPENCTEM_TRUSTED_PROXIES` set get correct client addresses by updating the gateway image; nothing else changes. Behind a Cloudflare Tunnel, also set `OPENCTEM_CLIENT_IP_HEADERS=Cf-Connecting-Ip`.
-- The API's request log line now has `client_ip`, the address the audit log and the per-address limits use, next to `remote_addr` (the TCP peer), so an operator can check what the API resolves behind proxies.

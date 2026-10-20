@@ -140,5 +140,16 @@
   "attackSurface.decide.addPrefix": "Add {prefix}",
   "attackSurface.decide.checkedHeading": "Already get low-impact checks (add to scope for a full scan)",
   "attackSurface.decide.seenPorts": "Open ports seen: {ports}",
-  "attackSurface.decide.otherNames": "Also named {names} (not in scope)"
+  "attackSurface.decide.otherNames": "Also named {names} (not in scope)",
+  "attackSurface.overview.totalAssets": "Total assets",
+  "attackSurface.overview.newInWindow": "{count} new in the last {days} days",
+  "attackSurface.overview.internetFacing": "Internet-facing assets",
+  "attackSurface.overview.newlyExposed": "{count} newly exposed in the last {days} days",
+  "attackSurface.overview.internetFacingInfo": "Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › What changed.",
+  "attackSurface.overview.criticalInternetFacing": "Critical internet-facing assets",
+  "attackSurface.overview.criticalInternetFacingInfo": "Internet-facing assets with critical or high criticality. A population to watch, not open risks: open exposures are listed below.",
+  "attackSurface.overview.avgRisk": "Average risk score",
+  "attackSurface.overview.of100": "of 100",
+  "attackSurface.overview.noAssetsToScore": "No assets to score",
+  "attackSurface.overview.seeNewlyExposed": "See what became internet-facing this week"
 }

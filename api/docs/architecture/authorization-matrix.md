@@ -25,7 +25,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 
 | Module group | Count | Example permissions |
 |--------------|-------|---------------------|
-| Core (dashboard, audit, settings) | 4 | `dashboard:read`, `audit:read`, `settings:read/write` |
+| Core (dashboard, audit, settings) | 6 | `dashboard:read`, `dashboards:org:view`, `dashboards:org:manage`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
@@ -37,11 +37,13 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Validation (legacy) | 4 | `validation:read/write`, `pentest:read/write` |
 | Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-087) |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
-| Reports | 2 | `reports:read/write` |
+| Reports | 3 | `reports:read/write`, `reports:manage` |
 | Content catalog | 3 | `content:read`, `content:install`, `content:publish` (RFC-099) |
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
+
+> **Compensating controls.** An effective control lowers the priority and SLA of every finding on the assets it covers, so `ctem:compensating_controls:write` (create, update, delete, record a test, link assets or findings) is held by owners, admins and roles granted it explicitly (the program-lead template); the built-in Member role reads controls only (migration `002950`). Every write is audited (High; findings links Medium).
 | **Total** | **166** | |
 
 > There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and
@@ -296,7 +298,7 @@ API keys are refused on both prefixes; the tenant is the session's. Design: `mcp
 | `GET /api/v1/assets/{id}/components`, `/dependency-paths`, `/dependency-graph` | `components:read` (asset in scope) |
 | `GET /api/v1/vex-statements`, `/{id}` | `components:read` (asset-bound statements: asset in scope; statements for every asset: an in-scope asset uses the package; else 404) |
 | `GET`/`PUT /api/v1/organization/settings/license-policy` | `settings:read` / `settings:write` (configuration of the caller's organization; a PUT re-evaluates its package links and license findings; audited) |
-| `POST /api/v1/vex-statements`, `PATCH`/`DELETE /{id}`, `POST /import` | `findings:approve` (closes findings: asset-bound needs the asset in scope, 404 otherwise; a statement for every asset needs full data access, 403 otherwise; import rate limited) |
+| `POST /api/v1/vex-statements`, `PATCH`/`DELETE /{id}`, `POST /import` | `findings:approve`, plus `findings:verify` to write a `fixed` statement (create or patch to `fixed`, widen a fixed one, or import a document with any `fixed` statement; the whole import is refused with 403 before anything is written), because `fixed` resolves findings with verification `vex_statement`; `not_affected` and delete need only approve (closes findings: asset-bound needs the asset in scope, 404 otherwise; a statement for every asset needs full data access, 403 otherwise; import rate limited) |
 
 The inventory has no manual create, update or delete (RFC-070): sensors, CI
 and SBOM import write it.
@@ -308,7 +310,7 @@ and SBOM import write it.
 | `GET /api/v1/findings` | `findings:read` |
 | `GET /api/v1/findings/{id}` | `findings:read` |
 | `POST /api/v1/findings` | `findings:write` |
-| `DELETE /api/v1/findings/{id}` | `findings:delete` |
+| `DELETE /api/v1/findings/{id}` | `findings:delete` (hard delete; the activity timeline goes with the row. An audit event `finding.deleted` is written first with the actor, title, severity, status, source, CVE, asset, fingerprint, tool and the number of activities removed; if that write fails the finding is not deleted) |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
@@ -756,6 +758,35 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/dashboard/stats` | `dashboard:read` |
+
+#### Dashboard data (`/api/v1/dashboard-data`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/dashboard-data/` | owner or administrator (`RequireAdmin`) |
+| `POST /api/v1/dashboard-data/rebuild` | owner or administrator (`RequireAdmin`); once per organization per hour, shared with the console route (`docs/architecture/dashboards.md`) |
+
+#### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
+
+Two kinds ([dashboards](dashboards.md)). Personal dashboards are the caller's
+own: `/me/*` is self-scoped (no permission gate) and every query filters on
+the caller's tenant and user, so another user's or tenant's dashboard is 404.
+Organization dashboards belong to the organization.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
+| `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
+| `GET /api/v1/organization/dashboards`, `GET …/{id}` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
+| `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
+| `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
+| `GET /api/v1/organization/settings/dashboards` | `dashboard:read` |
+| `PUT /api/v1/organization/settings/dashboards` | owner or admin, audited |
+
+`dashboards:org:view` replaced `dashboard:aggregate` (migration
+`dashboard_ownership`) and counts as full-data grade (`permission.IsFullDataGrade`):
+a role holding it is privileged, so an outside member holding it needs a
+second factor and binding it to a team is owner-only.
 
 ### URL-Tenant Routes (Tenant from URL)
 
@@ -1346,12 +1377,13 @@ targets must match a scope target (decision D9). See
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
 they may see and change. Scope rows live in `user_accessible_assets`, computed
-from exactly two sources:
+from exactly three sources:
 
 | Source | Managed with | Rows |
 |---|---|---|
 | **Group assignment**: the assets assigned to the user's active groups | `team:groups:write` (Groups → Assets, scope rules, or a *group* owner on an asset's Owners tab) | `asset_owners` rows with `group_id` × `group_members` |
-| **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000372`) |
+| **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`); a member without full data access who creates an asset gets one automatically (source `creator`) | `asset_access_grants` (migration `000372`) |
+| **Ownership**: a `primary` or `secondary` *user* owner set by a person | `team:groups:write` on top of `assets:write` / `assets:delete` (an asset's Owners tab) | `v_asset_owner_scope` (migration `003053`) |
 
 **Private program assets** (RFC-065 §15.3): the program-only assets of
 private bug-bounty programs, and their findings, are seen only by the
@@ -1370,17 +1402,66 @@ not hidden from them (`filterspec.ProgramHiddenSQL`, the one "program
 hidden" predicate). Notification pushes for a hidden asset reach only
 owners and the program's members.
 
-**Being an owner is not an access grant** (owner decision O1, 2026-10-03).
-Naming a user as an owner of an asset, in any RACI role or through the
-`owner_ref` email match, is an assignment (accountability, finding
-assignment, notifications) and never changes what that user can see. Before
-O1 it did: `assets:write` alone could narrow a member who saw everything
-to that one asset, or widen one who saw nothing. Migration `000372` turned every such
-owner-derived access row into an explicit grant (source `migration`), so
-nobody lost an asset at the upgrade; administrators review and revoke them
-on the asset's Owners tab (*Direct access*). A group owner remains the
-group's assignment, which is why adding or removing one needs
-`team:groups:write` on top of `assets:write`/`assets:delete`.
+**Owning an asset grants view of it** (owner decision 2026-10-19, which
+replaces O1). A user named `primary` or `secondary` owner **by a person**
+(`assignment_source = 'manual'`) has the asset, and so its findings,
+exposures and every other asset-bound row, in their data scope: the same
+`user_accessible_assets` rows every scoped read (lists, by-id routes,
+dashboards and their facts, exports, MCP tools, notifications) already uses.
+Ownership adds no permission: what the owner may do on the asset is what
+their role allows on any asset in their scope (a viewer owner reads only).
+Not granting: `stakeholder`, `informed` and `regulatory` owners, and owners
+matched from `owner_ref` (data from a source or an import, so a source can
+never widen a member's view). The rule is one SQL view,
+`v_asset_owner_scope`, mirrored by `accesscontrol.UserOwnerGrantsScope`; an
+`asset_owners` trigger recomputes the affected (user, asset) row on insert,
+delete and on a change of user, type or source, in the same transaction, so
+an ex-owner loses the asset at once (unless a group or a grant still gives
+it). The user must be an active member of the asset's organization. Naming,
+re-typing (into or out of `primary`/`secondary`) or removing such an owner
+changes who can see the asset, so it needs `team:groups:write` like a group
+owner or an access grant, refuses self-designation for a non-administrator
+(as an access grant refuses a self-grant), and is audited as
+`asset.access_granted` / `asset.access_revoked` with `source=ownership`. A
+group owner remains the group's assignment, which is why adding or removing
+one needs `team:groups:write` on top of `assets:write`/`assets:delete`.
+
+**Being assigned grants view of the assigned item** (owner decision
+2026-10-19). Unlike ownership this is per item, not per asset, so it is not a
+`user_accessible_assets` row:
+
+- The **assignee of a finding** (`findings.assigned_to`) sees that finding:
+  the findings list, stats, groups and export (`filterspec.AssigneeScopeSQL`,
+  registry field `ScopeAssigneeSQL`), the by-id routes
+  (`DataScopeRepository.FindingIDsInScope`, `Enforcer.FindingInScope`) and
+  the bulk paths (`Enforcer.FindingFilterForCaller`). Never the asset (its
+  page stays 404) nor the asset's other findings, never a finding on a
+  private program asset hidden from them, and pentest findings keep their
+  campaign-membership rule. Dashboards and their facts stay per asset scope.
+- The **assignee of a remediation campaign** (`remediation_campaigns.assigned_to`)
+  sees the campaign and the findings it tracks (list, counts, the campaign's
+  findings page), not other findings, and not on hidden assets. The wider
+  view of the campaign's findings applies only when someone else with full
+  data access created the campaign: its filter is evaluated live, so a
+  campaign a restricted member created (and assigned to themself or a
+  colleague) shows its assignee only the findings in the assignee's own
+  scope. Changing the campaign still needs every one of its findings in
+  their own scope.
+
+What the assignee may do is their role's. The view is computed from the
+assignment on every request, so unassigning removes it at once; assignments
+are recorded in the finding activity and the campaign audit. The
+organization comes from the caller (an assignee row of another organization
+never matches), and a request without a user (an organization API key) is
+nobody's assignee.
+
+**The creator sees what they created.** `POST /api/v1/assets` by a caller
+whose scope is restricted (a member without full data access, or an API key
+bound to such a user) adds an explicit grant for the caller with source
+`creator`, audited `asset.access_granted`. Creating never merges into an
+existing asset (a duplicate is a 409), so the grant only ever covers the new
+asset. Callers who see every asset get no grant; a request without a user
+(an organization API key, ingest) gets none.
 
 | Route | Gate |
 |---|---|
@@ -1388,6 +1469,7 @@ group's assignment, which is why adding or removing one needs
 | `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 403 when the user is the caller (no self-grant, so access held through a group cannot be turned into a personal grant before leaving it); 409 when the grant exists; audited `asset.access_granted` |
 | `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
 | `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
+| `POST /api/v1/assets/{id}/owners` with `user_id` and type `primary`/`secondary` · `PUT …/owners/{id}` moving a user owner into or out of those types · `DELETE …/owners/{id}` of such an owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise); 403 when a non-administrator names themself; audited `asset.access_granted` / `asset.access_revoked` |
 | `POST /api/v1/groups/{g}/assets` · `/assets/bulk` · scope rules | `team:groups:write`; the group must be in the caller's organization, and each asset must be a live asset of the **group's** organization. A single assign answers 404 for a foreign, deleted or unknown asset id alike; a bulk assign counts them as failed |
 
 **You can only hand out scope you hold** (owner decision D13, research doc 15
@@ -1691,6 +1773,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
 | `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
 | `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
+| `POST /findings/{id}/severity-requests/{request_id}/{approve,reject}` (`findings:approve`), `/cancel` (`findings:severity`, requester only) | new | 404 (guard) + `getFindingWithTenantCheck`; the request must belong to that finding and tenant; approve runs the approval policy (never the requester or an asset owner, approver needs the finding in scope) |
 | `PUT/DELETE /findings/{id}/comments/{comment_id}` | bypass | 404 (guard) + comment's finding checked |
 | `POST /comments/{comment_id}/reactions`, `DELETE /comments/{comment_id}/reactions/{emoji}` | (new) | comment resolved by (tenant, id); its finding goes through the comment-list gate (data scope, or pentest campaign membership instead of it; a client reaches client-visible comments only): 404. Removing another member's reaction (`?user_id=`) needs owner/admin and is audited |
 | `PUT/DELETE /assets/{id}`, activate/deactivate/archive, crown-jewel, snooze, sync, scan | **bypass (write)** | 404 (guard) |
@@ -1716,17 +1799,17 @@ a personal address, or be a work domain nobody has verified.
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values. The group list itself stays tenant configuration |
-| `GET /attack-surface/attack-paths` | **bypass (summary counts over the whole graph)** | `top_assets` filtered and `summary` recomputed over the assets the caller may see (entry points, reachable assets, critical reachable, crown jewels at risk, total paths, max depth); reachability itself is still the whole graph's. A viewer with `dashboard:aggregate` keeps the organization summary and still gets only their own rows |
-| `GET /threat-intel/stats` (EPSS and KEV counts) | **bypass (organization-wide exposure counts)** | the open findings counted (EPSS high / critical, KEV past due) are those on assets in the caller's scope; `dashboard:aggregate` or full data access counts the organization. The catalog totals (entries, ransomware, recently added) are public feed context |
-| `GET /validation/coverage` | **bypass (organization-wide KPI)** | per-severity totals, validated, downgrade and priority-class coverage count the findings on assets in the caller's scope; `dashboard:aggregate` or full data access counts the organization |
-| `GET /scans/coverage` | **bypass (organization-wide estate)** | the scannable estate counted (total, never scanned, covered, stale, critical uncovered, oldest dispatch) is the caller's in-scope assets; `dashboard:aggregate` or full data access counts the organization |
-| `GET /ctem-cycles/metrics/trend` | **bypass (organization-wide cycle metrics)** | the series and maturity are computed per organization, so a restricted member without `dashboard:aggregate` or full data access gets 403 |
+| `GET /attack-surface/attack-paths` | **bypass (summary counts over the whole graph)** | `top_assets` filtered and `summary` recomputed over the assets the caller may see (entry points, reachable assets, critical reachable, crown jewels at risk, total paths, max depth); reachability itself is still the whole graph's. A viewer with `dashboards:org:view` keeps the organization summary and still gets only their own rows |
+| `GET /threat-intel/stats` (EPSS and KEV counts) | **bypass (organization-wide exposure counts)** | the open findings counted (EPSS high / critical, KEV past due) are those on assets in the caller's scope; `dashboards:org:view` or full data access counts the organization. The catalog totals (entries, ransomware, recently added) are public feed context |
+| `GET /validation/coverage` | **bypass (organization-wide KPI)** | per-severity totals, validated, downgrade and priority-class coverage count the findings on assets in the caller's scope; `dashboards:org:view` or full data access counts the organization |
+| `GET /scans/coverage` | **bypass (organization-wide estate)** | the scannable estate counted (total, never scanned, covered, stale, critical uncovered, oldest dispatch) is the caller's in-scope assets; `dashboards:org:view` or full data access counts the organization |
+| `GET /ctem-cycles/metrics/trend` | **bypass (organization-wide cycle metrics)** | the series and maturity are computed per organization, so a restricted member without `dashboards:org:view` or full data access gets 403 |
 | `GET /attack-surface/exposure-chains`, MCP `get_exposure_chains` | **bypass** | a chain is returned only when every hop is in scope |
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
 | `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
 | `GET /dashboard/executive-summary` (+ export) `top_risks` | bypass | filtered |
-| `GET /dashboard/executive-summary` (+ export) totals, `/dashboard/velocity`, `/dashboard/data-quality`, `/dashboard/process-metrics` | **bypass (organization-wide totals)** | count the viewer's own scope (same rule as `/dashboard/stats`: `dashboard:aggregate` or full data access for the organization); the executive score change and the data-quality deduplication rate are not reported for a restricted viewer |
-| `GET /dashboard/risk-trend`, `GET /dashboard/program-metrics` | **bypass (organization-wide history and KPIs)** | kept for the whole organization: a restricted viewer without `dashboard:aggregate` gets an empty trend and a 403 on the program metrics |
+| `GET /dashboard/executive-summary` (+ export) totals, `/dashboard/velocity`, `/dashboard/data-quality`, `/dashboard/process-metrics` | **bypass (organization-wide totals)** | count the viewer's own scope (same rule as `/dashboard/stats`: `dashboards:org:view` or full data access for the organization); the executive score change and the data-quality deduplication rate are not reported for a restricted viewer |
+| `GET /dashboard/risk-trend`, `GET /dashboard/program-metrics` | **bypass (organization-wide history and KPIs)** | kept for the whole organization: a restricted viewer without `dashboards:org:view` gets an empty trend and a 403 on the program metrics |
 | `GET/PUT/POST/DELETE /suppressions...` | **bypass (rule patterns of any asset; an organization-wide rule could be approved by a restricted approver)** | an asset-bound rule needs its asset in the caller's scope to be read, edited, approved or deleted (404 otherwise) and is left out of the list; an organization-wide rule needs full data access to create, edit, approve or delete |
 | MCP `get_finding`, `explain_priority`, `list_finding_transitions`, `add_finding_comment` (by-id read, `GetFindingWithScope`) | **bypass (private program findings of a full-data role)** | the same decision as the route guard (`datascope.Enforcer`): a full-data role does not read a private bug-bounty program's findings it is not a member of; scope rows apply to everyone else |
 | `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
@@ -1755,7 +1838,7 @@ computed with the same SQL condition as every scoped list:
 |---|---|
 | Owner / admin / full-data role / unrestricted member | the organization |
 | Restricted member | only their in-scope assets and those assets' findings (0 in a fail-closed organization without a group) |
-| Restricted member with **`dashboard:aggregate`** (new permission, migration `000774`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
+| Restricted member with **`dashboards:org:view`** (was `dashboard:aggregate`, renamed by migration `dashboard_ownership`; owner and admin by default, custom roles when granted; full-data grade, see [dashboards](dashboards.md)) | the organization totals on these legacy endpoints; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see. Organization dashboards themselves show organization-wide numbers and names |
 
 Recent activity and top risks are row data and stay limited to the viewer's
 own scope whatever the permission: an aggregate viewer's top risks are queried
@@ -1776,7 +1859,7 @@ KEV, `GET /threat-intel/stats`), the validation coverage and downgrade figures
 (`GET /validation/coverage`) and the program metrics (`GET
 /dashboard/program-metrics`), where a pentest draft or in-review finding
 counts for nobody. Program metrics and the risk trend are kept for the
-organization, so a restricted viewer needs `dashboard:aggregate` (or full data
+organization, so a restricted viewer needs `dashboards:org:view` (or full data
 access) for them; the risk trend is a daily organization snapshot and cannot
 follow the pentest rule per viewer. A CTEM cycle's `charter_evaluation` is
 computed from the organization's metrics: `GET /ctem-cycles` and
@@ -1784,21 +1867,25 @@ computed from the organization's metrics: `GET /ctem-cycles` and
 one field out for a viewer who would be refused the cycle metrics, and the rest
 of the cycle stays readable. Every dashboard figure computed for the caller
 reads the data-scope enforcer's `ViewerScope` (one decision for the
-`dashboard:aggregate` check) and refuses when the enforcer is not wired; the
+`dashboards:org:view` check) and refuses when the enforcer is not wired; the
 attack-path and exposure-chain reads for a caller refuse likewise
 (`datascope.ErrNotConfigured`) instead of returning the organization's result.
 MTTR (`GET /dashboard/mttr` and
 `/dashboard/mttr-analytics`) follows the viewer the same way (research 24
 §5.1): a restricted member averages their own in-scope findings, with
-`dashboard:aggregate` the organization. The other dashboard metrics
+`dashboards:org:view` the organization. The other dashboard metrics
 (velocity, data quality, risk trend, program, process and executive metrics)
 move the same way in a follow-up; until then they stay in the table below.
 
-Remediation campaign progress follows the reader too (research 15 L-18,
-research 24): a restricted member reading a campaign (`GET`, list, and the
-responses of update, status and refresh) sees the finding and resolved counts
-of their own in-scope findings. The stored counts stay organization-wide,
-because auto-complete reads them; a restricted read never persists its view.
+Remediation campaigns hold tasks, never findings (remediation-campaigns.md):
+a restricted member sees a campaign they created or own, or one with a task
+holding a finding in their scope; its summary counts only those tasks and
+findings (`hidden_tasks` counts the rest). They change a campaign only when no
+task of it has a finding outside their scope, add only tasks they may change,
+and move a task out of another campaign only when they may change that one.
+Completion and the reconcile read the organization-wide summary; a read never
+stores anything.
+
 ### Scheduled report recipients
 
 A scheduled report mails organization posture out, so its recipients are
@@ -1812,8 +1899,23 @@ organization**, or an address in one of its **`Security.AllowedDomains`**
   on with them.
 - The scheduler re-checks every recipient at send time and skips the ones no
   longer allowed (logged); with nobody left it sends nothing (`no_recipients`).
-- Create, activate and delete are audited (`report_schedule.*`, with the
-  recipients on create).
+- Create, activate, pause and delete are audited (`report_schedule.*`, with
+  the recipients, and the creator when someone else changes it).
+
+### Report schedule ownership
+
+`reports:write` creates a schedule; only its **creator** or a holder of
+**`reports:manage`** (owner and admin by default) may pause, resume
+(`PATCH /reports/schedules/{id}/toggle`) or delete it. Anyone else gets 403;
+another organization's schedule is 404. A schedule without a recorded creator
+is managed only through `reports:manage`.
+
+Recipient addresses are personal data: `GET /reports/schedules` and
+`GET /reports/schedules/{id}` return `recipients` only to the creator and
+`reports:manage` holders, and an empty list with `recipient_count` to every
+other `reports:read` holder. Each row carries `created_by`, `created_by_name`
+(a display name, never an email) and `can_manage`, which the web uses to show
+or hide the toggle and delete actions.
 - The report body is still tenant-wide; rendering under the creator's scope is
   part of P1-4 (D6).
 ### Scheduled reports render under their creator's scope
@@ -1868,10 +1970,10 @@ These still return aggregates over the whole tenant to every holder of the
 read permission; none exposes a row, name, title or id of an out-of-scope
 object. This is **debt, not a decision**: owner decision D6 (2026-10-04) is
 that aggregates follow the viewer's scope, with org-wide totals only through
-`dashboard:aggregate` and a k ≥ 5 floor. Scoping them is RFC-050 W16;
+`dashboards:org:view` and a k ≥ 5 floor. Scoping them is RFC-050 W16;
 `/dashboard/stats` already follows D6, and so do the threat intel, validation
 coverage, scan coverage and attack-path summary counts (section "Data scope"
-above); the cycle metrics trend needs `dashboard:aggregate` or full data access.
+above); the cycle metrics trend needs `dashboards:org:view` or full data access.
 
 | Endpoint | Why tenant-wide |
 |---|---|
@@ -2118,7 +2220,8 @@ JWT-Tenant Routes (Permission-based):
 ├── /api/v1/components/*       → components:read/write/delete
 ├── /api/v1/findings/*         → findings:read/write/delete
 ├── /api/v1/vulnerabilities/*  → vulnerabilities:read/write/delete
-└── /api/v1/dashboard/*        → dashboard:read
+├── /api/v1/dashboard/*        → dashboard:read
+└── /api/v1/organization/dashboards/* → dashboards:org:view (read), dashboards:org:manage (write)
 
 URL-Tenant Routes (Role-based):
 ├── /api/v1/tenants                      → Any authenticated
@@ -2408,7 +2511,7 @@ from a custom role to deny that one action.
 | `scans:execute` | `POST /scans/{id}/trigger`, `POST /scans/quick`, `POST /assets/{id}/scan` | `scans:write` / `assets:write` |
 | `scans:workflows:execute` | `POST /scan-workflows/{id}/runs` | `scans:workflows:write` |
 | `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
-| `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15) | `findings:write` |
+| `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15; also `findings:bulk_update`). Both work only once an organization administrator turned AI triage on (`PUT /tenants/{tenant}/settings/ai`, team admin, `settings:write`, step-up) | `findings:write` |
 | `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
 | `findings:exposures:write` | `POST /exposures`, `/ingest`, `PUT /{id}/ctem-id` | `findings:write` |
 | `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate` (with `findings:write`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |

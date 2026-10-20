@@ -1,6 +1,7 @@
 'use client'
 
 import { use, useState, useMemo, useCallback } from 'react'
+import NextLink from '@/components/link'
 import { useRouter } from 'next/navigation'
 import { replaceUrlSearch, useUrlParams } from '@/hooks/use-url-param'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
@@ -79,6 +80,7 @@ import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { IssuesChip } from '@/features/assets/components/service-cells'
 import { SEVERITY_LEVELS, normalizeSeverity, type SeverityLevel } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
+import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 
 const criticalityColors: Record<string, string> = CRITICALITY_BADGE_SOFT
 
@@ -104,6 +106,9 @@ const findingStatusClass: Record<string, string> = {
 
 const assetTypeIcons: Record<string, React.ReactNode> = {
   domain: <Globe className="h-4 w-4" />,
+  subdomain: <Globe className="h-4 w-4" />,
+  ip_address: <Globe className="h-4 w-4" />,
+  application: <Globe className="h-4 w-4" />,
   website: <Globe className="h-4 w-4" />,
   api: <Server className="h-4 w-4" />,
   host: <Server className="h-4 w-4" />,
@@ -179,7 +184,20 @@ function AssetGroupDetailContent({ params }: PageProps) {
 
   // Derived data from hooks - wrapped in useMemo to prevent unnecessary re-renders
   const safeAssets = useMemo(() => assets || [], [assets])
-  const safeFindings = useMemo(() => findings || [], [findings])
+  // The group's finding count, its severity breakdown and its findings tab
+  // cover the same set: open findings on the group's members.
+  const safeFindings = useMemo(() => (findings || []).filter((f) => f.open), [findings])
+  const { registry } = useAssetTypeRegistry()
+  // The registry's label of a stored asset type (never a fixed list).
+  const typeLabel = useCallback(
+    (type: string) => {
+      const def = registry?.types?.find((d) => d.type === type && !d.alias_of)
+      return def?.label ?? type.replace(/_/g, ' ')
+    },
+    [registry]
+  )
+  const findingsHref = (severity?: string) =>
+    `/findings?asset_group_id=${encodeURIComponent(id)}${severity ? `&severity=${severity}` : ''}`
 
   // CSV export of the group's assets. Declared before any early return so the
   // hook order stays stable (rules-of-hooks).
@@ -240,7 +258,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
-              {assetTypeIcons[row.original.type]}
+              {assetTypeIcons[row.original.type] ?? <Server className="h-4 w-4" />}
             </span>
             <span className="font-medium">{row.original.name}</span>
           </div>
@@ -249,11 +267,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
       {
         accessorKey: 'type',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
-        cell: ({ row }) => (
-          <Badge variant="outline" className="capitalize">
-            {row.original.type}
-          </Badge>
-        ),
+        cell: ({ row }) => <Badge variant="outline">{typeLabel(row.original.type)}</Badge>,
       },
       {
         accessorKey: 'status',
@@ -312,7 +326,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
         ),
       },
     ],
-    [router]
+    [router, typeLabel]
   )
 
   const findingColumns = useMemo<ColumnDef<GroupFinding>[]>(
@@ -676,8 +690,12 @@ function AssetGroupDetailContent({ params }: PageProps) {
               {/* Asset Distribution */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Asset Distribution</CardTitle>
-                  <CardDescription>Breakdown by asset type</CardDescription>
+                  <CardTitle className="text-lg">
+                    {t('assets.groups.detail.typesTitle', 'Assets by type')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t('assets.groups.detail.typesDesc', 'The group’s members by asset type')}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {Object.keys(assetsByType).length === 0 ? (
@@ -691,7 +709,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium capitalize">{type}</span>
+                              <span className="text-sm font-medium">{typeLabel(type)}</span>
                               <span className="text-sm text-muted-foreground">{count}</span>
                             </div>
                             <Progress value={(count / group.assetCount) * 100} className="h-2" />
@@ -706,18 +724,34 @@ function AssetGroupDetailContent({ params }: PageProps) {
               {/* Finding Severity */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Finding Severity</CardTitle>
-                  <CardDescription>Breakdown by severity level</CardDescription>
+                  <CardTitle className="text-lg">
+                    {t('assets.groups.detail.severityTitle', 'Open findings by severity')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t(
+                      'assets.groups.detail.severityDesc',
+                      'The same findings as the group’s count; each row opens them'
+                    )}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     {Object.entries(findingsBySeverity).map(([severity, count]) => (
-                      <div key={severity} className="flex items-center justify-between">
+                      <NextLink
+                        key={severity}
+                        href={findingsHref(severity)}
+                        className="flex items-center justify-between rounded-md px-1 py-0.5 hover:bg-muted"
+                        aria-label={t(
+                          'assets.groups.detail.severityLink',
+                          'Open {count} {severity} findings of this group',
+                          { count, severity }
+                        )}
+                      >
                         <div className="flex items-center gap-2">
                           <SeverityBadge severity={severity as GroupFinding['severity']} />
                         </div>
-                        <span className="font-medium">{count}</span>
-                      </div>
+                        <span className="font-medium tabular-nums">{count}</span>
+                      </NextLink>
                     ))}
                   </div>
                 </CardContent>

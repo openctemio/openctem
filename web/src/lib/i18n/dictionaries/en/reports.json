@@ -1,5 +1,22 @@
 {
   "reports.schedulesHint": "Finding-summary digests emailed to recipients on a schedule.",
   "reports.executiveHint": "Program-level risk, findings, SLA and MTTR for the selected window.",
-  "reports.schedule.newDescription": "On the chosen cadence, {product} renders a finding-summary digest and emails it to the recipients below. It does not store a downloadable file."
+  "reports.schedule.newDescription": "On the chosen cadence, {product} renders a finding-summary digest and emails it to the recipients below. It does not store a downloadable file.",
+  "reports.schedules.paused": "Schedule paused",
+  "reports.schedules.activated": "Schedule activated",
+  "reports.schedules.updateFailed": "Failed to update schedule",
+  "reports.schedules.deleted": "Schedule deleted",
+  "reports.schedules.deleteFailed": "Failed to delete schedule",
+  "reports.schedules.colName": "Name",
+  "reports.schedules.colOwner": "Owner",
+  "reports.schedules.colType": "Type",
+  "reports.schedules.colCadence": "Cadence",
+  "reports.schedules.colRecipients": "Recipients",
+  "reports.schedules.colActive": "Active",
+  "reports.schedules.colLastRun": "Last run",
+  "reports.schedules.colNextRun": "Next run",
+  "reports.schedules.stateActive": "Active",
+  "reports.schedules.statePaused": "Paused",
+  "reports.schedules.pauseLabel": "Pause {name}",
+  "reports.schedules.resumeLabel": "Resume {name}"
 }

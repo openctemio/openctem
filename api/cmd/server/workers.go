@@ -9,6 +9,10 @@ import (
 	"sync"
 	"time"
 
+	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
+
+	vulneventapp "github.com/openctemio/openctem/api/internal/app/vulnevent"
+
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,8 +42,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -80,7 +86,6 @@ var controllerMetrics = sync.OnceValue(func() controller.Metrics {
 // Workers holds all background worker instances.
 type Workers struct {
 	JobWorker                 *jobs.Worker
-	SensorHealthChecker       *jobs.SensorHealthChecker
 	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
 	ScanScheduler             *scan.ScanScheduler
 	CommandExpirationChecker  *command.ExpirationChecker
@@ -241,18 +246,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// tasks and never consumed them. jobs.NewWorker logs which handlers it had
 	// to skip.
 	var err error
-	w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
+	w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, log)
 	if err != nil {
 		return nil, err
-	}
-
-	// Initialize sensor health checker if worker is enabled
-	if cfg.Worker.Enabled {
-		w.SensorHealthChecker = jobs.NewSensorHealthChecker(repos.Sensor, &cfg.Worker, log)
-		log.Info("sensor health checker initialized",
-			"heartbeat_timeout", cfg.Worker.HeartbeatTimeout,
-			"check_interval", cfg.Worker.HealthCheckInterval,
-		)
 	}
 
 	// Initialize AI triage recovery job if AI triage service is available
@@ -354,7 +350,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// No offline conviction while the platform itself is degraded (RFC-035
 	// D3): just started, stalled, or slow to handle heartbeats.
 	sensorHealth.SetPlatformHealth(svc.SensorPlatformHealth)
+	// Judges from the liveness store in redis mode, compares in shadow mode.
+	if svc.Sensor != nil {
+		sensorHealth.SetLiveness(svc.Sensor.LivenessMode(), svc.Sensor.LivenessStore())
+	}
+	// An offline conviction ends the sensor's leases at once.
+	sensorHealth.SetLeaseExpirer(repos.Command)
 	w.ControllerManager.Register(sensorHealth)
+	// How many sensors still use a legacy rda_ key (a gauge and a log line
+	// when it changes).
+	w.ControllerManager.Register(controller.NewSensorLegacyKeysController(repos.Sensor, log.With("controller", "sensor-legacy-keys")))
 
 	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
 	// default branches and outdated runners, once each while they hold; and
@@ -525,6 +530,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		repos.AssetChangeEvents, svc.Asset, cfg.AssetChangeRetentionDays,
 		log.With("controller", "asset-change-timeline")))
 
+	// Dashboard facts (docs/architecture/dashboards.md, "Facts maintainer"):
+	// the change queue every 30 s; full runs, age bands and partitions.
+	w.ControllerManager.Register(controller.NewDashboardFactsController(
+		repos.DashboardFacts, log.With("controller", "dashboard-facts")))
+	w.ControllerManager.Register(controller.NewDashboardFactReconcileController(
+		repos.DashboardFacts, log.With("controller", "dashboard-facts-reconcile")))
+
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
 		&controller.RoleSyncControllerConfig{
@@ -662,18 +674,26 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
-	// Threat intel — daily EPSS + KEV refresh, a priority recompute for only
-	// the findings whose CVE intel moved, and KEV auto-escalation.
+	// Threat intel — daily EPSS and hourly KEV refresh, a priority
+	// recompute for only the findings whose CVE intel moved, and KEV
+	// auto-escalation. Both report material changes to the vulnerability
+	// event log (RFC-117).
 	var intelQueue controller.IntelChangeQueue
 	if svc.Scoring != nil {
 		intelQueue = svc.Scoring
 	}
-	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
-		svc.ThreatIntel,
-		repos.KEVEscalator,
-		intelQueue,
-		log.With("controller", "threat-intel-refresh"),
-	))
+	var vulnEvents *vulneventapp.Emitter
+	if repos.VulnEvent != nil {
+		vulnEvents = vulneventapp.NewEmitter(repos.VulnEvent, log)
+	}
+	epssRefresh := controller.NewThreatIntelRefreshController(svc.ThreatIntel, intelQueue, log.With("controller", "threat-intel-refresh"))
+	kevRefresh := controller.NewKEVRefreshController(svc.ThreatIntel, repos.KEVEscalator, intelQueue, log.With("controller", "kev-refresh"))
+	if vulnEvents != nil {
+		epssRefresh.SetEventEmitter(vulnEvents)
+		kevRefresh.SetEventEmitter(vulnEvents)
+	}
+	w.ControllerManager.Register(epssRefresh)
+	w.ControllerManager.Register(kevRefresh)
 
 	// Vulnerability bundles (RFC-066 §5.5): verified and imported into the
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
@@ -690,7 +710,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
 			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
 				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
-			w.ControllerManager.Register(controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import")))
+			importCtl := controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
+			if vulnEvents != nil {
+				importCtl.SetEventEmitter(vulnEvents)
+			}
+			w.ControllerManager.Register(importCtl)
 		}
 	}
 
@@ -698,6 +722,33 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// each organization's findings.
 	if svc.VulnMatch != nil {
 		w.ControllerManager.Register(controller.NewVulnMatchController(svc.VulnMatch, log.With("controller", "vuln-match")))
+	}
+
+	// Emerging-threat alerts (RFC-117): events and matched findings to
+	// alerts, immediate messages under the hourly cap and quiet hours, the
+	// daily digest (channels, in-app, the e-mail digest preference).
+	if svc.ThreatAlertPlanner != nil {
+		var mail threatalertapp.Mailer
+		if svc.Email != nil {
+			mail = emergingThreatMailer{email: svc.Email, log: log}
+		}
+		var scopes threatalertapp.ScopeResolver
+		if svc.DataScope != nil {
+			scopes = svc.DataScope
+		}
+		var inApp threatalertapp.InAppNotifier
+		if svc.Notification != nil {
+			inApp = svc.Notification
+		}
+		var ob threatalertapp.Enqueuer
+		if svc.Outbox != nil {
+			ob = svc.Outbox
+		}
+		svc.ThreatAlertPlanner.SetSinks(ob, inApp, repos.MemberLifecycle, scopes, mail, deps.Config.SMTP.BaseURL)
+		if svc.Module != nil {
+			svc.ThreatAlertPlanner.SetModules(middleware.NewModuleGate(svc.Module, time.Minute))
+		}
+		w.ControllerManager.Register(controller.NewThreatAlertPlannerController(svc.ThreatAlertPlanner, log.With("controller", "threat-alert-planner")))
 	}
 
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
@@ -891,14 +942,32 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewAssetRiskReconcileController(svc.Asset, 0))
 	}
 
+	// Durable jobs: ticket status sync and invitation e-mails, queued in the
+	// transaction of the change that needs them.
+	if svc != nil {
+		handlers := map[durablejob.Kind]controller.DurableJobHandler{}
+		if svc.JiraSync != nil {
+			handlers[durablejob.KindJiraStatusSync] = jobs.StatusSyncHandler(svc.JiraSync)
+		}
+		if svc.GitHubTicket != nil {
+			handlers[durablejob.KindGitHubStatusSync] = jobs.StatusSyncHandler(svc.GitHubTicket)
+		}
+		if svc.Email != nil && svc.Encryptor != nil {
+			handlers[durablejob.KindInvitationEmail] = jobs.InvitationEmailHandler(svc.Email, svc.Encryptor)
+		}
+		w.ControllerManager.Register(controller.NewDurableJobsController(
+			postgres.NewDurableJobRepository(&postgres.DB{DB: deps.DB}), handlers, 0,
+			log.With("controller", "durable-jobs")))
+	}
+
 	// Risk snapshot — computes daily risk/MTTR/SLA metrics per tenant (RFC-005 Gap 4)
 	w.ControllerManager.Register(controller.NewRiskSnapshotController(
 		deps.DB,
 		log.With("controller", "risk-snapshot"),
 	))
 
-	// Remediation progress — periodically refresh campaign finding counts and
-	// auto-complete campaigns whose findings are all resolved.
+	// Remediation progress: complete campaigns whose tasks are done and
+	// reopen completed ones with a live task again.
 	if svc != nil && svc.RemediationCampaign != nil {
 		if svc.Module != nil {
 			svc.RemediationCampaign.SetModuleGuard(svc.Module) // skip tenants with remediation off
@@ -915,6 +984,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc != nil && svc.RemediationTask != nil {
 		w.ControllerManager.Register(controller.NewRemediationTaskController(
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
+		))
+	}
+	// Tasks from a query in auto mode: add new matches as each task's owner
+	// (suspends a task whose owner left or lost access).
+	if svc != nil && svc.RemediationTask != nil {
+		w.ControllerManager.Register(controller.NewRemediationTaskQueryController(
+			svc.RemediationTask, 5*time.Minute, log.With("controller", "remediation-task-queries"),
 		))
 	}
 	// Task issues: push each task's state to its tracker issue (move and a
@@ -1239,11 +1315,6 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 		}()
 	}
 
-	// Start sensor health checker
-	if w.SensorHealthChecker != nil {
-		w.SensorHealthChecker.Start()
-	}
-
 	// Start AI triage recovery job
 	if w.AITriageRecoveryJob != nil {
 		w.AITriageRecoveryJob.Start()
@@ -1355,11 +1426,6 @@ func (w *Workers) Stop(log *logger.Logger) {
 		log.Info("stopping job worker...")
 		w.JobWorker.Shutdown()
 		log.Info("job worker stopped")
-	}
-
-	// Stop sensor health checker
-	if w.SensorHealthChecker != nil {
-		w.SensorHealthChecker.Stop()
 	}
 
 	// Stop AI triage recovery job

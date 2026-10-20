@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -141,6 +142,61 @@ func parseIDList(field string, ss []string) ([]shared.ID, error) {
 	return out, nil
 }
 
+// RemediationConflictsInput says what to do with findings that already
+// belong to another active task: skip them all, or move the named ones (with
+// a reason; the others are skipped). Without it such findings answer 409
+// FINDINGS_IN_OTHER_TASK.
+type RemediationConflictsInput struct {
+	Skip       bool     `json:"skip,omitempty"`
+	Move       []string `json:"move,omitempty"`
+	MoveReason string   `json:"move_reason,omitempty"`
+}
+
+func parseConflicts(in *RemediationConflictsInput) (remediation.ConflictResolution, error) {
+	if in == nil {
+		return remediation.ConflictResolution{}, nil
+	}
+	move, err := parseIDList("conflicts.move", in.Move)
+	if err != nil {
+		return remediation.ConflictResolution{}, err
+	}
+	if len(move) > remediation.MaxMembersPerRequest {
+		return remediation.ConflictResolution{}, fmt.Errorf("%w: at most %d findings to move", shared.ErrValidation, remediation.MaxMembersPerRequest)
+	}
+	return remediation.ConflictResolution{Skip: in.Skip, Move: move, MoveReason: in.MoveReason}, nil
+}
+
+// RemediationFindingConflictResponse is one finding of a 409
+// FINDINGS_IN_OTHER_TASK answer (details.conflicts). task_title and the
+// assignee are null when the caller cannot read the task.
+type RemediationFindingConflictResponse struct {
+	FindingID       string  `json:"finding_id"`
+	FindingTitle    string  `json:"finding_title"`
+	TaskID          string  `json:"task_id"`
+	TaskTitle       *string `json:"task_title"`
+	AssigneeUserID  *string `json:"assignee_user_id"`
+	AssigneeGroupID *string `json:"assignee_group_id"`
+	CanMove         bool    `json:"can_move"`
+}
+
+func toConflictResps(cs []remediation.FindingConflict) []RemediationFindingConflictResponse {
+	out := make([]RemediationFindingConflictResponse, 0, len(cs))
+	for _, c := range cs {
+		r := RemediationFindingConflictResponse{FindingID: c.FindingID.String(), FindingTitle: c.FindingTitle,
+			TaskID: c.TaskID.String(), TaskTitle: c.TaskTitle, CanMove: c.CanMove}
+		if c.AssigneeUserID != nil {
+			v := c.AssigneeUserID.String()
+			r.AssigneeUserID = &v
+		}
+		if c.AssigneeGroupID != nil {
+			v := c.AssigneeGroupID.String()
+			r.AssigneeGroupID = &v
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 func parseOptID(field, s string) (*shared.ID, error) {
 	if strings.TrimSpace(s) == "" {
 		return nil, nil
@@ -153,7 +209,7 @@ func parseOptID(field, s string) (*shared.ID, error) {
 }
 
 // List lists tasks. Query: state (comma list), assignee (me or a user id),
-// group_id, action_id, action_kind, campaign_id, finding_id, search, sort
+// group_id, action_id, action_kind, campaign_id, finding_id, overdue, search, sort
 // (deadline, risk, updated, created), page, per_page.
 // @Summary      List remediation tasks
 // @Description  Tasks the caller may see: a restricted member sees tasks with at least one finding in their data scope, with the counters over those findings (hidden_members counts the rest).
@@ -166,6 +222,8 @@ func parseOptID(field, s string) (*shared.ID, error) {
 // @Param        action_kind  query  string  false  "Action kind (upgrade, rotate, sol, manual)"
 // @Param        campaign_id  query  string  false  "Campaign ID"
 // @Param        finding_id   query  string  false  "Tasks this finding is a member of"
+// @Param        no_campaign  query  bool    false  "Only tasks in no campaign"
+// @Param        overdue      query  boolean false  "true keeps tasks whose deadline has passed (combine with state for the open ones)"
 // @Param        search       query  string  false  "Title search"
 // @Param        sort         query  string  false  "deadline (default), risk, updated or created"
 // @Param        page         query  int     false  "Page number" default(1)
@@ -205,6 +263,7 @@ func (h *RemediationTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		in.Filter.AssigneeID = id
 	}
+	in.Filter.NoCampaign = q.Get("no_campaign") == "true"
 	for field, dst := range map[string]**shared.ID{
 		"group_id": &in.Filter.GroupID, "action_id": &in.Filter.ActionID,
 		"campaign_id": &in.Filter.CampaignID, "finding_id": &in.Filter.FindingID,
@@ -215,6 +274,14 @@ func (h *RemediationTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		*dst = id
+	}
+	if o := q.Get("overdue"); o != "" {
+		b, err := strconv.ParseBool(o)
+		if err != nil {
+			apierror.BadRequest("overdue must be true or false").WriteJSON(w)
+			return
+		}
+		in.Filter.Overdue = b
 	}
 	in.Filter.ActionKind = strings.TrimSpace(q.Get("action_kind"))
 	if len(in.Filter.ActionKind) > 16 {
@@ -256,11 +323,13 @@ type CreateRemediationTaskRequest struct {
 	AssigneeGroupID   string   `json:"assignee_group_id"`
 	CampaignID        string   `json:"campaign_id"`
 	Deadline          string   `json:"deadline"`
+	// Conflicts resolves findings of another active task.
+	Conflicts *RemediationConflictsInput `json:"conflicts,omitempty"`
 }
 
 // Create creates a task.
 // @Summary      Create a remediation task
-// @Description  Creates a task from open findings in the caller's data scope. A finding is the primary member of one active task: a finding already in another task answers 409 with code FINDINGS_IN_OTHER_TASK and the finding IDs.
+// @Description  Creates a task from open findings in the caller's data scope. A finding is the primary member of one active task: findings already in another active task answer 409 with code FINDINGS_IN_OTHER_TASK and details.conflicts (finding, holding task, its title and owner when the caller can read it, can_move), unless the request's conflicts says to skip them or to move named ones (needs write access to the holding task, else 403).
 // @Tags         Remediation
 // @Accept       json
 // @Produce      json
@@ -288,6 +357,10 @@ func (h *RemediationTaskHandler) Create(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if in.RelatedIDs, err = parseIDList("related_finding_ids", req.RelatedFindingIDs); err != nil {
+		h.handleError(w, err)
+		return
+	}
+	if in.Conflicts, err = parseConflicts(req.Conflicts); err != nil {
 		h.handleError(w, err)
 		return
 	}
@@ -529,10 +602,13 @@ type AddRemediationTaskMembersRequest struct {
 	Version    int      `json:"version"`
 	FindingIDs []string `json:"finding_ids"`
 	Role       string   `json:"role"`
+	// Conflicts resolves primary findings of another active task.
+	Conflicts *RemediationConflictsInput `json:"conflicts,omitempty"`
 }
 
 // AddMembers adds findings to a task.
 // @Summary      Add findings to a remediation task
+// @Description  Adds findings as primary members (default) or related links. Primary findings of another active task answer 409 FINDINGS_IN_OTHER_TASK with details.conflicts unless conflicts says to skip or move them; a move out of a task the caller cannot change answers 403.
 // @Tags         Remediation
 // @Accept       json
 // @Produce      json
@@ -563,9 +639,14 @@ func (h *RemediationTaskHandler) AddMembers(w http.ResponseWriter, r *http.Reque
 		h.handleError(w, err)
 		return
 	}
+	conflicts, err := parseConflicts(req.Conflicts)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
 	t, err := h.service.AddMembers(r.Context(), remediationapp.AddMembersInput{
 		TenantID: tid, TaskID: id, ActorID: callerID(r), Version: req.Version, FindingIDs: ids,
-		Role: remediation.MemberRole(req.Role),
+		Role: remediation.MemberRole(req.Role), Conflicts: conflicts,
 	}, h.auditContext(r))
 	if err != nil {
 		h.handleError(w, err)
@@ -713,13 +794,9 @@ func (h *RemediationTaskHandler) handleError(w http.ResponseWriter, err error) {
 		return
 	}
 	if e, ok := remediation.AsFindingsInOtherTask(err); ok {
-		ids := make([]string, len(e.FindingIDs))
-		for i, id := range e.FindingIDs {
-			ids[i] = id.String()
-		}
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"code": "FINDINGS_IN_OTHER_TASK", "message": e.Error(), "finding_ids": ids,
-			"details": map[string]any{"finding_ids": ids},
+			"code": "FINDINGS_IN_OTHER_TASK", "message": e.Error(),
+			"details": map[string]any{"conflicts": toConflictResps(e.Conflicts)},
 		})
 		return
 	}

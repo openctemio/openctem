@@ -1,5 +1,0 @@
-### Added: cross-rule correlation of DAST findings
-
-- Two rules that report one issue on the same injection point (a generic detection and a CVE template; or one CVE from two templates) become one finding: the CVE finding is the primary, the other its reversible duplicate. The injection point keeps scheme, host, port, path, method and parameter names; a template's out-of-band payload is removed from the path only when the detection's own response echoed it and its host is a known out-of-band domain.
-- Correlation only reduces noise: broad or missing CWEs, two different CVEs, other assets or CWEs never merge; less certain pairs are "possibly related" suggestions. The duplicate is re-derived every scan and released (as a new finding) when its primary was not seen or was triaged; triage never propagates.
-- `GET /api/v1/findings/{id}/detections`, `POST /api/v1/findings/{id}/correlation/release` and `/approve`, a per-organization switch (`/settings/finding-correlation`), and `refingerprint -correlate` for existing findings.

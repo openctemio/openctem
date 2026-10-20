@@ -1,5 +1,0 @@
-### Security: sensors leave the legacy broad grant with a suggested profile
-
-- The sensor's Grant section shows the narrowest grant profile that would have admitted every job the sensor ran in the last 30 days, and its results sent without a job, with the usage it is based on (job types, tools, highest tier, public or private targets, zones, push ingest). It is never wider than the current grant on any dimension; the trust level and remote actions are kept.
-- **Apply** stores it in one click: `POST /api/v1/sensors/{id}/grant/suggestion/apply` (read: `GET /api/v1/sensors/{id}/grant/suggestion`). It needs `sensors:grant:narrow` or `sensors:grant:widen` and a recent sign-in or step-up, re-computes the suggestion on the server (409 when it changed), and is audited as `sensor.grant_changed` with the diff and the usage.
-- **Behaviour change:** a new sensor of type `sensor` (EASM) gets the `easm-external` profile (public targets only) instead of `internal-network-scanner` (migration 002084, insert trigger only; existing sensors keep their grant). Workers keep `internal-network-scanner`, collectors `collector`.

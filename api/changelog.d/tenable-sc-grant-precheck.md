@@ -1,3 +1,0 @@
-### Fixed: a Tenable.sc sync or scan the sensor's grant refuses fails at once with the reason
-
-- A connector sync or scan whose sensor grant does not allow it (the default profile of a paired scanning sensor allows neither `connector_sync` nor `connector_scan`; a sensor at trust "new" receives no T1 scan; targets outside the grant) was queued and then withheld at every claim until it expired, leaving the sync pending and the run running for hours. "Sync now", scheduled syncs, scan runs and coverage batches now check the grant first and refuse with `CONNECTOR_GRANT_REFUSES` (HTTP 409 on "Sync now") naming what to widen. The claim still checks the grant and fails closed.

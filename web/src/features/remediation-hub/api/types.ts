@@ -178,8 +178,51 @@ export interface AcceptResult {
   action_id: string
   task_ids: string[]
   joined: number
+  /** Findings that closed since the suggestion was made. */
   dropped: string[]
+  /** Findings of another active task left out as asked. */
+  skipped?: string[]
+  /** Findings moved out of another task as asked. */
+  moved?: number
 }
+
+/**
+ * One finding of a suggestion with what a person needs to judge it. The
+ * location fields are the inputs of findingLocation(); recommendation and
+ * fix_code are scanner text (plain text, capped, secrets redacted by the API).
+ */
+export interface SuggestionMember extends TaskMember {
+  rule_id?: string
+  cwe_ids?: string[]
+  file_path?: string
+  start_line?: number
+  first_detected_branch?: string
+  network_port?: number
+  network_transport?: string
+  location_targets?: string[]
+  asset_criticality?: string
+  package_name?: string
+  installed_version?: string
+  recommendation?: string
+  fix_code?: string
+  /** The active task that claimed the finding since the suggestion was made. */
+  active_task?: { id: string; title: string } | null
+}
+
+/** One finding of a 409 FINDINGS_IN_OTHER_TASK answer (details.conflicts). */
+export interface FindingConflict {
+  finding_id: string
+  finding_title: string
+  task_id: string
+  /** Null when the caller cannot read the task that holds the finding. */
+  task_title: string | null
+  assignee_user_id: string | null
+  assignee_group_id: string | null
+  can_move: boolean
+}
+
+/** How to handle findings of another active task: skip all, or move some (the rest skipped). */
+export type ConflictResolution = { skip: true } | { move: string[]; move_reason: string }
 
 export interface BulkAcceptItem {
   id: string

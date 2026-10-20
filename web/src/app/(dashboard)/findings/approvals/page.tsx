@@ -5,7 +5,6 @@ import Link from '@/components/link'
 import { type ColumnDef } from '@tanstack/react-table'
 import { formatDistanceToNow } from 'date-fns'
 import {
-  Clock,
   MoreHorizontal,
   Check,
   X,
@@ -14,8 +13,6 @@ import {
   Loader2,
   ArrowLeft,
   RefreshCw,
-  CheckCircle2,
-  XCircle,
   AlertCircle,
   ShieldCheck,
   Layers,
@@ -28,8 +25,9 @@ import { DataTable } from '@/features/shared/components/data-table/data-table'
 import { DataTableColumnHeader } from '@/features/shared/components/data-table/data-table-column-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsList, TabsTrigger, TabsContent, TabsCount } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
+import { SegmentedLens } from '@/features/shared/components/segmented-lens'
+import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,7 +45,6 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
@@ -62,7 +59,7 @@ import {
   remindApprovers,
 } from '@/features/findings/api/use-findings-api'
 import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
-import { APPROVAL_STATUSES, FINDING_STATUS_CONFIG } from '@/features/findings/types'
+import { FINDING_STATUS_CONFIG } from '@/features/findings/types'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
 import { useListParams } from '@/hooks/use-list-params'
 import {
@@ -70,7 +67,6 @@ import {
   approvalTabCounts,
   canCancelApproval,
   isOwnApproval,
-  type ApprovalTab,
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
@@ -109,7 +105,17 @@ const APPROVAL_ACTOR_LABELS: Record<string, string> = {
   ticket: 'Linked ticket',
 }
 
-const APPROVAL_TABS: readonly string[] = ['all', ...APPROVAL_STATUSES]
+/**
+ * The status lens over both kinds of request. Pending (what needs a decision)
+ * is the default and needs no URL value; canceled and expired requests are
+ * closed without a decision and are listed under All.
+ */
+const APPROVAL_LENSES = ['pending', 'approved', 'rejected', 'all'] as const
+type ApprovalLens = (typeof APPROVAL_LENSES)[number]
+
+function parseApprovalLens(raw: string): ApprovalLens {
+  return (APPROVAL_LENSES as readonly string[]).includes(raw) ? (raw as ApprovalLens) : 'pending'
+}
 
 // ============================================
 // HELPERS
@@ -161,45 +167,6 @@ function RequesterCell({
 }
 
 // ============================================
-// LOADING SKELETON
-// ============================================
-
-function ApprovalsLoadingSkeleton() {
-  return (
-    <div className="space-y-6">
-      {/* Stats skeleton */}
-      <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i}>
-            <CardHeader className="pb-2">
-              <Skeleton className="h-4 w-16 mb-2" />
-              <Skeleton className="h-8 w-12" />
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
-      {/* Table skeleton */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4">
-                <Skeleton className="h-6 w-16" />
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-6 w-24" />
-                <Skeleton className="h-4 flex-1" />
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-8 w-8 rounded" />
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-// ============================================
 // MAIN PAGE COMPONENT
 // ============================================
 
@@ -212,9 +179,8 @@ export default function ApprovalsPage() {
   // The group exception in the side panel: picked here, or named by a link.
   const [pickedBatch, setPickedBatch] = useState<string | null>(null)
   const openBatch = pickedBatch ?? (list.filters.batch || null)
-  const activeTab: ApprovalTab = APPROVAL_TABS.includes(list.filters.status)
-    ? (list.filters.status as ApprovalTab)
-    : 'all'
+  const lens = parseApprovalLens(list.filters.status)
+  const lensStatus: ApprovalStatus | undefined = lens === 'all' ? undefined : lens
   const currentUserId = useDisplayUser()?.id
 
   // Action state
@@ -227,13 +193,13 @@ export default function ApprovalsPage() {
   // The sole member's own approval (shown only when the API offers it).
   const [selfApproveTarget, setSelfApproveTarget] = useState<ApiApproval | null>(null)
 
-  // One server page of the active tab; the counts cover every status.
+  // One server page of the lens; the counts cover every status.
   const {
     data,
     isLoading,
     error,
     mutate: mutateList,
-  } = useApprovals(list.page, list.perPage, activeTab === 'all' ? undefined : activeTab)
+  } = useApprovals(list.page, list.perPage, lensStatus)
   // Pending group exceptions, for the view switch's count.
   const { data: pendingGroups, mutate: mutatePendingGroups } = useApprovalBatches(1, 1, 'pending')
   // A decision changes the lists and the sidebar's Approvals badge.
@@ -259,8 +225,8 @@ export default function ApprovalsPage() {
   const pageCount = data ? Math.max(1, Math.ceil(data.total / list.perPage)) : 1
 
   const { setFilter } = list
-  const changeTab = useCallback(
-    (tab: string) => setFilter('status', tab === 'all' ? '' : tab),
+  const changeLens = useCallback(
+    (next: ApprovalLens) => setFilter('status', next === 'pending' ? '' : next),
     [setFilter]
   )
   const changeView = useCallback(
@@ -279,6 +245,7 @@ export default function ApprovalsPage() {
   )
 
   const isInitialLoading = isLoading && !data
+  const pendingTotal = counts.pending + (pendingGroups?.total ?? 0)
 
   // ============================================
   // ACTION HANDLERS
@@ -420,6 +387,29 @@ export default function ApprovalsPage() {
     await mutate()
     toast.success(t('findings.approvals.toast.refreshed', 'Approvals refreshed'))
   }
+
+  // The list toolbar: the status lens first, refresh at the end.
+  const statusLens = (
+    <SegmentedLens<ApprovalLens>
+      label={t('findings.approvals.lens.label', 'Request status')}
+      value={lens}
+      onChange={changeLens}
+      options={APPROVAL_LENSES.map((value) => ({
+        value,
+        label:
+          value === 'all'
+            ? t('findings.approvals.tabAll', 'All')
+            : t(`findings.approvals.status.${value}`, APPROVAL_STATUS_LABELS[value]),
+      }))}
+    />
+  )
+  const refreshButton = (
+    <RefreshButton
+      onClick={() => void handleRefresh()}
+      loading={isLoading}
+      label={t('findings.approvals.refresh', 'Refresh')}
+    />
+  )
 
   // ============================================
   // TABLE COLUMNS
@@ -739,174 +729,85 @@ export default function ApprovalsPage() {
           description={
             isInitialLoading
               ? t('findings.approvals.loading', 'Loading approvals…')
-              : t(
-                  'findings.approvals.summary',
-                  '{total} requests, {pending} waiting for a decision',
-                  {
-                    total: counts.all,
-                    pending: counts.pending,
-                  }
-                )
+              : pendingTotal > 0
+                ? t('findings.approvals.summaryPending', '{count} waiting for a decision', {
+                    count: pendingTotal,
+                  })
+                : t('findings.approvals.summaryNone', 'Nothing is waiting for a decision')
           }
-        >
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 sm:me-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 sm:me-2" />
-            )}
-            <span className="sr-only sm:not-sr-only">
-              {t('findings.approvals.refresh', 'Refresh')}
-            </span>
-          </Button>
-        </PageHeader>
+        />
 
-        {isInitialLoading ? (
-          <div className="mt-6">
-            <ApprovalsLoadingSkeleton />
-          </div>
-        ) : (
-          <>
-            {/* Stats Cards */}
-            <div className="mt-6 grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-4">
-              <Card className={counts.pending > 0 ? 'border-yellow-500/30' : ''}>
-                <CardHeader className="pb-2">
-                  <CardDescription className="flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5" />
-                    {t('findings.approvals.status.pending', 'Pending')}
-                  </CardDescription>
-                  <CardTitle className="text-2xl sm:text-3xl text-yellow-500">
-                    {counts.pending}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription className="flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    {t('findings.approvals.status.approved', 'Approved')}
-                  </CardDescription>
-                  <CardTitle className="text-2xl sm:text-3xl text-emerald-500">
-                    {counts.approved}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription className="flex items-center gap-1.5">
-                    <XCircle className="h-3.5 w-3.5" />
-                    {t('findings.approvals.status.rejected', 'Rejected')}
-                  </CardDescription>
-                  <CardTitle className="text-2xl sm:text-3xl text-red-500">
-                    {counts.rejected}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>{t('findings.approvals.total', 'Total')}</CardDescription>
-                  <CardTitle className="text-2xl sm:text-3xl">{counts.all}</CardTitle>
-                </CardHeader>
-              </Card>
-            </div>
+        {/* The one tab row: the two kinds of request are different objects
+            with their own columns. Each tab counts only what waits for a
+            decision, and shows nothing at zero. */}
+        <Tabs value={view} onValueChange={changeView} className="mt-6">
+          <TabsList aria-label={t('findingApprovals.group.viewLabel', 'Kind of request')}>
+            <TabsTrigger value="requests">
+              {t('findingApprovals.group.viewRequests', 'Finding requests')}
+              <TabsCount value={counts.pending || null} />
+            </TabsTrigger>
+            <TabsTrigger value="groups">
+              {t('findingApprovals.group.viewGroups', 'Group exceptions')}
+              <TabsCount value={pendingGroups?.total || null} />
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-            {/* Finding requests or group exceptions */}
-            <Tabs value={view} onValueChange={changeView} className="mt-6">
-              <TabsList aria-label={t('findingApprovals.group.viewLabel', 'Kind of request')}>
-                <TabsTrigger value="requests" className="text-xs sm:text-sm shrink-0">
-                  {t('findingApprovals.group.viewRequests', 'Finding requests')}
-                </TabsTrigger>
-                <TabsTrigger value="groups" className="text-xs sm:text-sm shrink-0">
-                  {t('findingApprovals.group.viewGroups', 'Group exceptions')}{' '}
-                  <TabsCount value={pendingGroups?.total ?? 0} />
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-
-            {/* Tabs + DataTable */}
-            <Tabs value={activeTab} onValueChange={changeTab} className="mt-4">
-              {/* Scroll container with fade indicator on mobile */}
-              <div className="relative sm:static">
-                <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
-                  <TabsList>
-                    <TabsTrigger value="all" className="text-xs sm:text-sm shrink-0">
-                      {t('findings.approvals.tabAll', 'All')}{' '}
-                      {view === 'requests' && <TabsCount value={counts.all} />}
-                    </TabsTrigger>
-                    <TabsTrigger value="pending" className="text-xs sm:text-sm shrink-0">
-                      {t('findings.approvals.status.pending', 'Pending')}{' '}
-                      {view === 'requests' && <TabsCount value={counts.pending} />}
-                    </TabsTrigger>
-                    <TabsTrigger value="approved" className="text-xs sm:text-sm shrink-0">
-                      {t('findings.approvals.status.approved', 'Approved')}{' '}
-                      {view === 'requests' && <TabsCount value={counts.approved} />}
-                    </TabsTrigger>
-                    <TabsTrigger value="rejected" className="text-xs sm:text-sm shrink-0">
-                      {t('findings.approvals.status.rejected', 'Rejected')}{' '}
-                      {view === 'requests' && <TabsCount value={counts.rejected} />}
-                    </TabsTrigger>
-                    <TabsTrigger value="canceled" className="text-xs sm:text-sm shrink-0">
-                      {t('findings.approvals.status.canceled', 'Canceled')}{' '}
-                      {view === 'requests' && <TabsCount value={counts.canceled} />}
-                    </TabsTrigger>
-                    <TabsTrigger value="expired" className="text-xs sm:text-sm shrink-0">
-                      {t('findings.approvals.status.expired', 'Expired')}{' '}
-                      {view === 'requests' && <TabsCount value={counts.expired} />}
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
-                {/* Fade indicator for scrollable tabs on mobile */}
-                <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent pointer-events-none sm:hidden" />
-              </div>
-
-              <TabsContent value={activeTab}>
-                <div className="mt-4">
-                  {view === 'groups' ? (
-                    <GroupExceptionsPanel
-                      status={activeTab === 'all' ? undefined : activeTab}
-                      pagination={list.pagination}
-                      onPaginationChange={list.setPagination}
-                      currentUserId={currentUserId}
-                      openId={openBatch}
-                      onOpenChange={changeOpenBatch}
-                      onDecided={mutate}
-                    />
-                  ) : (
-                    <DataTable
-                      columns={columns}
-                      data={approvals}
-                      manualPagination
-                      pageCount={pageCount}
-                      rowCount={data?.total ?? 0}
-                      pagination={list.pagination}
-                      onPaginationChange={list.setPagination}
-                      getRowId={(row) => row.id}
-                      showColumnToggle={false}
-                      emptyMessage={t('findings.approvals.empty', 'No approval requests')}
-                      emptyDescription={
-                        activeTab === 'all'
-                          ? t(
-                              'findings.approvals.emptyAll',
-                              'There are no approval requests to review at this time.'
-                            )
-                          : t(
-                              'findings.approvals.emptyStatus',
-                              'No requests with the status {status}.',
-                              {
-                                status: t(
-                                  `findings.approvals.status.${activeTab}`,
-                                  APPROVAL_STATUS_LABELS[activeTab]
-                                ),
-                              }
-                            )
-                      }
-                    />
-                  )}
-                </div>
-              </TabsContent>
-            </Tabs>
-          </>
-        )}
+        <div className="mt-4">
+          {isInitialLoading ? (
+            <TableSkeleton />
+          ) : view === 'groups' ? (
+            <GroupExceptionsPanel
+              status={lensStatus}
+              pagination={list.pagination}
+              onPaginationChange={list.setPagination}
+              currentUserId={currentUserId}
+              openId={openBatch}
+              onOpenChange={changeOpenBatch}
+              onDecided={mutate}
+              toolbarStart={statusLens}
+              toolbarEnd={refreshButton}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={approvals}
+              manualPagination
+              pageCount={pageCount}
+              rowCount={data?.total ?? 0}
+              pagination={list.pagination}
+              onPaginationChange={list.setPagination}
+              getRowId={(row) => row.id}
+              showColumnToggle={false}
+              showSearch={false}
+              toolbarStart={statusLens}
+              toolbarEnd={refreshButton}
+              emptyMessage={
+                lens === 'pending'
+                  ? t('findings.approvals.emptyPending', 'No pending requests')
+                  : t('findings.approvals.empty', 'No approval requests')
+              }
+              emptyDescription={
+                lens === 'pending'
+                  ? t(
+                      'findings.approvals.emptyPendingDesc',
+                      'A false positive or risk acceptance that needs a second person appears here. Decided requests are under Approved, Rejected and All.'
+                    )
+                  : lens === 'all'
+                    ? t(
+                        'findings.approvals.emptyAll',
+                        'There are no approval requests to review at this time.'
+                      )
+                    : t('findings.approvals.emptyStatus', 'No requests with the status {status}.', {
+                        status: t(
+                          `findings.approvals.status.${lens}`,
+                          APPROVAL_STATUS_LABELS[lens]
+                        ),
+                      })
+              }
+            />
+          )}
+        </div>
       </Main>
 
       {/* Approve Confirmation Dialog */}

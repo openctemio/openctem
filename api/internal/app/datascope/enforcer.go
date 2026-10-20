@@ -131,7 +131,7 @@ func (e *Enforcer) SetOwnerLookup(fn OwnerLookup) {
 }
 
 // SetAggregateCheck wires the decision "this caller may see organization
-// totals" (the dashboard:aggregate permission). Unset, nobody does.
+// totals" (the dashboards:org:view permission). Unset, nobody does.
 func (e *Enforcer) SetAggregateCheck(fn func(ctx context.Context) bool) {
 	if e != nil {
 		e.aggregate = fn
@@ -139,7 +139,7 @@ func (e *Enforcer) SetAggregateCheck(fn func(ctx context.Context) bool) {
 }
 
 // AggregateViewer reports whether the caller may see organization totals
-// whatever their data scope (the dashboard:aggregate permission).
+// whatever their data scope (the dashboards:org:view permission).
 func (e *Enforcer) AggregateViewer(ctx context.Context) bool {
 	return e != nil && e.aggregate != nil && e.aggregate(ctx)
 }
@@ -414,6 +414,19 @@ func (e *Enforcer) assertFindingIn(ctx context.Context, scope *shared.DataScope,
 	if scope == nil {
 		return nil
 	}
+	// A restricted caller sees a finding on an in-scope asset or assigned to
+	// them (FindingIDsInScope), in one query.
+	if !scope.Unrestricted {
+		ids, err := e.repo.FindingIDsInScope(ctx, tenantID, scope.UserID, []shared.ID{findingID})
+		if err != nil {
+			e.logger.Warn("data scope finding check failed", "error", err)
+			return shared.ErrNotFound
+		}
+		if len(ids) != 1 {
+			return shared.ErrNotFound
+		}
+		return nil
+	}
 	assetID, err := e.repo.FindingAssetID(ctx, tenantID, findingID)
 	if err != nil {
 		if !errors.Is(err, shared.ErrNotFound) {
@@ -605,6 +618,47 @@ func (e *Enforcer) RequireActOnFindings(ctx context.Context, tenantID shared.ID,
 		}
 	}
 	return nil
+}
+
+// FindingInScope reports whether a finding is inside scope: its asset is,
+// or the scope is restricted to a member and the finding is assigned to that
+// member (being the assignee grants view of the assigned finding, never of
+// its asset or other findings), its asset not hidden from them. A nil scope
+// admits all. It is the by-object form of filterspec.AssigneeScopeSQL.
+func (e *Enforcer) FindingInScope(ctx context.Context, scope *shared.DataScope, assetID shared.ID, assignedTo *shared.ID) (bool, error) {
+	ok, err := e.InScope(ctx, scope, assetID)
+	if err != nil || ok || !scope.Restricted() || assignedTo == nil || *assignedTo != scope.UserID {
+		return ok, err
+	}
+	if assetID.IsZero() {
+		return true, nil
+	}
+	return e.InScope(ctx, &shared.DataScope{TenantID: scope.TenantID, UserID: scope.UserID, Unrestricted: true}, assetID)
+}
+
+// FindingFilterForCaller is FindingInScope for a batch: a predicate over a
+// finding's (asset, assignee) for the request's caller, resolved with at most
+// two queries over assetIDs.
+func (e *Enforcer) FindingFilterForCaller(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(assetID shared.ID, assignedTo *shared.ID) bool, error) {
+	scope, err := e.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	inScope, err := e.Filter(ctx, scope, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Restricted() {
+		return func(a shared.ID, _ *shared.ID) bool { return inScope(a) }, nil
+	}
+	visible, err := e.Filter(ctx, &shared.DataScope{TenantID: scope.TenantID, UserID: scope.UserID, Unrestricted: true}, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+	uid := scope.UserID
+	return func(a shared.ID, to *shared.ID) bool {
+		return inScope(a) || (to != nil && *to == uid && (a.IsZero() || visible(a)))
+	}, nil
 }
 
 // FilterForCaller is Filter for the request's caller.

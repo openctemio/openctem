@@ -128,7 +128,7 @@ func (f *Factory) CreateProviderForTenant(tenantID string, aiSettings tenant.AIS
 		return nil, fmt.Errorf("%w: AI is disabled for this tenant", ErrProviderNotConfigured)
 
 	case tenant.AIModePlatform:
-		return f.createPlatformProvider(scope)
+		return f.createPlatformProvider(scope, tenantID)
 
 	case tenant.AIModeBYOK:
 		return f.createBYOKProvider(aiSettings, scope)
@@ -136,16 +136,17 @@ func (f *Factory) CreateProviderForTenant(tenantID string, aiSettings tenant.AIS
 	default:
 		// Default to platform if mode is empty
 		if aiSettings.Mode == "" {
-			return f.createPlatformProvider(scope)
+			return f.createPlatformProvider(scope, tenantID)
 		}
 		return nil, fmt.Errorf("%w: unknown AI mode: %s", ErrInvalidProvider, aiSettings.Mode)
 	}
 }
 
 // createPlatformProvider creates a provider using platform configuration:
-// the environment keys when set (AI_TRIAGE_ENABLED must be on), otherwise
-// the console's platform AI setting when it is on.
-func (f *Factory) createPlatformProvider(scope string) (Provider, error) {
+// the environment keys when set, otherwise the console's platform AI setting
+// when it is on. The organization's own bucket sits in front of the
+// platform key's shared one.
+func (f *Factory) createPlatformProvider(scope, tenantID string) (Provider, error) {
 	if !f.platformConfig.IsConfigured() && f.platformSource != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -154,10 +155,7 @@ func (f *Factory) createPlatformProvider(scope string) (Provider, error) {
 			return nil, fmt.Errorf("%w: platform AI is not turned on", ErrProviderNotConfigured)
 		}
 		p, err := f.BuildPlatformProvider(provider, model, key)
-		return f.rateLimited(p, err, scope)
-	}
-	if !f.platformConfig.Enabled {
-		return nil, fmt.Errorf("%w: platform AI is not enabled", ErrProviderNotConfigured)
+		return f.tenantShare(f.rateLimited(p, err, scope))(tenantID)
 	}
 	var key, envName string
 	switch f.platformConfig.PlatformProvider {
@@ -174,7 +172,24 @@ func (f *Factory) createPlatformProvider(scope string) (Provider, error) {
 		return nil, fmt.Errorf("%w: %s not configured", ErrProviderNotConfigured, envName)
 	}
 	p, err := f.BuildPlatformProvider(f.platformConfig.PlatformProvider, f.platformConfig.PlatformModel, key)
-	return f.rateLimited(p, err, scope)
+	return f.tenantShare(f.rateLimited(p, err, scope))(tenantID)
+}
+
+// tenantShare puts the organization's share of the platform allowance
+// (AI_RATE_LIMIT_TENANT_RPM) in front of a platform provider. A call waits
+// for its organization's bucket first, then for the shared one, so one
+// organization cannot use up the whole platform allowance.
+func (f *Factory) tenantShare(p Provider, err error) func(tenantID string) (Provider, error) {
+	return func(tenantID string) (Provider, error) {
+		rpm := f.platformConfig.TenantShareRPM()
+		if err != nil || p == nil || rpm <= 0 || tenantID == "" {
+			return p, err
+		}
+		if f.limiters == nil {
+			f.limiters = newLimiterRegistry()
+		}
+		return newRateLimitedProvider(p, f.limiters.get(platformTenantScopePrefix+tenantID, rpm), rpm, DefaultRateLimitMaxWait), nil
+	}
 }
 
 // BuildPlatformProvider builds a provider from a platform configuration
@@ -254,7 +269,7 @@ func (f *Factory) createBYOKProvider(settings tenant.AISettings, scope string) (
 	}
 }
 
-// IsPlatformEnabled checks if platform AI is both enabled and has at least one LLM provider configured.
+// IsPlatformEnabled reports whether an environment provider key is set.
 func (f *Factory) IsPlatformEnabled() bool {
-	return f.platformConfig.Enabled && f.platformConfig.IsConfigured()
+	return f.platformConfig.IsConfigured()
 }

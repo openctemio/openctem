@@ -83,6 +83,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "dashboard:read",
+		Jobs:       []string{"DashboardFactsController", "DashboardFactReconcileController"},
 	},
 	{
 		ID: ModuleAssets, Slug: "assets", Name: "Assets",
@@ -104,7 +105,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController", "VulnFeedImportController"},
+		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -310,7 +311,8 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "threat intel enriches findings"},
 		},
-		Routes: []string{"/api/v1/threat-actors"},
+		Routes: []string{"/api/v1/threat-actors", "/api/v1/emerging-threats"},
+		Jobs:   []string{"ThreatAlertPlannerController"},
 	},
 	{
 		ID: ModuleExposures, Slug: "exposures", Name: "Exposures",
@@ -496,7 +498,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "remediation closes findings"},
 		},
 		Routes: []string{"/api/v1/remediation/campaigns", "/api/v1/remediation/tasks", "/api/v1/remediation/suggestions", "/api/v1/remediation/actions", "/api/v1/remediation/moves"},
-		Jobs:   []string{"RemediationProgressController", "RemediationTaskController", "TaskTicketController", "RemediationSuggestionController"},
+		Jobs:   []string{"RemediationProgressController", "RemediationTaskController", "RemediationTaskQueryController", "TaskTicketController", "RemediationSuggestionController"},
 	},
 	{
 		ID: ModuleSuppressions, Slug: "suppressions", Name: "Suppressions",
@@ -667,7 +669,7 @@ var Registry = []Definition{
 		Category:    "settings", DisplayOrder: 61, Release: ReleaseStatusReleased,
 		Core:       true,
 		Permission: "sensors:read",
-		Jobs:       []string{"SensorHealthController", "SensorEventRetentionController", "HeartbeatHistoryRetentionController"},
+		Jobs:       []string{"SensorHealthController", "SensorLegacyKeysController", "SensorEventRetentionController", "HeartbeatHistoryRetentionController"},
 	},
 	{
 		ID: ModuleTeam, Slug: "team", Name: "Team",

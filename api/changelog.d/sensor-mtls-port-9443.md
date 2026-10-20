@@ -1,4 +1,0 @@
-### Behaviour change: the API's internal sensor listener moves to port 9443
-
-- The API's sensor protocol v3 listener (`SENSOR_MTLS_LISTEN_ADDR`) defaults to `:9443` instead of `:8443`, and the gateway passes sensor connections to `api:9443` (`SENSOR_MTLS_UPSTREAM`). Port 8443 now means only the platform console's site. Sensors are unaffected: they dial port 443 and the gateway routes them by ALPN inside the stack network.
-- **Upgrade note:** only a deployment that publishes or proxies the API's sensor listener itself (a separate port, an SNI passthrough, your own TCP proxy) changes its target from `:8443` to `:9443`, or sets `SENSOR_MTLS_LISTEN_ADDR=:8443` and `SENSOR_MTLS_UPSTREAM=api:8443` to keep the old port. The Compose overlay `docker-compose.sensor-passthrough.yml` already uses 9443.

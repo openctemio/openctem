@@ -20,6 +20,8 @@ import en_assetTimeline from './en/assetTimeline.json'
 import en_attackSurface from './en/attackSurface.json'
 import en_brand from './en/brand.json'
 import en_easmReview from './en/easmReview.json'
+import en_threatIntel from './en/threatIntel.json'
+import en_emergingThreats from './en/emergingThreats.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
 import en_common from './en/common.json'
@@ -37,6 +39,9 @@ import en_help from './en/help.json'
 import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_notificationTypes from './en/notificationTypes.json'
+import en_notificationChannels from './en/notificationChannels.json'
+import en_scmIntegration from './en/scmIntegration.json'
+import en_notificationPresets from './en/notificationPresets.json'
 import en_lookalikes from './en/lookalikes.json'
 import en_mcp from './en/mcp.json'
 import en_nav from './en/nav.json'
@@ -48,11 +53,14 @@ import en_pentestChecklists from './en/pentestChecklists.json'
 import en_limits from './en/limits.json'
 import en_prioritization from './en/prioritization.json'
 import en_programs from './en/programs.json'
-import en_remediation from './en/remediation.json'
 import en_reports from './en/reports.json'
 import en_scanWindows from './en/scanWindows.json'
 import en_tenableSc from './en/tenableSc.json'
+import en_siemIntegration from './en/siemIntegration.json'
+import en_sla from './en/sla.json'
+import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
+import en_ticketingIntegration from './en/ticketingIntegration.json'
 import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
 import en_sensors from './en/sensors.json'
@@ -65,8 +73,10 @@ import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
 import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
-import en_remediationTasks from './en/remediationTasks.json'
 import en_remediationHub from './en/remediationHub.json'
+import en_remediationClaim from './en/remediationClaim.json'
+import en_remediationCampaigns from './en/remediationCampaigns.json'
+import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
 import vi_activity from './vi/activity.json'
 import vi_auditLog from './vi/auditLog.json'
@@ -81,6 +91,8 @@ import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_attackSurface from './vi/attackSurface.json'
 import vi_brand from './vi/brand.json'
 import vi_easmReview from './vi/easmReview.json'
+import vi_threatIntel from './vi/threatIntel.json'
+import vi_emergingThreats from './vi/emergingThreats.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
@@ -98,6 +110,9 @@ import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_notificationTypes from './vi/notificationTypes.json'
+import vi_notificationChannels from './vi/notificationChannels.json'
+import vi_scmIntegration from './vi/scmIntegration.json'
+import vi_notificationPresets from './vi/notificationPresets.json'
 import vi_lookalikes from './vi/lookalikes.json'
 import vi_mcp from './vi/mcp.json'
 import vi_nav from './vi/nav.json'
@@ -109,11 +124,14 @@ import vi_pentestChecklists from './vi/pentestChecklists.json'
 import vi_limits from './vi/limits.json'
 import vi_prioritization from './vi/prioritization.json'
 import vi_programs from './vi/programs.json'
-import vi_remediation from './vi/remediation.json'
 import vi_reports from './vi/reports.json'
 import vi_scanWindows from './vi/scanWindows.json'
 import vi_tenableSc from './vi/tenableSc.json'
+import vi_siemIntegration from './vi/siemIntegration.json'
+import vi_sla from './vi/sla.json'
+import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
+import vi_ticketingIntegration from './vi/ticketingIntegration.json'
 import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
 import vi_sensors from './vi/sensors.json'
@@ -126,8 +144,10 @@ import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
 import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
-import vi_remediationTasks from './vi/remediationTasks.json'
 import vi_remediationHub from './vi/remediationHub.json'
+import vi_remediationClaim from './vi/remediationClaim.json'
+import vi_remediationCampaigns from './vi/remediationCampaigns.json'
+import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
 
 export type Dictionary = Record<string, string>
@@ -147,6 +167,8 @@ export const enNamespaces: Record<string, Dictionary> = {
   attackSurface: en_attackSurface,
   brand: en_brand,
   easmReview: en_easmReview,
+  threatIntel: en_threatIntel,
+  emergingThreats: en_emergingThreats,
   auth: en_auth,
   automations: en_automations,
   common: en_common,
@@ -164,6 +186,9 @@ export const enNamespaces: Record<string, Dictionary> = {
   insights: en_insights,
   licensePolicy: en_licensePolicy,
   notificationTypes: en_notificationTypes,
+  notificationChannels: en_notificationChannels,
+  scmIntegration: en_scmIntegration,
+  notificationPresets: en_notificationPresets,
   lookalikes: en_lookalikes,
   mcp: en_mcp,
   nav: en_nav,
@@ -175,12 +200,15 @@ export const enNamespaces: Record<string, Dictionary> = {
   limits: en_limits,
   prioritization: en_prioritization,
   programs: en_programs,
-  remediation: en_remediation,
   reports: en_reports,
   riskScore: en_riskScore,
   scanWindows: en_scanWindows,
   tenableSc: en_tenableSc,
+  siemIntegration: en_siemIntegration,
+  sla: en_sla,
+  integrationsHub: en_integrationsHub,
   ticketMapping: en_ticketMapping,
+  ticketingIntegration: en_ticketingIntegration,
   scans: en_scans,
   scope: en_scope,
   sensors: en_sensors,
@@ -192,8 +220,10 @@ export const enNamespaces: Record<string, Dictionary> = {
   validation: en_validation,
   webEvidence: en_webEvidence,
   workflowStages: en_workflowStages,
-  remediationTasks: en_remediationTasks,
   remediationHub: en_remediationHub,
+  remediationClaim: en_remediationClaim,
+  remediationCampaigns: en_remediationCampaigns,
+  remediationQuery: en_remediationQuery,
   myWork: en_myWork,
 }
 
@@ -211,6 +241,8 @@ export const viNamespaces: Record<string, Dictionary> = {
   attackSurface: vi_attackSurface,
   brand: vi_brand,
   easmReview: vi_easmReview,
+  threatIntel: vi_threatIntel,
+  emergingThreats: vi_emergingThreats,
   auth: vi_auth,
   automations: vi_automations,
   common: vi_common,
@@ -228,6 +260,9 @@ export const viNamespaces: Record<string, Dictionary> = {
   insights: vi_insights,
   licensePolicy: vi_licensePolicy,
   notificationTypes: vi_notificationTypes,
+  notificationChannels: vi_notificationChannels,
+  scmIntegration: vi_scmIntegration,
+  notificationPresets: vi_notificationPresets,
   lookalikes: vi_lookalikes,
   mcp: vi_mcp,
   nav: vi_nav,
@@ -239,12 +274,15 @@ export const viNamespaces: Record<string, Dictionary> = {
   limits: vi_limits,
   prioritization: vi_prioritization,
   programs: vi_programs,
-  remediation: vi_remediation,
   reports: vi_reports,
   riskScore: vi_riskScore,
   scanWindows: vi_scanWindows,
   tenableSc: vi_tenableSc,
+  siemIntegration: vi_siemIntegration,
+  sla: vi_sla,
+  integrationsHub: vi_integrationsHub,
   ticketMapping: vi_ticketMapping,
+  ticketingIntegration: vi_ticketingIntegration,
   scans: vi_scans,
   scope: vi_scope,
   sensors: vi_sensors,
@@ -256,8 +294,10 @@ export const viNamespaces: Record<string, Dictionary> = {
   validation: vi_validation,
   webEvidence: vi_webEvidence,
   workflowStages: vi_workflowStages,
-  remediationTasks: vi_remediationTasks,
   remediationHub: vi_remediationHub,
+  remediationClaim: vi_remediationClaim,
+  remediationCampaigns: vi_remediationCampaigns,
+  remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
 }
 

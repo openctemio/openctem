@@ -23,14 +23,10 @@ type KeySource struct {
 	CurrentKey string
 	// CurrentTitle is the stored title ("" when no key).
 	CurrentTitle string
-	Input        KeyInput
-}
-
-// CampaignKeyRef is a campaign that tracks a remediation key.
-type CampaignKeyRef struct {
-	ID   shared.ID
-	Name string
-	Key  string
+	// CurrentVersion is the key rules version that derived the stored key
+	// (0 when there is none).
+	CurrentVersion int
+	Input          KeyInput
 }
 
 // KeyRepository persists per-finding remediation keys and answers group queries.
@@ -43,6 +39,9 @@ type KeyRepository interface {
 	// Delete removes a finding's key (e.g. when it becomes ungroupable). Deleting
 	// the finding itself CASCADE-removes the row.
 	Delete(ctx context.Context, tenantID, findingID shared.ID) error
+
+	// HasStaleKeys reports a key derived by an older KeyAlgorithmVersion.
+	HasStaleKeys(ctx context.Context, tenantID shared.ID) (bool, error)
 
 	// KeySources reads the signals a key is derived from for the tenant's
 	// findings with these ids, with their current key ("" when none). Ids of
@@ -59,19 +58,6 @@ type KeyRepository interface {
 
 	// TenantsWithFindings lists the tenants that have at least one finding.
 	TenantsWithFindings(ctx context.Context) ([]shared.ID, error)
-
-	// CampaignsTrackingKeys lists the tenant's campaigns whose finding filter
-	// tracks one of these remediation keys.
-	CampaignsTrackingKeys(ctx context.Context, tenantID shared.ID, keys []string) ([]CampaignKeyRef, error)
-
-	// CampaignsWithStaleKey lists the tenant's campaigns whose finding filter
-	// tracks a remediation key that no finding of the tenant has.
-	CampaignsWithStaleKey(ctx context.Context, tenantID shared.ID) ([]CampaignKeyRef, error)
-
-	// RetargetCampaignKey moves one campaign of the tenant from oldKey to
-	// newKey. It changes nothing (false) when the campaign no longer tracks
-	// oldKey, so a repeated run is a no-op.
-	RetargetCampaignKey(ctx context.Context, tenantID, campaignID shared.ID, oldKey, newKey string) (bool, error)
 
 	// ListGroups returns groups rolled up over the tenant's OPEN findings.
 	// excludeStatuses are the closed finding statuses to leave out; pentest

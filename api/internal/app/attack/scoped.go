@@ -15,7 +15,7 @@ import (
 // member is narrowed:
 //
 //   - attack paths: TopAssets keeps only in-scope assets and the summary is
-//     recomputed over them (a viewer with dashboard:aggregate keeps the
+//     recomputed over them (a viewer with dashboards:org:view keeps the
 //     organization summary, no rows);
 //   - exposure chains: a chain is shown only when every hop is in scope, so
 //     no out-of-scope asset name or id is revealed along the way;
@@ -74,7 +74,7 @@ func (s *SurfaceService) AttackPathScoresForCaller(ctx context.Context, tenantID
 	}
 	res.TopAssets = top
 	// The summary follows the viewer: the assets they may see, unless they
-	// hold dashboard:aggregate (organization totals, no rows).
+	// hold dashboards:org:view (organization totals, no rows).
 	if basis != nil && !(scope.Restricted() && s.dataScope.AggregateViewer(ctx)) {
 		res.Summary = summarizeKept(basis, keep)
 	}

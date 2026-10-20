@@ -262,7 +262,7 @@ func registerVulnerabilityRoutes(
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
-		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus))
+		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus), handler.FindingIfMatch)
 		// The transition engine: the caller's allowed moves of one finding,
 		// and a bulk dry run. Reading them needs only findings:read; each
 		// decision states what the move itself would need.
@@ -270,14 +270,20 @@ func registerVulnerabilityRoutes(
 		r.POST("/transitions/preview", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
 
 		// Assignment operations
-		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsAssign))
-		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsAssign))
+		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsAssign), handler.FindingIfMatch)
+		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsAssign), handler.FindingIfMatch)
 
 		// Classification and severity
 		// Re-scoring is its own permission (findings:severity), so the person
 		// who fixes a finding need not be able to lower its severity.
-		r.PATCH("/{id}/classify", h.ClassifyFinding, middleware.Require(permission.FindingsSeverity))
-		r.PATCH("/{id}/severity", h.UpdateFindingSeverity, middleware.Require(permission.FindingsSeverity))
+		r.PATCH("/{id}/classify", h.ClassifyFinding, middleware.Require(permission.FindingsSeverity), handler.FindingIfMatch)
+		r.PATCH("/{id}/severity", h.UpdateFindingSeverity, middleware.Require(permission.FindingsSeverity), handler.FindingIfMatch)
+		// A severity downgrade waiting for approval: approving or rejecting it
+		// is an approval decision (findings:approve, eligibility checked by
+		// the approval policy in the service); the requester withdraws it.
+		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/severity-requests/{request_id}/reject", h.RejectSeverityRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/severity-requests/{request_id}/cancel", h.CancelSeverityRequest, middleware.Require(permission.FindingsSeverity))
 
 		// Triage and verification. Confirming a finding is a status change
 		// (PATCH /{id}/status): one gate per action.
@@ -296,7 +302,7 @@ func registerVulnerabilityRoutes(
 		// broader FindingsWrite that a developer role holds — otherwise a member
 		// could self-verify here what the sibling /actions/verify correctly
 		// gates on FindingsVerify.
-		r.POST("/{id}/verify", h.VerifyFinding, middleware.Require(permission.FindingsVerify))
+		r.POST("/{id}/verify", h.VerifyFinding, middleware.Require(permission.FindingsVerify), handler.FindingIfMatch)
 
 		// The whole-asset "request verification scan" is retired (RFC-039 D4):
 		// Retest now (POST /{id}/retests) re-runs the finding's own check.
@@ -306,7 +312,7 @@ func registerVulnerabilityRoutes(
 		}
 
 		// Tags
-		r.PUT("/{id}/tags", h.SetFindingTags, middleware.Require(permission.FindingsWrite))
+		r.PUT("/{id}/tags", h.SetFindingTags, middleware.Require(permission.FindingsWrite), handler.FindingIfMatch)
 
 		// Data flows (attack paths / taint tracking)
 		r.GET("/{id}/dataflows", h.GetFindingDataFlows, middleware.Require(permission.FindingsRead))
@@ -314,10 +320,10 @@ func registerVulnerabilityRoutes(
 		// Manual remediation steps (append-preserving) on generic findings.
 		// NOTE: manual evidence lives on the /{id}/evidence mount registered by
 		// registerValidationRoutes (chi forbids a second mount on that path).
-		r.POST("/{id}/remediation/steps", h.AddRemediationStep, middleware.Require(permission.FindingsWrite))
+		r.POST("/{id}/remediation/steps", h.AddRemediationStep, middleware.Require(permission.FindingsWrite), handler.FindingIfMatch)
 
 		// CTEM Mobilization guidance: definition of done + acceptable fixes.
-		r.PATCH("/{id}/remediation", h.UpdateRemediation, middleware.Require(permission.FindingsWrite))
+		r.PATCH("/{id}/remediation", h.UpdateRemediation, middleware.Require(permission.FindingsWrite), handler.FindingIfMatch)
 
 		// Jira: open a ticket for a finding.
 		if jiraHandler != nil {
@@ -458,6 +464,8 @@ func registerAITriageRoutes(
 	postMiddlewares = append(postMiddlewares, tenantMiddlewares...)
 	if rateLimiter != nil {
 		postMiddlewares = append(postMiddlewares, rateLimiter.RequestMiddleware())
+		// A bulk request spends one unit per finding, not one per request.
+		h.SetBulkAllowance(rateLimiter.AllowExtra)
 	}
 
 	// AI triage routes - tenant from JWT token
@@ -489,7 +497,7 @@ func registerAITriageRoutes(
 	})
 	router.POST("/api/v1/findings/ai-triage/bulk", h.RequestBulkTriage,
 		append(append([]Middleware{bulkTriageDeprecated}, postMiddlewares...),
-			middleware.RequireAll(permission.FindingsWrite, permission.AITriageTrigger))...)
+			middleware.RequireAll(permission.FindingsWrite, permission.FindingsBulkUpdate, permission.AITriageTrigger))...)
 
 	// AI triage config endpoint - returns current AI mode, provider, model
 	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig,

@@ -25,6 +25,7 @@ import type {
   AddCommentInput,
 } from './finding-api.types'
 import type { ApiApproval, ApprovalStatus } from '../types/finding.types'
+import { ifMatchRowVersion, splitRowVersion, type WithRowVersion } from '../lib/finding-conflict'
 import type { ApprovalEvaluation, ApprovalPolicy } from '../lib/approval-policy'
 
 // ============================================
@@ -99,6 +100,8 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.branch_only) params.set('branch_only', 'true')
   if (filters.assigned_to_me) params.set('related_to', 'me')
   if (filters.sla_statuses?.length) params.set('sla_status', filters.sla_statuses.join(','))
+  if (filters.sla_deadline_gt) params.set('sla_deadline_gt', filters.sla_deadline_gt)
+  if (filters.sla_deadline_lte) params.set('sla_deadline_lte', filters.sla_deadline_lte)
   if (filters.epss_min != null) params.set('epss_score_gte', String(filters.epss_min))
   if (filters.finding_ids?.length) params.set('id', filters.finding_ids.join(','))
   if (filters.cve_ids?.length) params.set('cve_id', filters.cve_ids.join(','))
@@ -107,6 +110,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.state) params.set('state', filters.state)
   if (filters.asset_owner_id) params.set('asset_owner_id', filters.asset_owner_id)
   if (filters.asset_owner_unassigned) params.set('asset_owner_id_null', 'true')
+  if (filters.asset_group_id) params.set('asset_group_id', filters.asset_group_id)
   if (filters.view) params.set('view', filters.view)
   if (filters.sort) params.set('sort', filters.sort)
   return params
@@ -115,6 +119,9 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
 function buildFindingEndpoint(findingId: string): string {
   return `/api/v1/findings/${findingId}`
 }
+
+/** The SWR key of one finding's detail (useFindingApi). */
+export const findingDetailKey = buildFindingEndpoint
 
 function buildAssetFindingsEndpoint(
   assetId: string,
@@ -245,8 +252,9 @@ export function useUpdateFindingStatusApi(findingId: string) {
   // Ensure user has a tenant before making requests
   return useSWRMutation(
     currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/status` : null,
-    async (url: string, { arg }: { arg: UpdateFindingStatusInput }) => {
-      return patch<ApiFinding>(url, arg)
+    async (url: string, { arg }: { arg: WithRowVersion<UpdateFindingStatusInput> }) => {
+      const [body, rowVersion] = splitRowVersion(arg)
+      return patch<ApiFinding>(url, body, ifMatchRowVersion(rowVersion))
     }
   )
 }
@@ -274,17 +282,37 @@ export function useMarkDuplicateApi(findingId: string) {
 }
 
 /**
- * Update finding severity
+ * Change a finding's severity (an analyst override with a reason, or a
+ * restore of the reported severity). The answer is the finding with its
+ * recomputed priority, SLA deadline and reason; a downgrade that waits for
+ * approval comes back unchanged with `pending_severity_request` set.
  */
 export function useUpdateFindingSeverityApi(findingId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
     currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/severity` : null,
-    async (url: string, { arg }: { arg: UpdateFindingSeverityInput }) => {
-      return patch<ApiFinding>(url, arg)
+    async (url: string, { arg }: { arg: WithRowVersion<UpdateFindingSeverityInput> }) => {
+      const [body, rowVersion] = splitRowVersion(arg)
+      return patch<ApiFinding>(url, body, ifMatchRowVersion(rowVersion))
     }
   )
+}
+
+export type SeverityRequestDecision = 'approve' | 'reject' | 'cancel'
+
+/**
+ * Decide a pending severity request: approve or reject it (findings:approve)
+ * or withdraw one's own (cancel). Answers the finding as it is now.
+ */
+export async function decideSeverityRequest(
+  findingId: string,
+  requestId: string,
+  decision: SeverityRequestDecision,
+  reason?: string
+): Promise<ApiFinding> {
+  const url = `${buildFindingEndpoint(findingId)}/severity-requests/${encodeURIComponent(requestId)}/${decision}`
+  return post<ApiFinding>(url, decision === 'reject' ? { reason } : {})
 }
 
 /**
@@ -295,8 +323,9 @@ export function useAssignFindingApi(findingId: string) {
 
   return useSWRMutation(
     currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/assign` : null,
-    async (url: string, { arg }: { arg: AssignFindingInput }) => {
-      return post<ApiFinding>(url, arg)
+    async (url: string, { arg }: { arg: WithRowVersion<AssignFindingInput> }) => {
+      const [body, rowVersion] = splitRowVersion(arg)
+      return post<ApiFinding>(url, body, ifMatchRowVersion(rowVersion))
     }
   )
 }
@@ -309,8 +338,8 @@ export function useUnassignFindingApi(findingId: string) {
 
   return useSWRMutation(
     currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/unassign` : null,
-    async (url: string) => {
-      return post<ApiFinding>(url, {})
+    async (url: string, { arg }: { arg?: { rowVersion?: number } } = {}) => {
+      return post<ApiFinding>(url, {}, ifMatchRowVersion(arg?.rowVersion))
     }
   )
 }
@@ -476,6 +505,8 @@ export async function fetchFindingStats(url: string): Promise<FindingStatsRespon
  */
 export interface FindingStatsFilters extends Omit<FindingApiFilters, 'page' | 'per_page' | 'sort'> {
   assetId?: string | null
+  /** Also split the filtered findings by SLA standing and past-due age (response `sla`). */
+  sla_breakdown?: boolean
 }
 
 /**
@@ -484,8 +515,9 @@ export interface FindingStatsFilters extends Omit<FindingApiFilters, 'page' | 'p
  */
 export function buildFindingStatsUrl(filters?: FindingStatsFilters): string {
   if (!filters) return '/api/v1/findings/stats'
-  const { assetId, ...rest } = filters
+  const { assetId, sla_breakdown, ...rest } = filters
   const params = buildFindingsQuery({ ...rest, asset_id: rest.asset_id ?? assetId ?? undefined })
+  if (sla_breakdown) params.set('sla_breakdown', 'true')
   const queryString = params.toString()
   return queryString ? `/api/v1/findings/stats?${queryString}` : '/api/v1/findings/stats'
 }

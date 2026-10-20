@@ -146,9 +146,10 @@ COPY --from=runtime-base /etc/passwd /etc/group /out/etc/
 RUN echo 'openctem:x:1000:1000:openctem:/app:/sbin/nologin' >> /out/etc/passwd \
  && echo 'openctem-signer:x:1001:1000:openctem-signer:/var/lib/openctem-signer:/sbin/nologin' >> /out/etc/passwd \
  && echo 'openctem:x:1000:' >> /out/etc/group \
- && mkdir -p /out/app-data/attachments /out/signer-lib/keys /out/signer-lib/state /out/signer-run \
+ && mkdir -p /out/app-data/attachments /out/signer-lib/keys /out/signer-lib/state /out/signer-run /out/signer-pub \
  && chmod 0700 /out/signer-lib/keys /out/signer-lib/state \
  && chmod 0770 /out/signer-run \
+ && chmod 0755 /out/signer-pub \
  && mkdir -p /out/tool-links \
  && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan; do ln -s server /out/tool-links/$t; done
 
@@ -193,9 +194,13 @@ COPY --from=builder /app/configs ./configs
 #                             read-only in the Compose files and ephemeral anyway.
 #   /var/lib/openctem-signer  the job signer's key and state (0700)
 #   /run/openctem-signer      its socket, reachable by the API's group (0770)
+#   /var/lib/openctem-signer-pub  the signer's public key (signer.pub, 0755 dir):
+#                             a volume only the signer writes and the bundled
+#                             sensor mounts read-only
 COPY --from=runtime-fs --chown=1000:1000 /out/app-data /app/data
 COPY --from=runtime-fs --chown=1001:1000 /out/signer-lib /var/lib/openctem-signer
 COPY --from=runtime-fs --chown=1001:1000 /out/signer-run /run/openctem-signer
+COPY --from=runtime-fs --chown=1001:1000 /out/signer-pub /var/lib/openctem-signer-pub
 
 LABEL org.opencontainers.image.title="OpenCTEM API" \
       org.opencontainers.image.description="OpenCTEM API server, job signer and bootstrap-admin (distroless, non-root)" \

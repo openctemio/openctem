@@ -1,4 +1,0 @@
-### Fixed: sensors no longer hand back work the platform has just offered them for a "busy" host
-
-- The per-host politeness keys are now defined once, in `github.com/openctemio/ctis/politeness` (the CTIS contract, so the platform does not depend on the sensor SDK), and used by both the platform and the sensor runtime. Every workflow chunk of a catalog stage carries the keys the platform holds for it in its payload (`host_keys`; an empty list for a passive stage), and a sensor on sdk-go v0.26.0 or later admits the chunk under exactly those keys. On live, 32 of 34 requeues in 30 days were "released by sensor: its hosts are busy on this sensor", caused by the two sides keying hosts differently.
-- Behaviour change: address keys are canonical (`::ffff:10.0.0.5` and `10.0.0.5/32` hold `10.0.0.5` and its bucket), so a mapped or `/32` form of an address now waits for the address like any other form.

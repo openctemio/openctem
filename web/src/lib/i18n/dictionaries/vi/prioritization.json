@@ -13,5 +13,12 @@
   "prioritization.exposureChains.rankedHint": "Mỗi chuỗi là đường đi ngắn nhất. Bấm vào một nút để mở các phát hiện của nó.",
   "prioritization.exposureChains.emptyTitle": "Không có chuỗi phơi nhiễm",
   "prioritization.exposureChains.emptyDescription": "Không điểm vào hướng Internet nào chạm tới tài sản có phát hiện KEV hoặc nghiêm trọng.",
-  "prioritization.dryRun.previewNote": "Chỉ là xem trước. Lưu quy tắc sẽ phân loại lại các phát hiện khớp."
+  "prioritization.dryRun.previewNote": "Chỉ là xem trước. Lưu quy tắc sẽ phân loại lại các phát hiện khớp.",
+  "prioritization.attackPaths.crownOnPath": "Tài sản trọng yếu nằm trên đường tấn công",
+  "prioritization.dryRun.impact": "Tác động",
+  "prioritization.dryRun.matchedOf": "trên {evaluated} phát hiện sẽ được phân loại lại thành",
+  "prioritization.dryRun.sampled": "Mẫu: đã đánh giá {evaluated} phát hiện mới nhất trong tổng số {total} phát hiện đang mở (giới hạn {cap}). Số lượng trên toàn tổ chức có thể cao hơn.",
+  "prioritization.dryRun.wholeTenant": "Đã đánh giá toàn bộ {total} phát hiện đang mở của tổ chức.",
+  "prioritization.dryRun.floored": "{count} phát hiện khớp vẫn ở mức P1 trở lên: phát hiện đã bị khai thác (KEV) hoặc đã được xác thực không thể xuống dưới P1.",
+  "prioritization.dryRun.sampleShowing": "Đang hiển thị {shown} trên {matched} kết quả khớp"
 }

@@ -548,6 +548,34 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	return a, nil
 }
 
+// GrantCreatorAccess gives the request's caller view of an asset they just
+// created when their data scope would otherwise hide it (a member without
+// full data access): an explicit access grant with source 'creator'. Callers
+// who see every asset get nothing (nil), and so do requests without a user
+// (an organization API key, ingest). The asset must be new: CreateAsset
+// refuses a duplicate instead of merging, so the grant never opens an
+// existing asset. Docs: docs/architecture/asset-ownership.md.
+func (s *AssetService) GrantCreatorAccess(ctx context.Context, tenantID, assetID shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	if s.dataScope == nil || s.accessControlRepo == nil {
+		return nil, nil
+	}
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve creator scope: %w", err)
+	}
+	if !scope.Restricted() || scope.UserID.IsZero() {
+		return nil, nil
+	}
+	g, err := s.accessControlRepo.CreateCreatorAccessGrant(ctx, tenantID, assetID, scope.UserID)
+	if err != nil {
+		if errors.Is(err, accesscontrol.ErrAccessGrantExists) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("grant creator access: %w", err)
+	}
+	return g, nil
+}
+
 // promoteKnownProperties extracts well-known fields from Properties JSONB into their
 // proper columns on CreateAssetInput. This allows collectors to send everything in
 // properties (e.g., {"sub_type": "firewall", "vendor": "Cisco"}) and the system
@@ -673,8 +701,8 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 
 		// Method 2: compute domain level from name structure
 		// A root domain has exactly 1 label before the effective TLD
-		// e.g., "ipa.com.vn" = root (1 label "ipa" before "com.vn")
-		//        "sub.ipa.com.vn" = subdomain (2 labels before "com.vn")
+		// e.g., "example.com.vn" = root (1 label "example" before "com.vn")
+		//        "sub.example.com.vn" = subdomain (2 labels before "com.vn")
 		if input.Type == "domain" && isLikelySubdomain(cleanName) {
 			input.Type = "subdomain"
 		}
@@ -744,7 +772,7 @@ func isLikelySubdomain(name string) bool {
 	// Check if last 2 parts form a known SLD
 	last2 := strings.Join(parts[len(parts)-2:], ".")
 	if knownSLDs[last2] {
-		// For .com.vn: "ipa.com.vn" = 3 parts = root; "sub.ipa.com.vn" = 4 parts = subdomain
+		// For .com.vn: "example.com.vn" = 3 parts = root; "sub.example.com.vn" = 4 parts = subdomain
 		return len(parts) > 3
 	}
 
@@ -1316,17 +1344,17 @@ type ListAssetsInput struct {
 	UnderDomains []string `validate:"max=10,dive,fqdn"`
 	// InCIDRs keeps the address assets inside these ranges (the scan
 	// wizard's preview of an inventory-mode CIDR target, RFC-068).
-	InCIDRs              []string `validate:"max=10,dive,cidr"`
-	HasOwner             *bool    // Assets with/without an assigned owner
-	DataClassifications  []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
-	IsControlPlane       *bool    // Asset is a control-plane dependency
-	IsInternetAccessible *bool    // Asset is internet-reachable
-	Environments         []string `validate:"max=5,dive,oneof=production staging development testing dr"`
-	Providers            []string `validate:"max=20,dive,max=50"`
-	LastSeenAfter        *time.Time
-	LastSeenBefore       *time.Time
-	ExpiresAfter         *time.Time
-	ExpiresBefore        *time.Time
+	InCIDRs             []string `validate:"max=10,dive,cidr"`
+	HasOwner            *bool    // Assets with/without an assigned owner
+	DataClassifications []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
+	IsControlPlane      *bool    // Asset is a control-plane dependency
+	InternetFacing      *bool    // Asset is internet-facing (asset.InternetFacing)
+	Environments        []string `validate:"max=5,dive,oneof=production staging development testing dr"`
+	Providers           []string `validate:"max=20,dive,max=50"`
+	LastSeenAfter       *time.Time
+	LastSeenBefore      *time.Time
+	ExpiresAfter        *time.Time
+	ExpiresBefore       *time.Time
 	// Attribution: attribution states (confirmed, needs_review, candidate,
 	// dependency, monitor_only, rejected) or the aliases unknown, unconfirmed
 	// and approved (RFC-036). Validated by attribution.ParseFilter.
@@ -1539,8 +1567,8 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	if input.IsControlPlane != nil {
 		filter = filter.WithIsControlPlane(*input.IsControlPlane)
 	}
-	if input.IsInternetAccessible != nil {
-		filter = filter.WithIsInternetAccessible(*input.IsInternetAccessible)
+	if input.InternetFacing != nil {
+		filter = filter.WithInternetFacing(*input.InternetFacing)
 	}
 	if len(input.Environments) > 0 {
 		filter = filter.WithEnvironments(input.Environments...)

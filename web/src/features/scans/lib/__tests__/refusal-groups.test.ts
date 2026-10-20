@@ -17,8 +17,8 @@ const zone = (target: string, resolved?: string[]) => ({
 describe('groupRefusals', () => {
   it('groups 281 refusals into a few decisions, one per reason, with counts', () => {
     const results = [
-      ...Array.from({ length: 212 }, (_, i) => proof(`h${i}.vndirect.com.vn`, 'vndirect.com.vn')),
-      ...Array.from({ length: 69 }, (_, i) => zone(`int${i}.vndirect.com.vn`, ['10.0.0.1'])),
+      ...Array.from({ length: 212 }, (_, i) => proof(`h${i}.example.com`, 'example.com')),
+      ...Array.from({ length: 69 }, (_, i) => zone(`int${i}.example.com`, ['10.0.0.1'])),
       { target: 'ok.example', allowed: true },
       { target: 'other.example', allowed: false, code: 'no_entry' },
     ]
@@ -28,7 +28,7 @@ describe('groupRefusals', () => {
       ['zone', 69],
       ['scope', 1],
     ])
-    expect(groups[0].domains).toEqual(['vndirect.com.vn'])
+    expect(groups[0].domains).toEqual(['example.com'])
     expect(canVerify(groups[0])).toBe(true)
     expect(ownSensorHelps(groups[0])).toBe(true)
     expect(ownSensorHelps(groups[1])).toBe(false)
@@ -84,5 +84,13 @@ describe('internalAddressOf', () => {
     expect(internalAddressOf(zone('192.168.1.4'))).toBe('192.168.1.4')
     expect(internalAddressOf(zone('fd00::1'))).toBe('fd00::1')
     expect(internalAddressOf(zone('intra.acme.io'))).toBeUndefined()
+  })
+
+  it('puts a name that does not resolve in its own group, apart from private addresses', () => {
+    const groups = groupRefusals([
+      { target: 'gone.example.com', allowed: false, code: 'unresolved' },
+      zone('intra.example.com', ['10.0.0.1']),
+    ])
+    expect(groups.map((g) => g.kind)).toEqual(['zone', 'unresolved'])
   })
 })

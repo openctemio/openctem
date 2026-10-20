@@ -46,11 +46,12 @@ const META = (i: Integration, k: string): string => {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation()
   const ok = status === 'connected'
   return (
     <Badge variant={ok ? 'default' : 'secondary'} className="gap-1">
       {ok ? <CheckCircle className="size-3" /> : <XCircle className="size-3" />}
-      {status}
+      {t(`siemIntegration.status.${status}`, status)}
     </Badge>
   )
 }
@@ -72,7 +73,9 @@ export default function SIEMIntegrationPage() {
 
   const handleCreate = useCallback(async () => {
     if (!form.name.trim() || !form.hecUrl.trim() || !form.token.trim()) {
-      toast.error('Name, HEC endpoint URL, and HEC token are required')
+      toast.error(
+        t('siemIntegration.toast.required', 'Name, HEC endpoint URL, and HEC token are required')
+      )
       return
     }
     try {
@@ -87,7 +90,7 @@ export default function SIEMIntegrationPage() {
           sourcetype: form.sourcetype.trim(),
         },
       })
-      toast.success('Splunk HEC integration created')
+      toast.success(t('siemIntegration.toast.created', 'Splunk HEC integration created'))
       resetForm()
       setShowForm(false)
       await invalidateNotificationIntegrationsCache()
@@ -95,7 +98,7 @@ export default function SIEMIntegrationPage() {
     } catch (err) {
       toast.error(getErrorMessage(err))
     }
-  }, [form, createIntegration, mutate])
+  }, [form, createIntegration, mutate, t])
 
   const handleTest = useCallback(
     async (integration: Integration) => {
@@ -105,10 +108,15 @@ export default function SIEMIntegrationPage() {
           method: 'POST',
         })
         if (res.ok) {
-          toast.success('Test event delivered to Splunk')
+          toast.success(t('siemIntegration.toast.testDelivered', 'Test event delivered to Splunk'))
         } else {
           const body = await res.json().catch(() => ({}))
-          toast.error(body?.error || `Test failed (HTTP ${res.status})`)
+          toast.error(
+            body?.error ||
+              t('siemIntegration.toast.testFailed', 'Test failed (HTTP {status})', {
+                status: res.status,
+              })
+          )
         }
         await mutate()
       } catch (err) {
@@ -117,7 +125,7 @@ export default function SIEMIntegrationPage() {
         setTestingId(null)
       }
     },
-    [mutate]
+    [mutate, t]
   )
 
   const handleDelete = useCallback(async () => {
@@ -126,7 +134,7 @@ export default function SIEMIntegrationPage() {
     try {
       // apiClient path: a STEP_UP_REQUIRED answer opens the re-authentication dialog and retries.
       await del(`/api/v1/integrations/${deleteTarget.id}`)
-      toast.success('Integration deleted')
+      toast.success(t('siemIntegration.toast.deleted', 'Integration deleted'))
       setDeleteTarget(null)
       await invalidateNotificationIntegrationsCache()
       await mutate()
@@ -135,13 +143,17 @@ export default function SIEMIntegrationPage() {
     } finally {
       setDeleting(false)
     }
-  }, [deleteTarget, mutate])
+  }, [deleteTarget, mutate, t])
 
   const endpointSummary = (integration: Integration) =>
     [
       META(integration, 'hec_url'),
-      META(integration, 'index') && `index: ${META(integration, 'index')}`,
-      META(integration, 'sourcetype') && `sourcetype: ${META(integration, 'sourcetype')}`,
+      META(integration, 'index') &&
+        t('siemIntegration.summary.index', 'index: {value}', { value: META(integration, 'index') }),
+      META(integration, 'sourcetype') &&
+        t('siemIntegration.summary.sourcetype', 'sourcetype: {value}', {
+          value: META(integration, 'sourcetype'),
+        }),
     ]
       .filter(Boolean)
       .join(' · ')
@@ -149,14 +161,14 @@ export default function SIEMIntegrationPage() {
   const columns: ColumnDef<Integration>[] = [
     {
       accessorKey: 'name',
-      header: 'Name',
+      header: t('siemIntegration.columns.name', 'Name'),
       cell: ({ row }) => (
         <StackedCell primary={row.original.name} secondary={row.original.status_message} truncate />
       ),
     },
     {
       id: 'endpoint',
-      header: 'HEC endpoint',
+      header: t('siemIntegration.columns.endpoint', 'HEC endpoint'),
       accessorFn: (i) => endpointSummary(i),
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">{endpointSummary(row.original)}</span>
@@ -164,7 +176,7 @@ export default function SIEMIntegrationPage() {
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: t('siemIntegration.columns.status', 'Status'),
       cell: ({ row }) => <StatusBadge status={row.original.status} />,
     },
     {
@@ -174,14 +186,17 @@ export default function SIEMIntegrationPage() {
         <DataTableRowActions
           actions={[
             {
-              label: testingId === row.original.id ? 'Sending test…' : 'Send test event',
+              label:
+                testingId === row.original.id
+                  ? t('siemIntegration.actions.sendingTest', 'Sending test…')
+                  : t('siemIntegration.actions.sendTest', 'Send test event'),
               icon: Send,
               onClick: () => void handleTest(row.original),
               disabled: testingId === row.original.id,
               route: 'PUT /api/v1/integrations/{id}',
             },
             {
-              label: 'Delete',
+              label: t('siemIntegration.actions.delete', 'Delete'),
               icon: Trash2,
               onClick: () => setDeleteTarget(row.original),
               destructive: true,
@@ -202,20 +217,27 @@ export default function SIEMIntegrationPage() {
   return (
     <Main>
       <PageHeader
-        title="SIEM"
-        description="Forward findings, exposures, scans and SLA breaches to Splunk through the HTTP Event Collector (HEC)."
+        title={t('siemIntegration.title', 'SIEM')}
+        description={t(
+          'siemIntegration.description',
+          'Forward findings, exposures, scans and SLA breaches to Splunk through the HTTP Event Collector (HEC).'
+        )}
       >
         <Can route="PUT /api/v1/integrations/{id}">
           <Button size="sm" onClick={() => setShowForm(true)}>
             <Plus className="me-2 h-4 w-4" />
-            Add Splunk HEC
+            {t('siemIntegration.add', 'Add Splunk HEC')}
           </Button>
         </Can>
       </PageHeader>
 
       <div className="mt-5">
         {error ? (
-          <ErrorState title="SIEM integrations" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={t('siemIntegration.errorTitle', 'SIEM integrations')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-9 w-full max-w-sm" />
@@ -224,13 +246,16 @@ export default function SIEMIntegrationPage() {
         ) : splunkIntegrations.length === 0 ? (
           <EmptyState
             icon={Shield}
-            title="No SIEM integrations yet"
-            description="Add a Splunk HTTP Event Collector to start forwarding security events to your SIEM."
+            title={t('siemIntegration.empty.title', 'No SIEM integrations yet')}
+            description={t(
+              'siemIntegration.empty.description',
+              'Add a Splunk HTTP Event Collector to start forwarding security events to your SIEM.'
+            )}
             action={
               <Can route="PUT /api/v1/integrations/{id}">
                 <Button size="sm" onClick={() => setShowForm(true)}>
                   <Plus className="me-2 h-4 w-4" />
-                  Add Splunk HEC
+                  {t('siemIntegration.add', 'Add Splunk HEC')}
                 </Button>
               </Can>
             }
@@ -240,7 +265,7 @@ export default function SIEMIntegrationPage() {
             columns={columns}
             data={splunkIntegrations}
             getRowId={(i) => i.id}
-            searchPlaceholder="Search integrations..."
+            searchPlaceholder={t('siemIntegration.searchPlaceholder', 'Search integrations...')}
             showSelectionCount={false}
           />
         )}
@@ -249,25 +274,31 @@ export default function SIEMIntegrationPage() {
       <Dialog open={showForm} onOpenChange={(open) => (open ? setShowForm(true) : closeForm())}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New Splunk HEC integration</DialogTitle>
+            <DialogTitle>
+              {t('siemIntegration.form.title', 'New Splunk HEC integration')}
+            </DialogTitle>
             <DialogDescription>
-              The HEC token is stored encrypted. The endpoint, index and sourcetype are
-              non-sensitive routing config.
+              {t(
+                'siemIntegration.form.description',
+                'The HEC token is stored encrypted. The endpoint, index and sourcetype are non-sensitive routing config.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="siem-name">Name</Label>
+                <Label htmlFor="siem-name">{t('siemIntegration.form.name', 'Name')}</Label>
                 <Input
                   id="siem-name"
-                  placeholder="Production Splunk"
+                  placeholder={t('siemIntegration.form.namePlaceholder', 'Production Splunk')}
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="siem-url">HEC endpoint URL</Label>
+                <Label htmlFor="siem-url">
+                  {t('siemIntegration.form.url', 'HEC endpoint URL')}
+                </Label>
                 <Input
                   id="siem-url"
                   placeholder="https://splunk.example.com:8088"
@@ -276,7 +307,7 @@ export default function SIEMIntegrationPage() {
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="siem-token">HEC token</Label>
+                <Label htmlFor="siem-token">{t('siemIntegration.form.token', 'HEC token')}</Label>
                 <Input
                   id="siem-token"
                   type="password"
@@ -286,7 +317,9 @@ export default function SIEMIntegrationPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="siem-index">Index (optional)</Label>
+                <Label htmlFor="siem-index">
+                  {t('siemIntegration.form.index', 'Index (optional)')}
+                </Label>
                 <Input
                   id="siem-index"
                   placeholder="main"
@@ -295,7 +328,9 @@ export default function SIEMIntegrationPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="siem-sourcetype">Sourcetype (optional)</Label>
+                <Label htmlFor="siem-sourcetype">
+                  {t('siemIntegration.form.sourcetype', 'Sourcetype (optional)')}
+                </Label>
                 <Input
                   id="siem-sourcetype"
                   placeholder="openctem:notification"
@@ -307,11 +342,11 @@ export default function SIEMIntegrationPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeForm}>
-              Cancel
+              {t('siemIntegration.form.cancel', 'Cancel')}
             </Button>
             <Button onClick={() => void handleCreate()} disabled={creating}>
               {creating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Create integration
+              {t('siemIntegration.form.create', 'Create integration')}
             </Button>
           </DialogFooter>
         </DialogContent>

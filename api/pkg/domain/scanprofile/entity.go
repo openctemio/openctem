@@ -5,6 +5,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -46,35 +47,12 @@ func (s Severity) IsValid() bool {
 	return false
 }
 
-// TemplateMode represents the mode for using scanner templates.
-type TemplateMode string
-
-const (
-	// TemplateModeDefault uses only the tool's built-in/official templates.
-	TemplateModeDefault TemplateMode = "default"
-	// TemplateModeCustom uses only tenant-uploaded custom templates.
-	TemplateModeCustom TemplateMode = "custom"
-	// TemplateModeBoth runs both default and custom templates together.
-	TemplateModeBoth TemplateMode = "both"
-)
-
-// IsValid checks if the template mode is valid.
-func (m TemplateMode) IsValid() bool {
-	switch m {
-	case TemplateModeDefault, TemplateModeCustom, TemplateModeBoth, "":
-		return true
-	}
-	return false
-}
-
 // ToolConfig represents the configuration for a specific tool.
 type ToolConfig struct {
-	Enabled           bool           `json:"enabled"`
-	Severity          string         `json:"severity,omitempty"`            // Minimum severity to report
-	Timeout           int            `json:"timeout,omitempty"`             // Timeout in seconds
-	Options           map[string]any `json:"options,omitempty"`             // Tool-specific options
-	TemplateMode      TemplateMode   `json:"template_mode,omitempty"`       // "default", "custom", "both"
-	CustomTemplateIDs []string       `json:"custom_template_ids,omitempty"` // IDs of custom templates to use
+	Enabled  bool           `json:"enabled"`
+	Severity string         `json:"severity,omitempty"` // Minimum severity to report
+	Timeout  int            `json:"timeout,omitempty"`  // Timeout in seconds
+	Options  map[string]any `json:"options,omitempty"`  // Tool-specific options
 }
 
 // QualityGate defines thresholds for CI/CD pass/fail decisions.
@@ -219,9 +197,12 @@ type ScanProfile struct {
 	Tags               []string
 	Metadata           map[string]any
 	QualityGate        QualityGate // Quality gate thresholds for CI/CD pass/fail
-	CreatedBy          *shared.ID
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// RuleSources is which detection rules the profile's scans run unless a
+	// scan sets its own (default both; docs/architecture/rule-sources.md).
+	RuleSources scannertemplate.RuleSources
+	CreatedBy   *shared.ID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // NewScanProfile creates a new ScanProfile entity.
@@ -264,6 +245,7 @@ func NewScanProfile(
 		Tags:               []string{},
 		Metadata:           make(map[string]any),
 		QualityGate:        NewQualityGate(),
+		RuleSources:        scannertemplate.RuleSourcesBoth,
 		CreatedBy:          createdBy,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -323,6 +305,24 @@ func (p *ScanProfile) UpdateQualityGate(gate QualityGate) error {
 		return shared.NewDomainError("FORBIDDEN", "system profiles cannot be modified", shared.ErrForbidden)
 	}
 	p.QualityGate = gate
+	p.UpdatedAt = time.Now()
+	return nil
+}
+
+// SetRuleSources sets which detection rules the profile's scans run; ""
+// is both. System profiles cannot be modified.
+func (p *ScanProfile) SetRuleSources(v string) error {
+	if p.IsSystem {
+		return shared.NewDomainError("FORBIDDEN", "system profiles cannot be modified", shared.ErrForbidden)
+	}
+	rs, err := scannertemplate.ParseRuleSources(v)
+	if err != nil {
+		return err
+	}
+	if rs == "" {
+		rs = scannertemplate.RuleSourcesBoth
+	}
+	p.RuleSources = rs
 	p.UpdatedAt = time.Now()
 	return nil
 }
@@ -403,15 +403,11 @@ func (p *ScanProfile) Clone(newName string, createdBy *shared.ID) (*ScanProfile,
 	for k, v := range p.ToolsConfig {
 		options := make(map[string]any)
 		maps.Copy(options, v.Options)
-		customTemplateIDs := make([]string, len(v.CustomTemplateIDs))
-		copy(customTemplateIDs, v.CustomTemplateIDs)
 		toolsConfig[k] = ToolConfig{
-			Enabled:           v.Enabled,
-			Severity:          v.Severity,
-			Timeout:           v.Timeout,
-			Options:           options,
-			TemplateMode:      v.TemplateMode,
-			CustomTemplateIDs: customTemplateIDs,
+			Enabled:  v.Enabled,
+			Severity: v.Severity,
+			Timeout:  v.Timeout,
+			Options:  options,
 		}
 	}
 
@@ -438,6 +434,7 @@ func (p *ScanProfile) Clone(newName string, createdBy *shared.ID) (*ScanProfile,
 		Tags:               tags,
 		Metadata:           metadata,
 		QualityGate:        p.QualityGate, // Copy quality gate settings
+		RuleSources:        p.RuleSources,
 		CreatedBy:          createdBy,
 		CreatedAt:          now,
 		UpdatedAt:          now,

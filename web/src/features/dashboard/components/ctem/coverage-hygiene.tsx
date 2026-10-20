@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { coverageState, STATE_BAR, STATE_TEXT } from '../../lib/ctem-colors'
 import type { ScanCoverage, ValidationCoverage } from '../../hooks/use-ctem-dashboard'
+import { WidgetError } from '../widget-error'
 
 interface CoverageHygieneProps {
   scan?: ScanCoverage
@@ -13,6 +14,24 @@ interface CoverageHygieneProps {
   /** Null: no open finding has an SLA (not measured). */
   slaPct?: number | null
   isLoading?: boolean
+  /** Every read behind the card failed: show an error, not 0 %. */
+  error?: unknown
+  onRetry?: () => void
+}
+
+/**
+ * Scan coverage, or null when it cannot be measured (the read failed or there
+ * is no scannable asset in scope).
+ */
+function scanPct(scan?: ScanCoverage): number | null {
+  if (!scan || scan.total_scannable === 0) return null
+  return scan.coverage_percent
+}
+
+/** Validation coverage, or null with nothing to validate (or no data). */
+function validationPct(v?: ValidationCoverage): number | null {
+  if (!v || v.total === 0) return null
+  return v.overall_pct
 }
 
 function Row({ label, pct }: { label: string; pct: number | null }) {
@@ -38,7 +57,14 @@ function Row({ label, pct }: { label: string; pct: number | null }) {
   )
 }
 
-export function CoverageHygiene({ scan, validation, slaPct, isLoading }: CoverageHygieneProps) {
+export function CoverageHygiene({
+  scan,
+  validation,
+  slaPct,
+  isLoading,
+  error,
+  onRetry,
+}: CoverageHygieneProps) {
   const { t } = useTranslation()
   return (
     <Card className="gap-4">
@@ -53,10 +79,15 @@ export function CoverageHygiene({ scan, validation, slaPct, isLoading }: Coverag
               <Skeleton key={i} className="h-5 w-full" />
             ))}
           </div>
+        ) : error ? (
+          <WidgetError onRetry={onRetry} />
         ) : (
           <div className="flex flex-col gap-3">
-            <Row label={t('dashboardMetrics.coverage.scan')} pct={scan?.coverage_percent ?? 0} />
-            <Row label="Validation" pct={validation?.overall_pct ?? 0} />
+            <Row label={t('dashboardMetrics.coverage.scan')} pct={scanPct(scan)} />
+            <Row
+              label={t('dashboardMetrics.coverage.validation')}
+              pct={validationPct(validation)}
+            />
             <Row label={t('dashboardMetrics.coverage.sla')} pct={slaPct ?? null} />
           </div>
         )}

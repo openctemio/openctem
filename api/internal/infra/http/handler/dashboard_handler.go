@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -362,7 +363,7 @@ func (h *DashboardHandler) GetProcessMetrics(w http.ResponseWriter, r *http.Requ
 
 // GetProgramMetrics returns the CTEM program metrics for the current tenant.
 // @Summary      Get CTEM program metrics
-// @Description  Returns the ctem.org program KPIs computed from stored data, tenant-scoped (organization-wide: a restricted viewer needs dashboard:aggregate or gets 403) and windowed to the last `days` days (1-365, default 90): mean/median time to detect new internet-facing assets, mean/median time to remediate validated (reproduced) exposures, and the owner acceptance rate within the SLA window. A null value means "not measurable" (no qualifying sample) and must be shown as "—", never 0 or 100%. Time-to-break attack paths is intentionally absent: attack paths are computed on demand and no path history is stored.
+// @Description  Returns the ctem.org program KPIs computed from stored data, tenant-scoped (organization-wide: a restricted viewer needs dashboards:org:view or gets 403) and windowed to the last `days` days (1-365, default 90): mean/median time to detect new internet-facing assets, mean/median time to remediate validated (reproduced) exposures, and the owner acceptance rate within the SLA window. A null value means "not measurable" (no qualifying sample) and must be shown as "—", never 0 or 100%. Time-to-break attack paths is intentionally absent: attack paths are computed on demand and no path history is stored.
 // @Tags         Dashboard
 // @Produce      json
 // @Security     BearerAuth
@@ -388,7 +389,11 @@ func (h *DashboardHandler) GetProgramMetrics(w http.ResponseWriter, r *http.Requ
 
 	metrics, err := h.dashboardService.GetProgramMetrics(r.Context(), tid, days)
 	if errors.Is(err, module.ErrAggregateRequired) {
-		apierror.Forbidden(err.Error()).WriteJSON(w)
+		// Name the grant, so the web can tell "no access" from a disabled
+		// module or a failure and say who can grant it.
+		apierror.Forbidden(err.Error()).
+			WithDetails(middleware.PermissionDeniedDetails{AnyOf: orgFiguresPermissions()}).
+			WriteJSON(w)
 		return
 	}
 	if err != nil {
@@ -492,4 +497,10 @@ func (h *DashboardHandler) GetDataQuality(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, scorecard)
+}
+
+// orgFiguresPermissions are the grants that show organization-wide figures
+// to a viewer restricted by data scope (full data access does too).
+func orgFiguresPermissions() []string {
+	return []string{permission.DashboardsOrgView.String(), permission.DashboardsOrgManage.String()}
 }

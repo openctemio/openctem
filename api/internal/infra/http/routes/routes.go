@@ -72,14 +72,17 @@ type Handlers struct {
 	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
 	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
 	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
-	SavedView     *handler.SavedViewHandler     // nil if not initialized - saved list views (D15, RFC-048)
-	Audit         *handler.AuditHandler         // nil if not initialized (no database)
-	Branch        *handler.BranchHandler        // nil if not initialized (no database)
-	SLA           *handler.SLAHandler           // nil if not initialized (no database)
-	Integration   *handler.IntegrationHandler   // nil if not initialized (no database)
-	DefectDojo    *handler.DefectDojoHandler    // nil if not initialized / no DefectDojo sync
-	AssetGroup    *handler.AssetGroupHandler    // nil if not initialized (no database)
-	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
+	// DashboardFacts serves "Rebuild dashboard data" (organization and
+	// console); nil if not initialized.
+	DashboardFacts *handler.DashboardFactsHandler
+	SavedView      *handler.SavedViewHandler   // nil if not initialized - saved list views (D15, RFC-048)
+	Audit          *handler.AuditHandler       // nil if not initialized (no database)
+	Branch         *handler.BranchHandler      // nil if not initialized (no database)
+	SLA            *handler.SLAHandler         // nil if not initialized (no database)
+	Integration    *handler.IntegrationHandler // nil if not initialized (no database)
+	DefectDojo     *handler.DefectDojoHandler  // nil if not initialized / no DefectDojo sync
+	AssetGroup     *handler.AssetGroupHandler  // nil if not initialized (no database)
+	Scope          *handler.ScopeHandler       // nil if not initialized (no database)
 	// BountyProgram serves bug-bounty programs (RFC-065); nil without a database.
 	BountyProgram *handler.BountyProgramHandler
 	// ScopeLetter serves authorization letters (RFC-065 §13).
@@ -156,6 +159,7 @@ type Handlers struct {
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
+	EmergingThreat   *handler.EmergingThreatHandler   // emerging-threat alerts (RFC-117); nil disables
 	CTEMID           *handler.CTEMIDHandler           // nil if not initialized (no database)
 	CredentialImport *handler.CredentialImportHandler // nil if not initialized (no database)
 	Workflow         *handler.WorkflowHandler         // nil if not initialized (no database)
@@ -164,6 +168,7 @@ type Handlers struct {
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
+	Query                  *handler.QueryHandler                  // Custom queries; nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetSoftware          *handler.AssetSoftwareHandler          // RFC-066; nil if not initialized
@@ -288,14 +293,14 @@ type Handlers struct {
 	// AdminSuspension: Console > Organizations suspend / lift, and
 	// Console > Users block / unblock.
 	AdminSuspension *handler.AdminSuspensionHandler
-	// AdminSignup: Console > System > Sign-up (the sign-up policy).
+	// AdminSignup: Console > Settings > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
-	// AdminSignupEvents: Console > Requests > Sign-ups (the sign-up feed and
+	// AdminSignupEvents: Console > Customers > Sign-ups (the sign-up feed and
 	// its burst alert thresholds).
 	AdminSignupEvents *handler.AdminSignupEventHandler
-	// AdminEmail: Console > System > E-mail (the platform SMTP server, RFC-079).
+	// AdminEmail: Console > Settings > E-mail (the platform SMTP server, RFC-079).
 	AdminEmail *handler.AdminEmailHandler
-	// AdminLegal: Console > System > Legal and the public GET /api/v1/legal (RFC-079).
+	// AdminLegal: Console > Settings > Legal and the public GET /api/v1/legal (RFC-079).
 	AdminLegal *handler.AdminLegalHandler
 	// Brand: the public instance brand (GET /api/v1/brand).
 	Brand *handler.BrandHandler
@@ -626,6 +631,9 @@ func Register(
 		registerAPISpecRoutes(router, h.APISpec, authMiddleware, userSync)
 	}
 
+	// Custom queries (docs/architecture/query-language.md)
+	registerQueryRoutes(router, h.Query, authMiddleware, userSync, log)
+
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
 	if h.AssetAttribution != nil {
 		registerAssetAttributionRoutes(router, h.AssetAttribution, authMiddleware, userSync)
@@ -664,6 +672,9 @@ func Register(
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerAISettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerEmergingThreatRoutes(router, h.EmergingThreat, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
 	registerScanApprovalRoutes(router, h.Scan.Approvals(), authMiddleware, userSync)
@@ -723,6 +734,9 @@ func Register(
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
 		registerDashboardRoutes(router, h.Dashboard, authMiddleware, userSync, log)
+		if h.DashboardFacts != nil {
+			registerDashboardDataRoutes(router, h.DashboardFacts, authMiddleware, userSync)
+		}
 	}
 
 	// Audit log routes (tenant from JWT token)
@@ -811,7 +825,7 @@ func Register(
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationTask != nil {
-		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation), log)
 	}
 	if h.RemediationSuggest != nil {
 		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
@@ -1181,7 +1195,7 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	if ssoEnforcementMiddleware != nil {
 		middlewares = append(middlewares, ssoEnforcementMiddleware)
 	}
-	// Organization IP allowlist for user sessions and API keys (no-op for sensors).
+	// Organization IP allowlist for every user principal: sessions, API keys, MCP OAuth and OIDC tokens (no-op for sensors).
 	if ipAllowlistMiddleware != nil {
 		middlewares = append(middlewares, ipAllowlistMiddleware)
 	}
@@ -1268,7 +1282,8 @@ var organizationAccessMiddleware Middleware //nolint:gochecknoglobals // set onc
 var organizationGate tenant.AccessGate //nolint:gochecknoglobals // set once during init
 
 // ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
-// user sessions. Set once during Register; nil disables it (tests).
+// every principal acting as an organization member (session, OIDC token,
+// `oct_` key, MCP OAuth token). Set once during Register; nil disables it (tests).
 var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
 // stepUpChecker answers RequireRecentAuth (step-up re-authentication,

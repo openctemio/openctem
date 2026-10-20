@@ -30,12 +30,20 @@ func (r *CommandRepository) leaseSeconds() float64 {
 	return r.lease.Seconds()
 }
 
+// renewBeforeSeconds is LeaseRenewBefore for this repository's lease, in
+// seconds, for make_interval.
+func (r *CommandRepository) renewBeforeSeconds(interval time.Duration) float64 {
+	return command.LeaseRenewBefore(time.Duration(r.leaseSeconds()*float64(time.Second)), interval).Seconds()
+}
+
 // RenewLeases extends the leases of the commands sensorID holds: those in
 // ids, or every one it holds when all is set (a sensor that does not report
 // what it runs). Only claimed or running commands still held by the sensor
 // are touched; anything re-queued or claimed by another sensor is left
-// alone. Returns the number of leases renewed.
-func (r *CommandRepository) RenewLeases(ctx context.Context, tenantID, sensorID shared.ID, ids []string, all bool) (int64, error) {
+// alone. A lease with more than command.LeaseRenewBefore(lease, interval)
+// left is not written (interval is the heartbeat interval the sensor
+// follows). Returns the number of leases renewed.
+func (r *CommandRepository) RenewLeases(ctx context.Context, tenantID, sensorID shared.ID, ids []string, all bool, interval time.Duration) (int64, error) {
 	if !all && len(ids) == 0 {
 		return 0, nil
 	}
@@ -44,8 +52,10 @@ func (r *CommandRepository) RenewLeases(ctx context.Context, tenantID, sensorID 
 		SET lease_expires_at = NOW() + make_interval(secs => $3)
 		WHERE tenant_id = $1 AND sensor_id = $2
 		  AND status IN ('acknowledged', 'running')
-		  AND ($4::boolean OR id::text = ANY($5::text[]))`
-	res, err := r.db.ExecContext(ctx, query, tenantID.String(), sensorID.String(), r.leaseSeconds(), all, pq.Array(ids))
+		  AND ($4::boolean OR id::text = ANY($5::text[]))
+		  AND (lease_expires_at IS NULL OR lease_expires_at < NOW() + make_interval(secs => $6))`
+	res, err := r.db.ExecContext(ctx, query, tenantID.String(), sensorID.String(), r.leaseSeconds(), all, pq.Array(ids),
+		r.renewBeforeSeconds(interval))
 	if err != nil {
 		return 0, fmt.Errorf("failed to renew command leases: %w", err)
 	}
@@ -122,14 +132,17 @@ func (r *CommandRepository) CancelIfOpen(ctx context.Context, cmd *command.Comma
 }
 
 // RequeueExpiredLeases puts every command whose lease ran out back to
-// pending, shared jobs included (their holder is sensor_id too): unpinned, its zone kept, one more dispatch attempt (so
+// pending, shared jobs included (their holder is sensor_id too): one more dispatch attempt (so
 // fail_exhausted_commands ends a command that keeps killing its sensors).
+// A command addressed to one sensor on purpose (pinned_sensor_id, recorded
+// at its claim) goes back addressed to that sensor and waits for it until
+// it expires; every other command is unpinned with its zone kept.
 // The holder can no longer change it: its start, complete or fail are
 // guarded by the sensor, the state and the lease epoch (FencedUpdate).
 func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command.RequeuedCommand, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		UPDATE commands c
-		SET status = 'pending', sensor_id = NULL,
+		SET status = 'pending', sensor_id = c.pinned_sensor_id,
 		    acknowledged_at = NULL, started_at = NULL,
 		    lease_expires_at = NULL,
 		    dispatch_attempts = c.dispatch_attempts + 1,

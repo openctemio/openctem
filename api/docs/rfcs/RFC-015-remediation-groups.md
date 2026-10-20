@@ -54,12 +54,23 @@ finding that no longer gets a key loses its row.
 |---|---|---|
 | Leaked secret | the keyed fingerprint of the secret value | `rotate:secret:<fingerprint>`, "Rotate the leaked <type> secret <fp8>". Only the same secret groups; a secret without a fingerprint gets no key (secret advice text is the same for every secret, so it is never a grouping signal) |
 | Package (SCA, container, OS, version-based match) | ecosystem + package name + installed version + fixed versions (the scanner's list on the finding, then the CVE catalog's) | `upgrade:<ecosystem>:<name>:<target>`, "Upgrade <name> to <target>", where target is the nearest fixed version for the installed one (`RecommendedFixVersion`). Two installed versions that the same upgrade fixes share one group; a version-based match uses ecosystem `cpe` and the fix its matching range names |
-| Infra / other | the solution text, only when specific (at least 16 characters, names a version or an id, not generic advice) | `sol:<source>:<sha256(normalized(solution))>` |
+| Infra / other | the specific sentences of the solution text: only sentences that name a version (`2.17.1`, `version 8`) or an advisory id (CVE, GHSA, MSnn-nnn, KB, RHSA, USN, DSA, APSB) count, at least 16 characters in all; boilerplate such as "Apply the suggested fix code." never forms a group. For code and configuration sources (`sast`, `iac`, `sarif`, `cspm`) the rule id is part of the hash, and a finding without a rule id gets no `sol` key | `sol:<source>:<sha256([rule id, ] specific sentences)>`, titled by the first specific sentence |
 | pentest, or nothing specific | — | no key (ungrouped) |
 
 Precedence: `rotate` > `upgrade` > `sol`. No key contains `/`, so a key is one
 URL path segment (`/remediation-groups/{key}/resolve`); a package name with a
 slash (an npm scope, a Go module path) uses `~` in the key.
+
+**Key rules version.** Each stored key records `algorithm_version`, the
+version of these rules that derived it (`KeyAlgorithmVersion`, now 3; version
+1 hashed any solution text, so unrelated findings with the same boilerplate
+advice shared a key). The suggestion generator never uses a key older than the
+current rules: before each run it re-derives the tenant's keys when any is
+stale (the backfill below, written, audited as `remediation key rules
+upgrade`), and its candidate query skips stale keys, so a failed re-derivation
+only delays those findings. Migration `remediation_key_algorithm_version`
+marks every existing key version 1 and expires open suggestions built on
+version-1 keys.
 
 Backfill: `refingerprint -remediation-keys [-tenant <id>] [-apply]` re-derives
 every finding's key, one tenant at a time, in id batches. Without `-apply` it
@@ -132,7 +143,7 @@ There is no immediate close for a group.
 |---|---|
 | **1** (#288) | `remediation_key` column + derivation at ingest + group query/repo + `GET /remediation-groups` + `POST /remediation-groups/{key}/resolve` (reuses BulkGuard+BulkUpdate) + backfill. Tests incl. DB round-trip. |
 | **2** | UI "Remediations / By solution" view with per-group **Resolve all**; wire the `fix_applied → verified-on-rescan` loop end to end. |
-| **3** (partial) | Unify with Remediation Campaigns — **campaign can now actively resolve its open findings** (`POST /remediation/campaigns/{id}/resolve`, reuses the finding bulk path + abuse guard; was a passive tracker). Remaining: group→campaign/ticket spawn; richer keys (Tenable solution-id, OS advisory id). |
+| **3** (partial) | Unify with Remediation Campaigns — **campaign can now actively resolve its open findings** (`POST /remediation/campaigns/{id}/resolve`, reuses the finding bulk path + abuse guard; was a passive tracker; removed 2026-10 when campaigns became programs of tasks, RFC-098 §9a). Remaining: group→campaign/ticket spawn; richer keys (Tenable solution-id, OS advisory id). |
 
 ## Testing
 

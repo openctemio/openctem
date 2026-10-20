@@ -128,7 +128,7 @@ type Importance struct {
 func ImportanceOf(a *asset.Asset) Importance {
 	return Importance{
 		Criticality:    a.Criticality(),
-		InternetFacing: a.IsInternetAccessible() || a.Exposure() == asset.ExposurePublic,
+		InternetFacing: a.IsInternetFacing(),
 	}
 }
 

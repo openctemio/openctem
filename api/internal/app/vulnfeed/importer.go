@@ -88,6 +88,9 @@ type Importer struct {
 	fetchMu            sync.Mutex
 	fetcher            *transfer.Fetcher
 	consumerRegistered bool
+
+	// aliases applies the release's alias dictionary (nil: not applied).
+	aliases software.AliasWriter
 }
 
 // NewImporter creates an importer. It refuses a base URL that is not a
@@ -178,7 +181,7 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 	now := im.now()
 	opt := vulnbundle.Options{PinnedRoot: im.cfg.RootKeyID, MinKeySetVer: cur.KeySetVersion, AppliedSeq: cur.Applied, Now: now}
 
-	dir, cleanup, err := im.stage(ctx, opt)
+	dir, kind, cleanup, err := im.stage(ctx, opt)
 	if errors.Is(err, vulnbundle.ErrNotNewer) {
 		return res, nil
 	}
@@ -186,11 +189,13 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 		return res, im.fail(ctx, err)
 	}
 	defer cleanup()
-	v, err := vulnbundle.VerifyDir(dir, opt)
+	// Only the part that is applied is verified (and was fetched): the
+	// delta when it starts at the applied sequence, the snapshot otherwise.
+	v, err := vulnbundle.VerifyOne(dir, opt, kind)
 	if err != nil {
 		return res, im.fail(ctx, err)
 	}
-	res.Ran, res.Sequence = true, v.Latest.Sequence
+	res.Ran, res.Sequence, res.Kind = true, v.Latest.Sequence, kind
 	if err := im.markStarted(ctx); err != nil {
 		return res, err
 	}
@@ -198,9 +203,8 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 		return res, im.fail(ctx, fmt.Errorf("curated products: %w", err))
 	}
 	m := v.Snapshot
-	res.Kind = vulnbundle.KindSnapshot
-	if v.Delta != nil && cur.Applied != 0 && v.Delta.BaseSequence == cur.Applied {
-		m, res.Kind = *v.Delta, vulnbundle.KindDelta
+	if kind == vulnbundle.KindDelta {
+		m = *v.Delta
 	}
 	recs, err := v.Read(m)
 	if err != nil {
@@ -268,58 +272,64 @@ func (im *Importer) apply(ctx context.Context, cves []cvecorpus.CVE, replaceAll 
 	return nil
 }
 
-// stage puts the bundle in a local directory: the configured bundle
-// directory, or a fresh temporary one filled from the release: the record
-// files are fetched only after the key set, the pointer and their manifest
-// verified, each capped at the size its signed manifest states.
-func (im *Importer) stage(ctx context.Context, opt vulnbundle.Options) (string, func(), error) {
+// stage puts the bundle in a local directory and says which part to apply:
+// the delta when the verified pointer says it starts at the applied
+// sequence, the snapshot otherwise (first import, or a platform that fell
+// behind, however far). From the network only that part is fetched: the
+// key set and the pointer first, then that part's manifest, verified, then
+// its record files, each capped at the size its signed manifest states. A
+// configured bundle directory (air-gapped) is read as it is.
+func (im *Importer) stage(ctx context.Context, opt vulnbundle.Options) (string, string, func(), error) {
 	if im.cfg.BundleDir != "" {
-		if _, err := vulnbundle.VerifyPointer(im.cfg.BundleDir, opt); err != nil {
-			return "", nil, err
+		v, err := vulnbundle.VerifyPointer(im.cfg.BundleDir, opt)
+		if err != nil {
+			return "", "", nil, err
 		}
-		return im.cfg.BundleDir, func() {}, nil
+		return im.cfg.BundleDir, partOf(v, opt), func() {}, nil
 	}
 	dir, err := os.MkdirTemp(im.tmp, "vulnfeed-*")
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
+	fail := func(err error) (string, string, func(), error) {
+		cleanup()
+		return "", "", nil, err
+	}
 	latestURL := im.cfg.BaseURL + "/latest/download/"
 	for _, name := range []string{vulnbundle.KeySetFile, vulnbundle.LatestFile} {
 		if err := im.download(ctx, latestURL+name, filepath.Join(dir, name), vulnbundle.MaxManifestBytes); err != nil {
-			cleanup()
-			return "", nil, err
+			return fail(err)
 		}
 	}
 	v, err := vulnbundle.VerifyPointer(dir, opt)
 	if err != nil {
-		cleanup()
-		return "", nil, err
+		return fail(err)
 	}
+	kind := partOf(v, opt)
 	tagURL := im.cfg.BaseURL + "/download/" + url.PathEscape(v.Latest.Tag) + "/"
-	kinds := []string{vulnbundle.KindSnapshot}
-	if v.Latest.Delta != "" {
-		kinds = append(kinds, vulnbundle.KindDelta)
+	name := vulnbundle.ManifestName(kind)
+	if err := im.download(ctx, tagURL+name, filepath.Join(dir, name), vulnbundle.MaxManifestBytes); err != nil {
+		return fail(err)
 	}
-	for _, kind := range kinds {
-		name := vulnbundle.ManifestName(kind)
-		if err := im.download(ctx, tagURL+name, filepath.Join(dir, name), vulnbundle.MaxManifestBytes); err != nil {
-			cleanup()
-			return "", nil, err
-		}
-		m, err := v.LoadManifest(kind)
-		if err != nil {
-			cleanup()
-			return "", nil, err
-		}
-		for _, f := range m.Files {
-			if err := im.download(ctx, tagURL+f.Name, filepath.Join(dir, f.Name), f.Size); err != nil {
-				cleanup()
-				return "", nil, err
-			}
+	m, err := v.LoadManifest(kind)
+	if err != nil {
+		return fail(err)
+	}
+	for _, f := range m.Files {
+		if err := im.download(ctx, tagURL+f.Name, filepath.Join(dir, f.Name), f.Size); err != nil {
+			return fail(err)
 		}
 	}
-	return dir, cleanup, nil
+	return dir, kind, cleanup, nil
+}
+
+// partOf is the bundle part a platform at opt.AppliedSeq applies.
+func partOf(v *vulnbundle.Verified, opt vulnbundle.Options) string {
+	if v.DeltaApplies(opt.AppliedSeq) {
+		return vulnbundle.KindDelta
+	}
+	return vulnbundle.KindSnapshot
 }
 
 func (im *Importer) download(ctx context.Context, rawURL, path string, max int64) error {

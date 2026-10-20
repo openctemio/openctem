@@ -37,6 +37,7 @@ import {
 } from '@/features/integrations/api/use-integrations-api'
 import type { NotificationEventEntry } from '@/features/integrations/types/integration.types'
 import { safeHref } from '@/lib/safe-href'
+import { useTranslation } from '@/context/i18n-provider'
 import { SafeExternalLink } from '@/components/safe-external-link'
 
 /** The channel's own delivery result wins over the event-wide status. */
@@ -47,83 +48,102 @@ function deliveryStatus(entry: NotificationEventEntry): string {
   return entry.status
 }
 
-const columns: ColumnDef<NotificationEventEntry>[] = [
-  {
-    accessorKey: 'title',
-    header: 'Title',
-    cell: ({ row }) => {
-      const entry = row.original
-      const sendResult = entry.send_results?.[0]
-      return (
-        <div className="min-w-0 max-w-md space-y-0.5">
-          <p className="font-medium">{entry.title}</p>
-          {entry.body && <p className="line-clamp-2 text-xs text-muted-foreground">{entry.body}</p>}
-          {sendResult?.status === 'failed' && sendResult.error && (
-            <p className="text-xs text-destructive">Error: {sendResult.error}</p>
-          )}
-          {sendResult?.message_id && (
-            <p className="text-xs text-muted-foreground">
-              Message ID <span className="font-mono">{sendResult.message_id}</span>
-            </p>
-          )}
-        </div>
-      )
+type Translate = ReturnType<typeof useTranslation>['t']
+
+function buildColumns(t: Translate): ColumnDef<NotificationEventEntry>[] {
+  return [
+    {
+      accessorKey: 'title',
+      header: t('notificationChannels.history.col.title', 'Title'),
+      cell: ({ row }) => {
+        const entry = row.original
+        const sendResult = entry.send_results?.[0]
+        return (
+          <div className="min-w-0 max-w-md space-y-0.5">
+            <p className="font-medium">{entry.title}</p>
+            {entry.body && (
+              <p className="line-clamp-2 text-xs text-muted-foreground">{entry.body}</p>
+            )}
+            {sendResult?.status === 'failed' && sendResult.error && (
+              <p className="text-xs text-destructive">
+                {t('notificationChannels.history.errorPrefix', 'Error: {error}', {
+                  error: sendResult.error,
+                })}
+              </p>
+            )}
+            {sendResult?.message_id && (
+              <p className="text-xs text-muted-foreground">
+                {t('notificationChannels.history.messageId', 'Message ID')}{' '}
+                <span className="font-mono">{sendResult.message_id}</span>
+              </p>
+            )}
+          </div>
+        )
+      },
     },
-  },
-  {
-    id: 'integration',
-    header: 'Integration',
-    cell: ({ row }) => {
-      const sendResult = row.original.send_results?.[0]
-      if (!sendResult) return <span className="text-muted-foreground">-</span>
-      return (
-        <div className="flex flex-col">
-          <span>{sendResult.name}</span>
-          <span className="text-xs capitalize text-muted-foreground">{sendResult.provider}</span>
-        </div>
-      )
+    {
+      id: 'integration',
+      header: t('notificationChannels.history.col.integration', 'Integration'),
+      cell: ({ row }) => {
+        const sendResult = row.original.send_results?.[0]
+        if (!sendResult) return <span className="text-muted-foreground">-</span>
+        return (
+          <div className="flex flex-col">
+            <span>{sendResult.name}</span>
+            <span className="text-xs capitalize text-muted-foreground">{sendResult.provider}</span>
+          </div>
+        )
+      },
     },
-  },
-  {
-    accessorKey: 'severity',
-    header: 'Severity',
-    cell: ({ row }) => <SeverityBadge severity={row.original.severity as Severity} />,
-  },
-  {
-    id: 'status',
-    header: 'Status',
-    cell: ({ row }) => <RunStatusBadge status={deliveryStatus(row.original)} />,
-  },
-  {
-    accessorKey: 'processed_at',
-    header: 'Time',
-    cell: ({ row }) => (
-      <span
-        className="whitespace-nowrap text-sm text-muted-foreground"
-        title={new Date(row.original.processed_at).toLocaleString()}
-      >
-        {formatDistanceToNow(new Date(row.original.processed_at), { addSuffix: true })}
-      </span>
-    ),
-  },
-  {
-    id: 'actions',
-    enableHiding: false,
-    cell: ({ row }) =>
-      safeHref(row.original.url) ? (
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
-          <SafeExternalLink
-            href={row.original.url}
-            aria-label={`Open the source of ${row.original.title}`}
-          >
-            <ExternalLink className="h-4 w-4" />
-          </SafeExternalLink>
-        </Button>
-      ) : null,
-  },
-]
+    {
+      accessorKey: 'severity',
+      header: t('notificationChannels.history.col.severity', 'Severity'),
+      cell: ({ row }) => <SeverityBadge severity={row.original.severity as Severity} />,
+    },
+    {
+      id: 'status',
+      header: t('notificationChannels.history.col.status', 'Status'),
+      cell: ({ row }) => <RunStatusBadge status={deliveryStatus(row.original)} />,
+    },
+    {
+      accessorKey: 'processed_at',
+      header: t('notificationChannels.history.col.time', 'Time'),
+      cell: ({ row }) => (
+        <span
+          className="whitespace-nowrap text-sm text-muted-foreground"
+          title={new Date(row.original.processed_at).toLocaleString()}
+        >
+          {formatDistanceToNow(new Date(row.original.processed_at), { addSuffix: true })}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      enableHiding: false,
+      cell: ({ row }) =>
+        safeHref(row.original.url) ? (
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
+            <SafeExternalLink
+              href={row.original.url}
+              aria-label={t(
+                'notificationChannels.history.openSource',
+                'Open the source of {title}',
+                {
+                  title: row.original.title,
+                }
+              )}
+            >
+              <ExternalLink className="h-4 w-4" />
+            </SafeExternalLink>
+          </Button>
+        ) : null,
+    },
+  ]
+}
 
 function HistoryList({ integrationId }: { integrationId: string }) {
+  const { t } = useTranslation()
+  const columns = useMemo(() => buildColumns(t), [t])
   // Server pagination over the channel's events (page / per_page).
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
   useEffect(() => {
@@ -151,11 +171,17 @@ function HistoryList({ integrationId }: { integrationId: string }) {
   const handleRefresh = useCallback(async () => {
     await invalidateNotificationEventsCache(integrationId)
     await mutate()
-    toast.success('Notifications refreshed')
-  }, [integrationId, mutate])
+    toast.success(t('notificationChannels.history.refreshed', 'Notifications refreshed'))
+  }, [integrationId, mutate, t])
 
   if (error && !data) {
-    return <ErrorState title="notification events" error={error} onRetry={() => void mutate()} />
+    return (
+      <ErrorState
+        title={t('notificationChannels.history.errorTitle', 'notification events')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
   }
 
   return (
@@ -165,19 +191,23 @@ function HistoryList({ integrationId }: { integrationId: string }) {
       <MetricStrip
         loading={isLoading && !data}
         items={[
-          { key: 'total', label: 'Sent', value: total },
+          {
+            key: 'total',
+            label: t('notificationChannels.history.metric.sent', 'Sent'),
+            value: total,
+          },
           {
             key: 'rate',
-            label: 'Success rate',
+            label: t('notificationChannels.history.metric.successRate', 'Success rate'),
             value: `${pageStats.rate}%`,
-            hint: 'Events on this page',
+            hint: t('notificationChannels.history.metric.pageHint', 'Events on this page'),
           },
           {
             key: 'failed',
-            label: 'Failed',
+            label: t('notificationChannels.history.metric.failed', 'Failed'),
             value: pageStats.failed,
             tone: 'danger',
-            hint: 'Events on this page',
+            hint: t('notificationChannels.history.metric.pageHint', 'Events on this page'),
           },
         ]}
       />
@@ -194,14 +224,18 @@ function HistoryList({ integrationId }: { integrationId: string }) {
         pagination={pagination}
         onPaginationChange={setPagination}
         pageSize={pagination.pageSize}
-        emptyMessage="No notifications sent yet"
-        emptyDescription="Send a test notification to see it here"
+        emptyMessage={t('notificationChannels.history.emptyMessage', 'No notifications sent yet')}
+        emptyDescription={t(
+          'notificationChannels.history.emptyDescription',
+          'Send a test notification to see it here'
+        )}
       />
     </div>
   )
 }
 
 function HistoryContent() {
+  const { t } = useTranslation()
   const router = useRouter()
   // Read on every render, not once: after an in-app navigation (a channel's
   // "View events") the first render still sees the previous page's URL.
@@ -224,11 +258,14 @@ function HistoryContent() {
         onClick={() => router.push('/settings/integrations/notifications')}
       >
         <ArrowLeft className="me-2 h-4 w-4" />
-        Back to channels
+        {t('notificationChannels.history.back', 'Back to channels')}
       </Button>
       <PageHeader
-        title="Notification events"
-        description="What each notification channel sent, and whether delivery succeeded."
+        title={t('notificationChannels.history.title', 'Notification events')}
+        description={t(
+          'notificationChannels.history.description',
+          'What each notification channel sent, and whether delivery succeeded.'
+        )}
         className="mb-6"
       >
         {loadingIntegrations ? (
@@ -240,13 +277,18 @@ function HistoryContent() {
               size="sm"
               onClick={() => router.push('/settings/integrations/notifications')}
             >
-              Add channel
+              {t('notificationChannels.history.addChannel', 'Add channel')}
             </Button>
           </Can>
         ) : (
           <Select value={selectedId} onValueChange={setPickedId}>
-            <SelectTrigger className="w-[220px] max-w-full" aria-label="Channel">
-              <SelectValue placeholder="Select channel…" />
+            <SelectTrigger
+              className="w-[220px] max-w-full"
+              aria-label={t('notificationChannels.history.channel', 'Channel')}
+            >
+              <SelectValue
+                placeholder={t('notificationChannels.history.selectChannel', 'Select channel…')}
+              />
             </SelectTrigger>
             <SelectContent>
               {integrations.map((i) => (
@@ -267,7 +309,13 @@ function HistoryContent() {
       {selectedId ? (
         <HistoryList integrationId={selectedId} />
       ) : (
-        <EmptyState icon={Bell} title="Select a channel to view its notification events" />
+        <EmptyState
+          icon={Bell}
+          title={t(
+            'notificationChannels.history.selectPrompt',
+            'Select a channel to view its notification events'
+          )}
+        />
       )}
     </>
   )

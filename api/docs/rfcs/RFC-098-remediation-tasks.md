@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk, and as the asset owner without write access) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab; campaigns as programs of tasks (§9a); claim conflicts (409 with per-finding details, skip or audited move); tasks from a query (API: preview, create in snapshot or auto mode, re-run, auto include with suspension; §13) |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -11,11 +11,12 @@
 A **remediation action** is *what* fixes a set of findings: one upgrade (`upgrade:pypi:django:4.2.30`), one
 secret rotation (`rotate:secret:<fingerprint>`), or a fix a person named. A **remediation task** is *who* does
 that fix and *by when*: one owner (a user and/or a group), a deadline and a state derived from its findings.
-A **campaign** stays a program lens over tasks ("all exposures to CVE-X by Friday") whose deadline can only
-tighten the tasks' deadlines.
+A **campaign** is a program of tasks ("all exposures to CVE-X by Friday") with one owner and a due date that
+can only tighten its tasks' deadlines. It holds tasks, never findings: a finding is in at most one active work
+unit, the primary membership of a task (§9a).
 
 ```
-campaign (optional, a program lens with a deadline)
+campaign (optional, a program of tasks with an owner and a due date)
   └── remediation action (WHAT fixes it)          created only by a person
         └── remediation task (WHO, BY WHEN)        the work unit: owner, deadline, ticket
               └── member findings (WHERE)          each with its own status and verification
@@ -85,6 +86,11 @@ Algorithms propose; a person with permission accepts.
   fingerprint, specific solution text), then KB/OS package, base image, IaC module/control and rule+file as
   their data arrives. Owner partitioning by the asset's primary owner (the RACI owner model) and a default
   queue.
+- **Confidence, with its basis:** an exact package target or secret value is 1.0 (`same_package_target`,
+  `same_secret_value`). A specific solution text starts at 0.6 (`same_specific_solution_text`), plus 0.2 when
+  every member comes from one scanner rule (`same_rule`) and 0.1 when every member is the same vulnerability
+  (`same_finding_title`). The factors met are stored in `fix_spec.basis` (with up to five `fix_spec.rule_ids`)
+  so the console explains the number in words; suggestions below 0.6 are not shown.
 - **Ranking:** risk reduced, then member count, then the earliest SLA deadline.
 - **Lifecycle:** `proposed` → `accepted` | `dismissed` (reason required) | `snoozed` (until a date) |
   `superseded` | `expired`. Identity is a fingerprint of kind, key, target and owner; a dismissed suggestion
@@ -113,10 +119,36 @@ Algorithms propose; a person with permission accepts.
    cap falls back to suggestions.
 
 Each accept is one transaction: the suggestion is locked at the version the person saw (409 when it changed),
-its findings are locked and re-checked, and findings that closed or joined another task since are left out and
-listed (`dropped`). Removed findings go to `remediation_key_exclusions`. Bulk accept takes up to 50
+its findings are claimed (§6.1): findings that closed since are left out and listed (`dropped`); findings that
+joined another active task since refuse the accept unless the request skips or moves them. Removed findings go to `remediation_key_exclusions`. Bulk accept takes up to 50
 suggestions and 5000 findings, each on its own. Turning auto-join on needs a caller with access to every asset
 (the rule acts on findings they may not see); `upgrade` and `rotate` keys only (also a table CHECK).
+
+### 6.1 Claim conflicts
+
+A finding is the primary member of at most one active task (`ux_remediation_task_members_primary`). Every path
+that adds primary members (accepting a suggestion, creating a task, adding members) claims the findings in its
+transaction: the tasks to move out of are locked in id order, then the findings in id order; each finding is
+closed (an accept drops it and lists it), free, or taken by another active task. A taken finding refuses the
+whole request with 409:
+
+```
+{"code": "FINDINGS_IN_OTHER_TASK", "message": "...", "details": {"conflicts": [
+  {"finding_id": "...", "finding_title": "...", "task_id": "...", "task_title": "..." | null,
+   "assignee_user_id": "..." | null, "assignee_group_id": "..." | null, "can_move": true | false}]}}
+```
+
+`task_title` and the assignee are null when the caller cannot read the holding task (they learn only that the
+finding is taken). `can_move` is true when the caller holds `findings:remediation:write` and may change the
+holding task (it is visible and none of its findings is outside their scope). The request resolves conflicts
+with one field, the same on every path: `"conflicts": {"skip": true}` leaves every taken finding out (listed
+in `skipped` on an accept), and `"conflicts": {"move": [ids], "move_reason": "..."}` moves the named findings
+and skips the others. A move needs a reason (at most 500 characters) and write access to every holding task
+(403 otherwise); it ends the source membership (`left_reason = 'moved'`, history kept), writes a timeline entry
+on the finding and on both tasks, recomputes the source (archived when emptied), keeps the finding's SLA, writes
+one `remediation_task.findings_moved` audit row per source task and tells the trackers of both tasks. Related
+links carry no status and are never a conflict. Of two concurrent claims of one finding exactly one wins (the
+finding rows are locked; the unique index is the backstop) and the other answers 409.
 
 ## 7. Moves, split, merge, detach
 
@@ -175,15 +207,42 @@ findings through the finding service (Done is a fix claim for each); the echo of
 pushed, within ten minutes) is ignored. `SyncService.TaskChanged` pushes a task at once for a caller that wants it
 before the next pass.
 
+## 9a. Campaigns
+
+A campaign is a program of tasks: `remediation_tasks.campaign_id`, a task in at most one campaign. It holds
+no findings and stores no counts; what it covers and how far along it is are derived from its tasks on every
+read, over the reader's data scope: tasks (visible, live, done, overdue, and the count of tasks outside the
+scope), findings of those tasks and how many are closed and verified fixed.
+
+- **Lifecycle:** `draft` → `active` → `completed`, `canceled` from draft or active, `completed` → `active`
+  (reopen). Completing needs every task closed and one done (the rule a task uses for its findings). The
+  progress controller completes an active campaign whose tasks are done and reopens a completed one when a task
+  is live again (a regression task joins its campaign). The former `paused` and `validating` states are gone: a
+  task has its own on-hold state, and every finding is verified on its own.
+- **Tasks:** tasks are added to a draft or active campaign (`POST .../campaigns/{id}/tasks`, or a task's
+  `campaign_id`) and removed (`DELETE .../campaigns/{id}/tasks/{task_id}`; the task stays). A task in another
+  campaign answers 409 `TASKS_IN_OTHER_CAMPAIGN` unless the request sets `move`. The campaign's due date bounds
+  the deadline of its tasks while it is draft or active.
+- **Data scope:** a restricted member sees a campaign they created or own (`assigned_to`), or one with a task
+  holding a finding in their scope; tasks outside their scope are a count (`hidden_tasks`). The owner of a
+  campaign sees the whole campaign's counts. A restricted member changes a campaign only when no task of it has
+  a finding outside their scope, adds only tasks they may change, and moves a task out of another campaign only
+  when they may change that one too.
+- **Tracker:** the campaign's Jira epic stays: completing the campaign moves the epic to Done; the epic moving to
+  a done status marks every live task of the campaign fixed (a fix claim per finding, verified on its own).
+- **Conversion:** the campaigns that tracked findings through a filter were converted into tasks once
+  (migrations `remediation_campaigns_hold_tasks` and `remediation_campaigns_drop_finding_filter`;
+  `docs/architecture/remediation-campaigns.md`).
+
 ## 10. API
 
 ```
 GET   /api/v1/remediation/tasks                          list (state, assignee=me, group, action, campaign, finding, search, sort)
-POST  /api/v1/remediation/tasks                          create from findings (409 FINDINGS_IN_OTHER_TASK)
+POST  /api/v1/remediation/tasks                          create from findings (409 FINDINGS_IN_OTHER_TASK unless conflicts resolves it, §6.1)
 GET   /api/v1/remediation/tasks/{task_id}
 PATCH /api/v1/remediation/tasks/{task_id}                title, description, owner, deadline, campaign, hold/resume/cancel; version required
 GET   /api/v1/remediation/tasks/{task_id}/members
-POST  /api/v1/remediation/tasks/{task_id}/members        add primary or related findings; version required
+POST  /api/v1/remediation/tasks/{task_id}/members        add primary or related findings; version required; conflicts (§6.1)
 POST  /api/v1/remediation/tasks/{task_id}/resolve        mark fixed: each open finding claimed fixed and re-checked
 GET   /api/v1/remediation/tasks/{task_id}/ticket-links   the task's tracker issue links
 POST  /api/v1/remediation/tasks/{task_id}/ticket-links   create the task's Jira issue (409 when it has one)
@@ -191,6 +250,12 @@ POST  /api/v1/remediation/tasks/{task_id}/splits         split findings into a n
 POST  /api/v1/remediation/tasks/{task_id}/merges         merge tasks of the same fix
 POST  /api/v1/remediation/moves[/preview]                move findings between tasks (or out of any)
 GET   /api/v1/remediation/tasks/{task_id}/timeline
+POST  /api/v1/remediation/tasks/query/preview            preview a task from a query (read-only; §13)
+POST  /api/v1/remediation/tasks/query                    create a task from a query, snapshot or auto (409 FINDINGS_IN_OTHER_TASK)
+GET   /api/v1/remediation/tasks/{task_id}/query          the stored query, mode and auto state
+POST  /api/v1/remediation/tasks/{task_id}/query/{run,preview}  new matches; added only on confirmation
+POST  /api/v1/remediation/tasks/{task_id}/query/auto     pause or resume auto include
+POST  /api/v1/query/from-filters                         a findings list filter as query text
 GET   /api/v1/remediation/suggestions                    list, best first (state, kind, key_kind, min_risk, search, queued)
 GET   /api/v1/remediation/suggestions/stats              open, held back and snoozed counts (the inbox badge)
 POST  /api/v1/remediation/suggestions/run                run the generator now (at most once a minute; 429 otherwise)
@@ -199,10 +264,19 @@ PATCH /api/v1/remediation/suggestions/{id}               snooze (snoozed_until, 
 GET   /api/v1/remediation/suggestions/{id}/members
 POST  /api/v1/remediation/suggestions/{id}/reject        dismiss with a reason; version required
 POST  /api/v1/remediation/suggestions/{id}/reopen        undo a dismissal or a snooze
-POST  /api/v1/remediation/suggestions/{id}/approve       accept, optionally edited (title, removed findings, owners, deadline, auto_join)
+POST  /api/v1/remediation/suggestions/{id}/approve       accept, optionally edited (title, removed findings, owners, deadline, auto_join); conflicts (§6.1)
 POST  /api/v1/remediation/suggestions/approve            accept several as they are
 GET   /api/v1/remediation/actions/{id}
 PATCH /api/v1/remediation/actions/{id}                   auto_join on or off
+GET   /api/v1/remediation/campaigns                      list with summaries and counts per status (status, priority, search)
+POST  /api/v1/remediation/campaigns                      create (optionally with task_ids; 409 TASKS_IN_OTHER_CAMPAIGN)
+GET   /api/v1/remediation/campaigns/{id}
+PATCH /api/v1/remediation/campaigns/{id}                 name, description, priority, owner, team, dates, tags; version
+PATCH /api/v1/remediation/campaigns/{id}/status          active, completed (only when done), canceled
+POST  /api/v1/remediation/campaigns/{id}/tasks           add tasks (move to move them from another campaign)
+DELETE /api/v1/remediation/campaigns/{id}/tasks/{task_id} the task leaves the campaign
+POST  /api/v1/remediation/campaigns/{id}/create-ticket   the campaign's Jira epic
+DELETE /api/v1/remediation/campaigns/{id}                its tasks stay and leave it
 ```
 
 Reads need `findings:remediation:read` (members also `findings:read`); changes need
@@ -227,12 +301,16 @@ auto-join stay with write. Marking findings fixed will also need `findings:fix_a
   bulk path with its permission, note and abuse guard; closing comes only from per-member verification.
 - **Concurrency:** every change carries the task `version`; the task row and the finding rows are locked in a
   fixed order; the background recompute locks the tasks it writes.
+- **Claim conflicts (§6.1):** the 409 names the holding task's title and owner only to a caller who can read
+  it; moving needs write access to the holding task, checked before the transaction and again inside it (a
+  finding that changed task since is refused, not moved); another tenant's finding is not found.
 - **Suggestions:** a restricted member sees a suggestion only through its findings in their scope; the ids
   and owner partitions of the others are not returned (`hidden_members` counts them), and they may not decide
   on it. The generator runs as the platform but writes only proposals.
 - **Audit:** `remediation_task.created`, `.updated`, `.members_added`, `.state_changed` (hold, resume, cancel);
-  `remediation_task.members_moved`, `.split`, `.merged`, `.fix_claimed`; `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`, `.accepted`;
-  `remediation_action.auto_join_changed`.
+  `remediation_task.members_moved`, `.findings_moved` (a resolved claim conflict, one row per source task), `.split`, `.merged`, `.fix_claimed`; `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`, `.accepted`;
+  `remediation_action.auto_join_changed`; `remediation_task.created_from_query`, `.query_rerun`,
+  `.query_auto_added`, `.query_auto_state_changed` (each with the query text).
 
 ## 12. Rollout
 
@@ -246,3 +324,58 @@ auto-join stay with write. Marking findings fixed will also need `findings:fix_a
 | 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Implemented |
 | 7 | Finding drawer band: the task a finding is tracked in, its state and deadline | Implemented |
 | 8 | My Work tasks tab: my open tasks (mine or my groups), earliest deadline first | Implemented |
+| 9 | Tasks from a query (§13): preview, snapshot and auto modes, re-run, auto include worker | Implemented (console: "New task from query" on Tasks, "Task from filters" on Findings, the task's "Created from a query" panel; "Add findings by query" in the suggestion edit dialog is open) |
+| 10 | Campaigns hold tasks only: filter campaigns converted into tasks, summaries derived from tasks, add/remove/move tasks, lifecycle draft/active/completed/canceled | Implemented |
+
+## 13. Tasks from a query
+
+A person selects the findings of a task with a custom query (RFC-115) instead of picking them: from the
+findings list ("Create task from these filters": the list filter becomes query text through
+`POST /api/v1/query/from-filters`, one filter in two views), from the suggestion "Edit, then accept"
+dialog ("Add findings by query"), or from a query box on the task create dialog.
+
+**Selection.** Only `findings where ...` qualifies (no pipeline stages). The query runs as the creator: the
+query service resolves the principal on the server (tenant, data scope, the pentest member rule, the
+mandatory exclusions of RFC-115) and the task layer adds two rules of its own: closed findings and pentest
+findings are left out (a pentest finding is fixed through its pentest campaign, and its visibility is
+member-only). The same limits apply as for interactive queries (per-user rate limit, concurrency caps,
+read-only transaction, 5 s statement timeout, `work_mem` cap). A task holds at most 1000 findings from a
+query; more matches answer `400 QUERY_TOO_MANY_MATCHES`: narrow the query, or split the work into several
+tasks under a campaign.
+
+**Preview** (read-only, claims nothing): the number of matches, counts by severity, the top assets and the top
+primary owners of those assets, a sample of 20, the earliest SLA deadline, a suggested assignee (the most
+common primary owner) and the matches other active tasks hold. A conflict shows the holding task's title and
+owner only when the caller may read that task, and `can_move` only when the caller may change it.
+
+**Create.** The task stores the canonical query text and its language version
+(`remediation_task_queries`: text, version, mode, auto state and reason, cap, owner, last run, counters),
+and its members join with source `query`. Matches other active tasks hold answer
+`409 FINDINGS_IN_OTHER_TASK` with `details.conflicts` (the shared shape) unless the request carries
+`"conflicts": {"skip": true}` or `{"move": [...], "move_reason": "..."}`; a move goes through the audited move
+(timeline on both tasks, owners told, SLA kept). The partial unique index on primary membership decides
+concurrent claims: exactly one wins.
+
+**Modes.** *Snapshot* (default) holds the matches at creation. "Re-run" previews the new matches no active
+task holds and adds them only when the person confirms. *Auto* adds new matches by itself, every 15 minutes
+at most, with guardrails: only findings no other active task holds (never taken), up to the task's cap
+(1 to 1000), the owner is told of additions in-app, and a person may pause and resume it.
+
+**Who an auto run acts as.** Always the creator (the stored owner), with their membership, role and
+permissions read again on every run, and their current data scope applied by the query service. The task is
+suspended, audited and shown on the task with the reason, never run ownerless, when:
+the owner left the organization or the account was deleted (`owner_removed`), the owner no longer holds
+`findings:read` and `findings:remediation:write` (`owner_lost_access`), the task closed (`task_closed`), or the
+stored query no longer compiles for the owner (`query_invalid`). A suspended task resumes only once its
+cause is gone.
+
+**Who sees the findings.** Assignees see the task's findings through the assignment view grant (the
+assignment-grants-view work); everyone else sees a task through its findings in their own scope, the rest
+as a count (§11).
+
+**Threat model.** A crafted query cannot widen its scope: the text never carries the principal, the plan
+layer injects every rule, and executors cannot build a plan. A client cannot name another tenant (the caller
+is built from the authenticated request and checked against the tenant). A creator cannot keep reading
+findings after losing access through an auto task: each run re-reads their access and suspends. A task from a
+query cannot silently take a finding from another person's task: conflicts are explicit (skip or audited
+move) and auto mode only adds unclaimed findings. Cost is bounded by the query limits and the 1000 cap.

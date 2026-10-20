@@ -3,8 +3,10 @@ package finding
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -15,11 +17,32 @@ import (
 // persists nothing and emits no events.
 type PriorityExplanation struct {
 	FindingID string `json:"finding_id"`
-	// Decision
+	// Decision: the class the finding holds. With a manual override that is
+	// the stored, person-set class (source "manual"); otherwise the class the
+	// engine computes now.
 	Class    string  `json:"priority_class"`
 	Reason   string  `json:"reason"`
-	Source   string  `json:"source"` // "auto" | "rule"
+	Source   string  `json:"source"` // "auto" | "rule" | "manual"
 	RuleName *string `json:"rule_name,omitempty"`
+
+	// Override is set when a person set the class by hand: the engine's
+	// verdict (ComputedClass) is then not applied.
+	Override *PriorityOverride `json:"override,omitempty"`
+	// ComputedClass / ComputedReason are what the engine computes now from
+	// the factors below (with the tenant's rules and the platform floors).
+	ComputedClass  string `json:"computed_class"`
+	ComputedReason string `json:"computed_reason"`
+	// StoredClass / StoredReason are what the finding holds now ("" when it
+	// was never classified). Stale is true when an automatically classified
+	// finding's stored class differs from ComputedClass: a recompute is
+	// pending (queued input change or model upgrade) or the finding is closed
+	// and frozen.
+	StoredClass  string `json:"stored_class"`
+	StoredReason string `json:"stored_reason"`
+	Stale        bool   `json:"stale"`
+	// ModelVersion is the priority model version of this build, the one the
+	// computed class comes from (docs/architecture/scoring-versions.md).
+	ModelVersion int `json:"model_version"`
 
 	// Factors that fed the decision (so an operator can audit/tune).
 	Factors PriorityFactors `json:"factors"`
@@ -32,6 +55,12 @@ type PriorityExplanation struct {
 	ScoreBreakdown vulnerability.PriorityScoreBreakdown `json:"score_breakdown"`
 }
 
+// PriorityOverride records a manual class override: who set it and when.
+type PriorityOverride struct {
+	By *string    `json:"by,omitempty"`
+	At *time.Time `json:"at,omitempty"`
+}
+
 // PriorityFactors are the inputs to the classifier, plus the two derived
 // booleans the rules actually gate on (reachable, critical_asset), so the
 // explanation is self-contained.
@@ -41,6 +70,7 @@ type PriorityFactors struct {
 	EPSSScore            *float64 `json:"epss_score,omitempty"`
 	EPSSPercentile       *float64 `json:"epss_percentile,omitempty"`
 	IsInKEV              bool     `json:"is_in_kev"`
+	ValidatedExploitable bool     `json:"validated_exploitable"`
 	IsReachable          bool     `json:"is_reachable"`
 	IsInternetAccessible bool     `json:"is_internet_accessible"`
 	IsNetworkAccessible  bool     `json:"is_network_accessible"`
@@ -97,14 +127,13 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			s.businessContextFor(ctx, tenantID, f.AssetID()))
 	}
 
-	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{f.ID()})
 	// Owner presence only feeds the explanation when the tenant enabled the floor
 	// (matches the live classify path — the reason must not appear when off).
 	var hasOwner map[shared.ID]bool
 	if s.ownershipFloorEnabled(ctx, tenantID) {
 		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(a))
 	}
-	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
+	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), hasOwner)
 	if a != nil {
 		pctx.AttributionUnconfirmed = s.unconfirmedAssets(ctx, tenantID, []shared.ID{a.ID()})[a.ID()]
 	}
@@ -119,17 +148,22 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 	classification.Reason = appendCriticalityReason(classification.Reason, critReason)
 
 	exp := &PriorityExplanation{
-		FindingID: findingID.String(),
-		Class:     string(classification.Class),
-		Reason:    classification.Reason,
-		Source:    classification.Source,
-		RuleName:  ruleName,
+		FindingID:      findingID.String(),
+		Class:          string(classification.Class),
+		Reason:         classification.Reason,
+		Source:         classification.Source,
+		RuleName:       ruleName,
+		ComputedClass:  string(classification.Class),
+		ComputedReason: classification.Reason,
+		StoredReason:   f.PriorityClassReason(),
+		ModelVersion:   scoring.PriorityModelVersion,
 		Factors: PriorityFactors{
 			Severity:               string(pctx.Severity),
 			CVEID:                  pctx.CVEID,
 			EPSSScore:              pctx.EPSSScore,
 			EPSSPercentile:         pctx.EPSSPercentile,
 			IsInKEV:                pctx.IsInKEV,
+			ValidatedExploitable:   pctx.ValidatedExploitable,
 			IsReachable:            pctx.IsReachable,
 			IsInternetAccessible:   pctx.IsInternetAccessible,
 			IsNetworkAccessible:    pctx.IsNetworkAccessible,
@@ -151,6 +185,22 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 		// Transparent composite score derived from the SAME context — additive
 		// explanation only, never changes the class above.
 		ScoreBreakdown: vulnerability.ComputePriorityScore(pctx),
+	}
+	if pc := f.PriorityClass(); pc != nil {
+		exp.StoredClass = string(*pc)
+	}
+	if f.PriorityClassOverride() && exp.StoredClass != "" {
+		// A person's class stands: report it, with who and when, and keep
+		// the engine's verdict beside it.
+		ov := &PriorityOverride{At: f.PriorityClassOverriddenAt()}
+		if by := f.PriorityClassOverriddenBy(); by != nil {
+			id := by.String()
+			ov.By = &id
+		}
+		exp.Override = ov
+		exp.Class, exp.Reason, exp.Source, exp.RuleName = exp.StoredClass, exp.StoredReason, "manual", nil
+	} else {
+		exp.Stale = exp.StoredClass != exp.ComputedClass
 	}
 	return exp, nil
 }
