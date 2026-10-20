@@ -51,7 +51,7 @@ path starting with `/`, header names, no credential or `Host` header, no
 `{{ }}` expressions anywhere, at most 10 matchers, valid regexes) and compiled
 with a YAML encoder, never by string concatenation.
 
-`POST /findings/{id}/retest-check/validate` runs all of it without saving and
+`POST /findings/{id}/retest-check/test` runs all of it without saving and
 returns the template that would run.
 
 ## Running a check
@@ -106,7 +106,7 @@ calibration. The rest follows [continuous retest](continuous-retest.md)
 | Route | Permission |
 |---|---|
 | `GET /api/v1/findings/{id}/retest-check` | `findings:read` |
-| `POST /api/v1/findings/{id}/retest-check/validate` | `findings:retest_checks:write` |
+| `POST /api/v1/findings/{id}/retest-check/test` | `findings:retest_checks:write` |
 | `PUT /api/v1/findings/{id}/retest-check` | `findings:retest_checks:write` |
 | `DELETE /api/v1/findings/{id}/retest-check` | `findings:retest_checks:write` |
 | `POST /api/v1/findings/{id}/retest-check/approve` | `scope:approve` + recent sign-in |

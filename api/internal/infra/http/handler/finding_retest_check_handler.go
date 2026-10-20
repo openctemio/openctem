@@ -200,7 +200,7 @@ func (h *FindingRetestCheckHandler) Get(w http.ResponseWriter, r *http.Request) 
 	writeRetestCheckJSON(w, http.StatusOK, RetestCheckGetResponse{Check: toRetestCheckResponse(v)})
 }
 
-// Validate handles POST /api/v1/findings/{id}/retest-check/validate.
+// Validate handles POST /api/v1/findings/{id}/retest-check/test.
 // @Summary      Validate a retest check
 // @Description  Parses and checks a retest check without saving it: the template library's validator, the retest check rules (HTTP only, requests on the finding's target, no out-of-band callbacks, no credentials) and the tier. Returns the nuclei template that would run (compiled for an assertion). Requires findings:retest_checks:write.
 // @Tags         Findings
@@ -212,7 +212,7 @@ func (h *FindingRetestCheckHandler) Get(w http.ResponseWriter, r *http.Request) 
 // @Failure      400   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /findings/{id}/retest-check/validate [post]
+// @Router       /findings/{id}/retest-check/test [post]
 func (h *FindingRetestCheckHandler) Validate(w http.ResponseWriter, r *http.Request) {
 	tenantID, findingID, ok := h.ids(w, r)
 	if !ok {

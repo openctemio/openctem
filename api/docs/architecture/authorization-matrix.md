@@ -335,7 +335,7 @@ and SBOM import write it.
 | `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
 | `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
 | `GET /api/v1/findings/{id}/retest-check` | `findings:read` (finding data scope) |
-| `PUT` · `DELETE /api/v1/findings/{id}/retest-check`, `POST /api/v1/findings/{id}/retest-check/validate` | `findings:retest_checks:write` (finding data scope; [retest checks](finding-retest-checks.md)) |
+| `PUT` · `DELETE /api/v1/findings/{id}/retest-check`, `POST /api/v1/findings/{id}/retest-check/test` | `findings:retest_checks:write` (finding data scope; [retest checks](finding-retest-checks.md)) |
 | `POST /api/v1/findings/{id}/retest-check/approve` | `scope:approve` + step-up; never the author of the version |
 
 > Organization configuration (no finding data), tenant from the token; another

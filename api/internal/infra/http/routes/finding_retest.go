@@ -36,7 +36,7 @@ func registerFindingRetestCheckRoutes(router Router, h *handler.FindingRetestChe
 		r.GET("/", h.Get, middleware.Require(permission.FindingsRead))
 		r.PUT("/", h.Put, middleware.Require(permission.FindingsRetestChecksWrite))
 		r.DELETE("/", h.Delete, middleware.Require(permission.FindingsRetestChecksWrite))
-		r.POST("/validate", h.Validate, middleware.Require(permission.FindingsRetestChecksWrite))
+		r.POST("/test", h.Validate, middleware.Require(permission.FindingsRetestChecksWrite))
 		r.POST("/approve", h.Approve, middleware.Require(permission.ScopeApprove), requireStepUp())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
