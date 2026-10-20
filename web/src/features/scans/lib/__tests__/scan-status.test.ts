@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { hasSchedule, lastRunOf, lastRunReason, scanTypeLabel, scheduleOn } from '../scan-status'
+import {
+  hasSchedule,
+  isManagedScan,
+  lastRunOf,
+  lastRunReason,
+  managedScanLabel,
+  scanTypeLabel,
+  scheduleOn,
+} from '../scan-status'
 
 describe('hasSchedule / scheduleOn', () => {
   it('a manual scan has no schedule to switch', () => {
@@ -87,5 +95,19 @@ describe('scanTypeLabel', () => {
       kind: 'single',
     })
     expect(scanTypeLabel({ scan_type: 'single' }).label).toBe('Single check')
+  })
+})
+
+describe('managed scans', () => {
+  it('a platform policy owns a scan with managed_by or the managed owner state', () => {
+    expect(isManagedScan({ managed_by: 'coverage' })).toBe(true)
+    expect(isManagedScan({ owner_state: 'managed' })).toBe(true)
+    expect(isManagedScan({ owner_state: 'ok' })).toBe(false)
+    expect(isManagedScan({})).toBe(false)
+  })
+
+  it('names what it carries', () => {
+    expect(managedScanLabel({ managed_by: 'coverage' })).toBe('Automatic coverage')
+    expect(managedScanLabel({ managed_by: 'enrichment' })).toBe('Automatic enrichment')
   })
 })

@@ -206,12 +206,28 @@ func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notifica
 		  )
 		  AND ` + preferenceFilter("$4::text", "$5::text") + `
 		  AND (
-			COALESCE($6::text, '') NOT IN ('finding', 'asset')
+			COALESCE($6::text, '') NOT IN ('finding', 'asset', 'remediation_task')
 			OR EXISTS (
 				SELECT 1 FROM v_user_effective_role ver
 				WHERE ver.user_id = tm.user_id AND ver.tenant_id = $1
 				  AND ver.role = 'owner')
-			OR (NOT EXISTS (
+			OR ($6::text = 'remediation_task' AND EXISTS (` + taskMemberInScopeSQL("$1", "$7::uuid", `NOT EXISTS (
+					SELECT 1 FROM assets ph WHERE ph.id = tf.asset_id AND `+filterspec.HiddenAssetWhereExpr("tm.user_id", "$1")+`)
+				  AND (
+					EXISTS (
+						SELECT 1 FROM v_user_effective_role ver
+						WHERE ver.user_id = tm.user_id AND ver.tenant_id = $1
+						  AND ver.role = 'admin')
+					OR EXISTS (
+						SELECT 1 FROM v_user_role_grants ur
+						JOIN roles ro ON ro.id = ur.role_id
+						WHERE ur.tenant_id = $1 AND ur.user_id = tm.user_id AND ro.has_full_data_access = TRUE
+						  AND (ro.tenant_id IS NULL OR ro.tenant_id = ur.tenant_id))
+					OR EXISTS (
+						SELECT 1 FROM user_accessible_assets uaa
+						WHERE uaa.user_id = tm.user_id AND uaa.tenant_id = $1
+						  AND uaa.asset_id = tf.asset_id))`) + `))
+			OR ($6::text IN ('finding', 'asset') AND NOT EXISTS (
 				SELECT 1 FROM assets ph
 				WHERE ph.id = ` + notificationAssetExpr("$6::text", "$7::uuid", "$1") + `
 				  AND ` + filterspec.HiddenAssetWhereExpr("tm.user_id", "$1") + `)
@@ -479,10 +495,24 @@ func notificationAssetExpr(typeExpr, idExpr, tenantExpr string) string {
 }
 
 // notificationScopeCond hides finding and asset notifications whose asset is
-// outside the reader's data scope; other notifications are unaffected.
+// outside the reader's data scope, and a remediation task notification
+// unless at least one of the task's active member findings is in scope (the
+// rule TaskService.GetTask applies); other notifications are unaffected.
 func notificationScopeCond(scope *shared.DataScope, args []any) (string, []any) {
 	cond, args := dataScopeCond(notificationAssetExpr("n.resource_type", "n.resource_id", "n.tenant_id"), scope, args)
-	return `(COALESCE(n.resource_type, '') NOT IN ('finding', 'asset') OR ` + cond + `)`, args
+	taskCond, args := dataScopeCond("tf.asset_id", scope, args)
+	return `(COALESCE(n.resource_type, '') NOT IN ('finding', 'asset', 'remediation_task')` +
+		` OR (n.resource_type IN ('finding', 'asset') AND ` + cond + `)` +
+		` OR (n.resource_type = 'remediation_task' AND EXISTS (` + taskMemberInScopeSQL("n.tenant_id", "n.resource_id", taskCond) + `)))`, args
+}
+
+// taskMemberInScopeSQL selects a row when one active member finding of the
+// task is inside the scope predicate scopeCond (written over tf.asset_id).
+func taskMemberInScopeSQL(tenantExpr, taskExpr, scopeCond string) string {
+	return `SELECT 1 FROM remediation_task_members rtm
+		JOIN findings tf ON tf.tenant_id = rtm.tenant_id AND tf.id = rtm.finding_id
+		WHERE rtm.tenant_id = ` + tenantExpr + ` AND rtm.task_id = ` + taskExpr + `
+		  AND rtm.left_at IS NULL AND ` + scopeCond
 }
 
 // rowScanner interface for scanning from both *sql.Row and *sql.Rows
