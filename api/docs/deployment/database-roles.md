@@ -127,6 +127,36 @@ Separate credentials, with the old single-role layout as the fallback:
 | `DB_SUPERUSER` / `DB_SUPERUSER_PASSWORD` | compose: the bundled Postgres superuser and the `db-roles` job | `DB_USER` / `DB_PASSWORD` |
 | `DB_ADMIN_USER` / `DB_ADMIN_PASSWORD` | the console role (API second pool); needs `DB_MIGRATE_USER`, which `bootstrap-admin` and `rekey` use | unset: the API writes the console tables as `DB_USER` |
 
+### Limits of the app role
+
+The bootstrap script sets two role-level limits on the app role (not on the
+migrator, whose migrations may run long):
+
+| psql variable | Default | Setting |
+|---|---|---|
+| `app_statement_timeout` | `30s` | `statement_timeout`: a query running longer is cancelled |
+| `app_idle_in_transaction_timeout` | `60s` | `idle_in_transaction_session_timeout`: a session idle inside a transaction is closed |
+
+A runaway query or a transaction left open by a crashed worker otherwise holds
+locks and keeps vacuum from cleaning the tables it touched. `0` turns a limit
+off. The values apply to new connections, so restart the API after changing
+them. A statement that legitimately needs longer raises its own limit inside
+its transaction (`SET LOCAL statement_timeout = '5min'`), as the finding export
+and the endpoint lists already do. Look for `canceling statement due to
+statement timeout` (SQLSTATE 57014) in the API log after an upgrade.
+
+### Compression of large values
+
+`deploy/docker-compose.yml` starts the bundled Postgres with
+`default_toast_compression=lz4` (`PG_TOAST_COMPRESSION=pglz` restores the
+built-in method), and migration `toast_lz4_large_columns` sets lz4 on the large
+jsonb, text and bytea columns (finding description and scanner output, command
+payloads, results and logs, ingest headers and payloads, sensor manifests,
+finding evidence, AI triage raw responses). Only values written afterwards use
+lz4; existing values stay readable and are not rewritten. On an external
+Postgres built without lz4 the migration does nothing; set
+`default_toast_compression = lz4` in its configuration where it is available.
+
 - **`deploy/docker-compose.yml`** has a one-shot `db-roles` job. When `DB_MIGRATE_USER` is set, it
   runs the bootstrap script as `DB_SUPERUSER` on every `up`, before `migrate`,
   and `db-grants` runs it again after `migrate`, before the API.
