@@ -76,11 +76,25 @@ export function savePlatformAI(input: {
   enabled: boolean
   provider: string
   model: string
+  base_url: string
+  allow_private: boolean
+  allowed_models: string[]
   api_key?: string
   reason: string
   version: number
 }) {
   return adminFetch<PlatformAISettings>(AI, { method: 'PUT', body: input })
+}
+
+export function saveOrgAIPolicy(input: {
+  allow_org_provider: boolean
+  reason: string
+  version: number
+}) {
+  return adminFetch<{ allow_org_provider: boolean; version: number }>(`${AI}/org-policy`, {
+    method: 'PUT',
+    body: input,
+  })
 }
 
 export function testPlatformAI() {

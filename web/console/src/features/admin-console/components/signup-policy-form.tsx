@@ -6,7 +6,6 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
@@ -16,7 +15,7 @@ import { RelativeTime } from '@/features/shared'
 import type { SignupPolicyResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveSignupPolicy } from '../api/use-signup-policy'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 type Mode = 'admin_only' | 'self_service'
 type Accounts = 'closed' | 'domain' | 'open'
@@ -304,20 +303,13 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
           )
         }
       >
-        <div className="space-y-2">
-          <Label htmlFor={codeId}>{t('admin.signup.code')}</Label>
-          <Input
-            id={codeId}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={8}
-            aria-invalid={!!codeError}
-          />
-          <StepUpCodeHint optional={codeOptional} />
-          {codeError && <p className="text-sm text-destructive">{codeError}</p>}
-        </div>
+        <StepUpCodeField
+          id={codeId}
+          value={code}
+          onChange={setCode}
+          optional={codeOptional}
+          error={codeError}
+        />
       </ConfirmDialog>
     </>
   )

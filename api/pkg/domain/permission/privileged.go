@@ -1,6 +1,10 @@
 package permission
 
-import "github.com/openctemio/openctem/api/pkg/domain/tenant"
+import (
+	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+)
 
 // Privileged permissions (decisions G1-G12 G3). A role is privileged when it has
 // full data access or carries one of these: whoever holds them can recruit
@@ -90,3 +94,38 @@ func IsAboveMember(perms []string, fullData bool) bool {
 
 // memberBaseline is the built-in member role's permissions.
 func memberBaseline() []Permission { return RolePermissions[tenant.RoleMember] }
+
+// IsApprovePermission reports whether p is an approval-type permission (its
+// last segment is "approve"): findings, suppressions, scope, scans, sensors.
+func IsApprovePermission(p string) bool {
+	return strings.HasSuffix(p, ":approve")
+}
+
+// GainsStepUpGrade reports whether moving a role from (oldPerms, oldFull) to
+// (newPerms, newFull) adds a privileged or approval permission, or full-data
+// grade access, that the role did not carry before. Whoever makes such a
+// change, or hands the role to a user who gains it, needs a recent sign-in.
+func GainsStepUpGrade(oldPerms []string, oldFull bool, newPerms []string, newFull bool) bool {
+	if IsFullDataGrade(newPerms, newFull) && !IsFullDataGrade(oldPerms, oldFull) {
+		return true
+	}
+	had := make(map[string]bool, len(oldPerms))
+	for _, p := range oldPerms {
+		had[p] = true
+	}
+	for _, p := range newPerms {
+		if had[p] {
+			continue
+		}
+		if IsApprovePermission(p) || IsPrivilegedRole([]string{p}, false) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsStepUpGradeRole reports whether a role with these permissions is
+// privileged or carries an approval permission.
+func IsStepUpGradeRole(perms []string, fullData bool) bool {
+	return GainsStepUpGrade(nil, false, perms, fullData)
+}

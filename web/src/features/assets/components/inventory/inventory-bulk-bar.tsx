@@ -27,7 +27,11 @@ import {
   Check,
   Trash2,
 } from 'lucide-react'
-import { bulkTypeToConfirm, ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  ConfirmDialog,
+  ConfirmSample,
+  irreversibleTypeToConfirm,
+} from '@/components/confirm-dialog'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { bulkDeleteAssetsSafely, reportBulkDelete } from '../../lib/safe-delete'
 import { bulkActionsFor } from '../../lib/type-actions'
@@ -186,11 +190,13 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     }
   }
 
+  const withFindings = selected.filter((a) => (a.findingCount ?? 0) > 0).length
+
   const deleteSelected = async () => {
     setBusy(true)
     try {
       const outcome = await bulkDeleteAssetsSafely(selected.map((a) => a.id))
-      reportBulkDelete(outcome, onDone)
+      reportBulkDelete(outcome, onDone, t)
       setConfirmDelete(false)
       onDone()
     } catch (err) {
@@ -470,15 +476,37 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
             : t('confirm.asset.bulkDeleteTitle', 'Delete {count} assets?', { count })
         }
         desc={t(
-          'confirm.asset.bulkDeleteDesc',
-          'They leave every list. An asset that has findings is not deleted: archive it instead to keep the finding history.'
+          'confirm.asset.bulkDeleteDescIrreversible',
+          'This cannot be undone. They leave every list and are removed from their groups, owners, relationships and scope. An asset that has findings is not deleted: archive it instead to keep the finding history.'
         )}
-        confirmText={busy ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
+        confirmText={
+          busy
+            ? t('confirm.deleting', 'Deleting…')
+            : count === 1
+              ? t('confirm.asset.bulkDeleteButtonOne', 'Delete 1 asset')
+              : t('confirm.asset.bulkDeleteButton', 'Delete {count} assets', { count })
+        }
         destructive
         isLoading={busy}
-        typeToConfirm={bulkTypeToConfirm(count)}
-        handleConfirm={() => void deleteSelected()}
-      />
+        typeToConfirm={irreversibleTypeToConfirm(selected.map((a) => a.name))}
+        handleConfirm={deleteSelected}
+      >
+        <ConfirmSample names={selected.map((a) => a.name)} />
+        {withFindings > 0 && (
+          <p className="text-sm text-muted-foreground">
+            {withFindings === 1
+              ? t(
+                  'confirm.asset.bulkWithFindingsOne',
+                  '1 of them has findings, so it is not deleted; you can archive it afterwards.'
+                )
+              : t(
+                  'confirm.asset.bulkWithFindings',
+                  '{count} of them have findings, so they are not deleted; you can archive them afterwards.',
+                  { count: withFindings }
+                )}
+          </p>
+        )}
+      </ConfirmDialog>
 
       {/* Set criticality */}
       <Dialog open={dialog === 'criticality'} onOpenChange={(o) => !o && closeDialog()}>

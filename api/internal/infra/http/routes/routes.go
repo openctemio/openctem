@@ -58,6 +58,8 @@ type Handlers struct {
 	MCPOAuth *handler.MCPOAuthHandler
 	// MCPSettings is the organization MCP policy (RFC-062 §8).
 	MCPSettings *handler.MCPSettingsHandler
+	// AISettings is the organization's AI settings (consent, source, own provider).
+	AISettings *handler.AISettingsHandler
 	// MCPConnections is the connected applications (RFC-062 §12), tenant
 	// and platform console; nil without the authorization server.
 	MCPConnections *handler.MCPConnectionsHandler
@@ -192,6 +194,8 @@ type Handlers struct {
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
 	// FindingRetest serves Retest now + retest history (RFC-039); nil if not initialized
 	FindingRetest *handler.FindingRetestHandler
+	// FindingRetestCheck serves a finding's custom retest check; nil if not initialized
+	FindingRetestCheck *handler.FindingRetestCheckHandler
 	// FindingEvidenceItems serves masked finding evidence + reveal; nil if not initialized
 	FindingEvidenceItems *handler.FindingEvidenceItemsHandler
 
@@ -670,10 +674,11 @@ func Register(
 
 	// Continuous retest (RFC-039): Retest now + a finding's retest history.
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
+	registerFindingRetestCheckRoutes(router, h.FindingRetestCheck, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
-	registerAISettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerAISettingsRoutes(router, h.AISettings, authMiddleware, userSync)
 	registerEmergingThreatRoutes(router, h.EmergingThreat, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
@@ -876,12 +881,7 @@ func Register(
 
 	// Verification Checklist routes (RFC-005) — added to findings group
 	if h.VerificationChecklist != nil {
-		vcHandler := h.VerificationChecklist
-		tenantMW := buildTokenTenantMiddlewares(authMiddleware, userSync)
-		router.Group("/api/v1/verification-checklists", func(r Router) {
-			r.GET("/{findingId}", vcHandler.Get, middleware.Require(permission.VerificationChecklistsRead))
-			r.PUT("/{findingId}", vcHandler.Update, middleware.Require(permission.VerificationChecklistsWrite))
-		}, tenantMW...)
+		registerVerificationChecklistRoutes(router, h.VerificationChecklist, buildTokenTenantMiddlewares(authMiddleware, userSync))
 	}
 
 	// Integration routes (tenant from JWT token)
@@ -1451,4 +1451,13 @@ func realtimeMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middle
 // Returns the final handler after applying all middleware in order.
 func ChainFunc(handler http.HandlerFunc, middlewares ...Middleware) http.Handler {
 	return infrahttp.ChainFunc(handler, middlewares...)
+}
+
+// registerVerificationChecklistRoutes mounts the verification checklist
+// endpoints. GET reads (no write); PUT edits and records who completed it.
+func registerVerificationChecklistRoutes(router Router, vc *handler.VerificationChecklistHandler, mws []Middleware) {
+	router.Group("/api/v1/verification-checklists", func(r Router) {
+		r.GET("/{findingId}", vc.Get, middleware.Require(permission.VerificationChecklistsRead))
+		r.PUT("/{findingId}", vc.Update, middleware.Require(permission.VerificationChecklistsWrite))
+	}, mws...)
 }
