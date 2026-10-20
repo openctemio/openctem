@@ -1,5 +1,0 @@
-### Security: people are added or created directly only on a domain the organization verified
-
-- An organization administrator could create an account for any unregistered address (`POST /api/v1/tenants/{tenant}/users`) and add any existing account by its id (`POST /api/v1/tenants/{tenant}/members`) when the organization had verified no email domain, because such an organization counts every work address as its own. The created account is email-verified and its set-password link comes back to the administrator when the email cannot be sent (or goes through the organization's own SMTP relay), so any self-service organization could mint a signed-in account for an address it does not own, ahead of its real holder, and pull people into the organization without their consent.
-- Both routes now need the address to be on an email domain this organization has verified. Everyone else is invited and joins by accepting. The platform administrator's first-owner bootstrap and provisioning by the organization's IdP are unchanged.
-- **Behaviour change:** organizations without a verified domain invite people instead of creating or adding them.

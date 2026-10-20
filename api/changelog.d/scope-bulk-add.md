@@ -1,3 +1,0 @@
-### Added: add many scope entries in one request
-
-- `POST /api/v1/scope/targets/bulk` (`attack_surface:scope:write`) adds up to 200 permanent scope entries at once: a pasted list, a selection of inventory assets, or the targets a scan refused. Each item follows the rules of a single add (platform guardrails, duplicates, the Strict request and approval rules, the job signer's ledger before the database write) and is audited on its own; a caller who adds entries directly re-authenticates once for the batch, and the administrators get one notice for the batch instead of one per entry. Every item answers `created`, `exists` (the organization's existing entry) or `refused` (code and message). RFC-054 §14.

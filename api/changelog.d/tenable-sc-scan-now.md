@@ -1,5 +1,0 @@
-### Added: scan assets now with a Tenable.sc connector
-
-- `POST /api/v1/integrations/{id}/scans/run` (`scans:write`, scans module) scans up to 50 chosen inventory assets through a Tenable.sc connector with its coverage policy, repository and zone, as a manual run of one hidden on-demand scan per connector, so every scan gate applies (act scope, active-probe gate, scan windows, scan approval). Assets of another organization or outside the caller's data scope, and another organization's integration, answer 404. A connector without a coverage policy and repository is refused with a message to set them.
-- The web console offers "Scan with Tenable.sc" on IP address and host assets and "Rescan with Tenable.sc" on findings the connector reported; a finding closes after a full rescan only through coverage auto-resolve (`INGEST_COVERAGE_AUTO_RESOLVE=enforce`).
-- The connector dialog sets license rotation (off, aging, recycle) with the required acknowledgement and the aging wait; the coverage panel shows the rotation cycle, its progress and ETA, why the next batch waits, and a stalled rotation with a Resume action.

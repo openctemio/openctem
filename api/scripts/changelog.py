@@ -17,6 +17,10 @@ Usage:
                                     conflict markers in any tracked text file
   changelog.py preview              print the Unreleased section assembled from
                                     the fragments
+  changelog.py archive HEADING LIST fold only the fragments named in LIST (one
+                                    file name per line) into CHANGELOG.md as
+                                    "## HEADING", below every existing section,
+                                    and delete them (one-off catch-up)
   changelog.py release VERSION      fold the fragments into CHANGELOG.md under
                                     "## VERSION (YYYY-MM-DD)" and delete them
 
@@ -149,9 +153,9 @@ def entries_in_unreleased() -> bool:
     return bool(re.search(r"(?m)^### ", unreleased_body(text)))
 
 
-def assemble() -> str:
+def assemble(paths: list[pathlib.Path] | None = None) -> str:
     by_cat: dict[str, list[str]] = {c: [] for c in CATEGORIES}
-    for p in fragments():
+    for p in fragments() if paths is None else paths:
         for cat, body in sections(p.read_text(encoding="utf-8")):
             by_cat.setdefault(cat, []).append(body)
     return "\n".join(b for c in by_cat for b in by_cat[c])
@@ -206,8 +210,37 @@ def cmd_release(argv: list[str]) -> int:
     return 0
 
 
+def cmd_archive(argv: list[str]) -> int:
+    if len(argv) != 2 or not argv[0].strip():
+        print("usage: changelog.py archive HEADING LISTFILE", file=sys.stderr)
+        return 2
+    heading = argv[0].strip()
+    names = [n.strip() for n in pathlib.Path(argv[1]).read_text(encoding="utf-8").splitlines() if n.strip()]
+    known = {p.name: p for p in fragments()}
+    missing = [n for n in names if n not in known]
+    if missing:
+        print("not a fragment: " + ", ".join(missing), file=sys.stderr)
+        return 1
+    chosen = sorted((known[n] for n in set(names)), key=lambda p: p.name)
+    errors = validate()
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+    text = CHANGELOG.read_text(encoding="utf-8")
+    if UNRELEASED not in text:
+        print("api/CHANGELOG.md has no '## Unreleased' heading", file=sys.stderr)
+        return 1
+    body = assemble(chosen).rstrip() or "No notable changes."
+    CHANGELOG.write_text(f"{text.rstrip()}\n\n## {heading}\n\n{body}\n", encoding="utf-8")
+    for p in chosen:
+        p.unlink()
+    print(f"archived {len(chosen)} fragment(s) into CHANGELOG.md as {heading}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
-    cmds = {"check": cmd_check, "preview": cmd_preview, "release": cmd_release}
+    cmds = {"check": cmd_check, "preview": cmd_preview, "release": cmd_release,
+            "archive": cmd_archive}
     if not argv or argv[0] not in cmds:
         print(__doc__, file=sys.stderr)
         return 2
