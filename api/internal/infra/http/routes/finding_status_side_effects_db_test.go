@@ -230,6 +230,9 @@ func TestBulkStatus_SideEffectsOnlyForMovedRows_DB(t *testing.T) {
 func TestBulkAssign_RecordsAndNotifies_DB(t *testing.T) {
 	h, _ := newEffectsHarness(t)
 	ids := []string{h.findingA.String(), h.findingB.String()}
+	// The assignee must be able to read both findings.
+	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')
+		ON CONFLICT DO NOTHING`, h.memberA.String(), h.tenant.String(), h.assetB.String())
 	if _, err := h.vuln.BulkAssignFindings(context.Background(), h.tenant.String(), finding.BulkAssignInput{
 		FindingIDs: ids, UserID: h.memberA.String(), AssignerID: h.owner.String(),
 	}); err != nil {
