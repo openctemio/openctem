@@ -2063,6 +2063,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: approvals the ledger requires for a tier-2 scope change."
+  - name: SIGNER_PUBLISH_DIR
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`openctem-signer serve`: a directory (a volume only the signer writes and the bundled sensor mounts read-only) where the signer writes its public key as `signer.pub` at every start, for the sensor to pin (`SENSOR_JOB_SIGNING_KEYS_FILE`). Unset: nothing is published."
   - name: SIGNER_SENSOR_BURST
     component: tool
     group: "Administration tools"

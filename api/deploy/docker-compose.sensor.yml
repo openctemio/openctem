@@ -105,6 +105,12 @@ services:
       SENSOR_NAME: ${SENSOR_NAME:-bundled-sensor}
       SENSOR_REGION: ${SENSOR_REGION:-default}
       SENSOR_INSTANCE_ENROLLMENT_TOKEN: ${SENSOR_INSTANCE_ENROLLMENT_TOKEN:?SENSOR_INSTANCE_ENROLLMENT_TOKEN is required (setup.sh writes it)}
+      # The job signer's public key, written by the signer to a volume the
+      # API does not mount: the sensor pins it instead of trusting the key
+      # the API serves first. A sensor older than the release that reads
+      # *_FILE ignores this variable and keeps its current behaviour. For
+      # production use the offline root instead (SENSOR_JOB_SIGNING_ROOT).
+      SENSOR_JOB_SIGNING_KEYS_FILE: /etc/openctem/signer-pub/signer.pub
       SENSOR_STATE_DIR: /var/lib/openctem/state
       SENSOR_CONTENT_DIR: /var/lib/openctem/content
       SENSOR_OUTBOX_DIR: /var/lib/openctem/outbox
@@ -130,6 +136,9 @@ services:
       - sensor-data:/var/lib/openctem
       # The network owner's local policy, read-only.
       - ./sensor/sensor-policy.yaml:/etc/openctem/sensor-policy.yaml:ro
+      # The signer's public key (signer.pub), read-only. Only the signer
+      # writes this volume; the API never mounts it.
+      - signer-pub:/etc/openctem/signer-pub:ro
     tmpfs:
       - /tmp
     read_only: true
@@ -161,3 +170,4 @@ networks:
 
 volumes:
   sensor-data:
+  signer-pub:

@@ -564,6 +564,13 @@ confirmation each write a console audit row; nothing reaches an
 organization's audit log or timeline. Transport v3 certificates are not
 issued to a shared sensor yet: it speaks the signed HTTPS protocol.
 
+The bundled sensor does not take its job-signing pin from the platform: the
+signer publishes its public key to a volume that only the sensor mounts
+(read-only) and the sensor reads it with `SENSOR_JOB_SIGNING_KEYS_FILE`
+([job-signing.md](job-signing.md#the-bundled-sensors-pin)). Secrets that
+sensors take from files (`SENSOR_INSTANCE_ENROLLMENT_TOKEN_FILE`, the pins'
+`_FILE` forms) must not be group- or world-writable.
+
 ## Shared sensors on the tenant plane
 
 Platform sensors become **shared sensors** (instance scope) in every edition;
