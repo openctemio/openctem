@@ -58,6 +58,7 @@ type TaskService struct {
 	matcher       QueryMatcher
 	owners        QueryOwnerDirectory
 	queryNotifier QueryTaskNotifier
+	notifier      QueryTaskNotifier // owner notices (SetNotifier)
 	modules       ModuleGuard
 }
 
@@ -195,6 +196,7 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 		WithMetadata("findings", len(members)).WithMetadata("related", len(related)).
 		WithMetadata("action_id", task.ActionID.String()).
 		WithMetadata("skipped", len(rec.Claimed.Skipped)))
+	s.notifyNewOwner(ctx, task, in.AssigneeUserID, in.AssigneeGroupID, in.ActorID)
 	return task, nil
 }
 
@@ -535,6 +537,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 			data["description"] = true
 		}
 	}
+	var ownerUser, ownerGroup *shared.ID // set when the owner changed to a user / team
 	if in.AssigneeUserID != nil || in.AssigneeGroupID != nil {
 		var u, g *shared.ID
 		if in.AssigneeUserID != nil {
@@ -550,11 +553,13 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 			ch.AssigneeUserID = in.AssigneeUserID
 			changes.Set("assignee_user_id", idStr(before.AssigneeUserID), idStr(u))
 			data["assignee_user_id"] = idStr(u)
+			ownerUser = u
 		}
 		if in.AssigneeGroupID != nil && idStr(g) != idStr(before.AssigneeGroupID) {
 			ch.AssigneeGroupID = in.AssigneeGroupID
 			changes.Set("assignee_group_id", idStr(before.AssigneeGroupID), idStr(g))
 			data["assignee_group_id"] = idStr(g)
+			ownerGroup = g
 		}
 	}
 	if in.Deadline != nil {
@@ -608,6 +613,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(action, auditdom.ResourceTypeRemediationTask, t.ID.String()).
 		WithResourceName(t.Title).WithChanges(changes).
 		WithMessage(fmt.Sprintf("Remediation task %q updated", t.Title)))
+	s.notifyNewOwner(ctx, t, ownerUser, ownerGroup, in.ActorID)
 	return t, nil
 }
 
