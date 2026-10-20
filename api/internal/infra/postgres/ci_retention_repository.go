@@ -50,7 +50,7 @@ func (r *CIRunRepository) RetentionTenantsForPlatform(ctx context.Context) ([]sh
 // token expired before the time, and deletes the expired job tokens of its
 // aggregate runs.
 func (r *CIRunRepository) ClearExpiredRunTokens(ctx context.Context, tenantID shared.ID, before time.Time) (int64, error) {
-	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET token_hash = NULL, updated_at = NOW()
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `UPDATE ci_runs SET token_hash = NULL, updated_at = NOW()
 		WHERE tenant_id = $1 AND token_hash IS NOT NULL AND token_expires_at < $2`, tenantID.String(), before)
 	if err != nil {
 		return 0, err
@@ -59,7 +59,7 @@ func (r *CIRunRepository) ClearExpiredRunTokens(ctx context.Context, tenantID sh
 	if err != nil {
 		return 0, err
 	}
-	res, err = r.db.ExecContext(ctx, `DELETE FROM ci_run_tokens WHERE tenant_id = $1 AND expires_at < $2`,
+	res, err = execWithTimeout(ctx, r.db.DB, timeoutBatch, `DELETE FROM ci_run_tokens WHERE tenant_id = $1 AND expires_at < $2`,
 		tenantID.String(), before)
 	if err != nil {
 		return cleared, err

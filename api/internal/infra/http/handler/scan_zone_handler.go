@@ -455,7 +455,9 @@ var scanZoneErrorCodes = map[string]bool{
 	"SCAN_OWNER_INACTIVE": true,
 	"SCAN_OWNER_REQUIRED": true,
 	"SCAN_OWNER_ACTIVE":   true,
-	"SCAN_OWNER_CHANGED":  true,
+	// Managed scans are read-only through the scan API.
+	"SCAN_MANAGED_BY_POLICY": true,
+	"SCAN_OWNER_CHANGED":     true,
 	// Target refusals at trigger time (docs/architecture/scan-targets.md):
 	// without their code the console cannot say what to fix.
 	"ALL_TARGETS_UNCONFIRMED":       true,
