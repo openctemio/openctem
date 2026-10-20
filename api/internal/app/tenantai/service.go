@@ -271,7 +271,7 @@ func (s *Service) Save(ctx context.Context, tenantID string, in Update, actx aud
 
 	now := s.stamp()
 	next.UpdatedAt, next.UpdatedBy = &now, actx.ActorID
-	if err := s.repo.Save(ctx, tid, next); err != nil {
+	if err := s.repo.Save(ctx, tid, next, cur.UpdatedAt); err != nil {
 		return View{}, err
 	}
 

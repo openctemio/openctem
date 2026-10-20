@@ -127,6 +127,8 @@ func (h *AISettingsHandler) fail(w http.ResponseWriter, err error) {
 			"The platform does not allow organizations to use their own AI provider.").WriteJSON(w)
 	case errors.Is(err, tenantai.ErrTooManyTests):
 		apierror.TooManyRequests(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict("The AI settings changed while you were editing; reload and try again.").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
 	default:

@@ -63,6 +63,9 @@ platform administrator sets up a provider in the console) or
   `AI_TRIAGE_BUDGET_DEFAULT_TOKENS`, set on the month's row when it is
   created). A triage that would pass it fails with `budget_exhausted`. The
   cap counts every organization's tokens, with the platform key or its own.
+  This is deliberate: an organization on its own provider is also stopped at
+  the cap, so an administrator can use it as a spend limit on the organization's
+  own account. The cap is set by the platform administrator.
 - Provider rate limit: `AI_RATE_LIMIT_RPM` per provider key, and each
   organization's own bucket in front of the platform key's
   (`AI_RATE_LIMIT_TENANT_RPM`, default 20), so one organization cannot starve

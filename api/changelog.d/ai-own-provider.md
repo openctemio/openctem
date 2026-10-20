@@ -7,4 +7,5 @@
 ### Changed: organization AI settings move to their own table
 
 - The `tenant_ai_settings` migration moves `tenants.settings.ai` into the new `tenant_ai_settings` table and removes the JSON. An organization on its own key keeps it (the ciphertext moves as it is); a key stored without encryption, an `azure_openai` provider or the removed `agent` mode is turned off instead of falling back to the platform key. Rekey now covers `tenant_ai_settings.key_enc`.
-- The monthly AI token cap now counts an organization's tokens whichever key pays for them (it counted only the platform key).
+- Behaviour change: the monthly AI token cap now counts an organization's tokens whichever key pays for them (it counted only the platform key). An organization on its own provider is therefore still stopped at the cap (`budget_exhausted`), so an administrator can use it as a spend limit; the cap is set by the platform administrator (AI_TRIAGE_BUDGET_ENABLED, AI_TRIAGE_BUDGET_DEFAULT_TOKENS).
+- Saving the AI settings now fails with 409 when another change was saved between the read and the write, instead of overwriting it.
