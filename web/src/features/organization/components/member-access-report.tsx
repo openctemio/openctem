@@ -7,6 +7,7 @@
  */
 
 import { CalendarClock, KeyRound, Shield, Swords, Users, Workflow } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DetailChipList, DetailSection, DetailStat, DetailStatGrid } from '@/features/shared'
 import type { LifecycleRef, MemberAccessReport } from '../types/member.types'
@@ -34,6 +35,7 @@ export function MemberAccessReportView({
   isLoading,
   ownedOnly = false,
 }: MemberAccessReportViewProps) {
+  const { t } = useTranslation()
   if (isLoading) {
     return (
       <div className="space-y-2" aria-busy="true" aria-label="Loading access report">
@@ -92,6 +94,14 @@ export function MemberAccessReportView({
       <DetailStatGrid aria-label="Owned work">
         <DetailStat label="Open assigned findings" value={report.assigned_findings} />
         <DetailStat label="Owned assets" value={report.owned_assets} />
+        <DetailStat
+          label={t('org.accessReport.ownedTasks', 'Open remediation tasks')}
+          value={report.owned_tasks ?? 0}
+        />
+        <DetailStat
+          label={t('org.accessReport.ownedCampaigns', 'Open remediation campaigns')}
+          value={report.owned_campaigns ?? 0}
+        />
       </DetailStatGrid>
       {!ownedOnly && report.status === 'suspended' && (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">

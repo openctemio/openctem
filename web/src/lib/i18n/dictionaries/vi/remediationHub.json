@@ -345,5 +345,14 @@
   "remediationHub.ownerAccess.requestComment": "Yêu cầu quyền truy cập cho {name}, người chưa thể xem {findings} phát hiện đang mở trên {assets} tài sản của công việc này. Người có quyền giao phát hiện có thể chia sẻ chúng.",
   "remediationHub.ownerAccess.consent": "{name} sẽ xem được {findings} phát hiện này (không phải các phát hiện khác của tài sản) trong thời gian phụ trách tác vụ. Việc này được ghi vào nhật ký kiểm toán.",
   "remediationHub.ownerAccess.consentCheck": "Chia sẻ các phát hiện này với người phụ trách",
-  "remediationHub.ownerAccess.noPermission": "Người này chưa xem được toàn bộ phát hiện và bạn không có quyền chia sẻ phát hiện. Hãy chọn người có quyền hoặc gửi yêu cầu."
+  "remediationHub.ownerAccess.noPermission": "Người này chưa xem được toàn bộ phát hiện và bạn không có quyền chia sẻ phát hiện. Hãy chọn người có quyền hoặc gửi yêu cầu.",
+  "remediationHub.drawer.nav": "Các phát hiện của tác vụ này",
+  "remediationHub.drawer.prev": "Phát hiện trước",
+  "remediationHub.drawer.next": "Phát hiện tiếp theo",
+  "remediationHub.drawer.position": "Phát hiện {index} / {total}",
+  "remediationHub.detail.autoNext": "Chuyển sang phát hiện mở tiếp theo sau mỗi thao tác",
+  "remediationHub.detail.openFinding": "Mở {title}",
+  "remediationHub.crumb.label": "Bạn đến từ đâu",
+  "remediationHub.crumb.tasks": "Tác vụ khắc phục",
+  "remediationHub.crumb.finding": "Phát hiện"
 }
