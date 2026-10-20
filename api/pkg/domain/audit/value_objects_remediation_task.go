@@ -20,6 +20,10 @@ const (
 	// ActionRemediationTaskIssueCreated: a person created the task's tracker
 	// issue (the task's title and counts leave the platform).
 	ActionRemediationTaskIssueCreated Action = "remediation_task.issue_created"
+	// ActionRemediationTaskOwnerMoved: the owner of a live task moved a
+	// finding of that task through the task-owner relation (the finding is
+	// outside their data scope): start work, claim the fix or go back.
+	ActionRemediationTaskOwnerMoved Action = "remediation_task.owner_moved_finding"
 )
 
 // ResourceTypeRemediationTask is a remediation task (table remediation_tasks).
@@ -41,6 +45,8 @@ var _ = registerActions("remediation_task", map[Action]Severity{
 	// One request to hide the risk of every open finding of the task.
 	ActionRemediationTaskExceptionRequested: SeverityMedium,
 	ActionRemediationTaskIssueCreated:       SeverityLow,
+	// A status change on a finding the actor reaches only as task owner.
+	ActionRemediationTaskOwnerMoved: SeverityMedium,
 })
 
 // Remediation suggestion decisions (RFC-098 §5). The generator itself writes
