@@ -97,3 +97,5 @@ because they change with it:
 - [Least-privilege database roles](deployment/database-roles.md)
 - [Rotating `APP_ENCRYPTION_KEY`](deployment/encryption-key-rotation.md)
 - [Docker (development)](deployment/docker.md), [Kubernetes requirements](deployment/kubernetes.md), [Redis](redis-production-guide.md)
+- [Install from the release archives (no containers, systemd)](deployment/binary-install.md)
+- [Private registries and air-gapped installs](deployment/air-gapped.md)
