@@ -377,6 +377,23 @@ func (s *SuggestionService) applyAutoJoin(ctx context.Context, tenantID shared.I
 			continue
 		}
 		n += joined
+		if joined > 0 {
+			s.auditAutoJoin(ctx, tenantID, a, sg, joined)
+		}
 	}
 	return n
+}
+
+// auditAutoJoin records, as the system, that findings joined a task under the
+// action's auto-join rule: no person decided it, so the audit log is where it
+// is traceable (the task timeline records it too).
+func (s *SuggestionService) auditAutoJoin(ctx context.Context, tenantID shared.ID, a remediationdom.AcceptedAction, sg remediationdom.Suggestion, joined int) {
+	s.logAudit(ctx, systemAuditContext(tenantID),
+		auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskMembersAdded, auditdom.ResourceTypeRemediationTask, sg.TargetTaskID.String()).
+			WithMessage(fmt.Sprintf("%d finding(s) joined a remediation task under the auto-join rule of %q", joined, a.Title)).
+			WithMetadata("trigger", "auto_join").
+			WithMetadata("action_id", a.ID.String()).
+			WithMetadata("action_key", a.Key).
+			WithMetadata("findings", joined).
+			WithMetadata("candidates", len(sg.FindingIDs)))
 }
