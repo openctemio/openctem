@@ -81,17 +81,39 @@ describe('StepUpDialogHost', () => {
     act(() => {
       result = requestStepUp()
     })
-    const input = await screen.findByLabelText('Authenticator code')
-    const confirm = screen.getByRole('button', { name: 'Confirm' })
+    const input = await screen.findByLabelText('Code from your authenticator app')
+    expect(input).toHaveAttribute('autocomplete', 'one-time-code')
+    expect(screen.getByText(/not be asked again for 10 minutes/)).toBeInTheDocument()
     await user.type(input, '12a34')
-    expect(confirm).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    // The sixth digit submits on its own.
     await user.type(input, '56')
-    await user.click(confirm)
 
     await expect(result).resolves.toBe(true)
     expect(JSON.parse(String((stepUpCalls()[0][1] as RequestInit).body))).toEqual({
       totp: '123456',
     })
+  })
+
+  it('a refused code is shown and cleared for the next one', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? jsonResponse(403, { code: 'STEP_UP_FAILED', message: 'Re-authentication failed' })
+        : jsonResponse(200, { method: 'totp', window_seconds: 600 })
+    )
+    render(<StepUpDialogHost />)
+    act(() => {
+      void requestStepUp()
+    })
+    const input = await screen.findByLabelText('Code from your authenticator app')
+    await user.click(input)
+    await user.paste('000 000')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That code is not valid or was already used.'
+    )
+    expect(input).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
   })
 
   it('cancel resolves false', async () => {
