@@ -17,6 +17,9 @@ import (
 //   - Propagate the repo's error cleanly.
 
 type fakeRetentionStore struct {
+	noOp, orphaned int64
+	purgeCalls     int
+	purgeErr       error
 	countResult int64
 	countErr    error
 	deleteCalls int
@@ -35,6 +38,36 @@ func (f *fakeRetentionStore) DeleteOlderThan(_ context.Context, _ time.Time) (in
 		return 0, f.deleteErr
 	}
 	return f.countResult, nil
+}
+
+func (f *fakeRetentionStore) PurgeNoOpAndOrphaned(_ context.Context) (int64, int64, error) {
+	f.purgeCalls++
+	return f.noOp, f.orphaned, f.purgeErr
+}
+
+func TestPriorityAuditRetention_PurgesNoOpAndOrphansFirst(t *testing.T) {
+	store := &fakeRetentionStore{noOp: 10, orphaned: 5, countResult: 0}
+	c := NewPriorityAuditRetentionController(store, nil)
+	n, err := c.Reconcile(context.Background())
+	if err != nil || n != 15 || store.purgeCalls != 1 {
+		t.Fatalf("n=%d err=%v purge calls=%d, want 15 nil 1", n, err, store.purgeCalls)
+	}
+}
+
+func TestPriorityAuditRetention_DryRunDoesNotPurge(t *testing.T) {
+	store := &fakeRetentionStore{noOp: 10, countResult: 3}
+	c := NewPriorityAuditRetentionController(store, &PriorityAuditRetentionConfig{DryRun: true})
+	if _, err := c.Reconcile(context.Background()); err != nil || store.purgeCalls != 0 {
+		t.Fatalf("err=%v purge calls=%d, want none in dry run", err, store.purgeCalls)
+	}
+}
+
+func TestPriorityAuditRetention_PurgeErrorPropagates(t *testing.T) {
+	store := &fakeRetentionStore{purgeErr: errors.New("db down")}
+	c := NewPriorityAuditRetentionController(store, nil)
+	if _, err := c.Reconcile(context.Background()); err == nil {
+		t.Fatal("expected purge error")
+	}
 }
 
 func TestPriorityAuditRetention_NothingToDo(t *testing.T) {

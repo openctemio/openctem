@@ -24,6 +24,9 @@ import (
 type PriorityAuditRetentionStore interface {
 	CountOlderThan(ctx context.Context, before time.Time) (int64, error)
 	DeleteOlderThan(ctx context.Context, before time.Time) (int64, error)
+	// PurgeNoOpAndOrphaned deletes, in batches, rows whose class did not move
+	// and rows of organizations that no longer exist.
+	PurgeNoOpAndOrphaned(ctx context.Context) (noOp, orphaned int64, err error)
 }
 
 // PriorityAuditRetentionConfig configures the controller.
@@ -85,13 +88,29 @@ func (c *PriorityAuditRetentionController) Interval() time.Duration {
 func (c *PriorityAuditRetentionController) Reconcile(ctx context.Context) (int, error) {
 	cutoff := time.Now().AddDate(0, 0, -c.config.RetentionDays)
 
+	// Rows with no information (class did not move) and rows of deleted
+	// organizations go first, whatever their age.
+	var swept int64
+	if !c.config.DryRun {
+		noOp, orphaned, err := c.repo.PurgeNoOpAndOrphaned(ctx)
+		swept = noOp + orphaned
+		if swept > 0 {
+			c.logger.Info("purged priority audit rows with no information",
+				"no_op", noOp, "deleted_organizations", orphaned)
+		}
+		if err != nil {
+			c.logger.Error("failed to purge priority audit rows", "error", err)
+			return int(swept), err
+		}
+	}
+
 	count, err := c.repo.CountOlderThan(ctx, cutoff)
 	if err != nil {
 		c.logger.Error("failed to count old priority audit rows", "error", err, "cutoff", cutoff)
-		return 0, err
+		return int(swept), err
 	}
 	if count == 0 {
-		return 0, nil
+		return int(swept), nil
 	}
 
 	c.logger.Info("priority audit rows eligible for retention cleanup",
@@ -108,14 +127,14 @@ func (c *PriorityAuditRetentionController) Reconcile(ctx context.Context) (int, 
 	deleted, err := c.repo.DeleteOlderThan(ctx, cutoff)
 	if err != nil {
 		c.logger.Error("failed to delete old priority audit rows", "error", err, "cutoff", cutoff)
-		return 0, err
+		return int(swept), err
 	}
 	c.logger.Info("deleted old priority audit rows",
 		"count", deleted,
 		"cutoff", cutoff,
 		"retention_days", c.config.RetentionDays,
 	)
-	return int(deleted), nil
+	return int(swept + deleted), nil
 }
 
 // Exclusive: it runs on one API replica at a time (controller lease, RFC-046
