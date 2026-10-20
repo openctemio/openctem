@@ -50,12 +50,13 @@ var routeAuthzAllowlist = map[string]string{
 	"GET /api/v1/brand/images/{kind}": "public on purpose: the instance brand images, validated at startup and served with nosniff and a sandbox policy",
 	"GET /api/v1/legal":               "public on purpose: the operator's legal links, legal page values and security.txt contact, shown to visitors before sign-in; no secret, no tenant data; written only by the admin console (RFC-079)",
 	// CI runner identity (RFC-051): machine credentials, not permissions.
-	"POST /api/v1/ci/oidc/exchange":                  "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
-	"POST /api/v1/ci/runs/{id}/results":              "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
-	"POST /api/v1/ci/runs/{id}/baseline-diff":        "CI run token (AuthenticateRun): the run's repository only",
-	"POST /api/v1/ci/runs/{id}/evaluate":             "CI run token (AuthenticateRun): the run's own verdict",
-	"POST /hooks/jira-integrations/{integration_id}": "public: the URL names one Jira integration and its own secret (X-Hub-Signature, HMAC-SHA256 over the raw body) is the credential, verified before anything is parsed; replayed and stale deliveries refused; per-IP and per-integration limits",
-	"POST /api/v1/hooks/github-app":                  "public: the GitHub App webhook secret (HMAC-SHA256 over the raw body) is the credential, verified before anything is read; per-IP limit; only installation status events change anything (RFC-077)",
+	"POST /api/v1/ci/oidc/exchange":                    "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
+	"POST /api/v1/ci/runs/{id}/results":                "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
+	"POST /api/v1/ci/runs/{id}/baseline-diff":          "CI run token (AuthenticateRun): the run's repository only",
+	"POST /api/v1/ci/runs/{id}/evaluate":               "CI run token (AuthenticateRun): the run's own verdict",
+	"POST /hooks/jira-integrations/{integration_id}":   "public: the URL names one Jira integration and its own secret (X-Hub-Signature, HMAC-SHA256 over the raw body) is the credential, verified before anything is parsed; replayed and stale deliveries refused; per-IP and per-integration limits",
+	"POST /hooks/github-integrations/{integration_id}": "public: the URL names one GitHub integration and its own secret (X-Hub-Signature-256, HMAC-SHA256 over the raw body) is the credential, verified before anything is parsed; replays refused by body hash and delivery id (store mandatory); events for repositories outside the integration's organization refused; per-IP and per-integration limits",
+	"POST /api/v1/hooks/github-app":                    "public: the GitHub App webhook secret (HMAC-SHA256 over the raw body) is the credential, verified before anything is read; per-IP limit; only installation status events change anything (RFC-077)",
 }
 
 // allowlistPrefixes: groups of routes authenticated by a non-permission gate
@@ -79,7 +80,6 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/.well-known/oauth-authorization-server", "public OAuth authorization server metadata of the MCP endpoint (RFC 8414, RFC-062): static, no tenant data"},
 	{"/oauth/", "OAuth endpoints of the MCP authorization server (RFC-062): public by protocol; authorize only stores a request for the consent page, token and revoke are bound to a PKCE-protected code or a hashed token of the presenting client"},
 	{"/api/v1/oauth/", "self-scoped (RFC-062 consent): the signed-in session answers its own MCP consent request in its current organization; the grant never exceeds what the user holds, API keys refused (APIKeyRouteDenied)"},
-	{"/api/v1/webhooks/incoming", "inbound webhook HMAC per-tenant"},
 	{"/api/v1/tenants", "base-auth + RequireMembership/RequireTeam* (role-gated, not permission-gated)"},
 	{"/api/v1/sensors/install/seccomp-profile", "public static file: the open-source sensor release's seccomp profile, the same for every organization, no tenant data; rate limited per IP"},
 	{"/api/v1/module-presets", "auth-only catalog read (public preset list)"},

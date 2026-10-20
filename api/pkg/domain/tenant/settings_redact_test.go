@@ -10,7 +10,11 @@ func TestRedactSettings_TypedAndNestedSecrets(t *testing.T) {
 	in := map[string]any{
 		// Typed values, as SetSetting may store them.
 		"api": map[string]any{"api_key_enabled": true, "webhook_url": "https://h.test", "webhook_secret": "whsec-1"},
-		"ai":  AISettings{Mode: "byok", APIKey: "enc:sk-1", MonthlyTokenLimit: 5},
+		"ai": struct {
+			Mode              string `json:"mode"`
+			APIKey            string `json:"api_key"`
+			MonthlyTokenLimit int    `json:"monthly_token_limit"`
+		}{Mode: "byok", APIKey: "enc:sk-1", MonthlyTokenLimit: 5},
 		"integrations": []any{
 			map[string]any{"name": "x", "client_secret": "cs-1", "password": nil},
 		},

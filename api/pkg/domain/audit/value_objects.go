@@ -234,6 +234,20 @@ const (
 	// ActionFindingRetestRequested records a user pressing "Retest now" on a
 	// finding (RFC-039): who, which finding, which template against which target.
 	ActionFindingRetestRequested Action = "finding.retest_requested"
+	// ActionFindingVerificationChecklistUpdated records a change to a
+	// finding's verification checklist: which items changed, whether it is now
+	// complete and who completed it. The notes text is not recorded.
+	ActionFindingVerificationChecklistUpdated Action = "finding.verification_checklist_updated"
+	// ActionFindingRetestCheckSaved / Removed / Approved record a person
+	// attaching, changing, removing or approving a finding's retest check
+	// (docs/architecture/finding-retest-checks.md): the template, its
+	// digest and its tier.
+	ActionFindingRetestCheckSaved    Action = "finding.retest_check_saved"
+	ActionFindingRetestCheckRemoved  Action = "finding.retest_check_removed"
+	ActionFindingRetestCheckApproved Action = "finding.retest_check_approved"
+	// ActionFindingClassified records a change to a finding's classification
+	// (CVE, CVSS, CWE, OWASP ids): the old and new values.
+	ActionFindingClassified Action = "finding.classified"
 	// ActionFindingCommentReactionRemoved records an administrator removing
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
@@ -641,6 +655,9 @@ const (
 	// ActionScanConfigOwnerTaken: an administrator became the owner of a
 	// scan whose owner was missing or no longer an active member.
 	ActionScanConfigOwnerTaken Action = "scan_config.owner_taken"
+	// ActionScanConfigManagedCreated: the platform created a managed scan
+	// (continuous coverage, automatic enrichment) for a tenant.
+	ActionScanConfigManagedCreated Action = "scan_config.managed_created"
 
 	// Scan profile actions
 	ActionScanProfileCreated            Action = "scan_profile.created"
@@ -776,7 +793,8 @@ func (a Action) IsValid() bool {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
+		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionFindingsRefingerprinted, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
@@ -844,7 +862,7 @@ func (a Action) IsValid() bool {
 		ActionScanRunTriggered, ActionScanRunCompleted, ActionScanRunPartial, ActionScanRunFailed, ActionScanRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
-		ActionScanConfigExported, ActionScanConfigImported, ActionScanConfigOwnerTaken,
+		ActionScanConfigExported, ActionScanConfigImported, ActionScanConfigOwnerTaken, ActionScanConfigManagedCreated,
 		ActionScanProfileCreated, ActionScanProfileUpdated, ActionScanProfileDeleted,
 		ActionScanProfileDefaultSet, ActionScanProfileCloned, ActionScanProfileQualityGateUpdated,
 		ActionCommandCreated, ActionCommandCanceled, ActionCommandDeleted,
@@ -906,7 +924,8 @@ func (a Action) Category() string {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingsRefingerprinted,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"

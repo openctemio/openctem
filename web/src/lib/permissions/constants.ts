@@ -136,6 +136,7 @@ export const Permission = {
 
   // Finding lifecycles (sub-statuses and schemes)
   FindingsLifecyclesWrite: 'findings:lifecycles:write',
+  FindingsRetestChecksWrite: 'findings:retest_checks:write',
 
   // Vulnerabilities (findings:vulnerabilities:*)
   VulnerabilitiesRead: 'findings:vulnerabilities:read',
@@ -254,6 +255,7 @@ export const Permission = {
   MembersRead: 'team:members:read',
   MembersInvite: 'team:members:invite',
   MembersWrite: 'team:members:write',
+  ServiceAccountsManage: 'service_accounts:manage',
 
   // Groups (team:groups:*)
   GroupsRead: 'team:groups:read',
@@ -554,6 +556,7 @@ export const PermissionGroups = {
     Permission.ExposuresDelete,
     Permission.SuppressionsDelete,
     Permission.FindingsLifecyclesWrite,
+    Permission.FindingsRetestChecksWrite,
     Permission.ScansDelete,
     Permission.ScanProfilesDelete,
     Permission.SourcesDelete,
@@ -584,6 +587,7 @@ export const PermissionGroups = {
     Permission.MembersRead,
     Permission.MembersInvite,
     Permission.MembersWrite,
+    Permission.ServiceAccountsManage,
     Permission.GroupsRead,
     Permission.GroupsWrite,
     Permission.GroupsMembers,
@@ -655,6 +659,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SuppressionsDelete]: 'Delete Suppressions',
   [Permission.SuppressionsApprove]: 'Approve Suppressions',
   [Permission.FindingsLifecyclesWrite]: 'Manage Finding Lifecycles',
+  [Permission.FindingsRetestChecksWrite]: 'Manage Finding Retest Checks',
   [Permission.VulnerabilitiesRead]: 'View Vulnerabilities',
   [Permission.CredentialsRead]: 'View Credentials',
   [Permission.CredentialsWrite]: 'Manage Credentials',
@@ -722,6 +727,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.MembersRead]: 'View Members',
   [Permission.MembersInvite]: 'Invite Members',
   [Permission.MembersWrite]: 'Manage Members',
+  [Permission.ServiceAccountsManage]: 'Manage Service Accounts',
   [Permission.GroupsRead]: 'View Groups',
   [Permission.GroupsWrite]: 'Manage Groups',
   [Permission.GroupsDelete]: 'Delete Groups',
@@ -866,6 +872,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsWrite,
     Permission.SuppressionsDelete,
     Permission.FindingsLifecyclesWrite,
+    Permission.FindingsRetestChecksWrite,
     Permission.SuppressionsApprove,
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
@@ -929,6 +936,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.MembersRead,
     Permission.MembersInvite,
     Permission.MembersWrite,
+    Permission.ServiceAccountsManage,
     Permission.GroupsRead,
     Permission.GroupsWrite,
     Permission.GroupsDelete,
@@ -1037,6 +1045,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsWrite,
     Permission.SuppressionsDelete,
     Permission.FindingsLifecyclesWrite,
+    Permission.FindingsRetestChecksWrite,
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
     Permission.CredentialsWrite,
@@ -1098,6 +1107,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.MembersRead,
     Permission.MembersInvite,
     Permission.MembersWrite,
+    Permission.ServiceAccountsManage,
     Permission.GroupsRead,
     Permission.GroupsWrite,
     Permission.GroupsDelete,

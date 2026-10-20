@@ -1,27 +1,34 @@
 package handler
 
 import (
-	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // VerificationChecklistHandler handles finding verification checklist endpoints.
+// The rules (tenant and data scope, who completed it, audit) live in the
+// finding service; this handler only decodes and encodes.
 type VerificationChecklistHandler struct {
-	db     *sql.DB
+	configAuditor
+	svc    *findingapp.VerificationChecklistService
 	logger *logger.Logger
 }
 
 // NewVerificationChecklistHandler creates a new handler.
-func NewVerificationChecklistHandler(db *sql.DB, log *logger.Logger) *VerificationChecklistHandler {
-	return &VerificationChecklistHandler{db: db, logger: log}
+func NewVerificationChecklistHandler(svc *findingapp.VerificationChecklistService, log *logger.Logger) *VerificationChecklistHandler {
+	return &VerificationChecklistHandler{svc: svc, logger: log}
 }
 
 type checklistResponse struct {
@@ -38,84 +45,85 @@ type checklistResponse struct {
 	CompletedAt         *string `json:"completed_at,omitempty"`
 }
 
-// Get returns the verification checklist for a finding. Creates one if it doesn't exist.
-func (h *VerificationChecklistHandler) Get(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	findingID := chi.URLParam(r, "findingId")
-
-	// Verify finding belongs to tenant
-	var exists bool
-	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM findings WHERE id = $1 AND tenant_id = $2)",
-		findingID, tenantID,
-	).Scan(&exists); err != nil || !exists {
-		apierror.NotFound("finding not found").WriteJSON(w)
-		return
+func checklistResponseOf(v *findingapp.ChecklistView) checklistResponse {
+	resp := checklistResponse{FindingID: v.FindingID.String()}
+	c := v.Checklist
+	if c == nil {
+		return resp // no checklist yet: all items false, nothing recorded
 	}
-
-	// Upsert checklist (auto-create if not exists)
-	query := `
-		INSERT INTO finding_verification_checklists (finding_id, tenant_id)
-		VALUES ($1, $2)
-		ON CONFLICT (finding_id) DO NOTHING
-		RETURNING id
-	`
-	h.db.ExecContext(r.Context(), query, findingID, tenantID) //nolint:errcheck
-
-	// Fetch
-	var resp checklistResponse
-	var completedAt sql.NullTime
-	var completedBy sql.NullString
-	var monitoringAdded, regressionScheduled sql.NullBool
-
-	err := h.db.QueryRowContext(r.Context(), `
-		SELECT id, finding_id, exposure_cleared, evidence_attached, register_updated,
-			monitoring_added, regression_scheduled, COALESCE(notes, ''),
-			completed_by, completed_at
-		FROM finding_verification_checklists
-		WHERE finding_id = $1 AND tenant_id = $2
-	`, findingID, tenantID).Scan(
-		&resp.ID, &resp.FindingID, &resp.ExposureCleared, &resp.EvidenceAttached,
-		&resp.RegisterUpdated, &monitoringAdded, &regressionScheduled, &resp.Notes,
-		&completedBy, &completedAt,
-	)
-	if err != nil {
-		h.logger.Error("get verification checklist", "error", err)
-		apierror.InternalServerError("internal error").WriteJSON(w)
-		return
+	resp.ID = c.ID().String()
+	resp.ExposureCleared = c.ExposureCleared()
+	resp.EvidenceAttached = c.EvidenceAttached()
+	resp.RegisterUpdated = c.RegisterUpdated()
+	resp.MonitoringAdded = c.MonitoringAdded()
+	resp.RegressionScheduled = c.RegressionScheduled()
+	resp.Notes = c.Notes()
+	resp.IsComplete = c.IsComplete()
+	if by := c.CompletedBy(); by != nil {
+		s := by.String()
+		resp.CompletedBy = &s
 	}
-
-	if monitoringAdded.Valid {
-		resp.MonitoringAdded = &monitoringAdded.Bool
+	if at := c.CompletedAt(); at != nil {
+		s := at.Format(time.RFC3339)
+		resp.CompletedAt = &s
 	}
-	if regressionScheduled.Valid {
-		resp.RegressionScheduled = &regressionScheduled.Bool
-	}
-	if completedBy.Valid {
-		resp.CompletedBy = &completedBy.String
-	}
-	if completedAt.Valid {
-		t := completedAt.Time.Format(time.RFC3339)
-		resp.CompletedAt = &t
-	}
-
-	// Compute is_complete
-	resp.IsComplete = resp.ExposureCleared && resp.EvidenceAttached && resp.RegisterUpdated
-	if resp.MonitoringAdded != nil && !*resp.MonitoringAdded {
-		resp.IsComplete = false
-	}
-	if resp.RegressionScheduled != nil && !*resp.RegressionScheduled {
-		resp.IsComplete = false
-	}
-
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }
 
-// Update updates checklist items.
-func (h *VerificationChecklistHandler) Update(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	findingID := chi.URLParam(r, "findingId")
+func (h *VerificationChecklistHandler) writeError(w http.ResponseWriter, err error, op string) {
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("finding not found").WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	default:
+		h.logger.Error(op, "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+	}
+}
 
+func (h *VerificationChecklistHandler) ids(w http.ResponseWriter, r *http.Request) (tenantID, findingID shared.ID, ok bool) {
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.NotFound("finding not found").WriteJSON(w)
+		return tenantID, findingID, false
+	}
+	findingID, err = shared.IDFromString(chi.URLParam(r, "findingId"))
+	if err != nil {
+		apierror.NotFound("finding not found").WriteJSON(w)
+		return tenantID, findingID, false
+	}
+	return tenantID, findingID, true
+}
+
+// Get returns the verification checklist for a finding. It is read-only: a
+// finding without a checklist reads as an empty, incomplete one.
+func (h *VerificationChecklistHandler) Get(w http.ResponseWriter, r *http.Request) {
+	tenantID, findingID, ok := h.ids(w, r)
+	if !ok {
+		return
+	}
+	v, err := h.svc.Get(r.Context(), tenantID, findingID)
+	if err != nil {
+		h.writeError(w, err, "get verification checklist")
+		return
+	}
+	writeJSON(w, http.StatusOK, checklistResponseOf(v))
+}
+
+// Update updates checklist items. The person making the edit that leaves every
+// required item true is recorded as the one who completed it; an edit that
+// unticks a required item clears that record.
+func (h *VerificationChecklistHandler) Update(w http.ResponseWriter, r *http.Request) {
+	tenantID, findingID, ok := h.ids(w, r)
+	if !ok {
+		return
+	}
+	actor, err := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err != nil {
+		apierror.Forbidden("authenticated user required").WriteJSON(w)
+		return
+	}
 	var req struct {
 		ExposureCleared     *bool   `json:"exposure_cleared"`
 		EvidenceAttached    *bool   `json:"evidence_attached"`
@@ -124,49 +132,36 @@ func (h *VerificationChecklistHandler) Update(w http.ResponseWriter, r *http.Req
 		RegressionScheduled *bool   `json:"regression_scheduled"`
 		Notes               *string `json:"notes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-
-	// Verify finding belongs to tenant
-	var exists bool
-	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM findings WHERE id = $1 AND tenant_id = $2)",
-		findingID, tenantID,
-	).Scan(&exists); err != nil || !exists {
-		apierror.NotFound("finding not found").WriteJSON(w)
-		return
-	}
-
-	// Ensure checklist exists
-	h.db.ExecContext(r.Context(), //nolint:errcheck
-		"INSERT INTO finding_verification_checklists (finding_id, tenant_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-		findingID, tenantID)
-
-	// Update fields that were provided
-	query := `
-		UPDATE finding_verification_checklists SET
-			exposure_cleared = COALESCE($3, exposure_cleared),
-			evidence_attached = COALESCE($4, evidence_attached),
-			register_updated = COALESCE($5, register_updated),
-			monitoring_added = COALESCE($6, monitoring_added),
-			regression_scheduled = COALESCE($7, regression_scheduled),
-			notes = COALESCE($8, notes),
-			updated_at = NOW()
-		WHERE finding_id = $1 AND tenant_id = $2
-	`
-	_, err := h.db.ExecContext(r.Context(), query,
-		findingID, tenantID,
-		req.ExposureCleared, req.EvidenceAttached, req.RegisterUpdated,
-		req.MonitoringAdded, req.RegressionScheduled, req.Notes,
-	)
+	v, change, err := h.svc.Update(r.Context(), tenantID, findingID, actor, findingapp.ChecklistUpdate{
+		ExposureCleared: req.ExposureCleared, EvidenceAttached: req.EvidenceAttached,
+		RegisterUpdated: req.RegisterUpdated, MonitoringAdded: req.MonitoringAdded,
+		RegressionScheduled: req.RegressionScheduled, Notes: req.Notes,
+	})
 	if err != nil {
-		h.logger.Error("update verification checklist", "error", err)
-		apierror.InternalServerError("internal error").WriteJSON(w)
+		h.writeError(w, err, "update verification checklist")
 		return
 	}
+	h.auditUpdate(r, findingID, actor, change)
+	writeJSON(w, http.StatusOK, checklistResponseOf(v))
+}
 
-	// Return updated checklist
-	h.Get(w, r)
+// auditUpdate records the edit (best effort: it already happened). The notes
+// text is not recorded.
+func (h *VerificationChecklistHandler) auditUpdate(r *http.Request, findingID, actor shared.ID, change *findingapp.ChecklistChange) {
+	ev := auditapp.NewSuccessEvent(auditdom.ActionFindingVerificationChecklistUpdated, auditdom.ResourceTypeFinding, findingID.String()).
+		WithMessage("Updated a finding's verification checklist").
+		WithMetadata("finding_id", findingID.String()).
+		WithMetadata("changed_items", change.ChangedItems).
+		WithMetadata("complete", change.Complete).
+		WithMetadata("completed", change.Completed).
+		WithMetadata("completion_cleared", change.Cleared).
+		WithSeverity(auditdom.SeverityMedium)
+	if change.Completed {
+		ev = ev.WithMetadata("completed_by", actor.String())
+	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r), ev)
 }

@@ -137,3 +137,13 @@ target stays failed in the ledger even when its run completes):
 A step that tried more than one target and reached none of them (with no
 findings) fails as `TARGET_UNREACHABLE`. The counts are written to the step's
 `output` and summed into the run context when the run settles.
+
+## Console: platform scans and run notes
+
+The Scans area separates the platform's own scans from people's:
+
+- The scans list has an **Origin** filter (People, System; `origin=user|system`). System lists managed scans (continuous coverage, automatic enrichment).
+- A managed scan's page shows a "Managed by the platform · Continuous coverage" banner (with a link to the coverage settings under Scope settings) in place of the "no active owner" notice, a System badge and "Automatic coverage" instead of schedule and state, and none of Edit, Run now, the schedule switch, Take ownership or Delete. Clone stays and reads "Clone as my scan". The list's row menu and the scan drawer follow the same rule.
+- A run a platform policy started is labelled "Automatic coverage" (or "Automatic enrichment") in the Trigger column, not "System".
+- A run's status badge carries the target note when it has one: "Completed · 3 unreachable", "· 2 skipped" (`unreachable_target_count`, `skipped_target_count` of the run response). The note never changes the status.
+- The success-rate labels of the list and the scan page come from the dictionary (en and vi).
