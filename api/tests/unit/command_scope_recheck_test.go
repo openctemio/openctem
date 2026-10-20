@@ -408,7 +408,7 @@ func TestScopeRecheck_ZoneChangedIsRefused(t *testing.T) {
 // of one step (one record) cost one gate call.
 func TestScopeRecheck_UnaffectedJobsAndCost(t *testing.T) {
 	f := newRecheckFixture()
-	g := &commanddom.DispatchGate{Tier: 1, ActScope: true}
+	g := &commanddom.DispatchGate{Tier: 1, ActScope: true, Actor: shared.NewID().String()}
 	chunk1 := f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"scanner":"nuclei","targets":["a.example.com"],"n":1}`, g)
 	chunk2 := f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"scanner":"nuclei","targets":["b.example.com"],"n":2}`, g)
 	health := f.repo.add(f.tenant, commanddom.CommandTypeHealthCheck, `{}`, nil)

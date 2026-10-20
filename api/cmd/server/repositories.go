@@ -53,6 +53,7 @@ type Repositories struct {
 	CommentReaction  *postgres.CommentReactionRepository
 	FindingApproval  *postgres.FindingApprovalRepository
 	SeverityRequest  *postgres.SeverityRequestRepository
+	AssetRiskRequest *postgres.AssetRiskRequestRepository
 	FindingActivity  *postgres.FindingActivityRepository
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
 	AITriageBudget   *postgres.AITriageBudgetRepository        // Per-tenant LLM token budget (RFC-008)
@@ -327,6 +328,7 @@ type Repositories struct {
 	// Validation evidence (CTEM Stage-4, migration 000178)
 	ValidationEvidence      *postgres.ValidationEvidenceRepository
 	FindingRetest           *postgres.FindingRetestRepository
+	FindingRetestCheck      *postgres.FindingRetestCheckRepository
 	FindingEvidence         *postgres.FindingEvidenceRepository
 	FindingSLARestart       *postgres.FindingSLARestartRepository
 	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
@@ -408,6 +410,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CommentReaction:  postgres.NewCommentReactionRepository(db),
 		FindingApproval:  postgres.NewFindingApprovalRepository(db),
 		SeverityRequest:  postgres.NewSeverityRequestRepository(db),
+		AssetRiskRequest: postgres.NewAssetRiskRequestRepository(db),
 		FindingActivity:  postgres.NewFindingActivityRepository(db),
 		AITriage:         postgres.NewAITriageRepository(db),              // AI-powered vulnerability triage
 		AITriageBudget:   postgres.NewAITriageBudgetRepository(db),        // RFC-008 monthly LLM token budget
@@ -628,6 +631,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Validation evidence (CTEM Stage-4, migration 000178).
 		ValidationEvidence:      postgres.NewValidationEvidenceRepository(db),
 		FindingRetest:           postgres.NewFindingRetestRepository(db),
+		FindingRetestCheck:      postgres.NewFindingRetestCheckRepository(db),
 		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
 		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
 		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),

@@ -31,7 +31,7 @@ func newGapEnv(t *testing.T) *gapEnv {
 	e := &gapEnv{ptEnv: newPtEnv(t)}
 	h := e.h
 	e.cve = "CVE-2099-" + strings.ToUpper(shared.NewID().String()[:8])
-	h.exec(`INSERT INTO epss_scores (cve_id, epss_score, score_date) VALUES ($1, 0.97, CURRENT_DATE)`, e.cve)
+	h.exec(`INSERT INTO epss_scores (cve_id, epss_score) VALUES ($1, 0.97)`, e.cve)
 	h.exec(`INSERT INTO kev_catalog (cve_id, vulnerability_name, date_added, due_date) VALUES ($1, 'gap', CURRENT_DATE - 30, CURRENT_DATE - 1)`, e.cve)
 	t.Cleanup(func() {
 		_, _ = h.db.Exec(`DELETE FROM epss_scores WHERE cve_id = $1`, e.cve)
