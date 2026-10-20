@@ -88,3 +88,16 @@ narrowing works on the caller's copy.
 - `finding_count` on a scored asset counts open findings only (the open status
   set), so resolved, closed and dispositioned findings do not raise the score.
   Branch-only findings are still left out.
+
+## Web pages
+
+- `/attack-paths` ranks assets by the score above. Each row is the asset itself;
+  the page makes no claim about which fix breaks the most paths (no choke-point
+  analysis exists yet). `/exposure-chains` draws the real hop chains.
+- A failed read shows an error state with Retry on both pages; the
+  "No relationship data yet" state appears only when the read succeeded and the
+  tenant has no relationships.
+- A hidden step (see Data scope) renders as a dashed "Outside your access" card
+  without a link.
+- All text goes through the `prioritization.*` keys in the en and vi
+  dictionaries.
