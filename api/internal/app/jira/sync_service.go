@@ -811,6 +811,9 @@ func (u WebhookUser) ID() string {
 
 // WebhookIssue represents the issue block inside a Jira webhook payload.
 type WebhookIssue struct {
+	// ID is the issue's id ("10001"), stable when the issue moves to another
+	// project and its key changes.
+	ID     string                 `json:"id"`
 	Key    string                 `json:"key"`  // e.g. "PROJ-123"
 	Self   string                 `json:"self"` // e.g. "https://myorg.atlassian.net/rest/api/2/issue/10001"
 	Fields map[string]interface{} `json:"fields"`
