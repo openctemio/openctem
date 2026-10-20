@@ -59,7 +59,6 @@
   "confirm.assignmentRule.deleteTitle": "Xóa quy tắc phân công \"{name}\"?",
   "confirm.attackerProfile.deleteDesc": "Không thể hoàn tác.",
   "confirm.attackerProfile.deleteTitle": "Xóa hồ sơ kẻ tấn công \"{name}\"?",
-  "confirm.auditChain.code": "Mã từ ứng dụng xác thực của bạn",
   "confirm.auditChain.rebaseline": "Thiết lập lại",
   "confirm.auditChain.rebaselineCheck": "Máy chủ kiểm tra lại chuỗi và từ chối nếu có gì chưa được giải thích hoặc chuỗi đã thay đổi kể từ lần xem xét này. Thao tác được ghi vào nhật ký kiểm toán của tổ chức và của nền tảng.",
   "confirm.auditChain.rebaselineDesc": "Thao tác này ký lại toàn bộ {total} mục của chuỗi kiểm toán từ nhật ký kiểm toán hiện tại. {explained} chỗ đứt đã được giải thích sẽ được xác minh sau đó, và mọi chỉnh sửa trước thời điểm này cũng vậy: không thể đảo ngược.",
