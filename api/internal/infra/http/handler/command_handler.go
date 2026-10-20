@@ -941,6 +941,7 @@ func withReach(p scanrun.Partial, reach, list json.RawMessage, total int) scanru
 		return p
 	}
 	unreached, unreachedTotal := scanrundom.ParseUnreachedTargets(list, total)
+	p.Tried = r.Targets
 	if r.AllUnreached() {
 		p.AllUnreached = true
 		p.UnreachableMessage = scanrundom.UnreachableFailure(r, unreached, unreachedTotal)
