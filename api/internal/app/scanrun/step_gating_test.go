@@ -47,6 +47,14 @@ type statusRuns struct {
 	scanrun.RunRepository
 	run      *scanrun.Run
 	statuses []scanrun.RunStatus
+	// updated is the run as the last full update wrote it (the run's
+	// context with its unreachable and skipped counts).
+	updated *scanrun.Run
+}
+
+func (r *statusRuns) Update(_ context.Context, run *scanrun.Run) error {
+	r.updated = run
+	return nil
 }
 
 func (r *statusRuns) GetWithStepRuns(context.Context, shared.ID) (*scanrun.Run, error) {
