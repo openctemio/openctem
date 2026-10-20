@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { isRunInProgress } from '../lib/run-display'
+import { isRunInProgress, runTargetNote } from '../lib/run-display'
 import { toast } from 'sonner'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -172,7 +172,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             badges={
               run ? (
                 <>
-                  <RunStatusBadge status={run.status} />
+                  <RunStatusBadge status={run.status} note={runTargetNote(run, t)} />
                   <IntensityBadge intensity={run.intensity} />
                 </>
               ) : undefined
