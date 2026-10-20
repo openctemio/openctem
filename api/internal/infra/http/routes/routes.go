@@ -707,8 +707,8 @@ func Register(
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
 	registerIncomingWebhookRoutes(router, h.JiraWebhook, log)
 
-	// Public GitHub webhook endpoint — verified in the handler via GitHub's
-	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
+	// Public GitHub webhook endpoint of one integration — verified in the
+	// handler (X-Hub-Signature-256 with that integration's own secret).
 	if h.GitHubWebhook != nil {
 		registerGitHubWebhookRoute(router, h.GitHubWebhook, log)
 	}
