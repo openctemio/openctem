@@ -172,7 +172,9 @@ The live order is:
 
 ## How it is tested
 
-- CI job **Tests (least-privilege DB role)** (`api-ci.yml`):
+- CI job **Tests (least-privilege DB role)** (`api-ci.yml`; in the merge queue,
+  on pushes, and on a pull request that changes `api/migrations/` or this
+  script, or has the `ci:full` label):
   1. bootstraps a fresh database with the script;
   2. applies every migration **as the migrator**, which proves no migration
      needs a superuser;
