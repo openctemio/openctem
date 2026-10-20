@@ -84,7 +84,7 @@ describe('use-finding-retest-check', () => {
     await act(async () => {
       await result.current.trigger(body)
     })
-    expect(mockPost).toHaveBeenCalledWith('/api/v1/findings/f-1/retest-check/validate', body)
+    expect(mockPost).toHaveBeenCalledWith('/api/v1/findings/f-1/retest-check/test', body)
     expect(mockPut).not.toHaveBeenCalled()
   })
 
