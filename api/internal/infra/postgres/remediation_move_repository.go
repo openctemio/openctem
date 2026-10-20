@@ -353,8 +353,23 @@ func (r *RemediationTaskRepository) CountActivePrimary(ctx context.Context, tena
 
 // OpenPrimaryIDs lists the task's active primary members that are not
 // closed.
-func (r *RemediationTaskRepository) OpenPrimaryIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *RemediationTaskRepository) OpenPrimaryIDs(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int) ([]shared.ID, error) {
+	var q rowsQuerier = r.db
+	if expectedVersion > 0 {
+		// The version is checked in the same transaction that reads the
+		// members, under a lock on the task row, so a change made between a
+		// separate check and the read cannot slip in.
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("begin open members read: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := lockTaskInTx(ctx, tx, tenantID, taskID, expectedVersion); err != nil {
+			return nil, err
+		}
+		q = tx
+	}
+	rows, err := q.QueryContext(ctx, `
 		SELECT tm.finding_id FROM remediation_task_members tm
 		JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
 		WHERE tm.tenant_id = $1 AND tm.task_id = $2 AND tm.left_at IS NULL AND tm.role = 'primary'

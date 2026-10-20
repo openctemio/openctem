@@ -52,7 +52,7 @@ func TestRecordExternalChange_AssigneeWithoutStatusChange(t *testing.T) {
 	if err := s.RecordExternalChange(context.Background(), tenant, intgB, p); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.HandleJiraWebhook(context.Background(), tenant, p); err != nil {
+	if err := s.HandleJiraWebhook(context.Background(), tenant, intgB, p); err != nil {
 		t.Fatal(err)
 	}
 	if lb.External.AssigneeID != "5b10ac8d82e05b22cc7d4ef5" || lb.External.AssigneeName != "Dana K. x" || lb.External.StatusCategory != ticketlink.StatusCategoryInProgress {

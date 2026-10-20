@@ -61,6 +61,28 @@ func (f fakeTenants) GetByID(_ context.Context, id shared.ID) (*tenant.Tenant, e
 	return f.t, nil
 }
 
+// fakeAISettings is the organization's AI settings store.
+type fakeAISettings struct {
+	mu sync.Mutex
+	s  tenant.AISettings
+}
+
+func (f *fakeAISettings) Get(_ context.Context, _ shared.ID, d tenant.AISettings) (tenant.AISettings, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := d
+	out.Mode, out.Provider, out.BaseURL, out.ModelOverride, out.APIKey = f.s.Mode, f.s.Provider, f.s.BaseURL, f.s.ModelOverride, f.s.APIKey
+	out.EnabledAt, out.EnabledBy = f.s.EnabledAt, f.s.EnabledBy
+	return out, nil
+}
+
+func (f *fakeAISettings) Save(_ context.Context, _ shared.ID, s tenant.AISettings, _ *time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.s = s
+	return nil
+}
+
 type fakeFindings struct {
 	vulnerability.FindingRepository
 	byID map[shared.ID]*vulnerability.Finding
@@ -163,6 +185,7 @@ func (f fakeOrgPolicy) MCPPolicy(context.Context, shared.ID) (tenant.MCPSettings
 type egressHarness struct {
 	svc      *AITriageService
 	tenant   *tenant.Tenant
+	ai       *fakeAISettings
 	llm      *fakeLLM
 	triage   *fakeTriageRepo
 	enqueuer *fakeEnqueuer
@@ -179,9 +202,8 @@ func newEgressHarness(t *testing.T) *egressHarness {
 	t.Helper()
 	tn, err := tenant.NewTenant("Org", "org-egress", "creator")
 	require.NoError(t, err)
-	ai := tn.TypedSettings().AI
-	ai.SetOptIn(true, "admin", time.Now()) // the organization opted in
-	require.NoError(t, tn.UpdateAISettings(ai))
+	ai := &fakeAISettings{}
+	ai.s.SetOptIn(true, "admin", time.Now()) // the organization opted in
 	h := &egressHarness{
 		llm:      &fakeLLM{resp: validTriageJSON},
 		triage:   newFakeTriageRepo(),
@@ -192,6 +214,8 @@ func newEgressHarness(t *testing.T) *egressHarness {
 	}
 	h.svc = NewAITriageService(h.triage, fakeFindings{byID: h.findings}, fakeTenants{t: tn}, nil,
 		nil, config.AITriageConfig{AnthropicAPIKey: "test-only", MaxTokens: 100}, logger.NewNop())
+	h.svc.SetAISettingsRepository(ai)
+	h.ai = ai
 	h.triage.settings = tn.Settings
 	h.tenant = tn
 	h.svc.llmFactory = fakeFactory{p: h.llm}
@@ -367,9 +391,7 @@ func TestAITriage_ConsentWithdrawnStopsQueuedJobs(t *testing.T) {
 	f := h.finding(t, vulnerability.FindingSourceDAST, nil)
 	row := h.pendingRow(t, f)
 
-	ai := h.tenant.TypedSettings().AI
-	ai.SetOptIn(false, "", time.Time{})
-	require.NoError(t, h.tenant.UpdateAISettings(ai))
+	h.ai.s.SetOptIn(false, "", time.Time{})
 
 	err := h.svc.ProcessTriage(aitriagedom.WithRetriesLeft(ctx, true), row.ID(), h.tenantID, f.ID())
 	require.ErrorIs(t, err, aitriagedom.ErrTriageFailed)

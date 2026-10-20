@@ -15,7 +15,7 @@ import (
 func TestWriteSettingsConflict_RedactsSecretsAndCarriesETag(t *testing.T) {
 	w := httptest.NewRecorder()
 	writeSettingsConflict(w, &tenant.SettingsConflictError{
-		Section: tenant.SectionAI,
+		Section: tenant.SectionSecurity,
 		ETag:    `"abc123"`,
 		Current: map[string]any{"api_key": "s3cr3t-value", "azure_endpoint": "https://ai.example"},
 	})
@@ -41,7 +41,7 @@ func TestWriteSettingsConflict_RedactsSecretsAndCarriesETag(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v (%s)", err, body)
 	}
-	if resp.Code != "SETTINGS_CONFLICT" || resp.Details.Section != tenant.SectionAI || resp.Details.ETag != `"abc123"` {
+	if resp.Code != "SETTINGS_CONFLICT" || resp.Details.Section != tenant.SectionSecurity || resp.Details.ETag != `"abc123"` {
 		t.Fatalf("unexpected conflict body: %s", body)
 	}
 	if resp.Details.Current["api_key_configured"] != true || resp.Details.Current["azure_endpoint"] != "https://ai.example" {
