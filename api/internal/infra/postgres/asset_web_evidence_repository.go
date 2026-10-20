@@ -166,7 +166,7 @@ func (r *AssetWebEvidenceRepository) TakeOrphans(ctx context.Context, limit int)
 // DeleteOlderThan deletes captures recorded before the cutoff that no
 // longer hold a screenshot.
 func (r *AssetWebEvidenceRepository) DeleteOlderThan(ctx context.Context, before time.Time) (int64, error) {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM asset_web_evidence WHERE captured_at < $1 AND screenshot_key IS NULL`, before)
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `DELETE FROM asset_web_evidence WHERE captured_at < $1 AND screenshot_key IS NULL`, before)
 	if err != nil {
 		return 0, fmt.Errorf("delete old web evidence: %w", err)
 	}

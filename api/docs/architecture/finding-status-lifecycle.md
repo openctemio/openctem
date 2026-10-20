@@ -338,7 +338,7 @@ Actors:
 The engine only adds constraints to the lifecycle map. `TestEvaluateTransition_NeverWiderThanTheLifecycle` proves that, for every actor and status pair, no allowed move is off the map. It also proves that no disposition is direct, no resolve lacks `findings:verify`, and no ticket closes a finding.
 
 The paths that use the engine:
-- `PATCH /findings/{id}/status` and `POST /findings/bulk/status`. Bulk refuses on the target first (`EvaluateTransitionRequest`), then refuses finding by finding.
+- `PATCH /findings/{id}/status` and `POST /findings/bulk/status`. Bulk refuses on the target first (`EvaluateTransitionRequest`), then refuses finding by finding. The write is a compare-and-set: each row is written only while it is still in the status it was read in (one guarded batch per read status), so a row an approval, a retest or another person changed in between is never overwritten. The response lists every row not updated in `rows` (`skipped`, `failed` or `conflict`, with a reason); a conflict also counts in `failed`.
 - `/actions/fix-applied`, `/actions/verify` and `/actions/reject-fix`, plus their by-filter variants.
 - Approval requests and decisions.
 - Remediation group and campaign resolves (through bulk), workflow `update_status`, and the Jira and GitHub webhooks.
@@ -535,6 +535,16 @@ instead).
   one email per tenant and approver, counting only findings in that
   approver's data scope and naming at most five titles; without a data-scope
   check nobody is told (`DispatchVEXRequestNotices`, `NotifyVEXRequests`).
+- **The requester hears the outcome.** When a false-positive or accepted-risk
+  request, a severity-change request or a group exception is approved or
+  rejected, its requester gets one in-app notice (`finding_approval`): "Your
+  false positive request was approved" with the finding title (a group
+  exception: the number of findings), never the justification or the
+  rejection reason. Nothing is sent for the requester's own withdrawal, to a
+  requester who is no longer an active member, or to one who can no longer
+  read the finding (data scope, or the campaign for a pentest finding; a
+  group exception needs every member finding readable). Fail closed: a lookup
+  error sends nothing (`notifyRequesterDecided`, `internal/app/finding/approval_notify.go`).
 - **Sole member.** An organization with one person has nobody to ask. Its
   owner may approve their own pending false-positive request
   (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while

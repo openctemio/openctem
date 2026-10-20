@@ -688,6 +688,9 @@ type ListScansInput struct {
 	// IncludeAdHoc also lists unsaved quick scans (Scan.AdHoc); by default the
 	// list holds saved configurations only.
 	IncludeAdHoc bool `json:"include_ad_hoc"`
+	// Origin narrows the list to people's scans ("user") or to the scans the
+	// platform manages ("system"); empty applies no origin filter.
+	Origin string `json:"origin" validate:"omitempty,oneof=user system"`
 	// Sort is one sort key, `field` or `-field` (scan.ListSortFields); an
 	// unknown field is a validation error.
 	Sort    string `json:"sort"`
@@ -707,11 +710,16 @@ func (s *Service) ListScans(ctx context.Context, input ListScansInput) (paginati
 		return pagination.Result[*scan.Scan]{}, err
 	}
 
+	origin := scan.Origin(input.Origin)
+	if !origin.Valid() {
+		return pagination.Result[*scan.Scan]{}, fmt.Errorf("%w: origin must be user or system", shared.ErrValidation)
+	}
 	filter := scan.Filter{
 		TenantID:     &tenantID,
 		Tags:         input.Tags,
 		Search:       input.Search,
 		ExcludeAdHoc: !input.IncludeAdHoc,
+		Origin:       origin,
 		Sort:         sort,
 	}
 
@@ -839,6 +847,9 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 
 	sc, err := s.GetScan(ctx, input.TenantID, input.ScanID)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseManaged(sc); err != nil {
 		return nil, err
 	}
 	// Editing a scan is acting on its targets: the editor must be allowed
@@ -1075,6 +1086,9 @@ func (s *Service) DeleteScan(ctx context.Context, tenantID, scanID string) error
 	if err != nil {
 		return err
 	}
+	if err := refuseManaged(sc); err != nil {
+		return err
+	}
 
 	scanName := sc.Name
 
@@ -1100,6 +1114,9 @@ func (s *Service) DeleteScan(ctx context.Context, tenantID, scanID string) error
 func (s *Service) ActivateScan(ctx context.Context, tenantID, scanID string) (*scan.Scan, error) {
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseManaged(sc); err != nil {
 		return nil, err
 	}
 
@@ -1137,6 +1154,9 @@ func (s *Service) PauseScan(ctx context.Context, tenantID, scanID string) (*scan
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseManaged(sc); err != nil {
+		return nil, err
+	}
 
 	previousStatus := string(sc.Status)
 	if err := sc.Pause(); err != nil {
@@ -1159,6 +1179,9 @@ func (s *Service) PauseScan(ctx context.Context, tenantID, scanID string) (*scan
 func (s *Service) DisableScan(ctx context.Context, tenantID, scanID string) (*scan.Scan, error) {
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseManaged(sc); err != nil {
 		return nil, err
 	}
 
@@ -1220,6 +1243,11 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 
 	clone := sc.Clone(newName)
 	clone.SetCreatedBy(actor)
+	if sc.IsManaged() {
+		// The copy is a scan its owner runs: it never carries the platform's
+		// own marker tags.
+		clone.SetTags(withoutPlatformTags(clone.Tags))
+	}
 
 	if err := s.scanRepo.Create(ctx, clone); err != nil {
 		return nil, err
@@ -1383,4 +1411,15 @@ func (s *Service) DeactivateScansByScanWorkflow(ctx context.Context, scanWorkflo
 	}
 
 	return pausedCount, nil
+}
+
+// withoutPlatformTags drops the tags that mark managed scans.
+func withoutPlatformTags(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t != CoverageTag && t != EnrichmentTag {
+			out = append(out, t)
+		}
+	}
+	return out
 }
