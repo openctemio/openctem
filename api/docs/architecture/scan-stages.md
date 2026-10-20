@@ -281,7 +281,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
   expressions; this covers rows stored before that check.
 - **Own sensors only.** A scan with `run_on_tenant_runner` carries
   `tenant_runner_only` in its run context; the dispatcher never sends any of
-  its steps to platform sensors, whatever the template prefers. (Steps after
+  its steps to platform sensors, whatever the template prefers. The flag and the scan's routing tags stay on the platform: they are not part of the job payload a sensor receives. (Steps after
   the first used to ignore it.)
 - **No step is pinned to one sensor.** A step command goes
   to the run's zone (stamped with it), to the platform queue, or to the

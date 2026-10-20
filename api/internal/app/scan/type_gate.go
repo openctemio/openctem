@@ -269,6 +269,10 @@ func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 	delete(out, RunContextKeySelectorRoots)
 	delete(out, RunContextKeySkippedTargets)
 	delete(out, RunContextKeyExcludedTargets)
+	// Routing facts the platform alone uses: a sensor, a shared one included,
+	// gets neither the tenant's own-sensors-only flag nor its tag names.
+	delete(out, "tenant_runner_only")
+	delete(out, "routing_tags")
 	// The scan's settings travel without a target list of their own: the
 	// step's gated targets are the job's only targets.
 	if cfg, ok := out["scanner_config"].(map[string]any); ok {
