@@ -550,8 +550,6 @@ the owner team:
   of both tasks are told, with counts and task titles only (never finding
   titles).
 
-See [RFC-120](../rfcs/RFC-120-participants-and-watchers.md).
-
 `email_digest` (`none` / `daily` / `weekly`) is stored but no digest sender
 exists yet, and no in-app notification is emailed individually, so the in-app
 filters above have no email path to apply to.
