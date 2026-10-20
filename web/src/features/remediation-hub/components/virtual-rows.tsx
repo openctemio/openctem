@@ -6,7 +6,7 @@
  * have a fixed height; reaching the end asks for more.
  */
 
-import { useCallback, useState, type ReactNode, type UIEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode, type UIEvent } from 'react'
 
 export interface VirtualRowsProps<T> {
   rows: T[]
@@ -17,6 +17,8 @@ export interface VirtualRowsProps<T> {
   rowKey: (row: T, index: number) => string
   onEndReached?: () => void
   label: string
+  /** Scrolls this row into view when it changes (keyboard navigation). */
+  scrollToIndex?: number | null
 }
 
 export function visibleRange(
@@ -40,8 +42,18 @@ export function VirtualRows<T>({
   rowKey,
   onEndReached,
   label,
+  scrollToIndex,
 }: VirtualRowsProps<T>) {
   const [scrollTop, setScrollTop] = useState(0)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = box.current
+    if (!el || scrollToIndex == null || scrollToIndex < 0) return
+    const top = scrollToIndex * rowHeight
+    if (top < el.scrollTop) el.scrollTop = top
+    else if (top + rowHeight > el.scrollTop + el.clientHeight)
+      el.scrollTop = top + rowHeight - el.clientHeight
+  }, [scrollToIndex, rowHeight])
   const onScroll = useCallback(
     (e: UIEvent<HTMLDivElement>) => {
       const el = e.currentTarget
@@ -56,6 +68,7 @@ export function VirtualRows<T>({
   const { first, last } = visibleRange(scrollTop, viewport, rowHeight, rows.length, overscan)
   return (
     <div
+      ref={box}
       role="list"
       aria-label={label}
       className="overflow-y-auto"

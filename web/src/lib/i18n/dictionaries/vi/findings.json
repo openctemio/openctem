@@ -503,7 +503,7 @@
   "findings.retestPanel.inconclusiveWhy.endpoint_mismatch": "đã kiểm tra một endpoint khác",
   "findings.retestPanel.inconclusiveWhy.template_changed": "mẫu đã thay đổi",
   "findings.retestPanel.inconclusiveWhy.no_result": "không có kết quả",
-  "findings.retestPanel.inconclusiveWhy.error": "lỗi",
+  "findings.retestPanel.inconclusiveWhy.error": "công cụ không chạy được phép kiểm tra",
   "findings.retestPanel.running": "Đang kiểm tra lại",
   "findings.retestPanel.fixedResolved": "Đã sửa — đã xác minh và giải quyết",
   "findings.retestPanel.verifiedFixed": "Đã xác minh là đã sửa — chờ xác nhận",
