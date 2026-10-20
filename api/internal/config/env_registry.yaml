@@ -1698,11 +1698,12 @@ vars:
     type: duration
     default: "24h"
     description: "How often the controller runs."
-  - name: AUDIT_ARCHIVE_DIR
+  - name: AUDIT_RETENTION_ENABLED
     component: api
     group: "Audit log retention"
-    type: string
-    description: "Directory for the gzip JSONL archives. Empty: nothing is deleted. Back it up like the database."
+    type: bool
+    default: "true"
+    description: "Archive and prune organization audit entries older than AUDIT_RETENTION_DAYS. The archives go through the storage provider (STORAGE_PROVIDER), namespace audit-archive; back that storage up like the database. false holds all audit history (nothing is archived or deleted). Chains of suspended organizations are always skipped."
   - name: AUDIT_RETENTION_DAYS
     component: api
     group: "Audit log retention"

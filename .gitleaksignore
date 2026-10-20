@@ -4,3 +4,6 @@
 a3259a357b33a44c832ab98a2d2c9bfc137c3191:.github/workflows/ci.yml:generic-api-key:322
 # A list of URL scheme prefixes the asset normaliser strips, not a connection string.
 5a9f295a3cbbee6b0997adbbfb244b036eedccd1:pkg/domain/asset/normalize.go:redis-connection-string:368
+# Test fixture: fake credentials the all-in-one child-env test feeds in to prove they are scrubbed.
+e67b6f4f0a6ac8ca782a20aa102689d63558be44:deploy/allinone/child-env.test.sh:postgresql-connection-string:11
+e67b6f4f0a6ac8ca782a20aa102689d63558be44:deploy/allinone/child-env.test.sh:generic-credential-uri:13
