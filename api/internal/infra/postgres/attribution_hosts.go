@@ -28,6 +28,9 @@ func (r *AttributionRepository) LinkChildren(ctx context.Context, tenantID share
 		return 0, fmt.Errorf("link children: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return 0, err
+	}
 	// Candidate hosts per child: by relationship, or by the host part of the
 	// name. A host is a live asset of the tenant with its own record that
 	// follows nobody.

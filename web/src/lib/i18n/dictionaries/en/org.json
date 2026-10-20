@@ -428,5 +428,7 @@
   "org.dashboardData.lastRebuilt": "Last full rebuild",
   "org.dashboardData.pendingChanges": "Changes waiting",
   "org.dashboardData.rebuild": "Rebuild dashboard data",
-  "org.dashboardData.nextAt": "Next rebuild possible at {time}"
+  "org.dashboardData.nextAt": "Next rebuild possible at {time}",
+  "org.accessReport.ownedTasks": "Open remediation tasks",
+  "org.accessReport.ownedCampaigns": "Open remediation campaigns"
 }
