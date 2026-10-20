@@ -428,5 +428,7 @@
   "org.dashboardData.lastRebuilt": "Lần dựng lại toàn bộ gần nhất",
   "org.dashboardData.pendingChanges": "Thay đổi đang chờ",
   "org.dashboardData.rebuild": "Dựng lại dữ liệu dashboard",
-  "org.dashboardData.nextAt": "Có thể dựng lại lần tiếp theo lúc {time}"
+  "org.dashboardData.nextAt": "Có thể dựng lại lần tiếp theo lúc {time}",
+  "org.accessReport.ownedTasks": "Nhiệm vụ khắc phục đang mở",
+  "org.accessReport.ownedCampaigns": "Chiến dịch khắc phục đang mở"
 }
