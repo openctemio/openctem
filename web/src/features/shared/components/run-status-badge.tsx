@@ -76,6 +76,7 @@ export function RunStatusBadge({
   progress,
   title,
   label,
+  note,
 }: {
   status: string
   className?: string
@@ -83,6 +84,12 @@ export function RunStatusBadge({
   title?: string
   /** Replaces the status word ("Waiting for a sensor" for a run no sensor picked up). */
   label?: string
+  /**
+   * What the run did not scan because of the targets themselves ("3
+   * unreachable"), shown after the status ("Completed · 3 unreachable").
+   * It never changes the status.
+   */
+  note?: string | null
 }) {
   // Normalize the two spellings the backends use.
   const key = status === 'cancelled' ? 'canceled' : status
@@ -107,6 +114,7 @@ export function RunStatusBadge({
       <Icon className={cn('h-3 w-3', config.spin && 'animate-spin motion-reduce:animate-none')} />
       {label ?? config.label}
       {pct !== null && <span className="tabular-nums">{pct}%</span>}
+      {note ? <span className="font-normal">· {note}</span> : null}
     </Badge>
   )
 }

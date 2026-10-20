@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -78,6 +79,8 @@ func (s *Service) StartEnrichment(ctx context.Context, in EnrichmentInput) (*Enr
 		return nil, fmt.Errorf("failed to set workflow: %w", err)
 	}
 	sc.SetTags([]string{EnrichmentTag})
+	// Each enrichment batch is its own scan; its key is its own id.
+	sc.ManagedBy, sc.ManagedKey = scan.ManagedByEnrichment, sc.ID.String()
 	if err := s.applyIntensity(ctx, sc, string(scan.IntensityPassive)); err != nil {
 		return nil, err
 	}
@@ -87,7 +90,10 @@ func (s *Service) StartEnrichment(ctx context.Context, in EnrichmentInput) (*Enr
 	run, err := s.TriggerScan(ctx, TriggerScanExecInput{
 		TenantID: in.TenantID.String(),
 		ScanID:   sc.ID.String(),
-		Context:  map[string]any{"trigger": "auto_enrichment", "target_count": len(kept)},
+		// The run is the enrichment policy's: no person is behind it.
+		TriggerType: scanworkflow.TriggerTypeSystem,
+		TriggeredBy: PolicyTriggerPrefix + string(scan.ManagedByEnrichment),
+		Context:     map[string]any{"trigger": "auto_enrichment", "target_count": len(kept)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to trigger enrichment: %w", err)
@@ -106,7 +112,7 @@ func (s *Service) enrichmentTargets(ctx context.Context, in EnrichmentInput, res
 	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
 		TenantID:        in.TenantID,
 		Targets:         in.Targets,
-		ActScope:        true,
+		SystemPolicy:    string(scan.ManagedByEnrichment),
 		PassiveOnly:     true,
 		Tier:            &tier,
 		SkipZoneRouting: true,

@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { savePlatformAI, testPlatformAI } from '../api/use-platform-settings'
+import { saveOrgAIPolicy, savePlatformAI, testPlatformAI } from '../api/use-platform-settings'
 import type { PlatformAISettings } from '../types'
 import {
   LockedByEnvironment,
@@ -32,6 +32,7 @@ const PROVIDER_LABEL: Record<string, [key: string, fallback: string]> = {
   claude: ['admin.ai.providerName.claude', 'Anthropic Claude'],
   openai: ['admin.ai.providerName.openai', 'OpenAI'],
   gemini: ['admin.ai.providerName.gemini', 'Google Gemini'],
+  openai_compatible: ['admin.ai.providerName.openai_compatible', 'OpenAI-compatible server'],
 }
 
 export interface PlatformAIFormProps {
@@ -53,28 +54,45 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
   const [enabled, setEnabled] = useState(settings.enabled)
   const [provider, setProvider] = useState(settings.provider || settings.providers[0] || '')
   const [model, setModel] = useState(settings.model)
+  const [baseUrl, setBaseUrl] = useState(settings.base_url)
+  const [allowPrivate, setAllowPrivate] = useState(settings.allow_private)
+  const [allowedModels, setAllowedModels] = useState(settings.allowed_models.join(', '))
   const [key, setKey] = useState('')
   const [clearKey, setClearKey] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [allowOrg, setAllowOrg] = useState(settings.allow_org_provider)
+  const [policyConfirmOpen, setPolicyConfirmOpen] = useState(false)
   const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     setEnabled(settings.enabled)
     setProvider(settings.provider || settings.providers[0] || '')
     setModel(settings.model)
+    setBaseUrl(settings.base_url)
+    setAllowPrivate(settings.allow_private)
+    setAllowedModels(settings.allowed_models.join(', '))
+    setAllowOrg(settings.allow_org_provider)
     setKey('')
     setClearKey(false)
   }, [settings])
 
   const providerChanged = settings.provider !== '' && provider !== settings.provider
+  const compat = provider === 'openai_compatible'
   const willHaveKey = (settings.key_set && !clearKey && !providerChanged) || key.trim() !== ''
+  const models = allowedModels
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean)
   const dirty =
     enabled !== settings.enabled ||
     provider !== settings.provider ||
     model.trim() !== settings.model ||
+    (compat && (baseUrl.trim() !== settings.base_url || allowPrivate !== settings.allow_private)) ||
+    models.join(',') !== settings.allowed_models.join(',') ||
     key !== '' ||
     clearKey
-  const incomplete = enabled && (!provider || model.trim() === '' || !willHaveKey)
+  const incomplete =
+    enabled && (!provider || model.trim() === '' || (compat ? baseUrl.trim() === '' : !willHaveKey))
 
   const test = async () => {
     setTesting(true)
@@ -94,11 +112,39 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
         enabled,
         provider,
         model: model.trim(),
+        base_url: compat ? baseUrl.trim() : '',
+        allow_private: compat && allowPrivate,
+        allowed_models: models,
         api_key: secretPatch(key, clearKey),
         reason,
         version: settings.version,
       })
       toast.success(t('admin.ai.saved', 'AI provider saved'))
+      onSaved()
+    } catch (e) {
+      if (
+        handleSaveConflict(
+          e,
+          onSaved,
+          t(
+            'admin.settings.conflict',
+            'Another administrator changed this setting. The latest values are shown.'
+          )
+        )
+      )
+        return
+      throw e
+    }
+  }
+
+  const savePolicy = async (reason: string) => {
+    try {
+      await saveOrgAIPolicy({
+        allow_org_provider: allowOrg,
+        reason,
+        version: settings.org_policy_version,
+      })
+      toast.success(t('admin.ai.policySaved', 'Policy saved'))
       onSaved()
     } catch (e) {
       if (
@@ -185,24 +231,96 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
               onClear={setClearKey}
               disabled={!editable}
               help={
-                providerChanged
+                compat
                   ? t(
-                      'admin.ai.keyNewProvider',
-                      "A key belongs to one provider: enter the new provider's key."
+                      'admin.ai.keyOptional',
+                      'Optional for this provider: a server inside your network may not need a key.'
                     )
-                  : t(
-                      'admin.ai.keyHelp',
-                      'Write-only: encrypted on the server and never shown again.'
-                    )
+                  : providerChanged
+                    ? t(
+                        'admin.ai.keyNewProvider',
+                        "A key belongs to one provider: enter the new provider's key."
+                      )
+                    : t(
+                        'admin.ai.keyHelp',
+                        'Write-only: encrypted on the server and never shown again.'
+                      )
               }
             />
+            {compat && (
+              <div className="grid gap-1.5 sm:col-span-2">
+                <Label htmlFor={`${id}-base-url`}>{t('admin.ai.baseUrl', 'Base URL')}</Label>
+                <Input
+                  id={`${id}-base-url`}
+                  type="url"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  disabled={!editable}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-describedby={`${id}-base-url-help`}
+                />
+                <p id={`${id}-base-url-help`} className="text-sm text-muted-foreground">
+                  {t(
+                    'admin.ai.baseUrlHelp',
+                    "The server's API root, for example https://llm.example.com/v1. Works with Azure OpenAI, vLLM, Ollama, LiteLLM, OpenRouter and gateways."
+                  )}
+                </p>
+              </div>
+            )}
+            <div className="grid gap-1.5 sm:col-span-2">
+              <Label htmlFor={`${id}-allowed-models`}>
+                {t('admin.ai.allowedModels', 'Allowed models')}
+              </Label>
+              <Input
+                id={`${id}-allowed-models`}
+                value={allowedModels}
+                onChange={(e) => setAllowedModels(e.target.value)}
+                disabled={!editable}
+                autoComplete="off"
+                spellCheck={false}
+                aria-describedby={`${id}-allowed-models-help`}
+              />
+              <p id={`${id}-allowed-models-help`} className="text-sm text-muted-foreground">
+                {t(
+                  'admin.ai.allowedModelsHelp',
+                  'Comma-separated. When set, the model above must be one of them. Leave empty to allow any.'
+                )}
+              </p>
+            </div>
           </div>
+          {compat && (
+            <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+              <Label htmlFor={`${id}-allow-private`} className="grid gap-1 font-normal">
+                <span className="font-medium">
+                  {t('admin.ai.allowPrivate', 'Allow private addresses')}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {t(
+                    'admin.ai.allowPrivateHelp',
+                    "Lets the base URL be on a private network (10.x, 172.16-31.x, 192.168.x) and use http, for a self-hosted model. Loopback, link-local and cloud-metadata addresses stay blocked. Organizations' own providers never get this."
+                  )}
+                </span>
+              </Label>
+              <Switch
+                id={`${id}-allow-private`}
+                checked={allowPrivate}
+                onCheckedChange={setAllowPrivate}
+                disabled={!editable}
+              />
+            </div>
+          )}
           {incomplete && (
-            <p className="text-sm text-destructive">
-              {t(
-                'admin.ai.incomplete',
-                'Choose a provider and a model and set its key to turn platform AI on.'
-              )}
+            <p className="text-sm text-destructive" role="alert">
+              {compat
+                ? t(
+                    'admin.ai.incompleteCompat',
+                    'Choose a model and a base URL to turn platform AI on with an OpenAI-compatible server.'
+                  )
+                : t(
+                    'admin.ai.incomplete',
+                    'Choose a provider and a model and set its key to turn platform AI on.'
+                  )}
             </p>
           )}
           <SettingChangedLine change={settings} />
@@ -211,7 +329,11 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
               <Button
                 variant="outline"
                 onClick={() => void test()}
-                disabled={testing || dirty || !settings.key_set}
+                disabled={
+                  testing ||
+                  dirty ||
+                  !(settings.key_set || settings.provider === 'openai_compatible')
+                }
               >
                 {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
                 {t('admin.ai.test', 'Test the key')}
@@ -228,6 +350,65 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
           )}
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('admin.ai.policyTitle', "Organizations' own AI providers")}</CardTitle>
+          <CardDescription>
+            {t(
+              'admin.ai.policyDescription',
+              'Let organizations send their findings to their own AI provider with their own key (Settings > AI > Own provider). Their addresses must be public https; the private-address toggle above never applies to them.'
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+            <Label htmlFor={`${id}-allow-org`} className="grid gap-1 font-normal">
+              <span className="font-medium">
+                {t('admin.ai.policyAllow', 'Allow organizations to use their own provider')}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {t(
+                  'admin.ai.policyAllowHelp',
+                  'Off: every organization on its own provider stops at its next call. It never falls back to the platform key.'
+                )}
+              </span>
+            </Label>
+            <Switch
+              id={`${id}-allow-org`}
+              checked={allowOrg}
+              onCheckedChange={setAllowOrg}
+              disabled={!canEdit}
+            />
+          </div>
+          {canEdit ? (
+            <div className="flex justify-end">
+              <Button
+                onClick={() => setPolicyConfirmOpen(true)}
+                disabled={allowOrg === settings.allow_org_provider}
+              >
+                {t('admin.ai.policySave', 'Save policy')}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+      <ReasonConfirmDialog
+        open={policyConfirmOpen}
+        onOpenChange={setPolicyConfirmOpen}
+        title={t(
+          'admin.ai.policyConfirmTitle',
+          "Change the policy on organizations' own providers?"
+        )}
+        desc={t(
+          'admin.ai.policyConfirmDesc',
+          'Applies at once to every organization. Recorded in the admin audit log and sent to every administrator.'
+        )}
+        onConfirm={savePolicy}
+      />
       <ReasonConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}

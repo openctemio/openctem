@@ -16,7 +16,7 @@ const { SharedSensorsForm } = await import('../components/shared-sensors-form')
 const confirmWith = async (user: ReturnType<typeof userEvent.setup>, reason: string) => {
   await user.click(screen.getByRole('button', { name: 'Save' }))
   await user.type(screen.getByLabelText('Reason'), reason)
-  await user.type(screen.getByLabelText('Code from your authenticator'), '123456')
+  await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
   await user.click(screen.getByRole('button', { name: 'Confirm' }))
 }
 

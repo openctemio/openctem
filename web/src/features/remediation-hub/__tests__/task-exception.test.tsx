@@ -29,7 +29,7 @@ vi.mock('@/features/findings/components/group-exception-dialog', () => ({
 }))
 
 function Harness({ writable }: { writable: boolean }) {
-  const ex = useTaskException('task-1', writable)
+  const ex = useTaskException('task-1', 3, writable)
   return (
     <div>
       {ex.action}

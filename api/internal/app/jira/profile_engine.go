@@ -56,7 +56,7 @@ type ProfileSource interface {
 // ProfileClient is what the engine needs from a tracker client beyond Client.
 type ProfileClient interface {
 	IntegrationID() shared.ID
-	CreateIssueFields(ctx context.Context, projectKey, issueTypeID string, fields map[string]any) (*CreateIssueResult, error)
+	CreateIssueFields(ctx context.Context, projectKey, issueTypeID string, fields map[string]any, marker *IssueMarker) (*CreateIssueResult, error)
 	CurrentStatus(ctx context.Context, issueKey string) (ticketmap.WorkflowStatus, error)
 	AvailableTransitions(ctx context.Context, issueKey string) ([]ticketmap.WorkflowTransition, error)
 	Transition(ctx context.Context, issueKey, transitionID string, fields map[string]string, comment string) error
@@ -106,7 +106,7 @@ func (s *SyncService) profileClient(c Client) (ProfileClient, bool) {
 // createFromProfile creates the issue from a published profile. handled is
 // false when there is no profile (or it is in dry run): the caller then
 // creates the issue the built-in way.
-func (s *SyncService) createFromProfile(ctx context.Context, c Client, tenantID, findingID shared.ID, projectKey, issueType, parentKey string) (*CreateIssueResult, bool, error) {
+func (s *SyncService) createFromProfile(ctx context.Context, c Client, tenantID, findingID shared.ID, projectKey, issueType, parentKey string, marker *IssueMarker) (*CreateIssueResult, bool, error) {
 	pc, ok := s.profileClient(c)
 	if !ok {
 		return nil, false, nil
@@ -129,7 +129,7 @@ func (s *SyncService) createFromProfile(ctx context.Context, c Client, tenantID,
 		fields = cloneFields(fields)
 		fields["parent"] = map[string]string{"key": parentKey}
 	}
-	res, err := pc.CreateIssueFields(ctx, projectKey, pr.IssueTypeID, fields)
+	res, err := pc.CreateIssueFields(ctx, projectKey, pr.IssueTypeID, fields, marker)
 	if err != nil {
 		return nil, true, fmt.Errorf("create jira ticket from mapping profile: %w", err)
 	}

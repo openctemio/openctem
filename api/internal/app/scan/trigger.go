@@ -124,6 +124,12 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	if err != nil {
 		return nil, err
 	}
+	// A managed scan runs only when its policy starts it (or the platform
+	// retries it, TriggeredBy naming no user): not on a member's "Run now", not
+	// as an approved or emergency run of a member, not from an automation.
+	if sc.IsManaged() && (input.Interactive || userIDPtr(input.TriggeredBy) != nil || input.TriggerType == scanworkflow.TriggerTypeAutomation) {
+		return nil, ErrScanManagedByPolicy
+	}
 	return s.triggerAndRecord(ctx, sc, input)
 }
 
@@ -353,11 +359,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	delete(runContext, scanrun.RunContextKeySensorRouting)
 	// Who the run acts for (act scope of chained stages): the person who
 	// triggered it, else the scan's owner. Never sent to a sensor.
-	if actor := userIDPtr(triggeredBy); actor != nil {
-		runContext[RunContextKeyActor] = actor.String()
-	} else if sc.CreatedBy != nil {
-		runContext[RunContextKeyActor] = sc.CreatedBy.String()
-	}
+	stampRunAuthority(runContext, sc, triggeredBy, true)
 	// Resolve the targets server-side (direct targets + asset-group members,
 	// minus scope exclusions) and carry them to the step commands; sensors do
 	// not resolve asset groups, so without this a group scan scans nothing.
@@ -492,6 +494,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	runContext["targets_per_job"] = sc.TargetsPerJob
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
+	stampRunAuthority(runContext, sc, triggeredBy, false)
 
 	// Smart filtering: filter assets based on scanner compatibility
 	filteringResult, err := s.filterAssetsForSingleScan(ctx, sc)
@@ -803,7 +806,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	}
 	payload, _ := json.Marshal(payloadMap)
 
-	cmd, err := command.NewCommand(sc.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
+	cmd, err := command.NewCommand(sc.TenantID, command.CommandTypeScan, CommandPriorityOf(run), payload)
 	if err != nil {
 		return err
 	}
