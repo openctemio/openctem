@@ -200,6 +200,14 @@ it (migration `002205`). The drawer offers Undo only for moves that do not
 close the finding; reopening a resolved finding is a deliberate move from the
 status control.
 
+Moving a finding out of an approved false positive or an accepted risk is a
+reversal of a decision, so the transition engine asks for `findings:approve`
+(the permission that made the decision), not only `findings:status`; the
+status route and the bulk route answer 403 without it. A workflow action or a
+ticket webhook is refused outright (`decided_status` block) for a false
+positive, an accepted risk or a duplicate, and a workflow also for a resolved
+finding: automation never undoes a person's decision.
+
 ## Every move is on the timeline
 
 A finding's timeline (`finding_activities`) explains every status change, in
