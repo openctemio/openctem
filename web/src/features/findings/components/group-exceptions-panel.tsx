@@ -8,7 +8,7 @@
  * The API decides who may act; the UI hides what the caller could not do.
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
 import { formatDistanceToNow } from 'date-fns'
 import { Ban, Check, Loader2, X } from 'lucide-react'
@@ -114,6 +114,9 @@ interface GroupExceptionsPanelProps {
   onOpenChange: (id: string | null) => void
   /** After a decision: refresh other lists and badges. */
   onDecided?: () => void | Promise<unknown>
+  /** The page's list toolbar (status lens, refresh), shared with its other list. */
+  toolbarStart?: ReactNode
+  toolbarEnd?: ReactNode
 }
 
 export function GroupExceptionsPanel({
@@ -124,6 +127,8 @@ export function GroupExceptionsPanel({
   openId,
   onOpenChange,
   onDecided,
+  toolbarStart,
+  toolbarEnd,
 }: GroupExceptionsPanelProps) {
   const { t } = useTranslation()
   const { data, isLoading, mutate } = useApprovalBatches(
@@ -214,6 +219,9 @@ export function GroupExceptionsPanel({
           onPaginationChange={onPaginationChange}
           getRowId={(row) => row.id}
           showColumnToggle={false}
+          showSearch={false}
+          toolbarStart={toolbarStart}
+          toolbarEnd={toolbarEnd}
           emptyMessage={t('findingApprovals.group.empty', 'No group exceptions')}
           emptyDescription={t(
             'findingApprovals.group.emptyDesc',

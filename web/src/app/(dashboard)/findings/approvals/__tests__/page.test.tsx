@@ -5,8 +5,8 @@
  * - Loading state shows skeleton
  * - Error state shows full-page error with retry
  * - Empty state shows message
- * - Stats cards render with counts (CardHeader/CardTitle pattern)
- * - Tab filtering with counts
+ * - One tab row (the kind of request), counting only pending requests
+ * - The status lens in the list toolbar, Pending by default, URL-synced
  * - DataTable renders with data
  * - Back link to findings page
  * - Refresh button
@@ -183,8 +183,12 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
     columns,
     emptyMessage,
     emptyDescription,
+    toolbarStart,
+    toolbarEnd,
   }: {
     data: unknown[]
+    toolbarStart?: React.ReactNode
+    toolbarEnd?: React.ReactNode
     emptyMessage?: string
     emptyDescription?: string
     columns: unknown[]
@@ -196,6 +200,10 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
     captured.columns = columns
     return (
       <div data-testid="data-table">
+        <div data-testid="toolbar">
+          {toolbarStart}
+          {toolbarEnd}
+        </div>
         {data.length === 0 ? (
           <div>
             <p>{emptyMessage}</p>
@@ -316,7 +324,13 @@ describe('ApprovalsPage', () => {
         data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
       })
       render(<ApprovalsPage />)
-      expect(screen.getByText('3 requests, 1 waiting for a decision')).toBeInTheDocument()
+      expect(screen.getByText('1 waiting for a decision')).toBeInTheDocument()
+    })
+
+    it('says so when nothing is waiting', () => {
+      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
+      render(<ApprovalsPage />)
+      expect(screen.getByText('Nothing is waiting for a decision')).toBeInTheDocument()
     })
 
     it('shows loading description while fetching', () => {
@@ -335,7 +349,7 @@ describe('ApprovalsPage', () => {
     it('renders refresh button', () => {
       mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
-      expect(screen.getByText('Refresh')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
     })
   })
 
@@ -378,91 +392,32 @@ describe('ApprovalsPage', () => {
 
   describe('empty state', () => {
     it('shows empty message when no approvals', () => {
+      listState.status = 'all'
       mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
       expect(screen.getByText('No approval requests')).toBeInTheDocument()
-    })
-  })
-
-  // ============================================
-  // STATS CARDS
-  // ============================================
-
-  describe('stats cards', () => {
-    it('renders stats with CardDescription labels', () => {
-      mockHook({
-        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
-      })
-      render(<ApprovalsPage />)
-
-      // Stat labels. "Pending" is also a tab label now that the tab count is a
-      // separate TabsCount, so it appears more than once.
-      expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1)
-      expect(screen.getByText('Total')).toBeInTheDocument()
-    })
-
-    it('renders correct counts', () => {
-      mockHook({
-        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
-      })
-      render(<ApprovalsPage />)
-
-      // Counts appear as CardTitle values - "1" for pending, "1" for approved, etc.
-      // Use getAllByText since counts appear in both cards and tabs
-      expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1)
-      expect(screen.getAllByText('3').length).toBeGreaterThanOrEqual(1)
-    })
-  })
-
-  // ============================================
-  // TABS
-  // ============================================
-
-  describe('tabs', () => {
-    it('renders status filter tabs with counts', () => {
-      mockHook({
-        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
-      })
-      render(<ApprovalsPage />)
-
-      expect(screen.getByRole('tab', { name: /^All\s*3$/i })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /^Pending\s*1$/i })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /^Approved\s*1$/i })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /^Rejected\s*1$/i })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /^Canceled\s*0$/i })).toBeInTheDocument()
-    })
-  })
-
-  describe('server-side tabs', () => {
-    it('asks the server for every status on the All tab', () => {
-      mockHook({
-        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
-      })
-      render(<ApprovalsPage />)
-      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, undefined)
-    })
-
-    it('asks the server for the tab status and starts at page 1', () => {
-      mockHook({
-        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
-      })
-      render(<ApprovalsPage />)
-      fireEvent.mouseDown(screen.getByRole('tab', { name: /^Approved/i }))
-      // Choosing a tab writes the status to the URL (and page 1)...
-      expect(listState.setFilter).toHaveBeenCalledWith('status', 'approved')
-    })
-
-    it('reads the tab from the URL and asks the server for that status', () => {
-      listState.status = 'rejected'
-      mockHook({
-        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
-      })
-      render(<ApprovalsPage />)
-      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'rejected')
       listState.status = ''
     })
+  })
 
-    it('takes tab counts from the server, not from the rows of the page', () => {
+  // ============================================
+  // ONE TAB ROW + STATUS LENS
+  // ============================================
+
+  describe('one tab row', () => {
+    it('renders a single tab row: the kind of request, not the status', () => {
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+      render(<ApprovalsPage />)
+      expect(screen.getAllByRole('tablist')).toHaveLength(1)
+      expect(screen.getAllByRole('tab').map((el) => el.textContent)).toEqual([
+        'Finding requests1',
+        'Group exceptions',
+      ])
+    })
+
+    it('counts only pending requests, from the server, and hides a zero', () => {
       mockHook({
         data: {
           data: mockApprovals.slice(0, 1),
@@ -473,9 +428,80 @@ describe('ApprovalsPage', () => {
         },
       })
       render(<ApprovalsPage />)
-      expect(screen.getByRole('tab', { name: /^All\s*170$/i })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /^Approved\s*40$/i })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /^Expired\s*1$/i })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: /^Finding requests\s*120$/ })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: /^Group exceptions$/ })).toBeInTheDocument()
+      expect(screen.getByText('120 waiting for a decision')).toBeInTheDocument()
+    })
+  })
+
+  describe('status lens', () => {
+    beforeEach(() => {
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+    })
+
+    it('sits in the list toolbar as one radio group with no counts', () => {
+      render(<ApprovalsPage />)
+      const group = within(screen.getByTestId('toolbar')).getByRole('radiogroup', {
+        name: 'Request status',
+      })
+      expect(
+        within(group)
+          .getAllByRole('radio')
+          .map((el) => el.textContent)
+      ).toEqual(['Pending', 'Approved', 'Rejected', 'All'])
+      expect(within(group).getByRole('radio', { name: 'Pending' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      )
+    })
+
+    it('opens on Pending and asks the server for pending requests', () => {
+      render(<ApprovalsPage />)
+      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'pending')
+    })
+
+    it('writes the lens to the URL; Pending is the default and leaves it out', () => {
+      render(<ApprovalsPage />)
+      fireEvent.click(screen.getByRole('radio', { name: 'All' }))
+      expect(listState.setFilter).toHaveBeenCalledWith('status', 'all')
+      fireEvent.click(screen.getByRole('radio', { name: 'Pending' }))
+      expect(listState.setFilter).toHaveBeenCalledWith('status', '')
+    })
+
+    it('asks the server for every status under All', () => {
+      listState.status = 'all'
+      render(<ApprovalsPage />)
+      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, undefined)
+      listState.status = ''
+    })
+
+    it('reads the lens from the URL and asks the server for that status', () => {
+      listState.status = 'rejected'
+      render(<ApprovalsPage />)
+      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'rejected')
+      expect(screen.getByRole('radio', { name: 'Rejected' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      )
+      listState.status = ''
+    })
+
+    it('falls back to Pending for a status that is not a lens', () => {
+      listState.status = 'canceled'
+      render(<ApprovalsPage />)
+      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'pending')
+      listState.status = ''
+    })
+
+    it('explains an empty Pending list', () => {
+      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
+      render(<ApprovalsPage />)
+      expect(screen.getByText('No pending requests')).toBeInTheDocument()
+      expect(
+        screen.getByText(/Decided requests are under Approved, Rejected and All/)
+      ).toBeInTheDocument()
     })
   })
 
@@ -537,7 +563,7 @@ describe('ApprovalsPage', () => {
     it('calls mutate when refresh button is clicked', () => {
       mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
-      fireEvent.click(screen.getByText('Refresh'))
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
       expect(mockMutate).toHaveBeenCalled()
     })
   })
