@@ -65,6 +65,8 @@ type CreateIssueInput struct {
 	Summary     string
 	Description string
 	IssueType   string // "Bug", "Task", "Story"
+	// IssueTypeID, when set, sends the type by id instead of by name.
+	IssueTypeID string
 	Priority    string // "Highest", "High", "Medium", "Low", "Lowest"
 	Labels      []string
 	// ParentKey makes the issue a child of this issue (an epic).
@@ -182,6 +184,9 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 		"summary":   input.Summary,
 		"issuetype": map[string]string{"name": input.IssueType},
 	}
+	if input.IssueTypeID != "" {
+		fields["issuetype"] = map[string]string{"id": input.IssueTypeID}
+	}
 
 	if input.Description != "" {
 		fields["description"] = input.Description
@@ -223,7 +228,7 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return nil, httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody)
+		return nil, upstreamError(ctx, resp.StatusCode, respBody)
 	}
 
 	var result CreateIssueResult

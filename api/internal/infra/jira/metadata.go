@@ -81,7 +81,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 		return &RateLimitedError{RetryAfter: retryAfter(resp.Header)}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody)
+		return upstreamError(ctx, resp.StatusCode, respBody)
 	}
 	if out == nil {
 		return nil
