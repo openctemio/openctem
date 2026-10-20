@@ -161,8 +161,8 @@ func TestVulnEventLog_DB(t *testing.T) {
 
 	// EPSS: a crossing upward is an event, noise below a band and a fall
 	// are not.
-	if _, err := db.Exec(`INSERT INTO epss_scores (cve_id, epss_score, score_date) VALUES
-		('CVE-2099-0001', 0.62, current_date), ('CVE-2099-0003', 0.04, current_date)`); err != nil {
+	if _, err := db.Exec(`INSERT INTO epss_scores (cve_id, epss_score) VALUES
+		('CVE-2099-0001', 0.62), ('CVE-2099-0003', 0.04)`); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := em.EmitEPSS(ctx); err != nil || n != 1 {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 // @title           OpenCTEM API
@@ -76,6 +78,8 @@ var (
 		"GET /health on 127.0.0.1:$SERVER_PORT (default 8080) and exit 0 when it answers 200, 1 otherwise; "+
 			"the container healthcheck, so the image needs no shell or wget")
 
+	showVersion = flag.Bool("version", false, "Print the version, commit and build time, then exit")
+
 	signerLedgerExport = flag.String("signer-ledger-export", "",
 		"Write every organization's scope in effect as a job-signer ledger snapshot to this new file (0600), then exit; "+
 			"the operator imports it with `openctem-signer ledger import` (RFC-040 P2)")
@@ -87,6 +91,10 @@ func main() {
 		return
 	}
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("openctem-server", version.Get())
+		return
+	}
 	if *healthcheck {
 		os.Exit(runHealthcheck(os.Stderr))
 	}

@@ -77,7 +77,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "security-analyst",
-		Version: 1,
+		Version: 2,
 		Name:    "Security analyst",
 		Description: "Triages findings and exposures in their scope: severity, status, duplicates, assignment, " +
 			"comments and evidence; verifies fixes and requests retests. May request risk acceptance but " +
@@ -85,7 +85,7 @@ var roleTemplates = []RoleTemplate{
 		Personas: []string{"Security operations analyst", "Exposure triage analyst"},
 		Permissions: join(readCore, []Permission{
 			FindingsWrite, FindingsComment, FindingsSeverity,
-			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify,
+			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify, FindingsRetestChecksWrite,
 			ExposuresWrite, ExposuresTriage, SuppressionsRead, SuppressionsWrite,
 			CredentialsRead, WorkflowsRead,
 			ScansRead, ScansExecute, ScanProfilesRead,
@@ -96,7 +96,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "vulnerability-manager",
-		Version: 1,
+		Version: 2,
 		Name:    "Vulnerability manager",
 		Description: "Owns the remediation backlog: routes work to owners with assignment rules, runs " +
 			"remediation campaigns, schedules scans and reports on SLA performance. Does not approve " +
@@ -104,7 +104,7 @@ var roleTemplates = []RoleTemplate{
 		Personas: []string{"Vulnerability management lead", "Remediation coordinator"},
 		Permissions: join(readCore, []Permission{
 			FindingsWrite, FindingsComment, FindingsSeverity,
-			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify,
+			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify, FindingsRetestChecksWrite,
 			FindingsExport,
 			ExposuresWrite, ExposuresTriage, SuppressionsRead, SuppressionsWrite,
 			RemediationWrite, WorkflowsRead, WorkflowsWrite,
@@ -131,14 +131,14 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "appsec-engineer",
-		Version: 1,
+		Version: 2,
 		Name:    "AppSec engineer",
 		Description: "Runs code and dependency scanning for their repositories, triages application " +
 			"findings, and runs the CI gate: gate policies, expected scans and break-glass.",
 		Personas: []string{"Application security engineer", "DevSecOps engineer"},
 		Permissions: join(readCore, []Permission{
 			ComponentsWrite, AssetsWrite,
-			FindingsWrite, FindingsComment, FindingsSeverity, FindingsTriage, FindingsStatus, FindingsAssign, FindingsVerify,
+			FindingsWrite, FindingsComment, FindingsSeverity, FindingsTriage, FindingsStatus, FindingsAssign, FindingsVerify, FindingsRetestChecksWrite,
 			SuppressionsRead, SuppressionsWrite,
 			ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScanProfilesWrite,
 			ScanWorkflowsRead, ToolsRead, ScannerTemplatesRead,
@@ -195,7 +195,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "validation-engineer",
-		Version: 1,
+		Version: 2,
 		Name:    "Validation engineer",
 		Description: "Proves exploitability: runs pentest campaigns, attack simulations and control " +
 			"tests, records validated findings and retests fixes. Cannot approve risk or change scope.",
@@ -204,7 +204,7 @@ var roleTemplates = []RoleTemplate{
 			PentestRead, PentestWrite,
 			PentestCampaignsRead, PentestCampaignsWrite, PentestFindingsRead, PentestFindingsWrite,
 			PentestRetestsRead, PentestRetestsWrite, PentestTemplatesRead, PentestTemplatesWrite, PentestReportsWrite,
-			FindingsWrite, FindingsComment, FindingsSeverity, FindingsVerify,
+			FindingsWrite, FindingsComment, FindingsSeverity, FindingsVerify, FindingsRetestChecksWrite,
 			ScansRead, ScansExecute, ScanProfilesRead, ScopeRead,
 			AttackerProfilesRead, CompensatingControlsRead, VerificationChecklistsRead, ThreatIntelRead,
 		}),
