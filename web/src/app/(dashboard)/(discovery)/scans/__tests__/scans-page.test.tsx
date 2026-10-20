@@ -163,4 +163,35 @@ describe('Scans › Configurations', () => {
     expect(confirm).toBeEnabled()
     expect(bulkDelete).not.toHaveBeenCalled()
   })
+
+  // The platform's managed scans (continuous coverage) are listed apart from
+  // people's: the Origin filter sends origin=system / origin=user.
+  it("lists the platform's scans under the System origin filter", async () => {
+    render(<ScansPage />)
+    expect(configCalls.at(-1)?.origin).toBeUndefined()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'System' }))
+    expect(urlState.origin).toBe('system')
+    await waitFor(() => expect(configCalls.at(-1)).toMatchObject({ origin: 'system' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'People' }))
+    await waitFor(() => expect(configCalls.at(-1)).toMatchObject({ origin: 'user' }))
+  })
+
+  it('reads the origin from a shared link', () => {
+    urlState.origin = 'system'
+    render(<ScansPage />)
+    expect(configCalls.at(-1)).toMatchObject({ origin: 'system' })
+  })
+
+  it('labels the success rate through the dictionary', () => {
+    configsResponse = {
+      data: [{ ...scan(1), successful_runs: 1, failed_runs: 1, total_runs: 2 }],
+      total: 1,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScansPage />)
+    expect(screen.getByRole('columnheader', { name: /Success rate/ })).toBeInTheDocument()
+    expect(screen.getByTitle('1 of 2 finished runs succeeded')).toBeInTheDocument()
+  })
 })
