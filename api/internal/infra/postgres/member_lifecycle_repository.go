@@ -435,6 +435,9 @@ func stripAccess(ctx context.Context, tx *sql.Tx, tid, uid string, actorArg any,
 			DELETE FROM asset_access_grants WHERE tenant_id = $1 AND user_id = $2`, []any{tid, uid}},
 		{&out.RemovedCampaigns, "remove campaign memberships", `
 			DELETE FROM pentest_campaign_members WHERE tenant_id = $1 AND user_id = $2`, []any{tid, uid}},
+		// A watcher who left must not keep hearing about items (RFC-120).
+		{&out.RemovedWatches, "remove watched items", `
+			DELETE FROM work_item_subscriptions WHERE tenant_id = $1 AND user_id = $2`, []any{tid, uid}},
 	}
 	for _, c := range counted {
 		n, err := execCount(ctx, tx, c.query, c.args...)
@@ -565,6 +568,11 @@ func (r *MemberLifecycleRepository) ErasePersonalData(ctx context.Context, tenan
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM user_mfa WHERE user_id = $1`, userID.String()); err != nil {
 		return fmt.Errorf("remove second factor: %w", err)
+	}
+	// What the person watched is personal data too (the rows are already gone
+	// for the tenant they were offboarded from; this covers any left over).
+	if _, err = tx.ExecContext(ctx, `DELETE FROM work_item_subscriptions WHERE user_id = $1`, userID.String()); err != nil {
+		return fmt.Errorf("remove watched items: %w", err)
 	}
 	// The IdP's ids for the person: personal data, and a later sign-in must
 	// not find the anonymised account.
