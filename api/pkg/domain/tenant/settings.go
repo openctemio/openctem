@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,7 +24,6 @@ type Settings struct {
 	Security       SecuritySettings       `json:"security"`
 	Branding       BrandingSettings       `json:"branding"`
 	Branch         BranchSettings         `json:"branch"`
-	AI             AISettings             `json:"ai"`
 	RiskScoring    RiskScoringSettings    `json:"risk_scoring"`
 	Pentest        PentestSettings        `json:"pentest"`
 	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
@@ -126,7 +126,15 @@ type PentestSettings struct {
 	// RequireAuthorizationBeforeStart: a campaign cannot start testing until
 	// its signed authorization letter is linked. Off by default.
 	RequireAuthorizationBeforeStart bool `json:"require_authorization_before_start"`
+	// TicketMaxTLP is the most restrictive TLP level of a campaign whose
+	// findings may be sent to a tracker (Jira, GitHub Issues) from the
+	// campaign; "" means amber. TLP:RED is never sent, so "red" is refused
+	// here (docs/architecture/ticketing-integration.md, "Outbound gate").
+	TicketMaxTLP string `json:"ticket_max_tlp,omitempty"`
 }
+
+// TicketMaxTLPValues are the accepted tracker TLP limits ("" = amber).
+var TicketMaxTLPValues = []string{"clear", "green", "amber", "amber_strict"}
 
 // ConfigOption represents a configurable option with value and label.
 type ConfigOption struct {
@@ -162,6 +170,10 @@ func (s *PentestSettings) Validate() error {
 			return fmt.Errorf("%w: duplicate methodology value: %s", shared.ErrValidation, m.Value)
 		}
 		seen[m.Value] = true
+	}
+
+	if s.TicketMaxTLP != "" && !slices.Contains(TicketMaxTLPValues, s.TicketMaxTLP) {
+		return fmt.Errorf("%w: ticket_max_tlp must be one of clear, green, amber, amber_strict (TLP:RED is never sent to a tracker)", shared.ErrValidation)
 	}
 
 	return nil
@@ -330,109 +342,6 @@ type BrandingSettings struct {
 	PrimaryColor string `json:"primary_color"` // Hex color code, e.g., "#3B82F6"
 	LogoDarkURL  string `json:"logo_dark_url"` // Logo for dark theme (URL)
 	LogoData     string `json:"logo_data"`     // Logo as base64 data URL (max 150KB)
-}
-
-// =============================================================================
-// AI Settings
-// =============================================================================
-
-// AIMode represents how the tenant uses AI services.
-type AIMode string
-
-const (
-	// AIModeDisabled means AI features are disabled.
-	AIModeDisabled AIMode = "disabled"
-	// AIModePlatform uses the platform's AI (included in subscription).
-	AIModePlatform AIMode = "platform"
-	// AIModeBYOK means tenant brings their own API key.
-	AIModeBYOK AIMode = "byok"
-)
-
-// IsValid checks if the AI mode is valid.
-func (m AIMode) IsValid() bool {
-	switch m {
-	case AIModeDisabled, AIModePlatform, AIModeBYOK:
-		return true
-	}
-	return false
-}
-
-// LLMProvider represents supported LLM providers.
-type LLMProvider string
-
-const (
-	LLMProviderClaude LLMProvider = "claude"
-	LLMProviderOpenAI LLMProvider = "openai"
-	// LLMProviderOpenAICompatible is any server speaking the OpenAI chat
-	// completions API, at a base URL the organization sets (public only).
-	LLMProviderOpenAICompatible LLMProvider = "openai_compatible"
-	LLMProviderGemini           LLMProvider = "gemini"
-)
-
-// IsValid checks if the LLM provider is valid.
-func (p LLMProvider) IsValid() bool {
-	switch p {
-	case LLMProviderClaude, LLMProviderOpenAI, LLMProviderOpenAICompatible, LLMProviderGemini:
-		return true
-	}
-	return false
-}
-
-// AISettings contains AI/LLM configuration for the tenant.
-type AISettings struct {
-	// Mode determines how AI is used: disabled, platform, or byok
-	Mode AIMode `json:"mode"`
-
-	// BYOK (Bring Your Own Key) Configuration - only used when Mode = "byok"
-	Provider      LLMProvider `json:"provider,omitempty"`       // claude, openai, gemini, openai_compatible
-	APIKey        string      `json:"api_key,omitempty"`        // Encrypted API key (set via special endpoint)
-	BaseURL       string      `json:"base_url,omitempty"`       // openai_compatible only; public https
-	ModelOverride string      `json:"model_override,omitempty"` // Optional model preference
-
-	// Auto-Triage Configuration
-	AutoTriageEnabled      bool     `json:"auto_triage_enabled"`              // Enable auto-triage on new findings
-	AutoTriageSeverities   []string `json:"auto_triage_severities,omitempty"` // Severities to auto-triage: critical, high, etc.
-	AutoTriageDelaySeconds int      `json:"auto_triage_delay_seconds"`        // Delay before auto-triage (for dedup)
-
-	// Usage Limits
-	MonthlyTokenLimit   int `json:"monthly_token_limit,omitempty"` // Optional cost control (0 = unlimited)
-	TokensUsedThisMonth int `json:"tokens_used_this_month"`        // Tracked internally
-
-	// Consent. Finding content goes to an AI provider only after an
-	// organization administrator turned AI triage on: EnabledAt is when,
-	// EnabledBy is who (a user id, or AIEnabledByUpgrade for organizations
-	// that used AI triage before consent existed). nil EnabledAt: off.
-	EnabledAt *time.Time `json:"enabled_at,omitempty"`
-	EnabledBy string     `json:"enabled_by,omitempty"`
-}
-
-// AIEnabledByUpgrade marks the consent of an organization that already used
-// AI triage when organization consent was introduced (migration).
-const AIEnabledByUpgrade = "upgrade"
-
-// OptedIn reports whether an organization administrator turned AI triage on.
-func (s AISettings) OptedIn() bool { return s.EnabledAt != nil }
-
-// EffectiveMode is the mode that applies: disabled until the organization
-// opted in, platform when no mode was chosen.
-func (s AISettings) EffectiveMode() AIMode {
-	if !s.OptedIn() || s.Mode == AIModeDisabled {
-		return AIModeDisabled
-	}
-	if s.Mode == "" {
-		return AIModePlatform
-	}
-	return s.Mode
-}
-
-// SetOptIn records the organization's consent (on) or withdraws it (off).
-func (s *AISettings) SetOptIn(on bool, by string, at time.Time) {
-	if !on {
-		s.EnabledAt, s.EnabledBy = nil, ""
-		return
-	}
-	at = at.UTC()
-	s.EnabledAt, s.EnabledBy = &at, by
 }
 
 // =============================================================================
@@ -849,12 +758,6 @@ func DefaultSettings() Settings {
 			PrimaryColor: "#3B82F6", // Blue
 			LogoDarkURL:  "",
 		},
-		AI: AISettings{
-			Mode:                   AIModePlatform, // Use platform AI by default
-			AutoTriageEnabled:      false,          // Disabled by default
-			AutoTriageSeverities:   []string{"critical", "high"},
-			AutoTriageDelaySeconds: 60,
-		},
 		RiskScoring: DefaultRiskScoringPreset(),
 		Pentest: PentestSettings{
 			CampaignTypes: []ConfigOption{
@@ -900,9 +803,6 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.Branch.Validate(); err != nil {
 		return fmt.Errorf("branch settings: %w", err)
-	}
-	if err := s.AI.Validate(); err != nil {
-		return fmt.Errorf("ai settings: %w", err)
 	}
 	if err := s.RiskScoring.Validate(); err != nil {
 		return fmt.Errorf("risk scoring settings: %w", err)
@@ -1012,55 +912,6 @@ func (s *BrandingSettings) Validate() error {
 			return err
 		}
 	}
-	return nil
-}
-
-// Validate validates AI settings.
-func (s *AISettings) Validate() error {
-	// Validate mode
-	if s.Mode != "" && !s.Mode.IsValid() {
-		return fmt.Errorf("%w: invalid AI mode", shared.ErrValidation)
-	}
-
-	// BYOK-specific validation
-	if s.Mode == AIModeBYOK {
-		if s.Provider == "" {
-			return fmt.Errorf("%w: provider is required for BYOK mode", shared.ErrValidation)
-		}
-		if !s.Provider.IsValid() {
-			return fmt.Errorf("%w: invalid LLM provider", shared.ErrValidation)
-		}
-		// API key validation is done separately (encrypted storage)
-		if s.Provider == LLMProviderOpenAICompatible {
-			if s.BaseURL == "" || s.ModelOverride == "" {
-				return fmt.Errorf("%w: base_url and model are required for an OpenAI-compatible provider", shared.ErrValidation)
-			}
-			if u, err := url.ParseRequestURI(s.BaseURL); err != nil || u.Scheme != "https" {
-				return fmt.Errorf("%w: invalid base URL (https required)", shared.ErrValidation)
-			}
-		}
-	}
-
-	// Validate auto-triage severities
-	validSeverities := map[string]bool{
-		"critical": true, "high": true, "medium": true, "low": true, "info": true,
-	}
-	for _, sev := range s.AutoTriageSeverities {
-		if !validSeverities[sev] {
-			return fmt.Errorf("%w: invalid severity: %s", shared.ErrValidation, sev)
-		}
-	}
-
-	// Validate delay
-	if s.AutoTriageDelaySeconds < 0 {
-		return fmt.Errorf("%w: auto_triage_delay_seconds must be non-negative", shared.ErrValidation)
-	}
-
-	// Validate token limit
-	if s.MonthlyTokenLimit < 0 {
-		return fmt.Errorf("%w: monthly_token_limit must be non-negative", shared.ErrValidation)
-	}
-
 	return nil
 }
 
@@ -1263,16 +1114,6 @@ func (t *Tenant) UpdateBranchSettings(bs BranchSettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.Branch = bs
-	return t.UpdateSettings(settings)
-}
-
-// UpdateAISettings updates only the AI settings.
-func (t *Tenant) UpdateAISettings(ai AISettings) error {
-	if err := ai.Validate(); err != nil {
-		return err
-	}
-	settings := t.TypedSettings()
-	settings.AI = ai
 	return t.UpdateSettings(settings)
 }
 

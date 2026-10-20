@@ -142,6 +142,10 @@ func (r stubMappingResolver) ResolveMapping(_ context.Context, _ shared.ID) (Map
 	return r.mapping, r.err
 }
 
+func (r stubMappingResolver) ResolveMappingByID(_ context.Context, _, _ shared.ID) (MappingConfig, error) {
+	return r.mapping, r.err
+}
+
 func TestSyncFindingStatus_NoResolverIsNoop(t *testing.T) {
 	c := &recordingClient{curStatus: "To Do"}
 	repo := &stubFindingRepo{finding: findingInProgress(t, "https://x.atlassian.net/browse/SEC-1")}

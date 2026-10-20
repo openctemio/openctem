@@ -124,6 +124,11 @@ const (
 	// findings:read; publishing also needs a recent sign-in (step-up).
 	FindingsLifecyclesWrite Permission = "findings:lifecycles:write"
 
+	// FindingsRetestChecksWrite attaches, changes and removes a finding's
+	// retest check (docs/architecture/finding-retest-checks.md). Reading it
+	// needs findings:read; approving an intrusive check needs scope:approve.
+	FindingsRetestChecksWrite Permission = "findings:retest_checks:write"
+
 	// Vulnerability permissions (findings:vulnerabilities:*)
 	VulnerabilitiesRead Permission = "findings:vulnerabilities:read"
 
@@ -478,7 +483,7 @@ func AllPermissions() []Permission {
 		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
-		FindingsLifecyclesWrite,
+		FindingsLifecyclesWrite, FindingsRetestChecksWrite,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,

@@ -39,6 +39,13 @@ import (
 // SettingKey is the platform_settings key.
 const SettingKey = "ai.platform"
 
+// OrgPolicyKey is the platform_settings key of the policy on organizations'
+// own providers.
+const OrgPolicyKey = "ai.org_policy"
+
+// ActionOrgPolicyChanged is the admin audit action of a change of that policy.
+const ActionOrgPolicyChanged = "platform.ai_org_policy_changed"
+
 // ActionChanged is the admin audit action of a change.
 const ActionChanged = "platform.ai_provider_changed"
 
@@ -63,6 +70,13 @@ var (
 	modelRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/\-]{0,127}$`)
 	keyRE   = regexp.MustCompile(`^[\x21-\x7e]{8,512}$`)
 )
+
+// orgPolicy is the platform policy on organizations' own AI providers. A
+// missing value means allowed: security and privacy are not paid features, and
+// an organization's own key lowers the platform's cost.
+type orgPolicy struct {
+	AllowOwnProvider *bool `json:"allow_own_provider,omitempty"`
+}
 
 type stored struct {
 	Enabled      bool   `json:"enabled"`
@@ -137,6 +151,7 @@ type Tester func(ctx context.Context, p Platform) error
 // Service reads and changes the platform AI provider.
 type Service struct {
 	store       *consolesetting.Store[stored]
+	policy      *consolesetting.Store[orgPolicy]
 	encryptor   crypto.Encryptor
 	recorder    *consolesetting.Recorder
 	envLocked   bool
@@ -153,7 +168,8 @@ func NewService(repo platformsetting.Repository, encryptor crypto.Encryptor, rec
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &Service{store: consolesetting.NewStore[stored](repo, SettingKey), encryptor: encryptor, recorder: recorder,
+	return &Service{store: consolesetting.NewStore[stored](repo, SettingKey),
+		policy: consolesetting.NewStore[orgPolicy](repo, OrgPolicyKey), encryptor: encryptor, recorder: recorder,
 		envLocked: envLocked, envProvider: envProvider, envModel: envModel, log: log.With("service", "platform_ai")}
 }
 
@@ -367,4 +383,63 @@ func cleanModels(in []string) ([]string, error) {
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// OrgPolicy is the platform policy on organizations' own AI providers.
+type OrgPolicy struct {
+	// AllowOwnProvider: organizations may use their own provider and key.
+	AllowOwnProvider bool
+	Version          int
+	UpdatedAt        time.Time
+	UpdatedBy        *shared.ID
+}
+
+// GetOrgPolicy returns the policy (allowed by default).
+func (s *Service) GetOrgPolicy(ctx context.Context) (OrgPolicy, error) {
+	p, m, err := s.policy.Get(ctx)
+	if err != nil {
+		return OrgPolicy{}, err
+	}
+	return OrgPolicy{AllowOwnProvider: p.AllowOwnProvider == nil || *p.AllowOwnProvider,
+		Version: m.Version, UpdatedAt: m.UpdatedAt, UpdatedBy: m.UpdatedBy}, nil
+}
+
+// OrgProviderAllowed reports whether organizations may use their own
+// provider. An unreadable policy refuses (fail closed); the organization's own
+// key is not used until the platform can say it is allowed.
+func (s *Service) OrgProviderAllowed(ctx context.Context) bool {
+	p, err := s.GetOrgPolicy(ctx)
+	if err != nil {
+		s.log.Warn("AI organization policy unreadable; own providers refused", "error", err)
+		return false
+	}
+	return p.AllowOwnProvider
+}
+
+// ChangeOrgPolicy changes the policy. The caller checked the actor's role and a
+// fresh confirmation. Turning it off stops every organization's own provider
+// at its next call, without a fall back to the platform key.
+func (s *Service) ChangeOrgPolicy(ctx context.Context, actor *admin.AdminUser, allow bool, reason string, expectedVersion int, ip, userAgent string) (OrgPolicy, error) {
+	if actor == nil {
+		return OrgPolicy{}, ErrNoActor
+	}
+	reason, err := consolesetting.CheckReason(reason)
+	if err != nil {
+		return OrgPolicy{}, err
+	}
+	prev, _, err := s.policy.Fresh(ctx)
+	if err != nil {
+		return OrgPolicy{}, err
+	}
+	was := prev.AllowOwnProvider == nil || *prev.AllowOwnProvider
+	if _, err := s.policy.Put(ctx, orgPolicy{AllowOwnProvider: &allow}, expectedVersion, actor.ID()); err != nil {
+		return OrgPolicy{}, err
+	}
+	s.recorder.Record(ctx, actor, consolesetting.Change{
+		Action: ActionOrgPolicyChanged, Key: OrgPolicyKey, Title: "Organizations' own AI providers",
+		Method: "PUT", Path: "/api/v1/admin/settings/ai/org-policy", Reason: reason,
+		Details:  map[string]any{"previous_allow_own_provider": was, "allow_own_provider": allow},
+		Critical: true, Notify: true,
+	}, ip, userAgent)
+	return s.GetOrgPolicy(ctx)
 }

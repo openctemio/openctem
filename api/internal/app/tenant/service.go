@@ -2186,6 +2186,8 @@ type UpdatePentestSettingsInput struct {
 	Methodologies []tenantdom.ConfigOption `json:"methodologies"`
 	// RequireAuthorizationBeforeStart: nil = unchanged.
 	RequireAuthorizationBeforeStart *bool `json:"require_authorization_before_start"`
+	// TicketMaxTLP: nil = unchanged, "" = the default (amber).
+	TicketMaxTLP *string `json:"ticket_max_tlp"`
 }
 
 // UpdatePentestSettings updates only the pentest settings.
@@ -2200,6 +2202,10 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 			Methodologies: current.Methodologies,
 
 			RequireAuthorizationBeforeStart: current.RequireAuthorizationBeforeStart,
+			TicketMaxTLP:                    current.TicketMaxTLP,
+		}
+		if input.TicketMaxTLP != nil {
+			ps.TicketMaxTLP = *input.TicketMaxTLP
 		}
 		if input.RequireAuthorizationBeforeStart != nil {
 			ps.RequireAuthorizationBeforeStart = *input.RequireAuthorizationBeforeStart
@@ -2721,62 +2727,6 @@ func (s *TenantService) GetMCPSettings(ctx context.Context, tenantID string) (*t
 	}
 	ms := t.TypedSettings().MCP
 	return &ms, nil
-}
-
-// GetAISettings returns the organization's AI triage settings, including
-// whether an administrator turned AI triage on (docs/architecture/ai-triage.md).
-func (s *TenantService) GetAISettings(ctx context.Context, tenantID string) (*tenantdom.AISettings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-	t, err := s.repo.GetByID(ctx, parsedID)
-	if err != nil {
-		return nil, err
-	}
-	ai := t.TypedSettings().AI
-	return &ai, nil
-}
-
-// UpdateAIOptIn turns AI triage on (the organization's consent to send finding
-// content to the AI provider) or off, and audits the change as critical.
-// Turning it on again keeps the original consent; nothing changes and
-// nothing is audited when the state is already the requested one.
-func (s *TenantService) UpdateAIOptIn(ctx context.Context, tenantID string, on bool, actx auditapp.AuditContext) (*tenantdom.AISettings, error) {
-	if on && actx.ActorID == "" {
-		return nil, fmt.Errorf("%w: turning AI triage on needs a signed-in administrator", shared.ErrValidation)
-	}
-	var before tenantdom.AISettings
-	changed := false
-	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAI, func(t *tenantdom.Tenant) error {
-		before = t.TypedSettings().AI
-		if before.OptedIn() == on {
-			return nil
-		}
-		changed = true
-		ai := before
-		ai.SetOptIn(on, actx.ActorID, time.Now())
-		return t.UpdateAISettings(ai)
-	})
-	if err != nil {
-		return nil, err
-	}
-	after := t.TypedSettings().AI
-	if changed {
-		msg := "AI triage turned off: finding content is no longer sent to the AI provider"
-		if on {
-			msg = "AI triage turned on: finding content may be sent to the AI provider"
-		}
-		actx.TenantID = tenantID
-		event := auditapp.NewSuccessEvent(audit.ActionAISettingsUpdated, audit.ResourceTypeTenant, tenantID).
-			WithChanges(auditapp.DiffChanges(
-				map[string]any{"enabled": before.OptedIn()},
-				map[string]any{"enabled": after.OptedIn()})).
-			WithMessage(msg).
-			WithSeverity(audit.SeverityCritical)
-		s.logAudit(ctx, actx, event)
-	}
-	return &after, nil
 }
 
 // UpdateMCPSettings replaces the tenant's MCP policy and audits the change.

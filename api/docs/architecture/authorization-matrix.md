@@ -268,7 +268,11 @@ Details: [api-keys.md](./api-keys.md).
 | `GET /api/v1/assets` | `assets:read` |
 | `GET /api/v1/assets/{id}` | `assets:read` |
 | `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
-| `PUT /api/v1/assets/{id}` | `assets:write` |
+| `PUT /api/v1/assets/{id}` | `assets:write`. Lowering exposure or criticality is decided under the organization's approval policy when it would drop an open P0/P1 finding on the asset (202, the lowered fields wait; [asset risk governance](asset-risk-governance.md)) |
+| `PATCH /api/v1/assets/{id}/crown-jewel` · `PUT /{id}/attribute-sources/{attribute}/lock` | `assets:write`; unmarking a crown jewel and locking a lower exposure or criticality follow the same decision |
+| `POST /api/v1/assets/{id}/risk-impact` · `GET /{id}/risk-requests/pending` | `assets:write` (preview) · `assets:read` (the pending request); the asset must be in the caller's data scope (404 otherwise) |
+| `POST /api/v1/assets/{id}/risk-requests/{request_id}/approve` · `/reject` | `findings:approve`, the asset in the caller's data scope; the requester and the asset's owners never approve (403); step-up when the tier asks for it |
+| `POST /api/v1/assets/{id}/risk-requests/{request_id}/cancel` | `assets:write`, the requester only |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` + data scope. Refused with 409 (`asset_has_findings`) while the asset has any finding (archive it instead); otherwise a soft delete, audited `asset.deleted` (see [asset-deletion.md](asset-deletion.md)) |
 
 #### Business units (`/api/v1/business-units`)
@@ -349,6 +353,9 @@ and SBOM import write it.
 | `POST /api/v1/lifecycle-sub-statuses` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/reactivate` | `findings:lifecycles:write` |
 | `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
 | `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
+| `GET /api/v1/findings/{id}/retest-check` | `findings:read` (finding data scope) |
+| `PUT` · `DELETE /api/v1/findings/{id}/retest-check`, `POST /api/v1/findings/{id}/retest-check/test` | `findings:retest_checks:write` (finding data scope; [retest checks](finding-retest-checks.md)) |
+| `POST /api/v1/findings/{id}/retest-check/approve` | `scope:approve` + step-up; never the author of the version |
 
 > Organization configuration (no finding data), tenant from the token; another
 > organization's sub-status, lifecycle or version is 404. A lifecycle can only
@@ -1463,6 +1470,27 @@ one needs `team:groups:write` on top of `assets:write`/`assets:delete`.
   colleague) shows its assignee only the findings in the assignee's own
   scope. Changing the campaign still needs every one of its findings in
   their own scope.
+
+- The **owner of a remediation task** (`remediation_tasks.assignee_user_id`,
+  or an active, unexpired member of `assignee_group_id`) sees exactly the
+  task's active primary findings while the task is live (open, in progress,
+  verifying, on hold) and the finding's asset is not hidden from them
+  (`filterspec.TaskOwnerFindingSQL`; `DataScopeRepository.FindingIDsOwnedViaTask`).
+  It is computed on every read, nothing is stored: it ends when the owner
+  changes, the finding leaves the task, the task closes, or the team
+  membership ends, expires or is suspended. It covers the task's own views
+  (members, counters, filters), the by-id routes of the fix workflow (reads,
+  comments, status change, manual evidence, proof-of-fix and retest
+  requests; `middleware.fixWorkRoute`, flagged with `shared.WithTaskOwnerView`
+  and re-checked by the services), the fix-claim ownership (`FixAppliers`),
+  and the bulk status path for the fix moves only. A status change through
+  the relation is limited to confirmed, in progress and fix applied
+  (`TransitionFacts.TaskOwnerOnly`, block `not_in_scope`) and is audited
+  `remediation_task.owner_moved_finding`. Everything else (false positive,
+  accepted risk, resolve, severity, classify, tags, assign, approvals,
+  tickets, delete, the findings list, export and dashboards) still needs the
+  finding in the actor's own scope. Pentest findings keep their
+  campaign-membership rule; an API key never gets the relation.
 
 What the assignee may do is their role's. The view is computed from the
 assignment on every request, so unassigning removes it at once; assignments

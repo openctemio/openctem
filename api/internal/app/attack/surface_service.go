@@ -135,6 +135,7 @@ type SurfaceService struct {
 	attribution AttributionRecords
 	findingRisk FindingRiskCounter
 	dataScope   *datascope.Enforcer // Layer 2 narrowing of member-facing reads (nil = unrestricted)
+	chains      *chainCache         // per-tenant exposure-chain results, shared by every reader
 	logger      *logger.Logger
 }
 
@@ -143,6 +144,7 @@ func NewSurfaceService(assetRepo asset.Repository, relRepo asset.RelationshipRep
 	return &SurfaceService{
 		assetRepo: assetRepo,
 		relRepo:   relRepo,
+		chains:    newChainCache(chainCacheTTL),
 		logger:    log.With("service", "attack_surface"),
 	}
 }
