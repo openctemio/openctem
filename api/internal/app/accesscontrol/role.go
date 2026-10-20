@@ -502,7 +502,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 			return nil, err
 		}
 	}
-	if err := editor.mayCarry(newPerms, hasFullDataAccess); err != nil {
+	if err := editor.mayEdit(r, newPerms, hasFullDataAccess); err != nil {
 		return nil, err
 	}
 
@@ -1245,7 +1245,7 @@ func (s *RoleService) guardDirectRolePrivilege(ctx context.Context, r *roledom.R
 	if s.stepUp == nil || r.TenantID() == nil || editor.system {
 		return nil
 	}
-	if permission.IsPrivilegedRole(r.Permissions(), r.HasFullDataAccess()) || !permission.IsPrivilegedRole(newPerms, fullData) {
+	if !permission.GainsStepUpGrade(r.Permissions(), r.HasFullDataAccess(), newPerms, fullData) {
 		return nil
 	}
 	holders, err := s.roleRepo.ListRoleMembers(ctx, *r.TenantID(), r.ID())
@@ -1265,7 +1265,7 @@ func (s *RoleService) guardBoundRolePrivilege(ctx context.Context, r *roledom.Ro
 	if s.bindings == nil || r.TenantID() == nil || editor.system {
 		return nil
 	}
-	if permission.IsPrivilegedRole(r.Permissions(), r.HasFullDataAccess()) || !permission.IsPrivilegedRole(newPerms, fullData) {
+	if !permission.GainsStepUpGrade(r.Permissions(), r.HasFullDataAccess(), newPerms, fullData) {
 		return nil
 	}
 	bound, err := s.bindings.ListRoleGroups(ctx, asSharedID(*r.TenantID()), asSharedID(r.ID()))

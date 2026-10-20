@@ -51,6 +51,7 @@ var (
 		UPDATE commands
 		SET status = 'pending', sensor_id = NULL, acknowledged_at = NULL, started_at = NULL,
 		    lease_expires_at = NULL, window_closed_at = NULL, window_policy_ids = NULL,
+		    requeue_count = requeue_count + 1,
 		    scheduled_at = $5, window_hold = $6,
 		    expires_at = ` + fmt.Sprintf(expiryAfterWait, "$7", "$5") + `,
 		    error_message = $8
