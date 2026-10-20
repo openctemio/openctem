@@ -135,7 +135,11 @@ func newJiraInbound(t *testing.T) *jiraInbound {
 	j.jiraA, j.jiraB = mk(j.tenantA), mk(j.tenantB)
 
 	j.repo = &flakyFindings{}
-	h := handler.NewJiraWebhookHandler(jira.NewSyncService(j.repo, nil, logger.NewNop()), nil, logger.NewNop())
+	syncSvc := jira.NewSyncService(j.repo, nil, logger.NewNop())
+	// An inbound delivery resolves its integration's site and projects first;
+	// without them it is ignored before any lookup.
+	syncSvc.SetMappingResolver(siteMapping{site: "https://x.atlassian.net", project: "OPS"})
+	h := handler.NewJiraWebhookHandler(syncSvc, nil, logger.NewNop())
 	j.handler = h
 	h.SetDeliveryVerifier(svc)
 	j.guard = &memDeliveries{seen: map[string]bool{}}

@@ -29,8 +29,8 @@ func (r *fakeTicketRepo) Create(_ context.Context, t *remediation.CampaignTicket
 	return nil
 }
 
-func (r *fakeTicketRepo) GetByIssueKey(_ context.Context, _ shared.ID, _, _ string) (*remediation.CampaignTicket, error) {
-	if r.existing != nil {
+func (r *fakeTicketRepo) GetByIssue(_ context.Context, _ shared.ID, _, key, url string) (*remediation.CampaignTicket, error) {
+	if r.existing != nil && r.existing.IssueKey() == key && strings.EqualFold(r.existing.IssueURL(), url) {
 		return r.existing, nil
 	}
 	return nil, remediation.ErrCampaignTicketNotFound
@@ -219,7 +219,7 @@ func TestHandleEpicStatusChange_DoneClaimsTasksFixedNeverCompletes(t *testing.T)
 	tasks.live = []shared.ID{t1, t2}
 	tasks.refusals = map[shared.ID][]string{t2: {"f-1: not your finding"}}
 
-	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "Done", "acct-1")
+	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "https://x.atlassian.net", "SEC-7", "Done", "acct-1")
 	if err != nil || !handled || len(refusals) != 1 || refusals[0] != "f-1: not your finding" {
 		t.Fatalf("Done: refusals=%v handled=%v err=%v", refusals, handled, err)
 	}
@@ -230,11 +230,18 @@ func TestHandleEpicStatusChange_DoneClaimsTasksFixedNeverCompletes(t *testing.T)
 		t.Fatalf("campaign status = %s, want still active", c.Status())
 	}
 	tasks.claimed = nil
-	if _, handled, _ := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "In Progress", ""); !handled || len(tasks.claimed) != 0 {
+	if _, handled, _ := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "https://x.atlassian.net", "SEC-7", "In Progress", ""); !handled || len(tasks.claimed) != 0 {
 		t.Fatalf("In Progress on the epic: handled=%v claimed=%v", handled, tasks.claimed)
 	}
+	// The same key on another Jira site (another integration) is not this
+	// campaign's epic; nor is a delivery that names no site.
+	for _, site := range []string{"https://y.atlassian.net", ""} {
+		if _, handled, _ := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), site, "SEC-7", "Done", ""); handled || len(tasks.claimed) != 0 {
+			t.Fatalf("site %q: handled=%v claimed=%v, want the epic of x.atlassian.net untouched", site, handled, tasks.claimed)
+		}
+	}
 	other := newTicketSvc(c, &fakeTicketRepo{}, nil)
-	if _, handled, _ := other.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-8", "Done", ""); handled {
+	if _, handled, _ := other.HandleEpicStatusChange(context.Background(), c.TenantID(), "https://x.atlassian.net", "SEC-8", "Done", ""); handled {
 		t.Fatal("an issue that is no campaign's epic was handled")
 	}
 }
@@ -251,7 +258,7 @@ func TestHandleEpicStatusChange_FailureCommentIsFixed(t *testing.T) {
 	tk := shared.NewID()
 	tasks.live = []shared.ID{tk}
 	tasks.claimErr = errors.New("pq: relation internal_secret_table does not exist")
-	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-9", "Done", "")
+	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "https://x.atlassian.net", "SEC-9", "Done", "")
 	if !handled || err != nil || len(refusals) != 1 || refusals[0] != tk.String()+": "+campaignEpicClaimFailed {
 		t.Fatalf("refusals=%q handled=%v err=%v, want the fixed message", refusals, handled, err)
 	}

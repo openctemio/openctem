@@ -35,8 +35,17 @@ var ErrProjectNotConfigured = fmt.Errorf("%w: the issue is in a Jira project tha
 // Linking (and so syncing) is limited to them: the integration's account may
 // see many more projects than security work belongs in.
 func (s *SyncService) allowedProjects(ctx context.Context, tenantID, integrationID shared.ID) (map[string]bool, error) {
+	m, err := s.mappingFor(ctx, tenantID, integrationID)
+	if err != nil {
+		return nil, err
+	}
+	return s.allowedProjectsOf(ctx, tenantID, integrationID, m)
+}
+
+// allowedProjectsOf is allowedProjects with the integration's mapping
+// already loaded.
+func (s *SyncService) allowedProjectsOf(ctx context.Context, tenantID, integrationID shared.ID, m MappingConfig) (map[string]bool, error) {
 	allowed := map[string]bool{}
-	m := s.resolveMapping(ctx, tenantID)
 	if m.DefaultProjectKey != "" {
 		allowed[strings.ToUpper(m.DefaultProjectKey)] = true
 	}
@@ -65,8 +74,9 @@ func (s *SyncService) SetLinkStore(r ticketlink.Repository) { s.links = r }
 var ErrLinksUnavailable = fmt.Errorf("%w: linking an issue is not available", shared.ErrValidation)
 
 // LinkExistingIssue links an existing issue (a key, or a browse URL on the
-// integration's site) to a finding of the tenant.
-func (s *SyncService) LinkExistingIssue(ctx context.Context, tenantID, findingID shared.ID, issue string, by *shared.ID) (*ticketlink.Link, error) {
+// integration's site) to a finding of the tenant. integrationID names the
+// tenant's Jira integration the issue is on (zero: the default one).
+func (s *SyncService) LinkExistingIssue(ctx context.Context, tenantID, findingID, integrationID shared.ID, issue string, by *shared.ID) (*ticketlink.Link, error) {
 	if s.links == nil {
 		return nil, ErrLinksUnavailable
 	}
@@ -74,7 +84,7 @@ func (s *SyncService) LinkExistingIssue(ctx context.Context, tenantID, findingID
 	if err != nil {
 		return nil, err
 	}
-	client, err := s.resolveClient(ctx, tenantID)
+	client, err := s.clientFor(ctx, tenantID, integrationID)
 	if err != nil {
 		return nil, err
 	}

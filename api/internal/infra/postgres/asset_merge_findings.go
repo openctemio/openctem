@@ -76,6 +76,10 @@ var findingMergeRefs = []mergeRef{
 	// survivor keeps that one (an unsubscribe on the survivor wins).
 	{table: "work_item_subscriptions", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"user_id"}}}},
+	// One retest check per finding: the survivor's own check stands, a loser's
+	// is dropped when the survivor has one and moves otherwise.
+	{table: "finding_retest_checks", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{}}},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},

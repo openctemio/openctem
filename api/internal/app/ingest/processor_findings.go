@@ -1038,14 +1038,16 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 // clientPartialFingerprints is a report's partial fingerprints without the
 // keys only the server writes: the pre-composite base an asset merge re-keys
 // by (composite/*) and the sensor's own fingerprint (sensor/*). A report that
-// set them could choose the key its finding takes after a merge.
+// set them could choose the key its finding takes after a merge. The
+// producer's keyed hash of a raw secret (secretHMAC/v1) is dropped too: it
+// has done its work as an identity input and is never stored.
 func clientPartialFingerprints(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(in))
 	for k, v := range in {
-		if vulnerability.IsServerPartialFingerprintKey(k) {
+		if vulnerability.IsServerPartialFingerprintKey(k) || vulnerability.IsSecretHashPartialFingerprintKey(k) {
 			continue
 		}
 		out[k] = v
@@ -1572,7 +1574,13 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	}
 	if ctisFinding.Secret.MaskedValue != "" {
 		f.SetSecretMaskedValue(ctisFinding.Secret.MaskedValue)
-		f.SetSecretFingerprint(p.secretFingerprinter.Fingerprint(f.TenantID(), ctisFinding.Secret.MaskedValue))
+	}
+	// The rotation group key is derived from this fingerprint, so it comes
+	// only from the keyed hash of the raw value, never from a mask: every
+	// short secret masks to the same word. Without one the finding gets no
+	// rotation group of its own making.
+	if h := p.rawSecretHMAC(f.TenantID(), ctisFinding); h != "" {
+		f.SetSecretFingerprint(h)
 	}
 	if ctisFinding.Secret.InHistoryOnly {
 		f.SetSecretInHistoryOnly(true)

@@ -13,9 +13,8 @@ import (
 
 // Factory creates LLM providers based on configuration.
 type Factory struct {
-	platformConfig          config.AITriageConfig
-	encryptor               crypto.Encryptor
-	requireEncryptedAPIKeys bool // SECURITY: When true, rejects plaintext API keys
+	platformConfig config.AITriageConfig
+	encryptor      crypto.Encryptor
 
 	// limiters enforce AI_RATE_LIMIT_RPM. One limiter per budget scope,
 	// shared process-wide, so the cap holds across concurrent triage jobs
@@ -62,16 +61,15 @@ func NewFactory(cfg config.AITriageConfig) *Factory {
 }
 
 // NewFactoryWithEncryption creates a new LLM provider factory with encryption support.
-// SECURITY: This factory requires encrypted API keys (enc:v1: prefix) by default.
+// SECURITY: organizations' keys are stored encrypted and must decrypt with it.
 func NewFactoryWithEncryption(cfg config.AITriageConfig, encryptor crypto.Encryptor) *Factory {
 	if encryptor == nil {
 		encryptor = crypto.NewNoOpEncryptor()
 	}
 	return &Factory{
-		platformConfig:          cfg,
-		encryptor:               encryptor,
-		requireEncryptedAPIKeys: true, // SECURITY: Enforce encryption by default
-		limiters:                newLimiterRegistry(),
+		platformConfig: cfg,
+		encryptor:      encryptor,
+		limiters:       newLimiterRegistry(),
 	}
 }
 
@@ -95,30 +93,17 @@ func (f *Factory) rateLimited(p Provider, err error, scope string) (Provider, er
 	return newRateLimitedProvider(p, f.limiters.get(scope, rpm), rpm, DefaultRateLimitMaxWait), nil
 }
 
-// decryptAPIKey decrypts an API key if it's encrypted (has enc:v1: prefix).
-// SECURITY: If requireEncryptedAPIKeys is true, rejects plaintext keys.
+// decryptAPIKey decrypts an organization's stored key (the ciphertext in
+// tenant_ai_settings.key_enc). SECURITY: with encryption required, a value that
+// does not decrypt is refused; there is no plaintext fallback.
 func (f *Factory) decryptAPIKey(key string) (string, error) {
 	if key == "" {
 		return "", nil
 	}
-
-	// Check for encryption prefix
-	if !strings.HasPrefix(key, "enc:v1:") {
-		// SECURITY: Reject plaintext keys if encryption is required
-		if f.requireEncryptedAPIKeys {
-			return "", fmt.Errorf("API key must be encrypted (missing enc:v1: prefix)")
-		}
-		// Legacy mode: allow plaintext (deprecated)
-		return key, nil
-	}
-
-	// Remove prefix and decrypt
-	ciphertext := strings.TrimPrefix(key, "enc:v1:")
-	plaintext, err := f.encryptor.DecryptString(ciphertext)
+	plaintext, err := f.encryptor.DecryptString(strings.TrimPrefix(key, "enc:v1:"))
 	if err != nil {
 		return "", fmt.Errorf("failed to decrypt API key: %w", err)
 	}
-
 	return plaintext, nil
 }
 
@@ -236,7 +221,9 @@ func (f *Factory) build(spec Spec) (Provider, error) {
 
 // createBYOKProvider creates a provider using tenant's own API key.
 func (f *Factory) createBYOKProvider(settings tenant.AISettings, scope string) (Provider, error) {
-	if settings.APIKey == "" {
+	// An OpenAI-compatible server may need no key (the settings allow that);
+	// every other provider does.
+	if settings.APIKey == "" && settings.Provider != tenant.LLMProviderOpenAICompatible {
 		return nil, fmt.Errorf("%w: tenant API key not configured", ErrProviderNotConfigured)
 	}
 

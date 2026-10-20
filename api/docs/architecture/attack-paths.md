@@ -31,7 +31,9 @@ The direction follows `api/configs/relationship-types.yaml`: for `A protected_by
 ## Full result, one cache
 
 The exposure-chain computation returns every chain. The result is cached per
-tenant for a short time with concurrent callers sharing one computation. The
+tenant for 5 minutes (`chain_cache.go`) with concurrent callers sharing one
+computation under a 30 second deadline. The cache is keyed by tenant id and holds
+the unscoped result; each reader gets its own copy of the chain list. The
 HTTP endpoint, the MCP tool, the priority oracle and threat-model generation all
 read the same cache; only the HTTP and MCP responses apply a row cap, after the
 caller's data scope.
