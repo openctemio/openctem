@@ -2073,6 +2073,7 @@ function DetailPageSkeleton() {
  * settings.
  */
 export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) {
+  const { t } = useTranslation()
   const router = useRouter()
 
   // Reactive URL params for shareable links
@@ -2208,13 +2209,13 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
     setShowDeleteDialog(false)
     setIsDeleting(true)
     // Refused when the repository has findings: the toast offers Archive.
-    const result = await deleteAssetSafely(repository.id, repository.name, () => mutateRepo())
+    const result = await deleteAssetSafely(repository.id, repository.name, () => mutateRepo(), t)
     if (result === 'deleted') {
       router.push('/assets?types=repository')
       return
     }
     setIsDeleting(false)
-  }, [repository, router, mutateRepo])
+  }, [repository, router, mutateRepo, t])
 
   // Loading state
   if (repoLoading) {
@@ -2392,7 +2393,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                 open={showDeleteDialog}
                 onOpenChange={setShowDeleteDialog}
                 assetName={repository.name}
-                typeName="Repository"
+                typeName={t('assets.repository.typeName', 'repository')}
                 onConfirm={handleDelete}
               />
             </div>

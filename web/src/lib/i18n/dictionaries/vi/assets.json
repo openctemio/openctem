@@ -1017,5 +1017,22 @@
   "assets.groups.detail.severityTitle": "Phát hiện đang mở theo mức độ",
   "assets.groups.detail.severityDesc": "Cùng các phát hiện được đếm cho nhóm; mỗi dòng mở danh sách tương ứng",
   "assets.groups.detail.typesTitle": "Tài sản theo loại",
-  "assets.groups.detail.typesDesc": "Các tài sản thành viên của nhóm theo loại"
+  "assets.groups.detail.typesDesc": "Các tài sản thành viên của nhóm theo loại",
+  "assets.external.typeName": "tài sản bên ngoài",
+  "assets.repository.typeName": "kho mã nguồn",
+  "assets.safeDelete.archivedOne": "Đã lưu trữ 1 tài sản; các phát hiện được giữ lại",
+  "assets.safeDelete.archived": "Đã lưu trữ {count} tài sản; các phát hiện được giữ lại",
+  "assets.safeDelete.archiveFailedOne": "Không thể lưu trữ 1 tài sản",
+  "assets.safeDelete.archiveFailed": "Không thể lưu trữ {count} tài sản",
+  "assets.safeDelete.deleted": "Đã xóa {name}",
+  "assets.safeDelete.refused": "{name} chưa bị xóa vì có phát hiện. Hãy lưu trữ để ẩn nó và giữ lịch sử phát hiện.",
+  "assets.safeDelete.refusedCount": "{name} chưa bị xóa vì có {count} phát hiện. Hãy lưu trữ để ẩn nó và giữ lịch sử phát hiện.",
+  "assets.safeDelete.archiveAction": "Lưu trữ",
+  "assets.safeDelete.deleteFailed": "Không thể xóa {name}",
+  "assets.safeDelete.bulkDeletedOne": "Đã xóa 1 tài sản",
+  "assets.safeDelete.bulkDeleted": "Đã xóa {count} tài sản",
+  "assets.safeDelete.bulkRefusedOne": "1 tài sản chưa bị xóa vì có phát hiện. Hãy lưu trữ để giữ lịch sử phát hiện.",
+  "assets.safeDelete.bulkRefused": "{count} tài sản chưa bị xóa vì có phát hiện. Hãy lưu trữ để giữ lịch sử phát hiện.",
+  "assets.safeDelete.bulkFailedOne": "Không thể xóa 1 tài sản",
+  "assets.safeDelete.bulkFailed": "Không thể xóa {count} tài sản"
 }

@@ -21,7 +21,7 @@ import type { AssetTypeRegistry } from '@/features/asset-types/lib/asset-registr
 import { AssetFormDialogShared } from '../asset-form-dialog-shared'
 import { AssetDeleteDialogShared } from '../asset-delete-dialog-shared'
 import { createAsset, updateAsset } from '../../hooks/use-assets'
-import { deleteAssetSafely } from '../../lib/safe-delete'
+import { archiveAndReport, deleteAssetSafely } from '../../lib/safe-delete'
 import { toastIfDuplicateAsset } from '../../lib/duplicate-asset'
 import { createInputFromForm, formFieldsForType, updateInputFromForm } from '../../lib/type-form'
 import type { Asset } from '../../types'
@@ -130,12 +130,23 @@ export function useInventoryAssetForms(
     if (!deleting) return
     setSubmitting(true)
     try {
-      const result = await deleteAssetSafely(deleting.id, deleting.name, onChanged)
+      const result = await deleteAssetSafely(deleting.id, deleting.name, onChanged, t)
       if (result !== 'failed') setDeleting(null)
     } finally {
       setSubmitting(false)
     }
-  }, [deleting, onChanged])
+  }, [deleting, onChanged, t])
+
+  const confirmArchive = useCallback(async () => {
+    if (!deleting) return
+    setSubmitting(true)
+    try {
+      const res = await archiveAndReport([deleting.id], onChanged, t)
+      if (res.failed.length === 0) setDeleting(null)
+    } finally {
+      setSubmitting(false)
+    }
+  }, [deleting, onChanged, t])
 
   const dialogs = (
     <>
@@ -169,8 +180,10 @@ export function useInventoryAssetForms(
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
         assetName={deleting?.name}
-        typeName="asset"
-        onConfirm={() => void confirmDelete()}
+        typeName={t('assets.formsHost.asset', 'asset')}
+        findingCount={deleting?.findingCount}
+        onArchive={confirmArchive}
+        onConfirm={confirmDelete}
         isSubmitting={submitting}
       />
     </>
