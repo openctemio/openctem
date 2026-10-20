@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -9,8 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -24,16 +23,29 @@ import (
 // as the anchor insert. Verification, classification and rebaseline start
 // from the newest anchor, so the remaining chain still verifies end to end.
 
-// ErrNoAuditArchiveDir means retention is configured without an archive
-// location. Nothing is deleted without an archive (fail safe).
-var ErrNoAuditArchiveDir = errors.New("audit retention needs AUDIT_ARCHIVE_DIR; nothing was pruned")
+// ErrNoAuditArchiveStore means retention has no storage provider to archive
+// to. Nothing is deleted without an archive (fail safe).
+var ErrNoAuditArchiveStore = errors.New("audit retention has no archive storage; nothing was pruned")
+
+// ArchiveNamespace is the fixed storage namespace of the audit archives (not a
+// tenant id, so an organization's storage erase never touches it).
+const ArchiveNamespace = "audit-archive"
+
+// ArchiveStore is the part of the storage provider (local filesystem or an
+// S3-compatible bucket, STORAGE_PROVIDER) the archives are written through
+// (attachment.FileStorage).
+type ArchiveStore interface {
+	Upload(ctx context.Context, namespace, filename, contentType string, r io.Reader) (key string, err error)
+	Delete(ctx context.Context, namespace, key string) error
+}
 
 // RetentionConfig configures one retention run.
 type RetentionConfig struct {
 	// RetentionDays below auditdom.MinAuditRetentionDays is raised to it.
 	RetentionDays int
-	// ArchiveDir receives <tenant>/audit-<first>-<last>-<time>.jsonl.gz.
-	ArchiveDir string
+	// Store receives <tenant>-audit-<first>-<last>-<time>.jsonl.gz in
+	// ArchiveNamespace. Nil: nothing is pruned.
+	Store ArchiveStore
 	// BatchSize is the number of entries pruned per transaction (default 1000).
 	BatchSize int
 	// Now is the clock (tests); zero means time.Now.
@@ -75,8 +87,8 @@ func (s *AuditService) PruneExpiredChains(ctx context.Context, cfg RetentionConf
 	if !ok {
 		return res, nil
 	}
-	if cfg.ArchiveDir == "" {
-		return res, ErrNoAuditArchiveDir
+	if cfg.Store == nil {
+		return res, ErrNoAuditArchiveStore
 	}
 	tenants, err := repo.ChainTenantsWithEntriesBefore(ctx, cfg.cutoff())
 	if err != nil {
@@ -102,8 +114,8 @@ func (s *AuditService) PruneChain(ctx context.Context, tenantID shared.ID, cfg R
 	if !ok {
 		return 0, nil, nil
 	}
-	if cfg.ArchiveDir == "" {
-		return 0, nil, ErrNoAuditArchiveDir
+	if cfg.Store == nil {
+		return 0, nil, ErrNoAuditArchiveStore
 	}
 	batch := cfg.BatchSize
 	if batch <= 0 {
@@ -116,7 +128,7 @@ func (s *AuditService) PruneChain(ctx context.Context, tenantID shared.ID, cfg R
 		if err := ctx.Err(); err != nil {
 			return total, archives, err
 		}
-		n, path, err := s.pruneChainBatch(ctx, repo, tenantID, before, batch, cfg.ArchiveDir, cfg.clock())
+		n, path, err := s.pruneChainBatch(ctx, repo, tenantID, before, batch, cfg.Store, cfg.clock())
 		if err != nil {
 			return total, archives, fmt.Errorf("prune chain %s: %w", tenantID, err)
 		}
@@ -144,19 +156,24 @@ func (c RetentionConfig) cutoff() time.Time {
 }
 
 func (s *AuditService) pruneChainBatch(ctx context.Context, repo auditdom.ChainRetentionRepository, tenantID shared.ID,
-	before time.Time, batch int, dir string, now func() time.Time,
+	before time.Time, batch int, store ArchiveStore, now func() time.Time,
 ) (int, string, error) {
 	entries, err := repo.ChainPrefixOlderThan(ctx, tenantID, before, batch)
 	if err != nil || len(entries) == 0 {
 		return 0, "", err
 	}
 	first, last := entries[0], entries[len(entries)-1]
-	path := filepath.Join(dir, tenantID.String(),
-		fmt.Sprintf("audit-%020d-%020d-%s.jsonl.gz", first.Entry.ChainPosition, last.Entry.ChainPosition, now().UTC().Format("20060102T150405Z")))
-	sum, err := writeAuditArchive(path, tenantID, entries)
+	name := fmt.Sprintf("%s-audit-%020d-%020d-%s.jsonl.gz", tenantID.String(),
+		first.Entry.ChainPosition, last.Entry.ChainPosition, now().UTC().Format("20060102T150405Z"))
+	data, sum, err := encodeAuditArchive(tenantID, entries)
 	if err != nil {
 		return 0, "", err
 	}
+	key, err := store.Upload(ctx, ArchiveNamespace, name, "application/gzip", bytes.NewReader(data))
+	if err != nil {
+		return 0, "", fmt.Errorf("store archive: %w", err)
+	}
+	path := ArchiveNamespace + "/" + key
 
 	anchor := auditdom.ChainAnchor{
 		TenantID:          tenantID,
@@ -179,7 +196,7 @@ func (s *AuditService) pruneChainBatch(ctx context.Context, repo auditdom.ChainR
 		}
 	}
 	if err := repo.PruneChainPrefix(ctx, anchor, ids); err != nil {
-		_ = os.Remove(path)
+		_ = store.Delete(ctx, ArchiveNamespace, key)
 		if errors.Is(err, auditdom.ErrChainPruneConflict) {
 			s.logger.Warn("audit chain changed while pruning; retrying next run", "tenant_id", tenantID.String())
 			return 0, "", nil
@@ -192,25 +209,12 @@ func (s *AuditService) pruneChainBatch(ctx context.Context, repo auditdom.ChainR
 	return len(entries), path, nil
 }
 
-// writeAuditArchive writes the entries as gzip JSONL (0600, directory 0700),
-// syncs the file to disk and returns the SHA-256 of the file bytes.
-func writeAuditArchive(path string, tenantID shared.ID, entries []auditdom.PrunableEntry) (string, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return "", fmt.Errorf("create archive dir: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return "", fmt.Errorf("create archive: %w", err)
-	}
-	ok := false
-	defer func() {
-		if !ok {
-			_ = f.Close()
-			_ = os.Remove(path)
-		}
-	}()
-	h := sha256.New()
-	zw := gzip.NewWriter(io.MultiWriter(f, h))
+// encodeAuditArchive encodes the entries as gzip JSONL and returns the bytes
+// with their SHA-256. A batch is at most BatchSize entries, so it is held in
+// memory.
+func encodeAuditArchive(tenantID shared.ID, entries []auditdom.PrunableEntry) ([]byte, string, error) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
 	enc := json.NewEncoder(zw)
 	for _, e := range entries {
 		if err := enc.Encode(archiveLine{
@@ -222,18 +226,12 @@ func writeAuditArchive(path string, tenantID shared.ID, entries []auditdom.Pruna
 			ChainedAt:     e.Entry.CreatedAt,
 			Row:           e.Row,
 		}); err != nil {
-			return "", fmt.Errorf("write archive: %w", err)
+			return nil, "", fmt.Errorf("encode archive: %w", err)
 		}
 	}
 	if err := zw.Close(); err != nil {
-		return "", fmt.Errorf("close archive: %w", err)
+		return nil, "", fmt.Errorf("close archive: %w", err)
 	}
-	if err := f.Sync(); err != nil {
-		return "", fmt.Errorf("sync archive: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("close archive: %w", err)
-	}
-	ok = true
-	return hex.EncodeToString(h.Sum(nil)), nil
+	sum := sha256.Sum256(buf.Bytes())
+	return buf.Bytes(), hex.EncodeToString(sum[:]), nil
 }

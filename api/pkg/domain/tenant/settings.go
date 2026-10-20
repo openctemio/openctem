@@ -691,6 +691,49 @@ func governmentRiskScoringPreset() RiskScoringSettings {
 	return base
 }
 
+// MinScoreFactor is the lowest value a factor score of the exposure or
+// criticality maps may take (the "not rated" criticality is exempt).
+const MinScoreFactor = 10
+
+// ValidateForSave is Validate plus the rules a new save must meet so a body
+// cannot silently zero or invert the scoring: every exposure score and every
+// rated-criticality score is at least MinScoreFactor, exposure scores do not
+// rise as exposure falls (public >= restricted >= private >= isolated), and
+// criticality scores do not rise as criticality falls (critical >= high >=
+// medium >= low). "unknown" exposure and "none" (not rated) criticality are
+// deliberately outside the ordering (the default rates them high). It is not part of Validate because Validate also
+// runs over the whole stored settings on every section's save, and a stored
+// value that predates these rules must not block unrelated saves.
+func (s *RiskScoringSettings) ValidateForSave() error {
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	e := s.ExposureScores
+	for name, v := range map[string]int{
+		"public": e.Public, "restricted": e.Restricted, "private": e.Private,
+		"isolated": e.Isolated, "unknown": e.Unknown,
+	} {
+		if v < MinScoreFactor {
+			return fmt.Errorf("%w: exposure score '%s' must be at least %d", shared.ErrValidation, name, MinScoreFactor)
+		}
+	}
+	if !(e.Public >= e.Restricted && e.Restricted >= e.Private && e.Private >= e.Isolated) {
+		return fmt.Errorf("%w: exposure scores must not increase as exposure falls (public >= restricted >= private >= isolated)", shared.ErrValidation)
+	}
+	c := s.CriticalityScores
+	for name, v := range map[string]int{
+		"critical": c.Critical, "high": c.High, "medium": c.Medium, "low": c.Low,
+	} {
+		if v < MinScoreFactor {
+			return fmt.Errorf("%w: criticality score '%s' must be at least %d", shared.ErrValidation, name, MinScoreFactor)
+		}
+	}
+	if !(c.Critical >= c.High && c.High >= c.Medium && c.Medium >= c.Low) {
+		return fmt.Errorf("%w: criticality scores must not increase as criticality falls (critical >= high >= medium >= low)", shared.ErrValidation)
+	}
+	return nil
+}
+
 // Validate validates the risk scoring settings.
 func (s *RiskScoringSettings) Validate() error {
 	sum := s.Weights.Exposure + s.Weights.Criticality + s.Weights.Findings + s.Weights.CTEM
@@ -1252,7 +1295,7 @@ func (t *Tenant) UpdateFindingCorrelationSettings(fc FindingCorrelationSettings)
 
 // UpdateRiskScoringSettings updates only the risk scoring settings.
 func (t *Tenant) UpdateRiskScoringSettings(rs RiskScoringSettings) error {
-	if err := rs.Validate(); err != nil {
+	if err := rs.ValidateForSave(); err != nil {
 		return err
 	}
 	settings := t.TypedSettings()

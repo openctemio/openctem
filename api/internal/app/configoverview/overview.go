@@ -161,6 +161,7 @@ var serverSettings = []serverSetting{
 	{env: "OPENCTEM_PLANE", group: GroupConsole, value: func(c *config.Config) string { return c.AdminPlane.Plane }},
 	{env: "ADMIN_AUDIT_SINK", group: GroupAudit, secret: true, isSet: func(c *config.Config) bool { return c.AdminAuditSink.URL != "" }},
 	{env: "AUDIT_RETENTION_DAYS", group: GroupAudit, value: func(c *config.Config) string { return strconv.Itoa(c.AuditRetention.Days) }},
+	{env: "AUDIT_RETENTION_ENABLED", group: GroupAudit, value: func(c *config.Config) string { return boolText(c.AuditRetention.Enabled) }},
 	{env: "RATE_LIMIT_ENABLED", group: GroupInstance, value: func(c *config.Config) string { return boolText(c.RateLimit.Enabled) }},
 	{env: "LOG_LEVEL", group: GroupInstance, planned: true, value: func(c *config.Config) string { return c.Log.Level }},
 	{env: "VERSION_CHECK_ENABLED", group: GroupUpdates, value: func(c *config.Config) string { return boolText(c.Worker.VersionCheckEnabled) }},

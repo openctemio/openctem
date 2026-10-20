@@ -417,12 +417,20 @@ func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionI
 	)
 
 	if h.scanService != nil {
+		// The scan acts as the person the step was authorized as (the
+		// automation's owner), never as the scan's own owner: a member's
+		// automation must not carry an administrator's wider scope. No
+		// principal, no scan.
+		if input.Principal.IsZero() {
+			return nil, fmt.Errorf("trigger_scan: the step has no person to act as")
+		}
 		run, err := h.scanService.TriggerScan(ctx, scansvc.TriggerScanExecInput{
 			TenantID:    input.TenantID.String(),
 			ScanID:      scanID,
-			TriggeredBy: "workflow:" + input.WorkflowID.String(),
+			TriggeredBy: input.Principal.String(),
 			// The run says an automation started it (research/62 P0-11); the
-			// cause in its context names the automation, its run and the node.
+			// cause in its context names the automation, its run and the node
+			// (the label reads the cause first).
 			TriggerType: scanworkflow.TriggerTypeAutomation,
 			Context:     runContextWithCause(ctx, input.TriggerData),
 		})
