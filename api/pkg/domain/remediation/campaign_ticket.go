@@ -69,9 +69,11 @@ type CampaignTicketRepository interface {
 	// GetByCampaignAndProvider returns the link for a campaign+provider, or
 	// ErrCampaignTicketNotFound.
 	GetByCampaignAndProvider(ctx context.Context, tenantID, campaignID shared.ID, provider string) (*CampaignTicket, error)
-	// GetByIssueKey returns the link for a provider issue key (the inbound
-	// direction: webhook → campaign), or ErrCampaignTicketNotFound.
-	GetByIssueKey(ctx context.Context, tenantID shared.ID, provider, issueKey string) (*CampaignTicket, error)
+	// GetByIssue returns the link for a provider issue key at its browse URL
+	// (the inbound direction: webhook → campaign; the URL names the site, so
+	// the same key on another site matches nothing), or
+	// ErrCampaignTicketNotFound.
+	GetByIssue(ctx context.Context, tenantID shared.ID, provider, issueKey, issueURL string) (*CampaignTicket, error)
 	// ListByCampaignIDs returns the links for the given campaigns, keyed by
 	// campaign id string. Used to enrich a campaign list without N+1 lookups.
 	// Campaigns with no link are simply absent from the map.

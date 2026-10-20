@@ -67,8 +67,9 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	adminID := "33333333-3333-7333-8333-333333333333"
 	intgID := "44444444-4444-7444-8444-444444444444"
 
-	exec(`INSERT INTO tenants (id, name, slug, settings) VALUES ($1, 'rekey', 'rekey', jsonb_build_object('ai', jsonb_build_object('api_key', $2::text)))`,
-		tenantID, "enc:v1:"+put("tenants.settings.ai.api_key", "sk-llm-key"))
+	exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'rekey', 'rekey')`, tenantID)
+	exec(`INSERT INTO tenant_ai_settings (tenant_id, source, provider, key_enc) VALUES ($1, 'own', 'openai', $2)`,
+		tenantID, put("tenant_ai_settings.key_enc", "sk-llm-key"))
 	exec(`INSERT INTO users (id, email) VALUES ($1, 'rekey@example.com')`, userID)
 	exec(`INSERT INTO admin_users (id, email, name) VALUES ($1, 'admin@example.com', 'Admin')`, adminID)
 
@@ -177,7 +178,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	}
 	out := map[string]string{}
 	for loc, q := range map[string]string{
-		"tenants.settings.ai.api_key":                         `SELECT settings #>> '{ai,api_key}' FROM tenants WHERE slug = 'rekey'`,
+		"tenant_ai_settings.key_enc":                          `SELECT key_enc FROM tenant_ai_settings`,
 		"integrations.credentials_encrypted":                  `SELECT credentials_encrypted FROM integrations`,
 		"integrations.metadata.webhook_secret_encrypted":      `SELECT metadata->>'webhook_secret_encrypted' FROM integrations`,
 		"integration_scm_extensions.webhook_secret_encrypted": `SELECT convert_from(webhook_secret_encrypted, 'UTF8') FROM integration_scm_extensions`,

@@ -45,10 +45,10 @@ func (r *RemediationCampaignTicketRepository) GetByCampaignAndProvider(ctx conte
 	return r.scanOne(ctx, query, tenantID.String(), campaignID.String(), provider)
 }
 
-func (r *RemediationCampaignTicketRepository) GetByIssueKey(ctx context.Context, tenantID shared.ID, provider, issueKey string) (*remediation.CampaignTicket, error) {
+func (r *RemediationCampaignTicketRepository) GetByIssue(ctx context.Context, tenantID shared.ID, provider, issueKey, issueURL string) (*remediation.CampaignTicket, error) {
 	query := "SELECT " + rctSelectCols + ` FROM remediation_campaign_tickets
-		WHERE tenant_id = $1 AND provider = $2 AND issue_key = $3`
-	return r.scanOne(ctx, query, tenantID.String(), provider, issueKey)
+		WHERE tenant_id = $1 AND provider = $2 AND issue_key = $3 AND lower(issue_url) = lower($4)`
+	return r.scanOne(ctx, query, tenantID.String(), provider, issueKey, issueURL)
 }
 
 func (r *RemediationCampaignTicketRepository) ListByCampaignIDs(ctx context.Context, tenantID shared.ID, campaignIDs []shared.ID) (map[string]*remediation.CampaignTicket, error) {
