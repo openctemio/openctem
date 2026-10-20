@@ -8,7 +8,7 @@
  * where the policy is changed.
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Cog } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
