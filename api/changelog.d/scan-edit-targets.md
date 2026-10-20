@@ -1,3 +1,0 @@
-### Fixed: editing a scan's targets and asset groups
-
-- The Edit scan wizard let you change a scan's targets, assets and asset groups, but the API had no such fields and dropped the change while reporting success. `PUT /api/v1/scans/{id}` now takes `targets`, `asset_ids` and `asset_group_ids` (omitted = unchanged). New targets pass the same checks as a new scan's, as the editor (target validation, act scope, ownership, intrusive proof, scope tier); another organization's asset group is not found; a scan must keep a target or a group. A governed scan needs approving again after its targets change. The wizard sends them only when you changed them, and shows the groups by name.
