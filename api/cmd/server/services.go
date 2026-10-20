@@ -561,9 +561,11 @@ type Services struct {
 	Session *auth.SessionService
 
 	// Core
-	Audit  *audit.AuditService
-	User   *tenantapp.UserService
-	Tenant *tenantapp.TenantService
+	Audit *audit.AuditService
+	// AuditArchive is where audit retention writes its archives (the server storage provider).
+	AuditArchive audit.ArchiveStore
+	User         *tenantapp.UserService
+	Tenant       *tenantapp.TenantService
 	// UserProvisioning creates accounts on behalf of administrators.
 	UserProvisioning *tenantapp.UserProvisioningService
 
@@ -1535,6 +1537,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	fileStorage = storage.Instrument(fileStorage, storage.BackendServer)
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
+	s.AuditArchive = fileStorage
 	s.Attachment.SetMetrics(storage.Metrics{})
 	s.Attachment.SetDirectDownloads(cfg.Storage.DirectDownload)
 	s.Attachment.SetTenantQuota(cfg.Storage.TenantQuotaMB << 20)
