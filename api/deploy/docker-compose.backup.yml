@@ -12,6 +12,10 @@
 #   docker compose -f docker-compose.yml -f docker-compose.backup.yml up -d --build
 #
 # Full guide, restore and point-in-time recovery: docs/deployment/backup-and-restore.md.
+# The image is built on the PostgreSQL image of the stack. If your data directory
+# was made by the Alpine image (postgres:17-alpine), build on that one instead and
+# set BACKUP_POSTGRES_IMAGE=postgres:17-alpine, BACKUP_IMAGE_TAG=17-alpine and
+# BACKUP_PG_UID=70 (never switch an existing data directory between the two).
 # Credentials are files, never environment variables:
 #   backup-secrets/cipher_pass         always (>= 24 characters, KEEP A COPY OFF THIS HOST)
 #   backup-secrets/s3_access_key       target s3
@@ -46,11 +50,11 @@ x-backup-mounts: &backup-mounts
 
 services:
   postgres:
-    image: openctem-postgres-backup:${POSTGRES_VERSION:-17}
+    image: openctem-postgres-backup:${BACKUP_IMAGE_TAG:-${POSTGRES_VERSION:-17}}
     build:
       context: ./backup
       args:
-        POSTGRES_VERSION: ${POSTGRES_VERSION:-17}
+        POSTGRES_IMAGE: ${BACKUP_POSTGRES_IMAGE:-postgres:${POSTGRES_VERSION:-17}}
     entrypoint: ["pg-entrypoint.sh"]
     environment:
       <<: *backup-env
@@ -58,10 +62,10 @@ services:
     volumes: *backup-mounts
     tmpfs:
       - /etc/pgbackrest:mode=0750
-      - /var/spool/pgbackrest:mode=0750,uid=999,gid=999
+      - /var/spool/pgbackrest:mode=0750,uid=${BACKUP_PG_UID:-999},gid=${BACKUP_PG_UID:-999}
 
   backup:
-    image: openctem-postgres-backup:${POSTGRES_VERSION:-17}
+    image: openctem-postgres-backup:${BACKUP_IMAGE_TAG:-${POSTGRES_VERSION:-17}}
     restart: unless-stopped
     entrypoint: ["backup-entrypoint.sh"]
     command: ["scheduler"]
@@ -72,10 +76,10 @@ services:
     volumes: *backup-mounts
     tmpfs:
       - /etc/pgbackrest:mode=0750
-      - /var/spool/pgbackrest:mode=0750,uid=999,gid=999
-      - /var/log/pgbackrest:mode=0750,uid=999,gid=999
-    networks:
-      - openctem
+      - /var/spool/pgbackrest:mode=0750,uid=${BACKUP_PG_UID:-999},gid=${BACKUP_PG_UID:-999}
+      - /var/log/pgbackrest:mode=0750,uid=${BACKUP_PG_UID:-999},gid=${BACKUP_PG_UID:-999}
+    # No network entry: the service needs only the socket volume and outbound access
+    # to the target, so it works with any base compose network layout.
     depends_on:
       postgres:
         condition: service_started
