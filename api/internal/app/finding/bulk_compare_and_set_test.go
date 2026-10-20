@@ -46,9 +46,10 @@ func TestBulkStatus_RowThatChangedSinceReadIsNotOverwritten(t *testing.T) {
 		},
 	}
 	res, err := newBulkTestService(repo).BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
-		FindingIDs: []string{ok.ID().String(), raced.ID().String()},
-		Status:     vulnerability.FindingStatusConfirmed.String(),
-		ActorID:    shared.NewID().String(),
+		FindingIDs:          []string{ok.ID().String(), raced.ID().String()},
+		Status:              vulnerability.FindingStatusConfirmed.String(),
+		ActorID:             shared.NewID().String(),
+		HasStatusPermission: true,
 	})
 	if err != nil {
 		t.Fatal(err)
