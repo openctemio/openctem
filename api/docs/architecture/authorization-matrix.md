@@ -2545,6 +2545,18 @@ organization, its members and its settings, so 000771 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
 
+**Governed classification.** `PATCH /findings/{id}/classify` (needs
+`findings:severity`) sets the CVE, CVSS, CWE and OWASP ids. A non-empty CVE is
+accepted only on a finding of type `vulnerability` (422
+`CLASSIFY_CVE_NOT_APPLICABLE` for a secret, misconfiguration, compliance, web3
+or license finding). A change of the CVE that lowers the finding's risk tier
+(it drops its KEV standing, or its P0 priority, which is derived from the CVE)
+also needs `findings:approve` (403 `CLASSIFY_LOWERS_RISK`); the tier after the
+change counts the new CVE's KEV membership and no priority class. Each change
+writes a `metadata_updated` timeline entry (`field: classification`, old and
+new values) and the audit action `finding.classified`. A request that changes
+nothing writes neither.
+
 **Split from `findings:write` (migration 001534).** `findings:severity` gates
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
 finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
