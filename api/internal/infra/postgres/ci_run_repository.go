@@ -23,7 +23,7 @@ import (
 // the upload-token lookup (the token is the credential) and the OIDC replay
 // table (global by design).
 type CIRunRepository struct {
-	db         *DB
+	db          *DB
 	limitChecks // ci_trusts
 }
 
