@@ -73,6 +73,10 @@ A restricted member sees a task through its findings in their scope: counters, d
 findings and `hidden_members` counts the others. A task with none of their findings is `404`. They may change a
 task only when `hidden_members` is 0, and every finding they name must be in their scope.
 
+The timeline is scoped the same way: an entry that names another task (a move, split or regression) loses that task's
+id, title and the move reason when the reader has no finding of it in their scope, and carries
+`other_task_hidden: true`; counts stay.
+
 ## Suggestions
 
 The generator only proposes; nothing is created until a person accepts.
