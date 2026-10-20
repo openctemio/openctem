@@ -39,6 +39,14 @@ func (r *bulkStubRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, ids []s
 	return nil
 }
 
+// UpdateStatusBatchFrom is the status-guarded write (the stub does not move
+// rows on its own, so every id counts as written).
+func (r *bulkStubRepo) UpdateStatusBatchFrom(ctx context.Context, tenantID shared.ID, ids []shared.ID, _ []vulnerability.FindingStatus,
+	status vulnerability.FindingStatus, resolution string, by *shared.ID, c vulnerability.Closure,
+) error {
+	return r.UpdateStatusBatch(ctx, tenantID, ids, status, resolution, by, c)
+}
+
 func newBulkTestService(repo vulnerability.FindingRepository) *VulnerabilityService {
 	return &VulnerabilityService{findingRepo: repo, logger: logger.NewNop()}
 }
