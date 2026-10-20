@@ -536,16 +536,18 @@ instead).
   approver's data scope and naming at most five titles; without a data-scope
   check nobody is told (`DispatchVEXRequestNotices`, `NotifyVEXRequests`).
 - **Sole member.** An organization with one person has nobody to ask. Its
-  owner may approve their own pending request
+  owner may approve their own pending false-positive request
   (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while
   the organization has exactly one active person (an active, unexpired
   membership of an active `person` account; checked in the database at
   decision time, `ScopeActorRepository.IsSoleActiveOwner`) and no member was
   suspended, offboarded, deleted, expired or demoted, and no role changed, in
   the last 7 days (`recentApproverChange`, memberships and audit log), with a fresh
-  authenticator code (`VerifyFreshTOTP`, single use) and a reason. An accepted
-  risk then ends within `vulnerability.SoloAcceptanceLimit` (7 days for P0 or
-  KEV, 45 for P1, 90 otherwise). The request carries `self_approved` and the
+  authenticator code (`VerifyFreshTOTP`, single use) and a reason. Only a
+  **false positive** can be approved this way: risk acceptance is always
+  four-eyes, so a sole member's accepted-risk request is refused with 403
+  `SELF_APPROVAL_FALSE_POSITIVE_ONLY` (audited as a refusal, no code spent)
+  and stays pending until a second member approves it. The request carries `self_approved` and the
   reason; the audit row is `finding_approval.self_approved` (high); every
   refusal is `finding_approval.self_approval_refused`; the organization's
   channels get a security alert and the backup contact
