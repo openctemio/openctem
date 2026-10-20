@@ -554,6 +554,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 	query := `
 		UPDATE commands
 		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW(),
+		    pinned_sensor_id = `+pinnedOnClaimSQL("commands")+`,
 		    lease_epoch = lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
 		    ` + clearProgressSQL + `,
 		    lease_expires_at = NOW() + make_interval(secs => $4)
@@ -718,6 +719,7 @@ func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, se
 	query := `
 		UPDATE commands c
 		SET status = 'acknowledged', sensor_id = $2, acknowledged_at = NOW(),
+		    pinned_sensor_id = `+pinnedOnClaimSQL("c")+`,
 		    lease_epoch = c.lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
 		    ` + clearProgressSQL + `,
 		    lease_expires_at = NOW() + make_interval(secs => ` + leaseParam + `)
@@ -1650,6 +1652,16 @@ func (r *CommandRepository) ReleasePendingFromUnavailableSensors(ctx context.Con
 // sensor only.
 func routedScanWork(alias string) string {
 	return alias + ".type = 'scan' AND " + alias + ".payload ? 'scan_run_id'"
+}
+
+// pinnedOnClaimSQL is the value pinned_sensor_id takes when a claim writes
+// the holder into sensor_id: a command that was already addressed to a
+// sensor (sensor_id set before the claim) and is not routed scan work keeps
+// that sensor as its pin; anything else keeps its pin as it was (NULL for
+// an unpinned command, so a lease expiry hands it to any eligible sensor).
+func pinnedOnClaimSQL(alias string) string {
+	return "CASE WHEN " + alias + ".sensor_id IS NOT NULL AND NOT (" + routedScanWork(alias) +
+		") AND " + alias + ".is_platform_job = FALSE THEN " + alias + ".sensor_id ELSE " + alias + ".pinned_sensor_id END"
 }
 
 // RecoverStuckTenantCommands returns stuck tenant commands to the pool.
