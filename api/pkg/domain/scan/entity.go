@@ -82,6 +82,13 @@ type Scan struct {
 	// list hides it) until someone saves it (SaveAsConfiguration).
 	AdHoc bool
 
+	// ManagedBy names the platform policy that owns this scan ("" for a
+	// person's scan) and ManagedKey identifies it within that policy (the
+	// capability for coverage). A managed scan is found by (ManagedBy,
+	// ManagedKey), never by name, and is changed only through its policy.
+	ManagedBy  ManagedBy
+	ManagedKey string
+
 	// Status
 	Status Status
 
@@ -897,3 +904,21 @@ func (s *Scan) Clone(newName string) *Scan {
 	clone.computeNextRunAt()
 	return clone
 }
+
+// ManagedBy is the platform policy that owns a managed scan.
+type ManagedBy string
+
+// Managed scan owners.
+const (
+	ManagedByCoverage   ManagedBy = "coverage"
+	ManagedByEnrichment ManagedBy = "enrichment"
+)
+
+// Valid reports whether m names a known policy.
+func (m ManagedBy) Valid() bool {
+	return m == ManagedByCoverage || m == ManagedByEnrichment
+}
+
+// IsManaged reports whether a platform policy owns the scan: its definition
+// is changed through that policy, not through the scan API.
+func (s *Scan) IsManaged() bool { return s.ManagedBy != "" }
