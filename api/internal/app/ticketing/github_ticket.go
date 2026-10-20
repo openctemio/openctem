@@ -2,6 +2,8 @@ package ticketing
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -180,13 +182,22 @@ func (s *GitHubTicketService) CreateTicketFromFinding(ctx context.Context, in Gi
 		return nil, fmt.Errorf("%w: failed to build GitHub client: %v", shared.ErrValidation, err)
 	}
 
-	title := issueTitle(finding)
-	body := buildIssueBody(finding)
-	labels := []string{"openctem", "security", string(finding.Severity())}
-
-	number, htmlURL, err := client.CreateIssue(ctx, owner, repo, title, body, labels)
+	// A previous attempt may have created the issue and lost the response
+	// or failed to record it: adopt the issue that carries this finding's
+	// marker instead of opening a second one.
+	bodyMarker := issueMarker(tenantID, findingID)
+	number, htmlURL, err := s.findMarkedIssue(ctx, client, owner, repo, bodyMarker)
 	if err != nil {
-		return nil, fmt.Errorf("create github issue: %w", err)
+		return nil, err
+	}
+	if number == 0 {
+		title := issueTitle(finding)
+		body := buildIssueBody(finding) + "\n\n" + bodyMarker + "\n"
+		labels := []string{"openctem", "security", string(finding.Severity())}
+		number, htmlURL, err = client.CreateIssue(ctx, owner, repo, title, body, labels)
+		if err != nil {
+			return nil, fmt.Errorf("create github issue: %w", err)
+		}
 	}
 
 	// Auto-link the created issue back onto the finding. A persist failure is
@@ -209,6 +220,46 @@ func (s *GitHubTicketService) CreateTicketFromFinding(ctx context.Context, in Gi
 		TicketURL: htmlURL,
 		LinkedAt:  time.Now().UTC(),
 	}, nil
+}
+
+// issueMarker is the hidden marker a created issue's body ends with: the
+// finding's id and a tag of its tenant (a hash, so the tenant id itself is
+// not written into the repository). A retry looks for it before creating.
+func issueMarker(tenantID, findingID shared.ID) string {
+	sum := sha256.Sum256([]byte("openctem-tenant:" + tenantID.String()))
+	return "<!-- openctem:k=finding;o=" + findingID.String() + ";t=" + hex.EncodeToString(sum[:8]) + " -->"
+}
+
+// markedIssueLister is a client that can list a repository's recent issues.
+type markedIssueLister interface {
+	RecentIssues(ctx context.Context, owner, repo, label string) ([]scm.IssueSummary, error)
+}
+
+// findMarkedIssue returns the oldest recent issue of owner/repo labeled
+// openctem whose body ends with exactly this marker (this finding of this
+// tenant), or 0. A marker of another finding or tenant never matches.
+func (s *GitHubTicketService) findMarkedIssue(ctx context.Context, client issueCreator, owner, repo, marker string) (int, string, error) {
+	l, ok := client.(markedIssueLister)
+	if !ok {
+		return 0, "", nil
+	}
+	issues, err := l.RecentIssues(ctx, owner, repo, "openctem")
+	if err != nil {
+		// Without the lookup a retry could duplicate the issue.
+		return 0, "", fmt.Errorf("look up an issue already created for this finding: %w", err)
+	}
+	number, htmlURL := 0, ""
+	for _, i := range issues { // newest first: the last match is the oldest
+		// The marker is the body's last line (finding text placed above it
+		// cannot stand in for it).
+		if i.Number > 0 && strings.HasSuffix(strings.TrimSpace(i.Body), marker) {
+			number, htmlURL = i.Number, i.HTMLURL
+		}
+	}
+	if number != 0 {
+		s.logger.Info("github: adopted the issue already created for the finding", "ticket_url", logger.SanitizeValue(htmlURL))
+	}
+	return number, htmlURL, nil
 }
 
 // SyncFindingStatus is the outbound half of GitHub Issues sync: when a finding's
