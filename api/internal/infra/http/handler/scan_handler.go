@@ -344,9 +344,14 @@ type ScanDetailResponse struct {
 	// A scheduled scan runs only with an active owner; an administrator
 	// takes ownership with POST /scans/{id}/take-ownership. Lists report
 	// missing only (no per-row membership lookup).
-	OwnerState string `json:"owner_state" enums:"ok,missing,inactive"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	// managed: a platform policy owns the scan (managed_by names it); it has
+	// no owner and is read-only here.
+	OwnerState string `json:"owner_state" enums:"ok,missing,inactive,managed"`
+	// ManagedBy names the platform policy that owns the scan (coverage,
+	// enrichment); absent on a person's scan.
+	ManagedBy string `json:"managed_by,omitempty" enums:"coverage,enrichment"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // ScanStatsResponse represents the response for scan statistics.
@@ -1477,8 +1482,12 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 	if s.CreatedBy == nil || s.CreatedBy.IsZero() {
 		ownerState = scansvc.OwnerStateMissing
 	}
+	if s.IsManaged() {
+		ownerState = scansvc.OwnerStateManaged
+	}
 	resp := &ScanDetailResponse{
 		OwnerState:            ownerState,
+		ManagedBy:             string(s.ManagedBy),
 		ID:                    s.ID.String(),
 		TenantID:              s.TenantID.String(),
 		Name:                  s.Name,

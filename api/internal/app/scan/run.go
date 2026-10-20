@@ -346,6 +346,9 @@ func (s *Service) SaveQuickScan(ctx context.Context, tenantID, scanID, name stri
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseManaged(sc); err != nil {
+		return nil, err
+	}
 	if err := sc.SaveAsConfiguration(name); err != nil {
 		return nil, err
 	}

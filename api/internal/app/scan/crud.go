@@ -849,6 +849,9 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseManaged(sc); err != nil {
+		return nil, err
+	}
 	// Editing a scan is acting on its targets: the editor must be allowed
 	// to scan every direct target (D9). Group members are filtered per run.
 	if err := s.refuseOutOfActScope(ctx, sc.TenantID, nil, sc.Targets); err != nil {
@@ -1083,6 +1086,9 @@ func (s *Service) DeleteScan(ctx context.Context, tenantID, scanID string) error
 	if err != nil {
 		return err
 	}
+	if err := refuseManaged(sc); err != nil {
+		return err
+	}
 
 	scanName := sc.Name
 
@@ -1108,6 +1114,9 @@ func (s *Service) DeleteScan(ctx context.Context, tenantID, scanID string) error
 func (s *Service) ActivateScan(ctx context.Context, tenantID, scanID string) (*scan.Scan, error) {
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseManaged(sc); err != nil {
 		return nil, err
 	}
 
@@ -1145,6 +1154,9 @@ func (s *Service) PauseScan(ctx context.Context, tenantID, scanID string) (*scan
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseManaged(sc); err != nil {
+		return nil, err
+	}
 
 	previousStatus := string(sc.Status)
 	if err := sc.Pause(); err != nil {
@@ -1167,6 +1179,9 @@ func (s *Service) PauseScan(ctx context.Context, tenantID, scanID string) (*scan
 func (s *Service) DisableScan(ctx context.Context, tenantID, scanID string) (*scan.Scan, error) {
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseManaged(sc); err != nil {
 		return nil, err
 	}
 
@@ -1228,6 +1243,11 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 
 	clone := sc.Clone(newName)
 	clone.SetCreatedBy(actor)
+	if sc.IsManaged() {
+		// The copy is a scan its owner runs: it never carries the platform's
+		// own marker tags.
+		clone.SetTags(withoutPlatformTags(clone.Tags))
+	}
 
 	if err := s.scanRepo.Create(ctx, clone); err != nil {
 		return nil, err
@@ -1391,4 +1411,15 @@ func (s *Service) DeactivateScansByScanWorkflow(ctx context.Context, scanWorkflo
 	}
 
 	return pausedCount, nil
+}
+
+// withoutPlatformTags drops the tags that mark managed scans.
+func withoutPlatformTags(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t != CoverageTag && t != EnrichmentTag {
+			out = append(out, t)
+		}
+	}
+	return out
 }
