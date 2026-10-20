@@ -55,7 +55,9 @@ func TestFixWorkRoute(t *testing.T) {
 // through the task relation.
 type taskAsserter struct{ owned map[shared.ID]bool }
 
-func (taskAsserter) AssertAsset(context.Context, shared.ID, shared.ID) error { return shared.ErrNotFound }
+func (taskAsserter) AssertAsset(context.Context, shared.ID, shared.ID) error {
+	return shared.ErrNotFound
+}
 func (taskAsserter) AssertFinding(context.Context, shared.ID, shared.ID) error {
 	return shared.ErrNotFound
 }
