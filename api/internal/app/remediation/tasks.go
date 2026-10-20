@@ -347,6 +347,7 @@ func (s *TaskService) applyScope(ctx context.Context, tenantID shared.ID, tasks 
 			hidden = 0
 		}
 		t.HiddenMembers = hidden
+		t.HiddenRelated = max(t.Counts.Related-visible.Related, 0)
 		t.Counts = visible
 		if hidden > 0 {
 			// The deadline and risk of hidden members are not the caller's
@@ -404,7 +405,7 @@ func (s *TaskService) writableTask(ctx context.Context, tenantID, taskID shared.
 	if err != nil {
 		return nil, err
 	}
-	if t.HiddenMembers > 0 {
+	if t.HasHidden() {
 		return nil, remediationdom.ErrTaskHiddenMembers
 	}
 	return t, nil

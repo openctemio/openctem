@@ -227,7 +227,18 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter) (string, []any)
 		conds = append(conds, "t.campaign_id IS NULL")
 	}
 	if f.FindingID != nil {
-		conds = append(conds, "EXISTS (SELECT 1 FROM remediation_task_members fm WHERE fm.tenant_id = t.tenant_id AND fm.task_id = t.id AND fm.left_at IS NULL AND fm.finding_id = "+next(f.FindingID.String())+")")
+		// Under a data scope the finding itself must be in scope: otherwise
+		// the filter answers, for a finding the caller cannot see, which of
+		// their visible tasks hold it.
+		p := next(f.FindingID.String())
+		scoped, scopeJoin := "", ""
+		if f.Scope != nil {
+			cond, scopeArgs := dataScopeCondAt("ff.asset_id", f.Scope, len(args)+1)
+			args = append(args, scopeArgs...)
+			scopeJoin = " JOIN findings ff ON ff.id = fm.finding_id AND ff.tenant_id = fm.tenant_id"
+			scoped = " AND " + cond
+		}
+		conds = append(conds, "EXISTS (SELECT 1 FROM remediation_task_members fm"+scopeJoin+" WHERE fm.tenant_id = t.tenant_id AND fm.task_id = t.id AND fm.left_at IS NULL AND fm.finding_id = "+p+scoped+")")
 	}
 	if f.Overdue {
 		conds = append(conds, "t.deadline IS NOT NULL AND t.deadline < NOW()")
