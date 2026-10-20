@@ -215,6 +215,34 @@ func TestActiveGate_Assets(t *testing.T) {
 		{"unrecorded outside everything", func() *asset.Asset { return f.add(t, "manual.example.net", asset.AssetTypeDomain) }, attribution.StateUnattributed},
 		{"unrecorded public IP outside everything", func() *asset.Asset { return f.add(t, "203.0.113.5", asset.AssetTypeIPAddress) }, attribution.StateUnattributed},
 		{"unrecorded private address: zones decide", func() *asset.Asset { return f.add(t, "10.0.0.5", asset.AssetTypeIPAddress) }, ""},
+		// A host is governed by what its name is, not by its type (a member
+		// chooses the type).
+		{"host named by a public DNS name outside every entry", func() *asset.Asset {
+			return f.add(t, "victim.example.org", asset.AssetTypeHost)
+		}, attribution.StateUnattributed},
+		{"host named by a public IP outside every entry", func() *asset.Asset {
+			return f.add(t, "203.0.113.9", asset.AssetTypeHost)
+		}, attribution.StateUnattributed},
+		{"host named by a public DNS name inside a scope target", func() *asset.Asset {
+			return f.add(t, "box.scoped.com", asset.AssetTypeHost)
+		}, ""},
+		{"host with a private address: zones decide", func() *asset.Asset {
+			return f.add(t, "10.0.0.77", asset.AssetTypeHost)
+		}, ""},
+		{"host with an internal-only name", func() *asset.Asset {
+			return f.add(t, "db01.corp", asset.AssetTypeHost)
+		}, ""},
+		{"host with a short name", func() *asset.Asset {
+			return f.add(t, "web01", asset.AssetTypeHost)
+		}, ""},
+		{"host recorded confirmed by a person outside scope", func() *asset.Asset {
+			a := f.add(t, "owned-host.example.org", asset.AssetTypeHost)
+			f.record(a, attribution.StateConfirmed, true)
+			return a
+		}, attribution.StateOutOfScope},
+		{"cloud resource named like an ARN is not a name", func() *asset.Asset {
+			return f.add(t, "arn:aws:s3:::bucket.example.org", asset.AssetTypeCloudAccount)
+		}, ""},
 		{"unrecorded repository: not an internet target", func() *asset.Asset {
 			return f.add(t, "github.com/org/repo", asset.AssetTypeRepository)
 		}, ""},

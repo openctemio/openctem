@@ -20,6 +20,7 @@ func (r *ScanRepository) ArchiveNeverRunOneOffs(ctx context.Context, olderThan t
 			SELECT s.id
 			FROM scans s
 			WHERE s.ad_hoc = true
+			  AND s.managed_by IS NULL
 			  AND s.archived_at IS NULL
 			  AND s.created_at < NOW() - make_interval(secs => $1)
 			  AND NOT EXISTS (
