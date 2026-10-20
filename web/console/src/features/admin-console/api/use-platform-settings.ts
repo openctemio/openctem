@@ -86,6 +86,17 @@ export function savePlatformAI(input: {
   return adminFetch<PlatformAISettings>(AI, { method: 'PUT', body: input })
 }
 
+export function saveOrgAIPolicy(input: {
+  allow_org_provider: boolean
+  reason: string
+  version: number
+}) {
+  return adminFetch<{ allow_org_provider: boolean; version: number }>(`${AI}/org-policy`, {
+    method: 'PUT',
+    body: input,
+  })
+}
+
 export function testPlatformAI() {
   return adminFetch<void>(`${AI}/test`, { method: 'POST' })
 }

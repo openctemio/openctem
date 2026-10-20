@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-19). Partly implemented: one AI data-egress policy for MCP and AI triage, failure codes, the retry contract, organization consent with Settings > AI, monthly platform budgets on by default, per-organization fair share of the platform rate limit, one rate-limit unit per finding in bulk. Designed: own-key (BYOK) and self-hosted providers, context enrichment and redaction, a structured result schema, the result card with apply actions, "Triage selected" bulk, the evaluation set |
+| Status | Accepted (2026-10-19). Partly implemented: one AI data-egress policy for MCP and AI triage, failure codes, the retry contract, organization consent with Settings > AI, monthly platform budgets on by default, per-organization fair share of the platform rate limit, one rate-limit unit per finding in bulk. Own provider (Settings > AI, `openai_compatible` base URL, write-only key, test connection, platform policy) is implemented. Designed: context enrichment and redaction, a structured result schema, the result card with apply actions, "Triage selected" bulk, the evaluation set |
 | Scope | api (`internal/app/aipolicy`, `internal/app/aitriage`, `internal/infra/llm`, tenant settings `ai`, `/api/v1/organization/settings/ai`), web (Settings > AI, the AI triage button and result) |
 | Related | RFC-016 / RFC-062 (MCP and its organization policy, the TLP limit for AI), RFC-008 (token budgets); `docs/architecture/ai-triage.md` |
 
@@ -28,7 +28,7 @@ language model. Until now:
 | D1 | AI triage is off for an organization until an organization administrator turns it on. Organizations that already used it stay on (migration, audited). |
 | D2 | Organizations may use their own key in every edition (designed). |
 | D3 | Local and self-hosted models through one OpenAI-compatible provider with a base URL (designed). |
-| D4 | A small default monthly platform budget; an own key is not counted. |
+| D4 | A small default monthly budget; it counts every organization's tokens, with the platform key or its own. |
 | D5 | Pentest content follows the same organization policy as MCP. |
 | D6 | An AI verdict never changes the priority class; it stays a suggestion (false-positive proposals go to a person). |
 | D7 | The deprecated bulk route is replaced by "Triage selected" on the same queue (designed). |
@@ -40,7 +40,7 @@ language model. Until now:
   only when its campaign is at or below the organization's TLP limit for AI
   and its lead has not turned AI off. It fails closed. MCP and AI triage
   call it; AI triage checks at request time and again in the worker.
-- **Consent**: `settings.ai.enabled_at` / `enabled_by`. The effective mode is
+- **Consent**: `tenant_ai_settings.enabled_at` / `enabled_by`. The effective mode is
   `disabled` until set. `GET/PUT /api/v1/organization/settings/ai`
   (owners and administrators, `settings:write`, a recent sign-in), audited
   as critical (`ai_settings.updated`). The worker re-checks consent, so
