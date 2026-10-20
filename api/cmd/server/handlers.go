@@ -103,6 +103,14 @@ func newPriorityRuleHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Servi
 	return h
 }
 
+// newVerificationChecklistHandler wires the checklist service with the data
+// scope enforcer and the audit log.
+func newVerificationChecklistHandler(db *sql.DB, log *logger.Logger, svc *Services) *handler.VerificationChecklistHandler {
+	h := handler.NewVerificationChecklistHandler(finding.NewVerificationChecklistService(db, svc.DataScope), log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
 // newThreatModelHandler wires the continuous-threat-modeling handler, or nil
 // when the generation service was not initialized (e.g. no database).
 func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatModelHandler {
@@ -770,7 +778,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
 		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant),
-		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
+		VerificationChecklist: newVerificationChecklistHandler(deps.DB.DB, log, svc),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
 		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log).WithDataScope(svc.DataScope),

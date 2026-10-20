@@ -455,6 +455,19 @@ its by-filter form all answer the same):
   checklist completed before a regression, or before a scan saw the finding
   again, no longer counts, so a critical finding that came back is not closed
   by one person on the proof of the previous fix.
+- **Who completed the checklist.** `PUT /api/v1/verification-checklists/{findingId}`
+  (`verification_checklists:write`) edits the items. The edit that leaves
+  every required item true records the caller as `completed_by` with
+  `completed_at`; an edit that unticks a required item clears both. A
+  notes-only edit keeps the record. This record is what the critical-tier
+  rule above reads ("completed by someone other than the person resolving").
+  The route is tenant-scoped and limited to findings in the caller's data
+  scope (an out-of-scope or other tenant's finding is a 404), edits only
+  findings that are still open (new through `fix_applied`; otherwise 400), and
+  every edit writes the audit action `finding.verification_checklist_updated`
+  (changed items, whether it is complete, who completed it; never the notes).
+  `GET` on the same path is read-only: a finding without a checklist reads as
+  an empty, incomplete one and no row is created.
 - A covered scan that no longer sees the finding, and a retest with
   `retest.auto_resolve`, close it without a person and are not affected.
 - The by-filter verify evaluates each matching finding (up to 1000 per call)
