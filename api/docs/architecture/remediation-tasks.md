@@ -59,6 +59,7 @@ manual states (on hold, canceled).
 | `GET /api/v1/remediation/tasks/{task_id}/members` | `findings:remediation:read` + `findings:read` |
 | `POST /api/v1/remediation/tasks/{task_id}/members` | `findings:remediation:write` |
 | `GET /api/v1/remediation/tasks/{task_id}/timeline` | `findings:remediation:read` |
+| `GET /api/v1/remediation/tasks/{task_id}/owner-candidates`, `GET /api/v1/remediation/tasks/owner-candidates?finding_ids=` | `findings:remediation:write` (the second also `findings:read`), query rate limit |
 | `POST /api/v1/remediation/tasks/query/preview`, `POST /api/v1/remediation/tasks/query` | `findings:remediation:write` + `findings:read`, query rate limit |
 | `GET /api/v1/remediation/tasks/{task_id}/query` | `findings:remediation:read` |
 | `POST /api/v1/remediation/tasks/{task_id}/query/{run,preview}` | `findings:remediation:write` + `findings:read`, query rate limit |
@@ -72,6 +73,29 @@ groups. Every change carries the task's `version`; a stale one answers `409`.
 A restricted member sees a task through its findings in their scope: counters, deadline and risk are over those
 findings and `hidden_members` counts the others. A task with none of their findings is `404`. They may change a
 task only when `hidden_members` is 0, and every finding they name must be in their scope.
+
+## Owner access
+
+A task owner has to be able to open the findings they are asked to fix. The owner picker calls the
+owner-candidates endpoint (for an existing task, or with `finding_ids` for a task not created yet) and shows,
+per person or team, how many of the task's open findings (on how many assets) the candidate cannot see: counts
+only, never titles; for a team, how many members lack access. People and teams with full access come first. The
+count is computed against each candidate's own data scope (their scope rows and the finding-assignee
+exception), so it stays right whatever extra ways to see a finding exist. The answer is limited to 20 entries,
+the task must be one the caller may change (a task with findings hidden from the caller is `403`), finding ids
+of the new-task form must be in the caller's scope (one `404` otherwise), and the call has the per-user query
+rate limit.
+
+Naming an owner who cannot see some of the open findings, when creating a task, changing its owner, adding
+primary findings to it, or splitting findings off to a new owner, is refused with `422` unless the caller holds
+`findings:assign` and sends `confirm_owner_access: true`. The refusal carries the counts
+(`OWNER_NEEDS_ACCESS` without the permission, `OWNER_ACCESS_CONFIRMATION_REQUIRED` without the confirmation).
+An accepted case writes `remediation_task.owner_access_extended` with the counts and the owner. An owner who is
+not changed is not judged again on an unrelated edit. In the console, a candidate with missing access shows "Needs
+access to N findings on M assets"; a viewer without `findings:assign` cannot pick them and gets "Request access",
+which leaves an internal comment on a finding of the task and grants nothing; a viewer with it sees the consent
+line and must tick it before saving. Today the task-owner picker is in the split dialog; the suggestion dialogs
+keep their own owner check.
 
 ## Suggestions
 
@@ -266,7 +290,9 @@ are in the `myWork` dictionary (en, vi).
 - `api/pkg/domain/remediation/task.go`, `task_repository.go`
 - `api/internal/infra/postgres/remediation_task_repository.go`, `remediation_claim.go` (claim conflicts)
 - `api/pkg/domain/remediation/claim.go`, `api/internal/app/remediation/claims.go`
-- `api/internal/app/remediation/tasks.go`
+- `api/internal/app/remediation/tasks.go`, `owner_access.go` (owner candidates and the owner access rule),
+  `api/internal/infra/postgres/remediation_owner_access_repository.go`,
+  `api/internal/infra/http/handler/remediation_task_owner_handler.go`
 - `api/internal/infra/http/handler/remediation_task_handler.go`, `routes/remediation.go`
 - `api/internal/infra/controller/remediation_tasks.go`
 - `api/migrations/*_remediation_suggestions.up.sql`

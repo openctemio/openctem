@@ -42,16 +42,17 @@ type TaskAssigneeChecker interface {
 
 // TaskService manages remediation tasks.
 type TaskService struct {
-	repo       remediationdom.TaskRepository
-	dataScope  *datascope.Enforcer
-	assignees  TaskAssigneeChecker
-	audit      TaskAuditLogger
-	claimer    TaskFixClaimer
-	guard      TaskBulkGuard
-	moves      TaskMoveNotifier
-	exceptions TaskExceptionRequester
-	campaigns  TaskCampaignGate
-	logger     *logger.Logger
+	repo        remediationdom.TaskRepository
+	dataScope   *datascope.Enforcer
+	assignees   TaskAssigneeChecker
+	ownerAccess remediationdom.OwnerAccessRepository
+	audit       TaskAuditLogger
+	claimer     TaskFixClaimer
+	guard       TaskBulkGuard
+	moves       TaskMoveNotifier
+	exceptions  TaskExceptionRequester
+	campaigns   TaskCampaignGate
+	logger      *logger.Logger
 
 	// Tasks from a query (query_tasks.go).
 	queries       QueryTaskRepository
@@ -125,6 +126,10 @@ type CreateTaskInput struct {
 	Deadline        *time.Time
 	// Conflicts resolves findings of another active task.
 	Conflicts remediationdom.ConflictResolution
+	// CanExtendOwnerAccess: the caller holds findings:assign. ConfirmOwnerAccess:
+	// the caller accepted that an owner without access sees the task's findings.
+	CanExtendOwnerAccess bool
+	ConfirmOwnerAccess   bool
 }
 
 // CreateTask creates a task with its findings as primary members.
@@ -149,6 +154,15 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 		return nil, err
 	}
 	if err := s.checkOwner(ctx, in.TenantID, in.AssigneeUserID, in.AssigneeGroupID); err != nil {
+		return nil, err
+	}
+	ownerGap, err := s.checkOwnerAccess(ctx, in.TenantID, ownerAccessCheck{
+		user: in.AssigneeUserID, group: in.AssigneeGroupID, canExtend: in.CanExtendOwnerAccess, confirmed: in.ConfirmOwnerAccess,
+		refs: func() ([]remediationdom.OwnerFindingRef, error) {
+			return s.ownerAccess.OpenFindingRefs(ctx, in.TenantID, members)
+		},
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := s.checkCampaignChange(ctx, in.TenantID, nil, in.CampaignID); err != nil {
@@ -195,6 +209,7 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 		WithMetadata("findings", len(members)).WithMetadata("related", len(related)).
 		WithMetadata("action_id", task.ActionID.String()).
 		WithMetadata("skipped", len(rec.Claimed.Skipped)))
+	s.auditOwnerAccess(ctx, actx, taskID, title, ownerGap, in.AssigneeUserID, in.AssigneeGroupID)
 	return task, nil
 }
 
@@ -427,6 +442,9 @@ type AddMembersInput struct {
 	Role       remediationdom.MemberRole
 	// Conflicts resolves primary findings of another active task.
 	Conflicts remediationdom.ConflictResolution
+	// CanExtendOwnerAccess and ConfirmOwnerAccess: see CreateTaskInput.
+	CanExtendOwnerAccess bool
+	ConfirmOwnerAccess   bool
 }
 
 // AddMembers adds findings to a task, as primary or related members.
@@ -448,7 +466,8 @@ func (s *TaskService) AddMembers(ctx context.Context, in AddMembersInput, actx a
 	if len(ids) > remediationdom.MaxMembersPerRequest {
 		return nil, ErrTaskTooManyFindings
 	}
-	if _, err := s.writableTask(ctx, in.TenantID, in.TaskID); err != nil {
+	cur, err := s.writableTask(ctx, in.TenantID, in.TaskID)
+	if err != nil {
 		return nil, err
 	}
 	var primary []shared.ID
@@ -457,6 +476,17 @@ func (s *TaskService) AddMembers(ctx context.Context, in AddMembersInput, actx a
 	}
 	if err := s.checkFindings(ctx, in.TenantID, ids, primary); err != nil {
 		return nil, err
+	}
+	var ownerGap OwnerGap
+	if role == remediationdom.MemberRolePrimary {
+		if ownerGap, err = s.checkOwnerAccess(ctx, in.TenantID, ownerAccessCheck{
+			user: cur.AssigneeUserID, group: cur.AssigneeGroupID, canExtend: in.CanExtendOwnerAccess, confirmed: in.ConfirmOwnerAccess,
+			refs: func() ([]remediationdom.OwnerFindingRef, error) {
+				return s.ownerAccess.OpenFindingRefs(ctx, in.TenantID, ids)
+			},
+		}); err != nil {
+			return nil, err
+		}
 	}
 	req := remediationdom.AddMembersRequest{TenantID: in.TenantID, TaskID: in.TaskID, ExpectedVersion: in.Version, FindingIDs: ids,
 		Role: role, Source: remediationdom.JoinSourceManual, ActorID: in.ActorID}
@@ -475,6 +505,7 @@ func (s *TaskService) AddMembers(ctx context.Context, in AddMembersInput, actx a
 		WithResourceName(t.Title).
 		WithMessage(fmt.Sprintf("%d finding(s) added to remediation task %q as %s", len(ids), t.Title, role)).
 		WithMetadata("findings", len(ids)).WithMetadata("role", string(role)))
+	s.auditOwnerAccess(ctx, actx, t.ID, t.Title, ownerGap, t.AssigneeUserID, t.AssigneeGroupID)
 	return t, nil
 }
 
@@ -497,6 +528,9 @@ type UpdateTaskInput struct {
 	Hold      *bool
 	Cancel    bool
 	StateNote string
+	// CanExtendOwnerAccess and ConfirmOwnerAccess: see CreateTaskInput.
+	CanExtendOwnerAccess bool
+	ConfirmOwnerAccess   bool
 }
 
 // UpdateTask changes a task's title, description, owner, deadline, campaign
@@ -512,6 +546,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 	ch := remediationdom.TaskChanges{}
 	changes := auditdom.NewChanges()
 	data := map[string]any{}
+	var ownerGap OwnerGap
 	if in.Title != nil {
 		title, terr := remediationdom.NormalizeTaskTitle(*in.Title)
 		if terr != nil {
@@ -543,6 +578,22 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 			g = *in.AssigneeGroupID
 		}
 		if err := s.checkOwner(ctx, in.TenantID, u, g); err != nil {
+			return nil, err
+		}
+		// Only a changed owner is checked: an unchanged one is not re-judged.
+		cu, cg := u, g
+		if in.AssigneeUserID == nil || idStr(u) == idStr(before.AssigneeUserID) {
+			cu = nil
+		}
+		if in.AssigneeGroupID == nil || idStr(g) == idStr(before.AssigneeGroupID) {
+			cg = nil
+		}
+		if ownerGap, err = s.checkOwnerAccess(ctx, in.TenantID, ownerAccessCheck{
+			user: cu, group: cg, canExtend: in.CanExtendOwnerAccess, confirmed: in.ConfirmOwnerAccess,
+			refs: func() ([]remediationdom.OwnerFindingRef, error) {
+				return s.ownerAccess.TaskOpenPrimaryRefs(ctx, in.TenantID, in.TaskID)
+			},
+		}); err != nil {
 			return nil, err
 		}
 		if in.AssigneeUserID != nil && idStr(u) != idStr(before.AssigneeUserID) {
@@ -607,6 +658,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(action, auditdom.ResourceTypeRemediationTask, t.ID.String()).
 		WithResourceName(t.Title).WithChanges(changes).
 		WithMessage(fmt.Sprintf("Remediation task %q updated", t.Title)))
+	s.auditOwnerAccess(ctx, actx, t.ID, t.Title, ownerGap, t.AssigneeUserID, t.AssigneeGroupID)
 	return t, nil
 }
 
