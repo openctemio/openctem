@@ -21,7 +21,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorEnrollmentToken } from '../api/use-scan-policy'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 export const SHARED_SENSOR_TOKEN_ENV = 'SENSOR_INSTANCE_ENROLLMENT_TOKEN'
@@ -187,20 +187,13 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
               onChange={(e) => setReason(e.target.value)}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-code`}>{t('admin.scanPolicy.code')}</Label>
-            <Input
-              id={`${id}-code`}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={8}
-              aria-invalid={!!codeError}
-            />
-            <StepUpCodeHint optional={codeOptional} />
-            {codeError && <p className="text-sm text-destructive">{codeError}</p>}
-          </div>
+          <StepUpCodeField
+            id={`${id}-code`}
+            value={code}
+            onChange={setCode}
+            optional={codeOptional}
+            error={codeError}
+          />
         </div>
       </ConfirmDialog>
     </>
