@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
@@ -38,6 +39,10 @@ type TaskReader interface {
 	GetTask(ctx context.Context, tenantID, taskID shared.ID) (*remediation.Task, error)
 	// OpenMemberIDs lists the task's active primary members (at most limit).
 	OpenMemberIDs(ctx context.Context, tenantID, taskID shared.ID, limit int) ([]shared.ID, error)
+	// EgressMemberIDs lists every current member of the task (primary and
+	// related, any status) for the outbound gate; an error when they cannot
+	// all be listed (the gate then fails closed).
+	EgressMemberIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error)
 }
 
 // SetTaskSources wires the task access check and the platform task reader.
@@ -78,6 +83,13 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 	}
 	if task.State == remediation.TaskStateCanceled || task.State == remediation.TaskStateArchived {
 		return nil, ErrTaskClosedForIssue
+	}
+	members, err := s.taskEgressMembers(ctx, in.TenantID, in.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.egress.Check(ctx, in.TenantID, ticketing.RouteTask, members...); err != nil {
+		return nil, err
 	}
 	existing, err := s.links.ListForTask(ctx, in.TenantID, in.TaskID)
 	if err != nil {
@@ -207,6 +219,16 @@ func (s *SyncService) SyncTaskIssue(ctx context.Context, tenantID, taskID shared
 	}
 	if string(task.State) == link.LastPushedState {
 		return nil
+	}
+	members, err := s.taskEgressMembers(ctx, tenantID, taskID)
+	if err != nil {
+		return err
+	}
+	if ok, err := s.egressAllowed(ctx, tenantID, ticketing.RouteStatusSync, members...); !ok {
+		if err != nil {
+			return err
+		}
+		return s.links.RecordSync(ctx, tenantID, link.ID, link.LastStatus, "not sent: refused by the outbound gate", time.Now().UTC())
 	}
 	client, err := s.resolveClient(ctx, tenantID)
 	if err != nil {

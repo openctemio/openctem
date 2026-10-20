@@ -32,7 +32,7 @@ describe('PlatformSensorProofForm', () => {
     const confirm = screen.getByRole('button', { name: 'Confirm' })
     expect(confirm).toBeDisabled()
     await user.type(screen.getByLabelText('Reason'), 'public cloud')
-    await user.type(screen.getByLabelText('Code from your authenticator'), '123456')
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(confirm)
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(true, 'public cloud', '123456'))
   })

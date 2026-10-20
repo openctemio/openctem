@@ -1,0 +1,7 @@
+{
+  "name": "ghcr",
+  "description": "ghcr.io directly (needs the egress exception for ghcr.io and pkg-containers.githubusercontent.com)",
+  "type": "github-ghcr",
+  "url": "https://ghcr.io",
+  "insecure": false
+}
