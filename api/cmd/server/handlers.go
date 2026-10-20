@@ -256,6 +256,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetTechnologyReader(repos.AssetTechnology)
 	assetHandler.SetAuditService(svc.Audit)
+	assetHandler.SetRiskGovernance(svc.AssetRiskGovernance)
 
 	// Command handler with scan run service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
@@ -575,6 +576,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
+		FindingRetestCheck:   handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
 		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:          jiraWebhookHandler,
 		TicketMapping:        ticketMappingHandler,

@@ -192,6 +192,8 @@ type Handlers struct {
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
 	// FindingRetest serves Retest now + retest history (RFC-039); nil if not initialized
 	FindingRetest *handler.FindingRetestHandler
+	// FindingRetestCheck serves a finding's custom retest check; nil if not initialized
+	FindingRetestCheck *handler.FindingRetestCheckHandler
 	// FindingEvidenceItems serves masked finding evidence + reveal; nil if not initialized
 	FindingEvidenceItems *handler.FindingEvidenceItemsHandler
 
@@ -670,6 +672,7 @@ func Register(
 
 	// Continuous retest (RFC-039): Retest now + a finding's retest history.
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
+	registerFindingRetestCheckRoutes(router, h.FindingRetestCheck, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)

@@ -4,7 +4,8 @@
 > closed and a regression reopened without a person. Design and decisions:
 > [RFC-039](../rfcs/RFC-039-continuous-retest.md). Related:
 > [validation engine](validation-engine.md) (the `validate` command transport a
-> retest reuses).
+> retest reuses), [finding retest checks](finding-retest-checks.md) (a custom
+> check a person attaches to a finding, run by its retest).
 
 ## What a retest is
 
@@ -231,3 +232,35 @@ findings when no sensor offers `retest:nuclei`. The payload names the tool as
 `scanner` and lists plain addresses, so it passes the same claim-time tool
 predicate, active-probe gate, zone pinning and sensor-side local policy as a
 scan. Design and threat model: [RFC-039 §12](../rfcs/RFC-039-continuous-retest.md).
+
+## Retest checks in the console
+
+A finding with no automatic retest (manual, pentest, bug bounty, DAST without
+a template) can get a **retest check** from the finding drawer or the finding
+page ("Retest check" section, next to "Retest"):
+
+- **Editor:** two tabs. *HTTP assertion* is a form (method GET/HEAD/POST/OPTIONS,
+  a path relative to the finding's target, headers, a body for POST, status /
+  word / regex matchers combined with and/or). *Nuclei template* takes pasted
+  YAML, an uploaded `.yaml`/`.yml` file (read in the browser, at most 256 KB) or a
+  template picked from the organization's library (shown to users with
+  `scans:templates:read`). **Validate** calls
+  `POST /api/v1/findings/{id}/retest-check/test` and shows the errors per
+  field, the tier with its reason and the template that would run; **Save**
+  (`PUT …/retest-check`) is enabled only after a valid validation of exactly the
+  current input; **Remove** (`DELETE …/retest-check`) detaches it and leaves the
+  template in the library.
+- **Saved state:** name, kind, short digest, tier badge, calibrated or not,
+  approval state, a note with a link to the template library while the template
+  awaits approval for the sensors, and the last verdict of a retest that ran the
+  check. **Approve** (`POST …/retest-check/approve`, scope approval rights and a
+  recent sign-in) appears only when the check needs approval and has none; a
+  409 (the approver wrote this version, or no approval is needed) is explained.
+- **Retest panel:** "Retest now" is offered for a finding with a check even when it
+  has no tool rule; a retest that ran the check reads "Checked with custom check
+  <name> (sha256:…12 hex)".
+- **Permissions:** reading needs `findings:read`; adding, editing and removing need
+  `findings:retest_checks:write`; the console only
+  hides actions the API would refuse. Code:
+  `web/src/features/findings/components/detail/finding-retest-check.tsx`,
+  `retest-check-editor-dialog.tsx`, `web/src/features/findings/api/use-finding-retest-check.ts`.

@@ -1,0 +1,12 @@
+# systemd-sysusers(8) entries for an OpenCTEM install from the release archives
+# (api/docs/deployment/binary-install.md). Install to
+# /etc/sysusers.d/openctem.conf and run `systemd-sysusers`.
+#
+# Each service runs as its own system user with no login shell and no home.
+# The job signer has a user of its own so the API can never read its key; it
+# runs with the API's group only so the API can open its socket.
+g openctem          -
+u openctem          -:openctem         "OpenCTEM API"         -  -
+u openctem-signer   -:openctem         "OpenCTEM job signer"  -  -
+u openctem-web      -                  "OpenCTEM web console" -  -
+u openctem-gateway  -                  "OpenCTEM gateway"     -  -
