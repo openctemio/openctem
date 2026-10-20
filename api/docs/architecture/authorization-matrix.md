@@ -1956,6 +1956,15 @@ fails the step with `AUTOMATION_RUN_NOT_AUTHORIZED` and changes nothing. The
 step then runs with the principal in its context, so the services it calls
 apply the same scope. An automation with no owner runs no step.
 
+A `trigger_scan` step starts the scan **as the principal**: the run's
+`triggered_by` is the principal's user id, so the run's act scope (chained
+stages, the claim-time re-check) is the principal's, never the scan owner's. The
+automation that caused it stays in the run context (`automation_cause`) and
+the run is recorded as an automation run (`trigger_type = automation`), so the
+console still labels it "Automation". A step without a principal starts no
+scan. The scan's owner (`scans.created_by`) is who acts only for the scan's
+own schedule.
+
 Editing needs the same permissions: building a node needs its permission,
 and any change to what an existing automation does (an edge, deleting a
 node, a node edit, switching it on) needs the permission of every step it
