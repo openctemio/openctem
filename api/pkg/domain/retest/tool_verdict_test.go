@@ -32,7 +32,7 @@ func TestDecideToolVerdict(t *testing.T) {
 		{"fixed at another path", v("fixed", `,"evidence":`+exchange(at+"/admin", 404)), OutcomeInconclusive, ReasonEndpointMismatch},
 		{"fixed with a 403", v("fixed", `,"evidence":`+exchange(at, 403)), OutcomeInconclusive, ReasonBlocked},
 		{"fixed without a response", v("fixed", `,"evidence":`+exchange(at, 0)), OutcomeInconclusive, ReasonUnreachable},
-		{"unverifiable", v("unverifiable", `,"detail":"timeout"`), OutcomeInconclusive, ReasonUnreachable},
+		{"unverifiable", v("unverifiable", `,"detail":"timeout"`), OutcomeInconclusive, ReasonError},
 		{"verdict for another finding only", `{"metadata":{"retest":{"verdicts":[{"ref":"0193a1f0-0000-7000-8000-000000000002","verdict":"fixed"}]}}}`, OutcomeInconclusive, ReasonNoResult},
 		{"unknown verdict word", v("gone", ""), OutcomeInconclusive, ReasonError},
 		{"no verdicts", `{"metadata":{"retest":{"verdicts":[]}}}`, OutcomeInconclusive, ReasonNoResult},

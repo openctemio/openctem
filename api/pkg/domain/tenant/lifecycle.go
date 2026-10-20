@@ -70,6 +70,12 @@ type AccessReport struct {
 	AssignedFindings int `json:"assigned_findings"`
 	// OwnedAssets counts the assets the member is a named (user) owner of.
 	OwnedAssets int `json:"owned_assets"`
+	// OwnedTasks counts the open remediation tasks the member owns as a user
+	// (not a team); OwnedCampaigns the open remediation campaigns assigned to
+	// them. An offboarding hands both to the plan's findings target (or leaves
+	// them unowned when the findings go back in the queue).
+	OwnedTasks     int `json:"owned_tasks"`
+	OwnedCampaigns int `json:"owned_campaigns"`
 }
 
 // OwnsSchedules reports whether the member owns any scan, report schedule or
@@ -148,6 +154,8 @@ type OffboardResult struct {
 	ReassignedSchedules int           `json:"reassigned_schedules"`
 	ReassignedFindings  int           `json:"reassigned_findings"`
 	ReassignedAssets    int           `json:"reassigned_assets"`
+	ReassignedTasks     int           `json:"reassigned_tasks"`
+	ReassignedCampaigns int           `json:"reassigned_campaigns"`
 	OffboardedAt        time.Time     `json:"offboarded_at"`
 }
 
