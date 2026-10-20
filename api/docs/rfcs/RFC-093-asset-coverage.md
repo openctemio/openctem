@@ -110,6 +110,7 @@ each of 1 000 tenants 12 ms, one asset's explanation 0.05 ms.
 | P0-5c | Gap detection: gaps, output drops, repeated failures to administrators and integrations; operator aggregates | #2135 |
 | P0-5 | Due marking at ingest, planner, gap detectors, explanation endpoint | planned |
 | P0-6 | Tenant setting for automatic coverage (default on; Strict off), audited | PR |
+| P0-7 | Managed scans: coverage and enrichment scans are identified by `(managed_by, managed_key)`, never by name ([managed scans](../architecture/managed-scans.md)) | PR |
 | P1 | Tenant and plan policy, priority, budgets, windows, outcome classes for throttling, coverage KPI | designed |
 | P2 | Information-gathering sources, vantage rows, authenticated web coverage, targeted re-checks, ledger history | designed |
 | P3 | Planner emits work-pool items; workflows plan from the ledger | designed |
