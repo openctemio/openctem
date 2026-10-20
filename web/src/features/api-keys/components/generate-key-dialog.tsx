@@ -35,16 +35,11 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '../lib/expiry'
 import type { CreateAPIKeyRequest } from '../types/api-key.types'
 
-/** Scopes offered when minting a key. The API refuses one the caller lacks. */
-export const API_KEY_SCOPES = [
-  'assets:read',
-  'findings:read',
-  'scans:read',
-  'integrations:read',
-  'assets:write',
-  'findings:write',
-  'scans:write',
-]
+/**
+ * Scopes offered when minting a key. Keys are read-only, so only read scopes are
+ * offered (the API refuses any other, and one the caller lacks).
+ */
+export const API_KEY_SCOPES = ['assets:read', 'findings:read', 'scans:read', 'integrations:read']
 
 const DEFAULT_SCOPES = ['assets:read', 'findings:read']
 

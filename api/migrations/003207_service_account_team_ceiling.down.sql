@@ -1,0 +1,4 @@
+DROP TRIGGER IF EXISTS trigger_refuse_service_account_in_full_data_team ON group_members;
+DROP FUNCTION IF EXISTS refuse_service_account_in_full_data_team();
+DROP TRIGGER IF EXISTS trigger_refuse_full_data_binding_with_service_account ON group_role_bindings;
+DROP FUNCTION IF EXISTS refuse_full_data_binding_with_service_account();

@@ -44,3 +44,34 @@ func TestOrgDashboardPermissionsArePrivileged(t *testing.T) {
 		}
 	}
 }
+
+func TestIsReadScope(t *testing.T) {
+	for p, want := range map[string]bool{
+		"assets:read": true, "findings:read": true, "dashboards:org:view": true,
+		"assets:write": false, "findings:approve": false, "team:delete": false,
+		"service_accounts:manage": false, "findings:export": false,
+	} {
+		if got := permission.IsReadScope(p); got != want {
+			t.Errorf("%s: got %v want %v", p, got, want)
+		}
+	}
+}
+
+// service_accounts:manage mints organization credentials: owners and admins
+// hold it, members and viewers never do, and it counts as privileged.
+func TestServiceAccountsManageIsAdminDefault(t *testing.T) {
+	p := permission.ServiceAccountsManage
+	for _, r := range []tenant.Role{tenant.RoleMember, tenant.RoleViewer} {
+		if permission.HasPermission(r, p) {
+			t.Errorf("%s holds %s", r, p)
+		}
+	}
+	for _, r := range []tenant.Role{tenant.RoleOwner, tenant.RoleAdmin} {
+		if !permission.HasPermission(r, p) {
+			t.Errorf("%s lacks %s", r, p)
+		}
+	}
+	if !permission.IsPrivilegedRole([]string{string(p)}, false) {
+		t.Errorf("%s is not privileged", p)
+	}
+}

@@ -159,6 +159,7 @@ func (s *TenantService) offboardMember(ctx context.Context, membershipID string,
 		WithMessage("Member offboarded").
 		WithMetadata("user_id", userID).
 		WithMetadata("revoked_keys", result.RevokedKeys).
+		WithMetadata("revoked_service_account_keys", result.RevokedServiceAccountKeys).
 		WithMetadata("removed_groups", result.RemovedGroups).
 		WithMetadata("removed_grants", result.RemovedGrants).
 		WithMetadata("removed_campaigns", result.RemovedCampaigns).
@@ -466,7 +467,8 @@ func (s *TenantService) LeaveOrganization(ctx context.Context, tenantID, userID 
 		WithSeverity(audit.SeverityMedium).
 		WithMessage("Member left the organization").
 		WithMetadata("user_id", userID.String()).
-		WithMetadata("revoked_keys", result.RevokedKeys))
+		WithMetadata("revoked_keys", result.RevokedKeys).
+		WithMetadata("revoked_service_account_keys", result.RevokedServiceAccountKeys))
 	s.notifyAdmins(ctx, tenantID, "A member left the organization",
 		fmt.Sprintf("%s left the organization.", actx.ActorEmail), notificationdom.SeverityInfo)
 	return nil
