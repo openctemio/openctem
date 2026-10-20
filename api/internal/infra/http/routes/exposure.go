@@ -272,6 +272,7 @@ func registerVulnerabilityRoutes(
 		r.POST("/transitions/preview", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
 
 		// Assignment operations
+		r.GET("/{id}/assignable", h.ListAssignableMembers, middleware.Require(permission.FindingsAssign))
 		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsAssign), handler.FindingIfMatch)
 		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsAssign), handler.FindingIfMatch)
 
