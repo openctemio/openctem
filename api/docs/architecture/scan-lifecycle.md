@@ -34,9 +34,9 @@ Scan (definition) ──fires──▶ Run (one occurrence) ──is cut into─
 |---|---|---|---|
 | `pending` | Created, no task claimed yet | no | — |
 | `running` | At least one task claimed or started | no | — |
-| `completed` | Every task completed | yes | success |
-| `partial` | Some tasks completed, some failed, or the deadline passed with work done; results kept, unfinished targets recorded. Also when every step finished but zone routing left targets uncovered (`uncovered_targets`): the run did not scan everything it was asked to | yes | partial |
-| `failed` | No task completed (all failed, or nobody claimed within 4 h scheduled / 1 h interactive) | yes | failure |
+| `completed` | Every task completed. Targets that did not answer (`unreachable_target_count`) or that the sensor's local policy skipped (`skipped_target_count`) do not change the status: they are facts about the targets, recorded in the run context and shown as a note ("Completed · N unreachable") | yes | success |
+| `partial` | Some tasks completed, some failed, or the deadline passed with work done, or a sensor left coverage gaps or unfinished targets; results kept, unfinished targets recorded. Also when every step finished but zone routing left targets uncovered (`uncovered_targets`): the run did not scan everything it was asked to | yes | partial |
+| `failed` | No task completed (all failed, or nobody claimed within 4 h scheduled / 1 h interactive), or a step tried more than one target and reached none (`TARGET_UNREACHABLE`: the sensor may be cut off). A single target that did not answer is `completed`, one unreachable | yes | failure |
 | `timeout` | Deadline passed and no task completed | yes | failure |
 | `canceled` | Stopped by a user with `scans:write` | yes | not counted in the success rate |
 
@@ -119,3 +119,21 @@ cannot reopen one, recount its findings or record its outcome twice.
    gate.
 6. Every query is tenant-scoped from the credential; a foreign id is a 404.
 7. A run executes the workflow version it started with.
+
+## Outcome of a target
+
+How a target's outcome affects the run (the coverage ledger settles per target
+from each task's own results, never from the run status, so an unreachable
+target stays failed in the ledger even when its run completes):
+
+| Per-target outcome | Run status effect | Ledger |
+|---|---|---|
+| scanned | none | covered |
+| skipped by the sensor's local policy or a server gate (exclusion, tier, act scope) | none; counted in `skipped_target_count` | blocked, re-checked later |
+| unreachable (timeout, no route, DNS) | none; counted in `unreachable_target_count` | failed `unreachable`, backoff |
+| unroutable (no zone or sensor can place it) | `partial` (a gap the tenant can fix) | blocked: zone |
+| unfinished (deadline, crash, coverage gap) | `partial` | failed, planned first |
+
+A step that tried more than one target and reached none of them (with no
+findings) fails as `TARGET_UNREACHABLE`. The counts are written to the step's
+`output` and summed into the run context when the run settles.

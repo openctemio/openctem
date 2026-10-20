@@ -15,6 +15,9 @@ func TestWithReach(t *testing.T) {
 	list := json.RawMessage(`[{"target":"192.0.2.7","class":"timeout"},{"target":"evil\n\u001b[2J","class":"no_route"},{"target":"x","class":"reached"}]`)
 
 	p := withReach(scanrun.Partial{}, json.RawMessage(`{"v":1,"targets":2,"reached":0,"unreached":2,"classes":{"timeout":1,"no_route":1}}`), list, 2)
+	if p.Tried != 2 {
+		t.Fatalf("targets tried = %d, want 2", p.Tried)
+	}
 	if !p.AllUnreached || p.Unreached != 2 || !strings.HasPrefix(p.UnreachableMessage, "No target was reachable from the sensor (2 target(s)") {
 		t.Fatalf("all unreached: %+v", p)
 	}
