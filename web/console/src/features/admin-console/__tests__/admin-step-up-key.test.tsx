@@ -111,8 +111,8 @@ describe('step-up with a security key', () => {
     await user.click(
       await screen.findByRole('button', { name: 'Use a code from your authenticator app instead' })
     )
-    await user.type(screen.getByLabelText('Code from your authenticator'), '123456')
-    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    // The sixth digit confirms on its own.
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     await result
     const writes = calls.filter((c) => c.url.endsWith('/platform-idp'))
     expect(writes[1].headers[ADMIN_STEP_UP_HEADER]).toBe('123456')
@@ -153,7 +153,7 @@ describe('step-up with a security key', () => {
     renderPrompt()
     protectedAnswers.push(stepUpRequired())
     const result = adminFetch('/platform-idp', { method: 'DELETE' }).catch((e: unknown) => e)
-    expect(await screen.findByLabelText('Code from your authenticator')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Code from your authenticator app')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Use security key or passkey' })
     ).not.toBeInTheDocument()
