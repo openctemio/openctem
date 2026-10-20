@@ -244,6 +244,8 @@ export interface MemberAccessReport {
   owned_workflows: LifecycleRef[]
   assigned_findings: number
   owned_assets: number
+  owned_tasks: number
+  owned_campaigns: number
 }
 
 /** POST /api/v1/organization/members/{member_id}/offboard body. */
@@ -264,6 +266,8 @@ export interface OffboardResult {
   reassigned_schedules: number
   reassigned_findings: number
   reassigned_assets: number
+  reassigned_tasks: number
+  reassigned_campaigns: number
   offboarded_at: string
 }
 

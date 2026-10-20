@@ -110,6 +110,14 @@ export function MemberAccessReportView({
       <DetailStatGrid aria-label="Owned work">
         <DetailStat label="Open assigned findings" value={report.assigned_findings} />
         <DetailStat label="Owned assets" value={report.owned_assets} />
+        <DetailStat
+          label={t('org.accessReport.ownedTasks', 'Open remediation tasks')}
+          value={report.owned_tasks ?? 0}
+        />
+        <DetailStat
+          label={t('org.accessReport.ownedCampaigns', 'Open remediation campaigns')}
+          value={report.owned_campaigns ?? 0}
+        />
       </DetailStatGrid>
       {!ownedOnly && report.status === 'suspended' && (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">

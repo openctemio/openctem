@@ -70,6 +70,7 @@ import { SCAN_TYPE_LABELS, SCHEDULE_TYPE_LABELS, SCHEDULE_TYPES } from '@/lib/ap
 import type {
   ScanConfig,
   ScanConfigStatus,
+  ScanOrigin,
   ScanType as ApiScanType,
   ScheduleType,
 } from '@/lib/api/scan-types'
@@ -82,7 +83,7 @@ import {
 import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-detail-sheet'
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
-import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
+import { isManagedScan, lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
 import { scanSuccessRate } from '@/features/scans/lib/format'
@@ -98,6 +99,8 @@ import {
 // ============================================
 
 type ConfigStatusFilter = ScanConfigStatus | 'all'
+// Whose scans: people's, or the platform's managed ones (continuous coverage).
+type ConfigOriginFilter = ScanOrigin | 'all'
 type ConfigTypeFilter = ApiScanType | 'all'
 
 // The configuration's state, not a run state: an enabled scan runs on its
@@ -107,6 +110,12 @@ const configStatusFilters: { value: ConfigStatusFilter; label: string }[] = [
   { value: 'active', label: 'Enabled' },
   { value: 'paused', label: 'Schedule paused' },
   { value: 'disabled', label: 'Disabled' },
+]
+
+const configOriginFilters: { value: ConfigOriginFilter; labelKey: string }[] = [
+  { value: 'all', labelKey: 'scans.origin.all' },
+  { value: 'user', labelKey: 'scans.origin.user' },
+  { value: 'system', labelKey: 'scans.origin.system' },
 ]
 
 const configTypeFilters: { value: ConfigTypeFilter; label: string }[] = [
@@ -244,6 +253,10 @@ interface ConfigActionsCellProps {
 }
 
 function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActionsCellProps) {
+  const { t } = useTranslation()
+  // A platform policy owns a managed scan: nothing to edit, run, pause or
+  // delete here. View it, or clone it into a scan of your own.
+  const managed = isManagedScan(config)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -258,50 +271,58 @@ function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActio
             View details
           </Link>
         </DropdownMenuItem>
-        <Can permission={Permission.ScansWrite}>
-          <DropdownMenuItem onClick={() => onAction('edit', config)}>
-            <Pencil className="me-2 h-4 w-4" />
-            Edit
-          </DropdownMenuItem>
-        </Can>
+        {!managed && (
+          <Can permission={Permission.ScansWrite}>
+            <DropdownMenuItem onClick={() => onAction('edit', config)}>
+              <Pencil className="me-2 h-4 w-4" />
+              Edit
+            </DropdownMenuItem>
+          </Can>
+        )}
         {/* Trigger, clone, pause and resume all need scans:write. */}
         <Can permission={Permission.ScansWrite}>
-          <DropdownMenuItem disabled={triggering} onClick={() => onAction('trigger', config)}>
-            {triggering ? (
-              <Loader2 className="me-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="me-2 h-4 w-4" />
-            )}
-            {triggering ? 'Starting…' : 'Trigger scan'}
-          </DropdownMenuItem>
+          {!managed && (
+            <DropdownMenuItem disabled={triggering} onClick={() => onAction('trigger', config)}>
+              {triggering ? (
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="me-2 h-4 w-4" />
+              )}
+              {triggering ? 'Starting…' : 'Trigger scan'}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => onAction('clone', config)}>
             <Copy className="me-2 h-4 w-4" />
-            Clone
+            {managed ? t('scans.managed.clone') : 'Clone'}
           </DropdownMenuItem>
-          {(config.status === 'active' || config.status === 'paused') && <DropdownMenuSeparator />}
-          {config.status === 'active' && (
+          {!managed && (config.status === 'active' || config.status === 'paused') && (
+            <DropdownMenuSeparator />
+          )}
+          {!managed && config.status === 'active' && (
             <DropdownMenuItem onClick={() => onAction('pause', config)}>
               <Pause className="me-2 h-4 w-4" />
               Pause
             </DropdownMenuItem>
           )}
-          {config.status === 'paused' && (
+          {!managed && config.status === 'paused' && (
             <DropdownMenuItem onClick={() => onAction('activate', config)}>
               <Play className="me-2 h-4 w-4" />
               Resume
             </DropdownMenuItem>
           )}
         </Can>
-        <Can permission={Permission.ScansDelete}>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="text-destructive focus:text-destructive"
-            onClick={() => onAction('delete', config)}
-          >
-            <Trash2 className="me-2 h-4 w-4" />
-            Delete
-          </DropdownMenuItem>
-        </Can>
+        {!managed && (
+          <Can permission={Permission.ScansDelete}>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => onAction('delete', config)}
+            >
+              <Trash2 className="me-2 h-4 w-4" />
+              Delete
+            </DropdownMenuItem>
+          </Can>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -321,7 +342,7 @@ function ConfigurationsTab() {
     defaultPageSize: DEFAULT_SCAN_PAGE_SIZE,
     sortFields: SCAN_CONFIG_SORT_FIELDS,
     defaultSort: DEFAULT_SCAN_CONFIG_SORT,
-    filters: { status: 'all', type: 'all', schedule: 'all', tag: '', one_off: '' },
+    filters: { status: 'all', type: 'all', schedule: 'all', origin: 'all', tag: '', one_off: '' },
   })
   const searchQuery = list.q
   const setSearchQuery = list.setSearch
@@ -332,6 +353,8 @@ function ConfigurationsTab() {
   const setTypeFilter = (v: ConfigTypeFilter) => list.setFilter('type', v)
   const scheduleFilter = list.filters.schedule as ConfigScheduleFilter
   const setScheduleFilter = (v: ConfigScheduleFilter) => list.setFilter('schedule', v)
+  const originFilter = list.filters.origin as ConfigOriginFilter
+  const setOriginFilter = (v: ConfigOriginFilter) => list.setFilter('origin', v)
   const tagFilter = list.filters.tag
   const setTagFilter = (v: string) => list.setFilter('tag', v)
   const debouncedTag = useDebounce(tagFilter, 300)
@@ -374,6 +397,7 @@ function ConfigurationsTab() {
       status: statusFilter !== 'all' ? statusFilter : undefined,
       scan_type: typeFilter !== 'all' ? typeFilter : undefined,
       schedule_type: scheduleFilter !== 'all' ? scheduleFilter : undefined,
+      origin: originFilter !== 'all' ? originFilter : undefined,
       tags: debouncedTag || undefined,
       search: debouncedSearch || undefined,
       include_ad_hoc: showOneOff || undefined,
@@ -385,6 +409,7 @@ function ConfigurationsTab() {
       statusFilter,
       typeFilter,
       scheduleFilter,
+      originFilter,
       debouncedTag,
       debouncedSearch,
       showOneOff,
@@ -448,6 +473,7 @@ function ConfigurationsTab() {
     statusFilter,
     typeFilter,
     scheduleFilter,
+    originFilter,
     debouncedTag,
     debouncedSearch,
     oneOffParam,
@@ -650,7 +676,7 @@ function ConfigurationsTab() {
       {
         id: 'success_rate',
         accessorFn: (c) => getProgress(c),
-        header: 'Success rate',
+        header: t('scans.list.successRate'),
         enableSorting: false,
         cell: ({ row }) => {
           const rate = scanSuccessRate(row.original)
@@ -662,7 +688,10 @@ function ConfigurationsTab() {
           return (
             <div
               className="flex items-center gap-2"
-              title={`${row.original.successful_runs} of ${settled} finished runs succeeded`}
+              title={t('scans.list.successTitle', undefined, {
+                ok: row.original.successful_runs,
+                total: settled,
+              })}
             >
               <Progress value={rate} className="h-2 w-20 shrink-0" />
               <span className="w-10 shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -719,13 +748,14 @@ function ConfigurationsTab() {
         ),
       },
     ],
-    [getProgress, handleAction, handleToggle, isTriggering]
+    [getProgress, handleAction, handleToggle, isTriggering, t]
   )
 
   const activeFiltersCount = [
     statusFilter !== 'all',
     typeFilter !== 'all',
     scheduleFilter !== 'all',
+    originFilter !== 'all',
     tagFilter !== '',
     showOneOff,
   ].filter(Boolean).length
@@ -734,6 +764,7 @@ function ConfigurationsTab() {
     setStatusFilter('all')
     setTypeFilter('all')
     setScheduleFilter('all')
+    setOriginFilter('all')
     setTagFilter('')
     setOneOffParam('')
     setPageParam(1)
@@ -811,6 +842,18 @@ function ConfigurationsTab() {
               label={f.label}
               checked={scheduleFilter === f.value}
               onCheckedChange={(on) => setScheduleFilter(on ? f.value : 'all')}
+            />
+          ))}
+      </FacetSection>
+      <FacetSection title={t('scans.origin.title')} selectedCount={originFilter !== 'all' ? 1 : 0}>
+        {configOriginFilters
+          .filter((f) => f.value !== 'all')
+          .map((f) => (
+            <FacetOption
+              key={f.value}
+              label={t(f.labelKey)}
+              checked={originFilter === f.value}
+              onCheckedChange={(on) => setOriginFilter(on ? f.value : 'all')}
             />
           ))}
       </FacetSection>

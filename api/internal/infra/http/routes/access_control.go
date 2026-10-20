@@ -228,7 +228,8 @@ func registerServiceAccountRoutes(
 		// Its API keys: each action needs both the service-account and the API
 		// key permission; minting and deleting need a recent sign-in, as they do
 		// for your own keys.
-		r.GET("/{id}/api-keys", h.ListKeys, middleware.RequireAll(permission.MembersRead, permission.APIKeysRead))
+		// Listing is for owners and administrators only (owner decision 2026-10-02).
+		r.GET("/{id}/api-keys", h.ListKeys, middleware.RequireAdmin(), middleware.RequireAll(permission.MembersRead, permission.APIKeysRead))
 		r.POST("/{id}/api-keys", h.CreateKey, middleware.RequireAll(permission.ServiceAccountsManage, permission.APIKeysWrite), requireStepUp())
 		r.DELETE("/{id}/api-keys/{key_id}", h.DeleteKey, middleware.RequireAll(permission.ServiceAccountsManage, permission.APIKeysDelete), requireStepUp())
 	}, tenantMiddlewares...)

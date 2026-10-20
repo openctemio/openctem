@@ -11,8 +11,8 @@ import (
 func seedEPSS(ctx context.Context, t *testing.T, db *sql.DB, cve string, score float64) {
 	t.Helper()
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO epss_scores (cve_id, epss_score, percentile, model_version, score_date)
-		 VALUES ($1, $2, 0.5, 'test', CURRENT_DATE)
+		`INSERT INTO epss_scores (cve_id, epss_score, model_version)
+		 VALUES ($1, $2, 'test')
 		 ON CONFLICT (cve_id) DO UPDATE SET epss_score = EXCLUDED.epss_score`, cve, score); err != nil {
 		t.Fatalf("seed epss: %v", err)
 	}

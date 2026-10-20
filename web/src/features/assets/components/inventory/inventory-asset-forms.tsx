@@ -107,11 +107,25 @@ export function useInventoryAssetForms(
       if (!editing) return false
       setSubmitting(true)
       try {
-        await updateAsset(
+        const saved = await updateAsset(
           editing.asset.id,
           updateInputFromForm(editing.view, data, editing.asset.metadata)
         )
-        toast.success(t('assets.formsHost.updated', '{name} updated', { name: editing.asset.name }))
+        if (saved.pendingRiskRequest) {
+          // The lowered exposure or criticality waits for a second person; the
+          // rest of the edit is saved.
+          toast.info(
+            t(
+              'assets.formsHost.sentForApproval',
+              '{name} saved. The lowered risk values are waiting for approval.',
+              { name: editing.asset.name }
+            )
+          )
+        } else {
+          toast.success(
+            t('assets.formsHost.updated', '{name} updated', { name: editing.asset.name })
+          )
+        }
         onChanged()
         return true
       } catch (err) {
