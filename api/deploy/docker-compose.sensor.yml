@@ -40,13 +40,26 @@
 #   the AppArmor userns restriction applies to unconfined processes only).
 #   On a host that cannot confine, the sensor refuses to start and says why.
 # - Network: the sensor sits on its own bridge, sensor-net, and nowhere else.
-#   Only the api service is attached to both networks, so the sensor resolves
-#   and reaches `api` (its one platform endpoint) and the internet for public
-#   scans. It cannot resolve or connect to postgres, redis, the signer, the
-#   gateway or the console: a hostile scan response that takes over the
-#   sensor process finds no datastore to talk to. sensor-enrollment keeps the
-#   openctem network because it writes the token hash to Postgres; it is a
-#   one-shot job and not reachable from the sensor.
+#   Only the gateway is attached to both networks, under the name of
+#   OPENCTEM_HOSTNAME, so the sensor reaches the platform at the same
+#   https://<OPENCTEM_HOSTNAME> every other client uses (sensor SDK releases
+#   from v0.35.0 refuse plain http to a host that is not loopback) and the
+#   internet for public scans. It cannot resolve or connect to postgres,
+#   redis, the signer, the api or the console service: a hostile scan response
+#   that takes over the sensor process finds no datastore to talk to. The
+#   gateway's console site shares the gateway's address; it answers the
+#   private networks (OPENCTEM_ADMIN_ALLOWED_CIDRS) and its own sign-in, and
+#   serves nothing to a sensor request. sensor-enrollment keeps the openctem
+#   network because it writes the token hash to Postgres; it is a one-shot job
+#   and not reachable from the sensor.
+# - TLS: with OPENCTEM_TLS_MODE=internal (default) the sensor trusts the
+#   gateway's internal CA, which the gateway exports to ./ca
+#   (SENSOR_CA_CERT_FILE, added to the system roots). With acme or files, the
+#   certificate is already publicly trusted or yours: set SENSOR_CA_CERT_FILE=
+#   (empty) in .env, or point it at your CA file under /ca. OPENCTEM_HOSTNAME
+#   must be a DNS name the sensor can resolve to the gateway (the network
+#   alias); an IP address works only when the host's published port 443 is
+#   reachable from containers on that IP.
 # - Limits: SENSOR_MEMORY_LIMIT (default 2g), SENSOR_CPUS (default 2) and
 #   SENSOR_PIDS_LIMIT (default 512) bound a runaway scanner. The sensor image
 #   has no health probe command yet, so there is no container healthcheck;
@@ -100,8 +113,12 @@ services:
   sensor:
     image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.23.2}
     environment:
-      # Inside the stack: the API directly (never the gateway).
-      SENSOR_API_URL: http://api:8080
+      # The gateway, over https, like every other client. The gateway's
+      # network alias on sensor-net is OPENCTEM_HOSTNAME.
+      SENSOR_API_URL: https://${OPENCTEM_HOSTNAME:?OPENCTEM_HOSTNAME is required (DNS name or IP clients use)}
+      # The gateway's internal CA (TLS mode internal). Set it empty for a
+      # publicly trusted certificate.
+      SENSOR_CA_CERT_FILE: ${SENSOR_CA_CERT_FILE-/ca/openctem-root-ca.crt}
       SENSOR_NAME: ${SENSOR_NAME:-bundled-sensor}
       SENSOR_REGION: ${SENSOR_REGION:-default}
       SENSOR_INSTANCE_ENROLLMENT_TOKEN: ${SENSOR_INSTANCE_ENROLLMENT_TOKEN:?SENSOR_INSTANCE_ENROLLMENT_TOKEN is required (setup.sh writes it)}
@@ -125,7 +142,7 @@ services:
     depends_on:
       sensor-enrollment:
         condition: service_completed_successfully
-      api:
+      gateway:
         condition: service_healthy
     networks:
       - sensor-net
@@ -139,6 +156,8 @@ services:
       # The signer's public key (signer.pub), read-only. Only the signer
       # writes this volume; the API never mounts it.
       - signer-pub:/etc/openctem/signer-pub:ro
+      # The gateway's internal CA certificate (public), read-only.
+      - ${OPENCTEM_CA_EXPORT_DIR:-./ca}:/ca:ro
     tmpfs:
       - /tmp
     read_only: true
@@ -158,11 +177,13 @@ services:
         max-size: "50m"
         max-file: "5"
 
-  # The API answers the sensor on both networks; the sensor's network holds
-  # nothing else of the stack.
-  api:
+  # The gateway answers the sensor on both networks, under the platform's
+  # host name; the sensor's network holds nothing else of the stack.
+  gateway:
     networks:
-      sensor-net: {}
+      sensor-net:
+        aliases:
+          - ${OPENCTEM_HOSTNAME}
 
 networks:
   sensor-net:
