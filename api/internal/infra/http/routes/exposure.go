@@ -238,8 +238,10 @@ func registerVulnerabilityRoutes(
 		}
 
 		// Bulk operations (must be before /{id})
-		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsBulkUpdate))
-		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsBulkUpdate))
+		// Each needs the single-item permission too: bulk_update widens the
+		// reach of a move, it does not replace the right to make it.
+		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus))
+		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsAssign))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
 		if remediationGroupHandler != nil {
