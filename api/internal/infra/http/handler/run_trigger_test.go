@@ -24,6 +24,12 @@ func TestRunTrigger(t *testing.T) {
 			TriggeredBy: "workflow:" + auto.String(),
 			Context:     map[string]any{"automation_cause": map[string]any{"workflow_id": auto.String(), "run_id": autoRun.String(), "node_key": "rescan", "chain_depth": 1}}},
 			RunTrigger{Type: "automation", ID: auto.String(), RunID: autoRun.String(), NodeKey: "rescan"}},
+		// The scan an automation step starts acts as the automation's owner
+		// (triggered_by is that person); the cause still labels it.
+		{"an automation step acting as its owner", scanrun.Run{TriggerType: scanworkflow.TriggerTypeAutomation,
+			TriggeredBy: user.String(),
+			Context:     map[string]any{"automation_cause": map[string]any{"workflow_id": auto.String(), "run_id": autoRun.String(), "node_key": "scan", "chain_depth": 1}}},
+			RunTrigger{Type: "automation", ID: auto.String(), RunID: autoRun.String(), NodeKey: "scan"}},
 		{"an automation (triggered_by only)", scanrun.Run{TriggerType: scanworkflow.TriggerTypeManual, TriggeredBy: "workflow:" + auto.String()},
 			RunTrigger{Type: "automation", ID: auto.String()}},
 		{"an automation run without a cause", scanrun.Run{TriggerType: scanworkflow.TriggerTypeAutomation},
