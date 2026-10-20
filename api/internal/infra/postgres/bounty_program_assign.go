@@ -65,6 +65,9 @@ func (r *BountyProgramRepository) AssignProgramAssets(ctx context.Context, tenan
 		return 0, 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return 0, 0, err
+	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO asset_owners (asset_id, group_id, ownership_type, assignment_source)
 		SELECT c.id, $3, 'informed', 'program' FROM (`+programCoveredAssets+`) c
