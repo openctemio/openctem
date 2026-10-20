@@ -144,6 +144,43 @@ func TestTaskOwnerRelation_DB(t *testing.T) {
 		t.Fatalf("owner's counters: %v %+v", err, counts[taskID])
 	}
 
+	// The same owner reading as a non-admin finding viewer who is not a member
+	// of the pentest finding's campaign: the owner rule admits the task's
+	// findings and the pentest rule removes the pentest one, in the member list
+	// and in the counters alike.
+	vctx := shared.WithFindingViewer(ctx, shared.FindingViewer{UserID: owner})
+	vres, err := repo.ListMembers(vctx, tenantID, taskID, remediation.MemberFilter{Scope: &shared.DataScope{TenantID: tenantID, UserID: owner}}, pagination.New(1, 50))
+	if err != nil {
+		t.Fatalf("list members as viewer: %v", err)
+	}
+	if len(vres.Data) != 1 || vres.Data[0].FindingID != inTask {
+		t.Fatalf("owner as non-admin viewer: want only the non-pentest finding, got %+v", vres.Data)
+	}
+	vcounts, err := repo.ScopedCounts(vctx, tenantID, []shared.ID{taskID}, &shared.DataScope{TenantID: tenantID, UserID: owner})
+	if err != nil || vcounts[taskID].Total != 1 {
+		t.Fatalf("owner as non-admin viewer: counters want total 1, got %v %+v", err, vcounts[taskID])
+	}
+
+	// The task list filtered by a finding uses the same view scope: the owner
+	// finds the task through the finding they own via it, a stranger does not.
+	listBy := func(who shared.ID, finding shared.ID) int {
+		t.Helper()
+		res, err := repo.ListTasks(ctx, tenantID, remediation.TaskFilter{FindingID: &finding, Scope: &shared.DataScope{TenantID: tenantID, UserID: who}}, pagination.New(1, 50))
+		if err != nil {
+			t.Fatalf("list tasks by finding: %v", err)
+		}
+		return len(res.Data)
+	}
+	if n := listBy(owner, inTask); n != 1 {
+		t.Fatalf("owner's task list filtered by the owned finding: want 1 task, got %d", n)
+	}
+	if n := listBy(owner, sameAsset); n != 0 {
+		t.Fatalf("owner filtering by a finding outside the task: want 0, got %d", n)
+	}
+	if n := listBy(other, inTask); n != 0 {
+		t.Fatalf("stranger's task list filtered by the finding: want 0, got %d", n)
+	}
+
 	// Owner change ends it at once.
 	setOwner(&other, nil)
 	want("owner changed", owned(owner, tenantID))
