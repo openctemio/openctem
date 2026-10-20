@@ -63,3 +63,20 @@ func TestSetSecretFields_FingerprintFromRawHashOnly(t *testing.T) {
 		t.Fatal("the same secret in two tenants shares a fingerprint")
 	}
 }
+
+// A producer's preview is a mask: the server does not take it for the raw
+// secret and key the finding (and its rotation group) on it.
+func TestKeyRawSecrets_APreviewIsNotKeyedAsTheRawValue(t *testing.T) {
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, nil, logger.NewNop())
+	p.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte("unit-test-server-secret-0123456789abcdef")))
+	rep := &ctis.Report{Findings: []ctis.Finding{
+		{Type: ctis.FindingTypeSecret, Secret: &ctis.SecretDetails{MaskedValue: "AKIA…MPLE"}},
+		{Type: ctis.FindingTypeSecret, Secret: &ctis.SecretDetails{MaskedValue: "ghp_…6789"}},
+	}}
+	p.keyRawSecrets(shared.NewID(), rep)
+	for i := range rep.Findings {
+		if v := rep.Findings[i].PartialFingerprints[partialServerSecretHMAC]; v != "" {
+			t.Errorf("finding %d: a preview was keyed as the raw secret", i)
+		}
+	}
+}
