@@ -648,6 +648,9 @@ const (
 	// ActionScanConfigOwnerTaken: an administrator became the owner of a
 	// scan whose owner was missing or no longer an active member.
 	ActionScanConfigOwnerTaken Action = "scan_config.owner_taken"
+	// ActionScanConfigManagedCreated: the platform created a managed scan
+	// (continuous coverage, automatic enrichment) for a tenant.
+	ActionScanConfigManagedCreated Action = "scan_config.managed_created"
 
 	// Scan profile actions
 	ActionScanProfileCreated            Action = "scan_profile.created"
@@ -852,7 +855,7 @@ func (a Action) IsValid() bool {
 		ActionScanRunTriggered, ActionScanRunCompleted, ActionScanRunPartial, ActionScanRunFailed, ActionScanRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
-		ActionScanConfigExported, ActionScanConfigImported, ActionScanConfigOwnerTaken,
+		ActionScanConfigExported, ActionScanConfigImported, ActionScanConfigOwnerTaken, ActionScanConfigManagedCreated,
 		ActionScanProfileCreated, ActionScanProfileUpdated, ActionScanProfileDeleted,
 		ActionScanProfileDefaultSet, ActionScanProfileCloned, ActionScanProfileQualityGateUpdated,
 		ActionCommandCreated, ActionCommandCanceled, ActionCommandDeleted,
