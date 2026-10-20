@@ -169,6 +169,7 @@ describe('Scans › Configurations', () => {
   it("lists the platform's scans under the System origin filter", async () => {
     render(<ScansPage />)
     expect(configCalls.at(-1)?.origin).toBeUndefined()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Filters' })[0])
     await userEvent.click(screen.getByRole('checkbox', { name: 'System' }))
     expect(urlState.origin).toBe('system')
     await waitFor(() => expect(configCalls.at(-1)).toMatchObject({ origin: 'system' }))
