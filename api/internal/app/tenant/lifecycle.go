@@ -164,7 +164,9 @@ func (s *TenantService) offboardMember(ctx context.Context, membershipID string,
 		WithMetadata("removed_campaigns", result.RemovedCampaigns).
 		WithMetadata("reassigned_schedules", result.ReassignedSchedules).
 		WithMetadata("reassigned_findings", result.ReassignedFindings).
-		WithMetadata("reassigned_assets", result.ReassignedAssets)
+		WithMetadata("reassigned_assets", result.ReassignedAssets).
+		WithMetadata("reassigned_tasks", result.ReassignedTasks).
+		WithMetadata("reassigned_campaigns", result.ReassignedCampaigns)
 	if plan.SchedulesTo != nil {
 		event = event.WithMetadata("schedules_to", plan.SchedulesTo.String())
 	}
