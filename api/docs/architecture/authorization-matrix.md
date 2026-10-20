@@ -62,6 +62,21 @@ Team roles are used for team management operations:
 | `member` | 2 | Team member - create/edit resources |
 | `viewer` | 1 | Team viewer - read-only access |
 
+### Editing a custom role
+
+`PUT /api/v1/roles/{id}` is held to the delegation ceiling on **both** sides:
+
+- The editor must hold every permission the role carries **now** and every one
+  it will carry afterwards (and full data access when either side has it). A
+  delegated role manager can neither add a permission they lack nor strip one
+  they lack, so they cannot sabotage a "risk approver" role they could never
+  grant. Owners pass; delete, grant and revoke apply the same rule.
+- A change that makes the role gain a privileged permission, an approval-type
+  permission (any `*:approve`) or organization-wide data grade needs the
+  editor's recent re-authentication when the role has holders, and for a
+  team-bound role it is also owner-only. Giving a user a custom role that
+  carries such a permission needs the same step-up.
+
 ### One authority for the team role
 
 A person's team role is the highest system role they hold in `user_roles`, read
