@@ -1,8 +1,9 @@
 # GitHub Issues Ticketing
 
 OpenCTEM can create a GitHub issue from a finding and link it back, alongside
-the existing Jira integration. This is **create-from-finding + link only** —
-there is no inbound status sync yet (see [Follow-ups](#follow-ups)).
+the existing Jira integration. A closed or reopened issue moves the linked
+findings through the same rules as a Jira status change (see
+[Inbound issue events](#inbound-issue-events)).
 
 ## Endpoint
 
@@ -95,12 +96,69 @@ Parallel to Jira, intentionally:
 - **Labels.** Issues are tagged `openctem`, `security`, and the finding
   severity.
 
+## Inbound issue events
+
+Each GitHub integration has its own inbound webhook:
+
+```
+POST /hooks/github-integrations/{integration_id}
+X-Hub-Signature-256: sha256=<hex HMAC-SHA256 of the raw body>
+X-GitHub-Delivery: <GUID>
+X-GitHub-Event: issues | push | ping
+```
+
+- **One integration, one secret.** The integration id in the URL names one
+  integration and so one tenant. The delivery must be signed with that
+  integration's own secret (stored encrypted in the integration metadata,
+  shown once when generated, never returned). An unknown, disabled or
+  non-GitHub integration, and a bad signature, all answer 401 with the same
+  message. There is no tenant chosen by the sender and no search across the
+  tenant's secrets.
+- **Replays.** The signature covers the body only, so the body hash is a
+  delivery key as well as `X-GitHub-Delivery`: both must be new (24 hours, in
+  Redis, shared by every replica). A captured body sent again with a fresh
+  delivery id is acknowledged and ignored. Without the store every delivery is
+  refused (503). When processing fails the keys are released and the answer is
+  500, so a redelivery from GitHub is processed.
+- **Repository binding.** A `push` or `issues` event must name its
+  repository; when the integration is bound to a GitHub organization, the
+  repository's owner must be that organization (403 otherwise).
+- **Limits.** Per client IP (50/s, burst 500) and per integration URL (20/s,
+  burst 200).
+- **Suspended organization.** Refused after the signature verified.
+
+An `issues` delivery for an issue linked to findings (by its browse URL in
+`work_item_uris`, every linked finding of the tenant, at most 500) goes through
+`VulnerabilityService.ApplyTicketStatus` / `RequestTicketDisposition` with the
+integration `github` as the recorded actor and the sender's login as the
+tracker account:
+
+| Event | Meaning for linked findings |
+|---|---|
+| `closed`, `state_reason: completed` (or no reason) | Fix claim: legal steps to `fix_applied`, then the proof of fix is requested per claimed finding. Never a close. |
+| `closed`, `state_reason: not_planned` | A pending risk-acceptance request per finding (requested by the ticket actor; an approver decides). No fix claim. |
+| `closed`, `state_reason: duplicate` | Nothing changes (the work lives in the other issue). |
+| `reopened` | Back to `in_progress` (a claim not yet verified is withdrawn). |
+| anything else | Ignored. |
+
+The transition map, the pentest gate (a pentest finding is never moved by an
+issue), the approval gate and tenant scope apply as for a person's bulk
+change. Refusals are logged; they are not commented back on the issue.
+
+Secret routes: `GET /api/v1/integrations/{id}/github-webhook` (URL and whether
+a secret is set; `integrations:manage`) and
+`POST /api/v1/integrations/{id}/github-webhook/secret/rotate` (`integrations:manage`,
+`integrations:scm:write` and step-up; audited as a Critical
+`integration.webhook_secret_rotated` entry without the secret).
+
 ## Layering
 
 | Layer        | Component                                                        | Responsibility                                  |
 |--------------|-----------------------------------------------------------------|-------------------------------------------------|
 | HTTP handler | `internal/infra/http/handler/jira_webhook_handler.go`           | Parse request, select provider, map errors      |
-| App service  | `internal/app/ticketing/github_ticket.go` (`GitHubTicketService`) | Resolve integration, idempotency, build body    |
+| App service  | `internal/app/ticketing/github_ticket.go` (`GitHubTicketService`) | Resolve integration, idempotency, build body; inbound issue events |
+| Inbound      | `internal/infra/http/handler/github_webhook_handler.go`          | Verify per integration, replay keys, repository binding |
+| Inbound      | `internal/app/integration/github_webhook.go`                     | Per-integration secret, `VerifyGitHubDelivery`   |
 | Shared       | `pkg/safetext/redact.go` (`RedactSecrets`)                      | Provider-agnostic secret scrubbing              |
 | Shared       | `pkg/safetext` (`MarkdownInline`, `MarkdownBlock`, `Jira*`)      | Output encoding per ticket format (RFC-040)     |
 | SCM client   | `internal/infra/scm/github.go` (`GitHubClient.CreateIssue`)     | `POST /repos/{owner}/{repo}/issues`             |
@@ -112,7 +170,6 @@ without network access; `*scm.GitHubClient` satisfies it in production.
 
 ## Follow-ups
 
-- Inbound status sync (GitHub webhook → finding status), mirroring the Jira
-  `IncomingJiraWebhook` path.
+- Comment refusals and the outcome of a not-planned close back on the issue.
 - A provider-abstraction interface so Jira/GitHub share one orchestration
   service instead of two.
