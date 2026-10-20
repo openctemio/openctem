@@ -76,8 +76,31 @@ happens at three points, and each one is enough on its own:
 
 The masked form shows at most the first 4 characters of a secret of 16 or
 more characters, and never more than a quarter of it. A shorter secret
-becomes `REDACTED`. `processor_findings.go` then replaces the stored
-snippet with the masked value (`redactSecretSnippet`).
+becomes `REDACTED`.
+
+### What a secret finding stores and shows
+
+- **Preview** (`type_details.secret.masked_preview`, `secret_masked_value` in the
+  finding response). A preview the producer made (one `…`, at most 8 visible
+  characters, a public type prefix such as `AKIA` or `ghp_` not counted against
+  a quarter of the secret's length) is kept as sent. A value that hides
+  everything (`REDACTED`, `[hidden]`, only mask characters) has no preview, and
+  is never shortened to `RE…ED`. A value that looks raw is cut to at most the
+  first and last 4 characters, never more than a quarter of it at each end.
+  Because the CTIS redaction would turn a producer preview into `REDACTED`,
+  ingest holds a valid preview out of that walk and puts it back.
+- **Snippet and context lines.** The producer's masked source line is kept
+  (`redactSecretSnippet`). If a snippet still holds a secret-looking word (8 or
+  more characters with a letter and a digit, or 20 or more, not masked) it is
+  replaced by `[redacted secret]`, and the context lines are dropped. Nothing
+  about the content is logged.
+- **A later scan fills what is missing.** A stored preview that is empty or
+  `RE…ED` is replaced by the first usable preview a later scan reports (the
+  batch enrichment writes the secret's `type_details`); a usable one stays.
+  The snippet follows the latest scan.
+- **Outward channels.** The AI triage prompt and the finding export (NDJSON)
+  leave out the snippet and context lines of a secret finding. Tickets and
+  notifications carry no code lines.
 
 `tests/integration/ingest_secret_redaction_test.go` ingests one applied
 report and one quarantined report. It then checks that no column of any

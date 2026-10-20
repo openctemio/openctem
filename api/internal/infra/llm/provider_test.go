@@ -295,7 +295,7 @@ func TestProviderType_IsValid(t *testing.T) {
 	}{
 		{"claude", ProviderTypeClaude, true},
 		{"openai", ProviderTypeOpenAI, true},
-		{"azure_openai", ProviderTypeAzureOpenAI, true},
+		{"openai_compatible", ProviderTypeOpenAICompatible, true},
 		{"invalid", ProviderType("invalid"), false},
 		{"empty", ProviderType(""), false},
 	}

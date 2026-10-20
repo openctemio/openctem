@@ -238,6 +238,9 @@ const (
 	// finding's verification checklist: which items changed, whether it is now
 	// complete and who completed it. The notes text is not recorded.
 	ActionFindingVerificationChecklistUpdated Action = "finding.verification_checklist_updated"
+	// ActionFindingClassified records a change to a finding's classification
+	// (CVE, CVSS, CWE, OWASP ids): the old and new values.
+	ActionFindingClassified Action = "finding.classified"
 	// ActionFindingCommentReactionRemoved records an administrator removing
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
@@ -783,7 +786,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionFindingsRefingerprinted, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
@@ -913,7 +916,7 @@ func (a Action) Category() string {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionFindingsRefingerprinted,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"

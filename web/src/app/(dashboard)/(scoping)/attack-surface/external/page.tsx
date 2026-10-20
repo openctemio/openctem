@@ -49,7 +49,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
+import { useTranslation } from '@/context/i18n-provider'
+import { archiveAndReport, deleteAssetSafely } from '@/features/assets/lib/safe-delete'
 import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
 import {
   createAsset,
@@ -143,6 +144,7 @@ function useAssetCount(filters: AssetSearchFilters) {
 }
 
 export default function ExternalSurfacePage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
@@ -319,8 +321,14 @@ export default function ExternalSurfacePage() {
   const handleDelete = async () => {
     if (!deleteAsset) return
     // Refused when the asset has findings: the toast offers Archive.
-    const result = await deleteAssetSafely(deleteAsset.id, deleteAsset.name, refetchAssets)
+    const result = await deleteAssetSafely(deleteAsset.id, deleteAsset.name, refetchAssets, t)
     if (result !== 'failed') setDeleteAsset(null)
+  }
+
+  const handleArchive = async () => {
+    if (!deleteAsset) return
+    const res = await archiveAndReport([deleteAsset.id], refetchAssets, t)
+    if (res.failed.length === 0) setDeleteAsset(null)
   }
 
   const openEdit = useCallback((a: Asset) => {
@@ -735,7 +743,9 @@ export default function ExternalSurfacePage() {
         open={!!deleteAsset}
         onOpenChange={(open) => !open && setDeleteAsset(null)}
         assetName={deleteAsset?.name}
-        typeName="External asset"
+        typeName={t('assets.external.typeName', 'external asset')}
+        findingCount={deleteAsset?.findingCount}
+        onArchive={handleArchive}
         onConfirm={handleDelete}
       />
 
