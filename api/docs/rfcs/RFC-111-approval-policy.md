@@ -40,7 +40,7 @@ none of them.
 | severity, priority class, KEV | `findings.severity`, `findings.priority_class`, `findings.is_in_kev` |
 | EPSS | `findings.epss_score` |
 | validated exploit | `findings.validation_outcome = 'reproducible'` |
-| crown jewel, internet exposed | `assets.is_crown_jewel`, `assets.is_internet_accessible` of the finding's asset |
+| crown jewel, internet exposed | `assets.is_crown_jewel` of the finding's asset; internet exposed is the one product definition (`asset.InternetFacingSQL`: `exposure = 'public'` or `assets.is_internet_accessible`), never the flag alone |
 | asset owners | `asset_owners` of the finding's asset: user owners, and members of owner groups, with ownership `primary` or `secondary` |
 | assignee | `findings.assigned_to` |
 | approvers | members who hold the approve permission of the request kind and have the finding in their data scope |
