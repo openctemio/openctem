@@ -1,0 +1,5 @@
+### Security: the ownership check for active probes follows the name, not the asset type
+
+- A `host` asset named by a public DNS name or public IP address was never held for scope coverage, so a member could create `victim.example` as a host and have active probes dispatched with only the deny list (and the tenant's unclassified-scans mode) in the way. Any asset whose name is exactly a public DNS name or public address is now checked like a domain or an address: outside every active scope entry it is `unattributed`, or passes the guardrails when the tenant allows unclassified scans. Private addresses, internal names, short names and names with ports or paths are unchanged.
+- **Behaviour change:** hosts with public names that come from a vulnerability scanner or agent inventory and are not covered by a scope entry are no longer probed actively while unclassified scans are off. Add the names or ranges to the scope to keep probing them.
+- The asset attribution response (`scope_status`) reports `in_scope`/`out_of_scope` for such hosts instead of `not_applicable`.

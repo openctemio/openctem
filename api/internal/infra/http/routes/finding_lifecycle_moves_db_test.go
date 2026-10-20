@@ -242,9 +242,7 @@ func TestFindingLifecycle_ActionRoutesNarrowed_DB(t *testing.T) {
 	fa := h.findingA
 	h.exec(`UPDATE findings SET status = 'fix_applied', severity = 'medium', sub_status_id = NULL WHERE id = $1`, fa.String())
 	// The verify action needs a complete checklist (a platform rule).
-	h.exec(`INSERT INTO finding_verification_checklists (id, tenant_id, finding_id, exposure_cleared, evidence_attached,
-		register_updated, monitoring_added, regression_scheduled, completed_by, completed_at)
-		VALUES (gen_random_uuid(), $1, $2, true, true, true, true, true, $3, NOW())`, h.tenant.String(), fa.String(), h.memberA.String())
+	h.completeChecklistViaAPI(h.memberA, fa)
 	code, body := h.doPerms(h.memberA, rgVerifierPerms(), http.MethodPost, "/api/v1/findings/actions/verify",
 		map[string]any{"finding_ids": []string{fa.String()}, "note": "verified"})
 	if code != http.StatusOK || h.statusOf(fa) != "fix_applied" {

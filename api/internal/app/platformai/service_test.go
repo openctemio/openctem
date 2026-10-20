@@ -105,3 +105,108 @@ func TestKeyTest(t *testing.T) {
 		t.Fatalf("test: %v %+v", err, seen.Provider)
 	}
 }
+
+// An OpenAI-compatible server: base URL and model, the key optional. A
+// private address needs the audited toggle; loopback and metadata never.
+func TestOpenAICompatibleAndPrivateToggle(t *testing.T) {
+	svc, repo, audit, _ := newSvc(t, false)
+	ctx := context.Background()
+	actor := cst.SuperAdmin(t)
+	in := Input{Enabled: true, Provider: "openai_compatible", Model: "llama3", BaseURL: "http://10.0.0.5:11434/v1", Reason: "self-hosted model"}
+
+	if _, err := svc.Update(ctx, actor, in, 0, "", ""); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a private address without the toggle must be refused: %v", err)
+	}
+	if len(audit.Entries) != 0 {
+		t.Fatal("a refused change writes nothing")
+	}
+	for _, u := range []string{"http://127.0.0.1:11434/v1", "http://localhost:11434/v1", "http://169.254.169.254/v1"} {
+		bad := in
+		bad.AllowPrivate, bad.BaseURL = true, u
+		if _, err := svc.Update(ctx, actor, bad, 0, "", ""); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("%s must be refused even with the toggle: %v", u, err)
+		}
+	}
+	in.AllowPrivate = true
+	got, err := svc.Update(ctx, actor, in, 0, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled || !got.AllowPrivate || got.BaseURL != "http://10.0.0.5:11434/v1" || got.KeySet {
+		t.Fatalf("got %+v", got)
+	}
+	base, priv := svc.PlatformAIEndpoint(ctx)
+	if base != "http://10.0.0.5:11434/v1" || !priv {
+		t.Fatalf("endpoint %s %v", base, priv)
+	}
+	if _, _, _, ok := svc.PlatformAI(ctx); !ok {
+		t.Fatal("a keyless OpenAI-compatible server is usable")
+	}
+	if len(audit.Entries) != 1 || !strings.Contains(audit.JSON(t), "allow_private") || !strings.Contains(repo.Raw(SettingKey), "allow_private") {
+		t.Fatal("the toggle must be recorded in the critical audit row")
+	}
+	// Switching to a hosted provider drops the base URL and the toggle.
+	got, err = svc.Update(ctx, actor, Input{Enabled: true, Provider: "claude", Model: "m", APIKey: cst.Strp(apiKey), Reason: "back to hosted"}, got.Version, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AllowPrivate || got.BaseURL != "" {
+		t.Fatalf("a hosted provider keeps no private toggle: %+v", got)
+	}
+}
+
+// A model allow-list limits the platform model.
+func TestModelAllowList(t *testing.T) {
+	svc, _, _, _ := newSvc(t, false)
+	ctx := context.Background()
+	actor := cst.SuperAdmin(t)
+	if _, err := svc.Update(ctx, actor, Input{Provider: "claude", Model: "not-listed", AllowedModels: []string{"a", "b"}, Reason: "x"}, 0, "", ""); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a model outside the list: %v", err)
+	}
+	if _, err := svc.Update(ctx, actor, Input{Provider: "claude", Model: "a", AllowedModels: []string{"a", " b ", "a"}, Reason: "x"}, 0, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !svc.ModelAllowed(ctx, "b") || svc.ModelAllowed(ctx, "c") {
+		t.Fatal("allow-list not applied")
+	}
+	if _, err := svc.Update(ctx, actor, Input{Provider: "claude", Model: "a", AllowedModels: []string{"bad model!"}, Reason: "x"}, 1, "", ""); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("bad name: %v", err)
+	}
+}
+
+// Organizations may use their own provider by default; turning that off is a
+// guarded, audited, announced change that applies at once, even while the
+// environment pins the platform provider.
+func TestOrgProviderPolicy(t *testing.T) {
+	svc, repo, audit, n := newSvc(t, true) // environment-locked platform provider
+	ctx := context.Background()
+	if !svc.OrgProviderAllowed(ctx) {
+		t.Fatal("own providers are allowed by default")
+	}
+	if _, err := svc.ChangeOrgPolicy(ctx, nil, false, "x", 0, "", ""); !errors.Is(err, ErrNoActor) {
+		t.Fatalf("no actor: %v", err)
+	}
+	if _, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), false, "", 0, "", ""); !errors.Is(err, consolesetting.ErrReasonRequired) {
+		t.Fatalf("a reason is required: %v", err)
+	}
+	if len(audit.Entries) != 0 {
+		t.Fatal("a refused change writes nothing")
+	}
+	p, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), false, "security review", 0, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.AllowOwnProvider || svc.OrgProviderAllowed(ctx) {
+		t.Fatal("the policy must apply at once")
+	}
+	if len(audit.Entries) != 1 || n.Count() != 1 || !strings.Contains(repo.Raw(OrgPolicyKey), "allow_own_provider") {
+		t.Fatalf("audit %d notices %d", len(audit.Entries), n.Count())
+	}
+	// A stale version is refused.
+	if _, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), true, "back", 0, "", ""); err == nil {
+		t.Fatal("a stale version must be refused")
+	}
+	if _, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), true, "back", p.Version, "", ""); err != nil || !svc.OrgProviderAllowed(ctx) {
+		t.Fatalf("allow again: %v", err)
+	}
+}

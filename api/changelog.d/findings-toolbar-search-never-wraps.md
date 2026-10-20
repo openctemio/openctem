@@ -1,0 +1,5 @@
+### Fixed: the Findings search box no longer drops under the filter button
+
+- The Findings list toolbar is now two fixed rows. Row 1 holds the state lens (Open, Fixed, Dispositioned, All) and the page actions (refresh, Export, Task from filters); row 2 holds the filter button joined to the search field, then saved views, Group and the table's View menu. At about 1000 to 1600 px wide the search box used to wrap onto its own line under a lone filter button, or the end controls overflowed the page edge.
+- Toolbar labels switch to icons by the width of the list itself (an open filter panel counts), and on a narrow list Export and Task from filters fold into a "More actions" menu. Every icon-only control keeps its accessible name.
+- Shared table toolbar: the start group (filters, search) keeps at least 12rem; when the end controls do not fit beside it they move to their own line as one group instead of squeezing the search box. The state lens now has the same 36 px height as the other toolbar controls.

@@ -85,7 +85,7 @@ describe('console sign-in: security key first', () => {
     expect(button).toHaveFocus()
     expect(screen.getByRole('button', { name: 'Use authenticator app' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Use a recovery code' })).toBeInTheDocument()
-    expect(screen.queryByLabelText('Verification code')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Code from your authenticator app')).not.toBeInTheDocument()
 
     await user.click(button)
     await waitFor(() => expect(href).toHaveBeenCalledWith('/'))
@@ -126,11 +126,11 @@ describe('console sign-in: security key first', () => {
 
     await renderSignedIn()
     await user.click(await screen.findByRole('button', { name: 'Use a recovery code' }))
+    // A complete code signs in on its own.
     await user.type(screen.getByLabelText('Recovery code'), 'abcd-efgh-ijkl')
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
     await waitFor(() => expect(href).toHaveBeenCalledWith('/'))
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/admin/auth/recovery')
-    expect(fetchMock.mock.calls[0][1].body).toBe(JSON.stringify({ code: 'abcd-efgh-ijkl' }))
+    expect(fetchMock.mock.calls[0][1].body).toBe(JSON.stringify({ code: 'abcdefghijkl' }))
   })
 
   it('a refused recovery code shows the error and clears the field', async () => {
@@ -142,8 +142,7 @@ describe('console sign-in: security key first', () => {
     )
     await renderSignedIn()
     await user.click(await screen.findByRole('button', { name: 'Use a recovery code' }))
-    await user.type(screen.getByLabelText('Recovery code'), 'used-code')
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.type(screen.getByLabelText('Recovery code'), 'used-code-xyz9')
     expect(await screen.findByText('Invalid or already used recovery code')).toBeInTheDocument()
     expect(screen.getByLabelText('Recovery code')).toHaveValue('')
   })
@@ -157,13 +156,12 @@ describe('console sign-in: security key first', () => {
       new AdminApiError('Use your security key or passkey', 403, 'WEBAUTHN_REQUIRED')
     )
     await renderSignedIn()
-    await user.type(await screen.findByLabelText('Verification code'), '123456')
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '123456')
     expect(
       await screen.findByRole('button', { name: 'Use security key or passkey' })
     ).toBeInTheDocument()
     expect(screen.getByText(/The authenticator app is not accepted/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Verification code')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Code from your authenticator app')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Use authenticator app' })).not.toBeInTheDocument()
   })
 
@@ -175,6 +173,6 @@ describe('console sign-in: security key first', () => {
       methods: ['webauthn', 'totp', 'recovery_code'],
     })
     await renderSignedIn()
-    expect(await screen.findByLabelText('Verification code')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Code from your authenticator app')).toBeInTheDocument()
   })
 })

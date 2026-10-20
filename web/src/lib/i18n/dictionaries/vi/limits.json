@@ -8,7 +8,6 @@
   "limits.col.limit": "Cho phép",
   "limits.col.used": "Đã dùng",
   "limits.console.cancel": "Huỷ",
-  "limits.console.code": "Mã từ ứng dụng xác thực",
   "limits.console.confirm": "Xác nhận",
   "limits.console.defaults.confirmDesc": "Áp dụng cho các tổ chức được tạo từ bây giờ. Các tổ chức hiện có không thay đổi. Thay đổi được ghi vào nhật ký kiểm toán quản trị.",
   "limits.console.defaults.confirmTitle": "Thay đổi giới hạn mặc định?",

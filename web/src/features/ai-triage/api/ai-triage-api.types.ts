@@ -73,7 +73,7 @@ export interface ApiAIConfigResponse {
   provider: string
   model: string
   is_enabled: boolean
-  /** Why is_enabled is false: not_enabled, platform_not_configured, budget_exhausted. */
+  /** Why is_enabled is false: not_enabled, platform_not_configured, own_provider_not_allowed, own_provider_not_configured, budget_exhausted. */
   reason?: string
   auto_triage_enabled: boolean
   auto_triage_severities?: string[]

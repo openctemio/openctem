@@ -50,12 +50,14 @@ import {
   FindingHeader,
   FindingProperties,
   FindingRetestSection,
+  FindingRetestCheckSection,
   FindingTenableRescanSection,
   FindingWhyItMatters,
   OverviewTab,
   RelatedTab,
   RemediationTab,
 } from '@/features/findings/components/detail'
+import { FromTaskCrumb } from '@/features/remediation-hub/components/from-task-crumb'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
 import { PentestDetailsTab } from '@/features/findings/components/detail/pentest-details-tab'
 import { getSourceLayout, getOrderedTabs } from '@/features/findings/config/source-layout'
@@ -199,6 +201,7 @@ export default function FindingDetailPage() {
 
   return (
     <Main>
+      <FromTaskCrumb />
       <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[auto_auto_auto_1fr]">
         <div className="min-w-0 lg:col-start-1">
           <FindingHeader
@@ -217,6 +220,10 @@ export default function FindingDetailPage() {
           </div>
           <FindingRetestSection
             finding={{ ...finding, status: triage.status }}
+            className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+          />
+          <FindingRetestCheckSection
+            finding={finding}
             className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
           />
           <FindingTenableRescanSection

@@ -244,9 +244,9 @@ func TestGitHubTicket_SecretFindingOmitsRawDescription(t *testing.T) {
 	if strings.Contains(ic.gotBody, "AKIAIOSFODNN7EXAMPLE") {
 		t.Errorf("secret finding body leaked the raw secret: %q", ic.gotBody)
 	}
-	// The finding keeps a 4+4 preview of what the scanner reported.
-	if !strings.Contains(ic.gotBody, finding.SecretMaskedValue()) || finding.SecretMaskedValue() == "" {
-		t.Errorf("secret finding body should include the masked value, got: %q", ic.gotBody)
+	// No preview leaves either (the outbound gate's secret rule).
+	if strings.Contains(ic.gotBody, finding.SecretMaskedValue()) {
+		t.Errorf("secret finding body carries the masked preview, got: %q", ic.gotBody)
 	}
 }
 

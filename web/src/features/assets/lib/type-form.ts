@@ -198,6 +198,9 @@ export function updateInputFromForm(
     ...(c.impactIntegrity !== undefined ? { impactIntegrity: c.impactIntegrity } : {}),
     ...(c.impactAvailability !== undefined ? { impactAvailability: c.impactAvailability } : {}),
     tags: c.tags,
+    ...(typeof data.riskChangeReason === 'string' && data.riskChangeReason
+      ? { riskChangeReason: data.riskChangeReason }
+      : {}),
     ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   } as UpdateAssetInput
 }

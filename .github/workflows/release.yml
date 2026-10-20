@@ -28,56 +28,27 @@ env:
   GOWORK: "off"
 
 jobs:
-  build:
-    name: Build bootstrap-admin (${{ matrix.os }}/${{ matrix.arch }})
+  # The release archives: server, signer, migrations, gateway, web, console,
+  # bootstrap-admin and the image kit (release-dist.yml, the same build a pull
+  # request dry-runs).
+  dist:
+    name: Archives
     if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: linux, arch: amd64 }
-          - { os: linux, arch: arm64 }
-          - { os: darwin, arch: amd64 }
-          - { os: darwin, arch: arm64 }
-          - { os: windows, arch: amd64 }
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: api/go.mod
-          cache: true
-          cache-dependency-path: api/go.sum
-      - name: Build and package
-        env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          VERSION: ${{ github.ref_name }}
-        run: |
-          BIN=bootstrap-admin; [ "$GOOS" = windows ] && BIN=bootstrap-admin.exe
-          go build -ldflags="-s -w -X main.Version=${VERSION}" -o "bin/${BIN}" ./cmd/bootstrap-admin
-          NAME="bootstrap-admin-${VERSION}-${GOOS}-${GOARCH}"
-          cd bin
-          if [ "$GOOS" = windows ]; then zip "../../${NAME}.zip" "$BIN"; else tar czf "../../${NAME}.tar.gz" "$BIN"; fi
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: bootstrap-admin-${{ matrix.os }}-${{ matrix.arch }}
-          path: |
-            *.tar.gz
-            *.zip
-          if-no-files-found: error
-          retention-days: 1
+    uses: ./.github/workflows/release-dist.yml
+    with:
+      version: ${{ github.ref_name }}
+      full: true
 
   release:
     name: Create Release
     permissions:
       contents: write
+      # Keyless Sigstore signature of checksums-sha256.txt and the SLSA build
+      # provenance of every archive (GitHub OIDC).
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [dist]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,11 +56,36 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/artifacts
-          pattern: bootstrap-admin-*
+          pattern: dist-*
           merge-multiple: true
-      - name: Generate checksums
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      # One SPDX SBOM per archive, from its unpacked contents (Go module
+      # versions of every binary, npm packages of the web bundles).
+      - name: SBOMs
         working-directory: /tmp/artifacts
-        run: sha256sum ./*.tar.gz ./*.zip > checksums-sha256.txt
+        run: |
+          set -euo pipefail
+          for a in *.tar.gz *.zip; do
+            d="$(mktemp -d)"
+            case "$a" in *.zip) unzip -q "$a" -d "$d" ;; *) tar -C "$d" -xzf "$a" ;; esac
+            syft scan "dir:$d" --source-name "$a" -q -o spdx-json="${a}.spdx.json"
+          done
+      # checksums-sha256.txt pins every archive and SBOM; its Sigstore bundle
+      # (checksums-sha256.txt.sigstore.json) names this workflow at this tag.
+      - name: Checksums and their signature
+        working-directory: /tmp/artifacts
+        run: |
+          set -euo pipefail
+          sha256sum -- *.tar.gz *.zip *.spdx.json > checksums-sha256.txt
+          cosign sign-blob --yes --bundle checksums-sha256.txt.sigstore.json checksums-sha256.txt
+          cosign verify-blob checksums-sha256.txt --bundle checksums-sha256.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: Build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: /tmp/artifacts/checksums-sha256.txt
       - name: Release notes header
         env:
           TAG: ${{ github.ref_name }}
@@ -122,6 +118,27 @@ jobs:
           gh attestation verify oci://ghcr.io/openctemio/openctem-api:${TAG} --owner openctemio
           \`\`\`
 
+          ## Installing without containers, or from a private registry
+
+          The archives below install every component as programs with systemd
+          units (linux amd64/arm64; \`bootstrap-admin\` also for macOS and
+          Windows): api/docs/deployment/binary-install.md. For sites whose
+          clusters cannot reach the internet, each image is also attached as an
+          OCI archive with its signatures (\`openctem-image-*.oci.tar\`, listed
+          and signed in \`openctem-images-${TAG}.txt\`), and the image kit builds
+          the images from the archives without source code:
+          api/docs/deployment/air-gapped.md.
+
+          Verify before use:
+
+          \`\`\`bash
+          cosign verify-blob checksums-sha256.txt --bundle checksums-sha256.txt.sigstore.json \\
+            --certificate-identity https://github.com/openctemio/openctem/.github/workflows/release.yml@refs/tags/${TAG} \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          sha256sum --ignore-missing -c checksums-sha256.txt
+          gh attestation verify openctem-server-${TAG}-linux-amd64.tar.gz --owner openctemio
+          \`\`\`
+
           ## Upgrading (Compose deployment, api/deploy)
 
           Read the upgrade notes below first. Then set \`OPENCTEM_VERSION=${TAG}\` in
@@ -137,7 +154,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           bash .github/scripts/release/publish-release.sh "$TAG" /tmp/release-header.md \
-            /tmp/artifacts/*.tar.gz /tmp/artifacts/*.zip /tmp/artifacts/checksums-sha256.txt
+            /tmp/artifacts/*.tar.gz /tmp/artifacts/*.zip /tmp/artifacts/*.spdx.json \
+            /tmp/artifacts/checksums-sha256.txt /tmp/artifacts/checksums-sha256.txt.sigstore.json
       - name: Sanitize release notes
         # Escape @mentions that are not "by @login" credits; drop raw emails
         # (.github/scripts/release/sanitize-notes.py).

@@ -1776,7 +1776,7 @@ vars:
     group: "AI triage"
     type: string
     default: "claude"
-    description: "Provider used for organizations in platform mode: `claude`, `openai` or `gemini`."
+    description: "Provider used for organizations in platform mode: `claude`, `openai` or `gemini`. A self-hosted or gateway model (`openai_compatible`, with a base URL) is set in the console, not here."
   - name: AI_RATE_LIMIT_RPM
     component: api
     group: "AI triage"
@@ -2374,6 +2374,12 @@ vars:
     type: string
     default: "ghcr.io/openctemio/migrations"
     description: "Image repository of the migrations job."
+  - name: GATEWAY_IMAGE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "ghcr.io/openctemio/openctem-gateway"
+    description: "Image repository of the gateway (Caddy with the layer4 module)."
   - name: API_VERSION
     component: compose
     group: "Docker Compose stack"
@@ -2445,6 +2451,18 @@ vars:
     type: string
     default: "7-alpine"
     description: "Image tag of the bundled Redis."
+  - name: POSTGRES_IMAGE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "postgres"
+    description: "Image repository of the bundled PostgreSQL (and of the one-shot jobs that use its tools), for a private registry: `registry.example.internal/library/postgres`. The tag is `POSTGRES_VERSION`."
+  - name: REDIS_IMAGE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "redis"
+    description: "Image repository of the bundled Redis, for a private registry. The tag is `REDIS_VERSION`."
   - name: DB_SUPERUSER
     component: compose
     group: "Docker Compose stack"
