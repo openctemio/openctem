@@ -21,12 +21,35 @@ var (
 func (a clientAdapter) IntegrationID() shared.ID { return a.integrationID }
 
 // CreateIssueFields creates an issue from a rendered field payload.
-func (a clientAdapter) CreateIssueFields(ctx context.Context, projectKey, issueTypeID string, fields map[string]any) (*appjira.CreateIssueResult, error) {
-	res, err := a.c.CreateIssueFields(ctx, projectKey, issueTypeID, fields)
+func (a clientAdapter) CreateIssueFields(ctx context.Context, projectKey, issueTypeID string, fields map[string]any, marker *appjira.IssueMarker) (*appjira.CreateIssueResult, error) {
+	res, err := a.c.CreateIssueFields(ctx, projectKey, issueTypeID, fields, infraMarker(marker))
 	if err != nil {
 		return nil, mapUpstream(err)
 	}
 	return &appjira.CreateIssueResult{ID: res.ID, Key: res.Key, BrowseURL: res.BrowseURL}, nil
+}
+
+// infraMarker converts the app-layer marker.
+func infraMarker(m *appjira.IssueMarker) *IssueMarker {
+	if m == nil {
+		return nil
+	}
+	return &IssueMarker{Object: m.Object, Kind: m.Kind, Integration: m.Integration}
+}
+
+// FindIssuesByMarker lists the issues labeled for the marker's object with
+// the marker each one carries.
+func (a clientAdapter) FindIssuesByMarker(ctx context.Context, m appjira.IssueMarker) ([]appjira.MarkedIssue, error) {
+	issues, err := a.c.FindIssuesByMarker(ctx, m.Object)
+	if err != nil {
+		return nil, mapUpstream(err)
+	}
+	out := make([]appjira.MarkedIssue, 0, len(issues))
+	for _, i := range issues {
+		out = append(out, appjira.MarkedIssue{ID: i.ID, Key: i.Key, BrowseURL: i.BrowseURL,
+			Marker: appjira.IssueMarker{Object: i.Marker.Object, Kind: i.Marker.Kind, Integration: i.Marker.Integration}})
+	}
+	return out, nil
 }
 
 // CurrentStatus reads the issue's status with id and category.

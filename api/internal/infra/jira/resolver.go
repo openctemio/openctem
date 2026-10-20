@@ -33,6 +33,7 @@ func (a clientAdapter) CreateIssue(ctx context.Context, in appjira.CreateIssueIn
 		Priority:    in.Priority,
 		Labels:      in.Labels,
 		ParentKey:   in.ParentKey,
+		Marker:      infraMarker(in.Marker),
 	})
 	if err != nil {
 		return nil, err

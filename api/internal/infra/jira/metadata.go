@@ -360,15 +360,17 @@ func (c *Client) GetIssueFields(ctx context.Context, issueKey string, fieldIDs [
 
 // CreateIssueFields creates an issue from a rendered field payload (project
 // and issue type are set here, by id).
-func (c *Client) CreateIssueFields(ctx context.Context, projectKey, issueTypeID string, fields map[string]any) (*CreateIssueResult, error) {
+func (c *Client) CreateIssueFields(ctx context.Context, projectKey, issueTypeID string, fields map[string]any, marker *IssueMarker) (*CreateIssueResult, error) {
 	f := make(map[string]any, len(fields)+2)
 	for k, v := range fields {
 		f[k] = v
 	}
 	f["project"] = map[string]string{"key": projectKey}
 	f["issuetype"] = map[string]string{"id": issueTypeID}
+	body := map[string]any{"fields": f}
+	applyMarker(body, f, marker)
 	var out CreateIssueResult
-	if err := c.doJSON(ctx, http.MethodPost, "/rest/api/2/issue", map[string]any{"fields": f}, &out); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/rest/api/2/issue", body, &out); err != nil {
 		return nil, err
 	}
 	out.BrowseURL = c.baseURL + "/browse/" + out.Key
