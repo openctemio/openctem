@@ -375,7 +375,7 @@ export function AISourceCard({ settings, canEdit, onSaved }: AISourceCardProps) 
           {testCode && (
             <p
               className={
-                testCode === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
+                testCode === 'ok' ? 'text-success' : 'text-destructive'
               }
             >
               {testMessage}

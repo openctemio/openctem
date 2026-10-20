@@ -40,7 +40,7 @@ func TestMigrationTenantAISettings(t *testing.T) {
 	}
 	up, down := read("up"), read("down")
 
-	db, err := sql.Open("postgres", url)
+	db, err := sql.Open("postgres", testdb.MigratorURL())
 	if err != nil {
 		t.Fatal(err)
 	}
