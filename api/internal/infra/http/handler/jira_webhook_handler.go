@@ -101,6 +101,9 @@ type CreateTicketRequest struct {
 	// Jira fields.
 	ProjectKey string `json:"project_key,omitempty" validate:"omitempty,max=255"`
 	IssueType  string `json:"issue_type,omitempty" validate:"omitempty,max=255"`
+	// IntegrationID names one of the organization's Jira integrations; empty
+	// means the default (the first connected one).
+	IntegrationID string `json:"integration_id,omitempty" validate:"omitempty,uuid"`
 
 	// GitHub fields (required when provider=github).
 	Owner string `json:"owner,omitempty" validate:"omitempty,max=255"`
@@ -131,8 +134,9 @@ func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request
 	result, err := h.service.CreateTicketFromFinding(r.Context(), jira.CreateTicketInput{
 		TenantID:   tenantID,
 		FindingID:  findingID,
-		ProjectKey: req.ProjectKey,
-		IssueType:  req.IssueType,
+		ProjectKey:    req.ProjectKey,
+		IssueType:     req.IssueType,
+		IntegrationID: req.IntegrationID,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -324,7 +328,7 @@ func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.
 		claimed = append(claimed, k)
 	}
 
-	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, payload); err != nil {
+	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, integrationID, payload); err != nil {
 		// Released, so Jira's retry of this delivery is processed.
 		release()
 		h.logger.Error("jira webhook processing failed",

@@ -9,6 +9,7 @@ package routes
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -33,6 +34,19 @@ func (c *commentClient) AddComment(_ context.Context, _ string, body string) err
 	defer c.mu.Unlock()
 	c.comments = append(c.comments, body)
 	return nil
+}
+
+// siteMapping is the mapping of the delivering integration.
+type siteMapping struct{ site, project string }
+
+func (m siteMapping) ResolveMapping(context.Context, shared.ID) (jira.MappingConfig, error) {
+	c := jira.DefaultMappingConfig()
+	c.SiteURL, c.DefaultProjectKey = m.site, m.project
+	return c, nil
+}
+
+func (m siteMapping) ResolveMappingByID(ctx context.Context, tenantID, _ shared.ID) (jira.MappingConfig, error) {
+	return m.ResolveMapping(ctx, tenantID)
 }
 
 type onceGuard struct {
@@ -91,7 +105,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 		return len(ids)
 	})
 
-	issue := "SEC-" + shared.NewID().String()[:8]
+	issue := fmt.Sprintf("SEC-%d", time.Now().UnixNano()%1_000_000_000)
 	url := "https://acme.atlassian.net/browse/" + issue
 	add := func(tenant, asset shared.ID, status string) shared.ID {
 		id := shared.NewID()
@@ -116,6 +130,9 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	sync.SetInboundApplier(testTicketApplier{vuln: h.vuln})
 	sync.SetWorkItemFindingLister(findingRepo)
 	sync.SetRefusalCommentGuard(&onceGuard{seen: map[string]bool{}})
+	// The delivering integration: its site and its configured project.
+	intg := shared.NewID()
+	sync.SetMappingResolver(siteMapping{site: "https://acme.atlassian.net", project: "SEC"})
 
 	payload := func(status string) jira.WebhookPayload {
 		return jira.WebhookPayload{
@@ -126,7 +143,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 		}
 	}
 	// The browse URL is derived from the key; make sure it matches ours.
-	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, payload("Done")); err != nil {
+	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, intg, payload("Done")); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []shared.ID{fNew, fConfirmed, fInProgress} {
@@ -177,7 +194,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	}
 
 	// A repeated delivery does not comment again.
-	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, payload("Done")); err != nil {
+	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, intg, payload("Done")); err != nil {
 		t.Fatal(err)
 	}
 	if len(client.comments) != 1 {
@@ -185,7 +202,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	}
 
 	// Reopened in Jira: fix_applied findings go back to in_progress, legally.
-	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, payload("In Progress")); err != nil {
+	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, intg, payload("In Progress")); err != nil {
 		t.Fatal(err)
 	}
 	if st, _, _ := h.findingRow(fNew); st != "in_progress" {

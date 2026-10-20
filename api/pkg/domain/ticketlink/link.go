@@ -184,6 +184,10 @@ type Repository interface {
 	// FindByIssue lists the active links of an issue of an integration (at
 	// most MaxLinksPerIssue).
 	FindByIssue(ctx context.Context, tenantID, integrationID shared.ID, key string) ([]*Link, error)
+	// FindByIssueID lists the active links of an issue of an integration by
+	// the issue's tracker id, which stays when the issue moves and its key
+	// changes (at most MaxLinksPerIssue).
+	FindByIssueID(ctx context.Context, tenantID, integrationID shared.ID, externalID string) ([]*Link, error)
 	// SetState moves a link to unlinked or deleted.
 	SetState(ctx context.Context, tenantID, id shared.ID, state string) error
 	// RecordSync stores the last status pushed or read and the last error.
