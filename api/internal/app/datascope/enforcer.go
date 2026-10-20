@@ -726,3 +726,13 @@ func MembershipOwnerLookup(members MembershipReader) OwnerLookup {
 		return m.IsActive() && m.IsOwner(), nil
 	}
 }
+
+// IsAdmin reports whether userID is an administrator of the tenant, using the
+// admin lookup (false without one, or for an empty user). It is for callers
+// that decide about a user other than the request's caller.
+func (e *Enforcer) IsAdmin(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	if e == nil || e.adminLookup == nil || userID.IsZero() {
+		return false, nil
+	}
+	return e.adminLookup(ctx, tenantID, userID)
+}

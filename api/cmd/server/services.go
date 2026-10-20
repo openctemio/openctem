@@ -112,6 +112,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/app/tenantai"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
@@ -930,6 +931,8 @@ type Services struct {
 	StorageQuota     *storagequota.Service
 	PlatformAlert    *platformalert.Service
 	PlatformAI       *platformai.Service
+	// TenantAI is the organizations' AI settings (consent, source, own provider).
+	TenantAI *tenantai.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -1276,6 +1279,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
+	s.Vulnerability.SetMemberSearcher(repos.Tenant)        // the assignee picker lists only members who can read the finding
 	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
 	s.Vulnerability.SetAssetRefChecker(s.DataScope)        // POST /findings asset_id: tenant + caller scope
 	s.Vulnerability.SetBranchLookup(repos.Branch)          // a finding branch must belong to its asset
@@ -1464,8 +1468,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Close-the-loop: feed attack-path reachability (from the exposure-chain
 	// graph) into prioritization, so an internal asset on a validated
 	// internet→KEV/crown-jewel path is treated as reachable. Cached 5m/tenant.
+	// One oracle serves both consumers (classification and exposure enrichment):
+	// the underlying chains are cached per tenant by the surface service.
+	var reachOracle *reachabilityOracle
 	if s.AttackSurface != nil {
-		s.PriorityClassification.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+		reachOracle = newReachabilityOracle(s.AttackSurface, time.Minute)
+		s.PriorityClassification.SetReachabilityOracle(reachOracle)
 	}
 
 	// CTEM Discovery: enrich EXPOSURE events on the read path with the SAME
@@ -1476,8 +1484,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Exposure != nil {
 		exposureEnricher := exposure.NewExposureEnricher(repos.Asset, log)
 		exposureEnricher.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
-		if s.AttackSurface != nil {
-			exposureEnricher.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+		if reachOracle != nil {
+			exposureEnricher.SetReachabilityOracle(reachOracle)
 		}
 		exposureEnricher.SetThreatIntel(exposureEPSSShim{epssAdapter}, exposureKEVShim{kevAdapter})
 		s.Exposure.SetEnricher(exposureEnricher)
@@ -1802,9 +1810,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		)
 		s.AITriage.SetAuditService(s.Audit)
 		s.AITriage.SetDataScope(s.DataScope)
+		s.AITriage.SetAISettingsRepository(repos.TenantAISettings)
+		var orgPolicy tenantai.OrgPolicy // nil: own providers allowed
 		if s.PlatformAI != nil {
 			s.AITriage.SetPlatformAISource(s.PlatformAI)
+			s.AITriage.SetOrgProviderPolicy(s.PlatformAI)
+			orgPolicy = s.PlatformAI
 		}
+		s.TenantAI = tenantai.NewService(repos.TenantAISettings, s.Encryptor, s.Audit, llmFactory, orgPolicy, log)
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// The organization's AI data-egress policy, shared with MCP: pentest

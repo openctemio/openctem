@@ -59,28 +59,39 @@ issue key is parsed from the `/browse/<KEY>` URL).
 
 ## Per-tenant client resolution
 
-Outbound ticketing builds a Jira client **per tenant** from that tenant's
-connected integration — there is no single global Jira client. This mirrors the
-per-tenant SMTP resolver.
+Ticketing builds a Jira client **per tenant** from that tenant's integrations
+— there is no single global Jira client. A tenant may connect several Jira
+integrations (two sites, or Cloud and Data Center), so every call names the
+integration it acts on:
+
+| Call | Integration |
+|---|---|
+| Inbound delivery (`/hooks/jira-integrations/{id}`) | the integration in the URL, whose secret signed it |
+| Push or comment on an existing link (task issue, finding status, retest comment) | the link's own `integration_id` |
+| Create (finding ticket, task issue) and link an existing issue | `integration_id` in the request body, else the tenant's default |
+
+The tenant's **default** integration is the newest connected Jira integration
+whose client builds (`IntegrationClientResolver.Resolve`). A named integration
+is loaded with `GetByTenantAndID`: another tenant's integration, a missing one
+or another provider is `ErrNoTicketingIntegration`, never a fallback to a
+different integration.
 
 ```
-SyncService.CreateTicketFromFinding(tenantID, …)
-        │
-        ▼
-SyncService.resolveClient(tenantID)
-   ├─ static client set?  (tests) ──► use it
-   └─ else ClientResolver.Resolve(tenantID)
+SyncService.clientFor(tenantID, integrationID)
+   ├─ static client set?  (tests) ──► use it (only for its own integration)
+   ├─ integrationID zero ──► ClientResolver.Resolve(tenantID)        (default)
+   └─ else ──────────────► ClientResolver.ResolveByID(tenantID, id)  (connected only)
             │
             ▼
    IntegrationClientResolver  (internal/infra/jira/resolver.go)
-     1. integrationRepo.ListByProvider(tenantID, ProviderJira)
-     2. pick first StatusConnected integration
-     3. decrypt credentials (AES-256-GCM / APP_ENCRYPTION_KEY)
-     4. build *infra/jira.Client → adapt to app/jira.Client
+     1. load the integration (by id in the tenant, or the default)
+     2. decrypt credentials (AES-256-GCM / APP_ENCRYPTION_KEY)
+     3. build *infra/jira.Client → adapt to app/jira.Client
 ```
 
-The same resolver implements `MappingResolver.ResolveMapping(tenantID)` for
-outbound sync (per-tenant status maps + `sync_enabled` from `config.ticketing`).
+The same resolver implements `MappingResolver` (`ResolveMapping` for the
+default, `ResolveMappingByID` for a named integration in any status, with its
+site URL in `MappingConfig.SiteURL`).
 
 No connected, usable integration → `ErrNoTicketingIntegration` (wraps
 `ErrValidation` → HTTP 400, not 500). Misconfigured integrations are skipped
@@ -331,9 +342,20 @@ An inbound change goes through the finding service, never a direct row write
 (`VulnerabilityService.ApplyTicketStatus`, wired as the sync service's
 `InboundStatusApplier`):
 
-- **Every linked finding.** All findings of the tenant whose `work_item_uris`
-  contain the issue's browse URL (partial GIN index `idx_findings_work_item_uris`,
-  at most 500), not one arbitrary finding.
+- **Only the delivering integration.** The delivery names its integration;
+  the mapping, the allowed projects, the published profile, the campaign epic
+  and the refusal comment all come from that integration. A tenant with two
+  Jira sites that both have an issue `SEC-1` moves only the links of the site
+  that sent the change.
+- **Every linked finding.** The findings linked to the issue in `ticket_links`
+  of that integration, matched by the issue's id (`issue.id`, stable when the
+  issue moves to another project and its key changes) and then by its key for
+  links that recorded no id or the same id (a key now worn by another issue
+  matches nothing); the findings whose `work_item_uris` contain the issue's
+  browse URL built from the integration's own site (never from the payload's
+  `self`; partial GIN index `idx_findings_work_item_uris`); and the open
+  members of the tasks whose issue it is. At most 500, not one arbitrary
+  finding.
 - **Same rules as a person's bulk change**, with the Jira integration as the
   recorded actor (`StatusTransition{Source: "jira", ActorType: "integration"}`,
   so each step's timeline entry commits with it): the transition map, the
@@ -349,7 +371,8 @@ An inbound change goes through the finding service, never a direct row write
   the rules kept where it is (a closed finding, a pentest finding, ...) with the
   reason, not repeated for the same issue, status and reasons within an hour.
 - **A campaign's epic**: Done marks the campaign's findings fixed through the
-  campaign resolve; it never completes the campaign.
+  campaign resolve; it never completes the campaign. The epic is matched by
+  its key at its browse URL on the delivering integration's site.
 
 > Inbound never auto-applies `false_positive`/`accepted` (they require approval),
 > and every Jira "done"-like status maps to `fix_applied` (not `resolved`, which

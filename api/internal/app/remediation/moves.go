@@ -181,6 +181,9 @@ type SplitInput struct {
 // Split creates a task of the same fix from some of a task's findings and
 // moves them there. The new task keeps the owner unless another is named.
 func (s *TaskService) Split(ctx context.Context, in SplitInput, actx auditapp.AuditContext) (*MoveOutcome, error) {
+	if in.Version <= 0 {
+		return nil, ErrTaskVersionRequired
+	}
 	src, err := s.writableTask(ctx, in.TenantID, in.TaskID)
 	if err != nil {
 		return nil, err

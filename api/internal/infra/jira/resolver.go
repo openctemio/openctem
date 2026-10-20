@@ -157,6 +157,64 @@ func (r *IntegrationClientResolver) pick(ctx context.Context, tenantID shared.ID
 	return nil, nil, appjira.ErrNoTicketingIntegration
 }
 
+// byID loads one Jira integration of the tenant. Another tenant's
+// integration, a missing one or another provider is
+// appjira.ErrNoTicketingIntegration (never a fallback to another one).
+func (r *IntegrationClientResolver) byID(ctx context.Context, tenantID, integrationID shared.ID) (*integration.Integration, error) {
+	intg, err := r.integrationRepo.GetByTenantAndID(ctx, tenantID, integrationID)
+	if err != nil {
+		if errors.Is(err, integration.ErrIntegrationNotFound) || errors.Is(err, shared.ErrNotFound) {
+			return nil, appjira.ErrNoTicketingIntegration
+		}
+		return nil, fmt.Errorf("load jira integration: %w", err)
+	}
+	if intg.TenantID() != tenantID || intg.Provider() != integration.ProviderJira {
+		return nil, appjira.ErrNoTicketingIntegration
+	}
+	return intg, nil
+}
+
+// ResolveByID returns the client of one named Jira integration of the
+// tenant; it must be connected. Calls that act on an existing link or an
+// inbound delivery use it, so the issue is always reached on the site that
+// owns it.
+func (r *IntegrationClientResolver) ResolveByID(ctx context.Context, tenantID, integrationID shared.ID) (appjira.Client, error) {
+	intg, err := r.byID(ctx, tenantID, integrationID)
+	if err != nil {
+		return nil, err
+	}
+	if intg.Status() != integration.StatusConnected {
+		return nil, appjira.ErrNoTicketingIntegration
+	}
+	return r.buildClient(intg)
+}
+
+// ResolveMappingByID loads the mapping of one named Jira integration of the
+// tenant, in any status, with its site URL.
+func (r *IntegrationClientResolver) ResolveMappingByID(ctx context.Context, tenantID, integrationID shared.ID) (appjira.MappingConfig, error) {
+	intg, err := r.byID(ctx, tenantID, integrationID)
+	if err != nil {
+		return appjira.MappingConfig{}, err
+	}
+	return mappingOf(intg), nil
+}
+
+// mappingOf is an integration's mapping with its site URL.
+func mappingOf(intg *integration.Integration) appjira.MappingConfig {
+	m := appjira.ParseMappingConfig(intg.Config())
+	m.SiteURL = siteOf(intg)
+	return m
+}
+
+// siteOf is an integration's base URL (no trailing slash).
+func siteOf(intg *integration.Integration) string {
+	baseURL := intg.BaseURL()
+	if baseURL == "" {
+		baseURL = stringFromMap(intg.Config(), "base_url")
+	}
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/")
+}
+
 // Compile-time check that the resolver also satisfies the mapping resolver.
 var _ appjira.MappingResolver = (*IntegrationClientResolver)(nil)
 
@@ -168,7 +226,7 @@ func (r *IntegrationClientResolver) ResolveMapping(ctx context.Context, tenantID
 	if err != nil {
 		return appjira.MappingConfig{}, err
 	}
-	return appjira.ParseMappingConfig(intg.Config()), nil
+	return mappingOf(intg), nil
 }
 
 // TestTicketingConnection checks that a ticketing integration's own stored
@@ -194,10 +252,7 @@ func (r *IntegrationClientResolver) TestTicketingConnection(ctx context.Context,
 // buildClient assembles a Jira client from an integration's base URL and
 // decrypted credentials.
 func (r *IntegrationClientResolver) buildClient(intg *integration.Integration) (appjira.Client, error) {
-	baseURL := intg.BaseURL()
-	if baseURL == "" {
-		baseURL = stringFromMap(intg.Config(), "base_url")
-	}
+	baseURL := siteOf(intg)
 	if baseURL == "" {
 		return nil, fmt.Errorf("integration %s has no base URL", intg.ID())
 	}

@@ -21,7 +21,7 @@ import (
 // the methods that read such rows end in Unscoped and are called only by the
 // pairing service (tools/lint/tenantsql).
 type SensorPairingRepository struct {
-	db         *DB
+	db          *DB
 	limitChecks // sensors: approving a pairing that creates a new sensor
 }
 

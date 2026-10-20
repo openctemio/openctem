@@ -5,7 +5,17 @@ import userEvent from '@testing-library/user-event'
 import AISettingsPage from '../page'
 
 let canEdit = true
-let settings: { enabled: boolean; enabled_at?: string; enabled_by?: string } = { enabled: false }
+const base = {
+  enabled: false,
+  source: 'platform',
+  provider: '',
+  base_url: '',
+  model: '',
+  key: { set: false },
+  own_provider_allowed: true,
+  providers: ['claude', 'openai', 'gemini', 'openai_compatible'],
+}
+let settings: Record<string, unknown> = { ...base }
 let reason: string | undefined
 const update = vi.fn()
 const mutateSettings = vi.fn()
@@ -33,33 +43,33 @@ describe('Settings > AI', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     canEdit = true
-    settings = { enabled: false }
+    settings = { ...base }
     reason = 'not_enabled'
   })
 
   it('turns AI triage on only after the consent dialog', async () => {
-    update.mockResolvedValue({ enabled: true, enabled_at: '2026-10-19T00:00:00Z' })
+    update.mockResolvedValue({ ...base, enabled: true, enabled_at: '2026-10-19T00:00:00Z' })
     render(<AISettingsPage />)
     expect(screen.getByText(/no finding content is sent/)).toBeInTheDocument()
     expect(screen.getByText('What is sent')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('switch'))
+    await userEvent.click(screen.getByRole('switch', { name: /Turn on AI triage/ }))
     expect(update).not.toHaveBeenCalled()
     expect(screen.getByText('Turn on AI triage?')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Turn on' }))
-    await waitFor(() => expect(update).toHaveBeenCalledWith(true))
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ enabled: true }))
   })
 
   it('turns it off at once', async () => {
-    settings = { enabled: true, enabled_at: '2026-10-19T00:00:00Z', enabled_by: 'u1' }
+    settings = { ...base, enabled: true, enabled_at: '2026-10-19T00:00:00Z', enabled_by: 'u1' }
     reason = undefined
-    update.mockResolvedValue({ enabled: false })
+    update.mockResolvedValue({ ...base, enabled: false })
     render(<AISettingsPage />)
-    await userEvent.click(screen.getByRole('switch'))
-    await waitFor(() => expect(update).toHaveBeenCalledWith(false))
+    await userEvent.click(screen.getByRole('switch', { name: /Turn on AI triage/ }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ enabled: false }))
   })
 
   it('says when the upgrade kept it on', () => {
-    settings = { enabled: true, enabled_at: '2026-10-19T00:00:00Z', enabled_by: 'upgrade' }
+    settings = { ...base, enabled: true, enabled_at: '2026-10-19T00:00:00Z', enabled_by: 'upgrade' }
     reason = undefined
     render(<AISettingsPage />)
     expect(screen.getByText(/used AI triage before this setting existed/)).toBeInTheDocument()
@@ -68,7 +78,7 @@ describe('Settings > AI', () => {
   it('is read-only for someone who may not change it', () => {
     canEdit = false
     render(<AISettingsPage />)
-    expect(screen.getByRole('switch')).toBeDisabled()
+    expect(screen.getByRole('switch', { name: /Turn on AI triage/ })).toBeDisabled()
     expect(screen.getByText(/Only owners and administrators/)).toBeInTheDocument()
   })
 
