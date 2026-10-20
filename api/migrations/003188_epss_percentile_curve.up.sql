@@ -1,3 +1,4 @@
+-- expand-contract-ok: contract step; the percentile and score_date columns are replaced by the curve table and the sync status row in the same release, and the API is stopped for this upgrade
 -- EPSS percentile is a rank that moves for almost every CVE on every daily
 -- feed, while the score moves for about 1 %. Stored per row it forced a
 -- rewrite of the whole table (and a fan-out to the catalog and findings) each
