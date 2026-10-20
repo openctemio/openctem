@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS asset_risk_requests (
     created_at            timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_asset_risk_requests PRIMARY KEY (id),
     CONSTRAINT fk_asset_risk_requests_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_asset_risk_requests_asset FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE,
+    CONSTRAINT fk_asset_risk_requests_asset FOREIGN KEY (tenant_id, asset_id) REFERENCES assets (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_asset_risk_requests_requested_by FOREIGN KEY (requested_by) REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT fk_asset_risk_requests_decided_by FOREIGN KEY (decided_by) REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT chk_asset_risk_requests_exposure
