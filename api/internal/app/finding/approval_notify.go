@@ -448,3 +448,86 @@ func (s *VulnerabilityService) DispatchVEXRequestNotices(ctx context.Context) (i
 	}
 	return n, nil
 }
+
+// decisionOutcome is how a request ended, for the notice to its requester.
+type decisionOutcome string
+
+const (
+	decisionApproved decisionOutcome = "approved"
+	decisionRejected decisionOutcome = "rejected"
+)
+
+// requesterMayHear reports whether the requester is still an active member
+// who can read the finding: their notice names the finding, so it is sent
+// under the same rules as the finding itself (data scope, or the pentest
+// campaign for a pentest finding). Fail closed: no membership check wired,
+// or any lookup error, sends nothing.
+func (s *VulnerabilityService) requesterMayHear(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding, requester shared.ID) bool {
+	if s.assigneeChecker == nil {
+		return false
+	}
+	if ok, err := s.assigneeChecker.IsActiveTenantMember(ctx, tenantID, requester); err != nil || !ok {
+		return false
+	}
+	if isPentest(f) {
+		_, err := s.resolvePentestViewer(ctx, tenantID, f, requester.String(), false)
+		return err == nil
+	}
+	if s.dataScope == nil {
+		return true
+	}
+	err := s.dataScope.AssertFindingForUser(ctx, tenantID, requester, f.ID())
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
+		s.logger.Warn("requester notice: data scope", "error", logger.SanitizeError(err))
+	}
+	return err == nil
+}
+
+// notifyRequesterDecided tells the person who asked for a status or severity
+// change how it ended: approved or rejected, with the finding title and never
+// the justification or the reason of the decision. Nothing for the requester's
+// own action (a withdrawal), for a requester who left or lost sight of the
+// finding. Best effort: the decision is saved already.
+func (s *VulnerabilityService) notifyRequesterDecided(ctx context.Context, tenantID, findingID, requester, actor shared.ID, subject string, outcome decisionOutcome) {
+	if s.approvalInApp == nil || requester.IsZero() || requester == actor {
+		return
+	}
+	f, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil || !s.requesterMayHear(ctx, tenantID, f, requester) {
+		return
+	}
+	s.sendDecisionNotice(ctx, tenantID, findingID, requester,
+		fmt.Sprintf("Your %s request was %s", subject, outcome), oneLineTitle(f.Title()), "/findings/"+findingID.String())
+}
+
+func (s *VulnerabilityService) sendDecisionNotice(ctx context.Context, tenantID shared.ID, findingID, requester shared.ID, title, body, url string) {
+	uid, fid := requester, findingID
+	if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
+		TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
+		NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+		Severity: notificationdom.SeverityMedium, ResourceType: "finding", ResourceID: &fid, URL: url,
+	}); err != nil {
+		s.logger.Warn("requester notice: in-app notification", "error", logger.SanitizeError(err))
+	}
+}
+
+// notifyBatchRequesterDecided is notifyRequesterDecided for a group
+// exception: one notice with the number of findings, sent only when the
+// requester can read every member finding.
+func (s *VulnerabilityService) notifyBatchRequesterDecided(ctx context.Context, tenantID shared.ID, b *vulnerability.ApprovalBatch, members []vulnerability.ApprovalBatchMember, actor shared.ID, outcome decisionOutcome) {
+	if s.approvalInApp == nil || b == nil || b.RequestedBy.IsZero() || b.RequestedBy == actor || len(members) == 0 {
+		return
+	}
+	for _, m := range members {
+		f, err := s.findingRepo.GetByID(ctx, tenantID, m.FindingID)
+		if err != nil || !s.requesterMayHear(ctx, tenantID, f, b.RequestedBy) {
+			return
+		}
+	}
+	n := fmt.Sprintf("%d findings", len(members))
+	if len(members) == 1 {
+		n = "1 finding"
+	}
+	s.sendDecisionNotice(ctx, tenantID, members[0].FindingID, b.RequestedBy,
+		fmt.Sprintf("Your %s group request was %s", statusLabel(string(b.RequestedStatus)), outcome), n, "/findings/approvals")
+}

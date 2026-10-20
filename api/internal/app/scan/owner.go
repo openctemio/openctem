@@ -23,7 +23,25 @@ const (
 	OwnerStateOK       = "ok"
 	OwnerStateMissing  = "missing"
 	OwnerStateInactive = "inactive"
+	// OwnerStateManaged: a platform policy owns the scan; it has no owner
+	// and nobody takes it over (ErrScanManagedByPolicy).
+	OwnerStateManaged = "managed"
 )
+
+// ErrScanManagedByPolicy refuses a change to, or a run of, a scan a platform
+// policy owns (continuous coverage, automatic enrichment): its definition is
+// changed through that policy, never through the scan API.
+var ErrScanManagedByPolicy = shared.NewDomainError("SCAN_MANAGED_BY_POLICY",
+	"This scan is managed by the platform. Its settings and runs are controlled by the policy that owns it; clone it to get a scan you own.",
+	shared.ErrConflict)
+
+// refuseManaged refuses a member's change to a managed scan.
+func refuseManaged(sc *scan.Scan) error {
+	if sc.IsManaged() {
+		return ErrScanManagedByPolicy
+	}
+	return nil
+}
 
 // ErrScanOwnerActive refuses a take-over of a scan whose owner is an active
 // member: ownership moves only away from a missing or departed owner.
@@ -64,6 +82,9 @@ func (s *Service) SetOwnerNotifications(d AdminDirectory, n InAppNotifier) {
 // lookup error reports ok: the state is advisory, the scheduled-run gate
 // checks again and fails closed.
 func (s *Service) OwnerState(ctx context.Context, sc *scan.Scan) string {
+	if sc.IsManaged() {
+		return OwnerStateManaged
+	}
 	if sc.CreatedBy == nil || sc.CreatedBy.IsZero() {
 		return OwnerStateMissing
 	}
@@ -144,6 +165,9 @@ func (s *Service) TakeOwnership(ctx context.Context, in TakeOwnershipInput) (*sc
 	}
 	sc, err := s.GetScan(ctx, in.TenantID, in.ScanID)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseManaged(sc); err != nil {
 		return nil, err
 	}
 	state := s.OwnerState(ctx, sc)
