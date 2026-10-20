@@ -154,10 +154,9 @@ func TestTicketDescription_SecretFinding_SuppressesRawSecret(t *testing.T) {
 	if strings.Contains(desc, rawSecret) {
 		t.Fatalf("secret-finding ticket leaked the raw secret: %q", desc)
 	}
-	// The finding keeps a 4+4 preview of what the scanner reported ("AK…LE"); it has no
-	// Jira wiki metacharacters, so the escaped description carries it verbatim.
-	if !strings.Contains(desc, f.SecretMaskedValue()) || f.SecretMaskedValue() == "" {
-		t.Fatalf("expected masked value in description: %q", desc)
+	// No preview leaves either (the outbound gate's secret rule).
+	if strings.Contains(desc, f.SecretMaskedValue()) {
+		t.Fatalf("secret-finding ticket carries the masked preview: %q", desc)
 	}
 }
 

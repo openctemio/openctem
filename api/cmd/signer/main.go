@@ -40,6 +40,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/signer"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 func main() {
@@ -87,10 +88,13 @@ func run(args []string) error {
 		return ledgerCmd(args, os.Stdout)
 	case "serve":
 		return serve()
+	case "version":
+		fmt.Println("openctem-signer", version.Get())
+		return nil
 	case "healthcheck":
 		return healthcheck(os.Getenv("SIGNER_SOCKET"), 2*time.Second)
 	default:
-		return fmt.Errorf("unknown command %q (keygen, pubkey, verify-log, ledger, serve, healthcheck, root keygen, keyset sign, keyset show)", cmd)
+		return fmt.Errorf("unknown command %q (keygen, pubkey, verify-log, ledger, serve, healthcheck, version, root keygen, keyset sign, keyset show)", cmd)
 	}
 }
 

@@ -7,8 +7,6 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -41,7 +39,7 @@ import {
   useAuditChainStatus,
 } from '../api/use-admin-audit-chain'
 import { useTranslation } from '@/context/i18n-provider'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 const CLASS_KEY: Record<AuditChainClass, string> = {
   verifies: 'admin.auditChain.class.verifies',
@@ -489,34 +487,17 @@ export function OrganizationAuditChainPanel({
         disabled={!stepUpCodeReady(code, codeOptional)}
         handleConfirm={() => void rebaseline()}
       >
-        <div className="space-y-2">
-          <Label htmlFor={codeId} className="font-normal">
-            {t('confirm.auditChain.code', 'Code from your authenticator')}
-          </Label>
-          <Input
-            id={codeId}
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            className="tabular-nums"
-            aria-invalid={codeError ? true : undefined}
-            aria-describedby={codeError ? `${codeId}-error` : undefined}
-          />
-          <StepUpCodeHint optional={codeOptional} />
-          {codeError ? (
-            <p id={`${codeId}-error`} className="text-sm text-destructive">
-              {codeError}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'admin.organizationAuditChainPanel.aNewCodeTheOne',
-                'A new code: the one you signed in with cannot be used again.'
-              )}
-            </p>
+        <StepUpCodeField
+          id={codeId}
+          value={code}
+          onChange={setCode}
+          optional={codeOptional}
+          error={codeError}
+          hint={t(
+            'admin.organizationAuditChainPanel.aNewCodeTheOne',
+            'A new code: the one you signed in with cannot be used again.'
           )}
-        </div>
+        />
       </ConfirmDialog>
     </div>
   )

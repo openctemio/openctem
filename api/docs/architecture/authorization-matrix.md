@@ -268,7 +268,11 @@ Details: [api-keys.md](./api-keys.md).
 | `GET /api/v1/assets` | `assets:read` |
 | `GET /api/v1/assets/{id}` | `assets:read` |
 | `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
-| `PUT /api/v1/assets/{id}` | `assets:write` |
+| `PUT /api/v1/assets/{id}` | `assets:write`. Lowering exposure or criticality is decided under the organization's approval policy when it would drop an open P0/P1 finding on the asset (202, the lowered fields wait; [asset risk governance](asset-risk-governance.md)) |
+| `PATCH /api/v1/assets/{id}/crown-jewel` · `PUT /{id}/attribute-sources/{attribute}/lock` | `assets:write`; unmarking a crown jewel and locking a lower exposure or criticality follow the same decision |
+| `POST /api/v1/assets/{id}/risk-impact` · `GET /{id}/risk-requests/pending` | `assets:write` (preview) · `assets:read` (the pending request); the asset must be in the caller's data scope (404 otherwise) |
+| `POST /api/v1/assets/{id}/risk-requests/{request_id}/approve` · `/reject` | `findings:approve`, the asset in the caller's data scope; the requester and the asset's owners never approve (403); step-up when the tier asks for it |
+| `POST /api/v1/assets/{id}/risk-requests/{request_id}/cancel` | `assets:write`, the requester only |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` + data scope. Refused with 409 (`asset_has_findings`) while the asset has any finding (archive it instead); otherwise a soft delete, audited `asset.deleted` (see [asset-deletion.md](asset-deletion.md)) |
 
 #### Business units (`/api/v1/business-units`)
@@ -349,6 +353,9 @@ and SBOM import write it.
 | `POST /api/v1/lifecycle-sub-statuses` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/reactivate` | `findings:lifecycles:write` |
 | `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
 | `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
+| `GET /api/v1/findings/{id}/retest-check` | `findings:read` (finding data scope) |
+| `PUT` · `DELETE /api/v1/findings/{id}/retest-check`, `POST /api/v1/findings/{id}/retest-check/test` | `findings:retest_checks:write` (finding data scope; [retest checks](finding-retest-checks.md)) |
+| `POST /api/v1/findings/{id}/retest-check/approve` | `scope:approve` + step-up; never the author of the version |
 
 > Organization configuration (no finding data), tenant from the token; another
 > organization's sub-status, lifecycle or version is 404. A lifecycle can only
