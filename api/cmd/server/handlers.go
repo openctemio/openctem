@@ -1879,6 +1879,13 @@ func (g findingAccessGuard) AssertFinding(ctx context.Context, tenantID, finding
 	return g.findings.AssertFindingAccess(ctx, tenantID, findingID)
 }
 
+// AssertFindingForFixWork is the by-id guard's finding check for a route of
+// the fix workflow: it also admits the owner of a live task holding the
+// finding (middleware.TaskWorkAsserter).
+func (g findingAccessGuard) AssertFindingForFixWork(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	return g.findings.AssertFindingForFixWork(ctx, tenantID, findingID)
+}
+
 // byIDGuardAsserter is the asserter of the by-id data-scope guard (nil
 // without a data-scope enforcer: no guard).
 func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
