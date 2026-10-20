@@ -1347,6 +1347,12 @@ func (s *AITriageService) extractAISettings(settings map[string]any) tenant.AISe
 // The second return value reports that the content tried to break the fence
 // or matched a known injection pattern; the caller treats the resulting
 // analysis as untrusted (see applyInjectionGuard).
+// carriesSecret reports whether a finding is a leaked-secret finding, by its
+// type or its source.
+func carriesSecret(f *vulnerability.Finding) bool {
+	return f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret
+}
+
 func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) (string, bool) {
 	var b strings.Builder
 
@@ -1383,7 +1389,11 @@ func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) (strin
 		fmt.Fprintf(&b, "- **File**: %s:%d\n", field(vulnerability.DisplayPath(f.FilePath())), f.StartLine())
 	}
 
-	if f.Snippet() != "" {
+	// A secret finding's snippet is the line that holds the credential, with
+	// the secret masked by the producer. The model provider gets the file and
+	// line only: masking is the producer's work and must not be the only
+	// thing between a live credential and an outside service.
+	if f.Snippet() != "" && !carriesSecret(f) {
 		snippet, hit := fence.wrap("\n```\n" + san.SanitizeCodeSnippet(f.Snippet()) + "\n```\n")
 		suspicious = suspicious || hit
 		fmt.Fprintf(&b, "- **Code Snippet**:\n%s\n", snippet)

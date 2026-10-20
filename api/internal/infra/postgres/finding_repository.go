@@ -4057,7 +4057,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 63
+const enrichColumnsPerRow = 64
 
 // enrichWhereColumns is the number of leading enrichColumnDefs used in WHERE.
 const enrichWhereColumns = 3
@@ -4149,6 +4149,10 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"patch_published_at", "timestamptz"},
 	{"last_seen_branch", "text"},
 	{"last_seen_commit", "text"},
+	// A secret finding's typed document: a later scan fills a preview the
+	// stored one lacks (EnrichFrom, enrichSecretFields). Other types send NULL
+	// and keep theirs.
+	{"type_details", "jsonb"},
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
@@ -4346,7 +4350,17 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		// Network location — EnrichFrom fills it first-wins (enrichNetwork).
 	}, append(append(findingNetworkArgs(f), findingScannerArgs(f)...),
 		// Last sighting's branch and commit (EnrichFrom: latest non-empty).
-		nullString(f.LastSeenBranch()), nullString(f.LastSeenCommit()))...), nil
+		nullString(f.LastSeenBranch()), nullString(f.LastSeenCommit()),
+		enrichTypeDetails(f))...), nil
+}
+
+// enrichTypeDetails is the type_details value a re-sighting writes: a secret
+// finding's document, NULL (keep the stored one) for every other type.
+func enrichTypeDetails(f *vulnerability.Finding) any {
+	if f.FindingType() != vulnerability.FindingTypeSecret {
+		return nil
+	}
+	return typeDetailsDoc(f.TypeDetails())
 }
 
 // buildBatchEnrichQuery builds a VALUES-based UPDATE query for the given number of rows.
@@ -4382,6 +4396,10 @@ func buildBatchEnrichQuery(rowCount int) string {
 			continue
 		}
 		sb.WriteString(col)
+		if col == "type_details" {
+			sb.WriteString(" = COALESCE(d.type_details, f.type_details)")
+			continue
+		}
 		if col == "occurrence_count" {
 			// A re-sighting counts one, computed from the row being updated.
 			// Writing back the value loaded before the merge (d.occurrence_count)
