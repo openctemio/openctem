@@ -125,9 +125,9 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 		return nil, err
 	}
 	// A managed scan runs only when its policy starts it (or the platform
-	// retries it): not on a member's "Run now", not as an approved or emergency
-	// run of a member, not from an automation.
-	if sc.IsManaged() && (input.Interactive || input.TriggeredBy != "" || input.TriggerType == scanworkflow.TriggerTypeAutomation) {
+	// retries it, TriggeredBy naming no user): not on a member's "Run now", not
+	// as an approved or emergency run of a member, not from an automation.
+	if sc.IsManaged() && (input.Interactive || userIDPtr(input.TriggeredBy) != nil || input.TriggerType == scanworkflow.TriggerTypeAutomation) {
 		return nil, ErrScanManagedByPolicy
 	}
 	return s.triggerAndRecord(ctx, sc, input)
