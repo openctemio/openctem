@@ -20,6 +20,16 @@ when a Go module, npm package or GitHub Action that the pull request adds or
 upgrades has a known high or critical advisory. Treat a red result as a blocker
 unless a maintainer agrees otherwise.
 
+A pull request runs the fast tier of CI: lint, the static gates, the whole Go
+test suite against Postgres and Redis (without the race detector), the web
+checks and tests, CodeQL for the changed language and the security checks. The
+merge queue then runs the full tier (race detector, least-privilege database
+suite, PostgreSQL 18, image build and smoke test, end-to-end suite) before
+anything lands. To run the full tier on the pull request itself, add the
+`ci:full` label and re-run the jobs (or push); a pull request that changes a
+workflow or CI script always runs it. Details:
+[Tiers](api/docs/development/ci-cd.md#tiers).
+
 ## Security-sensitive changes
 
 A pull request that changes authentication or authorization, tenant isolation,

@@ -1680,19 +1680,12 @@ func (r *CommandRepository) RecoverStuckTenantCommands(ctx context.Context, stuc
 	return recovered, nil
 }
 
-// FailExhaustedCommands marks commands that exceeded max retries as failed.
-// Uses a database function for atomic operation.
+// FailExhaustedCommands marks commands that exceeded max dispatch attempts, or
+// command.MaxRequeues returns to the queue, as failed.
 // Returns the number of commands failed.
 func (r *CommandRepository) FailExhaustedCommands(ctx context.Context, maxRetries int) (int64, error) {
-	query := `SELECT fail_exhausted_commands($1::INTEGER)`
-
-	var failed int64
-	err := r.db.QueryRowContext(ctx, query, maxRetries).Scan(&failed)
-	if err != nil {
-		return 0, fmt.Errorf("failed to mark exhausted commands as failed: %w", err)
-	}
-
-	return failed, nil
+	failed, err := r.FailExhaustedCommandsReturning(ctx, maxRetries)
+	return int64(len(failed)), err
 }
 
 // FailExhaustedCommandsReturning is FailExhaustedCommands (the same rows and
@@ -1702,13 +1695,14 @@ func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, 
 	const query = `
 		UPDATE commands
 		SET status = 'failed',
-		    error_message = 'Max dispatch attempts exceeded',
+		    error_message = CASE WHEN dispatch_attempts >= $1
+		                         THEN 'Max dispatch attempts exceeded' ELSE $3::text END,
 		    completed_at = NOW()
 		WHERE status IN ('pending', 'acknowledged')
-		  AND dispatch_attempts >= $1
+		  AND (dispatch_attempts >= $1 OR requeue_count >= $2)
 		RETURNING id, tenant_id, payload, dispatch_attempts
 	`
-	rows, err := r.db.QueryContext(ctx, query, maxRetries)
+	rows, err := r.db.QueryContext(ctx, query, maxRetries, command.MaxRequeues, command.RequeueExhaustedMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mark exhausted commands as failed: %w", err)
 	}
@@ -1727,7 +1721,7 @@ func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, 
 		tid, _ := shared.IDFromString(tenantID)
 		out = append(out, &command.Command{
 			ID: cid, TenantID: tid, Payload: payload, DispatchAttempts: attempts,
-			Status: command.CommandStatusFailed, ErrorMessage: "Max dispatch attempts exceeded",
+			Status: command.CommandStatusFailed, ErrorMessage: exhaustedMessage(attempts, maxRetries),
 		})
 	}
 	return out, rows.Err()
@@ -1931,6 +1925,7 @@ func (r *CommandRepository) ReleaseForSensor(ctx context.Context, tenantID, comm
 		SET status = 'pending', sensor_id = NULL,
 		    acknowledged_at = NULL, started_at = NULL,
 		    lease_expires_at = NULL,
+		    `+requeueSQL("")+`,
 		    error_message = $4
 		WHERE id = $1 AND tenant_id = $2 AND sensor_id = $3
 		  AND status IN ('acknowledged', 'running')`,
@@ -1959,7 +1954,8 @@ func (r *CommandRepository) UnclaimForSensor(ctx context.Context, tenantID, comm
 		UPDATE commands
 		SET status = 'pending',
 		    sensor_id = CASE WHEN $4 THEN sensor_id ELSE NULL END,
-		    acknowledged_at = NULL, lease_expires_at = NULL
+		    acknowledged_at = NULL, lease_expires_at = NULL,
+		    `+requeueSQL("")+`
 		WHERE id = $1 AND tenant_id = $2 AND sensor_id = $3
 		  AND status = 'acknowledged'`,
 		commandID.String(), tenantID.String(), sensorID, keepPin)
@@ -2003,4 +1999,12 @@ func commandIDStrings(ids []shared.ID) []string {
 		out[i] = id.String()
 	}
 	return out
+}
+
+// exhaustedMessage is the error the exhaustion sweep gave a command.
+func exhaustedMessage(attempts, maxRetries int) string {
+	if attempts >= maxRetries {
+		return "Max dispatch attempts exceeded"
+	}
+	return command.RequeueExhaustedMessage
 }
