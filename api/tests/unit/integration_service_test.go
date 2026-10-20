@@ -2613,6 +2613,100 @@ func TestJiraWebhookSecret_RotateEncryptsAndVerifies(t *testing.T) {
 }
 
 // =============================================================================
+// Per-integration GitHub inbound-webhook secret
+// =============================================================================
+
+func TestGitHubWebhookSecret_NotGitHubOrOtherTenant_NotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), crypto.NewNoOpEncryptor())
+	tenantID := shared.NewID()
+	jira := integration.NewIntegration(shared.NewID(), tenantID, "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	gh := integration.NewIntegration(shared.NewID(), tenantID, "GitHub", integration.CategorySCM, integration.ProviderGitHub, integration.AuthTypeToken)
+	repo.integrations[jira.ID()] = jira
+	repo.integrations[gh.ID()] = gh
+
+	if _, err := svc.RotateGitHubWebhookSecret(context.Background(), tenantID, jira.ID()); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("non-GitHub integration: want ErrNotFound, got %v", err)
+	}
+	if _, err := svc.RotateGitHubWebhookSecret(context.Background(), shared.NewID(), gh.ID()); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("another tenant: want ErrNotFound, got %v", err)
+	}
+	if _, err := svc.GitHubWebhookHasSecret(context.Background(), shared.NewID(), gh.ID()); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("another tenant reads: want ErrNotFound, got %v", err)
+	}
+}
+
+func TestGitHubWebhookSecret_RotateEncryptsAndVerifiesOneIntegration(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	cipher, err := crypto.NewCipher(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, ext, cipher)
+	tenantA, tenantB := shared.NewID(), shared.NewID()
+	a := integration.NewIntegration(shared.NewID(), tenantA, "GitHub A", integration.CategorySCM, integration.ProviderGitHub, integration.AuthTypeToken)
+	b := integration.NewIntegration(shared.NewID(), tenantB, "GitHub B", integration.CategorySCM, integration.ProviderGitHub, integration.AuthTypeToken)
+	repo.integrations[a.ID()] = a
+	repo.integrations[b.ID()] = b
+	aExt := integration.NewSCMExtension(a.ID())
+	aExt.SetSCMOrganization("acme")
+	ext.extensions[a.ID()] = aExt
+
+	if has, err := svc.GitHubWebhookHasSecret(context.Background(), tenantA, a.ID()); err != nil || has {
+		t.Fatalf("fresh integration: has=%v err=%v", has, err)
+	}
+	secret, err := svc.RotateGitHubWebhookSecret(context.Background(), tenantA, a.ID())
+	if err != nil || len(secret) != 64 {
+		t.Fatalf("rotate: %q %v", secret, err)
+	}
+	stored, _ := a.Metadata()["webhook_secret_encrypted"].(string)
+	if stored == "" || stored == secret {
+		t.Fatalf("secret not stored encrypted: %q", stored)
+	}
+	secretB, err := svc.RotateGitHubWebhookSecret(context.Background(), tenantB, b.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(`{"action":"closed"}`)
+	sign := func(secret string) string {
+		m := hmac.New(sha256.New, []byte(secret))
+		_, _ = m.Write(body)
+		return "sha256=" + hex.EncodeToString(m.Sum(nil))
+	}
+	got, err := svc.VerifyGitHubDelivery(context.Background(), a.ID(), body, sign(secret))
+	if err != nil || got.TenantID != tenantA || got.IntegrationID != a.ID() || got.Organization != "acme" {
+		t.Fatalf("verify: %+v err=%v", got, err)
+	}
+	if !got.RepositoryAllowed("ACME/app") || got.RepositoryAllowed("evil/app") || got.RepositoryAllowed("acme") {
+		t.Fatal("repository binding to the integration's organization is wrong")
+	}
+	// Tenant B's secret never verifies a delivery to A's URL, nor A's to B's.
+	if _, err := svc.VerifyGitHubDelivery(context.Background(), a.ID(), body, sign(secretB)); !errors.Is(err, integrationapp.ErrGitHubWebhookUnauthorized) {
+		t.Fatalf("B's secret on A's URL: %v", err)
+	}
+	if _, err := svc.VerifyGitHubDelivery(context.Background(), b.ID(), body, sign(secret)); !errors.Is(err, integrationapp.ErrGitHubWebhookUnauthorized) {
+		t.Fatalf("A's secret on B's URL: %v", err)
+	}
+	if _, err := svc.VerifyGitHubDelivery(context.Background(), a.ID(), []byte(`{"tampered":true}`), sign(secret)); err == nil {
+		t.Fatal("a tampered body verified")
+	}
+	a.SetStatus(integration.StatusDisabled)
+	if _, err := svc.VerifyGitHubDelivery(context.Background(), a.ID(), body, sign(secret)); err == nil {
+		t.Fatal("a disabled integration verified a delivery")
+	}
+	// An integration without an organization accepts any repository of it.
+	if d, err := svc.VerifyGitHubDelivery(context.Background(), b.ID(), body, sign(secretB)); err != nil || !d.RepositoryAllowed("anyone/app") {
+		t.Fatalf("no organization: %+v %v", d, err)
+	}
+	// The binding cannot be read: fail closed (not unauthorized, not open).
+	ext.getErr = errors.New("db down")
+	if _, err := svc.VerifyGitHubDelivery(context.Background(), b.ID(), body, sign(secretB)); err == nil {
+		t.Fatal("an unreadable organization binding verified a delivery")
+	}
+}
+
+// =============================================================================
 // Providers without a client
 // =============================================================================
 

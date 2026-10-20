@@ -49,7 +49,15 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   hour old). Per-IP and per-integration rate limits sit in front of the
   secret lookup. Secret routes: `GET /api/v1/integrations/{id}/jira-webhook`
   (URL, whether a secret is set), `POST .../jira-webhook/secret/rotate` and
-  `PUT .../jira-webhook/secret` (`integrations:manage` plus step-up).
+  `PUT .../jira-webhook/secret` (`integrations:manage` plus step-up); each
+  change is a Critical `integration.webhook_secret_rotated` audit entry
+  without the secret.
+- **GitHub inbound** (`POST /hooks/github-integrations/{integration_id}`): same
+  model per GitHub integration (its own secret, `X-Hub-Signature-256`, replay
+  keys by body hash and delivery id, mandatory store, repository bound to the
+  integration's organization). An issue closed as completed is a fix claim, as
+  not planned a pending risk-acceptance request, as duplicate nothing; reopened
+  is in progress. See `github-issue-ticketing.md`.
 - **Outbound** (RFC-006 Phase 3): a finding status change in OpenCTEM transitions
   the linked Jira issue to match. **Opt-in per integration** (`sync_enabled`,
   default off).
@@ -356,6 +364,9 @@ An inbound change goes through the finding service, never a direct row write
   `self`; partial GIN index `idx_findings_work_item_uris`); and the open
   members of the tasks whose issue it is. At most 500, not one arbitrary
   finding.
+- **Same path for GitHub.** `GitHubTicketService.HandleIssueEvent` calls the
+  same applier with integration `github` (fix claim, risk-acceptance request,
+  in progress) and the same proof-of-fix hook.
 - **Same rules as a person's bulk change**, with the Jira integration as the
   recorded actor (`StatusTransition{Source: "jira", ActorType: "integration"}`,
   so each step's timeline entry commits with it): the transition map, the

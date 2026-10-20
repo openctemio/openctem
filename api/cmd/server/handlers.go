@@ -406,9 +406,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	githubWebhookHandler.SetOrganizationGate(svc.OrganizationGate)
-	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
+	// Inbound GitHub issue closed/reopened → linked findings, through the
+	// finding service rules (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
-	// Replays of a verified delivery are ignored for 24 hours (all replicas).
+	// Replays of a verified delivery (same body or same delivery id) are
+	// ignored for 24 hours (all replicas). Without Redis every delivery is
+	// refused (503).
 	if deps.RedisClient != nil {
 		githubWebhookHandler.SetDeliveryGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
 	}
