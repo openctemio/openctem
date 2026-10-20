@@ -1017,5 +1017,18 @@
   "assets.groups.detail.severityTitle": "Open findings by severity",
   "assets.groups.detail.severityDesc": "The same findings as the group’s count; each row opens them",
   "assets.groups.detail.typesTitle": "Assets by type",
-  "assets.groups.detail.typesDesc": "The group’s members by asset type"
+  "assets.groups.detail.typesDesc": "The group’s members by asset type",
+  "assets.formsHost.sentForApproval": "{name} saved. The lowered risk values are waiting for approval.",
+  "assets.riskImpact.title": "Lowering risk",
+  "assets.riskImpact.loading": "Checking what this change does to the open findings...",
+  "assets.riskImpact.previewFailed": "The impact of this change could not be read",
+  "assets.riskImpact.noDrops": "No open finding on this asset would move to a lower priority class.",
+  "assets.riskImpact.drops": "{count} of {total} open findings on this asset would move to a lower priority class, {p0p1} of them from P0 or P1.",
+  "assets.riskImpact.move": "{from} to {to}: {count}",
+  "assets.riskImpact.needsApproval": "The lowered values are not applied until a second person approves them; the rest of your changes are saved now.",
+  "assets.riskImpact.noApprover": "This change needs approval and the organization has no eligible approver. Ask an administrator to change the approval policy.",
+  "assets.riskImpact.alone": "The approval policy lets you decide this yourself. It is recorded in the audit log with your reason.",
+  "assets.riskImpact.pending": "Another change to this asset is already waiting for approval; wait for it to be decided.",
+  "assets.riskImpact.reason": "Reason for lowering the risk",
+  "assets.riskImpact.reasonPlaceholder": "Why is this asset less exposed or less critical than recorded?"
 }

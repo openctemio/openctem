@@ -14,6 +14,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	appfinding "github.com/openctemio/openctem/api/internal/app/finding"
 	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
@@ -41,6 +42,7 @@ type AssetHandler struct {
 	triageGate         AssetTriageGate
 	triageRecords      AssetTriageRecords
 	triageExclusions   AssetTriageExclusions
+	riskGov            *appfinding.AssetRiskGovernance
 }
 
 // NewAssetHandler creates a new asset handler.
@@ -307,6 +309,10 @@ type AssetResponse struct {
 	// §16.5: bug-bounty, source:…, platform:…, program:…:…,
 	// program-unattested); no request can change them.
 	SystemTags []string `json:"system_tags,omitempty"`
+	// PendingRiskRequest is an edit that lowers the asset's exposure,
+	// criticality or crown-jewel flag and waits for approval (a single asset
+	// only; docs/architecture/asset-risk-governance.md).
+	PendingRiskRequest *RiskRequestResponse `json:"pending_risk_request,omitempty"`
 	// ProgramOnly: the asset came with a bug-bounty program and no own
 	// scope covers it; organization metrics leave it out by default.
 	ProgramOnly bool `json:"program_only,omitempty"`
@@ -436,6 +442,13 @@ type UpdateAssetRequest struct {
 	ImpactConfidentiality *string `json:"impact_confidentiality" validate:"omitempty,impact_rating"`
 	ImpactIntegrity       *string `json:"impact_integrity" validate:"omitempty,impact_rating"`
 	ImpactAvailability    *string `json:"impact_availability" validate:"omitempty,impact_rating"`
+
+	// RiskChangeReason is why exposure or criticality is lowered. It is
+	// required when the change would drop an open P0/P1 finding on the asset;
+	// then, unless the organization's approval policy lets the caller decide
+	// alone, the lowered fields wait for a second person (202) and the rest of
+	// the edit applies.
+	RiskChangeReason string `json:"risk_change_reason,omitempty" validate:"omitempty,max=1000"`
 }
 
 // toAssetResponse converts a domain asset to API response.
@@ -925,6 +938,7 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 	resp := toAssetResponse(a)
 	h.addProgramFlags(r, tenantID, []*AssetResponse{&resp})
 	h.addTechnologies(r, tenantID, getTechnologiesPerAsset, []*AssetResponse{&resp})
+	h.addPendingRiskRequest(r, tenantID, &resp)
 
 	// Fetch primary owner
 	if h.accessControlRepo != nil {
@@ -999,13 +1013,17 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a, err := h.service.UpdateAsset(r.Context(), id, tenantID, input)
+	a, held, err := h.service.UpdateAssetGoverned(r.Context(), id, tenantID, input, h.riskContext(r, req.RiskChangeReason))
 	if err != nil {
-		h.handleServiceError(w, err)
+		h.writeRiskError(w, err)
 		return
 	}
 	h.auditAsset(r, auditdom.ActionAssetUpdated, a.ID().String(), a.Name(), "Asset updated",
 		map[string]any{"changed_fields": assetChangedFields(before, a)})
+	if held != nil {
+		h.writeAssetHeld(w, a, held)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -2342,6 +2360,9 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 		IsCrownJewel        bool    `json:"is_crown_jewel"`
 		BusinessImpactScore float64 `json:"business_impact_score"`
 		BusinessImpactNotes string  `json:"business_impact_notes"`
+		// Reason is required when unmarking a crown jewel would drop an open
+		// P0/P1 finding on the asset (the unmarking may then wait for approval).
+		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid JSON body").WriteJSON(w)
@@ -2369,10 +2390,11 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 
 	// The flag is the assets.is_crown_jewel column; business impact stays in
 	// properties. One statement writes both.
-	a, err := h.service.UpdateCrownJewel(r.Context(), tenantID, assetID,
-		req.IsCrownJewel, req.BusinessImpactScore, req.BusinessImpactNotes)
+	a, held, err := h.service.UpdateCrownJewelGoverned(r.Context(), tenantID, assetID,
+		req.IsCrownJewel, req.BusinessImpactScore, req.BusinessImpactNotes, middleware.GetUserID(r.Context()),
+		h.riskContext(r, req.Reason))
 	if err != nil {
-		h.handleServiceError(w, err)
+		h.writeRiskError(w, err)
 		return
 	}
 
@@ -2389,6 +2411,10 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 	h.auditAsset(r, auditdom.ActionAssetCrownJewelChanged, a.ID().String(), a.Name(), "Crown-jewel designation changed",
 		map[string]any{"is_crown_jewel": a.IsCrownJewel(), "changed_fields": changed})
 
+	if held != nil {
+		h.writeAssetHeld(w, a, held)
+		return
+	}
 	writeJSON(w, http.StatusOK, toAssetResponse(a))
 }
 

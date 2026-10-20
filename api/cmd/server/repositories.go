@@ -53,6 +53,7 @@ type Repositories struct {
 	CommentReaction  *postgres.CommentReactionRepository
 	FindingApproval  *postgres.FindingApprovalRepository
 	SeverityRequest  *postgres.SeverityRequestRepository
+	AssetRiskRequest *postgres.AssetRiskRequestRepository
 	FindingActivity  *postgres.FindingActivityRepository
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
 	AITriageBudget   *postgres.AITriageBudgetRepository        // Per-tenant LLM token budget (RFC-008)
@@ -408,6 +409,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CommentReaction:  postgres.NewCommentReactionRepository(db),
 		FindingApproval:  postgres.NewFindingApprovalRepository(db),
 		SeverityRequest:  postgres.NewSeverityRequestRepository(db),
+		AssetRiskRequest: postgres.NewAssetRiskRequestRepository(db),
 		FindingActivity:  postgres.NewFindingActivityRepository(db),
 		AITriage:         postgres.NewAITriageRepository(db),              // AI-powered vulnerability triage
 		AITriageBudget:   postgres.NewAITriageBudgetRepository(db),        // RFC-008 monthly LLM token budget

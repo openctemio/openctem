@@ -1017,5 +1017,18 @@
   "assets.groups.detail.severityTitle": "Phát hiện đang mở theo mức độ",
   "assets.groups.detail.severityDesc": "Cùng các phát hiện được đếm cho nhóm; mỗi dòng mở danh sách tương ứng",
   "assets.groups.detail.typesTitle": "Tài sản theo loại",
-  "assets.groups.detail.typesDesc": "Các tài sản thành viên của nhóm theo loại"
+  "assets.groups.detail.typesDesc": "Các tài sản thành viên của nhóm theo loại",
+  "assets.formsHost.sentForApproval": "Đã lưu {name}. Các giá trị rủi ro đã hạ đang chờ phê duyệt.",
+  "assets.riskImpact.title": "Hạ mức rủi ro",
+  "assets.riskImpact.loading": "Đang kiểm tra thay đổi này ảnh hưởng thế nào đến các phát hiện đang mở...",
+  "assets.riskImpact.previewFailed": "Không đọc được tác động của thay đổi này",
+  "assets.riskImpact.noDrops": "Không có phát hiện đang mở nào của tài sản này bị hạ xuống lớp ưu tiên thấp hơn.",
+  "assets.riskImpact.drops": "{count} trên {total} phát hiện đang mở của tài sản này sẽ bị hạ xuống lớp ưu tiên thấp hơn, trong đó {p0p1} phát hiện đang ở P0 hoặc P1.",
+  "assets.riskImpact.move": "{from} xuống {to}: {count}",
+  "assets.riskImpact.needsApproval": "Các giá trị đã hạ chưa được áp dụng cho đến khi người thứ hai phê duyệt; các thay đổi còn lại của bạn được lưu ngay.",
+  "assets.riskImpact.noApprover": "Thay đổi này cần phê duyệt nhưng tổ chức chưa có người phê duyệt hợp lệ. Hãy nhờ quản trị viên đổi chính sách phê duyệt.",
+  "assets.riskImpact.alone": "Chính sách phê duyệt cho phép bạn tự quyết định. Quyết định được ghi vào nhật ký kiểm toán cùng lý do của bạn.",
+  "assets.riskImpact.pending": "Một thay đổi khác của tài sản này đang chờ phê duyệt; hãy chờ quyết định.",
+  "assets.riskImpact.reason": "Lý do hạ mức rủi ro",
+  "assets.riskImpact.reasonPlaceholder": "Vì sao tài sản này ít bị phơi bày hoặc ít quan trọng hơn so với ghi nhận?"
 }
