@@ -42,3 +42,8 @@ After the release is tagged, one pull request into `develop` runs
 into `CHANGELOG.md` under `## vX.Y.Z (date)` and deletes the fragments. The
 release branch itself is not changed, so its tree stays byte-for-byte equal to
 develop's.
+
+`changelog.py release` must run at every release cut, with no exception: fragments
+not folded at a release stay in `changelog.d/` forever and their notes reach no
+changelog. (Fragments shipped up to v0.11.0 were folded in one catch-up under
+`## v0.11.0 and earlier` with `changelog.py archive`.)
