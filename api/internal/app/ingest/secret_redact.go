@@ -43,13 +43,18 @@ func (p *FindingProcessor) keyRawSecrets(tenantID shared.ID, report *ctis.Report
 
 // looksMasked reports whether a reported secret value is already a mask
 // (the same test the CTIS redaction applies): empty, only mask characters,
-// a run of them, or "redacted".
+// a run of them, "redacted", or a producer preview with one "…".
 func looksMasked(s string) bool {
 	t := strings.TrimSpace(s)
 	if t == "" || strings.Trim(t, "*•") == "" {
 		return true
 	}
-	return strings.Contains(t, "***") || strings.Contains(t, "•••") || strings.Contains(strings.ToLower(t), "redacted")
+	if strings.Contains(t, "***") || strings.Contains(t, "•••") || strings.Contains(strings.ToLower(t), "redacted") {
+		return true
+	}
+	// A preview a producer made ("AKIA…MPLE") is a mask too: hashing it as if
+	// it were the secret would give every secret with that preview one key.
+	return strings.Count(t, "…") == 1 && vulnerability.IsSecretPreviewSafe(t)
 }
 
 // redactReportSecrets masks raw secret values in every free-text field of
