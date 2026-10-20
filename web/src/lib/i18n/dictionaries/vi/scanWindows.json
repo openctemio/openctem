@@ -111,7 +111,6 @@
   "scanWindows.override.action": "Vượt quyền khung giờ",
   "scanWindows.override.activeUntil": "Hiệu lực đến {at}",
   "scanWindows.override.all": "Mọi chính sách",
-  "scanWindows.override.code": "Mã từ ứng dụng xác thực của bạn",
   "scanWindows.override.description": "Các lần quét có thể chạy ngoài các khung đã chọn cho đến khi việc vượt quyền kết thúc. Thao tác được ghi vào nhật ký kiểm toán và mọi chủ sở hữu và quản trị viên đều được thông báo. Khung giờ của chương trình bug bounty không bao giờ bị bỏ qua.",
   "scanWindows.override.duration": "Trong",
   "scanWindows.override.endDesc": "Các khung giờ được áp dụng lại ngay.",

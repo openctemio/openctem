@@ -44,3 +44,23 @@ func TestOrgDashboardPermissionsArePrivileged(t *testing.T) {
 		}
 	}
 }
+
+func TestGainsStepUpGrade(t *testing.T) {
+	cases := []struct {
+		name       string
+		old, nw    []string
+		of, nf, ok bool
+	}{
+		{"approve gained", []string{"assets:read"}, []string{"assets:read", "findings:approve"}, false, false, true},
+		{"privileged gained", []string{"assets:read"}, []string{"team:roles:write"}, false, false, true},
+		{"full data gained", nil, nil, false, true, true},
+		{"nothing gained", []string{"findings:approve"}, []string{"findings:approve", "assets:read"}, false, false, false},
+		{"removal only", []string{"findings:approve", "team:roles:write"}, []string{"assets:read"}, false, false, false},
+		{"plain gain", []string{"assets:read"}, []string{"assets:read", "assets:write"}, false, false, false},
+	}
+	for _, c := range cases {
+		if got := permission.GainsStepUpGrade(c.old, c.of, c.nw, c.nf); got != c.ok {
+			t.Errorf("%s: got %v want %v", c.name, got, c.ok)
+		}
+	}
+}

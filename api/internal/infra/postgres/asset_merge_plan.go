@@ -230,6 +230,10 @@ var assetMergeLeftAlone = map[string]string{
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.
 // It runs inside the merge transaction, before the merged assets are deleted.
 func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, keepID string, mergeIDs []string) error {
+	// A merge re-keys every child row of the merged assets; a large asset can outlast the role limit.
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return err
+	}
 	if err := checkMergeTenant(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}

@@ -20,7 +20,12 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { ScanWorkflowStep } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-href'
-import { capabilityForStep, stepEdges, type CapabilityTable } from '../lib/capability-graph'
+import {
+  capabilityForStep,
+  describeEdge,
+  stepEdges,
+  type CapabilityTable,
+} from '../lib/capability-graph'
 import { selectionOf } from '../lib/step-settings'
 import { formatDuration, planStages } from '../lib/workflow-stages'
 import { useCapabilityTable } from '../lib/use-capability-table'
@@ -84,6 +89,13 @@ export function WorkflowStages({
   const plan = useMemo(() => planStages(steps), [steps])
   const byKey = useMemo(() => new Map(steps.map((s) => [s.step_key, s])), [steps])
   const nameOf = (key: string) => byKey.get(key)?.name || key
+  // Without a caller's label (run counts), a connection names the types it
+  // carries, as the builder draws it.
+  const typedEdgeLabel = useCallback(
+    (from: string, to: string) =>
+      table ? describeEdge(table, byKey.get(from), byKey.get(to), t)?.label : undefined,
+    [table, byKey, t]
+  )
 
   const warnings: string[] = []
   if (draftChanged) {
@@ -204,7 +216,7 @@ export function WorkflowStages({
           steps={steps}
           status={status}
           badge={badge}
-          edgeLabel={edgeLabel}
+          edgeLabel={edgeLabel ?? typedEdgeLabel}
           onSelectStep={onSelectStep}
         />
       ) : (
