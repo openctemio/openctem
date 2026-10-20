@@ -58,6 +58,16 @@ Migration `002915_organization_deletion_grace`: `tenants.status` gains
 the status together; a partial index serves the worker. The down migration
 returns pending organizations to `active`.
 
+### Tables without a foreign key to the organization
+
+Rows of tables that do not reference `tenants` do not cascade. The tenant
+delete (`TenantRepository.Delete`) erases them in the same transaction as the
+`tenants` row; today that is `priority_class_audit_log`. The priority audit
+retention controller also sweeps, in batches of 5,000, rows whose organization
+no longer exists and rows whose class did not move (`previous_class =
+new_class`, which the writers no longer store), then applies its 180-day
+window in batches. A table added without a foreign key needs a step here.
+
 ## Tests
 
 - `internal/app/orgdeletion/service_test.go`: owner-only schedule and cancel,
