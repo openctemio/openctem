@@ -373,13 +373,7 @@ export function AISourceCard({ settings, canEdit, onSaved }: AISourceCardProps) 
 
         <div aria-live="polite" className="min-h-5 text-sm">
           {testCode && (
-            <p
-              className={
-                testCode === 'ok' ? 'text-success' : 'text-destructive'
-              }
-            >
-              {testMessage}
-            </p>
+            <p className={testCode === 'ok' ? 'text-success' : 'text-destructive'}>{testMessage}</p>
           )}
         </div>
 
