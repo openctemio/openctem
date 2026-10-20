@@ -83,6 +83,15 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 			switch t.Status {
 			case "completed":
 				for _, target := range t.Targets {
+					// A target the sensor reported unreached is not covered,
+					// whether or not the task carries per-target outcomes
+					// (the run does not turn partial for it: the ledger is
+					// where it stays visible).
+					if unreached[TargetKey(target)] {
+						put(target, Verdict{Kind: VerdictFailed, Outcome: string(outcome.Unreachable),
+							Error: "the sensor reached no service on the target"})
+						continue
+					}
 					put(target, Verdict{Kind: VerdictCovered, Outcome: OutcomeOK})
 				}
 			case "failed", "canceled", "expired", "timeout":
@@ -118,7 +127,8 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 }
 
 // readResult returns a task result's per-target outcomes, the targets its
-// metadata lists as unreached, and whether it carries outcomes at all.
+// metadata lists as unreached (also when it carries no outcomes), and
+// whether it carries outcomes at all.
 func readResult(raw json.RawMessage) ([]outcome.Target, map[string]bool, bool) {
 	if len(raw) == 0 {
 		return nil, nil, false
@@ -131,12 +141,15 @@ func readResult(raw json.RawMessage) ([]outcome.Target, map[string]bool, bool) {
 			} `json:"unreached_targets"`
 		} `json:"metadata"`
 	}
-	if json.Unmarshal(raw, &r) != nil || r.Outcomes == nil {
+	if json.Unmarshal(raw, &r) != nil {
 		return nil, nil, false
 	}
 	unreached := map[string]bool{}
 	for _, u := range r.Metadata.Unreached {
 		unreached[TargetKey(u.Target)] = true
+	}
+	if r.Outcomes == nil {
+		return nil, unreached, false
 	}
 	return *r.Outcomes, unreached, true
 }

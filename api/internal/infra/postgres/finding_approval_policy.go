@@ -16,6 +16,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -63,7 +64,7 @@ func (r *FindingApprovalRepository) PolicyFacts(ctx context.Context, tenantID, f
 	err := r.db.QueryRowContext(ctx, `
 		SELECT f.severity, COALESCE(f.priority_class, ''), COALESCE(f.is_in_kev, false), f.epss_score::float8,
 		       COALESCE(f.validation_outcome = 'reproducible', false),
-		       COALESCE(a.is_crown_jewel, false), COALESCE(a.is_internet_accessible, false),
+		       COALESCE(a.is_crown_jewel, false), COALESCE(`+asset.InternetFacingSQL("a")+`, false),
 		       f.assigned_to::text,
 		       ARRAY(`+fmt.Sprintf(assetOwnersSQL, "f.asset_id")+`)::text[]
 		FROM findings f
