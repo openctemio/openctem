@@ -1373,6 +1373,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.PriorityRule, repos.PriorityAudit, log,
 	)
 	// Wire compensating controls into priority classification (RFC-005 Gap 6)
+	s.PriorityClassification.SetDataScope(s.DataScope)
 	s.PriorityClassification.SetControlLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
 
 	// Business-aligned prioritization: raise an asset's effective criticality to
