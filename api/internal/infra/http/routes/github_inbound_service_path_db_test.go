@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -83,7 +84,7 @@ func TestGitHubInbound_ServicePathPerIntegration(t *testing.T) {
 	})
 
 	gh := ticketing.NewGitHubTicketService(findingRepo, intRepo, cipher, log)
-	gh.SetInboundApplier(h.vuln)
+	gh.SetInboundApplier(ticketbridge.GitHub{Vuln: h.vuln})
 	gh.SetWorkItemFindingLister(findingRepo)
 	gh.SetFixClaimHook(func(_ context.Context, _ shared.ID, id shared.ID) error {
 		mu.Lock()
