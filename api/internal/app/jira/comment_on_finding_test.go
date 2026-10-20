@@ -2,10 +2,13 @@ package jira
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // RFC-039: a retest or a scan comments on the finding's linked Jira issue when
@@ -78,5 +81,35 @@ func TestCommentOnFinding_EncodesWikiMarkup(t *testing.T) {
 	}
 	if strings.Count(got, "\n\n") != 2 {
 		t.Fatalf("paragraphs not kept: %q", got)
+	}
+}
+
+// flakyFindingRepo serves the finding once and fails every later read.
+type flakyFindingRepo struct {
+	*egressRepo
+	reads int
+}
+
+func (r *flakyFindingRepo) GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error) {
+	r.reads++
+	if r.reads > 1 {
+		return nil, errors.New("read failed")
+	}
+	return r.egressRepo.GetByID(ctx, tenantID, id)
+}
+
+// The outbound gate judges the finding the comment is about: a later read
+// that fails must never let a refused (TLP:RED) comment out ungated.
+func TestCommentOnFinding_GateUsesTheFindingRead(t *testing.T) {
+	c := &recordingClient{}
+	s, f, repo := pentestSetup(t, pentest.TLPRed, c)
+	f.AddWorkItemURI("https://x.atlassian.net/browse/SEC-7")
+	s.findingRepo = &flakyFindingRepo{egressRepo: repo}
+	s.SetMappingResolver(stubMappingResolver{mapping: enabledMapping()})
+	if err := s.CommentOnFinding(context.Background(), shared.NewID(), f.ID(), "x"); err != nil {
+		t.Fatalf("a refused comment is skipped, not an error: %v", err)
+	}
+	if len(c.comments) != 0 {
+		t.Fatalf("TLP:RED comment sent: %v", c.comments)
 	}
 }

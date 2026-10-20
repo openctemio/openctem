@@ -403,7 +403,11 @@ func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID 
 	if s.mappingResolver == nil {
 		return nil
 	}
-	integrationID, issueKey, err := s.findingIssueByID(ctx, tenantID, findingID)
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return fmt.Errorf("get finding: %w", err)
+	}
+	integrationID, issueKey, err := s.findingIssue(ctx, tenantID, finding)
 	if err != nil {
 		return err
 	}
@@ -420,7 +424,9 @@ func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID 
 	if !mapping.SyncEnabled {
 		return nil
 	}
-	if ok, err := s.statusPushAllowed(ctx, tenantID, findingID); !ok {
+	// Gate the finding already read: a second read that failed would let
+	// the comment out ungated.
+	if ok, err := s.egressAllowed(ctx, tenantID, ticketing.RouteStatusSync, finding); !ok {
 		return err
 	}
 	client, err := s.clientFor(ctx, tenantID, integrationID)
