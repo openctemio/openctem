@@ -61,7 +61,7 @@ type Summary struct {
 }
 
 var (
-	peoplePerms   = []Permission{MembersInvite, MembersWrite, GroupsWrite, GroupsMembers, GroupsAssets, RolesWrite, RolesDelete, RolesAssign}
+	peoplePerms   = []Permission{MembersInvite, MembersWrite, ServiceAccountsManage, GroupsWrite, GroupsMembers, GroupsAssets, RolesWrite, RolesDelete, RolesAssign}
 	secretPerms   = []Permission{SecretStoreRead, SecretStoreWrite, CredentialsReveal, EvidenceReveal}
 	apiKeyPerms   = []Permission{APIKeysWrite}
 	settingsPerms = []Permission{SettingsWrite}

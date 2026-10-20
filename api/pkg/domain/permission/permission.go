@@ -272,6 +272,12 @@ const (
 	MembersInvite Permission = "team:members:invite"
 	MembersWrite  Permission = "team:members:write"
 
+	// ServiceAccountsManage creates and deletes service accounts and mints and
+	// deletes their API keys (organization-owned integration identities and
+	// their credentials). Owners and administrators hold it; a custom role
+	// may carry it.
+	ServiceAccountsManage Permission = "service_accounts:manage"
+
 	// Group permissions (team:groups:*)
 	GroupsRead    Permission = "team:groups:read"
 	GroupsWrite   Permission = "team:groups:write"
@@ -512,7 +518,7 @@ func AllPermissions() []Permission {
 
 		// Team module
 		TeamRead, TeamUpdate, TeamDelete,
-		MembersRead, MembersInvite, MembersWrite,
+		MembersRead, MembersInvite, MembersWrite, ServiceAccountsManage,
 		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,

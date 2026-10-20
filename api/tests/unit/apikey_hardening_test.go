@@ -30,7 +30,7 @@ func TestCreateAPIKey_RejectsScopeNotHeldByCaller(t *testing.T) {
 		TenantID:      shared.NewID().String(),
 		ExpiresInDays: 90,
 		Name:          "escalate",
-		Scopes:        []string{"findings:read", "team:delete"},
+		Scopes:        []string{"findings:read", "team:read"},
 		CallerHolds:   holds("findings:read"),
 	})
 	if err == nil {
@@ -71,7 +71,7 @@ func TestCreateAPIKey_AdminCallerMayGrantAnyValidScope(t *testing.T) {
 		TenantID:      shared.NewID().String(),
 		ExpiresInDays: 90,
 		Name:          "admin-key",
-		Scopes:        []string{"findings:read", "team:delete"},
+		Scopes:        []string{"findings:read", "team:read"},
 		CallerHolds:   func(string) bool { return true },
 	})
 	if err != nil {
@@ -117,5 +117,28 @@ func TestAPIKeyLifecycle_WritesAuditEvents(t *testing.T) {
 	}
 	if auditRepo.createCalls != 3 {
 		t.Errorf("expected 3 audit events, got %d", auditRepo.createCalls)
+	}
+}
+
+// API keys are read-only on the REST API: a write scope is refused at mint
+// time even for a caller who holds it, so a key never looks more powerful
+// than it is.
+func TestCreateAPIKey_RefusesWriteScopes(t *testing.T) {
+	for _, scope := range []string{"assets:write", "findings:write", "scans:write", "team:delete", "findings:approve"} {
+		repo := newMockAPIKeyRepo()
+		svc := newTestAPIKeyService(repo)
+		_, err := svc.Create(context.Background(), apikey.CreateInput{
+			TenantID:      shared.NewID().String(),
+			ExpiresInDays: 90,
+			Name:          "writer",
+			Scopes:        []string{"findings:read", scope},
+			CallerHolds:   func(string) bool { return true },
+		})
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("%s: want a validation error, got %v", scope, err)
+		}
+		if repo.createCalls != 0 {
+			t.Errorf("%s: a key was stored", scope)
+		}
 	}
 }
