@@ -22,8 +22,11 @@ type FindingRiskCounter interface {
 // priority classification and threat models need the whole result.
 const exposureChainCap = 100
 
-// ChainHop is one asset on an exposure chain.
+// ChainHop is one asset on an exposure chain. A hop the caller may not see
+// (outside their data scope) is returned with Hidden set and every other field
+// empty: it says only that something sits at that step.
 type ChainHop struct {
+	Hidden    bool   `json:"hidden,omitempty"`
 	AssetID   string `json:"asset_id"`
 	Name      string `json:"name"`
 	AssetType string `json:"asset_type"`
