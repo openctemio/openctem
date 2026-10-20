@@ -520,7 +520,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		&controller.DataExpirationControllerConfig{
 			Interval:           1 * time.Hour,
 			AuditRetentionDays: cfg.AuditRetention.Days,
-			AuditArchiveDir:    cfg.AuditRetention.ArchiveDir,
+			AuditArchive:           svc.AuditArchive,
+			AuditRetentionDisabled: !cfg.AuditRetention.Enabled,
 			Logger:             log.With("controller", "data-expiration"),
 		},
 	).SetScopeTargetExpirer(repos.ScopeTarget))
