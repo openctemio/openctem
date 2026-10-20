@@ -156,6 +156,7 @@ func ensureKey(keyFile string, logger *slog.Logger) error {
 	if os.Getenv("SIGNER_GENERATE_KEY") != "true" {
 		return nil
 	}
+	signer.CleanStaleKeyTemps(keyFile)
 	if _, err := os.Stat(keyFile); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return nil // present, or LoadKey reports the problem
 	}
