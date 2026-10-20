@@ -356,6 +356,9 @@ func (r *FindingRepository) CreateBatch(ctx context.Context, findings []*vulnera
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return err
+	}
 
 	// Note: ON CONFLICT preserves user-set status (false_positive, accepted, ignored, resolved)
 	// by not including status in the UPDATE SET clause. This ensures findings marked
@@ -4227,6 +4230,9 @@ func (r *FindingRepository) enrichOnce(ctx context.Context, existingByFP, newByF
 		return 0, nil, fmt.Errorf("failed to begin enrichment transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return 0, nil, err
+	}
 
 	landed := make(map[string]bool, len(allArgs))
 	err = forEachStatementChunk(len(allArgs), enrichColumnsPerRow, 0, enrichBatchChunkSize, func(start, end int) error {
