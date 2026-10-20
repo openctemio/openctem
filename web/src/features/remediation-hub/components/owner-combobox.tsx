@@ -152,7 +152,7 @@ export function OwnerCombobox({
     if (!c) return null
     return (
       <span className="ms-auto flex shrink-0 items-center gap-2 text-xs">
-        <span className="text-amber-700 dark:text-amber-400" data-testid={`owner-gap-${gid}`}>
+        <span className="text-warning" data-testid={`owner-gap-${gid}`}>
           {gapLine(c)}
         </span>
         {!canAssign && onRequestAccess && (
@@ -285,7 +285,7 @@ export function OwnerCombobox({
       </Popover>
       {chosenGap && canAssign && (
         <div
-          className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950/30"
+          className="space-y-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs"
           data-testid="owner-consent"
         >
           <p>
@@ -307,7 +307,7 @@ export function OwnerCombobox({
         </div>
       )}
       {chosenGap && !canAssign && (
-        <p className="text-xs text-amber-700 dark:text-amber-400" role="alert">
+        <p className="text-xs text-warning" role="alert">
           {t('remediationHub.ownerAccess.noPermission')}
         </p>
       )}
