@@ -234,6 +234,10 @@ const (
 	// ActionFindingRetestRequested records a user pressing "Retest now" on a
 	// finding (RFC-039): who, which finding, which template against which target.
 	ActionFindingRetestRequested Action = "finding.retest_requested"
+	// ActionFindingVerificationChecklistUpdated records a change to a
+	// finding's verification checklist: which items changed, whether it is now
+	// complete and who completed it. The notes text is not recorded.
+	ActionFindingVerificationChecklistUpdated Action = "finding.verification_checklist_updated"
 	// ActionFindingRetestCheckSaved / Removed / Approved record a person
 	// attaching, changing, removing or approving a finding's retest check
 	// (docs/architecture/finding-retest-checks.md): the template, its
@@ -789,7 +793,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingClassified,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionFindingsRefingerprinted, ActionAssetsMerged,
@@ -920,7 +924,7 @@ func (a Action) Category() string {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingsRefingerprinted,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
