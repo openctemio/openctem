@@ -235,7 +235,7 @@ func (r *IngestReportRepository) Reopen(ctx context.Context, id shared.ID, expir
 
 // ExpireStale marks uncommitted reports past their expiry expired.
 func (r *IngestReportRepository) ExpireStale(ctx context.Context, now time.Time) (int, error) {
-	res, err := r.db.ExecContext(ctx, `
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `
 		UPDATE ingest_reports SET state = 'expired', updated_at = NOW()
 		WHERE state = 'receiving' AND committed_at IS NULL AND expires_at < $1`, now)
 	if err != nil {

@@ -103,7 +103,7 @@ func (s *VulnerabilityService) ListAssignableMembers(ctx context.Context, tenant
 	if err != nil {
 		return nil, fmt.Errorf("list members: %w", err)
 	}
-	out := make([]AssignableMember, 0, limit)
+	out := make([]AssignableMember, 0) // no caller-sized preallocation; the loop is bounded by limit
 	for _, m := range res.Members {
 		if len(out) >= limit {
 			break

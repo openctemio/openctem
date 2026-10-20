@@ -201,7 +201,10 @@ const fresh = await regenerateRecoveryCodes('123456')
 
 // UI: <PasswordCard>, <TwoFactorCard>, <SessionsCard> from '@/features/account';
 // shared pieces in '@/components/security' (TotpQrCode, RecoveryCodesPanel,
-// OneTimeCodeInput, SecretKey). The login second step is
+// SecretKey, VerificationCodeInput, StepUpDialog). Every screen that asks for
+// an authenticator code, a recovery code or a step-up (web app and console)
+// uses VerificationCodeInput for the field and StepUpDialog for the dialog:
+// web/docs/ui/verification-code-input.md. The login second step is
 // src/features/auth/components/mfa-step.tsx (verifyMfaAction /
 // startMfaEnrollmentAction / confirmMfaEnrollmentAction; the challenge lives in
 // the httpOnly mfa_challenge cookie).
