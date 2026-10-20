@@ -73,12 +73,16 @@ type FindingRetestResponse struct {
 	RunKind        string `json:"run_kind"`
 	CheckCommandID string `json:"check_command_id,omitempty"`
 	// RunID is the scan run (kind retest) with the commands, logs and outcome.
-	RunID          string     `json:"run_id,omitempty"`
-	ReachCommandID string     `json:"reach_command_id,omitempty"`
-	SensorID       string     `json:"sensor_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
-	DeadlineAt     time.Time  `json:"deadline_at"`
+	RunID          string `json:"run_id,omitempty"`
+	ReachCommandID string `json:"reach_command_id,omitempty"`
+	SensorID       string `json:"sensor_id,omitempty"`
+	// RetestCheckID and CheckDigest are set when the attempt ran the
+	// finding's custom retest check: which check and the exact content.
+	RetestCheckID string     `json:"retest_check_id,omitempty"`
+	CheckDigest   string     `json:"check_digest,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	DeadlineAt    time.Time  `json:"deadline_at"`
 }
 
 // FindingRetestListResponse is a finding's retest history, newest first.
@@ -114,6 +118,9 @@ func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
 	}
 	if rt.SensorID != nil {
 		out.SensorID = rt.SensorID.String()
+	}
+	if rt.CheckID != nil {
+		out.RetestCheckID, out.CheckDigest = rt.CheckID.String(), rt.CheckDigest
 	}
 	return out
 }

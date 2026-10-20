@@ -44,6 +44,11 @@ func (s sensorsOnline) HasRetestSensor(context.Context, shared.ID, string) (bool
 	return false, nil
 }
 
+// HasRetestTemplatesSensor: no sensor runs custom checks.
+func (s sensorsOnline) HasRetestTemplatesSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+
 // RetestTools: the template re-verify rung only, when online.
 func (s sensorsOnline) RetestTools(context.Context, shared.ID) ([]string, error) {
 	if !s {
@@ -62,6 +67,10 @@ func (onlyToolRetest) HasNucleiValidationSensor(context.Context, shared.ID) (boo
 
 func (o onlyToolRetest) HasRetestSensor(_ context.Context, _ shared.ID, tool string) (bool, error) {
 	return tool == string(o), nil
+}
+
+func (o onlyToolRetest) HasRetestTemplatesSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
 }
 
 func (o onlyToolRetest) RetestTools(context.Context, shared.ID) ([]string, error) {

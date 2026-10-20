@@ -136,6 +136,7 @@ export const Permission = {
 
   // Finding lifecycles (sub-statuses and schemes)
   FindingsLifecyclesWrite: 'findings:lifecycles:write',
+  FindingsRetestChecksWrite: 'findings:retest_checks:write',
 
   // Vulnerabilities (findings:vulnerabilities:*)
   VulnerabilitiesRead: 'findings:vulnerabilities:read',
