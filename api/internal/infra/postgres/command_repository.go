@@ -554,7 +554,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 	query := `
 		UPDATE commands
 		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW(),
-		    pinned_sensor_id = `+pinnedOnClaimSQL("commands")+`,
+		    pinned_sensor_id = ` + pinnedOnClaimSQL("commands") + `,
 		    lease_epoch = lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
 		    ` + clearProgressSQL + `,
 		    lease_expires_at = NOW() + make_interval(secs => $4)
@@ -719,7 +719,7 @@ func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, se
 	query := `
 		UPDATE commands c
 		SET status = 'acknowledged', sensor_id = $2, acknowledged_at = NOW(),
-		    pinned_sensor_id = `+pinnedOnClaimSQL("c")+`,
+		    pinned_sensor_id = ` + pinnedOnClaimSQL("c") + `,
 		    lease_epoch = c.lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
 		    ` + clearProgressSQL + `,
 		    lease_expires_at = NOW() + make_interval(secs => ` + leaseParam + `)
