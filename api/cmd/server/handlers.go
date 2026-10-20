@@ -460,6 +460,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// (access tokens are checked by the authorization server).
 	var mcpPolicies middleware.MCPPolicyReader
 	var mcpSettings *handler.MCPSettingsHandler
+	var aiSettings *handler.AISettingsHandler
+	if svc.TenantAI != nil {
+		aiSettings = handler.NewAISettingsHandler(svc.TenantAI, v, log)
+	}
 	if svc.Tenant != nil {
 		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
 		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
@@ -500,6 +504,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCPDiscovery:   mcpDiscovery,
 		MCPOAuth:       mcpOAuthHandler,
 		MCPSettings:    mcpSettings,
+		AISettings:     aiSettings,
 		MCPConnections: mcpConnections,
 		MCPClients:     mcpClients,
 		APIKeyAuth:     apiKeyAuth,

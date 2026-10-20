@@ -111,6 +111,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/app/tenantai"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
@@ -879,6 +880,8 @@ type Services struct {
 	StorageQuota     *storagequota.Service
 	PlatformAlert    *platformalert.Service
 	PlatformAI       *platformai.Service
+	// TenantAI is the organizations' AI settings (consent, source, own provider).
+	TenantAI *tenantai.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -1743,9 +1746,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		)
 		s.AITriage.SetAuditService(s.Audit)
 		s.AITriage.SetDataScope(s.DataScope)
+		s.AITriage.SetAISettingsRepository(repos.TenantAISettings)
+		var orgPolicy tenantai.OrgPolicy // nil: own providers allowed
 		if s.PlatformAI != nil {
 			s.AITriage.SetPlatformAISource(s.PlatformAI)
+			s.AITriage.SetOrgProviderPolicy(s.PlatformAI)
+			orgPolicy = s.PlatformAI
 		}
+		s.TenantAI = tenantai.NewService(repos.TenantAISettings, s.Encryptor, s.Audit, llmFactory, orgPolicy, log)
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// The organization's AI data-egress policy, shared with MCP: pentest
