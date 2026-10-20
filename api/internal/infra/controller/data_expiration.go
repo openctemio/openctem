@@ -22,9 +22,13 @@ type DataExpirationControllerConfig struct {
 	// below 365 are raised to 365 (audit.MinAuditRetentionDays).
 	AuditRetentionDays int
 
-	// AuditArchiveDir receives the gzip JSONL archive of pruned entries.
-	// Empty: nothing is pruned (logged once).
-	AuditArchiveDir string
+	// AuditArchive is the storage provider the gzip JSONL archives of pruned
+	// entries are written through. Nil: nothing is pruned (logged once).
+	AuditArchive auditapp.ArchiveStore
+
+	// AuditRetentionDisabled holds all audit history (AUDIT_RETENTION_ENABLED=false):
+	// nothing is archived or pruned.
+	AuditRetentionDisabled bool
 
 	// Logger for logging.
 	Logger *logger.Logger
@@ -135,15 +139,15 @@ func (c *DataExpirationController) Reconcile(ctx context.Context) (int, error) {
 	// Step 3: Audit retention. Archive and prune the oldest prefix of each
 	// hash chain past the retention window (deleting rows in place broke the
 	// chain's foreign key and failed every run).
-	if c.auditPruner != nil {
+	if c.auditPruner != nil && !c.config.AuditRetentionDisabled {
 		res, err := c.auditPruner.PruneExpiredChains(ctx, auditapp.RetentionConfig{
 			RetentionDays: c.config.AuditRetentionDays,
-			ArchiveDir:    c.config.AuditArchiveDir,
+			Store:         c.config.AuditArchive,
 		})
 		switch {
-		case errors.Is(err, auditapp.ErrNoAuditArchiveDir):
+		case errors.Is(err, auditapp.ErrNoAuditArchiveStore):
 			if !c.warnedNoArchive {
-				c.logger.Warn("audit retention is off: set AUDIT_ARCHIVE_DIR to archive and prune audit logs older than the retention window",
+				c.logger.Warn("audit retention is off: no archive storage is configured (STORAGE_PROVIDER)",
 					"retention_days", c.config.AuditRetentionDays)
 				c.warnedNoArchive = true
 			}

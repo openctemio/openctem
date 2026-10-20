@@ -136,6 +136,21 @@ rows queued by real changes; a real change pulls the row forward. It covers
 inputs no trigger watches (a control-plane relationship, the criticality of
 an asset that another asset is the control plane of).
 
+**Saving settings.** `PATCH /settings/risk-scoring` (and the preview) merge the
+body into the stored settings: a field or block the body omits keeps its stored
+value, so a partial save can never zero the scores. The merged result must pass
+the save rules, or the request is refused with 400 and nothing is stored:
+component weights sum to 100; every exposure score and every rated-criticality
+score is at least 10; exposure scores do not rise as exposure falls (public >=
+restricted >= private >= isolated); criticality scores do not rise as
+criticality falls (critical >= high >= medium >= low); `unknown` exposure and
+`none` criticality are outside the ordering; multipliers 0.1-3.0; risk levels
+ordered critical > high > medium > low > 0. The merge happens inside the
+settings write, so it follows the section's `If-Match` check and a concurrent
+save is not overwritten. A stored value that predates these rules does not
+block saving other settings sections; it is refused only when the risk-scoring
+section is saved again.
+
 **Settings.** Saving the risk-scoring settings and the manual
 `POST /api/v1/settings/risk-scoring/recalculate` rescore the whole
 organization at once, as before.
