@@ -139,15 +139,26 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 		}
 	}
 
-	res, err := client.CreateIssue(ctx, CreateIssueInput{
-		ProjectKey:  project,
-		Summary:     taskIssueSummary(task),
-		Description: s.taskIssueDescription(task),
-		IssueType:   mapping.DefaultIssueType,
-		Labels:      []string{"openctem", "openctem-task"},
-	})
+	// A previous attempt may have created the issue and lost the response
+	// or failed to record the link: adopt that issue (in a configured
+	// project) instead of creating a second one.
+	marker := markerFor(client, MarkerKindTask, in.TaskID)
+	res, err := s.findMarked(ctx, client, marker, func(key string) bool { return allowed[ticketlink.ProjectOf(key)] })
 	if err != nil {
-		return nil, fmt.Errorf("create the task's issue: %w", err)
+		return nil, err
+	}
+	if res == nil {
+		res, err = client.CreateIssue(ctx, CreateIssueInput{
+			ProjectKey:  project,
+			Summary:     taskIssueSummary(task),
+			Description: s.taskIssueDescription(task),
+			IssueType:   mapping.DefaultIssueType,
+			Labels:      []string{"openctem", "openctem-task"},
+			Marker:      marker,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create the task's issue: %w", err)
+		}
 	}
 	l, err := ticketlink.New(in.TenantID, ii.IntegrationID(), ticketlink.ForTask(in.TaskID), res.Key, res.ID,
 		ii.SiteURL(), ticketlink.BrowseURL(ii.SiteURL(), res.Key), ticketlink.RoleOwn, ticketlink.SourcePerson, in.By)
@@ -159,7 +170,7 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 	if err != nil {
 		s.logger.Error("create task issue: the issue exists but its link was not recorded",
 			"task_id", in.TaskID.String(), "issue_key", res.Key, "error", err)
-		return nil, fmt.Errorf("issue %s was created but could not be recorded on the task; link it again: %w", res.Key, err)
+		return nil, fmt.Errorf("issue %s was created but could not be recorded on the task; create it again to record it (the same issue is reused): %w", res.Key, err)
 	}
 	return l, nil
 }

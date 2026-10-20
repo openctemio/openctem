@@ -231,6 +231,23 @@ alike:
 
 - **Idempotent create** (#134): a finding already ticketed in the target project
   (its `WorkItemURIs` contains `/browse/<PROJECT>-`) is not re-created.
+- **Duplicate-proof create** (research 220 P0-8): every finding or task issue
+  the platform creates carries a marker in the create request itself: the
+  issue entity property `openctem` = `{"o": <object id>, "k": "task"|"finding",
+  "i": <integration id>}` and, where the request already sends labels, the label
+  `openctem-ref-<object id>`. Before creating, the platform searches the label
+  on the integration (`labels = "openctem-ref-<id>"`, with the property returned)
+  and adopts an issue only when its **property** names exactly this object,
+  kind and integration, and the issue is in the target project (a finding) or a
+  configured project (a task). A create whose response was lost (Jira created
+  the issue, the call timed out) or whose link was not recorded is recovered by
+  the next attempt instead of opening a second issue. A copied label, or a
+  marker of another object, kind, integration or tenant, is never adopted; if
+  the lookup fails the create is refused rather than risk a duplicate. The
+  label is the search key because issue properties are only searchable in JQL
+  when an installed app indexes them. A mapping profile that sends no labels
+  gets the property only (a create screen without labels would refuse the
+  issue), so such creates are not looked up.
 - **Secret redaction** (#135): secret-leak findings never copy the raw value, the
   masked preview, the snippet or the fingerprint into a ticket (outbound gate);
   descriptions are run through redaction patterns as defense-in-depth.
