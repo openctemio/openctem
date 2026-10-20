@@ -4,7 +4,8 @@
 > closed and a regression reopened without a person. Design and decisions:
 > [RFC-039](../rfcs/RFC-039-continuous-retest.md). Related:
 > [validation engine](validation-engine.md) (the `validate` command transport a
-> retest reuses).
+> retest reuses), [finding retest checks](finding-retest-checks.md) (a custom
+> check a person attaches to a finding, run by its retest).
 
 ## What a retest is
 

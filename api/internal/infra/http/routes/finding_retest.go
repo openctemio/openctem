@@ -23,6 +23,24 @@ func registerFindingRetestRoutes(router Router, h *handler.FindingRetestHandler,
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerFindingRetestCheckRoutes wires a finding's custom retest check
+// (docs/architecture/finding-retest-checks.md) under /findings/{id}/**, so
+// the finding data-scope route guard applies. Writing needs
+// findings:retest_checks:write; approving an intrusive check is a scope
+// decision (scope:approve) with a recent sign-in.
+func registerFindingRetestCheckRoutes(router Router, h *handler.FindingRetestCheckHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/findings/{id}/retest-check", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.FindingsRead))
+		r.PUT("/", h.Put, middleware.Require(permission.FindingsRetestChecksWrite))
+		r.DELETE("/", h.Delete, middleware.Require(permission.FindingsRetestChecksWrite))
+		r.POST("/validate", h.Validate, middleware.Require(permission.FindingsRetestChecksWrite))
+		r.POST("/approve", h.Approve, middleware.Require(permission.ScopeApprove), requireStepUp())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerRetestSettingsRoutes wires the organization's auto-retest settings
 // (RFC-039) under the token singleton /api/v1/organization: the tenant comes
 // from the credential, never from the path (docs/architecture/api-conventions.md

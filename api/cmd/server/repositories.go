@@ -327,6 +327,7 @@ type Repositories struct {
 	// Validation evidence (CTEM Stage-4, migration 000178)
 	ValidationEvidence      *postgres.ValidationEvidenceRepository
 	FindingRetest           *postgres.FindingRetestRepository
+	FindingRetestCheck      *postgres.FindingRetestCheckRepository
 	FindingEvidence         *postgres.FindingEvidenceRepository
 	FindingSLARestart       *postgres.FindingSLARestartRepository
 	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
@@ -628,6 +629,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Validation evidence (CTEM Stage-4, migration 000178).
 		ValidationEvidence:      postgres.NewValidationEvidenceRepository(db),
 		FindingRetest:           postgres.NewFindingRetestRepository(db),
+		FindingRetestCheck:      postgres.NewFindingRetestCheckRepository(db),
 		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
 		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
 		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),

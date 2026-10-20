@@ -567,6 +567,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
+		FindingRetestCheck:   handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
 		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:          jiraWebhookHandler,
 		TicketMapping:        ticketMappingHandler,
