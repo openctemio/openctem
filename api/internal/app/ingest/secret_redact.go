@@ -86,7 +86,26 @@ func redactReportSecrets(report *ctis.Report) {
 		if secretTool && (typ == "" || typ == ctis.FindingTypeVulnerability) {
 			f.Type = ctis.FindingTypeSecret
 		}
+		// A preview the producer made ("AKIA…MPLE") is already masked, but the
+		// CTIS redaction takes anything without a run of mask characters for a
+		// raw value and turns it into the word REDACTED. Hold the preview out
+		// of the walk and put it back; the receiving finding re-checks it
+		// against the secret's length (Finding.SetSecretPreview).
+		preview := ""
+		if f.Secret != nil && isProducerPreview(f.Secret.MaskedValue) {
+			preview, f.Secret.MaskedValue = f.Secret.MaskedValue, "REDACTED"
+		}
 		ctis.RedactSecretFinding(f)
+		if preview != "" && f.Secret != nil {
+			f.Secret.MaskedValue = preview
+		}
 		f.Type = typ
 	}
+}
+
+// isProducerPreview reports whether v is a preview in the form a producer
+// makes: one "…" and at most 8 visible characters, with something visible.
+func isProducerPreview(v string) bool {
+	t := strings.TrimSpace(v)
+	return strings.Count(t, "…") == 1 && vulnerability.IsSecretPreviewSafe(t) && !vulnerability.IsSecretMaskOnly(t)
 }
