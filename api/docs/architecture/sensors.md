@@ -550,11 +550,15 @@ post-install/post-upgrade Job). An existing organization sensor keeps its
 identity: the scope is fixed at creation, so converting means retiring it and
 enrolling a fresh one.
 
-In compose the bundled sensor runs on its own `sensor-net` bridge. The `api`
-service is the only other member, so the sensor reaches the API and the
-internet (public scans) but cannot resolve or connect to Postgres, Redis, the
-signer, the gateway or the console. It has memory, CPU and process limits
-(`SENSOR_MEMORY_LIMIT`, `SENSOR_CPUS`, `SENSOR_PIDS_LIMIT`). The enrollment
+In compose the bundled sensor runs on its own `sensor-net` bridge. The
+`gateway` service is the only other member, under the name of
+`OPENCTEM_HOSTNAME`, so the sensor reaches the platform over https at the
+same address as every other client (sensor SDK releases from v0.35.0 refuse
+plain http to a non-loopback host), trusting the gateway's internal CA from
+`./ca` (`SENSOR_CA_CERT_FILE`; set it empty for a publicly trusted
+certificate). It also reaches the internet (public scans) but cannot resolve
+or connect to Postgres, Redis, the signer or the API. It has memory, CPU and
+process limits (`SENSOR_MEMORY_LIMIT`, `SENSOR_CPUS`, `SENSOR_PIDS_LIMIT`). The enrollment
 token still reaches the sensor through its environment until the sensor
 supports reading it from a file.
 

@@ -207,7 +207,7 @@ func TestBulkStatus_SideEffectsOnlyForMovedRows_DB(t *testing.T) {
 	rec.wire(svc)
 
 	res, err := svc.BulkUpdateFindingsStatus(context.Background(), h.tenant.String(), finding.BulkUpdateStatusInput{
-		FindingIDs: []string{a.String(), b.String()}, Status: "in_progress", ActorID: h.memberA.String(),
+		FindingIDs: []string{a.String(), b.String()}, Status: "in_progress", ActorID: h.memberA.String(), HasStatusPermission: true,
 	})
 	if err != nil {
 		t.Fatalf("bulk: %v", err)
