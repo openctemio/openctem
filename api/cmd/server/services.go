@@ -778,6 +778,7 @@ type Services struct {
 
 	// Priority Classification (RFC-004)
 	PriorityClassification *finding.PriorityClassificationService
+	AssetRiskGovernance    *finding.AssetRiskGovernance
 	// VulnMatch is inventory vulnerability matching (RFC-066).
 	VulnMatch *vulnmatch.Service
 
@@ -1257,8 +1258,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
 	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
-	s.Vulnerability.SetAssetRefChecker(s.DataScope) // POST /findings asset_id: tenant + caller scope
-	s.Vulnerability.SetBranchLookup(repos.Branch)   // a finding branch must belong to its asset
+	s.Vulnerability.SetAssetRefChecker(s.DataScope)        // POST /findings asset_id: tenant + caller scope
+	s.Vulnerability.SetBranchLookup(repos.Branch)          // a finding branch must belong to its asset
 	s.FindingActivity = activity.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
@@ -1427,6 +1428,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.Attribution != nil {
 		s.PriorityClassification.SetAttributionLookup(repos.Attribution)
 	}
+
+	// Edits that lower an asset's exposure, criticality or crown-jewel flag are
+	// decided under the organization's approval policy when they would drop an
+	// open P0/P1 finding (docs/architecture/asset-risk-governance.md).
+	s.AssetRiskGovernance = finding.NewAssetRiskGovernance(s.Vulnerability, s.PriorityClassification,
+		repos.Asset, repos.AssetRiskRequest, s.Asset, log)
+	s.Asset.SetRiskGovernor(assetRiskGovernor{s.AssetRiskGovernance})
 
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
@@ -3651,4 +3659,16 @@ func learnComponentReleases(f *releasefeed.Feed) {
 		learned[k] = versions.Learned{Version: c.Version, Digest: c.Digest}
 	}
 	versions.SetLearned(learned)
+}
+
+// assetRiskGovernor adapts the finding package's risk governance to the asset
+// service's decision hook (the two packages do not import each other).
+type assetRiskGovernor struct{ g *finding.AssetRiskGovernance }
+
+func (a assetRiskGovernor) GovernRisk(ctx context.Context, in asset.RiskGovernInput) (asset.RiskGovernOutcome, error) {
+	out, err := a.g.Govern(ctx, finding.GovernInput{
+		TenantID: in.TenantID, AssetID: in.AssetID, Before: in.Before, After: in.After,
+		Actor: in.Actor, CanApprove: in.CanApprove, Reason: in.Reason, Audit: in.Audit,
+	})
+	return asset.RiskGovernOutcome{Held: out.Held}, err
 }
