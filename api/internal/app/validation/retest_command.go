@@ -2,6 +2,7 @@ package validation
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -11,6 +12,20 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
+
+// SensorCapabilityRetestTemplates prefixes the capability a sensor reports
+// when its retest handler for a tool also runs templates delivered with the
+// command: "retest-templates:<tool>" (a finding's custom retest check,
+// docs/architecture/finding-retest-checks.md). A retest command that carries
+// a template requires it next to "retest:<tool>", so an older sensor never
+// receives one.
+const SensorCapabilityRetestTemplates = "retest-templates"
+
+// RetestTemplatesCapability is the capability a retest command carrying a
+// template for tool requires.
+func RetestTemplatesCapability(tool string) string {
+	return SensorCapabilityRetestTemplates + ":" + strings.ToLower(strings.TrimSpace(tool))
+}
 
 // SensorCapabilityRetest prefixes the capability a sensor reports for a tool
 // with a retest handler: "retest:<tool>" (RFC-039, tool retest). A retest
@@ -63,6 +78,21 @@ type RetestItemPayload struct {
 	Kind        string `json:"kind"`
 	RuleID      string `json:"rule_id"`
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Template is the id of the custom template (one of the command's
+	// custom_templates) the item is checked with, instead of the sensor's
+	// managed template set.
+	Template string `json:"template,omitempty"`
+}
+
+// RetestTemplatePayload is one custom template of a retest command, in the
+// shape of a scan command's custom templates: the platform signs it on
+// delivery and the job statement lists its digest.
+type RetestTemplatePayload struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	TemplateType string `json:"template_type"`
+	// Content is the template, base64 (standard encoding).
+	Content string `json:"content"`
 }
 
 // RetestCommandPayload is the payload of a CommandTypeRetest command: the wire
@@ -77,6 +107,9 @@ type RetestCommandPayload struct {
 	TimeoutSeconds int                 `json:"timeout_seconds"`
 	Targets        []string            `json:"targets"`
 	Items          []RetestItemPayload `json:"items"`
+	// CustomTemplates are the templates the items name (a custom retest
+	// check).
+	CustomTemplates []RetestTemplatePayload `json:"custom_templates,omitempty"`
 	// RequiredCapabilities routes the command only to sensors whose tool has
 	// a retest handler (["retest:<tool>"]).
 	RequiredCapabilities []string `json:"required_capabilities"`
@@ -99,9 +132,40 @@ type ToolRetestJob struct {
 	RuleID         string
 	Fingerprint    string
 	TimeoutSeconds int
+	// Template is the finding's custom retest check, sent with the command
+	// (nil: the tool checks with its own rules).
+	Template *RetestTemplate
 	// ScanRunID / ScanRunStepID tag the command with the retest's run.
 	ScanRunID     shared.ID
 	ScanRunStepID shared.ID
+}
+
+// RetestTemplate is a nuclei template a retest sends with its command.
+type RetestTemplate struct {
+	ID      string
+	Name    string
+	Content []byte
+}
+
+// retestTemplateFile is the file name a template is sent under.
+func retestTemplateFile(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		out = "retest-check"
+	}
+	if len(out) > 100 {
+		out = out[:100]
+	}
+	return out + ".yaml"
 }
 
 // DispatchToolRetest enqueues one retest command. The target passes the same
@@ -137,6 +201,15 @@ func (d *CommandDispatcher) DispatchToolRetest(ctx context.Context, job ToolRete
 		}},
 		RequiredCapabilities: []string{RetestCapability(job.Tool)},
 		ScanRunID:            idString(job.ScanRunID),
+	}
+	if t := job.Template; t != nil {
+		if t.ID == "" || len(t.Content) == 0 {
+			return shared.ID{}, fmt.Errorf("%w: a retest template needs an id and content", shared.ErrValidation)
+		}
+		payload.CustomTemplates = []RetestTemplatePayload{{ID: t.ID, Name: retestTemplateFile(t.Name),
+			TemplateType: "nuclei", Content: base64.StdEncoding.EncodeToString(t.Content)}}
+		payload.Items[0].Template = t.ID
+		payload.RequiredCapabilities = append(payload.RequiredCapabilities, RetestTemplatesCapability(job.Tool))
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

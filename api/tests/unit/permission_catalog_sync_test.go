@@ -46,6 +46,7 @@ var permSeedMigrations = []string{
 	"dashboard_ownership",                     // dashboards:org:manage
 	"reports_manage_permission",               // reports:manage
 	"service_accounts_manage_permission",      // service_accounts:manage
+	"permission_findings_retest_checks",       // findings:retest_checks:write
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
