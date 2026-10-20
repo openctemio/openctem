@@ -303,6 +303,9 @@ func (h *JiraWebhookHandler) CreateTaskIssue(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *JiraWebhookHandler) taskIssueError(w http.ResponseWriter, err error) {
+	if writeEgressRefusal(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("task").WriteJSON(w)

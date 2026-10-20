@@ -2186,6 +2186,8 @@ type UpdatePentestSettingsInput struct {
 	Methodologies []tenantdom.ConfigOption `json:"methodologies"`
 	// RequireAuthorizationBeforeStart: nil = unchanged.
 	RequireAuthorizationBeforeStart *bool `json:"require_authorization_before_start"`
+	// TicketMaxTLP: nil = unchanged, "" = the default (amber).
+	TicketMaxTLP *string `json:"ticket_max_tlp"`
 }
 
 // UpdatePentestSettings updates only the pentest settings.
@@ -2200,6 +2202,10 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 			Methodologies: current.Methodologies,
 
 			RequireAuthorizationBeforeStart: current.RequireAuthorizationBeforeStart,
+			TicketMaxTLP:                    current.TicketMaxTLP,
+		}
+		if input.TicketMaxTLP != nil {
+			ps.TicketMaxTLP = *input.TicketMaxTLP
 		}
 		if input.RequireAuthorizationBeforeStart != nil {
 			ps.RequireAuthorizationBeforeStart = *input.RequireAuthorizationBeforeStart
