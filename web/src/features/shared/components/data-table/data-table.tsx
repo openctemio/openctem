@@ -586,13 +586,21 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-4">
-      {/* Toolbar: one row where it fits; on narrow screens filters wrap onto a
-          second row rather than squeezing the search box to a few letters. */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Toolbar: one row where it fits. The start group (filters, search)
+          asks for at least 12rem; when that and the end group do not fit on one
+          line, the whole end group moves to its own line, so the search box is
+          never squeezed until it drops under a lone filter button. The row is a
+          size container: controls inside switch labels to icons by the
+          toolbar's own width (`@xl/toolbar:`), which tracks an open filter
+          panel or a collapsed sidebar, not only the viewport. */}
+      <div
+        data-testid="data-table-toolbar"
+        className="@container/toolbar flex flex-wrap items-center gap-2"
+      >
         {toolbarStart ? (
           // No min-w-0: the group must not shrink below its widest control, or a
           // button spills over the search box beside it. It wraps instead.
-          <div className="flex flex-1 flex-wrap items-center gap-2 [&>.relative:has(input)]:min-w-36">
+          <div className="flex flex-[1_1_12rem] flex-wrap items-center gap-2 [&>.relative:has(input)]:min-w-36">
             {filterToggle && <FilterPanelToggle {...filterToggle} />}
             {toolbarStart}
           </div>
@@ -658,8 +666,8 @@ export function DataTable<TData, TValue>({
                 className={cn('h-9', phoneCards && 'hidden')}
                 aria-label="Table view: density and columns"
               >
-                <SlidersHorizontal className="h-4 w-4 sm:me-2" />
-                <span className="sr-only sm:not-sr-only">View</span>
+                <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
+                <span className="sr-only @xl/toolbar:not-sr-only">View</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[200px]">

@@ -138,6 +138,9 @@ type QueryClaim struct {
 	IDs      []shared.ID
 	Cap      int
 	ActorID  *shared.ID
+	// ExpectedVersion > 0 is the task version the caller read, checked under
+	// the task lock (0 for the platform's automatic runs).
+	ExpectedVersion int
 	// Auto marks an automatic addition (timeline actor "system" on behalf
 	// of the owner).
 	Auto bool
@@ -170,7 +173,9 @@ type PrimaryHolder struct {
 // tenant except the one named ForPlatform.
 type TaskQueryRepository interface {
 	GetTaskQuery(ctx context.Context, tenantID, taskID shared.ID) (*TaskQuery, error)
-	SetAutoState(ctx context.Context, tenantID, taskID shared.ID, state AutoState, reason *AutoReason) error
+	// SetAutoState changes the auto state; expectedVersion > 0 checks the
+	// task's version under a lock in the same transaction (0 = the platform).
+	SetAutoState(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int, state AutoState, reason *AutoReason) error
 	RecordQueryRun(ctx context.Context, tenantID, taskID shared.ID, added int, at time.Time) error
 	ClaimQueryFindings(ctx context.Context, c QueryClaim) (*QueryClaimResult, error)
 	PrimaryHolders(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]PrimaryHolder, error)

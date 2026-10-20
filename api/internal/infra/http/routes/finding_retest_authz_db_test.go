@@ -23,8 +23,10 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
+	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
@@ -46,6 +48,10 @@ func (rtNucleiOnline) HasNucleiValidationSensor(context.Context, shared.ID) (boo
 }
 
 func (rtNucleiOnline) HasRetestSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+
+func (rtNucleiOnline) HasRetestTemplatesSensor(context.Context, shared.ID, string) (bool, error) {
 	return false, nil
 }
 
@@ -97,6 +103,9 @@ func newRetestAuthzHarness(t *testing.T) *rtHarness {
 
 	router := infrahttp.NewChiRouter()
 	registerFindingRetestRoutes(router, handler.NewFindingRetestHandler(svc, log), Middleware(h.auth), nil)
+	checks := retestcheckapp.NewService(postgres.NewFindingRetestCheckRepository(pg), postgres.NewFindingRepository(pg),
+		retestcheckapp.LibraryTemplates{Svc: app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(pg), "", log)}, nil, log)
+	registerFindingRetestCheckRoutes(router, handler.NewFindingRetestCheckHandler(checks, log), Middleware(h.auth), nil)
 	tenantSvc := tenantapp.NewTenantService(postgres.NewTenantRepository(pg), log)
 	registerRetestSettingsRoutes(router, handler.NewTenantHandler(tenantSvc, validator.New(), log), Middleware(h.auth), nil)
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())

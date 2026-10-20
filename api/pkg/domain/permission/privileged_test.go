@@ -44,3 +44,54 @@ func TestOrgDashboardPermissionsArePrivileged(t *testing.T) {
 		}
 	}
 }
+
+func TestIsReadScope(t *testing.T) {
+	for p, want := range map[string]bool{
+		"assets:read": true, "findings:read": true, "dashboards:org:view": true,
+		"assets:write": false, "findings:approve": false, "team:delete": false,
+		"service_accounts:manage": false, "findings:export": false,
+	} {
+		if got := permission.IsReadScope(p); got != want {
+			t.Errorf("%s: got %v want %v", p, got, want)
+		}
+	}
+}
+
+// service_accounts:manage mints organization credentials: owners and admins
+// hold it, members and viewers never do, and it counts as privileged.
+func TestServiceAccountsManageIsAdminDefault(t *testing.T) {
+	p := permission.ServiceAccountsManage
+	for _, r := range []tenant.Role{tenant.RoleMember, tenant.RoleViewer} {
+		if permission.HasPermission(r, p) {
+			t.Errorf("%s holds %s", r, p)
+		}
+	}
+	for _, r := range []tenant.Role{tenant.RoleOwner, tenant.RoleAdmin} {
+		if !permission.HasPermission(r, p) {
+			t.Errorf("%s lacks %s", r, p)
+		}
+	}
+	if !permission.IsPrivilegedRole([]string{string(p)}, false) {
+		t.Errorf("%s is not privileged", p)
+	}
+}
+
+func TestGainsStepUpGrade(t *testing.T) {
+	cases := []struct {
+		name       string
+		old, nw    []string
+		of, nf, ok bool
+	}{
+		{"approve gained", []string{"assets:read"}, []string{"assets:read", "findings:approve"}, false, false, true},
+		{"privileged gained", []string{"assets:read"}, []string{"team:roles:write"}, false, false, true},
+		{"full data gained", nil, nil, false, true, true},
+		{"nothing gained", []string{"findings:approve"}, []string{"findings:approve", "assets:read"}, false, false, false},
+		{"removal only", []string{"findings:approve", "team:roles:write"}, []string{"assets:read"}, false, false, false},
+		{"plain gain", []string{"assets:read"}, []string{"assets:read", "assets:write"}, false, false, false},
+	}
+	for _, c := range cases {
+		if got := permission.GainsStepUpGrade(c.old, c.of, c.nw, c.nf); got != c.ok {
+			t.Errorf("%s: got %v want %v", c.name, got, c.ok)
+		}
+	}
+}

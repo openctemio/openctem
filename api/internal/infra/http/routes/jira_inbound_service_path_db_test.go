@@ -9,6 +9,7 @@ package routes
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -35,6 +37,19 @@ func (c *commentClient) AddComment(_ context.Context, _ string, body string) err
 	return nil
 }
 
+// siteMapping is the mapping of the delivering integration.
+type siteMapping struct{ site, project string }
+
+func (m siteMapping) ResolveMapping(context.Context, shared.ID) (jira.MappingConfig, error) {
+	c := jira.DefaultMappingConfig()
+	c.SiteURL, c.DefaultProjectKey = m.site, m.project
+	return c, nil
+}
+
+func (m siteMapping) ResolveMappingByID(ctx context.Context, tenantID, _ shared.ID) (jira.MappingConfig, error) {
+	return m.ResolveMapping(ctx, tenantID)
+}
+
 type onceGuard struct {
 	mu   sync.Mutex
 	seen map[string]bool
@@ -50,37 +65,6 @@ func (g *onceGuard) FirstDelivery(_ context.Context, key string, _ time.Duration
 	return true, nil
 }
 
-// testTicketApplier is the composition-root adapter (cmd/server) for the test.
-type testTicketApplier struct{ vuln *finding.VulnerabilityService }
-
-func (a testTicketApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref, externalActor string,
-) ([]shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
-	if err != nil {
-		return nil, nil, err
-	}
-	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
-	for _, r := range out.Refused {
-		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
-	}
-	return out.Applied, refused, nil
-}
-
-func (a testTicketApplier) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref, externalActor string,
-) ([]shared.ID, []shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.RequestTicketDisposition(ctx, tenantID, ids, target, integration, ref, externalActor)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
-	for _, r := range out.Refused {
-		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
-	}
-	return out.Requested, out.Pending, refused, nil
-}
-
 func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	h := newGroupScopeHarness(t)
 	db := &postgres.DB{DB: h.db}
@@ -91,7 +75,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 		return len(ids)
 	})
 
-	issue := "SEC-" + shared.NewID().String()[:8]
+	issue := fmt.Sprintf("SEC-%d", time.Now().UnixNano()%1_000_000_000)
 	url := "https://acme.atlassian.net/browse/" + issue
 	add := func(tenant, asset shared.ID, status string) shared.ID {
 		id := shared.NewID()
@@ -113,9 +97,12 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 
 	client := &commentClient{}
 	sync := jira.NewSyncService(findingRepo, client, logger.NewNop())
-	sync.SetInboundApplier(testTicketApplier{vuln: h.vuln})
+	sync.SetInboundApplier(ticketbridge.Jira{Vuln: h.vuln})
 	sync.SetWorkItemFindingLister(findingRepo)
 	sync.SetRefusalCommentGuard(&onceGuard{seen: map[string]bool{}})
+	// The delivering integration: its site and its configured project.
+	intg := shared.NewID()
+	sync.SetMappingResolver(siteMapping{site: "https://acme.atlassian.net", project: "SEC"})
 
 	payload := func(status string) jira.WebhookPayload {
 		return jira.WebhookPayload{
@@ -126,7 +113,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 		}
 	}
 	// The browse URL is derived from the key; make sure it matches ours.
-	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, payload("Done")); err != nil {
+	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, intg, payload("Done")); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []shared.ID{fNew, fConfirmed, fInProgress} {
@@ -177,7 +164,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	}
 
 	// A repeated delivery does not comment again.
-	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, payload("Done")); err != nil {
+	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, intg, payload("Done")); err != nil {
 		t.Fatal(err)
 	}
 	if len(client.comments) != 1 {
@@ -185,7 +172,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	}
 
 	// Reopened in Jira: fix_applied findings go back to in_progress, legally.
-	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, payload("In Progress")); err != nil {
+	if err := sync.HandleJiraWebhook(context.Background(), h.tenant, intg, payload("In Progress")); err != nil {
 		t.Fatal(err)
 	}
 	if st, _, _ := h.findingRow(fNew); st != "in_progress" {

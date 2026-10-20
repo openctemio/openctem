@@ -1,0 +1,204 @@
+name: Release archives
+
+# The release archives for installs without containers and for private
+# registries (api/docs/deployment/binary-install.md,
+# api/docs/deployment/air-gapped.md), built by
+# .github/scripts/release/build-dist.sh.
+#
+# - Called by Release (release.yml) on a tag with `full: true`: every archive,
+#   linux amd64 + arm64, the bootstrap-admin CLI for darwin and windows too.
+#   Release then checksums, signs and publishes them.
+# - On a pull request that touches the archives' inputs: a dry run that builds
+#   the linux/amd64 archives with the same script, smoke-tests them
+#   (.github/scripts/release/smoke-dist.sh) and publishes nothing, so a broken
+#   release build shows up before the next tag.
+#
+# No cache anywhere: a release is built from the tag's sources only.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version (vX.Y.Z)
+        required: true
+        type: string
+      full:
+        description: Every target (release) instead of linux/amd64 (dry run)
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/release-dist.yml
+      - .github/workflows/release.yml
+      - .github/scripts/release/build-dist.sh
+      - .github/scripts/release/smoke-dist.sh
+      - deploy/binary/**
+      - deploy/airgap/**
+      - api/Dockerfile
+      - api/Dockerfile.migrations
+      - api/scripts/migrate-entrypoint.sh
+      - api/deploy/gateway/**
+      - api/cmd/server/main.go
+      - api/cmd/signer/main.go
+      - web/package.json
+      - web/package-lock.json
+      - web/.nvmrc
+      - web/next.config.ts
+      - web/console/next.config.ts
+      - web/server-with-ws.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-dist-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOWORK: "off"
+  VERSION: ${{ inputs.version || 'v0.0.0-ci' }}
+
+jobs:
+  go:
+    name: Go archives (linux/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(inputs.full && '["amd64","arm64"]' || '["amd64"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+      - name: Build server, gateway and bootstrap-admin
+        env:
+          TARGET_OS: linux
+          TARGET_ARCH: ${{ matrix.arch }}
+          COMMIT: ${{ github.sha }}
+          OUT_DIR: ${{ github.workspace }}/dist
+        run: bash .github/scripts/release/build-dist.sh server gateway bootstrap-admin
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-go-linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 3
+
+  cli:
+    name: bootstrap-admin (${{ matrix.os }}/${{ matrix.arch }})
+    if: inputs.full
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: darwin, arch: amd64 }
+          - { os: darwin, arch: arm64 }
+          - { os: windows, arch: amd64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+      - name: Build bootstrap-admin
+        env:
+          TARGET_OS: ${{ matrix.os }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          COMMIT: ${{ github.sha }}
+          OUT_DIR: ${{ github.workspace }}/dist
+        run: bash .github/scripts/release/build-dist.sh bootstrap-admin
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-cli-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 3
+
+  # Next.js standalone bundles carry native modules (sharp) of the machine
+  # that builds them, so each arch builds on a native runner.
+  web:
+    name: Web and console archives (linux/${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.full && '[{"arch":"amd64","runner":"ubuntu-latest"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"arch":"amd64","runner":"ubuntu-latest"}]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The web console compiles against the generated contract files, which
+      # are not committed. This also sets up Go and Node.js (web/.nvmrc).
+      - name: Generate the contract files
+        uses: ./.github/actions/generate-contract
+        with:
+          cache: 'false'
+      - name: Build web and console
+        env:
+          TARGET_OS: linux
+          TARGET_ARCH: ${{ matrix.arch }}
+          COMMIT: ${{ github.sha }}
+          OUT_DIR: ${{ github.workspace }}/dist
+        run: bash .github/scripts/release/build-dist.sh web console
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-web-linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 3
+
+  kit:
+    name: Image kit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image kit
+        env:
+          COMMIT: ${{ github.sha }}
+          OUT_DIR: ${{ github.workspace }}/dist
+        run: bash .github/scripts/release/build-dist.sh image-kit
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-kit
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 3
+
+  # Runs the linux/amd64 archives: versions, the configuration check against
+  # the shipped example settings, the systemd units, the gateway's layer4
+  # module, the web servers' health endpoints, and the image kit's Dockerfiles
+  # (built, not pushed).
+  smoke:
+    name: Smoke test (linux/amd64)
+    needs: [go, web, kit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/dist
+          pattern: dist-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Smoke test
+        run: bash .github/scripts/release/smoke-dist.sh "${{ runner.temp }}/dist" "$VERSION"

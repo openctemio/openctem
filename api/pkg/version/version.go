@@ -58,6 +58,16 @@ type Info struct {
 	Channel   string `json:"channel" example:"release" enums:"release,rc,dev"`
 }
 
+// String is the one-line identity printed by `openctem-server -version` and
+// `openctem-signer version`: "<version> (commit <commit>, built <time>)".
+func (i Info) String() string {
+	s := i.Version + " (commit " + i.Commit
+	if i.BuildTime != "" {
+		s += ", built " + i.BuildTime
+	}
+	return s + ")"
+}
+
 // tagVersion matches a version a tag can carry: v1.2.3, optionally with a
 // pre-release suffix (group 1: rc.1, staging, dev) and build metadata (+sha).
 var tagVersion = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
