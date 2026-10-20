@@ -784,6 +784,26 @@ func (r *RemediationTaskRepository) ScopedCounts(ctx context.Context, tenantID s
 	return memberCounts(ctx, r.db, tenantID, taskIDs, scope)
 }
 
+type recomputeReportKey struct{}
+
+// reportOf is the report the background reconcile asked a recompute to fill
+// (nil for every other caller).
+func reportOf(ctx context.Context) *remediation.RecomputeReport {
+	rep, _ := ctx.Value(recomputeReportKey{}).(*remediation.RecomputeReport)
+	return rep
+}
+
+// ReconcileTasks recomputes tasks as the platform and reports what changed.
+// The report is only meaningful when the call succeeds (the whole recompute
+// is one transaction).
+func (r *RemediationTaskRepository) ReconcileTasks(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID) (*remediation.RecomputeReport, error) {
+	rep := &remediation.RecomputeReport{}
+	if err := r.Recompute(context.WithValue(ctx, recomputeReportKey{}, rep), tenantID, taskIDs, nil); err != nil {
+		return nil, err
+	}
+	return rep, nil
+}
+
 // Recompute derives the state, deadline and counters of the tenant's tasks
 // from their members and stores what changed; a state change is recorded on
 // the task's timeline (actor nil = the platform).
@@ -803,6 +823,7 @@ func (r *RemediationTaskRepository) Recompute(ctx context.Context, tenantID shar
 }
 
 type taskDerivationInput struct {
+	title    string
 	manual   *remediation.ManualState
 	archived bool
 	manualDL *time.Time
@@ -816,7 +837,7 @@ type taskDerivationInput struct {
 // besides the members.
 func readDerivationInputs(ctx context.Context, tx *sql.Tx, tenantID shared.ID, taskIDs []shared.ID) (map[shared.ID]taskDerivationInput, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT t.id, t.manual_state, t.archived_at IS NOT NULL, t.manual_deadline,
+		SELECT t.id, t.title, t.manual_state, t.archived_at IS NOT NULL, t.manual_deadline,
 		       (c.due_date::timestamp AT TIME ZONE 'UTC') + interval '1 day' - interval '1 second',
 		       t.state, t.closed_at
 		FROM remediation_tasks t
@@ -840,7 +861,7 @@ func readDerivationInputs(ctx context.Context, tx *sql.Tx, tenantID shared.ID, t
 			closedAt         sql.NullTime
 			state            string
 		)
-		if err := rows.Scan(&id, &manual, &in.archived, &manualDL, &campDL, &state, &closedAt); err != nil {
+		if err := rows.Scan(&id, &in.title, &manual, &in.archived, &manualDL, &campDL, &state, &closedAt); err != nil {
 			return nil, fmt.Errorf("read tasks to recompute: %w", err)
 		}
 		if manual.Valid {
@@ -917,6 +938,9 @@ func (r *RemediationTaskRepository) recomputeInTx(ctx context.Context, tx *sql.T
 			if err := insertTaskEventInTx(ctx, tx, tenantID, id, remediation.TaskEventStateChanged, actor,
 				map[string]any{"from": string(in.state), "to": string(state)}); err != nil {
 				return err
+			}
+			if rep := reportOf(ctx); rep != nil {
+				rep.StateChanges = append(rep.StateChanges, remediation.StateChange{TaskID: id, Title: in.title, From: in.state, To: state})
 			}
 		}
 	}
@@ -1141,6 +1165,10 @@ func (r *RemediationTaskRepository) regressInTx(ctx context.Context, tx *sql.Tx,
 	if err := insertTaskEventInTx(ctx, tx, tenantID, src.ID, remediation.TaskEventRegressed, actor,
 		map[string]any{"count": len(reopened), "regression_task_id": child.ID.String()}); err != nil {
 		return shared.ID{}, err
+	}
+	if rep := reportOf(ctx); rep != nil {
+		rep.Regressions = append(rep.Regressions, remediation.Regression{SourceID: src.ID, SourceTitle: src.Title,
+			TaskID: child.ID, Title: child.Title, Findings: len(reopened)})
 	}
 	return child.ID, nil
 }

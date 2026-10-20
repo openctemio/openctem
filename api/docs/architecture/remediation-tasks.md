@@ -27,6 +27,12 @@ manual states (on hold, canceled).
 - Recompute runs in the transaction of every change (create, add members, update) and in the
   `remediation-tasks` controller every two minutes for tasks whose findings changed since `recomputed_at`
   (`StaleTasksForPlatform`, oldest first, 500 per pass). A state change is written to the timeline.
+- Changes no person made are also in the audit log, with `system` as the actor (`ActorEmail: system`, the tenant
+  set): a state change found by the background reconcile (`remediation_task.state_changed`, `trigger: reconcile`),
+  the new task opened when a closed task's finding reopens (`remediation_task.regressed`, with `regression_of` and
+  the finding count) and findings joining under an action's auto-join rule (`remediation_task.members_added`,
+  `trigger: auto_join`, with the action and the count). A person's own change is audited where it is made, not again
+  for the recompute it triggers.
 
 ## Membership rules
 
