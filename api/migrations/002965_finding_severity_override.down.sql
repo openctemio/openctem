@@ -21,6 +21,9 @@ BEGIN
         ALTER TABLE finding_activities DROP CONSTRAINT chk_activity_type;
         EXECUTE format('ALTER TABLE finding_activities ADD CONSTRAINT chk_activity_type CHECK (activity_type IN (%s)) NOT VALID',
             (SELECT string_agg(quote_literal(v), ', ' ORDER BY v) FROM unnest(vals) AS v WHERE NOT v = ANY (removed)));
+        -- Every remaining row already satisfies it (the removed types were deleted
+        -- above): restore the constraint validated, as it was before the up.
+        ALTER TABLE finding_activities VALIDATE CONSTRAINT chk_activity_type;
     END IF;
 END;
 $$;
