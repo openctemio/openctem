@@ -64,7 +64,7 @@ case, so check for it in review.
   the statement short.
 - Before dropping a unique index, check `pg_constraint.conindid`: a foreign
   key bound to it blocks the drop, and PostgreSQL cannot re-point it.
-  `003182_drop_dup_unique_indexes` shows the pattern (drop the dependent keys,
+  `003191_drop_dup_unique_indexes` shows the pattern (drop the dependent keys,
   drop the index, re-add the keys unchanged and validate them).
 
 ## Migration baseline
