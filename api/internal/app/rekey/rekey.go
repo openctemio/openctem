@@ -14,7 +14,7 @@
 //	  admin_credentials.mfa_secret_encrypted          admin console TOTP
 //	  user_mfa.secret_encrypted, pending_secret_encrypted  user TOTP
 //	  settings.value_json.access_key / secret_key     tenant file storage (key 'storage_config')
-//	  tenants.settings.ai.api_key                     BYOK LLM key ("enc:v1:" prefix)
+//	  tenant_ai_settings.key_enc                      organization's own AI provider key
 //	  exposure_events.details.secret_value_enc        leaked-credential secret
 //	AES-256-GCM, raw bytes (pkg/domain/secretstore, key = hex-decoded key):
 //	  credentials.encrypted_data                      secret store (template sources, ...)
@@ -246,7 +246,7 @@ var registry = []location{
 	textCol{table: "scm_gitlab_connections", pk: "id", col: "token_encrypted"},
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"access_key"}, where: "key = 'storage_config'"},
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"secret_key"}, where: "key = 'storage_config'"},
-	jsonField{table: "tenants", pk: "id", col: "settings", path: []string{"ai", "api_key"}, prefix: "enc:v1:"},
+	textCol{table: "tenant_ai_settings", pk: "tenant_id", col: "key_enc"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"password_encrypted"}, where: "key = 'email.smtp'"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"key_encrypted"}, where: "key = 'ai.platform'"},
 	leakedSecret{},

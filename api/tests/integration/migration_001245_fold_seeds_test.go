@@ -3,8 +3,8 @@ package integration
 // Migration 001262 (research/53 A1, SC1, SC2): seeds and easm verified
 // domains fold into scope entries with today's authority kept, SSO domains
 // get no entry, one-off entries stop discovering, and the down migration
-// brings the seeds back. Replayed in a rolled-back transaction as the
-// migrator (it runs DDL).
+// brings the seeds back. Replayed in a rolled-back transaction in a
+// private database (it runs DDL, so it must not share locks with other tests).
 
 import (
 	"context"
@@ -19,8 +19,11 @@ import (
 )
 
 func TestMigration001262FoldsSeedsIntoEntries(t *testing.T) {
-	db := openLifecycleDB(t)
-	mig := testdb.OpenMigrator(t)
+	// A private, fully migrated database: the replay below runs DDL (the
+	// constraint rollback and 001262's own statements take table locks), and
+	// on the shared test database that deadlocked with whatever other
+	// package's tests were writing to the same tables in parallel.
+	db := testdb.PrivateDatabase(t, "mig001262", "../../migrations")
 	ctx := context.Background()
 	tenantA := seedLifecycleTenant(ctx, t, db)
 	tenantB := seedLifecycleTenant(ctx, t, db)
@@ -44,7 +47,7 @@ func TestMigration001262FoldsSeedsIntoEntries(t *testing.T) {
 	}
 	up, down := read("001262_scope_fold_seeds.up.sql"), read("001262_scope_fold_seeds.down.sql")
 
-	tx, err := mig.BeginTx(ctx, nil)
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

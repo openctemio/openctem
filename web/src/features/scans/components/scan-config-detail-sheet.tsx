@@ -30,7 +30,7 @@ import {
 } from '@/features/shared'
 import { LastRunCell } from './last-run-cell'
 import { ScanControls, scanStateLabel } from './scan-controls'
-import { lastRunOf, scanTypeLabel } from '../lib/scan-status'
+import { isManagedScan, lastRunOf, scanTypeLabel } from '../lib/scan-status'
 import type { ScanConfig } from '@/lib/api/scan-types'
 import { scanTypeName, scheduleTypeName } from '../lib/labels'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -77,12 +77,17 @@ export function ScanConfigDetailSheet({
   const canWrite = useHasPermission(Permission.ScansWrite)
   if (!config) return null
 
+  const managed = isManagedScan(config)
   const menu: DetailMenuItem[] = []
-  if (canWrite && onEdit) {
+  if (canWrite && onEdit && !managed) {
     menu.push({ label: t('scans.sheet.edit'), icon: Pencil, onSelect: () => onEdit(config) })
   }
   if (canWrite && onClone) {
-    menu.push({ label: t('scans.sheet.clone'), icon: Copy, onSelect: () => onClone(config) })
+    menu.push({
+      label: managed ? t('scans.managed.clone') : t('scans.sheet.clone'),
+      icon: Copy,
+      onSelect: () => onClone(config),
+    })
   }
   menu.push({
     label: t('scans.sheet.copyId'),
@@ -93,7 +98,7 @@ export function ScanConfigDetailSheet({
       toast.success(t('scans.sheet.idCopied'))
     },
   })
-  if (canDelete) {
+  if (canDelete && !managed) {
     menu.push({
       label: t('scans.sheet.deleteConfig'),
       icon: Trash2,

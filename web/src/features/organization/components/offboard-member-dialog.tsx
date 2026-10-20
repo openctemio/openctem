@@ -8,6 +8,7 @@
  * reassignment_required, 400 for a target that is not an active member).
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useMemo, useState } from 'react'
 import { Loader2, UserMinus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -66,6 +67,7 @@ export function OffboardMemberDialog({
   onOpenChange,
   onOffboarded,
 }: OffboardMemberDialogProps) {
+  const { t } = useTranslation()
   const open = !!member
   const { report, isLoading, mutate: reloadReport } = useMemberAccessReport(member?.id)
   // New owners come from the active members only (never a deactivated person).
@@ -98,7 +100,16 @@ export function OffboardMemberDialog({
     try {
       const res = await offboardMember(member.id, buildOffboardInput(report, draft))
       toast.success(
-        `${name} offboarded: ${res.revoked_keys} key(s) revoked, ${res.removed_groups} group(s) removed`
+        t(
+          'org.lifecycle.offboarded',
+          '{name} offboarded: {keys} key(s) revoked, {serviceKeys} service account key(s) revoked, {groups} group(s) removed',
+          {
+            name,
+            keys: res.revoked_keys,
+            serviceKeys: res.revoked_service_account_keys ?? 0,
+            groups: res.removed_groups,
+          }
+        )
       )
       setDraft({})
       onOpenChange(false)
