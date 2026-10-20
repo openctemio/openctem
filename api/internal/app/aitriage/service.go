@@ -1296,8 +1296,8 @@ func (s *AITriageService) extractAISettings(settings map[string]any) tenant.AISe
 	if apiKey, ok := aiMap["api_key"].(string); ok {
 		result.APIKey = apiKey
 	}
-	if endpoint, ok := aiMap["azure_endpoint"].(string); ok {
-		result.AzureEndpoint = endpoint
+	if baseURL, ok := aiMap["base_url"].(string); ok {
+		result.BaseURL = baseURL
 	}
 	if model, ok := aiMap["model_override"].(string); ok {
 		result.ModelOverride = model
@@ -1777,8 +1777,6 @@ func (s *AITriageService) GetAIConfig(ctx context.Context, tenantID string) (*AI
 				info.Model = "gemini-2.0-flash"
 			}
 		}
-	case tenant.AIModeAgent:
-		info.Provider, info.Model = "agent", "self-hosted"
 	default:
 		info.Provider = s.platformCfg.PlatformProvider
 		info.Model = s.platformCfg.PlatformModel
