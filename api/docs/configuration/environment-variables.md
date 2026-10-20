@@ -512,6 +512,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `SIGNER_LEDGER` | string | empty |  |  | `openctem-signer`: scope ledger mode (`enforce`, `audit` or `off`). |
 | `SIGNER_LEDGER_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a scope change. |
 | `SIGNER_LEDGER_T2_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a tier-2 scope change. |
+| `SIGNER_PUBLISH_DIR` | string | empty |  |  | `openctem-signer serve`: a directory (a volume only the signer writes and the bundled sensor mounts read-only) where the signer writes its public key as `signer.pub` at every start, for the sensor to pin (`SENSOR_JOB_SIGNING_KEYS_FILE`). Unset: nothing is published. |
 | `SIGNER_SENSOR_BURST` | string | empty |  |  | `openctem-signer`: burst of `SIGNER_SENSOR_RATE`. |
 | `SIGNER_SENSOR_RATE` | string | empty |  |  | `openctem-signer`: signatures per second allowed per sensor. |
 | `SIGNER_STATE_DIR` | string | empty |  |  | `openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys). |
