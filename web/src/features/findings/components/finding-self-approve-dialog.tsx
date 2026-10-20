@@ -10,19 +10,8 @@
  */
 
 import { useId, useState } from 'react'
-import { AlertTriangle, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { StepUpDialog } from '@/components/security'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
@@ -71,141 +60,78 @@ export function FindingSelfApproveDialog({
   onApproved,
 }: FindingSelfApproveDialogProps) {
   const { t } = useTranslation()
-  const formId = useId()
+  const reasonId = useId()
   const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
 
   if (!approval) return null
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!reason.trim()) {
-      setError(t('findingApprovals.selfApprove.error.reason', 'Give a reason.'))
-      return
-    }
-    setSaving(true)
-    setError(null)
-    try {
-      const res = await selfApproveFindingApproval(approval.id, {
-        reason: reason.trim(),
-        code: code.trim(),
-      })
-      toast.success(
-        res?.end_shortened
-          ? t(
-              'findingApprovals.selfApprove.doneShortened',
-              'Approved. The acceptance was shortened to the limit for a self-approval.'
-            )
-          : t('findingApprovals.selfApprove.done', 'Approved')
-      )
-      onApproved?.()
-      onOpenChange(false)
-    } catch (err) {
-      setError(selfApproveErrorMessage(t, err))
-      setCode('')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {t('findingApprovals.selfApprove.title', 'Approve your own request')}
-          </DialogTitle>
-          <DialogDescription>
-            {t(
-              'findingApprovals.selfApprove.description',
-              'Nobody else in your organization can decide this request. As its only member and owner you may approve it yourself.'
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          <form method="post" id={formId} onSubmit={submit} className="space-y-4">
-            <ul className="list-disc space-y-1 ps-5 text-sm text-muted-foreground">
-              <li>
-                {t(
-                  'findingApprovals.selfApprove.audited',
-                  'It is recorded in the audit log and marked self-approved everywhere.'
-                )}
-              </li>
-              <li>
-                {t(
-                  'findingApprovals.selfApprove.told',
-                  "Your organization's notification channels and its backup contact are told."
-                )}
-              </li>
-              <li>
-                {t(
-                  'findingApprovals.selfApprove.limit',
-                  'An accepted risk ends within 7 days (P0 or known exploited), 45 days (P1) or 90 days.'
-                )}
-              </li>
-            </ul>
-            {error && (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                <span>{error}</span>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor={`${formId}-reason`}>
-                {t(
-                  'findingApprovals.selfApprove.reasonLabel',
-                  'Why may it take effect without a second person?'
-                )}
-              </Label>
-              <Textarea
-                id={`${formId}-reason`}
-                rows={3}
-                maxLength={MAX_REASON}
-                required
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor={`${formId}-code`}>
-                {t('findingApprovals.selfApprove.codeLabel', 'Code from your authenticator app')}
-              </Label>
-              <Input
-                id={`${formId}-code`}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={8}
-                required
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\s/g, ''))}
-                className="w-40"
-              />
-            </div>
-          </form>
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            {t('findingApprovals.cancel', 'Cancel')}
-          </Button>
-          <Button
-            type="submit"
-            form={formId}
-            disabled={saving || !reason.trim() || code.length < 6}
-          >
-            {saving ? (
-              <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <ShieldCheck className="me-2 h-4 w-4" aria-hidden />
-            )}
-            {t('findingApprovals.selfApprove.submit', 'Approve')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <StepUpDialog
+      open
+      onOpenChange={onOpenChange}
+      title={t('findingApprovals.selfApprove.title', 'Approve your own request')}
+      description={t(
+        'findingApprovals.selfApprove.description',
+        'Nobody else in your organization can decide this request. As its only member and owner you may approve it yourself.'
+      )}
+      ready={!!reason.trim()}
+      submitLabel={t('findingApprovals.selfApprove.submit', 'Approve')}
+      onSubmit={async (proof) => {
+        if (proof.kind !== 'totp') return
+        const res = await selfApproveFindingApproval(approval.id, {
+          reason: reason.trim(),
+          code: proof.code,
+        })
+        toast.success(
+          res?.end_shortened
+            ? t(
+                'findingApprovals.selfApprove.doneShortened',
+                'Approved. The acceptance was shortened to the limit for a self-approval.'
+              )
+            : t('findingApprovals.selfApprove.done', 'Approved')
+        )
+        onApproved?.()
+        onOpenChange(false)
+      }}
+      errorMessage={(err) => selfApproveErrorMessage(t, err)}
+    >
+      <ul className="text-muted-foreground list-disc space-y-1 ps-5 text-sm">
+        <li>
+          {t(
+            'findingApprovals.selfApprove.audited',
+            'It is recorded in the audit log and marked self-approved everywhere.'
+          )}
+        </li>
+        <li>
+          {t(
+            'findingApprovals.selfApprove.told',
+            "Your organization's notification channels and its backup contact are told."
+          )}
+        </li>
+        <li>
+          {t(
+            'findingApprovals.selfApprove.limit',
+            'An accepted risk ends within 7 days (P0 or known exploited), 45 days (P1) or 90 days.'
+          )}
+        </li>
+      </ul>
+      <div className="space-y-2">
+        <Label htmlFor={reasonId}>
+          {t(
+            'findingApprovals.selfApprove.reasonLabel',
+            'Why may it take effect without a second person?'
+          )}
+        </Label>
+        <Textarea
+          id={reasonId}
+          rows={3}
+          maxLength={MAX_REASON}
+          required
+          autoFocus
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+      </div>
+    </StepUpDialog>
   )
 }
