@@ -155,6 +155,8 @@ type CreateIssueInput struct {
 	Labels      []string
 	// ParentKey makes the issue a child of this issue (an epic).
 	ParentKey string
+	// Marker is written into the create request (see IssueMarker).
+	Marker *IssueMarker
 }
 
 // CreateIssueResult contains the response from creating a Jira issue.
@@ -761,9 +763,21 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		issueType = "Bug"
 	}
 
-	result, handled, err := s.createFromProfile(ctx, jiraClient, tenantID, findingID, projectKey, issueType, strings.TrimSpace(input.ParentKey))
+	// A previous attempt may have created the issue and lost the response
+	// or failed to record it: adopt that issue instead of creating another.
+	marker := markerFor(jiraClient, MarkerKindFinding, findingID)
+	result, err := s.findMarked(ctx, jiraClient, marker, func(key string) bool {
+		return strings.EqualFold(ticketlink.ProjectOf(key), projectKey)
+	})
 	if err != nil {
 		return nil, err
+	}
+	handled := result != nil
+	if !handled {
+		result, handled, err = s.createFromProfile(ctx, jiraClient, tenantID, findingID, projectKey, issueType, strings.TrimSpace(input.ParentKey), marker)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if !handled {
 		result, err = jiraClient.CreateIssue(ctx, CreateIssueInput{
@@ -774,6 +788,7 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 			Priority:    priority,
 			Labels:      []string{"openctem", "security", string(finding.Severity())},
 			ParentKey:   strings.TrimSpace(input.ParentKey),
+			Marker:      marker,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create jira ticket: %w", err)

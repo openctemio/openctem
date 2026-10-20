@@ -34,7 +34,7 @@ var wfStatuses = []ticketmap.WorkflowStatus{{ID: "1", Category: "new"}, {ID: "3"
 
 func (c *profileClient) IntegrationID() shared.ID { return c.integration }
 func (c *profileClient) SiteURL() string          { return "https://x.atlassian.net" }
-func (c *profileClient) CreateIssueFields(_ context.Context, _ string, typeID string, f map[string]any) (*CreateIssueResult, error) {
+func (c *profileClient) CreateIssueFields(_ context.Context, _ string, typeID string, f map[string]any, _ *IssueMarker) (*CreateIssueResult, error) {
 	c.createdWith, c.createdType = f, typeID
 	return &CreateIssueResult{Key: "SEC-7", BrowseURL: "https://x.atlassian.net/browse/SEC-7"}, nil
 }

@@ -92,9 +92,19 @@ Parallel to Jira, intentionally:
 - **Idempotent.** If the finding's `work_item_uris` already contains an issue
   URL for the requested `owner/repo`, the existing link is returned and no new
   issue is created.
+- **Duplicate-proof create.** The issue body ends with a hidden marker
+  `<!-- openctem:k=finding;o=<finding id>;t=<tenant tag> -->` (the tenant tag
+  is a hash, so the tenant id is not written into the repository). Before
+  creating, the service lists the repository's 100 newest `openctem` issues
+  (the issue list, not the search index, so an issue created a moment ago is
+  in it) and adopts the oldest one whose body **ends** with exactly this
+  marker. A create whose response was lost, or whose URL was not recorded, is
+  therefore recovered by the next attempt instead of opening a second issue.
+  A marker of another finding or tenant, or one quoted inside finding text,
+  never matches; if the list cannot be read the create is refused.
 - **Best-effort link persistence.** Once the issue is created, its URL is added
   to the finding's `work_item_uris`. A persistence failure is logged but does
-  not fail the request (the issue already exists; re-running is idempotent).
+  not fail the request (the issue already exists; the next attempt adopts it).
 - **Labels.** Issues are tagged `openctem`, `security`, and the finding
   severity.
 
