@@ -743,10 +743,12 @@ func (s *TaskService) Reconcile(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for tenantID, ids := range byTenant {
-		if err := s.repo.Recompute(ctx, tenantID, ids, nil); err != nil {
+		rep, err := s.repo.ReconcileTasks(ctx, tenantID, ids)
+		if err != nil {
 			s.logger.Warn("remediation task reconcile failed", "tenant", tenantID.String(), "error", logger.SanitizeError(err))
 			continue
 		}
+		s.auditReconcile(ctx, tenantID, rep)
 		n += len(ids)
 	}
 	return n, nil

@@ -1,0 +1,70 @@
+# Helm (openctemio/helm-charts, chart openctem 0.31.0 or later): run OpenCTEM
+# from a private registry with every OpenCTEM image pinned by digest.
+# Guide: api/docs/deployment/air-gapped.md.
+#
+#   helm upgrade --install openctem openctem/openctem -f values.yaml -f values-private-registry.yaml
+#
+# The digests come from openctem-mirrored-<version>.txt written by
+# mirror-images.sh (or the bump job of .gitlab-ci.mirror.yml, which writes
+# this block for you). A digest pins the exact image whatever the tag says;
+# a malformed digest fails the render.
+
+global:
+  # Replaces ghcr.io/openctemio/ of every OpenCTEM image; the image names
+  # (openctem-api, openctem-web, ...) stay. Third-party images below need
+  # their own repositories.
+  imageRegistry: registry.example.internal/openctem-trusted
+
+# A kubernetes.io/dockerconfigjson Secret with a pull-only robot account.
+imagePullSecrets:
+  - name: openctem-registry
+
+api:
+  image:
+    tag: "@VERSION@"
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  migrations:
+    image:
+      tag: "@VERSION@"
+      digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+ui:
+  image:
+    tag: "@VERSION@"
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+console:
+  image:
+    tag: "@VERSION@"
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+gateway:
+  caddy:
+    image:
+      tag: "@VERSION@"
+      digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+# Only with sensor.enabled=true (the sensor is released from openctemio/sensor;
+# mirror it the same way, its signatures name that repository's workflow).
+#sensor:
+#  image:
+#    digest: "sha256:..."
+
+# Production uses external PostgreSQL and Redis. With the bundled ones,
+# global.imageRegistry also applies to them: mirror bitnamilegacy/postgresql
+# and bitnamilegacy/redis under the same registry path.
+postgresql:
+  enabled: false
+redis:
+  enabled: false
+
+# The chart's test pod (helm test).
+#tests:
+#  image:
+#    repository: registry.example.internal/dockerhub-proxy/library/busybox
+
+# Backup CronJob (if enabled): its third-party images from your mirror.
+#backup:
+#  rclone:
+#    image:
+#      repository: registry.example.internal/dockerhub-proxy/rclone/rclone
+#  dump:
+#    image:
+#      repository: registry.example.internal/dockerhub-proxy/library/postgres

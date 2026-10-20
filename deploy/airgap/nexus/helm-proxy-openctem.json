@@ -1,0 +1,9 @@
+{
+  "name": "helm-openctem",
+  "online": true,
+  "storage": { "blobStoreName": "default", "strictContentTypeValidation": true },
+  "cleanup": null,
+  "proxy": { "remoteUrl": "https://openctemio.github.io/helm-charts", "contentMaxAge": 1440, "metadataMaxAge": 60 },
+  "negativeCache": { "enabled": true, "timeToLive": 1 },
+  "httpClient": { "blocked": false, "autoBlock": true }
+}

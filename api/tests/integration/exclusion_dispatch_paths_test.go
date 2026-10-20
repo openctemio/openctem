@@ -18,6 +18,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	scopesvc "github.com/openctemio/openctem/api/internal/app/scope"
@@ -137,7 +138,8 @@ func TestPipelineRun_TargetsPassTheScanGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedApprovedExclusion(t, db, tenant, "domain", "blocked.example.com")
-	// The run starts with no user: free text must match a scope target (D9).
+	// The run is started by a person (a run with no actor is refused); free
+	// text must match a scope target (D9).
 	seedScopeTarget(t, db, tenant, "domain", "*.example.com")
 
 	gate := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
@@ -152,7 +154,7 @@ func TestPipelineRun_TargetsPassTheScanGate(t *testing.T) {
 		scanrun.WithTargetGate(gate),
 	)
 	trigger := func(runContext map[string]any) error {
-		_, err := svc.TriggerPipeline(ctx, scanrun.TriggerRunInput{
+		_, err := svc.TriggerPipeline(asCaller(ctx, datascope.Caller{UserID: shared.NewID().String(), IsAdmin: true}), scanrun.TriggerRunInput{
 			TenantID: tenant.String(), TemplateID: templateID.String(), TriggerType: "api", Context: runContext,
 		})
 		return err

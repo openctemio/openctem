@@ -1,0 +1,56 @@
+# OpenCTEM job signer (signs every job before a sensor runs it), from the
+# openctem-server release archive (api/docs/deployment/binary-install.md).
+#
+# Key separation: it runs as openctem-signer, which owns
+# /var/lib/openctem-signer (0700: the key and the signing state); the API user
+# cannot read it. The socket directory /run/openctem-signer is 0750 with the
+# group openctem, so only the API can connect. No network at all.
+[Unit]
+Description=OpenCTEM job signer
+Documentation=https://docs.openctem.io
+Before=openctem-server.service
+
+[Service]
+Type=simple
+User=openctem-signer
+Group=openctem
+EnvironmentFile=/etc/openctem/signer.env
+ExecStart=/opt/openctem/server/bin/openctem-signer serve
+Restart=on-failure
+RestartSec=2s
+StateDirectory=openctem-signer openctem-signer/keys openctem-signer/state
+StateDirectoryMode=0700
+RuntimeDirectory=openctem-signer
+RuntimeDirectoryMode=0750
+UMask=0077
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateNetwork=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target
