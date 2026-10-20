@@ -144,9 +144,7 @@ func TestFindingActions_StatusSideEffects_DB(t *testing.T) {
 
 	t.Run("verify", func(t *testing.T) {
 		h.exec(`UPDATE findings SET status = 'fix_applied' WHERE id = $1`, fa.String())
-		h.exec(`INSERT INTO finding_verification_checklists (id, tenant_id, finding_id, exposure_cleared, evidence_attached,
-			register_updated, monitoring_added, regression_scheduled, completed_by, completed_at)
-			VALUES (gen_random_uuid(), $1, $2, true, true, true, true, true, $3, NOW())`, h.tenant.String(), fa.String(), h.memberA.String())
+		h.completeChecklistViaAPI(h.memberA, fa)
 		before := h.statusActivities(fa, h.memberA)
 		rec.reset()
 		h.clearTicketPushes()
