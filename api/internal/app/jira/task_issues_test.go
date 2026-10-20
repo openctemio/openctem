@@ -35,6 +35,9 @@ func (s *taskStore) GetTask(_ context.Context, _, id shared.ID) (*remediation.Ta
 func (s *taskStore) OpenMemberIDs(_ context.Context, _, id shared.ID, _ int) ([]shared.ID, error) {
 	return s.members[id], nil
 }
+func (s *taskStore) EgressMemberIDs(_ context.Context, _, id shared.ID) ([]shared.ID, error) {
+	return s.members[id], nil
+}
 
 type onceGuard struct{ seen map[string]bool }
 

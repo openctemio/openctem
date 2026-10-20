@@ -1447,11 +1447,10 @@ func (p *FindingProcessor) setFindingTypeAndSpecializedFields(f *vulnerability.F
 	switch findingType {
 	case vulnerability.FindingTypeSecret:
 		p.setSecretFields(f, ctisFinding)
-		// SECURITY: for a secret finding the raw code snippet / context is the
-		// leaked credential's source line. Never persist it in cleartext —
-		// replace it with the masked value (or a generic placeholder) so the DB
-		// and any snippet rendering cannot expose the secret. The scanner is
-		// expected to pre-mask, but we redact server-side as defense in depth.
+		// SECURITY: a secret finding's snippet is the producer's source line
+		// with the secret masked, and the report was masked again on arrival
+		// (redactReportSecrets). Keep it unless it still holds something that
+		// looks like a secret; then store a placeholder.
 		p.redactSecretSnippet(f)
 	case vulnerability.FindingTypeCompliance:
 		p.setComplianceFields(f, ctisFinding)
@@ -1462,17 +1461,21 @@ func (p *FindingProcessor) setFindingTypeAndSpecializedFields(f *vulnerability.F
 	}
 }
 
-// redactSecretSnippet strips the raw code snippet/context from a secret finding
-// so the live credential is never persisted in cleartext. The masked value is
-// kept as the only snippet representation; if none is available a generic
-// placeholder is used.
+// secretSnippetPlaceholder is what a secret finding shows when its snippet
+// could not be kept.
+const secretSnippetPlaceholder = "[redacted secret]"
+
+// redactSecretSnippet keeps a secret finding's snippet when it holds no
+// secret-looking word, and replaces it with a placeholder when it does. The
+// context lines are dropped in that case. Nothing is logged: only the stored
+// text changes.
 func (p *FindingProcessor) redactSecretSnippet(f *vulnerability.Finding) {
-	if masked := f.SecretMaskedValue(); masked != "" {
-		f.SetSnippet(masked)
-	} else {
-		f.SetSnippet("[redacted secret]")
+	if s := f.Snippet(); s != "" && vulnerability.SnippetHoldsSecret(s) {
+		f.SetSnippet(secretSnippetPlaceholder)
 	}
-	f.SetContextSnippet("")
+	if c := f.ContextSnippet(); c != "" && vulnerability.SnippetHoldsSecret(c) {
+		f.SetContextSnippet("")
+	}
 }
 
 // inferFindingType determines the FindingType based on source and CTIS finding data.
@@ -1571,7 +1574,13 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	}
 	if ctisFinding.Secret.MaskedValue != "" {
 		f.SetSecretMaskedValue(ctisFinding.Secret.MaskedValue)
-		f.SetSecretFingerprint(p.secretFingerprinter.Fingerprint(f.TenantID(), ctisFinding.Secret.MaskedValue))
+	}
+	// The rotation group key is derived from this fingerprint, so it comes
+	// only from the keyed hash of the raw value, never from a mask: every
+	// short secret masks to the same word. Without one the finding gets no
+	// rotation group of its own making.
+	if h := p.rawSecretHMAC(f.TenantID(), ctisFinding); h != "" {
+		f.SetSecretFingerprint(h)
 	}
 	if ctisFinding.Secret.InHistoryOnly {
 		f.SetSecretInHistoryOnly(true)
