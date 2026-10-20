@@ -91,6 +91,24 @@ one never for the campaign's client role. Members, counters, `hidden_members` an
 (an administrator sees every pentest finding). A pentest finding is fixed through its pentest campaign, so it cannot
 be the primary member of a task (`400`).
 
+### Task owner access
+
+The owner of a live task (the user, or an active, unexpired member of the owner team) is accountable for its
+findings, so they can open exactly those findings whatever their scope: the finding and a minimal asset card, its
+comments and activity, never the asset's other findings, and never a finding on a private program asset hidden from
+them or a pentest finding outside their campaigns. The relation is computed on each request and stores nothing: it
+ends when the owner changes, a finding leaves the task, the task closes (done, closed unverified, canceled,
+archived), or the team membership ends, expires or is suspended.
+
+What they may do on such a finding is the fix workflow: comment, start work, go back to confirmed, claim the fix,
+add a manual evidence note and request a proof-of-fix or retest (each still needs its own permission). The
+task's "Mark fixed" therefore claims every open finding for the owner without the finding being assigned to them
+or the asset being theirs, which used to refuse each one as `not_fix_owner`. A false positive, an accepted risk,
+a resolve, severity or classification edits, assigning, approvals, tickets and delete need the finding in the
+owner's own scope: the status menu shows those moves blocked with the reason `not_in_scope`. Each status move
+made only through the relation is audited as `remediation_task.owner_moved_finding`. Two partial indexes on live
+tasks (`idx_remediation_tasks_live_owner_user`, `..._group`) make the lookup an index probe.
+
 ## Suggestions
 
 The generator only proposes; nothing is created until a person accepts.
@@ -176,7 +194,7 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 
 - `POST /api/v1/remediation/tasks/{task_id}/resolve` (`findings:remediation:write` + `findings:fix_apply`),
   body `version`, `note`: every open finding of the task goes to `fix_applied` through the finding bulk path
-  (`WalkToFixApplied`: new/confirmed walk through in_progress; the asset owner's claim only; the bulk abuse
+  (`WalkToFixApplied`: new/confirmed walk through in_progress; a claim by the finding's assignee, an assigned team member, an asset owner or the task owner only; the bulk abuse
   guard; a proof-of-fix re-check queued per finding). The response lists each finding not updated with the
   reason; the task records a `fix_claimed` timeline entry. Nothing closes: each finding closes on its own
   evidence.
