@@ -272,6 +272,34 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		t.Error("PUBLIC still has CONNECT on the database")
 	}
 
+	// Role-level limits: defaults, and an override that really cancels a statement.
+	var stmt, idle string
+	fresh := open(t, withUser(t, scratchAdmin, appRole, appPass))
+	if err := fresh.QueryRowContext(ctx, `SELECT current_setting('statement_timeout'), current_setting('idle_in_transaction_session_timeout')`).Scan(&stmt, &idle); err != nil {
+		t.Fatal(err)
+	}
+	if stmt != "30s" || idle != "1min" {
+		t.Errorf("app role limits = statement_timeout %q, idle_in_transaction_session_timeout %q; want 30s and 1min", stmt, idle)
+	}
+	_ = fresh.Close()
+	if out, err := run("app_user="+appRole, "migrator_user="+migRole, "app_statement_timeout=1s"); err != nil {
+		t.Fatalf("bootstrap with a statement timeout: %v\n%s", err, out)
+	}
+	short := open(t, withUser(t, scratchAdmin, appRole, appPass))
+	if _, err := short.ExecContext(ctx, `SELECT pg_sleep(3)`); err == nil || !strings.Contains(err.Error(), "statement timeout") {
+		t.Errorf("a 3 s statement under a 1 s app limit: err = %v, want a statement timeout", err)
+	}
+	_ = short.Close()
+	var migStmt string
+	mig2 := open(t, withUser(t, scratchAdmin, migRole, migPass))
+	if err := mig2.QueryRowContext(ctx, `SELECT current_setting('statement_timeout')`).Scan(&migStmt); err != nil {
+		t.Fatal(err)
+	}
+	if migStmt != "0" {
+		t.Errorf("migrator statement_timeout = %q, want none", migStmt)
+	}
+	_ = mig2.Close()
+
 	// The script refuses to make the superuser running it the app role.
 	var self string
 	if err := root.QueryRowContext(ctx, `SELECT current_user`).Scan(&self); err != nil {

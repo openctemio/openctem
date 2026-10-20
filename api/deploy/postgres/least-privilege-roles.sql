@@ -20,7 +20,12 @@
 --        -f least-privilege-roles.sql
 --
 -- Optional variables: app_user (openctem_app), migrator_user
--- (openctem_migrator). A password variable left empty keeps the role's current
+-- (openctem_migrator), app_statement_timeout (30s) and
+-- app_idle_in_transaction_timeout (60s): role-level limits of the app role, so
+-- a runaway query or a transaction left open by a crashed worker cannot hold
+-- locks and block vacuum. 0 turns a limit off. They apply to new connections
+-- (restart the API after changing them); migrations run as the migrator, which
+-- has no limit. A password variable left empty keeps the role's current
 -- password (a new role then has none and cannot log in until one is set).
 --
 -- See docs/deployment/database-roles.md.
@@ -42,6 +47,14 @@
 \if :{?migrator_password}
 \else
   \set migrator_password ''
+\endif
+\if :{?app_statement_timeout}
+\else
+  \set app_statement_timeout 30s
+\endif
+\if :{?app_idle_in_transaction_timeout}
+\else
+  \set app_idle_in_transaction_timeout 60s
 \endif
 
 -- Keep the passwords below out of the server log whatever log_statement says.
@@ -81,6 +94,11 @@ SELECT format('ALTER ROLE %I PASSWORD %L', :'migrator_user', :'migrator_password
 WHERE :'migrator_password' <> '' \gexec
 SELECT format('ALTER ROLE %I PASSWORD %L', :'app_user', :'app_password')
 WHERE :'app_password' <> '' \gexec
+
+-- Limits for the app role only. A statement that legitimately needs longer
+-- raises its own limit with SET LOCAL statement_timeout inside its transaction.
+SELECT format('ALTER ROLE %I SET statement_timeout = %L', :'app_user', :'app_statement_timeout') \gexec
+SELECT format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', :'app_user', :'app_idle_in_transaction_timeout') \gexec
 
 -- No role memberships at all for the app (the predefined pg_* file/program
 -- roles included), and none of the file/program roles for the migrator.
