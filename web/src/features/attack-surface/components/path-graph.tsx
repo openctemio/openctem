@@ -5,6 +5,7 @@ import Link from '@/components/link'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   CRITICALITY_BADGE_SOFT,
   CRITICALITY_TEXT_COLORS,
@@ -22,6 +23,7 @@ import {
   ArrowRight,
   AlertOctagon,
   Flame,
+  EyeOff,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -48,6 +50,8 @@ export interface PathGraphNode {
   findingCount?: number
   /** Where a click lands. Defaults to the findings list filtered to this asset. */
   href?: string
+  /** A step the viewer may not see: shown as a placeholder, never as a link. */
+  hidden?: boolean
 }
 
 export interface PathGraphPath {
@@ -110,11 +114,31 @@ function nodeAccent(node: PathGraphNode): string | undefined {
 // ============================================================
 
 function PathNode({ node }: { node: PathGraphNode }) {
+  const { t } = useTranslation()
   const isEntry = node.role === 'entry'
   const isTarget = node.role === 'target'
   const iconCmp = isEntry ? Globe : assetTypeIcon(node.assetType)
   const crit = normalizeCriticality(node.criticality)
   const accent = nodeAccent(node)
+
+  if (node.hidden) {
+    return (
+      <div
+        className="bg-card text-muted-foreground flex min-w-[9rem] flex-col gap-1 rounded-lg border-2 border-dashed px-2.5 py-2"
+        title={t(
+          'prioritization.pathGraph.hiddenLabel',
+          'A step on this path is an asset you are not allowed to see.'
+        )}
+      >
+        <div className="flex items-center gap-1.5">
+          <EyeOff className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="text-xs font-medium">
+            {t('prioritization.pathGraph.hidden', 'Outside your access')}
+          </span>
+        </div>
+      </div>
+    )
+  }
 
   const inner = (
     <>
@@ -134,7 +158,7 @@ function PathNode({ node }: { node: PathGraphNode }) {
             // Crown-jewel marker keeps its own amber hue, distinct from the
             // criticality scale. Sourced from a shared token, not a literal.
             style={{ color: CRITICALITY_CHART_COLORS.medium }}
-            aria-label="Crown jewel"
+            aria-label={t('prioritization.pathGraph.crownJewel', 'Crown jewel')}
           />
         )}
       </div>
@@ -146,13 +170,13 @@ function PathNode({ node }: { node: PathGraphNode }) {
             className="border-destructive/30 bg-destructive/10 text-destructive gap-1 px-1.5 py-0 text-[10px]"
           >
             <Globe className="h-2.5 w-2.5" aria-hidden />
-            Entry
+            {t('prioritization.pathGraph.entry', 'Entry')}
           </Badge>
         )}
         {isTarget && (
           <span className="text-muted-foreground inline-flex items-center gap-1 text-[10px]">
             <Target className="h-2.5 w-2.5" aria-hidden />
-            Target
+            {t('prioritization.pathGraph.target', 'Target')}
           </span>
         )}
         {isTarget && crit && (
@@ -172,12 +196,16 @@ function PathNode({ node }: { node: PathGraphNode }) {
             className={cn('gap-0.5 px-1.5 py-0 text-[10px]', SEVERITY_BADGE_SOFT.critical)}
           >
             <AlertOctagon className="h-2.5 w-2.5" aria-hidden />
-            KEV
+            {t('prioritization.pathGraph.kev', 'KEV')}
           </Badge>
         )}
         {node.findingCount != null && node.findingCount > 0 && (
           <span className="text-muted-foreground text-[10px]">
-            {node.findingCount} finding{node.findingCount !== 1 ? 's' : ''}
+            {node.findingCount === 1
+              ? t('prioritization.pathGraph.findingOne', '{count} finding', { count: 1 })
+              : t('prioritization.pathGraph.findingOther', '{count} findings', {
+                  count: node.findingCount,
+                })}
           </span>
         )}
       </div>
@@ -193,8 +221,15 @@ function PathNode({ node }: { node: PathGraphNode }) {
     return (
       <Link
         href={node.href}
-        aria-label={`${node.name} — ${capitalize(node.assetType)}. View findings for this asset.`}
-        title={`${node.name} (${capitalize(node.assetType)}) — view findings`}
+        aria-label={t(
+          'prioritization.pathGraph.nodeLabel',
+          '{name} — {type}. View findings for this asset.',
+          { name: node.name, type: capitalize(node.assetType) }
+        )}
+        title={t('prioritization.pathGraph.nodeTitle', '{name} ({type}) — view findings', {
+          name: node.name,
+          type: capitalize(node.assetType),
+        })}
         style={style}
         className={cn(
           baseClass,
@@ -236,6 +271,7 @@ function Connector({ kevOnPath }: { kevOnPath: boolean }) {
 // ============================================================
 
 function PathRow({ path }: { path: PathGraphPath }) {
+  const { t } = useTranslation()
   const kevOnPath = (path.kevCount ?? 0) > 0
   const scorePct = Math.max(0, Math.min(100, path.scorePct ?? 0))
 
@@ -253,13 +289,15 @@ function PathRow({ path }: { path: PathGraphPath }) {
           {kevOnPath && (
             <Badge variant="outline" className={cn('gap-1', SEVERITY_BADGE_SOFT.critical)}>
               <AlertOctagon className="h-3 w-3" aria-hidden />
-              {path.kevCount} KEV
+              {t('prioritization.pathGraph.kevCount', '{count} KEV', { count: path.kevCount ?? 0 })}
             </Badge>
           )}
           {(path.criticalCount ?? 0) > 0 && (
             <Badge variant="outline" className={cn('gap-1', SEVERITY_BADGE_SOFT.high)}>
               <Flame className="h-3 w-3" aria-hidden />
-              {path.criticalCount} critical
+              {t('prioritization.pathGraph.criticalCount', '{count} critical', {
+                count: path.criticalCount ?? 0,
+              })}
             </Badge>
           )}
         </div>
@@ -270,7 +308,9 @@ function PathRow({ path }: { path: PathGraphPath }) {
               {path.reachableFrom}
             </span>
             <span className="text-muted-foreground mt-0.5 text-[10px]">
-              {path.reachableFrom === 1 ? 'entry point' : 'entry points'}
+              {path.reachableFrom === 1
+                ? t('prioritization.pathGraph.entryPointOne', 'entry point')
+                : t('prioritization.pathGraph.entryPointOther', 'entry points')}
             </span>
           </div>
         )}
@@ -291,7 +331,9 @@ function PathRow({ path }: { path: PathGraphPath }) {
         <div className="flex items-center gap-3">
           <Progress value={scorePct} className="h-1.5 flex-1" />
           <span className="text-muted-foreground w-20 shrink-0 text-end text-xs">
-            score {path.score.toFixed(0)}
+            {t('prioritization.pathGraph.score', 'score {score}', {
+              score: path.score.toFixed(0),
+            })}
           </span>
         </div>
       )}
