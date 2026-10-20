@@ -446,7 +446,7 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 	// A leaked secret is not fixed by a check that stops matching it: only
 	// rotation or revocation is, and a person verifies that.
 	if f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret {
-		return nil, nil, "", "", fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible)
+		return nil, nil, "", "", nil, fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible)
 	}
 	templateID := strings.TrimSpace(f.RuleID())
 	tool := findingTool(f)
