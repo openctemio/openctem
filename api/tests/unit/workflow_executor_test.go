@@ -307,12 +307,15 @@ type wfExecMockActionHandler struct {
 	callCount    int
 	returnErr    error
 	returnOutput map[string]any
+	// lastInput is the input of the latest call (the step's principal).
+	lastInput *automationsvc.ActionInput
 }
 
 func (h *wfExecMockActionHandler) Execute(ctx context.Context, input *automationsvc.ActionInput) (map[string]any, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.callCount++
+	h.lastInput = input
 	if h.returnErr != nil {
 		return nil, h.returnErr
 	}

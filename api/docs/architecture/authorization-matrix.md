@@ -311,7 +311,7 @@ and SBOM import write it.
 | `GET /api/v1/findings/{id}` | `findings:read` |
 | `POST /api/v1/findings` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` (hard delete; the activity timeline goes with the row. An audit event `finding.deleted` is written first with the actor, title, severity, status, source, CVE, asset, fingerprint, tool and the number of activities removed; if that write fails the finding is not deleted) |
-| `PATCH /api/v1/findings/{id}/status` | `findings:status` |
+| `PATCH /api/v1/findings/{id}/status` | `findings:status`; moving a finding **out of** an approved false positive or an accepted risk needs `findings:approve` as well (403 otherwise), on this route and on bulk status. A workflow, automation action or ticket webhook cannot move a finding out of a decided status at all (false positive, accepted risk, duplicate; a workflow also not out of resolved) |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
@@ -1955,6 +1955,15 @@ finding the step names in its config inside their data scope. A failed check
 fails the step with `AUTOMATION_RUN_NOT_AUTHORIZED` and changes nothing. The
 step then runs with the principal in its context, so the services it calls
 apply the same scope. An automation with no owner runs no step.
+
+A `trigger_scan` step starts the scan **as the principal**: the run's
+`triggered_by` is the principal's user id, so the run's act scope (chained
+stages, the claim-time re-check) is the principal's, never the scan owner's. The
+automation that caused it stays in the run context (`automation_cause`) and
+the run is recorded as an automation run (`trigger_type = automation`), so the
+console still labels it "Automation". A step without a principal starts no
+scan. The scan's owner (`scans.created_by`) is who acts only for the scan's
+own schedule.
 
 Editing needs the same permissions: building a node needs its permission,
 and any change to what an existing automation does (an edge, deleting a
