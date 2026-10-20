@@ -311,8 +311,23 @@ func (s *FindingActionsService) visibleTo(
 func visibleFilter(
 	ctx context.Context, e *datascope.Enforcer, tid shared.ID, filter vulnerability.FindingFilter,
 ) (vulnerability.FindingFilter, error) {
+	return visibleFilterWith(ctx, e, tid, filter, e.Resolve)
+}
+
+// visibleFilterStrict is visibleFilter for a read that must never fall back
+// to "unrestricted" when the enforcer is not wired: that is an error.
+func visibleFilterStrict(
+	ctx context.Context, e *datascope.Enforcer, tid shared.ID, filter vulnerability.FindingFilter,
+) (vulnerability.FindingFilter, error) {
+	return visibleFilterWith(ctx, e, tid, filter, e.ResolveStrict)
+}
+
+func visibleFilterWith(
+	ctx context.Context, e *datascope.Enforcer, tid shared.ID, filter vulnerability.FindingFilter,
+	resolve func(context.Context, shared.ID) (*shared.DataScope, error),
+) (vulnerability.FindingFilter, error) {
 	filter.TenantID = &tid
-	scope, err := e.Resolve(ctx, tid)
+	scope, err := resolve(ctx, tid)
 	if err != nil {
 		return filter, fmt.Errorf("failed to resolve data scope: %w", err)
 	}
