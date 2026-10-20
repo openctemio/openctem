@@ -76,6 +76,9 @@ export function savePlatformAI(input: {
   enabled: boolean
   provider: string
   model: string
+  base_url: string
+  allow_private: boolean
+  allowed_models: string[]
   api_key?: string
   reason: string
   version: number

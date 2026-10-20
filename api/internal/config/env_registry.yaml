@@ -1776,7 +1776,7 @@ vars:
     group: "AI triage"
     type: string
     default: "claude"
-    description: "Provider used for organizations in platform mode: `claude`, `openai` or `gemini`."
+    description: "Provider used for organizations in platform mode: `claude`, `openai` or `gemini`. A self-hosted or gateway model (`openai_compatible`, with a base URL) is set in the console, not here."
   - name: AI_RATE_LIMIT_RPM
     component: api
     group: "AI triage"

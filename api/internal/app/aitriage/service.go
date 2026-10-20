@@ -1296,8 +1296,8 @@ func (s *AITriageService) extractAISettings(settings map[string]any) tenant.AISe
 	if apiKey, ok := aiMap["api_key"].(string); ok {
 		result.APIKey = apiKey
 	}
-	if endpoint, ok := aiMap["azure_endpoint"].(string); ok {
-		result.AzureEndpoint = endpoint
+	if baseURL, ok := aiMap["base_url"].(string); ok {
+		result.BaseURL = baseURL
 	}
 	if model, ok := aiMap["model_override"].(string); ok {
 		result.ModelOverride = model
@@ -1347,6 +1347,12 @@ func (s *AITriageService) extractAISettings(settings map[string]any) tenant.AISe
 // The second return value reports that the content tried to break the fence
 // or matched a known injection pattern; the caller treats the resulting
 // analysis as untrusted (see applyInjectionGuard).
+// carriesSecret reports whether a finding is a leaked-secret finding, by its
+// type or its source.
+func carriesSecret(f *vulnerability.Finding) bool {
+	return f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret
+}
+
 func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) (string, bool) {
 	var b strings.Builder
 
@@ -1383,7 +1389,11 @@ func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) (strin
 		fmt.Fprintf(&b, "- **File**: %s:%d\n", field(vulnerability.DisplayPath(f.FilePath())), f.StartLine())
 	}
 
-	if f.Snippet() != "" {
+	// A secret finding's snippet is the line that holds the credential, with
+	// the secret masked by the producer. The model provider gets the file and
+	// line only: masking is the producer's work and must not be the only
+	// thing between a live credential and an outside service.
+	if f.Snippet() != "" && !carriesSecret(f) {
 		snippet, hit := fence.wrap("\n```\n" + san.SanitizeCodeSnippet(f.Snippet()) + "\n```\n")
 		suspicious = suspicious || hit
 		fmt.Fprintf(&b, "- **Code Snippet**:\n%s\n", snippet)
@@ -1777,8 +1787,6 @@ func (s *AITriageService) GetAIConfig(ctx context.Context, tenantID string) (*AI
 				info.Model = "gemini-2.0-flash"
 			}
 		}
-	case tenant.AIModeAgent:
-		info.Provider, info.Model = "agent", "self-hosted"
 	default:
 		info.Provider = s.platformCfg.PlatformProvider
 		info.Model = s.platformCfg.PlatformModel
