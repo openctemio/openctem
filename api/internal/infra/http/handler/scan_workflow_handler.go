@@ -205,18 +205,23 @@ type RunResponse struct {
 	TriggeredBy     string  `json:"triggered_by,omitempty"`
 	TriggeredByName string  `json:"triggered_by_name,omitempty"` // display name, when triggered_by is a user id
 	// Trigger is who or what started the run, in one shape for every kind.
-	Trigger           *RunTrigger                    `json:"trigger,omitempty"`
-	Status            string                         `json:"status"`
-	StartedAt         *string                        `json:"started_at,omitempty"`
-	CompletedAt       *string                        `json:"completed_at,omitempty"`
-	TotalSteps        int                            `json:"total_steps"`
-	CompletedSteps    int                            `json:"completed_steps"`
-	FailedSteps       int                            `json:"failed_steps"`
-	SkippedSteps      int                            `json:"skipped_steps"`
-	TotalFindings     int                            `json:"total_findings"`
-	QualityGateResult *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
-	StepRuns          []StepRunResponse              `json:"scan_run_steps,omitempty"`
-	ErrorMessage      string                         `json:"error_message,omitempty"`
+	Trigger        *RunTrigger `json:"trigger,omitempty"`
+	Status         string      `json:"status"`
+	StartedAt      *string     `json:"started_at,omitempty"`
+	CompletedAt    *string     `json:"completed_at,omitempty"`
+	TotalSteps     int         `json:"total_steps"`
+	CompletedSteps int         `json:"completed_steps"`
+	FailedSteps    int         `json:"failed_steps"`
+	SkippedSteps   int         `json:"skipped_steps"`
+	TotalFindings  int         `json:"total_findings"`
+	// UnreachableTargetCount and SkippedTargetCount are the targets the
+	// run's sensors could not reach, or skipped by their local policy. They
+	// never change the run's status (a run with only these completes).
+	UnreachableTargetCount int                            `json:"unreachable_target_count,omitempty"`
+	SkippedTargetCount     int                            `json:"skipped_target_count,omitempty"`
+	QualityGateResult      *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
+	StepRuns               []StepRunResponse              `json:"scan_run_steps,omitempty"`
+	ErrorMessage           string                         `json:"error_message,omitempty"`
 	// RefusalCode says why a blocked run was refused (status blocked only),
 	// e.g. ALL_TARGETS_EXCLUDED, SCAN_WINDOW_NEVER_OPENS, NO_SENSOR_AVAILABLE.
 	RefusalCode string `json:"refusal_code,omitempty"`
@@ -1498,6 +1503,9 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		}
 	}
 
+	resp.UnreachableTargetCount = contextCount(r.Context, scanrun.RunContextKeyUnreachableCount)
+	resp.SkippedTargetCount = contextCount(r.Context, scanrun.RunContextKeySkippedCount)
+
 	// Extract filtering result from context if present
 	if r.Context != nil {
 		if filteringResult, ok := r.Context["filtering_result"]; ok {
@@ -1759,3 +1767,15 @@ func stepErrorClass(code string) string {
 func (h *ScanWorkflowHandler) SetUserNames(users user.Repository) { h.users = users }
 
 func ptrRunTrigger(t RunTrigger) *RunTrigger { return &t }
+
+// contextCount reads a count a run recorded in its context: an int in
+// memory, a float64 after the JSON round trip.
+func contextCount(runContext map[string]any, key string) int {
+	switch n := runContext[key].(type) {
+	case int:
+		return max(n, 0)
+	case float64:
+		return max(int(n), 0)
+	}
+	return 0
+}
