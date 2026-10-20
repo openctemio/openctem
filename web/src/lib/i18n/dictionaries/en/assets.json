@@ -1017,5 +1017,22 @@
   "assets.groups.detail.severityTitle": "Open findings by severity",
   "assets.groups.detail.severityDesc": "The same findings as the group’s count; each row opens them",
   "assets.groups.detail.typesTitle": "Assets by type",
-  "assets.groups.detail.typesDesc": "The group’s members by asset type"
+  "assets.groups.detail.typesDesc": "The group’s members by asset type",
+  "assets.external.typeName": "external asset",
+  "assets.repository.typeName": "repository",
+  "assets.safeDelete.archivedOne": "Archived 1 asset; its findings are kept",
+  "assets.safeDelete.archived": "Archived {count} assets; their findings are kept",
+  "assets.safeDelete.archiveFailedOne": "Could not archive 1 asset",
+  "assets.safeDelete.archiveFailed": "Could not archive {count} assets",
+  "assets.safeDelete.deleted": "{name} deleted",
+  "assets.safeDelete.refused": "{name} was not deleted: it has findings. Archive it to hide it and keep its finding history.",
+  "assets.safeDelete.refusedCount": "{name} was not deleted: it has {count} findings. Archive it to hide it and keep its finding history.",
+  "assets.safeDelete.archiveAction": "Archive",
+  "assets.safeDelete.deleteFailed": "Failed to delete {name}",
+  "assets.safeDelete.bulkDeletedOne": "Deleted 1 asset",
+  "assets.safeDelete.bulkDeleted": "Deleted {count} assets",
+  "assets.safeDelete.bulkRefusedOne": "1 asset was not deleted because it has findings. Archive it to keep the finding history.",
+  "assets.safeDelete.bulkRefused": "{count} assets were not deleted because they have findings. Archive them to keep the finding history.",
+  "assets.safeDelete.bulkFailedOne": "Failed to delete 1 asset",
+  "assets.safeDelete.bulkFailed": "Failed to delete {count} assets"
 }
