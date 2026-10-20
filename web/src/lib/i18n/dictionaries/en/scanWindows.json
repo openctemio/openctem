@@ -111,7 +111,6 @@
   "scanWindows.override.action": "Override windows",
   "scanWindows.override.activeUntil": "Active until {at}",
   "scanWindows.override.all": "Every policy",
-  "scanWindows.override.code": "Code from your authenticator app",
   "scanWindows.override.description": "Scans may run outside the chosen windows until the override ends. It is recorded in the audit log and every owner and administrator is notified. Bug-bounty program windows are never lifted.",
   "scanWindows.override.duration": "For",
   "scanWindows.override.endDesc": "The windows apply again at once.",

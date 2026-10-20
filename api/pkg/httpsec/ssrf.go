@@ -197,6 +197,10 @@ var dangerousHosts = []string{
 // recording dial) instead of mutating package state.
 type guardedDialer struct {
 	resolver *net.Resolver
+	// privateOK lets this dialer reach RFC1918 / ULA addresses. Hard-blocked
+	// ranges (loopback, link-local and cloud metadata, CGNAT, ...) stay
+	// blocked. Only PrivateAllowedHTTPClient sets it.
+	privateOK bool
 	// dial connects to an already-vetted IP literal; it never resolves.
 	dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
@@ -233,12 +237,19 @@ func init() {
 // (RFC1918 / ULA) address is reachable only when allowPrivate is set or it is
 // inside a range the operator opened.
 func IsIPBlocked(ip net.IP) bool {
+	return isIPBlocked(ip, false)
+}
+
+// isIPBlocked is IsIPBlocked with a per-call private switch: when
+// privateOK is true every RFC1918 / ULA address is reachable (the
+// hard-blocked ranges never are).
+func isIPBlocked(ip net.IP, privateOK bool) bool {
 	for _, cidr := range hardBlockedCIDRs {
 		if cidr.Contains(ip) {
 			return true
 		}
 	}
-	if allowPrivate {
+	if privateOK || allowPrivate {
 		return false
 	}
 	for _, cidr := range allowedPrivateCIDRs {
@@ -283,6 +294,12 @@ func ResolveSafeHost(ctx context.Context, host string) (net.IP, error) {
 // resolver order, so a dialer can fall back across them without resolving
 // again.
 func resolveSafeIPs(ctx context.Context, resolver *net.Resolver, host string) ([]net.IP, error) {
+	return resolveSafeIPsPolicy(ctx, resolver, host, false)
+}
+
+// resolveSafeIPsPolicy is resolveSafeIPs with the per-call private switch of
+// isIPBlocked.
+func resolveSafeIPsPolicy(ctx context.Context, resolver *net.Resolver, host string, privateOK bool) ([]net.IP, error) {
 	if host == "" {
 		return nil, fmt.Errorf("empty host")
 	}
@@ -296,7 +313,7 @@ func resolveSafeIPs(ctx context.Context, resolver *net.Resolver, host string) ([
 		}
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if IsIPBlocked(ip) {
+		if isIPBlocked(ip, privateOK) {
 			return nil, fmt.Errorf("host %s resolves to a blocked address", host)
 		}
 		return []net.IP{ip}, nil
@@ -307,7 +324,7 @@ func resolveSafeIPs(ctx context.Context, resolver *net.Resolver, host string) ([
 	}
 	safe := make([]net.IP, 0, len(ips))
 	for _, ip := range ips {
-		if IsIPBlocked(ip.IP) {
+		if isIPBlocked(ip.IP, privateOK) {
 			return nil, fmt.Errorf("host %q resolves to blocked address %s", host, ip.IP)
 		}
 		safe = append(safe, ip.IP)
@@ -403,6 +420,26 @@ func SafeHTTPClient(timeout time.Duration) *http.Client {
 	return newSafeHTTPClient(timeout, defaultDialer)
 }
 
+// PrivateAllowedHTTPClient is SafeHTTPClient for a destination an operator
+// explicitly allowed to be on a private network (a self-hosted model server).
+// RFC1918 and ULA addresses are reachable; loopback, link-local and cloud
+// metadata, CGNAT and the other hard-blocked ranges still are not, and the
+// resolve-once, dial-the-vetted-IP rule against DNS rebinding is unchanged.
+// Use it only for a URL set by a platform administrator, never one an
+// organization supplies.
+func PrivateAllowedHTTPClient(timeout time.Duration) *http.Client {
+	d := defaultDialer
+	d.privateOK = true
+	return newSafeHTTPClient(timeout, d)
+}
+
+// ValidateHostAllowPrivate is ValidateHost for a destination an operator
+// allowed on a private network (see PrivateAllowedHTTPClient).
+func ValidateHostAllowPrivate(ctx context.Context, host string) error {
+	_, err := resolveSafeIPsPolicy(ctx, net.DefaultResolver, host, true)
+	return err
+}
+
 // SafeHTTPClientWithHeaderTimeout is SafeHTTPClient for upstreams that take
 // longer than the default 15 s to start answering (crt.sh builds a large JSON
 // answer before sending headers). Same SSRF guard; only the wait for response
@@ -445,7 +482,7 @@ func (d guardedDialer) dialContext(ctx context.Context, network, addr string) (n
 	if err != nil {
 		return nil, err
 	}
-	ips, err := resolveSafeIPs(ctx, d.resolver, host)
+	ips, err := resolveSafeIPsPolicy(ctx, d.resolver, host, d.privateOK)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf guard: %w", err)
 	}

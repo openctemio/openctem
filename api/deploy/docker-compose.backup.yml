@@ -1,0 +1,104 @@
+# Off-host backups and point-in-time recovery for the bundled PostgreSQL: an
+# optional overlay, off by default (without it nothing changes). It
+#   - rebuilds the postgres service from the same PostgreSQL release plus
+#     pgBackRest and turns on WAL archiving to the repository,
+#   - adds a backup service that creates the repository, takes a full backup
+#     (weekly) and a differential one (daily), prunes by BACKUP_RETENTION_*,
+#     and verifies after every full backup.
+# Everything is encrypted on this host (AES-256) before it leaves it.
+#
+#   BACKUP_TARGET=s3 (or sftp, local) in .env, the files under ./backup-secrets,
+#   then:
+#   docker compose -f docker-compose.yml -f docker-compose.backup.yml up -d --build
+#
+# Full guide, restore and point-in-time recovery: docs/deployment/backup-and-restore.md.
+# The image is built on the PostgreSQL image of the stack. If your data directory
+# was made by the Alpine image (postgres:17-alpine), build on that one instead and
+# set BACKUP_POSTGRES_IMAGE=postgres:17-alpine, BACKUP_IMAGE_TAG=17-alpine and
+# BACKUP_PG_UID=70 (never switch an existing data directory between the two).
+# Credentials are files, never environment variables:
+#   backup-secrets/cipher_pass         always (>= 24 characters, KEEP A COPY OFF THIS HOST)
+#   backup-secrets/s3_access_key       target s3
+#   backup-secrets/s3_secret_key       target s3
+#   backup-secrets/s3_ca.pem           target s3, optional (a private CA)
+#   backup-secrets/sftp_private_key    target sftp
+#   backup-secrets/sftp_key_passphrase target sftp, optional
+x-backup-env: &backup-env
+  BACKUP_TARGET: ${BACKUP_TARGET:?set BACKUP_TARGET to s3, sftp or local, or leave this overlay out}
+  BACKUP_STANZA: ${BACKUP_STANZA:-openctem}
+  DB_SUPERUSER: ${DB_SUPERUSER:-${DB_USER:-openctem}}
+  BACKUP_RETENTION_FULL: ${BACKUP_RETENTION_FULL:-4}
+  BACKUP_RETENTION_DIFF: ${BACKUP_RETENTION_DIFF:-7}
+  BACKUP_PROCESS_MAX: ${BACKUP_PROCESS_MAX:-2}
+  BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+  BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+  BACKUP_S3_REGION: ${BACKUP_S3_REGION:-us-east-1}
+  BACKUP_S3_PATH: ${BACKUP_S3_PATH:-openctem}
+  BACKUP_S3_URI_STYLE: ${BACKUP_S3_URI_STYLE:-host}
+  BACKUP_S3_VERIFY_TLS: ${BACKUP_S3_VERIFY_TLS:-y}
+  BACKUP_SFTP_HOST: ${BACKUP_SFTP_HOST:-}
+  BACKUP_SFTP_PORT: ${BACKUP_SFTP_PORT:-22}
+  BACKUP_SFTP_USER: ${BACKUP_SFTP_USER:-}
+  BACKUP_SFTP_PATH: ${BACKUP_SFTP_PATH:-}
+  BACKUP_SFTP_HOST_FINGERPRINT: ${BACKUP_SFTP_HOST_FINGERPRINT:-}
+
+x-backup-mounts: &backup-mounts
+  - postgres-data:/var/lib/postgresql/data
+  - pg-socket:/var/run/postgresql
+  - ${BACKUP_SECRETS_DIR:-./backup-secrets}:/run/backup-secrets:ro
+  - ${BACKUP_LOCAL_PATH:-backup-repo}:/backup-repo
+
+services:
+  postgres:
+    image: openctem-postgres-backup:${BACKUP_IMAGE_TAG:-${POSTGRES_VERSION:-17}}
+    build:
+      context: ./backup
+      args:
+        POSTGRES_IMAGE: ${BACKUP_POSTGRES_IMAGE:-postgres:${POSTGRES_VERSION:-17}}
+    entrypoint: ["pg-entrypoint.sh"]
+    environment:
+      <<: *backup-env
+      BACKUP_ARCHIVE_TIMEOUT: ${BACKUP_ARCHIVE_TIMEOUT:-300}
+    volumes: *backup-mounts
+    tmpfs:
+      - /etc/pgbackrest:mode=0750
+      - /var/spool/pgbackrest:mode=0750,uid=${BACKUP_PG_UID:-999},gid=${BACKUP_PG_UID:-999}
+
+  backup:
+    image: openctem-postgres-backup:${BACKUP_IMAGE_TAG:-${POSTGRES_VERSION:-17}}
+    restart: unless-stopped
+    entrypoint: ["backup-entrypoint.sh"]
+    command: ["scheduler"]
+    environment:
+      <<: *backup-env
+      BACKUP_TIME: ${BACKUP_TIME:-02:30}
+      BACKUP_FULL_DAY: ${BACKUP_FULL_DAY:-0}
+    volumes: *backup-mounts
+    tmpfs:
+      - /etc/pgbackrest:mode=0750
+      - /var/spool/pgbackrest:mode=0750,uid=${BACKUP_PG_UID:-999},gid=${BACKUP_PG_UID:-999}
+      - /var/log/pgbackrest:mode=0750,uid=${BACKUP_PG_UID:-999},gid=${BACKUP_PG_UID:-999}
+    # No network entry: the service needs only the socket volume and outbound access
+    # to the target, so it works with any base compose network layout.
+    depends_on:
+      postgres:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "gosu", "postgres", "pgbackrest", "--stanza=${BACKUP_STANZA:-openctem}", "check"]
+      interval: 15m
+      timeout: 2m
+      start_period: 5m
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pg-socket:
+  backup-repo:
