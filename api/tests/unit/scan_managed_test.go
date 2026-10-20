@@ -144,3 +144,21 @@ func TestManagedScan_CloneIsAnOrdinaryScan(t *testing.T) {
 		t.Errorf("clone owner = %v, want the caller", clone.CreatedBy)
 	}
 }
+
+// The policy's own run (attributed to the policy, no user) and the platform's
+// retry of a failed run are not a member's run: they start.
+func TestManagedScan_PolicyAndRetryRunsStart(t *testing.T) {
+	ctx := context.Background()
+	svc, deps := newTestScanService()
+	tenant := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	sc := managedScan(deps, tenant)
+	for name, in := range map[string]scanservice.TriggerScanExecInput{
+		"policy": {TenantID: tenant.String(), ScanID: sc.ID.String(), TriggerType: scanworkflow.TriggerTypeSystem, TriggeredBy: "policy:coverage"},
+		"retry":  {TenantID: tenant.String(), ScanID: sc.ID.String(), TriggerType: scanworkflow.TriggerTypeSystem},
+	} {
+		if _, err := svc.TriggerScan(ctx, in); err != nil {
+			t.Errorf("%s run of a managed scan: %v", name, err)
+		}
+	}
+}
