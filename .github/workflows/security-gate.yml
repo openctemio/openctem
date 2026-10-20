@@ -15,6 +15,9 @@ name: Security Gate
 #   (Bootstrap: while the base has no gate script yet, the PR's copy is used.)
 # - No job-level `if:` on the gate job: a skipped required job counts as
 #   passed, so the job always runs and decides in the script.
+# - The gate's own unit tests and the CODEOWNERS mirror check run in the
+#   `Workflow Lint` job (repo-security.yml): they run pull request code, which
+#   this workflow never does.
 # - Labels change on every `labeled` event and re-run the gate; the runs the
 #   gate's own label writes would trigger do not happen (GITHUB_TOKEN events
 #   start no workflows).
@@ -84,21 +87,3 @@ jobs:
         run: |
           SECURITY_PATHS="$GATE_DIR/.github/security-paths.yml" \
             python3 "$GATE_DIR/.github/scripts/security_gate.py" gate
-
-  self-test:
-    name: Security gate self-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Unit tests
-        run: python3 .github/scripts/security_gate_test.py
-
-      - name: CODEOWNERS mirrors the path list
-        run: python3 .github/scripts/security_gate.py codeowners --check

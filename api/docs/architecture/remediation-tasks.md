@@ -27,6 +27,12 @@ manual states (on hold, canceled).
 - Recompute runs in the transaction of every change (create, add members, update) and in the
   `remediation-tasks` controller every two minutes for tasks whose findings changed since `recomputed_at`
   (`StaleTasksForPlatform`, oldest first, 500 per pass). A state change is written to the timeline.
+- Changes no person made are also in the audit log, with `system` as the actor (`ActorEmail: system`, the tenant
+  set): a state change found by the background reconcile (`remediation_task.state_changed`, `trigger: reconcile`),
+  the new task opened when a closed task's finding reopens (`remediation_task.regressed`, with `regression_of` and
+  the finding count) and findings joining under an action's auto-join rule (`remediation_task.members_added`,
+  `trigger: auto_join`, with the action and the count). A person's own change is audited where it is made, not again
+  for the recompute it triggers.
 
 ## Membership rules
 
@@ -71,11 +77,19 @@ groups. Every change carries the task's `version`; a stale one answers `409`.
 
 A restricted member sees a task through its findings in their scope: counters, deadline and risk are over those
 findings and `hidden_members` counts the others. A task with none of their findings is `404`. They may change a
-task only when `hidden_members` is 0, and every finding they name must be in their scope.
+task only when it has no member outside their scope, primary or related (`hidden_members` shows the primary ones
+only), and every finding they name must be in their scope. The `finding_id` list filter applies the same scope: for a
+finding outside it the list is empty.
 
 The timeline is scoped the same way: an entry that names another task (a move, split or regression) loses that task's
 id, title and the move reason when the reader has no finding of it in their scope, and carries
 `other_task_hidden: true`; counts stay.
+
+The pentest member rule of the findings list applies on top of the asset scope, also to a full-data caller who has
+no asset scope: a pentest finding is a visible member only for the members of its campaign, and a draft or in-review
+one never for the campaign's client role. Members, counters, `hidden_members` and the task list read through it
+(an administrator sees every pentest finding). A pentest finding is fixed through its pentest campaign, so it cannot
+be the primary member of a task (`400`).
 
 ## Suggestions
 

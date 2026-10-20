@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // Roles of a link.
@@ -59,8 +60,78 @@ type Link struct {
 	LastPushedState string
 	LastSyncedAt    *time.Time
 	SyncError       string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// External is the tracker side of the issue as last read from the
+	// tracker: its assignee (a label, never a platform user), status
+	// category and change time.
+	External  External
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// External is what the tracker says about the linked issue. The assignee is
+// a tracker account shown as a label: it is never a platform assignee, never
+// a member and grants no data access.
+type External struct {
+	AssigneeID     string // tracker account id (Jira accountId); "" = unassigned
+	AssigneeName   string // display name as last seen
+	StatusCategory string // StatusCategoryTodo / InProgress / Done; "" = not seen
+	UpdatedAt      *time.Time
+}
+
+// Status categories of a tracker issue.
+const (
+	StatusCategoryTodo       = "todo"
+	StatusCategoryInProgress = "in_progress"
+	StatusCategoryDone       = "done"
+)
+
+// Length caps of the external fields (the columns' sizes).
+const (
+	MaxExternalAssigneeID   = 128
+	MaxExternalAssigneeName = 255
+)
+
+var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+
+// SanitizeExternalName cleans a display name read from a tracker: HTML tags
+// and angle brackets, control, bidi and zero-width characters removed,
+// whitespace folded, length capped. The result is plain text; it is still
+// escaped wherever it is rendered.
+func SanitizeExternalName(s string) string {
+	s = htmlTagRe.ReplaceAllString(s, "")
+	s = strings.NewReplacer("<", "", ">", "").Replace(s)
+	return safetext.SingleLine(s, MaxExternalAssigneeName)
+}
+
+// SanitizeExternalID cleans a tracker account id: one line, no control or
+// bidi characters, no spaces, length capped.
+func SanitizeExternalID(s string) string {
+	return strings.ReplaceAll(safetext.SingleLine(s, MaxExternalAssigneeID), " ", "")
+}
+
+// StatusCategoryFromJira maps a Jira statusCategory key (new, indeterminate,
+// done) to a link status category; "" when unknown.
+func StatusCategoryFromJira(key string) string {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "new":
+		return StatusCategoryTodo
+	case "indeterminate":
+		return StatusCategoryInProgress
+	case "done":
+		return StatusCategoryDone
+	}
+	return ""
+}
+
+// ExternalChange is a change read from the tracker for one issue. Assignee
+// is applied only when AssigneeSet (an unassign sets it to empty);
+// StatusCategory only when not empty.
+type ExternalChange struct {
+	AssigneeSet    bool
+	AssigneeID     string
+	AssigneeName   string
+	StatusCategory string
+	At             time.Time
 }
 
 var issueKeyRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*-[0-9]+$`)
@@ -195,6 +266,11 @@ type Repository interface {
 	// RecordPush stores the object state last pushed to the issue and the
 	// issue's status after the push.
 	RecordPush(ctx context.Context, tenantID, id shared.ID, state, status string, at time.Time) error
+	// RecordExternal stores a change read from the tracker on every active
+	// link of one issue of an integration (matched by the issue's id, or by
+	// key for links that recorded no id), and returns the links it updated.
+	// An older change than the one stored (by At) is ignored.
+	RecordExternal(ctx context.Context, tenantID, integrationID shared.ID, externalID, key string, ch ExternalChange) ([]*Link, error)
 	// TaskLinksBehindForPlatform lists active task links whose task state differs from
 	// the state last pushed (all tenants; the reconciler pushes each in its
 	// own tenant).

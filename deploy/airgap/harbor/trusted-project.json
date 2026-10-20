@@ -1,0 +1,11 @@
+{
+  "project_name": "openctem-trusted",
+  "public": false,
+  "metadata": {
+    "public": "false",
+    "auto_scan": "true",
+    "prevent_vul": "true",
+    "severity": "critical",
+    "enable_content_trust_cosign": "true"
+  }
+}
