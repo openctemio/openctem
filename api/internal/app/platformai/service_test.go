@@ -173,3 +173,40 @@ func TestModelAllowList(t *testing.T) {
 		t.Fatalf("bad name: %v", err)
 	}
 }
+
+// Organizations may use their own provider by default; turning that off is a
+// guarded, audited, announced change that applies at once, even while the
+// environment pins the platform provider.
+func TestOrgProviderPolicy(t *testing.T) {
+	svc, repo, audit, n := newSvc(t, true) // environment-locked platform provider
+	ctx := context.Background()
+	if !svc.OrgProviderAllowed(ctx) {
+		t.Fatal("own providers are allowed by default")
+	}
+	if _, err := svc.ChangeOrgPolicy(ctx, nil, false, "x", 0, "", ""); !errors.Is(err, ErrNoActor) {
+		t.Fatalf("no actor: %v", err)
+	}
+	if _, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), false, "", 0, "", ""); !errors.Is(err, consolesetting.ErrReasonRequired) {
+		t.Fatalf("a reason is required: %v", err)
+	}
+	if len(audit.Entries) != 0 {
+		t.Fatal("a refused change writes nothing")
+	}
+	p, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), false, "security review", 0, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.AllowOwnProvider || svc.OrgProviderAllowed(ctx) {
+		t.Fatal("the policy must apply at once")
+	}
+	if len(audit.Entries) != 1 || n.Count() != 1 || !strings.Contains(repo.Raw(OrgPolicyKey), "allow_own_provider") {
+		t.Fatalf("audit %d notices %d", len(audit.Entries), n.Count())
+	}
+	// A stale version is refused.
+	if _, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), true, "back", 0, "", ""); err == nil {
+		t.Fatal("a stale version must be refused")
+	}
+	if _, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), true, "back", p.Version, "", ""); err != nil || !svc.OrgProviderAllowed(ctx) {
+		t.Fatalf("allow again: %v", err)
+	}
+}

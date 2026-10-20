@@ -36,7 +36,7 @@ The list lives in `internal/app/rekey/rekey.go`. It was enumerated from every
 | `admin_credentials.mfa_secret_encrypted` | admin console TOTP secret |
 | `user_mfa.secret_encrypted`, `pending_secret_encrypted` | user TOTP secrets |
 | `settings.value_json.access_key`, `secret_key` (`storage_config`) | tenant file-storage credentials |
-| `tenants.settings.ai.api_key` (`enc:v1:`) | BYOK LLM key |
+| `tenant_ai_settings.key_enc` | organization's own AI provider key |
 | `exposure_events.details.secret_value_enc` (+ `secret_fingerprint`) | leaked-credential secret |
 | `credentials.encrypted_data` | secret store (template sources and other stored credentials) |
 | `scanner_templates.signature_hash` | template signature (recomputed) |

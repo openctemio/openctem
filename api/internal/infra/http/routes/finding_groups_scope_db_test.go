@@ -135,6 +135,9 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	registerVulnerabilityRoutes(router, vulnHandler,
 		actionsHandler, nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
 	registerSavedViewRoutes(router, handler.NewSavedViewHandler(viewSvc, log), auth, nil)
+	checklistHandler := handler.NewVerificationChecklistHandler(finding.NewVerificationChecklistService(ds.db, enforcer), log)
+	checklistHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	registerVerificationChecklistRoutes(router, checklistHandler, []Middleware{auth})
 	ds.srv.Close()
 	ds.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(ds.srv.Close)

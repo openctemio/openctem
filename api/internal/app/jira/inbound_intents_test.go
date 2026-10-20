@@ -42,7 +42,7 @@ func intentSync(t *testing.T, sm *ticketmap.StatusMap) (*SyncService, *applierSt
 	repo := &inboundRepo{finding: inProgressFinding(t)}
 	c := &profileClient{integration: shared.NewID()}
 	s := NewSyncService(repo, c, logger.NewNop())
-	s.SetProfileSource(&stubProfiles{inbound: sm})
+	s.SetProfileSource(&stubProfiles{inbound: sm, projects: []string{"SEC"}})
 	app := &applierStub{}
 	s.SetInboundApplier(app)
 	return s, app, c, repo
@@ -67,7 +67,7 @@ func TestProfileIntents(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s, app, c, repo := intentSync(t, designProfile())
-			if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), tc.ev); err != nil {
+			if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), c.integration, tc.ev); err != nil {
 				t.Fatal(err)
 			}
 			if app.target != tc.wantTarget || app.request != tc.wantRequest {
@@ -94,7 +94,7 @@ func TestProfileIntents(t *testing.T) {
 func TestProfileIntents_RequestRefusalsCommented(t *testing.T) {
 	s, app, c, _ := intentSync(t, designProfile())
 	app.refuse = []InboundRefusal{{FindingID: "f2", Reason: "the finding is resolved; a request for accepted cannot be made for it"}}
-	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), moved("5", "done", "Won't Do")); err != nil {
+	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), c.integration, moved("5", "done", "Won't Do")); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(c.comments, "\n"); !strings.Contains(got, "f2") || !strings.Contains(got, "cannot be made") {
@@ -105,8 +105,8 @@ func TestProfileIntents_RequestRefusalsCommented(t *testing.T) {
 // Without a profile for the project the built-in map applies (Done → fix
 // claim); "Won't Do" there is not a request.
 func TestProfileIntents_NoProfileKeepsTheBuiltInMap(t *testing.T) {
-	s, app, _, _ := intentSync(t, nil)
-	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), doneWebhook()); err != nil {
+	s, app, c, _ := intentSync(t, nil)
+	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), c.integration, doneWebhook()); err != nil {
 		t.Fatal(err)
 	}
 	if app.target != vulnerability.FindingStatusFixApplied || app.request != "" {
@@ -117,9 +117,9 @@ func TestProfileIntents_NoProfileKeepsTheBuiltInMap(t *testing.T) {
 // A profile that cannot be read never falls back to the built-in map: the
 // delivery fails and Jira retries it.
 func TestProfileIntents_UnreadableProfileFailsClosed(t *testing.T) {
-	s, app, _, _ := intentSync(t, nil)
-	s.SetProfileSource(&stubProfiles{inErr: errors.New("db down")})
-	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), doneWebhook()); err == nil {
+	s, app, c, _ := intentSync(t, nil)
+	s.SetProfileSource(&stubProfiles{inErr: errors.New("db down"), projects: []string{"SEC"}})
+	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), c.integration, doneWebhook()); err == nil {
 		t.Fatal("want an error")
 	}
 	if len(app.ids) != 0 {
@@ -150,12 +150,12 @@ func TestInbound_OnlyConfiguredProjects(t *testing.T) {
 		repo := &inboundRepo{finding: inProgressFinding(t)}
 		c := &linkClient{intg: shared.NewID()}
 		s := NewSyncService(repo, c, logger.NewNop())
-		configured(s)
+		s.SetMappingResolver(fixedMapping(inboundTestMapping()))
 		app := &applierStub{}
 		s.SetInboundApplier(app)
 		p := doneWebhook()
 		p.Issue.Key = tc.key
-		if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), p); err != nil {
+		if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), c.intg, p); err != nil {
 			t.Fatal(err)
 		}
 		if got := len(app.ids) > 0; got != tc.want {

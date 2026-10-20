@@ -1471,6 +1471,27 @@ one needs `team:groups:write` on top of `assets:write`/`assets:delete`.
   scope. Changing the campaign still needs every one of its findings in
   their own scope.
 
+- The **owner of a remediation task** (`remediation_tasks.assignee_user_id`,
+  or an active, unexpired member of `assignee_group_id`) sees exactly the
+  task's active primary findings while the task is live (open, in progress,
+  verifying, on hold) and the finding's asset is not hidden from them
+  (`filterspec.TaskOwnerFindingSQL`; `DataScopeRepository.FindingIDsOwnedViaTask`).
+  It is computed on every read, nothing is stored: it ends when the owner
+  changes, the finding leaves the task, the task closes, or the team
+  membership ends, expires or is suspended. It covers the task's own views
+  (members, counters, filters), the by-id routes of the fix workflow (reads,
+  comments, status change, manual evidence, proof-of-fix and retest
+  requests; `middleware.fixWorkRoute`, flagged with `shared.WithTaskOwnerView`
+  and re-checked by the services), the fix-claim ownership (`FixAppliers`),
+  and the bulk status path for the fix moves only. A status change through
+  the relation is limited to confirmed, in progress and fix applied
+  (`TransitionFacts.TaskOwnerOnly`, block `not_in_scope`) and is audited
+  `remediation_task.owner_moved_finding`. Everything else (false positive,
+  accepted risk, resolve, severity, classify, tags, assign, approvals,
+  tickets, delete, the findings list, export and dashboards) still needs the
+  finding in the actor's own scope. Pentest findings keep their
+  campaign-membership rule; an API key never gets the relation.
+
 What the assignee may do is their role's. The view is computed from the
 assignment on every request, so unassigning removes it at once; assignments
 are recorded in the finding activity and the campaign audit. The

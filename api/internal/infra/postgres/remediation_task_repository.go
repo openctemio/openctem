@@ -250,8 +250,8 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter, visible string)
 		p := next(f.FindingID.String())
 		scoped, scopeJoin := "", ""
 		if f.Scope != nil {
-			cond, scopeArgs := dataScopeCondAt("ff.asset_id", f.Scope, len(args)+1)
-			args = append(args, scopeArgs...)
+			cond, scoped2 := taskViewScopeCond("ff.asset_id", "ff.id", f.Scope, args)
+			args = scoped2
 			scopeJoin = " JOIN findings ff ON ff.id = fm.finding_id AND ff.tenant_id = fm.tenant_id"
 			scoped = " AND " + cond
 		}
@@ -269,8 +269,8 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter, visible string)
 		// asset scope and passing the pentest member rule.
 		memberConds := []string{"sm.tenant_id = t.tenant_id", "sm.task_id = t.id", "sm.left_at IS NULL"}
 		if f.Scope != nil {
-			cond, scopeArgs := dataScopeCondAt("sf.asset_id", f.Scope, len(args)+1)
-			args = append(args, scopeArgs...)
+			cond, scoped := taskViewScopeCond("sf.asset_id", "sf.id", f.Scope, args)
+			args = scoped
 			memberConds = append(memberConds, cond)
 		}
 		if visible != "" {
@@ -809,7 +809,7 @@ type rowsQuerier interface {
 
 func memberCounts(ctx context.Context, q rowsQuerier, tenantID shared.ID, taskIDs []shared.ID, scope *shared.DataScope, visible string) (map[shared.ID]remediation.TaskCounts, error) {
 	args := []any{tenantID.String(), pq.Array(rtIDStrings(taskIDs)), closedStatusArray(), fixAppliedStatuses}
-	cond, args := dataScopeCond("f.asset_id", scope, args)
+	cond, args := taskViewScopeCond("f.asset_id", "f.id", scope, args)
 	if visible != "" {
 		cond = cond + " AND " + visible
 	}
@@ -1061,7 +1061,7 @@ func (r *RemediationTaskRepository) ListMembers(ctx context.Context, tenantID, t
 		args = append(args, f.Status)
 		conds = append(conds, fmt.Sprintf("f.status = $%d", len(args)))
 	}
-	cond, args := dataScopeCond("f.asset_id", f.Scope, args)
+	cond, args := taskViewScopeCond("f.asset_id", "f.id", f.Scope, args)
 	conds = append(conds, cond, pentestVisibilityCond(ctx, "f", "$1"))
 	from := ` FROM remediation_task_members tm
 		JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
