@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
@@ -18,19 +19,11 @@ import (
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
-// isSecretFinding reports whether a finding is a leaked-secret/credential
-// finding, whose raw description must never be copied verbatim into an external
-// ticket (it can contain the secret itself).
-func isSecretFinding(f *vulnerability.Finding) bool {
-	return f.Source() == vulnerability.FindingSourceSecret ||
-		f.FindingType() == vulnerability.FindingTypeSecret
-}
-
-// ticketDescription builds the Jira description for a finding. For secret
-// findings it deliberately omits the raw finding description (which may embed
-// the leaked secret), surfacing only the masked value + location and pointing
-// the reader back to the platform. For all other findings it runs the
-// description through redactSecrets as defense-in-depth.
+// ticketDescription builds the Jira description for a finding. What text
+// may leave is the outbound gate's decision (ticketing.FindingContent): a
+// secret finding sends its location only (no description, preview, snippet,
+// fingerprint or commit context), a finding that exposes data sends no free
+// text at all. Every other description is secret-redacted as defense in depth.
 //
 // The description is Jira wiki markup (REST API v2), and every value that
 // comes from the finding is attacker-influenced (a scanned page title, a file
@@ -44,17 +37,19 @@ func ticketDescription(f *vulnerability.Finding) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "*Finding:* %s\n*Severity:* %s\n*Status:* %s\n",
-		inline(f.Title()), inline(string(f.Severity())), inline(string(f.Status())))
+		inline(ticketing.OutboundTitle(f)), inline(string(f.Severity())), inline(string(f.Status())))
 	if f.FilePath() != "" {
 		fmt.Fprintf(&b, "*Location:* %s:%d\n", inline(vulnerability.DisplayPath(f.FilePath())), f.StartLine())
 	}
 
-	if isSecretFinding(f) {
-		b.WriteString("\nA secret was detected. The value is redacted here for safety. Open the finding in the platform for full details.")
-		if mv := f.SecretMaskedValue(); mv != "" {
-			fmt.Fprintf(&b, "\n*Masked value:* %s", inline(mv))
-		}
+	switch ticketing.FindingContent(f) {
+	case ticketing.ContentSecret:
+		b.WriteString("\nA secret was detected. Its value is not sent to trackers. Open the finding in the platform for full details.")
 		return withMobilizationBrief(b.String(), f)
+	case ticketing.ContentPersonalData:
+		b.WriteString("\nThis finding exposes data. Its details are not sent to trackers. Open the finding in the platform for full details.")
+		return b.String()
+	case ticketing.ContentFull:
 	}
 
 	if desc := strings.TrimSpace(f.Description()); desc != "" {
@@ -68,7 +63,7 @@ func ticketDescription(f *vulnerability.Finding) string {
 // characters in Jira): secret-redacted, cleaned of control and bidi
 // characters, folded to one line and capped.
 func ticketSummary(f *vulnerability.Finding) string {
-	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), f.Title())), safetext.MaxTitleRunes)
+	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), ticketing.OutboundTitle(f))), safetext.MaxTitleRunes)
 }
 
 // withMobilizationBrief appends the CTEM Mobilization brief (definition of done
@@ -168,6 +163,8 @@ type SyncService struct {
 	findingRepo vulnerability.FindingRepository
 	jiraClient  Client
 	logger      *logger.Logger
+	// egress is the outbound gate (egress.go); nil refuses pentest content.
+	egress *ticketing.EgressGate
 
 	// clientResolver builds a per-tenant Jira client on demand. When set, it
 	// takes precedence over the static jiraClient (which exists mainly so tests
@@ -403,6 +400,9 @@ func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID 
 	if err != nil {
 		return fmt.Errorf("get finding: %w", err)
 	}
+	if ok, err := s.egressAllowed(ctx, tenantID, ticketing.RouteStatusSync, finding); !ok {
+		return err
+	}
 	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
 	if issueKey == "" {
 		return nil
@@ -465,6 +465,10 @@ type CreateTicketInput struct {
 	IssueType  string `json:"issue_type"`  // e.g. "Bug"
 	// ParentKey creates the ticket as a child of this issue (an epic).
 	ParentKey string `json:"parent_key,omitempty"`
+	// Route is the path the request came by, set by the server's callers
+	// only (never decoded from a request); the zero value is the generic
+	// finding route.
+	Route ticketing.Route `json:"-"`
 }
 
 // jiraBrowseKeyRe extracts a Jira issue key from a browse URL,
@@ -492,6 +496,9 @@ func firstJiraIssueKey(uris []string) string {
 // On a workflow with no transition to the target, it falls back to a comment so
 // the change is visible to a human rather than failing.
 func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, findingID shared.ID, mapping MappingConfig) error {
+	if ok, err := s.statusPushAllowed(ctx, tenantID, findingID); !ok {
+		return err
+	}
 	// A published mapping profile for the issue's project decides the move
 	// itself (its status map is the explicit opt-in for that destination).
 	if s.profiles != nil {
@@ -574,6 +581,9 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
 	if err != nil {
 		return nil, fmt.Errorf("get finding: %w", err)
+	}
+	if err := s.egress.Check(ctx, tenantID, input.Route, finding); err != nil {
+		return nil, err
 	}
 
 	// Destination project resolution, in priority order:
@@ -801,6 +811,9 @@ func (u WebhookUser) ID() string {
 
 // WebhookIssue represents the issue block inside a Jira webhook payload.
 type WebhookIssue struct {
+	// ID is the issue's id ("10001"), stable when the issue moves to another
+	// project and its key changes.
+	ID     string                 `json:"id"`
 	Key    string                 `json:"key"`  // e.g. "PROJ-123"
 	Self   string                 `json:"self"` // e.g. "https://myorg.atlassian.net/rest/api/2/issue/10001"
 	Fields map[string]interface{} `json:"fields"`

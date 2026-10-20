@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
+import { StepUpCodeField } from './step-up-code-hint'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import {
   createInstanceScanZone,
@@ -281,17 +282,7 @@ function ZoneDialog({
                 onChange={(e) => setReason(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor={`${id}-code`}>{t('admin.scanPolicy.code')}</Label>
-              <Input
-                id={`${id}-code`}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={8}
-              />
-            </div>
+            <StepUpCodeField id={`${id}-code`} value={code} onChange={setCode} />
             {error && <p className="text-sm text-destructive">{error}</p>}
           </DialogBody>
           <DialogFooter className="flex-wrap gap-2">

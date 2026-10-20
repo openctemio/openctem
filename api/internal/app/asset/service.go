@@ -62,6 +62,7 @@ type AssetService struct {
 	riskContributors  assetdom.RiskContributorReader
 	redisClient       *redis.Client
 	logger            *logger.Logger
+	riskGovernor      RiskGovernor // decides edits that lower risk inputs (nil = ungoverned)
 
 	// In-memory scoring config cache (per-tenant, 5-min TTL)
 	scoringCacheMu sync.RWMutex
@@ -990,30 +991,65 @@ type UpdateAssetInput struct {
 // UpdateAsset updates an existing asset.
 // Security: Requires tenantID to prevent cross-tenant data modification.
 func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID string, input UpdateAssetInput) (*assetdom.Asset, error) {
+	a, _, err := s.updateAsset(ctx, assetID, tenantID, input, nil)
+	return a, err
+}
+
+// updateAsset is the edit. A non-nil rc is a person's edit under the risk
+// governance: lowered exposure or criticality may be held for approval (the
+// request is returned and those fields are not applied).
+//
+//nolint:gocognit,cyclop // the existing edit workflow, plus one governance step in front
+func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID string, input UpdateAssetInput, rc *RiskContext) (*assetdom.Asset, *assetdom.RiskChangeRequest, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		return nil, nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
 	parsedID, err := shared.IDFromString(assetID)
 	if err != nil {
-		return nil, shared.ErrNotFound
+		return nil, nil, shared.ErrNotFound
 	}
 
 	// GetByID with tenantID automatically enforces tenant isolation
 	a, err := s.repo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	// Lowering exposure or criticality is decided before anything is applied.
+	var held *assetdom.RiskChangeRequest
+	if rc != nil && s.riskGovernor != nil {
+		proposed := assetdom.PriorityInputsOf(a)
+		if input.Criticality != nil {
+			if c, perr := assetdom.ParseCriticality(*input.Criticality); perr == nil {
+				proposed.Criticality = c
+			}
+		}
+		if input.Exposure != nil {
+			if e, perr := assetdom.ParseExposure(*input.Exposure); perr == nil {
+				proposed.Exposure = e
+			}
+		}
+		if held, err = s.governLowering(ctx, a, proposed, input.ActorID, rc); err != nil {
+			return nil, nil, err
+		}
+		if heldField(held, "criticality") {
+			input.Criticality = nil
+		}
+		if heldField(held, "exposure") {
+			input.Exposure = nil
+		}
 	}
 
 	// Platform-owned keys cannot be changed through properties; an
 	// unchanged echo of the stored value is dropped.
 	if input.Properties != nil {
 		if err := stripUnchangedReservedProperties(input.Properties, a.Properties()); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := rejectMisplacedProperties(a.Type(), a.SubType(), input.Properties); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -1021,27 +1057,27 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	oldName := a.Name()
 	if input.Name != nil {
 		if err := a.UpdateName(*input.Name); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if input.Criticality != nil {
 		criticality, err := assetdom.ParseCriticality(*input.Criticality)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		if err := a.UpdateCriticality(criticality); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if input.Scope != nil {
 		scope, err := assetdom.ParseScope(*input.Scope)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		if err := a.UpdateScope(scope); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -1049,10 +1085,10 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	if input.Exposure != nil {
 		exposure, err := assetdom.ParseExposure(*input.Exposure)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		if err := a.UpdateExposure(exposure); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -1069,7 +1105,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	oldSubType := a.SubType()
 	if input.SubType != nil {
 		if err := applySubTypeChange(a, *input.SubType); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -1077,28 +1113,28 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	if input.ImpactConfidentiality != nil {
 		rating, err := assetdom.ParseImpactRating(*input.ImpactConfidentiality)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		if err := a.SetImpactConfidentiality(rating); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if input.ImpactIntegrity != nil {
 		rating, err := assetdom.ParseImpactRating(*input.ImpactIntegrity)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		if err := a.SetImpactIntegrity(rating); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if input.ImpactAvailability != nil {
 		rating, err := assetdom.ParseImpactRating(*input.ImpactAvailability)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		if err := a.SetImpactAvailability(rating); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -1134,7 +1170,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	s.scoreAsset(ctx, parsedTenantID, a)
 
 	if err := s.repo.Update(ctx, a); err != nil {
-		return nil, fmt.Errorf("failed to update asset: %w", err)
+		return nil, nil, fmt.Errorf("failed to update asset: %w", err)
 	}
 
 	// A changed owner_ref replaces the owner derived from the old one (an
@@ -1194,7 +1230,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	}
 
 	s.logger.Info("asset updated", "id", a.ID().String())
-	return a, nil
+	return a, held, nil
 }
 
 // applySubTypeChange sets a requested sub-type on an existing asset. The
