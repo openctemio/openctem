@@ -653,6 +653,10 @@ services:
       - random_page_cost=${PG_RANDOM_PAGE_COST:-1.1}
       - -c
       - max_wal_size=${PG_MAX_WAL_SIZE:-2GB}
+      # Large jsonb/text values compress with lz4: cheaper to read and write
+      # than the built-in pglz. Applies to values written from now on.
+      - -c
+      - default_toast_compression=${PG_TOAST_COMPRESSION:-lz4}
     # Parallel queries share memory through /dev/shm (64 MB by default).
     shm_size: ${PG_SHM_SIZE:-256m}
     environment:

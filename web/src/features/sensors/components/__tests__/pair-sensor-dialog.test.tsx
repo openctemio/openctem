@@ -76,8 +76,8 @@ function pendingView(over: Record<string, unknown> = {}) {
 }
 
 async function findByCode(user: ReturnType<typeof userEvent.setup>) {
+  // A complete code looks the sensor up on its own.
   await user.type(screen.getByLabelText('Pairing code'), 'k7qm-4ztd')
-  await user.click(screen.getByRole('button', { name: /find sensor/i }))
 }
 
 describe('PairSensorDialog', () => {

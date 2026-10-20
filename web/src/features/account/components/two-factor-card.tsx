@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { KeyRound, Loader2, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -18,11 +18,19 @@ import {
   DialogBody,
   DialogForm,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/password-input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { OneTimeCodeInput, RecoveryCodesPanel, SecretKey, TotpQrCode } from '@/components/security'
+import {
+  ACCOUNT_RECOVERY_CODE,
+  RecoveryCodesPanel,
+  SecretKey,
+  StepUpDialog,
+  TOTP_CODE_LENGTH,
+  TotpQrCode,
+  VerificationCodeInput,
+} from '@/components/security'
+import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe } from '@/lib/format-date'
 
@@ -43,9 +51,10 @@ interface TwoFactorCardProps {
 type DialogKind = 'enable' | 'disable' | 'regenerate' | null
 
 /**
- * Two-factor authentication section of My account → Security.
+ * Two-factor authentication section of My account -> Security.
  */
 export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCardProps) {
+  const { t } = useTranslation()
   const { status, isLoading, mutate } = useTwoFactorStatus()
   const [dialog, setDialog] = useState<DialogKind>(null)
 
@@ -55,11 +64,14 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Smartphone className="h-5 w-5" />
-          Two-factor authentication
+          <Smartphone className="h-5 w-5" aria-hidden />
+          {t('settings.twoFactor.title', 'Two-factor authentication')}
         </CardTitle>
         <CardDescription>
-          Ask for a code from an authenticator app every time you sign in with your password.
+          {t(
+            'settings.twoFactor.description',
+            'Ask for a code from an authenticator app every time you sign in with your password.'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -67,31 +79,47 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
           <Skeleton className="h-16 w-full" />
         ) : !status.supported ? (
           <p className="text-sm text-muted-foreground">
-            You sign in through your organization&apos;s identity provider, which handles two-factor
-            authentication.
+            {t(
+              'settings.twoFactor.federated',
+              "You sign in through your organization's identity provider, which handles two-factor authentication."
+            )}
           </p>
         ) : (
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{status.enabled ? 'On' : 'Off'}</span>
+                <span className="font-medium">
+                  {status.enabled
+                    ? t('settings.twoFactor.on', 'On')
+                    : t('settings.twoFactor.off', 'Off')}
+                </span>
                 {status.enabled ? (
                   <Badge variant="outline" className="border-success/40 text-success">
-                    Protected
+                    {t('settings.twoFactor.protected', 'Protected')}
                   </Badge>
                 ) : null}
                 {status.required_by_organization && (
-                  <Badge variant="outline">Required by your organization</Badge>
+                  <Badge variant="outline">
+                    {t('settings.twoFactor.required', 'Required by your organization')}
+                  </Badge>
                 )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {status.enabled
-                  ? `Turned on ${formatDateSafe(status.enabled_at)}. `
-                  : 'Anyone with your password can sign in. '}
+                  ? t('settings.twoFactor.turnedOnAt', 'Turned on {date}.', {
+                      date: formatDateSafe(status.enabled_at),
+                    })
+                  : t(
+                      'settings.twoFactor.passwordOnly',
+                      'Anyone with your password can sign in.'
+                    )}{' '}
                 {status.enabled && (
                   <span className={lowOnCodes ? 'text-warning' : undefined}>
-                    {status.recovery_codes_remaining} recovery{' '}
-                    {status.recovery_codes_remaining === 1 ? 'code' : 'codes'} left.
+                    {status.recovery_codes_remaining === 1
+                      ? t('settings.twoFactor.codesLeftOne', '1 recovery code left.')
+                      : t('settings.twoFactor.codesLeft', '{count} recovery codes left.', {
+                          count: status.recovery_codes_remaining,
+                        })}
                   </span>
                 )}
               </p>
@@ -100,8 +128,8 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
               {status.enabled ? (
                 <>
                   <Button variant="outline" size="sm" onClick={() => setDialog('regenerate')}>
-                    <KeyRound className="h-4 w-4" />
-                    New recovery codes
+                    <KeyRound className="h-4 w-4" aria-hidden />
+                    {t('settings.twoFactor.newCodes', 'New recovery codes')}
                   </Button>
                   <Button
                     variant="outline"
@@ -109,12 +137,12 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
                     className="text-destructive hover:text-destructive"
                     onClick={() => setDialog('disable')}
                   >
-                    Turn off
+                    {t('settings.twoFactor.turnOff', 'Turn off')}
                   </Button>
                 </>
               ) : (
                 <Button size="sm" onClick={() => setDialog('enable')}>
-                  Set up
+                  {t('settings.twoFactor.setUp', 'Set up')}
                 </Button>
               )}
             </div>
@@ -157,6 +185,26 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
 
 // ---------------------------------------------------------------------------
 
+function SaveCodesConfirm({
+  id,
+  saved,
+  onSavedChange,
+}: {
+  id: string
+  saved: boolean
+  onSavedChange: (saved: boolean) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox id={id} checked={saved} onCheckedChange={(v) => onSavedChange(v === true)} />
+      <Label htmlFor={id} className="font-normal">
+        {t('settings.twoFactor.codesSaved', 'I have saved my recovery codes')}
+      </Label>
+    </div>
+  )
+}
+
 function EnableTwoFactorDialog({
   open,
   email,
@@ -168,6 +216,9 @@ function EnableTwoFactorDialog({
   onClose: () => void
   onEnabled: () => void
 }) {
+  const { t } = useTranslation()
+  const passwordId = useId()
+  const savedId = useId()
   const { setupTwoFactor, isSettingUp } = useSetupTwoFactor()
   const { enableTwoFactor, isEnabling } = useEnableTwoFactor()
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null)
@@ -176,6 +227,10 @@ function EnableTwoFactorDialog({
   const [error, setError] = useState<string | null>(null)
   const [codes, setCodes] = useState<string[] | null>(null)
   const [saved, setSaved] = useState(false)
+  // Read through a ref so the start-once effect below does not depend on t.
+  const startFailedRef = useRef(
+    t('settings.twoFactor.startFailed', 'Could not start two-factor setup')
+  )
 
   // A setup call issues a new secret and replaces the previous one: call it
   // once per opening (React StrictMode runs effects twice in development).
@@ -195,19 +250,21 @@ function EnableTwoFactorDialog({
     setSaved(false)
     setupTwoFactor()
       .then((res) => setSetup({ secret: res.secret, uri: res.otpauth_uri }))
-      .catch((err) => setError(getErrorMessage(err, 'Could not start two-factor setup')))
+      .catch((err) => setError(getErrorMessage(err, startFailedRef.current)))
   }, [open, setupTwoFactor])
 
-  async function confirm(e: React.FormEvent) {
-    e.preventDefault()
+  async function send(value: string) {
+    if (!setup || !password || value.length !== TOTP_CODE_LENGTH || isEnabling) return
     setError(null)
     try {
-      const recovery = await enableTwoFactor({ password, code })
+      const recovery = await enableTwoFactor({ password, code: value })
       setCodes(recovery)
       onEnabled()
-      toast.success('Two-factor authentication is on')
+      toast.success(t('settings.twoFactor.enabled', 'Two-factor authentication is on'))
     } catch (err) {
-      setError(getErrorMessage(err, 'Invalid verification code'))
+      setError(
+        getErrorMessage(err, t('settings.twoFactor.invalidCode', 'Invalid verification code'))
+      )
       setCode('')
     }
   }
@@ -224,38 +281,42 @@ function EnableTwoFactorDialog({
         {codes ? (
           <>
             <DialogHeader>
-              <DialogTitle>Save your recovery codes</DialogTitle>
+              <DialogTitle>
+                {t('settings.twoFactor.saveCodesTitle', 'Save your recovery codes')}
+              </DialogTitle>
               <DialogDescription>
-                Two-factor authentication is on, and your other sessions were signed out. Use a
-                recovery code to sign in if you lose your authenticator.
+                {t(
+                  'settings.twoFactor.saveCodesBody',
+                  'Two-factor authentication is on, and your other sessions were signed out. Use a recovery code to sign in if you lose your authenticator.'
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody className="grid gap-4">
               <RecoveryCodesPanel codes={codes} accountLabel={email} />
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="enable-codes-saved"
-                  checked={saved}
-                  onCheckedChange={(v) => setSaved(v === true)}
-                />
-                <Label htmlFor="enable-codes-saved" className="font-normal">
-                  I have saved my recovery codes
-                </Label>
-              </div>
+              <SaveCodesConfirm id={savedId} saved={saved} onSavedChange={setSaved} />
             </DialogBody>
             <DialogFooter>
               <Button disabled={!saved} onClick={onClose}>
-                Done
+                {t('settings.twoFactor.done', 'Done')}
               </Button>
             </DialogFooter>
           </>
         ) : (
-          <DialogForm onSubmit={confirm}>
+          <DialogForm
+            onSubmit={(e) => {
+              e.preventDefault()
+              void send(code)
+            }}
+          >
             <DialogHeader>
-              <DialogTitle>Set up two-factor authentication</DialogTitle>
+              <DialogTitle>
+                {t('settings.twoFactor.setUpTitle', 'Set up two-factor authentication')}
+              </DialogTitle>
               <DialogDescription>
-                Scan the QR code with an authenticator app, then enter the 6-digit code it shows and
-                your current password. Turning this on signs out your other sessions.
+                {t(
+                  'settings.twoFactor.setUpBody',
+                  'Scan the QR code with an authenticator app, then enter your current password and the 6-digit code it shows. Turning this on signs out your other sessions.'
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody className="space-y-4">
@@ -270,41 +331,35 @@ function EnableTwoFactorDialog({
                 ) : null}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="enable-password">Current password</Label>
+                <Label htmlFor={passwordId}>
+                  {t('settings.twoFactor.currentPassword', 'Current password')}
+                </Label>
                 <PasswordInput
-                  id="enable-password"
+                  id={passwordId}
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={!setup || isEnabling}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="enable-code">Authentication code</Label>
-                <OneTimeCodeInput
-                  id="enable-code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  disabled={!setup || isEnabling}
-                  aria-invalid={!!error}
-                />
-                {error && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {error}
-                  </p>
-                )}
-              </div>
+              <VerificationCodeInput
+                value={code}
+                onChange={setCode}
+                onComplete={(value) => void send(value)}
+                disabled={!setup || isEnabling}
+                error={error}
+              />
             </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
+                {t('settings.twoFactor.cancel', 'Cancel')}
               </Button>
               <Button
                 type="submit"
-                disabled={!setup || !password || code.length !== 6 || isEnabling}
+                disabled={!setup || !password || code.length !== TOTP_CODE_LENGTH || isEnabling}
               >
-                {isEnabling && <Loader2 className="h-4 w-4 animate-spin" />}
-                Turn on
+                {isEnabling && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+                {t('settings.twoFactor.turnOn', 'Turn on')}
               </Button>
             </DialogFooter>
           </DialogForm>
@@ -325,87 +380,61 @@ function DisableTwoFactorDialog({
   onClose: () => void
   onDisabled: () => void
 }) {
-  const { disableTwoFactor, isDisabling } = useDisableTwoFactor()
+  const { t } = useTranslation()
+  const passwordId = useId()
+  const { disableTwoFactor } = useDisableTwoFactor()
   const [password, setPassword] = useState('')
-  const [code, setCode] = useState('')
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (open) {
-      setPassword('')
-      setCode('')
-      setError(null)
-    }
+    if (open) setPassword('')
   }, [open])
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    try {
-      await disableTwoFactor({ password, code: code.trim() })
-      toast.success('Two-factor authentication is off')
-      onDisabled()
-    } catch (err) {
-      setError(getErrorMessage(err, 'Could not turn off two-factor authentication'))
-    }
-  }
-
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogForm onSubmit={submit}>
-          <DialogHeader>
-            <DialogTitle>Turn off two-factor authentication</DialogTitle>
-            <DialogDescription>
-              {requiredByOrganization
-                ? 'Your organization requires two-factor authentication: you will have to set it up again the next time you sign in.'
-                : 'Signing in will need only your password. We will email you about this change.'}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="disable-password">Current password</Label>
-              <PasswordInput
-                id="disable-password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="disable-code">Authentication code or recovery code</Label>
-              <Input
-                id="disable-code"
-                autoComplete="one-time-code"
-                className="font-mono"
-                placeholder="123456 or xxxxx-xxxxx"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                aria-invalid={!!error}
-              />
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              )}
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="destructive"
-              disabled={!password || code.trim().length < 6 || isDisabling}
-            >
-              {isDisabling && <Loader2 className="h-4 w-4 animate-spin" />}
-              Turn off
-            </Button>
-          </DialogFooter>
-        </DialogForm>
-      </DialogContent>
-    </Dialog>
+    <StepUpDialog
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title={t('settings.twoFactor.turnOffTitle', 'Turn off two-factor authentication')}
+      description={
+        requiredByOrganization
+          ? t(
+              'settings.twoFactor.turnOffRequired',
+              'Your organization requires two-factor authentication: you will have to set it up again the next time you sign in.'
+            )
+          : t(
+              'settings.twoFactor.turnOffBody',
+              'Signing in will need only your password. We will email you about this change.'
+            )
+      }
+      recovery={{ length: ACCOUNT_RECOVERY_CODE.length, groups: [...ACCOUNT_RECOVERY_CODE.groups] }}
+      ready={!!password}
+      destructive
+      submitLabel={t('settings.twoFactor.turnOff', 'Turn off')}
+      onSubmit={async (proof) => {
+        if (proof.kind === 'password') return
+        await disableTwoFactor({ password, code: proof.code })
+        toast.success(t('settings.twoFactor.disabled', 'Two-factor authentication is off'))
+        onDisabled()
+      }}
+      errorMessage={(err) =>
+        getErrorMessage(
+          err,
+          t('settings.twoFactor.disableFailed', 'Could not turn off two-factor authentication')
+        )
+      }
+    >
+      <div className="space-y-2">
+        <Label htmlFor={passwordId}>
+          {t('settings.twoFactor.currentPassword', 'Current password')}
+        </Label>
+        <PasswordInput
+          id={passwordId}
+          autoComplete="current-password"
+          autoFocus
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+    </StepUpDialog>
   )
 }
 
@@ -418,83 +447,52 @@ function RegenerateCodesDialog({
   email?: string
   onClose: () => void
 }) {
-  const { regenerateRecoveryCodes, isRegenerating } = useRegenerateRecoveryCodes()
-  const [code, setCode] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const { t } = useTranslation()
+  const { regenerateRecoveryCodes } = useRegenerateRecoveryCodes()
   const [codes, setCodes] = useState<string[] | null>(null)
 
   useEffect(() => {
-    if (open) {
-      setCode('')
-      setError(null)
-      setCodes(null)
-    }
+    if (open) setCodes(null)
   }, [open])
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    try {
-      setCodes(await regenerateRecoveryCodes(code))
-    } catch (err) {
-      setError(getErrorMessage(err, 'Invalid verification code'))
-      setCode('')
-    }
+  if (codes) {
+    return (
+      <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('settings.twoFactor.newCodesTitle', 'New recovery codes')}</DialogTitle>
+            <DialogDescription>
+              {t('settings.twoFactor.newCodesBody', 'Your old recovery codes no longer work.')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <RecoveryCodesPanel codes={codes} accountLabel={email} />
+          </DialogBody>
+          <DialogFooter>
+            <Button onClick={onClose}>{t('settings.twoFactor.done', 'Done')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        {codes ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>New recovery codes</DialogTitle>
-              <DialogDescription>Your old recovery codes no longer work.</DialogDescription>
-            </DialogHeader>
-            <DialogBody>
-              <RecoveryCodesPanel codes={codes} accountLabel={email} />
-            </DialogBody>
-            <DialogFooter>
-              <Button onClick={onClose}>Done</Button>
-            </DialogFooter>
-          </>
-        ) : (
-          <DialogForm onSubmit={submit}>
-            <DialogHeader>
-              <DialogTitle>Generate new recovery codes</DialogTitle>
-              <DialogDescription>
-                This replaces all of your recovery codes. Enter a code from your authenticator app
-                to confirm.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogBody className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="regen-code">Authentication code</Label>
-                <OneTimeCodeInput
-                  id="regen-code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  aria-invalid={!!error}
-                />
-                {error && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {error}
-                  </p>
-                )}
-              </div>
-            </DialogBody>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={code.length !== 6 || isRegenerating}>
-                {isRegenerating && <Loader2 className="h-4 w-4 animate-spin" />}
-                Generate
-              </Button>
-            </DialogFooter>
-          </DialogForm>
-        )}
-      </DialogContent>
-    </Dialog>
+    <StepUpDialog
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title={t('settings.twoFactor.regenerateTitle', 'Generate new recovery codes')}
+      description={t(
+        'settings.twoFactor.regenerateBody',
+        'This replaces all of your recovery codes. Enter a code from your authenticator app to confirm.'
+      )}
+      submitLabel={t('settings.twoFactor.generate', 'Generate')}
+      onSubmit={async (proof) => {
+        if (proof.kind !== 'totp') return
+        setCodes(await regenerateRecoveryCodes(proof.code))
+      }}
+      errorMessage={(err) =>
+        getErrorMessage(err, t('settings.twoFactor.invalidCode', 'Invalid verification code'))
+      }
+    />
   )
 }
