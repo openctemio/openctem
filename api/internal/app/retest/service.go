@@ -353,6 +353,11 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 	if !retestdom.EligibleStatus(f.Status()) {
 		return nil, nil, "", "", fmt.Errorf("%w: a %s finding is not retested", retestdom.ErrNotEligible, f.Status())
 	}
+	// A leaked secret is not fixed by a check that stops matching it: only
+	// rotation or revocation is, and a person verifies that.
+	if f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret {
+		return nil, nil, "", "", fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible)
+	}
 	templateID := strings.TrimSpace(f.RuleID())
 	tool := findingTool(f)
 	if !validation.ValidRetestTool(tool) || !validRuleID(templateID) {

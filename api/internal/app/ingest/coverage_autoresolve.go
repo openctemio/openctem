@@ -243,6 +243,48 @@ type templateDriftRepo interface {
 	MarkCoverageNotObserved(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
 }
 
+// secretNotObservedRepo is implemented by the postgres finding repository. A
+// leaked secret is not closed by a scan that stops seeing it (removing it from
+// the branch does not revoke it); it is marked stale, with a timeline entry,
+// until it is rotated and a person verifies that.
+type secretNotObservedRepo interface {
+	MarkCoverageSecretsNotObserved(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery) ([]shared.ID, error)
+}
+
+type repoSecretNotObservedRepo interface {
+	MarkRepoCoverageSecretsNotObserved(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery) ([]shared.ID, error)
+}
+
+// markSecretsNotObserved marks the secrets of a covered run that it did not
+// report stale (never resolved). A failure is logged and leaves them open.
+func (s *Service) markSecretsNotObserved(ctx context.Context, tenantID, commandID shared.ID, q ingestreport.CoverageQuery, repoPath bool) []shared.ID {
+	var (
+		marked []shared.ID
+		err    error
+	)
+	if repoPath {
+		r, ok := s.findingRepo.(repoSecretNotObservedRepo)
+		if !ok {
+			return nil
+		}
+		marked, err = r.MarkRepoCoverageSecretsNotObserved(ctx, tenantID, q)
+	} else {
+		r, ok := s.findingRepo.(secretNotObservedRepo)
+		if !ok {
+			return nil
+		}
+		marked, err = r.MarkCoverageSecretsNotObserved(ctx, tenantID, q)
+	}
+	if err != nil {
+		s.logger.Warn("coverage auto-resolve: marking secrets not observed failed", "command_id", commandID.String(), "error", err)
+		return nil
+	}
+	if len(marked) > 0 {
+		metrics.FindingsCoverageAutoResolve.WithLabelValues("secret", "not_observed").Add(float64(len(marked)))
+	}
+	return marked
+}
+
 // splitTemplateDrift separates, from the stale candidates, those whose last
 // sighting recorded a template release other than the run's. A lookup
 // error keeps every candidate open (fail closed): ok is false.
@@ -342,11 +384,18 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		return out
 	}
 
+	// Every move below writes its timeline entry with the scan behind it.
+	ctx = vulnerability.WithTransitionEvidence(ctx, map[string]any{
+		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
+	})
 	stale, open, err := repo.CoverageStaleFindings(ctx, tenantID, d.query)
 	if err != nil {
 		s.logger.Warn("coverage auto-resolve: candidate query failed", "command_id", commandID.String(), "error", err)
 		out.Reason = "error"
 		return out
+	}
+	if mode == CoverageAutoResolveEnforce {
+		out.NotObserved = append(out.NotObserved, s.markSecretsNotObserved(ctx, tenantID, commandID, d.query, false)...)
 	}
 	if len(stale) == 0 {
 		return out
@@ -360,10 +409,6 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	out.WouldResolve, out.TemplateDrift = resolvable, drifted
 	stale = resolvable
 
-	// Every move below writes its timeline entry with the scan behind it.
-	ctx = vulnerability.WithTransitionEvidence(ctx, map[string]any{
-		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
-	})
 	logArgs := []any{
 		"command_id", commandID.String(), "tool_name", sanitizeIngestLogField(d.query.ToolName),
 		"profile_id", d.query.ProfileID, "covered_assets", len(d.query.AssetIDs),
@@ -385,7 +430,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 				if err != nil {
 					s.logger.Warn("coverage auto-resolve: marking template-drifted findings stale failed", append(logArgs, "error", err)...)
 				} else {
-					out.NotObserved = marked
+					out.NotObserved = append(out.NotObserved, marked...)
 					metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "not_observed").Add(float64(len(marked)))
 				}
 			}
@@ -447,21 +492,22 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		return out
 	}
 
+	// Every move below writes its timeline entry with the scan behind it.
+	ctx = vulnerability.WithTransitionEvidence(ctx, map[string]any{
+		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
+	})
 	stale, open, err := repo.RepoCoverageStaleFindings(ctx, tenantID, d.query)
 	if err != nil {
 		s.logger.Warn("repository auto-resolve: candidate query failed", "command_id", commandID.String(), "error", err)
 		out.Reason = "error"
 		return out
 	}
+	out.NotObserved = append(out.NotObserved, s.markSecretsNotObserved(ctx, tenantID, commandID, d.query, true)...)
 	if len(stale) == 0 {
 		return out
 	}
 	out.WouldResolve = stale
 	out.Held = guard.Holds(len(stale), open)
-	// Every move below writes its timeline entry with the scan behind it.
-	ctx = vulnerability.WithTransitionEvidence(ctx, map[string]any{
-		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
-	})
 	logArgs := []any{
 		"command_id", commandID.String(), "tool_name", sanitizeIngestLogField(d.query.ToolName),
 		"profile_id", d.query.ProfileID, "covered_assets", len(d.query.AssetIDs),
