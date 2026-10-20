@@ -1,0 +1,167 @@
+# GitLab CI: build the OpenCTEM images from the release ARCHIVES (no source
+# code), scan them, sign them with YOUR key and push them to your registry.
+# Guide: api/docs/deployment/air-gapped.md ("Build images from the release
+# archives").
+#
+# fetch (assets + signed checksums verified) -> build (kaniko, rootless, one
+# job per image and arch; the kit's Dockerfiles only COPY files, so arm64
+# images build on amd64 runners without emulation) -> index (multi-arch) ->
+# scan (Trivy) -> sign (cosign, your key) -> promote (staging -> trusted).
+#
+# Rebuilt images have NEW digests and do NOT carry the release's signatures:
+# what you can verify is that they were built from archives the release
+# signed (fetch stage) and, afterwards, your own signature (sign stage).
+# Enforce YOUR key in the cluster (templates/kyverno-verify-openctem-images.yaml
+# with a `keys:` attestor instead of `keyless:`).
+#
+# Runner: unprivileged (no privileged mode, no Docker socket).
+# CI/CD variables (protected; masked where secret):
+#   OPENCTEM_VERSION      release to build, e.g. v0.13.0 (a pipeline input)
+#   TOOLS_IMAGE           image with bash, curl, jq, tar, cosign, crane, trivy
+#                         (Dockerfile.ci-tools)
+#   KANIKO_IMAGE          a kaniko executor image (":debug" variant, it has a
+#                         shell) from your registry, pinned by digest
+#   RELEASES_BASE_URL     release assets (your Nexus raw proxy of github.com)
+#   BASE_REGISTRY_PREFIX  where your registry serves the base images, e.g.
+#                         harbor.example.internal/dockerhub-proxy
+#                         (gcr.io/distroless/... and docker.io/library/...
+#                         paths below it)
+#   DEST_STAGING, DEST_TRUSTED, REGISTRY_HOST, REGISTRY_USER, REGISTRY_PASSWORD
+#   COSIGN_PRIVATE_KEY (file variable, masked), COSIGN_PASSWORD (masked)
+#                         or COSIGN_KEY_REF=hashivault://... / awskms://... / gcpkms://...
+#   COSIGN_PUBLIC_KEY     (file variable) the matching public key, checked before promotion
+#   TRIVY_DB_REPOSITORY, TRIVY_JAVA_DB_REPOSITORY, TRIVY_SEVERITY
+
+workflow:
+  rules:
+    - if: $OPENCTEM_VERSION
+
+stages: [fetch, build, index, scan, sign, promote]
+
+variables:
+  KIT: openctem-image-kit-${OPENCTEM_VERSION}
+
+.registry-login: &registry-login
+  - mkdir -p "$HOME/.docker"
+  - printf '{"auths":{"%s":{"auth":"%s"}}}' "$REGISTRY_HOST" "$(printf '%s:%s' "$REGISTRY_USER" "$REGISTRY_PASSWORD" | base64 -w0)" > "$HOME/.docker/config.json"
+
+fetch:
+  stage: fetch
+  image: $TOOLS_IMAGE
+  script:
+    - set -euo pipefail
+    - |
+      files="openctem-image-kit-${OPENCTEM_VERSION}.tar.gz"
+      for a in amd64 arm64; do
+        files="$files openctem-server-${OPENCTEM_VERSION}-linux-$a.tar.gz openctem-gateway-${OPENCTEM_VERSION}-linux-$a.tar.gz"
+        files="$files openctem-web-${OPENCTEM_VERSION}-linux-$a.tar.gz openctem-console-${OPENCTEM_VERSION}-linux-$a.tar.gz"
+        files="$files bootstrap-admin-${OPENCTEM_VERSION}-linux-$a.tar.gz"
+      done
+      # shellcheck disable=SC2086
+      bash scripts/fetch-release.sh "$OPENCTEM_VERSION" assets $files
+    - tar -C . -xzf "assets/${KIT}.tar.gz"
+    - bash "${KIT}/image-kit/unpack.sh" assets "$OPENCTEM_VERSION"
+  artifacts:
+    paths: ["${KIT}/"]
+    expire_in: 1 day
+
+build:
+  stage: build
+  needs: [fetch]
+  image:
+    name: $KANIKO_IMAGE
+    entrypoint: [""]
+  parallel:
+    matrix:
+      - IMAGE: [api, migrations, seed, admin-cli, gateway, web, console]
+        ARCH: [amd64, arm64]
+  script:
+    - *registry-login
+    - |
+      case "$IMAGE" in
+        api|admin-cli) base="${BASE_REGISTRY_PREFIX}/gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3" ;;
+        web|console) base="${BASE_REGISTRY_PREFIX}/gcr.io/distroless/nodejs26-debian13:nonroot@sha256:bf14c9d80c1cc1430416fc164f7eb4b7b7a754259010530feac065dccd98035c" ;;
+        seed) base="${BASE_REGISTRY_PREFIX}/library/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873" ;;
+        *) base="${BASE_REGISTRY_PREFIX}/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6" ;;
+      esac
+      case "$IMAGE" in api) name=openctem-api ;; web) name=openctem-web ;; console) name=openctem-console ;; gateway) name=openctem-gateway ;; *) name="$IMAGE" ;; esac
+      /kaniko/executor \
+        --context "dir://${CI_PROJECT_DIR}/${KIT}/image-kit" \
+        --dockerfile "${CI_PROJECT_DIR}/${KIT}/image-kit/Dockerfile.${IMAGE}" \
+        --custom-platform "linux/${ARCH}" \
+        --build-arg "TARGETARCH=${ARCH}" \
+        --build-arg "BASE_IMAGE=${base}" \
+        --destination "${DEST_STAGING}/${name}:${OPENCTEM_VERSION}-${ARCH}" \
+        --digest-file "digest-${IMAGE}-${ARCH}" \
+        --reproducible --single-snapshot
+      echo "${name} ${ARCH} $(cat "digest-${IMAGE}-${ARCH}")" > "built-${IMAGE}-${ARCH}.txt"
+  artifacts:
+    paths: ["built-*.txt"]
+    expire_in: 1 day
+
+index:
+  stage: index
+  needs: [build]
+  image: $TOOLS_IMAGE
+  script:
+    - set -euo pipefail
+    - *registry-login
+    - |
+      : > staging.txt
+      for name in openctem-api migrations seed admin-cli openctem-gateway openctem-web openctem-console; do
+        ref="${DEST_STAGING}/${name}:${OPENCTEM_VERSION}"
+        crane index append -t "$ref" \
+          -m "${DEST_STAGING}/${name}@$(awk -v n="$name" '$1==n && $2=="amd64" {print $3}' built-*.txt)" \
+          -m "${DEST_STAGING}/${name}@$(awk -v n="$name" '$1==n && $2=="arm64" {print $3}' built-*.txt)"
+        echo "${name} ${ref} $(crane digest "$ref")" >> staging.txt
+      done
+  artifacts:
+    paths: [staging.txt]
+    expire_in: 1 year
+
+scan:
+  stage: scan
+  needs: [fetch, index]
+  image: $TOOLS_IMAGE
+  script:
+    - set -euo pipefail
+    - *registry-login
+    - bash scripts/scan-images.sh staging.txt
+  artifacts:
+    when: always
+    paths: ["trivy-*.json"]
+    expire_in: 1 year
+
+sign:
+  stage: sign
+  needs: [index, scan]
+  image: $TOOLS_IMAGE
+  script:
+    - set -euo pipefail
+    - *registry-login
+    - key="${COSIGN_KEY_REF:-${COSIGN_PRIVATE_KEY:?set COSIGN_PRIVATE_KEY or COSIGN_KEY_REF}}"
+    - |
+      while read -r name ref digest; do
+        case "$name" in ""|\#*) continue ;; esac
+        cosign sign --yes --tlog-upload=false --key "$key" \
+          -a "openctem.release=${OPENCTEM_VERSION}" "${ref%:*}@${digest}"
+      done < staging.txt
+
+promote:
+  stage: promote
+  needs: [index, sign]
+  image: $TOOLS_IMAGE
+  script:
+    - set -euo pipefail
+    - *registry-login
+    - |
+      : > trusted.txt
+      while read -r name ref digest; do
+        case "$name" in ""|\#*) continue ;; esac
+        cosign verify --insecure-ignore-tlog=true --key "${COSIGN_PUBLIC_KEY:?}" "${ref%:*}@${digest}" > /dev/null
+        cosign copy --force "${ref%:*}@${digest}" "${DEST_TRUSTED}/${name}:${OPENCTEM_VERSION}"
+        echo "${name} ${DEST_TRUSTED}/${name}:${OPENCTEM_VERSION} ${digest}" >> trusted.txt
+      done < staging.txt
+  artifacts:
+    paths: [trusted.txt]
+    expire_in: 1 year

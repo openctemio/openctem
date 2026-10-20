@@ -42,6 +42,9 @@ type GitHubTicketInput struct {
 	FindingID string
 	Owner     string
 	Repo      string
+	// Route is the path the request came by (set by server callers only);
+	// the zero value is the generic finding route.
+	Route Route
 }
 
 // issueCreator is the minimal slice of the SCM GitHub client the service needs.
@@ -86,7 +89,13 @@ type GitHubTicketService struct {
 	// webhook's move is also decided by the scheme selected for the
 	// finding, which can only narrow it. nil = the platform alone.
 	lifecycles lifecycleSchemes
+
+	// egress is the outbound gate (egress.go); nil refuses pentest content.
+	egress *EgressGate
 }
+
+// SetEgressGate wires the outbound gate.
+func (s *GitHubTicketService) SetEgressGate(g *EgressGate) { s.egress = g }
 
 // lifecycleSchemes returns a tenant's published finding lifecycle schemes.
 type lifecycleSchemes interface {
@@ -158,6 +167,9 @@ func (s *GitHubTicketService) CreateTicketFromFinding(ctx context.Context, in Gi
 	if err != nil {
 		return nil, fmt.Errorf("get finding: %w", err)
 	}
+	if err := s.egress.Check(ctx, tenantID, in.Route, finding); err != nil {
+		return nil, err
+	}
 
 	// Idempotency: if a GitHub issue for THIS repo is already linked, return it
 	// instead of creating a duplicate.
@@ -225,6 +237,15 @@ func (s *GitHubTicketService) SyncFindingStatus(ctx context.Context, tenantID, f
 	owner, repo, number, issueURL, ok := firstGitHubIssue(finding.WorkItemURIs())
 	if !ok {
 		return nil // finding isn't linked to a GitHub issue — nothing to sync
+	}
+	if err := s.egress.Check(ctx, tenantID, RouteStatusSync, finding); err != nil {
+		var refused *EgressRefusedError
+		if errors.As(err, &refused) {
+			s.logger.Info("github outbound: push skipped by the outbound gate",
+				"finding_id", findingID.String(), "reason", string(refused.Reason))
+			return nil
+		}
+		return err
 	}
 
 	desired := "open"
@@ -302,13 +323,14 @@ func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID sh
 // issueTitle is the GitHub issue title (plain text, at most 256 characters):
 // secret-redacted, cleaned of control and bidi characters, one line, capped.
 func issueTitle(finding *vulnerability.Finding) string {
-	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())), safetext.MaxTitleRunes)
+	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), OutboundTitle(finding))), safetext.MaxTitleRunes)
 }
 
 // buildIssueBody renders the markdown body of the issue, mirroring the
-// semantics of the Jira description. For secret findings the raw description is
-// OMITTED — only the masked value and a pointer to the platform are included,
-// so the credential is never written into a third-party ticket.
+// semantics of the Jira description. What text may leave is the outbound
+// gate's decision (FindingContent): a secret finding sends its location only
+// (no description, preview, snippet, fingerprint or commit context), a
+// finding that exposes data sends no free text at all.
 //
 // Every value from the finding is attacker-influenced (a scanned page, a file
 // path, a sensor report). One-line values go into code spans and the
@@ -326,14 +348,17 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 	}
 	b.WriteString("\n")
 
-	if isSecretFinding(finding) {
-		b.WriteString("> A secret/credential was detected. The raw value is intentionally omitted from this issue.\n\n")
-		if masked := finding.SecretMaskedValue(); masked != "" {
-			fmt.Fprintf(&b, "**Masked value:** %s\n\n", safetext.MarkdownInline(masked, safetext.MaxInlineRunes))
-		}
+	switch FindingContent(finding) {
+	case ContentSecret:
+		b.WriteString("> A secret/credential was detected. Its value is not sent to trackers.\n\n")
 		b.WriteString("Open the finding in " + brand.Name() + " for full details.\n")
 		appendMobilizationBrief(&b, finding)
 		return b.String()
+	case ContentPersonalData:
+		b.WriteString("> This finding exposes data. Its details are not sent to trackers.\n\n")
+		b.WriteString("Open the finding in " + brand.Name() + " for full details.\n")
+		return b.String()
+	case ContentFull:
 	}
 
 	if desc := strings.TrimSpace(finding.Description()); desc != "" {
@@ -358,12 +383,6 @@ func appendMobilizationBrief(b *strings.Builder, finding *vulnerability.Finding)
 	b.WriteString("\n")
 	b.WriteString(safetext.MarkdownBlock(safetext.RedactSecrets(brief), safetext.MaxBriefRunes))
 	b.WriteString("\n")
-}
-
-// isSecretFinding reports whether a finding represents an exposed secret.
-func isSecretFinding(finding *vulnerability.Finding) bool {
-	return finding.Source() == vulnerability.FindingSourceSecret ||
-		finding.FindingType() == vulnerability.FindingTypeSecret
 }
 
 // findingLocation builds a "file:line" location string when available.

@@ -16,12 +16,22 @@ const mockTrigger = vi.fn()
 let mockRetests: FindingRetest[] = []
 let mockCanRetest = true
 let mockHasPermission = (_: string) => true
+let mockRetestsFor: string | null = null
+let mockCheck: { id: string; template_name: string } | null = null
+
+vi.mock('../../../api/use-finding-retest-check', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../api/use-finding-retest-check')>()
+  return { ...real, useFindingRetestCheck: () => ({ data: { check: mockCheck } }) }
+})
 
 vi.mock('../../../api/use-finding-retests', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../api/use-finding-retests')>()
   return {
     ...real,
-    useFindingRetests: () => ({ data: { data: mockRetests, can_retest: mockCanRetest } }),
+    useFindingRetests: (id: string | null) => {
+      mockRetestsFor = id
+      return { data: id ? { data: mockRetests, can_retest: mockCanRetest } : undefined }
+    },
     useRequestRetest: () => ({ trigger: mockTrigger, isMutating: false }),
   }
 })
@@ -67,6 +77,8 @@ describe('FindingRetestSection', () => {
     mockRetests = []
     mockCanRetest = true
     mockHasPermission = () => true
+    mockCheck = null
+    mockRetestsFor = null
   })
 
   it('offers Retest now on a nuclei finding to a user with findings:verify', async () => {
@@ -103,6 +115,31 @@ describe('FindingRetestSection', () => {
       <FindingRetestSection finding={{ id: 'f-2', toolName: 'trivy', status: 'confirmed' }} />
     )
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('offers Retest now on a finding without a tool rule once a retest check is attached', async () => {
+    mockCheck = { id: 'c-1', template_name: 'Reflected XSS on /search' }
+    render(<FindingRetestSection finding={{ id: 'f-3', status: 'confirmed', source: 'manual' }} />)
+    expect(mockRetestsFor).toBe('f-3')
+    expect(screen.getByText(/runs the custom check Reflected XSS on \/search/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
+    expect(mockTrigger).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the custom check on a retest that ran it', () => {
+    mockCheck = { id: 'c-1', template_name: 'Reflected XSS on /search' }
+    mockRetests = [
+      retest({
+        outcome: 'still_vulnerable',
+        retest_check_id: 'c-1',
+        check_digest: 'sha256:abcdef1234567890',
+      } as Partial<FindingRetest>),
+    ]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    expect(
+      screen.getByText(/Checked with custom check Reflected XSS on \/search/)
+    ).toBeInTheDocument()
+    expect(screen.getByText('(sha256:abcdef123456)')).toBeInTheDocument()
   })
 
   it('shows an unreachable target as inconclusive, with the reason', () => {

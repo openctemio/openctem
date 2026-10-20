@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Table,
   TableBody,
@@ -23,7 +22,7 @@ import { LIMIT_KEYS, parseLimit, UNLIMITED, type LimitKey } from '@/features/lim
 import type { SelfServiceLimitsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveSelfServiceLimits } from '../api/use-limits'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 type Values = Record<LimitKey, string>
@@ -225,20 +224,13 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
           )
         }
       >
-        <div className="space-y-2">
-          <Label htmlFor={codeId}>{t('limits.console.code', 'Code from your authenticator')}</Label>
-          <Input
-            id={codeId}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={8}
-            aria-invalid={!!codeError}
-          />
-          <StepUpCodeHint optional={codeOptional} />
-          {codeError && <p className="text-sm text-destructive">{codeError}</p>}
-        </div>
+        <StepUpCodeField
+          id={codeId}
+          value={code}
+          onChange={setCode}
+          optional={codeOptional}
+          error={codeError}
+        />
       </ConfirmDialog>
     </>
   )

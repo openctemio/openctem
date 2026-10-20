@@ -14,12 +14,11 @@ import {
   DialogForm,
   DialogBody,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 /** Shortest reason the console accepts for a sensitive action. */
 export const REASON_MIN = 10
@@ -164,21 +163,12 @@ export function AdminConfirmDialog({
               </p>
             </div>
             {requireCode && (
-              <div className="space-y-1.5">
-                <Label htmlFor={codeId}>
-                  {t('admin.confirm.code', 'Code from your authenticator')}
-                </Label>
-                <Input
-                  id={codeId}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  className="w-36 font-mono tracking-widest"
-                  required={!codeOptional}
-                />
-                <StepUpCodeHint optional={codeOptional} />
-              </div>
+              <StepUpCodeField
+                id={codeId}
+                value={code}
+                onChange={setCode}
+                optional={codeOptional}
+              />
             )}
             {error && (
               <Alert variant="destructive">
