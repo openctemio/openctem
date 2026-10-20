@@ -3203,6 +3203,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	if s.Scan != nil {
 		s.Scan.SetOwnerNotifications(repos.MemberLifecycle, s.Notification)
 	}
+	// A new task owner and the owners of tasks a move touches are told in the
+	// app; the inbox and push show a task notice only to members who can read
+	// one of its findings.
+	if s.RemediationTask != nil && s.Notification != nil {
+		s.RemediationTask.SetNotifier(s.Notification)
+	}
 	// Tasks from a query: the query runs as the creator; auto mode re-reads
 	// the owner's membership and permissions on every run and tells them
 	// of additions and suspensions.
