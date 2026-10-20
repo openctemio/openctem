@@ -10,7 +10,7 @@ func TestSanitizeExternalName(t *testing.T) {
 		"Dana K.":                        "Dana K.",
 		"<img src=x onerror=alert(1)>Al": "Al",
 		"a<b":                            "ab",
-		"‮evil‬ name\x00":                "evil name",
+		"\u202eevil\u202c name\x00":      "evil name",
 		"two\nlines\tand  spaces":        "two lines and spaces",
 	} {
 		if got := SanitizeExternalName(in); got != want {
@@ -20,7 +20,7 @@ func TestSanitizeExternalName(t *testing.T) {
 	if got := SanitizeExternalName(strings.Repeat("x", 1000)); len([]rune(got)) != MaxExternalAssigneeName {
 		t.Errorf("length %d, want capped at %d", len([]rune(got)), MaxExternalAssigneeName)
 	}
-	if got := SanitizeExternalID(" 5b10 ac8d​\n" + strings.Repeat("a", 200)); strings.ContainsAny(got, " \n​") || len(got) > MaxExternalAssigneeID {
+	if got := SanitizeExternalID(" 5b10 ac8d\u200b\n" + strings.Repeat("a", 200)); strings.ContainsAny(got, " \n\u200b") || len(got) > MaxExternalAssigneeID {
 		t.Errorf("SanitizeExternalID = %q", got)
 	}
 }

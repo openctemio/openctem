@@ -48,7 +48,7 @@ func TestRecordExternalChange_AssigneeWithoutStatusChange(t *testing.T) {
 	s.SetMappingResolver(stubMappingResolver{mapping: DefaultMappingConfig()})
 
 	now := time.Now()
-	p := assigned("200", "SEC-1", "5b10ac8d82e05b22cc7d4ef5", "<b>Dana</b> ‮K.\x00 <script>x</script>", now)
+	p := assigned("200", "SEC-1", "5b10ac8d82e05b22cc7d4ef5", "<b>Dana</b> \u202eK.\x00 <script>x</script>", now)
 	if err := s.RecordExternalChange(context.Background(), tenant, intgB, p); err != nil {
 		t.Fatal(err)
 	}
