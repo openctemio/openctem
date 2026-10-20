@@ -1,3 +1,0 @@
-### Added: GitHub repository rename, transfer and archive events keep assets and CI pipelines in step
-
-- The GitHub App webhook now handles `repository` events. `renamed` and `transferred` rename the repository's asset and CI pipelines, found by GitHub's immutable repository id inside the organization the installation is bound to (a name another asset holds is left alone). `archived` flags the repository's pipelines as archived (no stale alerts, findings not marked not observed) and `unarchived` revives them. CI trust configurations are never edited by a webhook. Subscribe the app to the **Repository** event (new apps from the manifest in the how-to already do). Migration adds `ci_pipelines.repository_archived_at`.
