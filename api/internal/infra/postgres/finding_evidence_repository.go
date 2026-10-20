@@ -341,6 +341,9 @@ func (r *FindingEvidenceRepository) CountSince(ctx context.Context, tenantID sha
 func (r *FindingEvidenceRepository) DeleteExpired(ctx context.Context, now time.Time, retention time.Duration) (int64, int64, error) {
 	var secrets, records int64
 	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `DELETE FROM finding_evidence_secrets WHERE expires_at <= $1`, now)
 		if err != nil {
 			return fmt.Errorf("delete expired evidence secrets: %w", err)

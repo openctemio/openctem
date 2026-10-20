@@ -278,8 +278,8 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	if err := fresh.QueryRowContext(ctx, `SELECT current_setting('statement_timeout'), current_setting('idle_in_transaction_session_timeout')`).Scan(&stmt, &idle); err != nil {
 		t.Fatal(err)
 	}
-	if stmt != "30s" || idle != "1min" {
-		t.Errorf("app role limits = statement_timeout %q, idle_in_transaction_session_timeout %q; want 30s and 1min", stmt, idle)
+	if stmt != "1min" || idle != "1min" {
+		t.Errorf("app role limits = statement_timeout %q, idle_in_transaction_session_timeout %q; want 1min and 1min", stmt, idle)
 	}
 	_ = fresh.Close()
 	if out, err := run("app_user="+appRole, "migrator_user="+migRole, "app_statement_timeout=1s"); err != nil {

@@ -134,16 +134,54 @@ migrator, whose migrations may run long):
 
 | psql variable | Default | Setting |
 |---|---|---|
-| `app_statement_timeout` | `30s` | `statement_timeout`: a query running longer is cancelled |
+| `app_statement_timeout` | `60s` | `statement_timeout`: a query running longer is cancelled |
 | `app_idle_in_transaction_timeout` | `60s` | `idle_in_transaction_session_timeout`: a session idle inside a transaction is closed |
 
 A runaway query or a transaction left open by a crashed worker otherwise holds
 locks and keeps vacuum from cleaning the tables it touched. `0` turns a limit
 off. The values apply to new connections, so restart the API after changing
-them. A statement that legitimately needs longer raises its own limit inside
-its transaction (`SET LOCAL statement_timeout = '5min'`), as the finding export
-and the endpoint lists already do. Look for `canceling statement due to
-statement timeout` (SQLSTATE 57014) in the API log after an upgrade.
+them.
+
+**Tuning.** Look for `canceling statement due to statement timeout` (SQLSTATE
+57014) in the API log after an upgrade. A statement that is cancelled and is
+legitimate should raise its own limit in code (below); raise
+`app_statement_timeout` only when many interactive statements on a very large
+install need it, for example
+`psql -f least-privilege-roles.sql -v app_statement_timeout=120s`, or in
+compose set it where the `db-roles` job reads it and re-run `up`. Lower values
+are fine on small installs. The idle-in-transaction limit should stay above the
+longest pause between two statements of one transaction (an ingest batch
+computing between statements stays well under 60s).
+
+### Long statements
+
+A statement that can legitimately outlast the role limit at scale raises its
+own limit for its transaction with `SET LOCAL statement_timeout`, to one of two
+bounded values (`internal/infra/postgres/statement_timeout.go`): 5 minutes for
+one batched write and 15 minutes for one set-based statement over a table or
+tenant. The helper refuses anything above 30 minutes, and the role limit
+returns at commit. Every controller states how its SQL stays bounded in
+`internal/infra/controller/statement_profile.go` (`light`, `batched` or
+`long`); a test fails when a controller has no entry, so a new background job
+must choose.
+
+| Job | Statements | Limit |
+|---|---|---|
+| EPSS and KEV sync | full-feed upsert (temp table, chunked KEV upserts), prune, catalog propagation | 15 min / 5 min |
+| Finding priority | EPSS/KEV intel enqueue, per-tenant reconcile enqueue, finding EPSS refresh batches | 15 min / 5 min |
+| Dashboard facts | dirty-queue processing, full run steps, day-partition upkeep | 5 min / 15 min |
+| CVE feed import | corpus chunk apply, bundle finish | 15 min |
+| Software match | version vulnerability replace, invalidation after a feed delta | 5 min |
+| Vulnerability events | corpus baseline, KEV and EPSS state sync, retention delete | 15 min / 5 min |
+| Retention | audit chain prefix prune, finding evidence deletes, CI run token clearing, attachment orphan marking, web evidence deletes, sensor result purge, ingest report expiry | 5 min |
+| Ingest | asset batch upserts, finding batch create and enrich, package writer, ingest payload clearing | 5 min |
+| Asset merge | every re-key and delete of one merge | 15 min |
+| Repository merge, program asset sync, attribution links, license verdicts | one transaction each | 5 / 15 min |
+| Interactive reads | finding list 5s, endpoint list 3s, query engine 5s, finding export 60s | at or below the role limit, on purpose |
+
+Work that is already in keyset or `LIMIT` batches (coverage planner, backfills,
+the other sweeps and expiry jobs) stays under the role limit by construction
+and sets nothing.
 
 ### Compression of large values
 

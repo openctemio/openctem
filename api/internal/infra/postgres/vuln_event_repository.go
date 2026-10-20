@@ -50,6 +50,9 @@ func (r *VulnEventRepository) BaselineCorpus(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return 0, err
+	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO vuln_event_state (vuln_id, status, severity, cvss_score, product_ids, range_count)
 		SELECT r.cve_id, r.status, COALESCE(r.severity, ''), r.cvss_score,
@@ -280,6 +283,9 @@ func (r *VulnEventRepository) SyncKEV(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return 0, err
+	}
 	seen, err := cursorExists(ctx, tx, cursorKEV)
 	if err != nil {
 		return 0, err
@@ -336,6 +342,9 @@ func (r *VulnEventRepository) SyncEPSS(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return 0, err
+	}
 	seen, err := cursorExists(ctx, tx, cursorEPSS)
 	if err != nil {
 		return 0, err
@@ -372,7 +381,7 @@ func (r *VulnEventRepository) SyncEPSS(ctx context.Context) (int, error) {
 
 // Prune (see vulnevent.Store).
 func (r *VulnEventRepository) Prune(ctx context.Context, before time.Time) (int64, error) {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM vuln_events WHERE at < $1`, before)
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `DELETE FROM vuln_events WHERE at < $1`, before)
 	if err != nil {
 		return 0, fmt.Errorf("prune vuln events: %w", err)
 	}

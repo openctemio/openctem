@@ -20,7 +20,7 @@
 --        -f least-privilege-roles.sql
 --
 -- Optional variables: app_user (openctem_app), migrator_user
--- (openctem_migrator), app_statement_timeout (30s) and
+-- (openctem_migrator), app_statement_timeout (60s) and
 -- app_idle_in_transaction_timeout (60s): role-level limits of the app role, so
 -- a runaway query or a transaction left open by a crashed worker cannot hold
 -- locks and block vacuum. 0 turns a limit off. They apply to new connections
@@ -50,7 +50,7 @@
 \endif
 \if :{?app_statement_timeout}
 \else
-  \set app_statement_timeout 30s
+  \set app_statement_timeout 60s
 \endif
 \if :{?app_idle_in_transaction_timeout}
 \else

@@ -239,6 +239,9 @@ func (w *SoftwarePackageWriter) WritePackages(ctx context.Context, tenantID shar
 		return res, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return res, err
+	}
 
 	products, created, err := resolvePackageProducts(ctx, tx, tenantID, idents, names)
 	if err != nil {

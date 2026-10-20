@@ -44,6 +44,9 @@ func (r *CVECorpusRepository) ApplyFeedChunk(ctx context.Context, c cvecorpus.Ch
 		return res, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return res, err
+	}
 	if err := r.feedCheckpoint().AdvanceTx(ctx, tx, next); err != nil {
 		return res, err
 	}
@@ -338,6 +341,9 @@ func (r *CVECorpusRepository) FinishFeedBundle(ctx context.Context, f cvecorpus.
 		return res, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return res, err
+	}
 	if err := r.feedCheckpoint().CompleteTx(ctx, tx, done); err != nil {
 		return res, err
 	}

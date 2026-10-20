@@ -227,7 +227,7 @@ func (r *ScoringRepository) EnqueueReconcile(ctx context.Context, delay time.Dur
 		// A batch racing an asset delete (foreign key violation) is retried:
 		// its next snapshot no longer sees the asset.
 		for attempt := 0; attempt < 3; attempt++ {
-			err = r.db.QueryRowContext(ctx, q, tid, delay.Seconds(), scoring.PriorityModelVersion).Scan(&n)
+			err = queryRowWithTimeout(ctx, r.db.DB, timeoutHeavy, q, []any{tid, delay.Seconds(), scoring.PriorityModelVersion}, &n)
 			if !isForeignKeyViolation(err) {
 				break
 			}
@@ -423,7 +423,7 @@ func (r *ScoringRepository) EnqueueIntelChanges(ctx context.Context) (int64, err
 		var res sql.Result
 		var err error
 		for attempt := 0; attempt < 3; attempt++ {
-			res, err = r.db.ExecContext(ctx, q)
+			res, err = execWithTimeout(ctx, r.db.DB, timeoutHeavy, q)
 			if !isForeignKeyViolation(err) {
 				break
 			}
@@ -552,7 +552,7 @@ func (r *ScoringRepository) RefreshFindingEPSS(ctx context.Context) (int64, erro
 			if err := ctx.Err(); err != nil {
 				return total, err
 			}
-			res, err := r.db.ExecContext(ctx, q, tid, epssRefreshBatch)
+			res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, q, tid, epssRefreshBatch)
 			if err != nil {
 				return total, fmt.Errorf("refresh finding epss: %w", err)
 			}

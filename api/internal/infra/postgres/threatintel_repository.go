@@ -101,7 +101,7 @@ const (
 func (r *ThreatIntelRepository) PropagateToVulnerabilityCatalog(ctx context.Context) (int64, error) {
 	var total int64
 	for _, q := range []string{catalogFromEPSS, catalogFromKEV, catalogClearKEV} {
-		res, err := r.db.ExecContext(ctx, q)
+		res, err := execWithTimeout(ctx, r.db.DB, timeoutHeavy, q)
 		if err != nil {
 			return total, fmt.Errorf("propagate threat intel to catalog: %w", err)
 		}
@@ -206,6 +206,10 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	// A full feed (hundreds of thousands of rows) can outlast the app role's limit.
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return err
+	}
 
 	// Create temp table
 	_, err = tx.ExecContext(ctx, `
@@ -592,7 +596,7 @@ func (r *KEVRepository) UpsertBatch(ctx context.Context, entries []*threatintel.
 			updated_at = NOW()
 	`, strings.Join(valueStrings, ", "))
 
-	_, err := r.db.ExecContext(ctx, query, valueArgs...)
+	_, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, query, valueArgs...)
 	if err != nil {
 		return fmt.Errorf("failed to upsert KEV entries: %w", err)
 	}
@@ -817,7 +821,7 @@ func (r *KEVRepository) Count(ctx context.Context) (int64, error) {
 
 // PruneNotIn removes the KEV entries whose CVE is not in keep.
 func (r *KEVRepository) PruneNotIn(ctx context.Context, keep []string) (int64, error) {
-	res, err := r.db.ExecContext(ctx,
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch,
 		`DELETE FROM kev_catalog WHERE NOT (cve_id = ANY($1))`, pq.Array(keep))
 	if err != nil {
 		return 0, fmt.Errorf("failed to prune KEV catalog: %w", err)
