@@ -26,7 +26,7 @@ test('create a task from findings, then hold and resume it', async ({ page }) =>
     .check()
 
   // The bulk bar offers the remediation task; the dialog starts on "New task".
-  await page.getByRole('button', { name: 'Remediation task' }).click()
+  await page.getByRole('button', { name: 'Remediation task', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('heading', { name: 'Add 2 findings to remediation' })).toBeVisible()
   await dialog.getByLabel('Task title').fill(title)
@@ -34,7 +34,7 @@ test('create a task from findings, then hold and resume it', async ({ page }) =>
 
   // Created: the toast names the task and opens it.
   await expect(page.getByText(`Task ${title} created`)).toBeVisible({ timeout: 15_000 })
-  await page.getByRole('button', { name: 'Open task' }).click()
+  await page.getByRole('button', { name: 'Open task', exact: true }).click()
   await expect(page).toHaveURL(/\/remediation\/tasks\/[0-9a-f-]+$/)
   await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible()
   await expect(page.getByText('Open', { exact: true }).first()).toBeVisible()
