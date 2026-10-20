@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -126,7 +127,15 @@ type PentestSettings struct {
 	// RequireAuthorizationBeforeStart: a campaign cannot start testing until
 	// its signed authorization letter is linked. Off by default.
 	RequireAuthorizationBeforeStart bool `json:"require_authorization_before_start"`
+	// TicketMaxTLP is the most restrictive TLP level of a campaign whose
+	// findings may be sent to a tracker (Jira, GitHub Issues) from the
+	// campaign; "" means amber. TLP:RED is never sent, so "red" is refused
+	// here (docs/architecture/ticketing-integration.md, "Outbound gate").
+	TicketMaxTLP string `json:"ticket_max_tlp,omitempty"`
 }
+
+// TicketMaxTLPValues are the accepted tracker TLP limits ("" = amber).
+var TicketMaxTLPValues = []string{"clear", "green", "amber", "amber_strict"}
 
 // ConfigOption represents a configurable option with value and label.
 type ConfigOption struct {
@@ -162,6 +171,10 @@ func (s *PentestSettings) Validate() error {
 			return fmt.Errorf("%w: duplicate methodology value: %s", shared.ErrValidation, m.Value)
 		}
 		seen[m.Value] = true
+	}
+
+	if s.TicketMaxTLP != "" && !slices.Contains(TicketMaxTLPValues, s.TicketMaxTLP) {
+		return fmt.Errorf("%w: ticket_max_tlp must be one of clear, green, amber, amber_strict (TLP:RED is never sent to a tracker)", shared.ErrValidation)
 	}
 
 	return nil
