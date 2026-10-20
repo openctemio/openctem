@@ -39,18 +39,19 @@ func NewFindingRetestRepository(db *DB) *FindingRetestRepository {
 
 const findingRetestColumns = `id, tenant_id, finding_id, asset_id, trigger, requested_by, status, outcome, reason,
 	reason_code, sensor_id, prior_status, result_status, template_id, target, check_command_id, reach_command_id,
-	deadline_at, created_at, completed_at, run_id`
+	deadline_at, created_at, completed_at, run_id, retest_check_id, check_digest, check_path`
 
 // Create inserts a pending retest. A second pending retest of the same finding
 // violates ux_finding_retests_one_pending and returns retest.ErrInFlight.
 func (r *FindingRetestRepository) Create(ctx context.Context, rt *retest.Retest) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO finding_retests (id, tenant_id, finding_id, asset_id, trigger, requested_by, status,
-			prior_status, template_id, target, deadline_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11)`,
+			prior_status, template_id, target, deadline_at, created_at, retest_check_id, check_digest, check_path)
+		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11, $12, $13, $14)`,
 		rt.ID.String(), rt.TenantID.String(), rt.FindingID.String(), nullIDValue(rt.AssetID),
 		string(rt.Trigger), nullIDPtr(rt.RequestedBy), string(rt.PriorStatus),
-		rt.TemplateID, rt.Target, rt.DeadlineAt, rt.CreatedAt)
+		rt.TemplateID, rt.Target, rt.DeadlineAt, rt.CreatedAt,
+		nullID(rt.CheckID), nullString(rt.CheckDigest), nullString(rt.CheckPath))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return retest.ErrInFlight
@@ -516,9 +517,11 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 		deadline, created                      time.Time
 		completed                              sql.NullTime
 		runID                                  sql.NullString
+		checkID, checkDigest, checkPath        sql.NullString
 	)
 	if err := s.Scan(&id, &tenantID, &findingID, &assetID, &trigger, &requestedBy, &status, &outcome, &reason,
-		&reasonCode, &sensorID, &priorStatus, &resultStatus, &template, &target, &checkCmd, &reachCmd, &deadline, &created, &completed, &runID); err != nil {
+		&reasonCode, &sensorID, &priorStatus, &resultStatus, &template, &target, &checkCmd, &reachCmd, &deadline, &created, &completed, &runID,
+		&checkID, &checkDigest, &checkPath); err != nil {
 		return nil, err
 	}
 	rt := &retest.Retest{
@@ -535,6 +538,9 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 		DeadlineAt:   deadline,
 		CreatedAt:    created,
 		RunID:        optionalID(runID),
+		CheckID:      optionalID(checkID),
+		CheckDigest:  checkDigest.String,
+		CheckPath:    checkPath.String,
 	}
 	var err error
 	if rt.ID, err = shared.IDFromString(id); err != nil {
