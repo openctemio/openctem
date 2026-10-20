@@ -623,12 +623,13 @@ func (s *TaskService) ListMembers(ctx context.Context, tenantID, taskID shared.I
 	return s.repo.ListMembers(ctx, tenantID, taskID, f, page)
 }
 
-// ListEvents lists a task's timeline (the caller must see the task).
+// ListEvents lists a task's timeline (the caller must see the task). What an
+// entry says about another task the caller cannot open is redacted.
 func (s *TaskService) ListEvents(ctx context.Context, tenantID, taskID shared.ID, page pagination.Pagination) (pagination.Result[remediationdom.TaskEvent], error) {
 	if _, err := s.GetTask(ctx, tenantID, taskID); err != nil {
 		return pagination.Result[remediationdom.TaskEvent]{}, err
 	}
-	return s.repo.ListEvents(ctx, tenantID, taskID, page)
+	return s.listEventsScoped(ctx, tenantID, taskID, page)
 }
 
 // ReconcileBatch is how many stale tasks one reconcile pass recomputes.
