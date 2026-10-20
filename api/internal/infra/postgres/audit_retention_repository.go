@@ -50,13 +50,16 @@ func chainAnchorHash(ctx context.Context, q queryRower, tenantID shared.ID) (str
 }
 
 // ChainTenantsWithEntriesBefore lists the chains with an entry logged before
-// the cutoff.
+// the cutoff. A chain of an organization that is not active (suspended, which
+// is how a legal hold is applied, or pending deletion) is left alone; the
+// system chain and the chains of organizations that no longer exist are not.
 func (r *AuditRepository) ChainTenantsWithEntriesBefore(ctx context.Context, before time.Time) ([]shared.ID, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT DISTINCT c.tenant_id
 		  FROM audit_log_chain c
 		  JOIN audit_logs l ON l.id = c.audit_log_id
-		 WHERE l.logged_at < $1`, before)
+		  LEFT JOIN tenants t ON t.id = c.tenant_id
+		 WHERE l.logged_at < $1 AND (t.id IS NULL OR t.status = 'active')`, before)
 	if err != nil {
 		return nil, fmt.Errorf("list chains to prune: %w", err)
 	}
