@@ -142,6 +142,18 @@ func (r *TicketLinkRepository) FindByIssue(ctx context.Context, tenantID, integr
 		ORDER BY created_at LIMIT $4`, tenantID.String(), integrationID.String(), key, ticketlink.MaxLinksPerIssue)
 }
 
+// FindByIssueID lists the active links of one issue of an integration by the
+// issue's tracker id. An empty id matches nothing (links recorded without an
+// id are found by key).
+func (r *TicketLinkRepository) FindByIssueID(ctx context.Context, tenantID, integrationID shared.ID, externalID string) ([]*ticketlink.Link, error) {
+	if externalID == "" {
+		return []*ticketlink.Link{}, nil
+	}
+	return r.list(ctx, `SELECT `+tlCols+` FROM ticket_links
+		WHERE tenant_id = $1 AND integration_id = $2 AND external_id = $3 AND state = 'active'
+		ORDER BY created_at LIMIT $4`, tenantID.String(), integrationID.String(), externalID, ticketlink.MaxLinksPerIssue)
+}
+
 // SetState moves a link to unlinked or deleted and clears its external
 // assignee.
 func (r *TicketLinkRepository) SetState(ctx context.Context, tenantID, id shared.ID, state string) error {

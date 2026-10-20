@@ -502,8 +502,27 @@ type PlatformAIResponse struct {
 	KeySet              bool     `json:"key_set"`
 	LockedByEnvironment bool     `json:"locked_by_environment"`
 	Providers           []string `json:"providers"`
-	Version             int      `json:"version"`
+	// AllowOrgProvider is the platform policy: organizations may use their
+	// own AI provider and key.
+	AllowOrgProvider bool `json:"allow_org_provider"`
+	// OrgPolicyVersion is the version of that policy (its own setting).
+	OrgPolicyVersion int `json:"org_policy_version"`
+	Version          int `json:"version"`
 	SettingChange
+}
+
+// OrgAIPolicyResponse is the policy on organizations' own AI providers.
+type OrgAIPolicyResponse struct {
+	AllowOrgProvider bool `json:"allow_org_provider"`
+	Version          int  `json:"version"`
+	SettingChange
+}
+
+// UpdateOrgAIPolicyRequest changes the policy.
+type UpdateOrgAIPolicyRequest struct {
+	AllowOrgProvider bool   `json:"allow_org_provider"`
+	Reason           string `json:"reason"`
+	Version          int    `json:"version"`
 }
 
 // UpdatePlatformAIRequest changes the provider.
@@ -525,12 +544,16 @@ type UpdatePlatformAIRequest struct {
 }
 
 func (h *AdminPlatformSettingsHandler) aiResponse(ctx context.Context, s platformai.Settings) PlatformAIResponse {
+	allow, policyVersion := true, 0
+	if p, err := h.AI.GetOrgPolicy(ctx); err == nil {
+		allow, policyVersion = p.AllowOwnProvider, p.Version
+	}
 	models := s.AllowedModels
 	if models == nil {
 		models = []string{}
 	}
 	return PlatformAIResponse{Enabled: s.Enabled, Provider: s.Provider, Model: s.Model, BaseURL: s.BaseURL,
-		AllowPrivate: s.AllowPrivate, AllowedModels: models, KeySet: s.KeySet,
+		AllowPrivate: s.AllowPrivate, AllowedModels: models, AllowOrgProvider: allow, OrgPolicyVersion: policyVersion, KeySet: s.KeySet,
 		LockedByEnvironment: s.LockedByEnvironment, Providers: platformai.Providers, Version: s.Version,
 		SettingChange: h.change(ctx, s.UpdatedAt, s.UpdatedBy)}
 }
@@ -606,4 +629,34 @@ func (h *AdminPlatformSettingsHandler) TestPlatformAI(w http.ResponseWriter, r *
 	default:
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// UpdateOrgAIPolicy changes whether organizations may use their own AI provider.
+// @Summary      Allow or forbid organizations' own AI providers
+// @Description  Super admin with a fresh confirmation and a reason. On by default. Turning it off stops every organization's own provider at its next call (it never falls back to the platform key). Audited critical, every administrator is told.
+// @Tags         Admin System
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdateOrgAIPolicyRequest  true  "Policy"
+// @Success      200  {object}  OrgAIPolicyResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     AdminAuth
+// @Router       /admin/settings/ai/org-policy [put]
+func (h *AdminPlatformSettingsHandler) UpdateOrgAIPolicy(w http.ResponseWriter, r *http.Request) {
+	actor := requireActor(w, r)
+	if actor == nil {
+		return
+	}
+	var req UpdateOrgAIPolicyRequest
+	if !decodeSetting(w, r, &req) {
+		return
+	}
+	p, err := h.AI.ChangeOrgPolicy(r.Context(), actor, req.AllowOrgProvider, req.Reason, req.Version, middleware.ClientIP(r), r.UserAgent())
+	if err != nil {
+		h.writeSettingError(w, "AI provider policy", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, OrgAIPolicyResponse{AllowOrgProvider: p.AllowOwnProvider, Version: p.Version,
+		SettingChange: h.change(r.Context(), p.UpdatedAt, p.UpdatedBy)})
 }
