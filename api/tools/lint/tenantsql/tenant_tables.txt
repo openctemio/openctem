@@ -127,6 +127,7 @@ finding_injection_points
 finding_priority_queue
 finding_rekey_runs
 finding_remediation_keys
+finding_retest_checks
 finding_retest_cursors
 finding_retests
 finding_severity_requests

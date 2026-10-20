@@ -53,14 +53,14 @@ func TestFindingRetestCheckAuthzDB(t *testing.T) {
 	}
 	// Writing needs findings:retest_checks:write.
 	for _, c := range []struct{ method, suffix string }{
-		{http.MethodPut, "/"}, {http.MethodPost, "/validate"}, {http.MethodDelete, "/"},
+		{http.MethodPut, "/"}, {http.MethodPost, "/test"}, {http.MethodDelete, "/"},
 	} {
 		if code, body := h.doBody(h.writer, read, c.method, path(h.findingA1, c.suffix), rcAssertion); code != http.StatusForbidden {
 			t.Errorf("%s %s without the permission: %d %s", c.method, c.suffix, code, body)
 		}
 	}
 	// Validate reports problems without saving.
-	if code, body := h.doBody(h.writer, write, http.MethodPost, path(h.findingA1, "/validate"),
+	if code, body := h.doBody(h.writer, write, http.MethodPost, path(h.findingA1, "/test"),
 		`{"kind":"http_assertion","assertion":{"method":"GET","path":"//evil.example/","matchers":[{"type":"status","status":[200]}]}}`); code != http.StatusOK || !strings.Contains(body, `"valid":false`) {
 		t.Fatalf("validate off-target: %d %s", code, body)
 	}
