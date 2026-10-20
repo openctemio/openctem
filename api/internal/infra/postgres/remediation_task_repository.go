@@ -250,8 +250,8 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter, visible string)
 		p := next(f.FindingID.String())
 		scoped, scopeJoin := "", ""
 		if f.Scope != nil {
-			cond, scopeArgs := dataScopeCondAt("ff.asset_id", f.Scope, len(args)+1)
-			args = append(args, scopeArgs...)
+			cond, scoped2 := taskViewScopeCond("ff.asset_id", "ff.id", f.Scope, args)
+			args = scoped2
 			scopeJoin = " JOIN findings ff ON ff.id = fm.finding_id AND ff.tenant_id = fm.tenant_id"
 			scoped = " AND " + cond
 		}
