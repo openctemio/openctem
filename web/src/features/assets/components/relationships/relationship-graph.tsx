@@ -8,11 +8,12 @@
  */
 
 import * as React from 'react'
-import { ZoomIn, ZoomOut, Maximize2, Link2 } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, RotateCcw, Link2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { useFullscreen } from '@/hooks/use-fullscreen'
 import type {
   RelationshipGraph as RelationshipGraphType,
   RelationshipGraphNode,
@@ -201,6 +202,9 @@ function GraphNode({ node, isCentral, onClick }: GraphNodeProps) {
             onClick={onClick}
             style={{ cursor: 'pointer' }}
           >
+            {/* Native tooltip: stays visible inside a full-screen element,
+                where the portalled tooltip below cannot render. */}
+            <title>{`${node.name} (${label})`}</title>
             {/* Node circle */}
             <circle
               r={isCentral ? NODE_RADIUS + 5 : NODE_RADIUS}
@@ -359,19 +363,33 @@ export function RelationshipGraphView({
   const [isDragging, setIsDragging] = React.useState(false)
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 })
 
-  // Update dimensions on resize
-  React.useEffect(() => {
-    const updateDimensions = () => {
-      if (containerRef.current) {
-        const { width, height } = containerRef.current.getBoundingClientRect()
-        setDimensions({ width: Math.max(width, 400), height: Math.max(height, 300) })
-      }
-    }
+  const cardRef = React.useRef<HTMLDivElement>(null)
+  const { isFullscreen, isOverlay, toggle } = useFullscreen(cardRef)
 
+  // Re-fit the drawing whenever the container changes size (window resize,
+  // entering or leaving full screen).
+  React.useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const updateDimensions = () => {
+      const { width, height } = el.getBoundingClientRect()
+      setDimensions({ width: Math.max(width, 400), height: Math.max(height, 300) })
+    }
     updateDimensions()
-    window.addEventListener('resize', updateDimensions)
-    return () => window.removeEventListener('resize', updateDimensions)
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateDimensions)
+      return () => window.removeEventListener('resize', updateDimensions)
+    }
+    const ro = new ResizeObserver(updateDimensions)
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [])
+
+  // Start from a fitted view after every full-screen change.
+  React.useEffect(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [isFullscreen])
 
   // Calculate node positions
   const nodesWithPositions = React.useMemo(
@@ -417,6 +435,13 @@ export function RelationshipGraphView({
     setIsDragging(false)
   }
 
+  const zoomInLabel = t('assets.related.graphZoomIn', 'Zoom in')
+  const zoomOutLabel = t('assets.related.graphZoomOut', 'Zoom out')
+  const resetLabel = t('assets.related.graphReset', 'Reset view')
+  const fullscreenLabel = isFullscreen
+    ? t('assets.related.graphExitFullscreen', 'Exit full screen')
+    : t('assets.related.graphFullscreen', 'Full screen')
+
   if (graph.nodes.length === 0) {
     return (
       <div
@@ -434,17 +459,56 @@ export function RelationshipGraphView({
   }
 
   return (
-    <div className={cn('relative rounded-lg border bg-card overflow-hidden', className)}>
+    <div
+      ref={cardRef}
+      className={cn(
+        'relative flex flex-col rounded-lg border bg-card overflow-hidden',
+        isOverlay && 'fixed inset-0 z-50 rounded-none',
+        className
+      )}
+    >
       {/* Controls */}
       <div className="absolute top-2 right-2 z-10 flex gap-1">
-        <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleZoomIn}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={handleZoomIn}
+          aria-label={zoomInLabel}
+          title={zoomInLabel}
+        >
           <ZoomIn className="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleZoomOut}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={handleZoomOut}
+          aria-label={zoomOutLabel}
+          title={zoomOutLabel}
+        >
           <ZoomOut className="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleReset}>
-          <Maximize2 className="h-4 w-4" />
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={handleReset}
+          aria-label={resetLabel}
+          title={resetLabel}
+        >
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => void toggle()}
+          aria-label={fullscreenLabel}
+          aria-pressed={isFullscreen}
+          title={fullscreenLabel}
+        >
+          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
         </Button>
       </div>
 
@@ -467,7 +531,10 @@ export function RelationshipGraphView({
       {/* Graph container */}
       <div
         ref={containerRef}
-        className="h-[400px] cursor-grab active:cursor-grabbing"
+        className={cn(
+          'cursor-grab active:cursor-grabbing',
+          isFullscreen ? 'min-h-0 flex-1' : 'h-full min-h-[300px] flex-1'
+        )}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
