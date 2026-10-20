@@ -381,14 +381,19 @@ func (s *TaskService) PreviewQueryRerun(ctx context.Context, tenantID, taskID sh
 type RerunQueryInput struct {
 	TenantID shared.ID
 	TaskID   shared.ID
-	Caller   queryapp.Caller
-	ActorID  *shared.ID
+	// Version is the task version the caller read (required).
+	Version int
+	Caller  queryapp.Caller
+	ActorID *shared.ID
 }
 
 // RerunQuery runs a task's stored query as the caller and adds the new
 // matches no active task holds, up to the task's cap (the person confirmed
 // after a preview).
 func (s *TaskService) RerunQuery(ctx context.Context, in RerunQueryInput, actx auditapp.AuditContext) (*remediationdom.QueryClaimResult, *remediationdom.Task, error) {
+	if in.Version <= 0 {
+		return nil, nil, ErrTaskVersionRequired
+	}
 	if err := checkQueryCaller(in.TenantID, in.Caller); err != nil {
 		return nil, nil, err
 	}
@@ -399,12 +404,15 @@ func (s *TaskService) RerunQuery(ctx context.Context, in RerunQueryInput, actx a
 	if t.State.IsTerminal() {
 		return nil, nil, remediationdom.ErrTaskTerminal
 	}
+	if t.Version != in.Version {
+		return nil, nil, remediationdom.ErrTaskVersionConflict
+	}
 	m, err := s.matcher.MatchFindings(ctx, in.Caller, q.Text, queryMatchOptions(remediationdom.MaxFindingsPerQueryTask, true))
 	if err != nil {
 		return nil, nil, err
 	}
 	res, err := s.queries.ClaimQueryFindings(ctx, remediationdom.QueryClaim{TenantID: in.TenantID, TaskID: in.TaskID,
-		IDs: m.IDs, Cap: q.Cap, ActorID: in.ActorID})
+		IDs: m.IDs, Cap: q.Cap, ActorID: in.ActorID, ExpectedVersion: in.Version})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -427,7 +435,9 @@ func (s *TaskService) RerunQuery(ctx context.Context, in RerunQueryInput, actx a
 type SetQueryAutoStateInput struct {
 	TenantID shared.ID
 	TaskID   shared.ID
-	ActorID  *shared.ID
+	// Version is the task version the caller read (required).
+	Version int
+	ActorID *shared.ID
 	// Paused true pauses, false resumes.
 	Paused bool
 }
@@ -437,9 +447,15 @@ type SetQueryAutoStateInput struct {
 // needs; a task whose owner is gone stays suspended (the query never runs
 // ownerless, and a resume never changes whose access it runs with).
 func (s *TaskService) SetQueryAutoState(ctx context.Context, in SetQueryAutoStateInput, actx auditapp.AuditContext) (*remediationdom.TaskQuery, error) {
+	if in.Version <= 0 {
+		return nil, ErrTaskVersionRequired
+	}
 	t, q, err := s.queryForChange(ctx, in.TenantID, in.TaskID)
 	if err != nil {
 		return nil, err
+	}
+	if t.Version != in.Version {
+		return nil, remediationdom.ErrTaskVersionConflict
 	}
 	if q.Mode != remediationdom.QueryModeAuto || q.AutoState == nil {
 		return nil, remediationdom.ErrNotAutoMode
@@ -465,7 +481,7 @@ func (s *TaskService) SetQueryAutoState(ctx context.Context, in SetQueryAutoStat
 	if *q.AutoState == target {
 		return q, nil
 	}
-	if err := s.queries.SetAutoState(ctx, in.TenantID, in.TaskID, target, nil); err != nil {
+	if err := s.queries.SetAutoState(ctx, in.TenantID, in.TaskID, in.Version, target, nil); err != nil {
 		return nil, err
 	}
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskQueryAutoStateChanged, auditdom.ResourceTypeRemediationTask, in.TaskID.String()).
@@ -617,7 +633,7 @@ func (s *TaskService) autoIncludeOne(ctx context.Context, d remediationdom.DueQu
 // suspend stops auto mode for a reason, once: audited, a timeline-visible
 // state on the task's query, and the owner (when still a member) is told.
 func (s *TaskService) suspend(ctx context.Context, t *remediationdom.Task, q *remediationdom.TaskQuery, reason remediationdom.AutoReason) error {
-	if err := s.queries.SetAutoState(ctx, t.TenantID, t.ID, remediationdom.AutoStateSuspended, &reason); err != nil {
+	if err := s.queries.SetAutoState(ctx, t.TenantID, t.ID, 0, remediationdom.AutoStateSuspended, &reason); err != nil {
 		if errors.Is(err, remediationdom.ErrNotAutoMode) {
 			// No longer active (another pass suspended it, or a person paused
 			// it): audited and notified once, by whoever changed it.
