@@ -128,7 +128,7 @@ func TestTicketLinks_RecordExternal(t *testing.T) {
 	lOther := link(b.id, b.intgB, b.finding, "https://b.atlassian.net", "SEC-1", "100")
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	ch := ticketlink.ExternalChange{AssigneeSet: true, AssigneeID: "acc-1", AssigneeName: "<b>Dana</b>‮ K.", StatusCategory: ticketlink.StatusCategoryInProgress, At: now}
+	ch := ticketlink.ExternalChange{AssigneeSet: true, AssigneeID: "acc-1", AssigneeName: "<b>Dana</b>\u202e K.", StatusCategory: ticketlink.StatusCategoryInProgress, At: now}
 	got, err := repo.RecordExternal(ctx, a.id, a.intgA, "100", "SEC-1", ch)
 	if err != nil || len(got) != 1 || got[0].ID != la.ID {
 		t.Fatalf("record on A: %v %+v", err, got)
