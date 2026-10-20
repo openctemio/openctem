@@ -1,0 +1,5 @@
+### Changed: the EPSS and KEV syncs write only what changed; the EPSS percentile moves to a curve table
+
+- The daily EPSS sync rewrote every row of `epss_scores` (percentile and feed date change for nearly every CVE each day) and the KEV sync rewrote every KEV row. Both now filter against the stored rows before the upsert, so an unchanged feed writes nothing and a normal day writes the ~1 % of scores that moved. Measured on a 390 000-row sample feed with 1 % of scores moved: WAL per sync 272 MB -> 39 MB, row versions 390 330 -> 4 135, unchanged feed 0 bytes.
+- The percentile is no longer a column of `epss_scores`: the new table `epss_percentile_curve` holds one row per distinct score and a CVE's percentile is read from it. The feed date moves to `threat_intel_sync_status.data_date`. Migration `epss_percentile_curve` backfills both and drops `epss_scores.percentile`, `epss_scores.score_date` and their indexes; the down migration restores them.
+- **Upgrade note:** run the migration with the API stopped; the previous API version reads the dropped columns.

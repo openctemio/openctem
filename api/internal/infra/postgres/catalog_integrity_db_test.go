@@ -109,7 +109,7 @@ func TestVulnCatalog_NewCVEFromTenantGetsRiskSignalsOnlyFromThreatIntel(t *testi
 	})
 	// Trusted feed: EPSS knows this CVE, KEV does not.
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO epss_scores (cve_id, epss_score, percentile, score_date) VALUES ($1, 0.0123, 0.45, CURRENT_DATE)`, cve); err != nil {
+		INSERT INTO epss_scores (cve_id, epss_score) VALUES ($1, 0.0123)`, cve); err != nil {
 		t.Fatal(err)
 	}
 
@@ -148,7 +148,7 @@ func TestThreatIntelPropagation_SetsCatalogRiskSignals(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The feeds learn about the CVE after it entered the catalog.
-	if _, err := db.ExecContext(ctx, `INSERT INTO epss_scores (cve_id, epss_score, percentile, score_date) VALUES ($1, 0.5, 0.9, CURRENT_DATE)`, cve); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO epss_scores (cve_id, epss_score) VALUES ($1, 0.5)`, cve); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO kev_catalog (cve_id, vulnerability_name, date_added, known_ransomware_campaign_use) VALUES ($1, 'kev name', CURRENT_DATE, 'Known')`, cve); err != nil {

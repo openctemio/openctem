@@ -62,10 +62,11 @@ func (r *ThreatIntelRepository) SyncStatus() threatintel.SyncStatusRepository {
 const (
 	catalogFromEPSS = `
 		UPDATE vulnerabilities v
-		SET epss_score = e.epss_score, epss_percentile = e.percentile
+		SET epss_score = e.epss_score,
+		    epss_percentile = (SELECT c.percentile FROM epss_percentile_curve c WHERE c.score = e.epss_score)
 		FROM epss_scores e
 		WHERE e.cve_id = v.cve_id
-		  AND (v.epss_score IS DISTINCT FROM e.epss_score OR v.epss_percentile IS DISTINCT FROM e.percentile)`
+		  AND v.epss_score IS DISTINCT FROM e.epss_score`
 	catalogFromKEV = `
 		UPDATE vulnerabilities v
 		SET cisa_kev_date_added     = k.date_added::timestamptz,
@@ -169,30 +170,55 @@ type EPSSRepository struct {
 	db *DB
 }
 
-// Upsert creates or updates an EPSS score.
+// Upsert creates or updates an EPSS score. Its percentile goes to the curve
+// (one row per distinct score); the feed date goes to the sync status row.
 func (r *EPSSRepository) Upsert(ctx context.Context, score *threatintel.EPSSScore) error {
-	query := `
-		INSERT INTO epss_scores (cve_id, epss_score, percentile, model_version, score_date, updated_at)
-		VALUES ($1, $2, $3, $4, $5, NOW())
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO epss_percentile_curve (score, percentile) VALUES ($1, $2)
+		ON CONFLICT (score) DO UPDATE SET percentile = EXCLUDED.percentile
+		WHERE epss_percentile_curve.percentile IS DISTINCT FROM EXCLUDED.percentile`,
+		score.Score(), score.Percentile()); err != nil {
+		return fmt.Errorf("failed to upsert EPSS percentile: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO epss_scores (cve_id, epss_score, model_version, updated_at)
+		VALUES ($1, $2, $3, NOW())
 		ON CONFLICT (cve_id) DO UPDATE SET
 			epss_score = EXCLUDED.epss_score,
-			percentile = EXCLUDED.percentile,
 			model_version = EXCLUDED.model_version,
-			score_date = EXCLUDED.score_date,
 			updated_at = NOW()
-	`
-	_, err := r.db.ExecContext(ctx, query,
-		score.CVEID(),
-		score.Score(),
-		score.Percentile(),
-		score.ModelVersion(),
-		score.ScoreDate(),
-	)
-	if err != nil {
+		WHERE (epss_scores.epss_score, epss_scores.model_version)
+			IS DISTINCT FROM (EXCLUDED.epss_score, EXCLUDED.model_version)`,
+		score.CVEID(), score.Score(), score.ModelVersion()); err != nil {
 		return fmt.Errorf("failed to upsert EPSS score: %w", err)
 	}
-	return nil
+	if _, err = tx.ExecContext(ctx, epssSetDataDateSQL, score.ScoreDate()); err != nil {
+		return fmt.Errorf("failed to record EPSS feed date: %w", err)
+	}
+	return tx.Commit()
 }
+
+// epssSetDataDateSQL records the feed date on the EPSS sync status row, only
+// when it moved ($1 is the date).
+const epssSetDataDateSQL = `
+	UPDATE threat_intel_sync_status SET data_date = $1::date
+	WHERE source_name = 'epss' AND data_date IS DISTINCT FROM $1::date`
+
+// epssReadSQL is the read model of one EPSS score: the percentile comes from
+// the curve at the score, the feed date from the sync status row.
+const epssReadSQL = `
+	SELECT e.cve_id, e.epss_score, c.percentile, e.model_version,
+		COALESCE((SELECT data_date FROM threat_intel_sync_status WHERE source_name = 'epss'),
+			e.updated_at::date),
+		e.created_at, e.updated_at
+	FROM epss_scores e
+	LEFT JOIN epss_percentile_curve c ON c.score = e.epss_score`
 
 // UpsertBatch creates or updates multiple EPSS scores efficiently.
 func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.EPSSScore) error {
@@ -251,26 +277,58 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 		return fmt.Errorf("failed to flush COPY: %w", err)
 	}
 
-	// Upsert from temp table
+	// Only rows that are new or whose score or model moved are written: the
+	// filter runs before the upsert because a WHERE on DO UPDATE still locks
+	// and logs every conflicting row. The percentile is not a column of
+	// epss_scores; it is one row per distinct score in the curve.
 	// sqlgate:optional — temp_epss_scores is a session-scoped TEMP table created
 	// a few lines above in this same transaction, so it is legitimately absent
 	// from a schema built purely from migrations.
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO epss_scores (cve_id, epss_score, percentile, model_version, score_date, updated_at)
-		SELECT DISTINCT ON (cve_id) cve_id, epss_score, percentile, model_version, score_date, NOW()
-		FROM temp_epss_scores
-		-- A feed that repeats a CVE must not fail the whole sync (ON CONFLICT
-		-- cannot update one row twice): keep the newest score date per CVE.
-		ORDER BY cve_id, score_date DESC NULLS LAST
+		INSERT INTO epss_percentile_curve (score, percentile)
+		SELECT s.epss_score, s.percentile
+		FROM (SELECT DISTINCT ON (epss_score) epss_score, percentile
+			FROM temp_epss_scores WHERE percentile IS NOT NULL
+			ORDER BY epss_score, percentile DESC) s
+		LEFT JOIN epss_percentile_curve c ON c.score = s.epss_score
+		WHERE c.score IS NULL OR c.percentile IS DISTINCT FROM s.percentile
+		ON CONFLICT (score) DO UPDATE SET percentile = EXCLUDED.percentile
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to upsert EPSS percentile curve: %w", err)
+	}
+
+	// sqlgate:optional — same TEMP table as above.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO epss_scores (cve_id, epss_score, model_version, updated_at)
+		SELECT s.cve_id, s.epss_score, s.model_version, NOW()
+		FROM (
+			-- A feed that repeats a CVE must not fail the whole sync (ON CONFLICT
+			-- cannot update one row twice): keep the newest score date per CVE.
+			SELECT DISTINCT ON (cve_id) cve_id, epss_score, model_version
+			FROM temp_epss_scores
+			ORDER BY cve_id, score_date DESC NULLS LAST
+		) s
+		LEFT JOIN epss_scores t ON t.cve_id = s.cve_id
+		WHERE t.cve_id IS NULL
+		   OR (t.epss_score, t.model_version) IS DISTINCT FROM (s.epss_score, s.model_version)
 		ON CONFLICT (cve_id) DO UPDATE SET
 			epss_score = EXCLUDED.epss_score,
-			percentile = EXCLUDED.percentile,
 			model_version = EXCLUDED.model_version,
-			score_date = EXCLUDED.score_date,
 			updated_at = NOW()
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to upsert from temp table: %w", err)
+	}
+
+	// sqlgate:optional — same TEMP table as above.
+	_, err = tx.ExecContext(ctx, `
+		UPDATE threat_intel_sync_status SET data_date = d.v
+		FROM (SELECT MAX(score_date) AS v FROM temp_epss_scores) d
+		WHERE source_name = 'epss' AND d.v IS NOT NULL AND data_date IS DISTINCT FROM d.v
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to record EPSS feed date: %w", err)
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -283,8 +341,8 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 // GetByCVEID retrieves an EPSS score by CVE ID.
 func (r *EPSSRepository) GetByCVEID(ctx context.Context, cveID string) (*threatintel.EPSSScore, error) {
 	query := `
-		SELECT cve_id, epss_score, percentile, model_version, score_date, created_at, updated_at
-		FROM epss_scores WHERE cve_id = $1
+		` + epssReadSQL + `
+		WHERE e.cve_id = $1
 	`
 	row := r.db.QueryRowContext(ctx, query, cveID)
 	return r.scanEPSSScore(row)
@@ -297,8 +355,8 @@ func (r *EPSSRepository) GetByCVEIDs(ctx context.Context, cveIDs []string) ([]*t
 	}
 
 	query := `
-		SELECT cve_id, epss_score, percentile, model_version, score_date, created_at, updated_at
-		FROM epss_scores WHERE cve_id = ANY($1)
+		` + epssReadSQL + `
+		WHERE e.cve_id = ANY($1)
 	`
 	rows, err := r.db.QueryContext(ctx, query, pq.Array(cveIDs))
 	if err != nil {
@@ -312,9 +370,9 @@ func (r *EPSSRepository) GetByCVEIDs(ctx context.Context, cveIDs []string) ([]*t
 // GetHighRisk retrieves all high-risk EPSS scores (score > threshold).
 func (r *EPSSRepository) GetHighRisk(ctx context.Context, threshold float64, limit int) ([]*threatintel.EPSSScore, error) {
 	query := `
-		SELECT cve_id, epss_score, percentile, model_version, score_date, created_at, updated_at
-		FROM epss_scores WHERE epss_score > $1
-		ORDER BY epss_score DESC LIMIT $2
+		` + epssReadSQL + `
+		WHERE e.epss_score > $1
+		ORDER BY e.epss_score DESC LIMIT $2
 	`
 	rows, err := r.db.QueryContext(ctx, query, threshold, limit)
 	if err != nil {
@@ -329,9 +387,9 @@ func (r *EPSSRepository) GetHighRisk(ctx context.Context, threshold float64, lim
 func (r *EPSSRepository) GetTopPercentile(ctx context.Context, percentile float64, limit int) ([]*threatintel.EPSSScore, error) {
 	threshold := 100.0 - percentile
 	query := `
-		SELECT cve_id, epss_score, percentile, model_version, score_date, created_at, updated_at
-		FROM epss_scores WHERE percentile >= $1
-		ORDER BY percentile DESC LIMIT $2
+		` + epssReadSQL + `
+		WHERE c.percentile >= $1
+		ORDER BY c.percentile DESC LIMIT $2
 	`
 	rows, err := r.db.QueryContext(ctx, query, threshold, limit)
 	if err != nil {
@@ -404,6 +462,10 @@ func (r *EPSSRepository) DeleteAll(ctx context.Context) error {
 	_, err := r.db.ExecContext(ctx, "TRUNCATE TABLE epss_scores")
 	if err != nil {
 		return fmt.Errorf("failed to truncate EPSS scores: %w", err)
+	}
+	// The app role holds TRUNCATE on the two feed tables only (database-roles.md).
+	if _, err := r.db.ExecContext(ctx, "DELETE FROM epss_percentile_curve"); err != nil {
+		return fmt.Errorf("failed to clear EPSS percentile curve: %w", err)
 	}
 	return nil
 }
@@ -553,7 +615,7 @@ func (r *KEVRepository) UpsertBatch(ctx context.Context, entries []*threatintel.
 	for i, entry := range entries {
 		base := i * 10
 		valueStrings = append(valueStrings, fmt.Sprintf(
-			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			"($%d::varchar, $%d::varchar, $%d::varchar, $%d::text, $%d::text, $%d::date, $%d::date, $%d::varchar, $%d::text, $%d::text[])",
 			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10,
 		))
 
@@ -576,10 +638,24 @@ func (r *KEVRepository) UpsertBatch(ctx context.Context, entries []*threatintel.
 		)
 	}
 
+	// Rows are filtered before the upsert (a WHERE on DO UPDATE would still lock
+	// and log every conflicting row): only new entries and entries whose
+	// updatable fields differ are written, so an unchanged feed writes nothing.
 	query := fmt.Sprintf(`
+		WITH src (cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes) AS (VALUES %s)
 		INSERT INTO kev_catalog (cve_id, vendor_project, product, vulnerability_name, short_description,
 			date_added, due_date, known_ransomware_campaign_use, notes, cwes)
-		VALUES %s
+		SELECT s.cve_id, s.vendor_project, s.product, s.vulnerability_name, s.short_description,
+			s.date_added, s.due_date, s.known_ransomware_campaign_use, s.notes, s.cwes
+		FROM src s
+		LEFT JOIN kev_catalog t ON t.cve_id = s.cve_id
+		WHERE t.cve_id IS NULL
+		   OR (t.vendor_project, t.product, t.vulnerability_name, t.short_description, t.due_date,
+		       t.known_ransomware_campaign_use, t.notes, t.cwes)
+		      IS DISTINCT FROM
+		      (s.vendor_project, s.product, s.vulnerability_name, s.short_description, s.due_date,
+		       s.known_ransomware_campaign_use, s.notes, s.cwes)
 		ON CONFLICT (cve_id) DO UPDATE SET
 			vendor_project = EXCLUDED.vendor_project,
 			product = EXCLUDED.product,
