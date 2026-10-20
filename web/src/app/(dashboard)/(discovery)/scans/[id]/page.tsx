@@ -62,10 +62,13 @@ import {
   isRunInProgress,
   liveRunIds,
   runListRefreshInterval,
+  runTargetNote,
   runTaskProgress,
   runTriggeredByLabel,
   scanRunCounts,
 } from '@/features/scans/lib/run-display'
+import { isManagedScan, managedScanLabel } from '@/features/scans/lib/scan-status'
+import { ManagedScanBanner } from '@/features/scans/components/managed-scan-banner'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useRunChannels } from '@/hooks/use-websocket'
 import { del, post } from '@/lib/api/client'
@@ -249,7 +252,7 @@ export default function ScanDetailPage() {
       enableSorting: false,
       cell: ({ row }) => (
         <div className="space-y-0.5">
-          <RunStatusBadge status={row.original.status} />
+          <RunStatusBadge status={row.original.status} note={runTargetNote(row.original, t)} />
           {row.original.error_message && (
             <TruncatedText
               value={row.original.error_message}
@@ -266,14 +269,22 @@ export default function ScanDetailPage() {
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex flex-col">
-          <span>
-            {SCAN_RUN_TRIGGER_LABELS[row.original.trigger_type as ScanWorkflowTriggerType] ??
-              row.original.trigger_type}
-          </span>
-          {runTriggeredByLabel(row.original) && (
-            <span className="text-xs text-muted-foreground">
-              {runTriggeredByLabel(row.original)}
-            </span>
+          {row.original.trigger?.type === 'policy' ? (
+            // A platform policy's run: "Automatic coverage", not the
+            // trigger type word "System".
+            <span>{runTriggeredByLabel(row.original, t)}</span>
+          ) : (
+            <>
+              <span>
+                {SCAN_RUN_TRIGGER_LABELS[row.original.trigger_type as ScanWorkflowTriggerType] ??
+                  row.original.trigger_type}
+              </span>
+              {runTriggeredByLabel(row.original, t) && (
+                <span className="text-xs text-muted-foreground">
+                  {runTriggeredByLabel(row.original, t)}
+                </span>
+              )}
+            </>
           )}
         </div>
       ),
@@ -379,6 +390,8 @@ export default function ScanDetailPage() {
         : []
   const targets = config.targets ?? []
   const rate = counts?.successRate ?? null
+  // A platform policy owns the scan: read-only here, listed as System.
+  const managed = isManagedScan(config)
 
   const metrics: MetricStripItem[] = [
     {
@@ -389,10 +402,10 @@ export default function ScanDetailPage() {
     },
     {
       key: 'rate',
-      label: 'Success rate',
+      label: t('scans.list.successRate'),
       // A rate needs a settled run: "n/a", never a red 0%.
-      value: rate === null ? 'n/a' : `${rate}%`,
-      hint: rate === null ? 'No finished run yet' : undefined,
+      value: rate === null ? t('scans.list.notAvailable') : `${rate}%`,
+      hint: rate === null ? t('scans.list.noFinishedRun') : undefined,
     },
     { key: 'ok', label: 'Successful', value: config.successful_runs },
     { key: 'partial', label: 'Partial', value: config.partial_runs ?? 0, tone: 'warning' },
@@ -401,8 +414,9 @@ export default function ScanDetailPage() {
       key: 'next',
       label: 'Next run',
       value: config.next_run_at ? formatScanDate(config.next_run_at) : '-',
-      hint:
-        config.status === 'paused' && config.next_run_at
+      hint: managed
+        ? undefined
+        : config.status === 'paused' && config.next_run_at
           ? 'If resumed'
           : config.schedule_type === 'manual'
             ? 'Manual only'
@@ -426,9 +440,18 @@ export default function ScanDetailPage() {
             <LastRunCell run={lastRunOf(config)} onOpen={setOpenRunId} />
             <span>{scanTypeLabel(config).label}</span>
             <span aria-hidden="true">·</span>
-            <span>{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
-            <span aria-hidden="true">·</span>
-            <span>{scanStateLabel(config)}</span>
+            {managed ? (
+              <>
+                <Badge variant="secondary">{t('scans.managed.system')}</Badge>
+                <span>{managedScanLabel(config, t)}</span>
+              </>
+            ) : (
+              <>
+                <span>{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
+                <span aria-hidden="true">·</span>
+                <span>{scanStateLabel(config)}</span>
+              </>
+            )}
             {activeRun && (
               <Button
                 variant="link"
@@ -445,19 +468,23 @@ export default function ScanDetailPage() {
       >
         {/* Run now, schedule on/off, enable: the same controls as the scan
             drawer, gated as the API gates them. */}
-        <ScanControls
-          config={config}
-          onViewRun={setOpenRunId}
-          onChanged={() => void refetchAll()}
-        />
+        {!managed && (
+          <ScanControls
+            config={config}
+            onViewRun={setOpenRunId}
+            onChanged={() => void refetchAll()}
+          />
+        )}
         <Can permission={Permission.ScansWrite}>
-          <Button variant="outline" onClick={() => setEditOpen(true)}>
-            <Pencil className="me-2 h-4 w-4" />
-            {t('scans.page.edit')}
-          </Button>
+          {!managed && (
+            <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil className="me-2 h-4 w-4" />
+              {t('scans.page.edit')}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setCloneOpen(true)}>
             <Copy className="me-2 h-4 w-4" />
-            {t('scans.page.clone')}
+            {managed ? t('scans.managed.clone') : t('scans.page.clone')}
           </Button>
         </Can>
       </PageHeader>
@@ -477,17 +504,25 @@ export default function ScanDetailPage() {
 
       <MetricStrip className="mt-5" items={metrics} />
 
-      <div className="mt-5 empty:hidden">
-        <ScanOwnerBanner config={config} onChanged={() => void refetchConfig()} />
-      </div>
+      {managed ? (
+        <div className="mt-5">
+          <ManagedScanBanner config={config} />
+        </div>
+      ) : (
+        <>
+          <div className="mt-5 empty:hidden">
+            <ScanOwnerBanner config={config} onChanged={() => void refetchConfig()} />
+          </div>
 
-      <div className="mt-5 empty:hidden">
-        <LivenessHint config={config} onChanged={() => void refetchConfig()} />
-      </div>
+          <div className="mt-5 empty:hidden">
+            <LivenessHint config={config} onChanged={() => void refetchConfig()} />
+          </div>
 
-      <div className="mt-5 empty:hidden">
-        <ScanApprovalPanel scanId={config.id} onRan={() => void refetchAll()} />
-      </div>
+          <div className="mt-5 empty:hidden">
+            <ScanApprovalPanel scanId={config.id} onRan={() => void refetchAll()} />
+          </div>
+        </>
+      )}
 
       <Tabs value={tab} onValueChange={setTabParam} className="mt-5">
         <TabsList>
@@ -652,23 +687,25 @@ export default function ScanDetailPage() {
               </DetailFieldGrid>
             </DetailSection>
             <Can permission={Permission.ScansDelete}>
-              <DangerZone>
-                <DangerZoneItem
-                  title="Delete scan"
-                  description="Deletes this scan and its schedule. Past runs and findings stay."
-                  action={
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setDeleteConfirmOpen(true)}
-                      disabled={isDeleting}
-                    >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      Delete scan
-                    </Button>
-                  }
-                />
-              </DangerZone>
+              {managed ? null : (
+                <DangerZone>
+                  <DangerZoneItem
+                    title="Delete scan"
+                    description="Deletes this scan and its schedule. Past runs and findings stay."
+                    action={
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setDeleteConfirmOpen(true)}
+                        disabled={isDeleting}
+                      >
+                        <Trash2 className="me-2 h-4 w-4" />
+                        Delete scan
+                      </Button>
+                    }
+                  />
+                </DangerZone>
+              )}
             </Can>
           </DetailSections>
         </TabsContent>

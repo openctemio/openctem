@@ -178,9 +178,16 @@ export interface ScanConfig {
    * Whether the scan has an owner who is an active member. A scheduled run
    * acts as the owner: with none (missing) or a departed one (inactive) the
    * scan is paused and an administrator takes ownership. Lists report
-   * missing only.
+   * missing only. `managed`: a platform policy owns the scan (managed_by),
+   * so it has no owner to take over.
    */
-  owner_state?: 'ok' | 'missing' | 'inactive'
+  owner_state?: 'ok' | 'missing' | 'inactive' | 'managed'
+  /**
+   * The platform policy that owns the scan (continuous coverage, automatic
+   * enrichment); absent on a person's scan. A managed scan is read-only
+   * here: its settings and runs belong to the policy.
+   */
+  managed_by?: 'coverage' | 'enrichment'
   created_at: string
   updated_at: string
 }
@@ -368,6 +375,9 @@ export type BulkAction = 'activate' | 'pause' | 'disable' | 'delete'
 /**
  * Scan configuration list filters
  */
+/** Who owns a scan: a person, or a platform policy (managed scans). */
+export type ScanOrigin = 'user' | 'system'
+
 export interface ScanConfigListFilters {
   asset_group_id?: string
   scan_workflow_id?: string
@@ -378,6 +388,8 @@ export interface ScanConfigListFilters {
   search?: string
   /** Also list one-off (ad-hoc quick) scans; hidden by default. */
   include_ad_hoc?: boolean
+  /** Who owns the scan: people's scans (`user`) or the platform's managed scans (`system`). */
+  origin?: ScanOrigin
   /** One sort key, `-` for descending (name, created_at, last_run_at, next_run_at, total_runs). */
   sort?: string
   page?: number

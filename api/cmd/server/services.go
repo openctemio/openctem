@@ -102,6 +102,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
+	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
@@ -223,6 +224,22 @@ func (v validationSensorAvailability) HasRetestSensor(ctx context.Context, tenan
 		return false, nil
 	}
 	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, []string{validation.RetestCapability(tool)}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(sensors) > 0, nil
+}
+
+// HasRetestTemplatesSensor reports whether a sensor of the tenant is online,
+// with capacity, whose retest handler for tool runs delivered templates
+// (both "retest:<tool>" and "retest-templates:<tool>"), what a retest with
+// a custom check requires.
+func (v validationSensorAvailability) HasRetestTemplatesSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
+	if !validation.ValidRetestTool(tool) {
+		return false, nil
+	}
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID,
+		[]string{validation.RetestCapability(tool), validation.RetestTemplatesCapability(tool)}, "")
 	if err != nil {
 		return false, err
 	}
@@ -778,6 +795,7 @@ type Services struct {
 
 	// Priority Classification (RFC-004)
 	PriorityClassification *finding.PriorityClassificationService
+	AssetRiskGovernance    *finding.AssetRiskGovernance
 	// VulnMatch is inventory vulnerability matching (RFC-066).
 	VulnMatch *vulnmatch.Service
 
@@ -818,6 +836,8 @@ type Services struct {
 	ValidationEvidence *validation.EvidenceIngestService
 	// Retest runs continuous retests (RFC-039): Retest now, settle, auto ticks.
 	Retest *retestapp.Service
+	// RetestCheck manages findings' custom retest checks.
+	RetestCheck *retestcheckapp.Service
 	// Evidence: masked finding evidence, encrypted secret values, audited reveal.
 	Evidence *evidenceapp.Service
 
@@ -1427,6 +1447,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.Attribution != nil {
 		s.PriorityClassification.SetAttributionLookup(repos.Attribution)
 	}
+
+	// Edits that lower an asset's exposure, criticality or crown-jewel flag are
+	// decided under the organization's approval policy when they would drop an
+	// open P0/P1 finding (docs/architecture/asset-risk-governance.md).
+	s.AssetRiskGovernance = finding.NewAssetRiskGovernance(s.Vulnerability, s.PriorityClassification,
+		repos.Asset, repos.AssetRiskRequest, s.Asset, log)
+	s.Asset.SetRiskGovernor(assetRiskGovernor{s.AssetRiskGovernance})
 
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
@@ -2289,6 +2316,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Scope.SetLedgerTemplates(s.ScannerTemplate)
 	}
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
+
+	// A finding's custom retest check: content in the template library
+	// above, run by the retest service.
+	s.RetestCheck = retestcheckapp.NewService(repos.FindingRetestCheck, repos.Finding,
+		retestcheckapp.LibraryTemplates{Svc: s.ScannerTemplate}, s.Audit, log)
+	s.Retest.SetCheckSource(retestcheckapp.RetestSource{Svc: s.RetestCheck})
 
 	// Initialize credential service for template sources
 	// Decode hex key to bytes (64 hex chars -> 32 bytes for AES-256)
@@ -3651,4 +3684,16 @@ func learnComponentReleases(f *releasefeed.Feed) {
 		learned[k] = versions.Learned{Version: c.Version, Digest: c.Digest}
 	}
 	versions.SetLearned(learned)
+}
+
+// assetRiskGovernor adapts the finding package's risk governance to the asset
+// service's decision hook (the two packages do not import each other).
+type assetRiskGovernor struct{ g *finding.AssetRiskGovernance }
+
+func (a assetRiskGovernor) GovernRisk(ctx context.Context, in asset.RiskGovernInput) (asset.RiskGovernOutcome, error) {
+	out, err := a.g.Govern(ctx, finding.GovernInput{
+		TenantID: in.TenantID, AssetID: in.AssetID, Before: in.Before, After: in.After,
+		Actor: in.Actor, CanApprove: in.CanApprove, Reason: in.Reason, Audit: in.Audit,
+	})
+	return asset.RiskGovernOutcome{Held: out.Held}, err
 }
