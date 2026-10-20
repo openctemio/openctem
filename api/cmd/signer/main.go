@@ -18,7 +18,7 @@
 //
 // Environment: SIGNER_KEY_FILE, SIGNER_SOCKET, SIGNER_STATE_DIR,
 // SIGNER_KEYSET_FILE, SIGNER_TENANT_RATE, SIGNER_TENANT_BURST,
-// SIGNER_SENSOR_RATE, SIGNER_SENSOR_BURST, SIGNER_LEDGER,
+// SIGNER_SENSOR_RATE, SIGNER_SENSOR_BURST, SIGNER_PUBLISH_DIR, SIGNER_LEDGER,
 // SIGNER_LEDGER_MIN_APPROVALS.
 package main
 
@@ -181,6 +181,16 @@ func serve() error {
 	key, err := signer.LoadKey(keyFile)
 	if err != nil {
 		return err
+	}
+	// The public key for the installation's sensor to pin: written to a volume
+	// only this signer writes and only the sensor mounts (read-only), never
+	// the API's. Unset: nothing is published.
+	if dir := os.Getenv("SIGNER_PUBLISH_DIR"); dir != "" {
+		pub, _ := key.Public().(ed25519.PublicKey)
+		if err := signer.PublishPublicKey(dir, pub); err != nil {
+			return fmt.Errorf("SIGNER_PUBLISH_DIR: %w", err)
+		}
+		logger.Info("public key published", "dir", dir, "keyid", jobsign.NewPublicKey(pub).KeyID)
 	}
 	cfg := signer.Config{Key: key, StateDir: stateDir, Logger: logger}
 	if cfg.TenantRate, err = envFloat("SIGNER_TENANT_RATE"); err != nil {

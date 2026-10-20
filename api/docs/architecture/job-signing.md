@@ -66,6 +66,7 @@ Signer (`openctem-signer serve`):
 | `SIGNER_SOCKET` | Unix socket path | required |
 | `SIGNER_STATE_DIR` | `seq/` and `signing.log` | required |
 | `SIGNER_KEYSET_FILE` | the key set signed by the offline root, served at `GET /v1/keyset`; read at start and on `SIGHUP` (see "Key sets and the offline root") | unset: no key set |
+| `SIGNER_PUBLISH_DIR` | a directory where the signer writes its public key as `signer.pub` (0644, atomically, at every start) for the bundled sensor to pin ([The bundled sensor's pin](#the-bundled-sensors-pin)); it must exist | unset: nothing published |
 | `SIGNER_TENANT_RATE` / `SIGNER_TENANT_BURST` | signing ceiling per organization (token bucket) | 50/s, 500 |
 | `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
 | `SIGNER_LEDGER` | scope ledger mode: `enforce`, `audit` or `off` ([Scope ledger](#scope-ledger)) | the recorded default: `enforce` on a signer that had never signed, `audit` on one upgraded to the ledger |
@@ -213,6 +214,38 @@ The API fetches the key set from the signer (`GET /v1/keyset`, cached 5
 minutes, passed on only when it is signed by the root it names) and
 carries it in hello as `signed_jobs.keyset`. A change of key set changes
 the doorbell's `config_version`, so sensors re-read hello.
+
+## The bundled sensor's pin
+
+A sensor that pins nothing trusts the key set or keys the API serves the
+first time it pairs, so a compromised API could plant its own signer for
+it. The default Compose install therefore delivers the pin outside the
+API's reach:
+
+- The signer (`SIGNER_PUBLISH_DIR=/var/lib/openctem-signer-pub`) writes
+  its **public** key to `signer.pub` on the `signer-pub` volume: one line,
+  standard base64 of the 32-byte Ed25519 key, mode 0644, written to a
+  temporary file and renamed. It is rewritten at every start, so a rotated
+  signer key is republished (restart the sensor to read it).
+- `signer-pub` is mounted read-write into the signer only and read-only
+  into the bundled sensor (`docker-compose.sensor.yml`). The API never
+  mounts it, so it cannot change what the sensor pins.
+- The sensor reads it through `SENSOR_JOB_SIGNING_KEYS_FILE` (sdk-go). A pin
+  read from a file is exclusive: the keys and root the sensor took from the
+  platform when it paired are not trusted next to it. The file must not be
+  writable by group or others and must not be a symlink that leaves its
+  directory. Setting both `SENSOR_JOB_SIGNING_KEYS` and the `_FILE` form
+  stops the sensor. `SENSOR_INSTANCE_ENROLLMENT_TOKEN_FILE` and
+  `SENSOR_JOB_SIGNING_ROOT_FILE` follow the same rules.
+- A sensor release older than the one that reads `*_FILE` ignores the new
+  variable and keeps trusting the first key the API serves.
+
+This pins the signer's own key, which is the default for installs that have
+not done the offline-root ceremony. It does not survive a signer key
+change without a sensor restart. Production installs (Helm, regulated
+sites) pin the **offline root** (`SENSOR_JOB_SIGNING_ROOT`, or its `_FILE`
+form) as described above: then a key rotation is a new key set and nothing
+on the sensor changes.
 
 ## Signer API
 
