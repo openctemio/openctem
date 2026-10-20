@@ -4,7 +4,7 @@
  * can re-run it on a sensor. Design: research/221 (finding retest checks).
  *
  *   GET    /api/v1/findings/{id}/retest-check            — { check } (findings:read)
- *   POST   /api/v1/findings/{id}/retest-check/validate   — dry run, nothing saved
+ *   POST   /api/v1/findings/{id}/retest-check/test       — dry run, nothing saved
  *   PUT    /api/v1/findings/{id}/retest-check            — attach or replace
  *   DELETE /api/v1/findings/{id}/retest-check            — detach (template stays in the library)
  *   POST   /api/v1/findings/{id}/retest-check/approve    — second-person approval of an intrusive check
@@ -154,7 +154,7 @@ function useRefreshCheck(findingId: string) {
 /** Dry run: what would run, its tier and whether it needs approval. Nothing is saved. */
 export function useValidateRetestCheck(findingId: string) {
   return useSWRMutation(
-    `${retestCheckEndpoint(findingId)}/validate`,
+    `${retestCheckEndpoint(findingId)}/test`,
     (url: string, { arg }: { arg: RetestCheckPutBody }) => post<RetestCheckValidation>(url, arg)
   )
 }
