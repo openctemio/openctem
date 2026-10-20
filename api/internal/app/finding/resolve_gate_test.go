@@ -165,3 +165,28 @@ func TestBulkResolve_EvidenceByRisk(t *testing.T) {
 		t.Errorf("reasons = %v", reasons)
 	}
 }
+
+// A person move in bulk needs findings:status, as on the single route: the
+// bulk permission is not a stand-in. Without it the whole request is refused
+// before anything is read or written; with it the same move goes through.
+func TestBulkStatus_WithoutStatusPermission_Refused(t *testing.T) {
+	tenantID := shared.NewID()
+	f := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	repo := &methodStubRepo{bulkStubRepo: bulkStubRepo{byID: map[string]*vulnerability.Finding{f.ID().String(): f}}}
+	svc := newBulkTestService(repo)
+	in := BulkUpdateStatusInput{
+		FindingIDs: []string{f.ID().String()},
+		Status:     vulnerability.FindingStatusConfirmed.String(),
+		ActorID:    shared.NewID().String(),
+	}
+	if _, err := svc.BulkUpdateFindingsStatus(context.Background(), tenantID.String(), in); !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("bulk confirm without findings:status: err = %v, want ErrForbidden", err)
+	}
+	if len(repo.written) != 0 {
+		t.Fatalf("a refused bulk move wrote %v", repo.written)
+	}
+	in.HasStatusPermission = true
+	if res, err := svc.BulkUpdateFindingsStatus(context.Background(), tenantID.String(), in); err != nil || res.Updated != 1 {
+		t.Fatalf("bulk confirm with findings:status = %+v, %v; want 1 updated", res, err)
+	}
+}
