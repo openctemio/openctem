@@ -18,6 +18,8 @@ const base: MemberAccessReport = {
   owned_workflows: [],
   assigned_findings: 0,
   owned_assets: 0,
+  owned_tasks: 0,
+  owned_campaigns: 0,
 }
 
 describe('MemberAccessReportView', () => {
