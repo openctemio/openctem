@@ -1,6 +1,7 @@
 package scanrun
 
 import (
+	"maps"
 	"time"
 
 	"context"
@@ -980,8 +981,10 @@ type Partial struct {
 	// the step message.
 	Unreached        int
 	UnreachedSummary string
-	// AllUnreached says the sensor tried targets and reached none of them;
+	// Tried is how many targets the sensor tried to reach (0: it reported
+	// no reach summary). AllUnreached says it reached none of them;
 	// UnreachableMessage is then the step's failure message.
+	Tried              int
 	AllUnreached       bool
 	UnreachableMessage string
 	// Unfinished are the command's targets its result left unfinished (a
@@ -991,32 +994,71 @@ type Partial struct {
 	Unfinished []string
 }
 
-func (p Partial) any() bool {
-	return p.Skipped > 0 || p.Gaps > 0 || p.Unreached > 0 || len(p.Unfinished) > 0
+// incomplete reports whether the command left work unfinished: hosts the
+// sensor could not fully cover, or targets its result left unfinished. Only
+// that makes a step (and the run) partial. A target the sensor skipped by its
+// local policy, or could not reach, is a fact about the target, not lost work:
+// the step completes and the counts are recorded (notes).
+func (p Partial) incomplete() bool {
+	return p.Gaps > 0 || len(p.Unfinished) > 0
 }
 
-// message and code of a partial step: the skipped targets' code when there
-// are any, else the unreached targets', else the coverage gaps'; every
-// message that applies.
+// failsStep reports whether the command reached none of the targets it tried
+// and found nothing: with more than one target the sensor may be cut off, so
+// the step fails as unreachable. A single target that did not answer is an
+// ordinary result (completed, one unreachable).
+func (p Partial) failsStep(findings int) bool {
+	return p.AllUnreached && findings == 0 && p.Tried > 1
+}
+
+// Step output keys recording the targets a completed step did not scan.
+const (
+	// StepOutputUnreachable counts the targets the sensor could not reach.
+	StepOutputUnreachable = "unreachable_target_count"
+	// StepOutputSkipped counts the targets the sensor's local policy skipped.
+	StepOutputSkipped = "skipped_target_count"
+	// stepOutputUnreachableNote / stepOutputSkippedNote carry the summaries.
+	stepOutputUnreachableNote = "unreachable_summary"
+	stepOutputSkippedNote     = "skipped_summary"
+)
+
+// withNotes returns output with the skipped and unreachable counts (and
+// their summaries) of p added; output itself is not changed.
+func (p Partial) withNotes(output map[string]any) map[string]any {
+	if p.Skipped == 0 && p.Unreached == 0 {
+		return output
+	}
+	out := make(map[string]any, len(output)+4)
+	maps.Copy(out, output)
+	if p.Unreached > 0 {
+		out[StepOutputUnreachable] = p.Unreached
+		if p.UnreachedSummary != "" {
+			out[stepOutputUnreachableNote] = p.UnreachedSummary
+		}
+	}
+	if p.Skipped > 0 {
+		out[StepOutputSkipped] = p.Skipped
+		if p.SkippedSummary != "" {
+			out[stepOutputSkippedNote] = p.SkippedSummary
+		}
+	}
+	return out
+}
+
+// message and code of a partial step: the targets it left unfinished and the
+// coverage gaps, with their summaries.
 func (p Partial) message() (string, string) {
 	var parts []string
 	unfinished := ""
 	if n := len(p.Unfinished); n > 0 {
 		unfinished = fmt.Sprintf("%d target(s) not finished", n)
 	}
-	for _, m := range []string{p.SkippedSummary, p.UnreachedSummary, p.GapSummary, unfinished} {
+	for _, m := range []string{p.GapSummary, unfinished} {
 		if m != "" {
 			parts = append(parts, m)
 		}
 	}
-	code := scanrun.ErrCodeCoverageGaps
-	switch {
-	case p.Skipped > 0:
-		code = scanrun.ErrCodeTargetsSkipped
-	case p.Unreached > 0:
-		code = scanrun.FailureTargetUnreachable
-	}
-	return strings.Join(parts, "; "), code
+	return strings.Join(parts, "; "), scanrun.ErrCodeCoverageGaps
 }
 
 // OnStepCompletedPartial is OnStepCompleted for a command that completed
@@ -1081,18 +1123,19 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 			}
 		}
 	}
-	if stepRun != nil && p.AllUnreached && findingsCount == 0 {
+	if stepRun != nil && p.failsStep(findingsCount) {
 		return s.failStep(ctx, run, stepRun, p.UnreachableMessage, scanrun.FailureTargetUnreachable)
 	}
-	if stepRun != nil && p.any() {
+	if stepRun != nil && p.incomplete() {
 		msg, code := p.message()
 		stepRun.Partial(findingsCount, msg, code)
+		stepRun.Output = p.withNotes(stepRun.Output)
 		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 			s.logger.Error("failed to record partial step run", "step_key", stepKey, "error", err)
 		}
 		metrics.StepRunsTotal.WithLabelValues(stepKey, "partial").Inc()
 	} else if stepRun != nil {
-		stepRun.Complete(findingsCount, output)
+		stepRun.Complete(findingsCount, p.withNotes(output))
 		// FIXED: Don't silently suppress errors - log them instead
 		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 			s.logger.Error("failed to update step run status", "step_key", stepKey, "error", err)
@@ -1262,6 +1305,7 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 		}
 	}
 	qgPassed := qgResult == nil || qgResult.Passed
+	s.recordReachCounts(ctx, run)
 
 	// Targets zone routing could not place were never scanned (22c B7): a
 	// run whose steps all finished but left targets out is partial, not
@@ -1394,7 +1438,7 @@ type stepBatches struct {
 // The step fails as unreachable only when every batch reported its reach
 // and no batch reached a target.
 func (b stepBatches) partial() Partial {
-	p := Partial{Skipped: b.skipped, Gaps: b.gaps, Unreached: b.unreached}
+	p := Partial{Skipped: b.skipped, Gaps: b.gaps, Unreached: b.unreached, Tried: b.reachTargets}
 	if b.skipped > 0 {
 		p.SkippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", b.skipped)
 	}
@@ -2155,4 +2199,50 @@ func runTargetTypes(rc map[string]any) map[string]asset.TypeRef {
 		}
 	}
 	return out
+}
+
+// Run context keys recording the targets a run did not scan because of the
+// targets themselves: summed from its steps when the run settles. They never
+// change the run's status.
+const (
+	RunContextKeyUnreachableCount = StepOutputUnreachable
+	RunContextKeySkippedCount     = StepOutputSkipped
+)
+
+// recordReachCounts sums the skipped and unreachable counts the steps
+// recorded in their output into the run's context ("completed · N
+// unreachable" in the console).
+func (s *Service) recordReachCounts(ctx context.Context, run *scanrun.Run) {
+	unreached, skipped := 0, 0
+	for _, sr := range run.StepRuns {
+		unreached += outputCount(sr.Output, StepOutputUnreachable)
+		skipped += outputCount(sr.Output, StepOutputSkipped)
+	}
+	if unreached == 0 && skipped == 0 {
+		return
+	}
+	if run.Context == nil {
+		run.Context = map[string]any{}
+	}
+	if unreached > 0 {
+		run.Context[RunContextKeyUnreachableCount] = unreached
+	}
+	if skipped > 0 {
+		run.Context[RunContextKeySkippedCount] = skipped
+	}
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		s.logger.Error("failed to record the run's unreachable and skipped counts", "run_id", run.ID.String(), "error", err)
+	}
+}
+
+// outputCount reads a count a step stored in its output: an int in memory, a
+// float64 after the JSON round trip.
+func outputCount(output map[string]any, key string) int {
+	switch n := output[key].(type) {
+	case int:
+		return max(n, 0)
+	case float64:
+		return max(int(n), 0)
+	}
+	return 0
 }
