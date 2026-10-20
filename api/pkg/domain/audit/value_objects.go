@@ -238,6 +238,13 @@ const (
 	// finding's verification checklist: which items changed, whether it is now
 	// complete and who completed it. The notes text is not recorded.
 	ActionFindingVerificationChecklistUpdated Action = "finding.verification_checklist_updated"
+	// ActionFindingRetestCheckSaved / Removed / Approved record a person
+	// attaching, changing, removing or approving a finding's retest check
+	// (docs/architecture/finding-retest-checks.md): the template, its
+	// digest and its tier.
+	ActionFindingRetestCheckSaved    Action = "finding.retest_check_saved"
+	ActionFindingRetestCheckRemoved  Action = "finding.retest_check_removed"
+	ActionFindingRetestCheckApproved Action = "finding.retest_check_approved"
 	// ActionFindingClassified records a change to a finding's classification
 	// (CVE, CVSS, CWE, OWASP ids): the old and new values.
 	ActionFindingClassified Action = "finding.classified"
@@ -787,6 +794,7 @@ func (a Action) IsValid() bool {
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
+		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionFindingsRefingerprinted, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
@@ -917,6 +925,7 @@ func (a Action) Category() string {
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingsRefingerprinted,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
