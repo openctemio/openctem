@@ -1569,7 +1569,13 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	}
 	if ctisFinding.Secret.MaskedValue != "" {
 		f.SetSecretMaskedValue(ctisFinding.Secret.MaskedValue)
-		f.SetSecretFingerprint(p.secretFingerprinter.Fingerprint(f.TenantID(), ctisFinding.Secret.MaskedValue))
+	}
+	// The rotation group key is derived from this fingerprint, so it comes
+	// only from the keyed hash of the raw value, never from a mask: every
+	// short secret masks to the same word. Without one the finding gets no
+	// rotation group of its own making.
+	if h := p.rawSecretHMAC(f.TenantID(), ctisFinding); h != "" {
+		f.SetSecretFingerprint(h)
 	}
 	if ctisFinding.Secret.InHistoryOnly {
 		f.SetSecretInHistoryOnly(true)
