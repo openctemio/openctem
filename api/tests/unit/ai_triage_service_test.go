@@ -738,7 +738,7 @@ func (m *mockAITriageTenantRepo) Get(_ context.Context, id shared.ID, d tenant.A
 	return result, nil
 }
 
-func (m *mockAITriageTenantRepo) Save(context.Context, shared.ID, tenant.AISettings) error {
+func (m *mockAITriageTenantRepo) Save(context.Context, shared.ID, tenant.AISettings, *time.Time) error {
 	return nil
 }
 

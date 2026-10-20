@@ -110,27 +110,41 @@ func (r *TenantAISettingsRepository) Get(ctx context.Context, tenantID shared.ID
 	return out, nil
 }
 
-// Save upserts the source, own provider, key and consent. The policy column
-// is left as it is.
-func (r *TenantAISettingsRepository) Save(ctx context.Context, tenantID shared.ID, s tenant.AISettings) error {
-	const q = `
-		INSERT INTO tenant_ai_settings (tenant_id, source, provider, base_url, model, key_enc, key_last4,
-		                                key_updated_at, key_updated_by, enabled_at, enabled_by, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, '')::uuid, $10, $11, NULLIF($12, '')::uuid)
-		ON CONFLICT (tenant_id) DO UPDATE SET
-		       source = EXCLUDED.source, provider = EXCLUDED.provider, base_url = EXCLUDED.base_url,
-		       model = EXCLUDED.model, key_enc = EXCLUDED.key_enc, key_last4 = EXCLUDED.key_last4,
-		       key_updated_at = EXCLUDED.key_updated_at, key_updated_by = EXCLUDED.key_updated_by,
-		       enabled_at = EXCLUDED.enabled_at, enabled_by = EXCLUDED.enabled_by,
-		       updated_by = EXCLUDED.updated_by, updated_at = now()`
+// Save writes the source, own provider, key and consent. The policy column
+// is left as it is. expected is the updated_at the caller read (nil: it read
+// no row); a row changed since then is not overwritten (shared.ErrConflict).
+func (r *TenantAISettingsRepository) Save(ctx context.Context, tenantID shared.ID, s tenant.AISettings, expected *time.Time) error {
 	var key sql.NullString
 	if s.APIKey != "" {
 		key = sql.NullString{String: s.APIKey, Valid: true}
 	}
-	_, err := r.db.ExecContext(ctx, q, tenantID.String(), modeToSource(s.Mode), string(s.Provider), s.BaseURL, s.ModelOverride,
-		key, s.KeyLast4, s.KeyUpdatedAt, s.KeyUpdatedBy, s.EnabledAt, s.EnabledBy, s.UpdatedBy)
+	var (
+		res sql.Result
+		err error
+	)
+	if expected == nil {
+		const ins = `
+		INSERT INTO tenant_ai_settings (tenant_id, source, provider, base_url, model, key_enc, key_last4,
+		                                key_updated_at, key_updated_by, enabled_at, enabled_by, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, '')::uuid, $10, $11, NULLIF($12, '')::uuid)
+		ON CONFLICT (tenant_id) DO NOTHING`
+		res, err = r.db.ExecContext(ctx, ins, tenantID.String(), modeToSource(s.Mode), string(s.Provider), s.BaseURL, s.ModelOverride,
+			key, s.KeyLast4, s.KeyUpdatedAt, s.KeyUpdatedBy, s.EnabledAt, s.EnabledBy, s.UpdatedBy)
+	} else {
+		const upd = `
+		UPDATE tenant_ai_settings SET
+		       source = $2, provider = $3, base_url = $4, model = $5, key_enc = $6, key_last4 = $7,
+		       key_updated_at = $8, key_updated_by = NULLIF($9, '')::uuid, enabled_at = $10, enabled_by = $11,
+		       updated_by = NULLIF($12, '')::uuid, updated_at = now()
+		 WHERE tenant_id = $1 AND updated_at = $13`
+		res, err = r.db.ExecContext(ctx, upd, tenantID.String(), modeToSource(s.Mode), string(s.Provider), s.BaseURL, s.ModelOverride,
+			key, s.KeyLast4, s.KeyUpdatedAt, s.KeyUpdatedBy, s.EnabledAt, s.EnabledBy, s.UpdatedBy, expected.UTC())
+	}
 	if err != nil {
 		return fmt.Errorf("save AI settings: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("%w: the AI settings changed while you were editing; reload and try again", shared.ErrConflict)
 	}
 	return nil
 }

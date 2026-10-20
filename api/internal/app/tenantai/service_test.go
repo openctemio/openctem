@@ -23,6 +23,8 @@ import (
 type fakeRepo struct {
 	mu   sync.Mutex
 	rows map[shared.ID]tenant.AISettings
+	// conflictNext simulates a concurrent writer winning between read and write.
+	conflictNext bool
 }
 
 func newFakeRepo() *fakeRepo { return &fakeRepo{rows: map[shared.ID]tenant.AISettings{}} }
@@ -36,9 +38,14 @@ func (f *fakeRepo) Get(_ context.Context, id shared.ID, d tenant.AISettings) (te
 	return d, nil
 }
 
-func (f *fakeRepo) Save(_ context.Context, id shared.ID, s tenant.AISettings) error {
+func (f *fakeRepo) Save(_ context.Context, id shared.ID, s tenant.AISettings, expected *time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	cur, ok := f.rows[id]
+	if f.conflictNext || (ok && (expected == nil || cur.UpdatedAt == nil || !cur.UpdatedAt.Equal(*expected))) || (!ok && expected != nil) {
+		f.conflictNext = false
+		return shared.ErrConflict
+	}
 	f.rows[id] = s
 	return nil
 }
@@ -321,4 +328,19 @@ func TestIsolationBetweenOrganizations(t *testing.T) {
 	assert.False(t, other.KeySet)
 	assert.Equal(t, "platform", other.Source)
 	assert.Empty(t, other.Provider)
+}
+
+// A concurrent writer winning between the read and the write makes Save fail
+// with a conflict (HTTP 409) and leaves the stored row as it was.
+func TestSaveConflictWhenSettingsChangedConcurrently(t *testing.T) {
+	h := newHarness(t, true)
+	ctx := context.Background()
+	_, err := h.svc.Save(ctx, h.tid, Update{Source: sp("own"), Provider: sp("openai"), Model: sp("gpt-4o"), APIKey: sp(secret), Enabled: bp(true)}, actx)
+	require.NoError(t, err)
+	before := h.rep.rows[h.id]
+
+	h.rep.conflictNext = true
+	_, err = h.svc.Save(ctx, h.tid, Update{Model: sp("gpt-4o-mini")}, actx)
+	require.ErrorIs(t, err, shared.ErrConflict)
+	assert.Equal(t, before, h.rep.rows[h.id])
 }

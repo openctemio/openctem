@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -42,8 +43,12 @@ func TestTenantAISettingsRepository(t *testing.T) {
 		APIKey: "Y2lwaGVydGV4dA==", KeyLast4: "wxyz", KeyUpdatedAt: &now, KeyUpdatedBy: userID,
 		EnabledAt: &now, EnabledBy: userID, UpdatedBy: userID,
 	}
-	if err := r.Save(ctx, a, in); err != nil {
+	if err := r.Save(ctx, a, in, nil); err != nil {
 		t.Fatal(err)
+	}
+	// A second first-write (nil expected) must not overwrite the row.
+	if err := r.Save(ctx, a, in, nil); !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("insert over an existing row: err = %v, want conflict", err)
 	}
 	got, err = r.Get(ctx, a, defaults)
 	if err != nil {
@@ -70,8 +75,15 @@ func TestTenantAISettingsRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	in.ModelOverride = "llama3.1"
-	if err := r.Save(ctx, a, in); err != nil {
+	read := got.UpdatedAt
+	if err := r.Save(ctx, a, in, read); err != nil {
 		t.Fatal(err)
+	}
+	// A save based on the older read is refused and changes nothing.
+	stale := in
+	stale.ModelOverride = "stale"
+	if err := r.Save(ctx, a, stale, read); !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("stale save: err = %v, want conflict", err)
 	}
 	got, _ = r.Get(ctx, a, defaults)
 	if got.AutoTriageEnabled || got.AutoTriageDelaySeconds != 60 || len(got.AutoTriageSeverities) != 1 || got.ModelOverride != "llama3.1" {
@@ -80,7 +92,11 @@ func TestTenantAISettingsRepository(t *testing.T) {
 
 	// Removing the key stores NULL, not an empty string.
 	in.APIKey, in.KeyLast4, in.KeyUpdatedAt, in.KeyUpdatedBy = "", "", nil, ""
-	if err := r.Save(ctx, a, in); err != nil {
+	got, _ = r.Get(ctx, a, defaults)
+	if got.ModelOverride != "llama3.1" {
+		t.Fatalf("the stale save must not be applied: %+v", got)
+	}
+	if err := r.Save(ctx, a, in, got.UpdatedAt); err != nil {
 		t.Fatal(err)
 	}
 	var isNull bool

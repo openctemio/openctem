@@ -445,6 +445,7 @@
   "settings.ai.usage": "This month: {used} of {limit} tokens used.",
   "settings.ai.confirmTitle": "Turn on AI triage?",
   "settings.ai.confirmDesc": "Finding content (see \"What is sent\") will be sent to the AI provider your platform administrator set up, each time a member asks for an analysis. You can turn it off at any time.",
+  "settings.ai.confirmDescOwn": "Finding content (see \"What is sent\") will be sent to the AI provider your organization set up, each time a member asks for an analysis. You can turn it off at any time.",
   "settings.ai.confirm": "Turn on",
   "settings.ai.source.title": "AI source",
   "settings.ai.source.description": "Choose which AI analyses your findings. Saving needs a recent sign-in and is recorded in the audit log.",

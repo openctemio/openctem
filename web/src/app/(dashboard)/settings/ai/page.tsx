@@ -204,10 +204,17 @@ export default function AISettingsPage() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={t('settings.ai.confirmTitle', 'Turn on AI triage?')}
-        desc={t(
-          'settings.ai.confirmDesc',
-          'Finding content (see "What is sent") will be sent to the AI provider your platform administrator set up, each time a member asks for an analysis. You can turn it off at any time.'
-        )}
+        desc={
+          settings.data?.source === 'own'
+            ? t(
+                'settings.ai.confirmDescOwn',
+                'Finding content (see "What is sent") will be sent to the AI provider your organization set up, each time a member asks for an analysis. You can turn it off at any time.'
+              )
+            : t(
+                'settings.ai.confirmDesc',
+                'Finding content (see "What is sent") will be sent to the AI provider your platform administrator set up, each time a member asks for an analysis. You can turn it off at any time.'
+              )
+        }
         confirmText={t('settings.ai.confirm', 'Turn on')}
         handleConfirm={async () => {
           await save(true)

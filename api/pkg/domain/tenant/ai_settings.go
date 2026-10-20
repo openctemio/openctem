@@ -154,6 +154,8 @@ type AISettingsRepository interface {
 	// explicit "auto-triage off" always wins over a platform default).
 	Get(ctx context.Context, tenantID shared.ID, defaults AISettings) (AISettings, error)
 	// Save writes the source, provider, key and consent. The auto-triage
-	// policy is not touched.
-	Save(ctx context.Context, tenantID shared.ID, s AISettings) error
+	// policy is not touched. expected is the UpdatedAt the caller read (nil
+	// when it read no row): when the stored row has changed since, nothing is
+	// written and the error wraps shared.ErrConflict.
+	Save(ctx context.Context, tenantID shared.ID, s AISettings, expected *time.Time) error
 }

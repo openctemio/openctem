@@ -76,7 +76,7 @@ func (f *fakeAISettings) Get(_ context.Context, _ shared.ID, d tenant.AISettings
 	return out, nil
 }
 
-func (f *fakeAISettings) Save(_ context.Context, _ shared.ID, s tenant.AISettings) error {
+func (f *fakeAISettings) Save(_ context.Context, _ shared.ID, s tenant.AISettings, _ *time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.s = s
