@@ -27,27 +27,27 @@ func (a ParticipationAccess) CallerAccess(ctx context.Context, tenantID, taskID 
 	return participation.Access{}, nil
 }
 
-// UserMayRead reports whether the person could read the task: one of its
+// UserAccess reports whether the person could read the task: one of its
 // member findings is inside their data scope.
-func (a ParticipationAccess) UserMayRead(ctx context.Context, tenantID, taskID, userID shared.ID) (bool, error) {
+func (a ParticipationAccess) UserAccess(ctx context.Context, tenantID, taskID, userID shared.ID) (participation.Access, bool, error) {
 	s := a.s
 	if _, err := s.repo.GetTask(ctx, tenantID, taskID); err != nil {
-		return false, err
+		return participation.Access{}, false, err
 	}
 	if s.dataScope == nil {
-		return true, nil
+		return participation.Access{}, true, nil
 	}
 	scope, err := s.dataScope.ForUser(ctx, tenantID, userID)
 	if err != nil {
-		return false, err
+		return participation.Access{}, false, err
 	}
 	if scope == nil {
-		return true, nil
+		return participation.Access{}, true, nil
 	}
 	counts, err := s.repo.ScopedCounts(ctx, tenantID, []shared.ID{taskID}, scope)
 	if err != nil {
-		return false, err
+		return participation.Access{}, false, err
 	}
 	c := counts[taskID]
-	return c.Total > 0 || c.Related > 0, nil
+	return participation.Access{}, c.Total > 0 || c.Related > 0, nil
 }
