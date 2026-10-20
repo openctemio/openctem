@@ -167,6 +167,19 @@ func (h *JiraWebhookHandler) createGitHubTicket(w http.ResponseWriter, r *http.R
 	_ = json.NewEncoder(w).Encode(result)
 }
 
+// writeEgressRefusal answers a refusal of the outbound ticket gate: 403 with
+// code TICKET_EGRESS_REFUSED and the refusal's stable reason. The message is
+// the platform's own text.
+func writeEgressRefusal(w http.ResponseWriter, err error) bool {
+	var refused *ticketing.EgressRefusedError
+	if !errors.As(err, &refused) {
+		return false
+	}
+	apierror.New(http.StatusForbidden, apierror.Code("TICKET_EGRESS_REFUSED"), refused.Error()).
+		WithDetails(map[string]string{"reason": string(refused.Reason)}).WriteJSON(w)
+	return true
+}
+
 // ListJiraProjects handles GET /api/v1/integrations/jira/projects.
 // Returns the Jira projects visible to the tenant's connected ticketing
 // integration, for the admin destination-project picker (so an operator
@@ -351,6 +364,9 @@ func jiraDeliveryFresh(tsMillis int64, now time.Time) bool {
 
 // handleError maps domain errors to HTTP responses.
 func (h *JiraWebhookHandler) handleError(w http.ResponseWriter, err error) {
+	if writeEgressRefusal(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("finding not found").WriteJSON(w)
