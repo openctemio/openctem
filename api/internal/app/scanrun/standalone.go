@@ -79,8 +79,12 @@ type StandaloneOutcome struct {
 	// verdict, fixed or still present). Otherwise the run fails with Message
 	// and Code (the reason the work produced no answer).
 	Succeeded bool
-	Message   string
-	Code      string
+	// Unable: the tool could not run the check (not a failure of the work
+	// and not an answer): the step is skipped and the run is blocked with
+	// Code and Message, never failed.
+	Unable  bool
+	Message string
+	Code    string
 }
 
 // FinishStandaloneRun settles a standalone run and its step. A run of another
@@ -103,6 +107,8 @@ func (s *Service) FinishStandaloneRun(ctx context.Context, tenantID, runID share
 		}
 		if out.Succeeded {
 			step.Complete(0, nil)
+		} else if out.Unable {
+			step.Skip(out.Message)
 		} else {
 			step.Fail(out.Message, out.Code)
 		}
@@ -113,6 +119,9 @@ func (s *Service) FinishStandaloneRun(ctx context.Context, tenantID, runID share
 	if out.Succeeded {
 		run.Complete()
 		run.CompletedSteps = 1
+	} else if out.Unable {
+		run.Block(out.Code, out.Message)
+		run.SkippedSteps = 1
 	} else {
 		run.Fail(out.Message)
 		run.FailedSteps = 1
@@ -173,4 +182,10 @@ func (s *Service) FinishValidationRun(ctx context.Context, tenantID, runID share
 // FinishRetestRun settles a retest's run (retest.RunRecorder).
 func (s *Service) FinishRetestRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error {
 	return s.FinishStandaloneRun(ctx, tenantID, runID, StandaloneOutcome{Succeeded: succeeded, Message: message, Code: code})
+}
+
+// FinishRetestRunUnable settles a retest's run whose tool could not run the
+// check: blocked with the reason, not failed.
+func (s *Service) FinishRetestRunUnable(ctx context.Context, tenantID, runID shared.ID, message, code string) error {
+	return s.FinishStandaloneRun(ctx, tenantID, runID, StandaloneOutcome{Unable: true, Message: message, Code: code})
 }

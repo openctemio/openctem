@@ -62,6 +62,21 @@ Team roles are used for team management operations:
 | `member` | 2 | Team member - create/edit resources |
 | `viewer` | 1 | Team viewer - read-only access |
 
+### Editing a custom role
+
+`PUT /api/v1/roles/{id}` is held to the delegation ceiling on **both** sides:
+
+- The editor must hold every permission the role carries **now** and every one
+  it will carry afterwards (and full data access when either side has it). A
+  delegated role manager can neither add a permission they lack nor strip one
+  they lack, so they cannot sabotage a "risk approver" role they could never
+  grant. Owners pass; delete, grant and revoke apply the same rule.
+- A change that makes the role gain a privileged permission, an approval-type
+  permission (any `*:approve`) or organization-wide data grade needs the
+  editor's recent re-authentication when the role has holders, and for a
+  team-bound role it is also owner-only. Giving a user a custom role that
+  carries such a permission needs the same step-up.
+
 ### One authority for the team role
 
 A person's team role is the highest system role they hold in `user_roles`, read
@@ -314,7 +329,8 @@ and SBOM import write it.
 | `PATCH /api/v1/findings/{id}/status` | `findings:status`; moving a finding **out of** an approved false positive or an accepted risk needs `findings:approve` as well (403 otherwise), on this route and on bulk status. A workflow, automation action or ticket webhook cannot move a finding out of a decided status at all (false positive, accepted risk, duplicate; a workflow also not out of resolved) |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
-| `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
+| `POST /api/v1/findings/bulk/status` | `findings:bulk_update` **and** `findings:status` (the bulk permission widens the reach of a move; it does not replace the right to make it) |
+| `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
 
 > The finding **action** routes (status, triage, assign, bulk, verify) are gated on
@@ -2544,6 +2560,18 @@ permission held in another tenant never counts. Every member could read the
 organization, its members and its settings, so 000771 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
+
+**Governed classification.** `PATCH /findings/{id}/classify` (needs
+`findings:severity`) sets the CVE, CVSS, CWE and OWASP ids. A non-empty CVE is
+accepted only on a finding of type `vulnerability` (422
+`CLASSIFY_CVE_NOT_APPLICABLE` for a secret, misconfiguration, compliance, web3
+or license finding). A change of the CVE that lowers the finding's risk tier
+(it drops its KEV standing, or its P0 priority, which is derived from the CVE)
+also needs `findings:approve` (403 `CLASSIFY_LOWERS_RISK`); the tier after the
+change counts the new CVE's KEV membership and no priority class. Each change
+writes a `metadata_updated` timeline entry (`field: classification`, old and
+new values) and the audit action `finding.classified`. A request that changes
+nothing writes neither.
 
 **Split from `findings:write` (migration 001534).** `findings:severity` gates
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
