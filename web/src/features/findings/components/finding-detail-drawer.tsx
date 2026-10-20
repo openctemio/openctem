@@ -241,6 +241,7 @@ export function FindingDetailDrawer({
                   showCheck
                 />
                 <AssigneeSelect
+                  findingId={detail.id}
                   value={
                     triage.assignee
                       ? {

@@ -217,6 +217,7 @@ export function FindingProperties({
       {!hideTriage && (
         <Row label={t('findings.properties.assignee', 'Assignee')}>
           <AssigneeSelect
+            findingId={finding.id}
             disabled={locked}
             value={
               triage.assignee
