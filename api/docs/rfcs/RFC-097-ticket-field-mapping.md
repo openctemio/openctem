@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-15). Implemented: the mapping model (profiles per integration, project, issue type and object kind; versions with draft, publish and rollback), the attribute catalog with fixed inbound capabilities, the template language, validation against the tracker's create fields and workflow, drift detection, transition path planning, inbound intents and decisions, presets, auto-suggest, copy, import and export, outbound and inbound preview, the simulator, the API; the console (Settings → Integrations → Ticket field mapping: two-column field mapper with transforms and a sample render, workflow graph with outbound and inbound status maps and the simulator, previews, history with diff and rollback, import/export, dry run, drift check). the outbound engine (create from the published profile, status moves along the workflow path) and the inbound engine (status intents through the finding service; request intents open pending requests by the ticket actor). Designed: task issues from task profiles, field updates on change, a nightly drift check |
+| Status | Proposed (2026-10-15). Implemented: the mapping model (profiles per integration, project, issue type and object kind; versions with draft, publish and rollback), the attribute catalog with fixed inbound capabilities, the template language, validation against the tracker's create fields and workflow, drift detection, transition path planning, inbound intents and decisions, presets, auto-suggest, copy, import and export, outbound and inbound preview, the simulator, the API; the console (Settings → Integrations → Ticket field mapping: two-column field mapper with transforms and a sample render, workflow graph with outbound and inbound status maps and the simulator, previews, history with diff and rollback, import/export, dry run, drift check). the outbound engine (create from the published profile, status moves along the workflow path) and the inbound engine (status intents through the finding service; request intents open pending requests by the ticket actor); task issues from task profiles (create and status moves); the profile chosen by object kind, project and issue type on every path, with the issue type of each kind chosen on the integration (docs/architecture/ticketing-integration.md, "Issue types"); a create refused for its fields marks the profile drifted. Designed: field updates on change, a nightly drift check |
 | Scope | api, web |
 | Related | RFC-006 (ticketing provider and mapping), RFC-006 phase 3 (bidirectional status sync), RFC-015 (remediation groups), RFC-040 (output encoding of sensor-controlled text) |
 
@@ -110,6 +110,11 @@ catalog allows, invertible two-way transforms, attributes above the data level, 
 reachable with its required fields, inbound rules naming existing statuses, unmapped statuses. Errors block
 publishing; a draft may carry them. A tracker that cannot be reached blocks publishing.
 
+A profile is found by its destination: object kind, project and issue type (by id, or by name for a type chosen
+by name). An inbound change uses the profile of the issue's own type (a remediation task's issue: the task profile,
+else the finding profile of that type); an outbound move reads the issue's current type first. A create the tracker
+refuses for named fields marks the profile drifted at once.
+
 Drift compares the published snapshot with the tracker now: a mapped field removed, renamed (kept by id), an
 allowed value removed, a new required field, a workflow status removed. Any error marks the profile drifted.
 
@@ -144,7 +149,7 @@ previews need `integrations:manage`.
 | Step | Content | State |
 |---|---|---|
 | 1 | Model, validation, metadata discovery, preview, simulator, presets, import/export, API | implemented |
-| 2 | Outbound engine: create from the published profile and status moves along its workflow path (findings); dry run; no retry on refusals. Field updates on change, task issues and labels follow | implemented (findings: create + status) |
+| 2 | Outbound engine: create from the published profile and status moves along its workflow path (findings and remediation tasks); dry run; no retry on refusals; a field refusal marks the profile drifted. Field updates on change and labels follow | implemented (findings and tasks: create + status) |
 | 3 | Inbound engine: field commands and status intents through the service paths | designed |
 | 4 | Console: two-column mapper, workflow mapper with simulator, preview, history and diff, health | implemented |
 | 5 | Nightly drift check with a health banner and notification | designed |
