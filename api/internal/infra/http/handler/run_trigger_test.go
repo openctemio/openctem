@@ -60,3 +60,22 @@ func TestWithRunTriggerLabel(t *testing.T) {
 		t.Fatalf("automation trigger labeled with a user name: %+v", auto.Trigger)
 	}
 }
+
+// The run response carries the counts the run recorded in its context (an int
+// in memory, a float64 after the JSON round trip), never negative ones.
+func TestToRunResponse_UnreachableAndSkippedCounts(t *testing.T) {
+	r := scanrun.Run{TenantID: shared.NewID(), Context: map[string]any{
+		"unreachable_target_count": 3, "skipped_target_count": float64(2),
+	}}
+	got := toRunResponse(&r)
+	if got.UnreachableTargetCount != 3 || got.SkippedTargetCount != 2 {
+		t.Fatalf("counts = %d / %d, want 3 / 2", got.UnreachableTargetCount, got.SkippedTargetCount)
+	}
+	neg := scanrun.Run{TenantID: shared.NewID(), Context: map[string]any{"unreachable_target_count": -4, "skipped_target_count": "7"}}
+	if g := toRunResponse(&neg); g.UnreachableTargetCount != 0 || g.SkippedTargetCount != 0 {
+		t.Fatalf("hostile counts = %d / %d, want 0 / 0", g.UnreachableTargetCount, g.SkippedTargetCount)
+	}
+	if g := toRunResponse(&scanrun.Run{TenantID: shared.NewID()}); g.UnreachableTargetCount != 0 || g.SkippedTargetCount != 0 {
+		t.Fatalf("no context: %d / %d", g.UnreachableTargetCount, g.SkippedTargetCount)
+	}
+}
