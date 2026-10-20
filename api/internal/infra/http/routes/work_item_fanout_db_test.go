@@ -97,6 +97,9 @@ func (h *fanoutHarness) told(typ string) map[string]string {
 			out[id] += " x" + string(rune('0'+n))
 		}
 	}
+	if err := rows.Err(); err != nil {
+		h.t.Fatal(err)
+	}
 	return out
 }
 
@@ -286,6 +289,9 @@ func TestPentestFindingComment_NotToClientWatcher_DB(t *testing.T) {
 			var id string
 			_ = rows.Scan(&id)
 			out[id] = true
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
 		}
 		return out
 	}
