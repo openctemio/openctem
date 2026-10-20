@@ -43,10 +43,13 @@ func TestTenableSCCoverage_RollingBatchesStayInsideTheLicense(t *testing.T) {
 	pg := &postgres.DB{DB: db}
 	tenant := seedLifecycleTenant(ctx, t, db)
 	sensorID := seedReportingSensor(t, db, tenant, tenablesc.ToolName)
+	// The estate's addresses are public: the ownership gate holds a public
+	// address until a scope entry covers it.
+	seedScopeTarget(t, db, tenant, "cidr", "198.51.100.0/24")
 	for i := range 30 {
 		if _, err := db.ExecContext(ctx, `INSERT INTO assets (id, tenant_id, name, asset_type, status, criticality)
 			VALUES ($1, $2, $3, 'host', 'active', 'medium')`, shared.NewID().String(), tenant.String(),
-			fmt.Sprintf("10.20.0.%d", i+1)); err != nil {
+			fmt.Sprintf("198.51.100.%d", i+1)); err != nil {
 			t.Fatalf("seed asset: %v", err)
 		}
 	}
@@ -153,11 +156,14 @@ func TestTenableSCCoverage_RecycleRotationCoversTheEstate(t *testing.T) {
 	pg := &postgres.DB{DB: db}
 	tenant := seedLifecycleTenant(ctx, t, db)
 	sensorID := seedReportingSensor(t, db, tenant, tenablesc.ToolName)
+	// The estate's addresses are public: the ownership gate holds a public
+	// address until a scope entry covers it.
+	seedScopeTarget(t, db, tenant, "cidr", "198.51.100.0/24")
 	const hosts, license = 40, 10
 	for i := range hosts {
 		if _, err := db.ExecContext(ctx, `INSERT INTO assets (id, tenant_id, name, asset_type, status, criticality)
 			VALUES ($1, $2, $3, 'host', 'active', 'medium')`, shared.NewID().String(), tenant.String(),
-			fmt.Sprintf("10.20.0.%d", i+1)); err != nil {
+			fmt.Sprintf("198.51.100.%d", i+1)); err != nil {
 			t.Fatalf("seed asset: %v", err)
 		}
 	}
@@ -250,7 +256,7 @@ func TestTenableSCCoverage_RecycleRotationCoversTheEstate(t *testing.T) {
 		t.Fatalf("%d batches, want %d", batches, hosts/license)
 	}
 	for i := range hosts {
-		if n := assessedTimes[fmt.Sprintf("10.20.0.%d", i+1)]; n != 1 {
+		if n := assessedTimes[fmt.Sprintf("198.51.100.%d", i+1)]; n != 1 {
 			t.Fatalf("host %d assessed %d times in the cycle", i+1, n)
 		}
 	}
