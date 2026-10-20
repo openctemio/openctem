@@ -105,6 +105,33 @@ func (m *memLinks) FindByIssueID(_ context.Context, tenantID, integrationID shar
 	return out, nil
 }
 
+func (m *memLinks) RecordExternal(_ context.Context, tenantID, integrationID shared.ID, externalID, key string, ch ticketlink.ExternalChange) ([]*ticketlink.Link, error) {
+	var out []*ticketlink.Link
+	for _, r := range m.rows {
+		if r.State != ticketlink.StateActive || r.TenantID != tenantID || r.IntegrationID != integrationID {
+			continue
+		}
+		byID := externalID != "" && r.ExternalID == externalID
+		byKey := key != "" && r.ExternalKey == key && (r.ExternalID == "" || externalID == "")
+		if !byID && !byKey {
+			continue
+		}
+		if r.External.UpdatedAt != nil && r.External.UpdatedAt.After(ch.At) {
+			continue
+		}
+		if ch.AssigneeSet {
+			r.External.AssigneeID, r.External.AssigneeName = ch.AssigneeID, ch.AssigneeName
+		}
+		if ch.StatusCategory != "" {
+			r.External.StatusCategory = ch.StatusCategory
+		}
+		at := ch.At
+		r.External.UpdatedAt = &at
+		out = append(out, r)
+	}
+	return out, nil
+}
+
 func sameID(a, b *shared.ID) bool {
 	if a == nil || b == nil {
 		return a == b

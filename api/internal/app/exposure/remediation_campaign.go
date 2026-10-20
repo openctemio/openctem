@@ -605,6 +605,19 @@ func (s *RemediationCampaignService) RemoveCampaignTask(ctx context.Context, ten
 	if len(refs) != 1 || refs[0].CampaignID == nil || *refs[0].CampaignID != cid {
 		return nil, ErrCampaignTaskNotInCampaign
 	}
+	// The campaign's deadline cap and rollups follow the task, so taking it
+	// out is a change of the task: the caller must be able to change it too
+	// (as when adding it). A task they cannot see is not found; one with
+	// findings outside their data scope is refused.
+	if s.tasks == nil {
+		return nil, ErrCampaignTaskNotFound
+	}
+	if err := s.tasks.CheckTaskWritable(ctx, tid, tk); err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, ErrCampaignTaskNotFound
+		}
+		return nil, err
+	}
 	changed, err := s.repo.SetTasksCampaign(ctx, tid, []shared.ID{tk}, nil, optionalID(actorID))
 	if err != nil {
 		return nil, err

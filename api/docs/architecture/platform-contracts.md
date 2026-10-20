@@ -20,8 +20,8 @@ customers build on sdk-go) is handled by the same code.
 - The api requires no `github.com/openctemio/sdk-go` module:
   `GOWORK=off go mod why -m github.com/openctemio/sdk-go` answers
   "main module does not need module".
-- CI job **Platform depends on contracts only** (workflow
-  `repo-security.yml`, script `.github/scripts/check-platform-deps.sh` with
+- CI steps **Platform depends on contracts only** in the required job
+  **Workflow Lint** (workflow `repo-security.yml`, script `.github/scripts/check-platform-deps.sh` with
   its self-test) fails on a require, replace or `go.sum` line, a Go import,
   an npm dependency or a web import of the sensor SDK, a sensor or a
   connector product.
