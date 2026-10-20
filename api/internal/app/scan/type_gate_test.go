@@ -239,8 +239,18 @@ func TestStepRunContext(t *testing.T) {
 		"scan_id":                "s",
 		"targets":                []string{"a", "b"},
 		RunContextKeyTargetTypes: map[string]string{"a": "host"},
+		"tenant_runner_only":     true,
+		"routing_tags":           []string{"prod"},
 	}
 	got := StepRunContext(rc, &StepTargets{Targets: []string{"a"}})
+	for _, k := range []string{"tenant_runner_only", "routing_tags"} {
+		if _, leaked := got[k]; leaked {
+			t.Fatalf("%s must not reach a sensor", k)
+		}
+		if _, still := rc[k]; !still && k == "tenant_runner_only" {
+			t.Fatal("the run's own context keeps tenant_runner_only")
+		}
+	}
 	if _, leaked := got[RunContextKeyTargetTypes]; leaked {
 		t.Fatal("target_types must not reach a sensor")
 	}
