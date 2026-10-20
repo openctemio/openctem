@@ -13,8 +13,8 @@ import (
 // "Intel updates"). Implemented by postgres.ScoringRepository.
 type IntelChangeQueue interface {
 	EnqueueIntelChanges(ctx context.Context) (int64, error)
-	// RefreshFindingEPSS writes the catalog EPSS score and percentile onto
-	// every open finding whose CVE's values changed (tenant by tenant, in
+	// RefreshFindingEPSS writes the catalog EPSS score onto
+	// every open finding whose CVE's score changed (tenant by tenant, in
 	// batches), so readers of the stored value (the CI gate's
 	// epss_threshold) see today's score.
 	RefreshFindingEPSS(ctx context.Context) (int64, error)
