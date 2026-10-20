@@ -45,7 +45,7 @@ type AttachmentService struct {
 	storageCache    sync.Map                  // tenantID → *storageCacheEntry
 	quotaBytes      int64                     // per-tenant total of attachment bytes; 0 = no quota
 	quotaSource     QuotaSource
-	scanner         attachmentdom.Scanner     // optional malware scanner; nil = off
+	scanner         attachmentdom.Scanner // optional malware scanner; nil = off
 	scanRepo        attachmentdom.ScanRepository
 	retentionRepo   attachmentdom.RetentionRepository
 	blobQueue       attachmentdom.BlobDeletionQueue
