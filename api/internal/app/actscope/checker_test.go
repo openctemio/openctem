@@ -16,7 +16,10 @@ type fakeEnforcer struct {
 	inScope      map[shared.ID]bool
 	err          error
 	gotFallback  *shared.ID
+	noActor      bool
 }
+
+func (f *fakeEnforcer) HasActor(context.Context) bool { return !f.noActor }
 
 func (f *fakeEnforcer) CanActOnAssets(_ context.Context, _ shared.ID, fallback *shared.ID, _ []shared.ID) (func(shared.ID) bool, bool, error) {
 	f.gotFallback = fallback
@@ -263,6 +266,71 @@ func TestCheck_FreeTextUsesTheOneAuthority(t *testing.T) {
 	for k := range want {
 		if d.RefusedTargets[k] != ReasonNoScopeTarget {
 			t.Fatalf("refused[%s] = %q, want the authority reason", k, d.RefusedTargets[k])
+		}
+	}
+}
+
+// The system authority of a platform policy skips the member act scope (the
+// enforcer is never asked) but not the tenant's scope entries: an asset of the
+// tenant is allowed, free text must match a scope target, another tenant's
+// names are refused.
+func TestCheck_SystemAuthority(t *testing.T) {
+	f := newFixture(t)
+	enf := &fakeEnforcer{inScope: map[shared.ID]bool{}, err: errors.New("the enforcer must not be asked")}
+	c := New(enf, f.assets, f.targets, f.roots)
+
+	d, err := c.Check(context.Background(), Input{
+		TenantID: f.tenantA, System: true, RequireActor: true,
+		Targets:  []string{"theirs.example.com", "app.allowed.example.com", "evil.example.org", "b-only.example.com"},
+		AssetIDs: []shared.ID{f.mine.ID(), f.theirs.ID()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.RefusedAssets) != 0 {
+		t.Errorf("system refused assets: %v", d.RefusedAssets)
+	}
+	want := map[string]bool{"evil.example.org": true, "b-only.example.com": true}
+	if len(d.RefusedTargets) != len(want) {
+		t.Fatalf("refused = %v, want %v", d.RefusedTargets, want)
+	}
+	for k := range want {
+		if _, ok := d.RefusedTargets[k]; !ok {
+			t.Errorf("%s was not refused: %v", k, d.RefusedTargets)
+		}
+	}
+
+	// A system check names no user.
+	owner := shared.NewID()
+	if _, err := c.Check(context.Background(), Input{TenantID: f.tenantA, System: true, FallbackUser: &owner, Targets: []string{"x.example.com"}}); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("system with a user: err = %v, want a validation error", err)
+	}
+}
+
+// With no user in the context, no fallback user and no system authority, a
+// check that requires an actor refuses instead of acting as the system.
+func TestCheck_MissingActorRefuses(t *testing.T) {
+	f := newFixture(t)
+	owner := shared.NewID()
+	cases := []struct {
+		name    string
+		enf     *fakeEnforcer
+		in      Input
+		wantErr bool
+	}{
+		{"no actor", &fakeEnforcer{unrestricted: true, noActor: true}, Input{RequireActor: true}, true},
+		{"a user in the context", &fakeEnforcer{unrestricted: true}, Input{RequireActor: true}, false},
+		{"a fallback user", &fakeEnforcer{unrestricted: true, noActor: true}, Input{RequireActor: true, FallbackUser: &owner}, false},
+		{"explicit system", &fakeEnforcer{unrestricted: true, noActor: true}, Input{RequireActor: true, System: true}, false},
+		// Callers that never asked keep their behavior.
+		{"actor not required", &fakeEnforcer{unrestricted: true, noActor: true}, Input{}, false},
+	}
+	for _, tc := range cases {
+		tc.in.TenantID = f.tenantA
+		tc.in.Targets = []string{"app.allowed.example.com"}
+		_, err := New(tc.enf, f.assets, f.targets, f.roots).Check(context.Background(), tc.in)
+		if tc.wantErr != errors.Is(err, ErrActorRequired) || (!tc.wantErr && err != nil) {
+			t.Errorf("%s: err = %v, wantErr %v", tc.name, err, tc.wantErr)
 		}
 	}
 }

@@ -15,7 +15,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
-import { Copy, ExternalLink, FileText, Link2, ShieldCheck, Ticket } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  FileText,
+  Link2,
+  ShieldCheck,
+  Ticket,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -57,13 +66,26 @@ import { FindingProvenanceSection } from './detail/finding-provenance-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
 import { FindingIntelSection } from './detail/finding-intel-section'
 import { FindingRetestSection } from './detail/finding-retest'
+import { FindingRetestCheckSection } from './detail/finding-retest-check'
 import { FindingTenableRescanSection } from './detail/finding-tenable-rescan'
 import { FindingActivity } from './finding-activity'
 import { AdvisoryText } from './detail/advisory-text'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { AIProposalBadge } from './ai-proposal-badge'
 
+/** The drawer inside a task: position in the task's findings and the task to return to. */
+export interface FindingDrawerTaskNav {
+  taskId: string
+  /** 1-based position and the number of findings. */
+  index: number
+  total: number
+  onPrev?: () => void
+  onNext?: () => void
+}
+
 interface FindingDetailDrawerProps {
+  /** Set when the drawer is opened from a task's findings. */
+  taskNav?: FindingDrawerTaskNav
   finding: Finding | null
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -97,6 +119,7 @@ export function FindingDetailDrawer({
   onStatusChange,
   onSeverityChange,
   onAssigneeChange,
+  taskNav,
 }: FindingDetailDrawerProps) {
   const { t } = useTranslation()
   const router = useRouter()
@@ -134,9 +157,13 @@ export function FindingDetailDrawer({
     (tab?: string) => {
       if (!finding) return
       onOpenChange(false)
-      router.push(`/findings/${finding.id}${tab ? `?tab=${tab}` : ''}`)
+      const q = new URLSearchParams()
+      if (tab) q.set('tab', tab)
+      if (taskNav) q.set('from', `task:${taskNav.taskId}`)
+      const qs = q.toString()
+      router.push(`/findings/${finding.id}${qs ? `?${qs}` : ''}`)
     },
-    [finding, onOpenChange, router]
+    [finding, onOpenChange, router, taskNav]
   )
 
   // ⌘/Ctrl+Enter opens the full page; ⌘/Ctrl+C opens the activity panel on
@@ -267,8 +294,39 @@ export function FindingDetailDrawer({
           <DrawerBodySkeleton />
         ) : (
           <div className="space-y-4">
+            {taskNav && (
+              <nav
+                aria-label={t('remediationHub.drawer.nav', 'Findings of this task')}
+                className="flex items-center justify-between gap-2"
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!taskNav.onPrev}
+                  onClick={taskNav.onPrev}
+                  aria-label={t('remediationHub.drawer.prev', 'Previous finding')}
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden />
+                </Button>
+                <span className="text-muted-foreground text-xs" aria-live="polite">
+                  {t('remediationHub.drawer.position', 'Finding {index} of {total}', {
+                    index: String(taskNav.index),
+                    total: String(taskNav.total),
+                  })}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!taskNav.onNext}
+                  onClick={taskNav.onNext}
+                  aria-label={t('remediationHub.drawer.next', 'Next finding')}
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden />
+                </Button>
+              </nav>
+            )}
             <FindingWhyItMatters finding={detail} compact />
-            <FindingTaskBand findingId={detail.id} />
+            {!taskNav && <FindingTaskBand findingId={detail.id} />}
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
             <DetailSections>
               <FindingTypePanel finding={detail} onOpenTrace={() => openPage('attack-path')} />
@@ -276,6 +334,7 @@ export function FindingDetailDrawer({
               <FindingIntelSection finding={detail} />
               <FindingProvenanceSection finding={detail} />
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
+              <FindingRetestCheckSection finding={detail} />
               <FindingTenableRescanSection finding={detail} />
 
               {description.text && (

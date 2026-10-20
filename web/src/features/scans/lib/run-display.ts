@@ -28,6 +28,16 @@ const TRIGGER_TYPES = new Set([
   'system',
 ])
 
+/**
+ * What a platform policy that started a run is called ("Automatic
+ * coverage"); a policy this build does not know reads "Automatic".
+ */
+export function policyTriggerLabel(id: string | undefined, t: Translate = enTranslate): string {
+  return id === 'coverage' || id === 'enrichment'
+    ? t(`scans.trigger.policy.${id}`)
+    : t('scans.trigger.policy.other')
+}
+
 export function runTriggeredByLabel(
   run: Pick<ScanRun, 'triggered_by' | 'triggered_by_name' | 'trigger'>,
   t: Translate = enTranslate
@@ -35,6 +45,7 @@ export function runTriggeredByLabel(
   const trigger = run.trigger
   if (trigger) {
     if (trigger.type === 'user') return trigger.label || t('scans.trigger.unknownUser')
+    if (trigger.type === 'policy') return policyTriggerLabel(trigger.id, t)
     if (TRIGGER_TYPES.has(trigger.type)) return t(`scans.trigger.${trigger.type}`)
   }
   if (run.triggered_by_name) return run.triggered_by_name
@@ -214,4 +225,21 @@ export function runSubjectFindingId(run: { subject?: Record<string, unknown> }):
 /** The Runs page with one run open (a retest's "View run"). */
 export function runHref(runId: string): string {
   return `/scans/runs?run=${encodeURIComponent(runId)}`
+}
+
+/**
+ * The note of a run's targets that did not scan because of the targets
+ * themselves ("3 unreachable · 1 skipped"), or null when there are none.
+ * They never change the run's status.
+ */
+export function runTargetNote(
+  run: Pick<ScanRun, 'unreachable_target_count' | 'skipped_target_count'>,
+  t: Translate = enTranslate
+): string | null {
+  const parts: string[] = []
+  const unreachable = run.unreachable_target_count ?? 0
+  const skipped = run.skipped_target_count ?? 0
+  if (unreachable > 0) parts.push(t('scans.outcome.unreachable', undefined, { count: unreachable }))
+  if (skipped > 0) parts.push(t('scans.outcome.skipped', undefined, { count: skipped }))
+  return parts.length > 0 ? parts.join(' · ') : null
 }

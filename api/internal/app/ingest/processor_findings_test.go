@@ -1560,7 +1560,9 @@ func newSecretFindingForTest(t *testing.T) *vulnerability.Finding {
 	return f
 }
 
-func TestRedactSecretSnippet_UsesMaskedValueAndClearsContext(t *testing.T) {
+// A raw secret line is never stored: the snippet becomes the placeholder and
+// the context lines are dropped.
+func TestRedactSecretSnippet_RawLineBecomesPlaceholderAndClearsContext(t *testing.T) {
 	p := &FindingProcessor{}
 	f := newSecretFindingForTest(t)
 	f.SetSnippet("AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE")
@@ -1569,12 +1571,12 @@ func TestRedactSecretSnippet_UsesMaskedValueAndClearsContext(t *testing.T) {
 
 	p.redactSecretSnippet(f)
 
-	assert.Equal(t, "AKIA…MPLE", f.Snippet(), "raw secret snippet must be replaced by the masked preview")
+	assert.Equal(t, "[redacted secret]", f.Snippet())
 	assert.Equal(t, "", f.ContextSnippet(), "context snippet (may contain the secret) must be cleared")
 	assert.NotContains(t, f.Snippet(), "AKIAIOSFODNN7EXAMPLE")
 }
 
-func TestRedactSecretSnippet_PlaceholderWhenNoMaskedValue(t *testing.T) {
+func TestRedactSecretSnippet_PlaceholderWhenSnippetHoldsASecret(t *testing.T) {
 	p := &FindingProcessor{}
 	f := newSecretFindingForTest(t)
 	f.SetSnippet("token = ghp_REALSECRETVALUE1234567890")
@@ -1583,6 +1585,22 @@ func TestRedactSecretSnippet_PlaceholderWhenNoMaskedValue(t *testing.T) {
 
 	assert.Equal(t, "[redacted secret]", f.Snippet())
 	assert.NotContains(t, f.Snippet(), "ghp_REALSECRETVALUE1234567890")
+}
+
+// The producer's masked source line is what a person needs to picture the
+// finding: it is kept, not replaced by the preview.
+func TestRedactSecretSnippet_KeepsAMaskedLine(t *testing.T) {
+	p := &FindingProcessor{}
+	f := newSecretFindingForTest(t)
+	f.SetSnippet(`<input type="password" name="password" value="REDACTED">`)
+	f.SetContextSnippet("<label>Password</label>\n<input value=\"REDACTED\">")
+	f.SetSecretMaskedValue("AKIA…MPLE")
+
+	p.redactSecretSnippet(f)
+
+	assert.Equal(t, `<input type="password" name="password" value="REDACTED">`, f.Snippet())
+	assert.Contains(t, f.ContextSnippet(), "<label>Password</label>")
+	assert.Equal(t, "AKIA…MPLE", f.SecretMaskedValue(), "a producer preview is kept as sent")
 }
 
 // =============================================================================

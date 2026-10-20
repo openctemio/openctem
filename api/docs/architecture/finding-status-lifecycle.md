@@ -338,7 +338,7 @@ Actors:
 The engine only adds constraints to the lifecycle map. `TestEvaluateTransition_NeverWiderThanTheLifecycle` proves that, for every actor and status pair, no allowed move is off the map. It also proves that no disposition is direct, no resolve lacks `findings:verify`, and no ticket closes a finding.
 
 The paths that use the engine:
-- `PATCH /findings/{id}/status` and `POST /findings/bulk/status`. Bulk refuses on the target first (`EvaluateTransitionRequest`), then refuses finding by finding.
+- `PATCH /findings/{id}/status` and `POST /findings/bulk/status`. Bulk refuses on the target first (`EvaluateTransitionRequest`), then refuses finding by finding. The write is a compare-and-set: each row is written only while it is still in the status it was read in (one guarded batch per read status), so a row an approval, a retest or another person changed in between is never overwritten. The response lists every row not updated in `rows` (`skipped`, `failed` or `conflict`, with a reason); a conflict also counts in `failed`.
 - `/actions/fix-applied`, `/actions/verify` and `/actions/reject-fix`, plus their by-filter variants.
 - Approval requests and decisions.
 - Remediation group and campaign resolves (through bulk), workflow `update_status`, and the Jira and GitHub webhooks.
@@ -455,6 +455,19 @@ its by-filter form all answer the same):
   checklist completed before a regression, or before a scan saw the finding
   again, no longer counts, so a critical finding that came back is not closed
   by one person on the proof of the previous fix.
+- **Who completed the checklist.** `PUT /api/v1/verification-checklists/{findingId}`
+  (`verification_checklists:write`) edits the items. The edit that leaves
+  every required item true records the caller as `completed_by` with
+  `completed_at`; an edit that unticks a required item clears both. A
+  notes-only edit keeps the record. This record is what the critical-tier
+  rule above reads ("completed by someone other than the person resolving").
+  The route is tenant-scoped and limited to findings in the caller's data
+  scope (an out-of-scope or other tenant's finding is a 404), edits only
+  findings that are still open (new through `fix_applied`; otherwise 400), and
+  every edit writes the audit action `finding.verification_checklist_updated`
+  (changed items, whether it is complete, who completed it; never the notes).
+  `GET` on the same path is read-only: a finding without a checklist reads as
+  an empty, incomplete one and no row is created.
 - A covered scan that no longer sees the finding, and a retest with
   `retest.auto_resolve`, close it without a person and are not affected.
 - The by-filter verify evaluates each matching finding (up to 1000 per call)
@@ -535,6 +548,16 @@ instead).
   one email per tenant and approver, counting only findings in that
   approver's data scope and naming at most five titles; without a data-scope
   check nobody is told (`DispatchVEXRequestNotices`, `NotifyVEXRequests`).
+- **The requester hears the outcome.** When a false-positive or accepted-risk
+  request, a severity-change request or a group exception is approved or
+  rejected, its requester gets one in-app notice (`finding_approval`): "Your
+  false positive request was approved" with the finding title (a group
+  exception: the number of findings), never the justification or the
+  rejection reason. Nothing is sent for the requester's own withdrawal, to a
+  requester who is no longer an active member, or to one who can no longer
+  read the finding (data scope, or the campaign for a pentest finding; a
+  group exception needs every member finding readable). Fail closed: a lookup
+  error sends nothing (`notifyRequesterDecided`, `internal/app/finding/approval_notify.go`).
 - **Sole member.** An organization with one person has nobody to ask. Its
   owner may approve their own pending false-positive request
   (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while

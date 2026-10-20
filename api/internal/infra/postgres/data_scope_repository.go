@@ -172,6 +172,17 @@ func dataScopeCond(assetExpr string, scope *shared.DataScope, args []any) (strin
 	return cond, append(args, scopeArgs...)
 }
 
+// taskViewScopeCond is dataScopeCond for the task reads: a restricted
+// caller also sees the findings of the live tasks they own
+// (filterspec.TaskViewScopeSQL). findingExpr is the finding id column.
+func taskViewScopeCond(assetExpr, findingExpr string, scope *shared.DataScope, args []any) (string, []any) {
+	if scope == nil {
+		return sqlTrue, args
+	}
+	cond, scopeArgs := filterspec.TaskViewScopeSQL(assetExpr, findingExpr, scope, len(args)+1)
+	return cond, append(args, scopeArgs...)
+}
+
 // pairInScopeCond is dataScopeCond for a row that links two assets (a
 // relationship, a suggestion): both ends must be in the scope, because the
 // row names the other asset. A nil scope returns "TRUE" and leaves args
@@ -192,4 +203,38 @@ func pairInScopeCond(sourceExpr, targetExpr string, scope *shared.DataScope, arg
 // the assets hidden from the user (private program assets).
 func dataScopeCondAt(assetExpr string, scope *shared.DataScope, first int) (string, []any) {
 	return filterspec.ScopeSQL(assetExpr, scope, first)
+}
+
+// FindingIDsOwnedViaTask returns the subset of findingIDs (in the tenant)
+// that are active primary members of a live task the user owns, directly or
+// through a team they are an active member of, and whose asset is not hidden
+// from the user (filterspec.TaskOwnerFindingSQL). Pentest findings are never
+// returned: the campaign membership rule decides those.
+func (r *DataScopeRepository) FindingIDsOwnedViaTask(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) ([]shared.ID, error) {
+	if len(findingIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, len(findingIDs))
+	for i, id := range findingIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT f.id FROM findings f
+		 WHERE f.tenant_id = $2 AND f.id = ANY($3::uuid[]) AND f.source <> 'pentest'
+		   AND `+filterspec.TaskOwnerFindingSQL("f.id", 1, 2)+`
+		   AND `+notHiddenCond("f.asset_id", 1, 2),
+		userID.String(), tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("list task-owned findings: %w", err)
+	}
+	defer rows.Close()
+	out := make([]shared.ID, 0, len(findingIDs))
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan task-owned finding: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }

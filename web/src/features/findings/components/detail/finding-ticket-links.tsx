@@ -23,6 +23,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { sanitizeExternalUrl } from '@/lib/utils'
+import { usePermissions } from '@/context/permission-provider'
 import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
 
 export interface TicketLink {
@@ -51,6 +52,10 @@ export function FindingTicketLinks({
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const canLink = useCanCreateTicket()
+  // Linking an existing issue also needs findings:fix_apply (its Done is a
+  // fix claim); the API refuses it otherwise.
+  const { hasPermission } = usePermissions()
+  const canLinkExisting = canLink && hasPermission('findings:fix_apply')
   const key = currentTenant ? `/api/v1/findings/${findingId}/ticket-links` : null
   const { data, mutate } = useSWR<{ links: TicketLink[] }>(
     key,
@@ -139,7 +144,7 @@ export function FindingTicketLinks({
           <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
         </a>
       ))}
-      {canLink && (
+      {canLinkExisting && (
         <Button
           variant="link"
           size="sm"

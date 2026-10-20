@@ -99,6 +99,27 @@ type AITriageService struct {
 	dataScope *datascope.Enforcer
 	// platformAI is the console's platform AI provider (nil: environment only).
 	platformAI PlatformAISource
+	// aiSettings is the organizations' AI settings (tenant_ai_settings).
+	aiSettings tenant.AISettingsRepository
+	// orgProvider is the platform policy "organizations may use their own
+	// provider" (nil: allowed).
+	orgProvider OrgProviderPolicy
+}
+
+// OrgProviderPolicy answers the console's platform policy on organizations'
+// own AI providers.
+type OrgProviderPolicy interface {
+	OrgProviderAllowed(ctx context.Context) bool
+}
+
+// SetOrgProviderPolicy wires the platform policy on organizations' own providers.
+func (s *AITriageService) SetOrgProviderPolicy(p OrgProviderPolicy) { s.orgProvider = p }
+
+// ownProviderBlocked reports whether the organization's own provider is in
+// use while the platform policy forbids it. A forbidden own provider never
+// falls back to the platform key.
+func (s *AITriageService) ownProviderBlocked(ctx context.Context, mode tenant.AIMode) bool {
+	return mode == tenant.AIModeBYOK && s.orgProvider != nil && !s.orgProvider.OrgProviderAllowed(ctx)
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer.
@@ -289,17 +310,23 @@ func (s *AITriageService) RequestTriage(ctx context.Context, req TriageRequest) 
 		return nil, fmt.Errorf("%w: invalid finding id", shared.ErrValidation)
 	}
 
-	// Get tenant to check AI settings
-	t, err := s.tenantRepo.GetByID(ctx, tenantID)
-	if err != nil {
+	// Get the organization's AI settings.
+	if _, err := s.tenantRepo.GetByID(ctx, tenantID); err != nil {
 		return nil, fmt.Errorf("failed to get tenant: %w", err)
+	}
+	orgAI, err := s.loadAISettings(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read AI settings: %w", err)
 	}
 
 	// Consent: nothing is sent until an organization administrator turned
 	// AI triage on.
-	mode := t.TypedSettings().AI.EffectiveMode()
+	mode := orgAI.EffectiveMode()
 	if mode == tenant.AIModeDisabled {
 		return nil, ErrAIDisabled
+	}
+	if s.ownProviderBlocked(ctx, mode) {
+		return nil, ErrOwnProviderNotAllowed
 	}
 	if err := s.platformReady(ctx, mode); err != nil {
 		return nil, err
@@ -488,10 +515,17 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 
 	// Extract AI settings from tenant settings JSON. Consent is checked again:
 	// an administrator may have turned AI triage off after the request.
-	aiSettings := s.extractAISettings(triageCtx.TenantSettings)
+	aiSettings, err := s.loadAISettings(ctx, tenantID)
+	if err != nil {
+		s.logger.Error("AI triage: failed to read the AI settings", "error", err, "result_id", resultID.String())
+		return fail(FailInternal)
+	}
 	aiSettings.Mode = aiSettings.EffectiveMode()
 	if aiSettings.Mode == tenant.AIModeDisabled {
 		return s.failTriage(ctx, result, FailAIDisabled)
+	}
+	if s.ownProviderBlocked(ctx, aiSettings.Mode) {
+		return s.failTriage(ctx, result, FailNotConfigured)
 	}
 
 	// Get finding
@@ -532,12 +566,11 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			"result_id", resultID.String(), "finding_id", findingID.String())
 	}
 
-	// BUDGET (RFC-008): pre-check before the LLM call. The monthly budget
-	// caps the platform's spend, so it applies in platform mode; an
-	// organization with its own key pays its own bill. ErrBudgetExceeded
+	// BUDGET (RFC-008): pre-check before the LLM call. ErrBudgetExceeded
 	// fails the triage with an explicit audit trail.
-	platformSpend := aiSettings.Mode == tenant.AIModePlatform
-	if s.budget != nil && platformSpend {
+	// The cap counts every organization's tokens, with the platform key or
+	// its own: one counter, one limit.
+	if s.budget != nil {
 		// Best-effort prompt-token estimate: the provider-side count
 		// is more accurate but we don't have it until after the call.
 		// Under-estimating is OK — we Record the real count below.
@@ -656,7 +689,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// triage result fails, the tokens we already spent are counted
 	// against the tenant's budget. Errors here are logged but do not
 	// fail the triage — the LLM call already succeeded.
-	if s.budget != nil && platformSpend && llmResp.TotalTokens > 0 {
+	if s.budget != nil && llmResp.TotalTokens > 0 {
 		if berr := s.budget.Record(ctx, tenantID, llmResp.TotalTokens); berr != nil {
 			s.logger.Warn("failed to record AI triage token usage",
 				"tenant_id", tenantID.String(),
@@ -973,17 +1006,23 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	// Get tenant to check AI settings
-	t, err := s.tenantRepo.GetByID(ctx, tenantID)
-	if err != nil {
+	// Get the organization's AI settings.
+	if _, err := s.tenantRepo.GetByID(ctx, tenantID); err != nil {
 		return nil, fmt.Errorf("failed to get tenant: %w", err)
+	}
+	orgAI, err := s.loadAISettings(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read AI settings: %w", err)
 	}
 
 	// Consent: nothing is sent until an organization administrator turned
 	// AI triage on.
-	mode := t.TypedSettings().AI.EffectiveMode()
+	mode := orgAI.EffectiveMode()
 	if mode == tenant.AIModeDisabled {
 		return nil, ErrAIDisabled
+	}
+	if s.ownProviderBlocked(ctx, mode) {
+		return nil, ErrOwnProviderNotAllowed
 	}
 	if err := s.platformReady(ctx, mode); err != nil {
 		return nil, err
@@ -1139,15 +1178,10 @@ func (s *AITriageService) ShouldAutoTriage(ctx context.Context, tenantID shared.
 		return false, nil
 	}
 
-	t, err := s.tenantRepo.GetByID(ctx, tenantID)
+	aiSettings, err := s.loadAISettings(ctx, tenantID)
 	if err != nil {
 		return false, err
 	}
-
-	// Extract from the raw map (not TypedSettings) so "key absent" is
-	// distinguishable from "explicitly false" and the platform auto-triage
-	// defaults can apply to tenants that never configured it.
-	aiSettings := s.extractAISettings(t.Settings())
 	if aiSettings.EffectiveMode() == tenant.AIModeDisabled {
 		return false, nil
 	}
@@ -1167,13 +1201,11 @@ func (s *AITriageService) ShouldAutoTriage(ctx context.Context, tenantID shared.
 
 // EnqueueAutoTriage enqueues an auto-triage job with optional delay.
 func (s *AITriageService) EnqueueAutoTriage(ctx context.Context, tenantID, findingID shared.ID) error {
-	// Get delay from tenant settings
-	t, err := s.tenantRepo.GetByID(ctx, tenantID)
+	// Get delay from the organization's AI settings
+	aiSettings, err := s.loadAISettings(ctx, tenantID)
 	if err != nil {
 		return err
 	}
-
-	aiSettings := s.extractAISettings(t.Settings())
 	delay := time.Duration(aiSettings.AutoTriageDelaySeconds) * time.Second
 
 	// The organization's AI data policy: a restricted finding is simply not
@@ -1273,65 +1305,23 @@ func (s *AITriageService) autoTriageDefaults() tenant.AISettings {
 	}
 }
 
-// extractAISettings extracts AISettings from raw tenant settings JSON.
+// loadAISettings reads the organization's AI settings (tenant_ai_settings).
 //
-// Auto-triage keys the tenant has never set fall back to the platform
-// defaults. A tenant that HAS set a key always wins — an explicit
-// "auto_triage_enabled": false is honored even when the platform default is
-// true, because opting out has to be sticky.
-func (s *AITriageService) extractAISettings(settings map[string]any) tenant.AISettings {
-	result := s.autoTriageDefaults()
-
-	aiMap, ok := settings["ai"].(map[string]any)
-	if !ok {
-		return result
+// Auto-triage keys the organization has never set fall back to the platform
+// defaults. A key it HAS set always wins: an explicit "auto-triage off" is
+// honored even when the platform default is on, because opting out has to be
+// sticky. Without a store (tests, no database) the result is the defaults:
+// not opted in, so nothing is sent.
+func (s *AITriageService) loadAISettings(ctx context.Context, tenantID shared.ID) (tenant.AISettings, error) {
+	defaults := s.autoTriageDefaults()
+	if s.aiSettings == nil {
+		return defaults, nil
 	}
-
-	if mode, ok := aiMap["mode"].(string); ok {
-		result.Mode = tenant.AIMode(mode)
-	}
-	if provider, ok := aiMap["provider"].(string); ok {
-		result.Provider = tenant.LLMProvider(provider)
-	}
-	if apiKey, ok := aiMap["api_key"].(string); ok {
-		result.APIKey = apiKey
-	}
-	if endpoint, ok := aiMap["azure_endpoint"].(string); ok {
-		result.AzureEndpoint = endpoint
-	}
-	if model, ok := aiMap["model_override"].(string); ok {
-		result.ModelOverride = model
-	}
-	if enabled, ok := aiMap["auto_triage_enabled"].(bool); ok {
-		result.AutoTriageEnabled = enabled
-	}
-	if severities, ok := aiMap["auto_triage_severities"].([]any); ok {
-		// Replace, don't append: the tenant's list is authoritative once
-		// present, otherwise it would be unioned with the platform default.
-		result.AutoTriageSeverities = nil
-		for _, sev := range severities {
-			if s, ok := sev.(string); ok {
-				result.AutoTriageSeverities = append(result.AutoTriageSeverities, s)
-			}
-		}
-	}
-	if delay, ok := aiMap["auto_triage_delay_seconds"].(float64); ok {
-		result.AutoTriageDelaySeconds = int(delay)
-	}
-	if limit, ok := aiMap["monthly_token_limit"].(float64); ok {
-		result.MonthlyTokenLimit = int(limit)
-	}
-	if at, ok := aiMap["enabled_at"].(string); ok && at != "" {
-		if ts, err := time.Parse(time.RFC3339Nano, at); err == nil {
-			result.EnabledAt = &ts
-		}
-	}
-	if by, ok := aiMap["enabled_by"].(string); ok {
-		result.EnabledBy = by
-	}
-
-	return result
+	return s.aiSettings.Get(ctx, tenantID, defaults)
 }
+
+// SetAISettingsRepository wires the store of the organizations' AI settings.
+func (s *AITriageService) SetAISettingsRepository(r tenant.AISettingsRepository) { s.aiSettings = r }
 
 // buildTriagePromptSafe builds the prompt for AI triage with sanitization.
 //
@@ -1347,6 +1337,12 @@ func (s *AITriageService) extractAISettings(settings map[string]any) tenant.AISe
 // The second return value reports that the content tried to break the fence
 // or matched a known injection pattern; the caller treats the resulting
 // analysis as untrusted (see applyInjectionGuard).
+// carriesSecret reports whether a finding is a leaked-secret finding, by its
+// type or its source.
+func carriesSecret(f *vulnerability.Finding) bool {
+	return f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret
+}
+
 func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) (string, bool) {
 	var b strings.Builder
 
@@ -1383,7 +1379,11 @@ func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) (strin
 		fmt.Fprintf(&b, "- **File**: %s:%d\n", field(vulnerability.DisplayPath(f.FilePath())), f.StartLine())
 	}
 
-	if f.Snippet() != "" {
+	// A secret finding's snippet is the line that holds the credential, with
+	// the secret masked by the producer. The model provider gets the file and
+	// line only: masking is the producer's work and must not be the only
+	// thing between a live credential and an outside service.
+	if f.Snippet() != "" && !carriesSecret(f) {
 		snippet, hit := fence.wrap("\n```\n" + san.SanitizeCodeSnippet(f.Snippet()) + "\n```\n")
 		suspicious = suspicious || hit
 		fmt.Fprintf(&b, "- **Code Snippet**:\n%s\n", snippet)
@@ -1710,6 +1710,12 @@ const (
 	ConfigReasonNotEnabled = "not_enabled"
 	// ConfigReasonPlatformNotConfigured: platform AI is not set up.
 	ConfigReasonPlatformNotConfigured = "platform_not_configured"
+	// ConfigReasonOwnProviderNotAllowed: the organization uses its own
+	// provider and the platform policy does not allow that.
+	ConfigReasonOwnProviderNotAllowed = "own_provider_not_allowed"
+	// ConfigReasonOwnProviderNotConfigured: the organization chose its own
+	// provider and has not finished setting it up.
+	ConfigReasonOwnProviderNotConfigured = "own_provider_not_configured"
 	// ConfigReasonBudgetExhausted: the monthly AI token budget is used up.
 	ConfigReasonBudgetExhausted = "budget_exhausted"
 )
@@ -1748,11 +1754,13 @@ func (s *AITriageService) GetAIConfig(ctx context.Context, tenantID string) (*AI
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	t, err := s.tenantRepo.GetByID(ctx, tid)
-	if err != nil {
+	if _, err := s.tenantRepo.GetByID(ctx, tid); err != nil {
 		return nil, fmt.Errorf("failed to get tenant: %w", err)
 	}
-	aiSettings := t.TypedSettings().AI
+	aiSettings, err := s.loadAISettings(ctx, tid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read AI settings: %w", err)
+	}
 	mode := aiSettings.EffectiveMode()
 
 	info := &AIConfigInfo{
@@ -1777,8 +1785,13 @@ func (s *AITriageService) GetAIConfig(ctx context.Context, tenantID string) (*AI
 				info.Model = "gemini-2.0-flash"
 			}
 		}
-	case tenant.AIModeAgent:
-		info.Provider, info.Model = "agent", "self-hosted"
+		switch {
+		case s.ownProviderBlocked(ctx, mode):
+			info.Reason = ConfigReasonOwnProviderNotAllowed
+		case aiSettings.APIKey == "" && aiSettings.Provider != tenant.LLMProviderOpenAICompatible,
+			aiSettings.Provider == "":
+			info.Reason = ConfigReasonOwnProviderNotConfigured
+		}
 	default:
 		info.Provider = s.platformCfg.PlatformProvider
 		info.Model = s.platformCfg.PlatformModel
@@ -1792,14 +1805,14 @@ func (s *AITriageService) GetAIConfig(ctx context.Context, tenantID string) (*AI
 		}
 		if !s.platformOn(ctx) {
 			info.Reason = ConfigReasonPlatformNotConfigured
-			break
 		}
-		if s.budget != nil && s.budget.Enabled() {
-			if st, err := s.budget.Status(ctx, tid); err == nil {
-				info.MonthlyTokenLimit, info.TokensUsedThisMonth = st.Limit, st.Used
-				if st.Limit > 0 && st.Used >= st.Limit {
-					info.Reason = ConfigReasonBudgetExhausted
-				}
+	}
+	// The monthly cap counts the organization's tokens in both modes.
+	if mode != tenant.AIModeDisabled && info.Reason == "" && s.budget != nil && s.budget.Enabled() {
+		if st, err := s.budget.Status(ctx, tid); err == nil {
+			info.MonthlyTokenLimit, info.TokensUsedThisMonth = st.Limit, st.Used
+			if st.Limit > 0 && st.Used >= st.Limit {
+				info.Reason = ConfigReasonBudgetExhausted
 			}
 		}
 	}

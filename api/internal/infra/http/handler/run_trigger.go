@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -14,10 +15,11 @@ import (
 // run (research/62 P0-3): a person, a schedule, an automation, an API call,
 // a webhook or the platform itself.
 type RunTrigger struct {
-	// Type: user, schedule, automation, api, webhook, asset_discovery,
-	// system.
+	// Type: user, schedule, automation, policy, api, webhook,
+	// asset_discovery, system.
 	Type string `json:"type"`
-	// ID: the user, the automation or the scan (schedule) behind it.
+	// ID: the user, the automation, the scan (schedule) or the policy
+	// (coverage, enrichment) behind it.
 	ID string `json:"id,omitempty"`
 	// RunID: the automation run that started it.
 	RunID string `json:"run_id,omitempty"`
@@ -32,6 +34,7 @@ const (
 	runTriggerUser       = "user"
 	runTriggerAutomation = "automation"
 	runTriggerSchedule   = "schedule"
+	runTriggerPolicy     = "policy"
 )
 
 // automationTriggerPrefix is how an automation step names itself in a run's
@@ -53,6 +56,9 @@ func runTrigger(run *scanrun.Run) RunTrigger {
 	}
 	if id, ok := strings.CutPrefix(run.TriggeredBy, automationTriggerPrefix); ok {
 		return RunTrigger{Type: runTriggerAutomation, ID: id}
+	}
+	if id, ok := strings.CutPrefix(run.TriggeredBy, scansvc.PolicyTriggerPrefix); ok && id != "" {
+		return RunTrigger{Type: runTriggerPolicy, ID: id}
 	}
 	switch tt := string(run.TriggerType); tt {
 	case "schedule":

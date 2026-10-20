@@ -288,6 +288,11 @@ func (s *Service) recheckBatch(ctx context.Context, tenantID shared.ID, sensorID
 		TenantID: tenantID, SensorID: sensorID, Path: "claim_recheck",
 		AllowNonNetworkTargets: !g.Validated, SkipZoneRouting: g.NoZoneRouting,
 		Tier: &tier, PassiveOnly: g.Passive, ActScope: g.ActScope,
+		SystemPolicy: g.SystemPolicy,
+	}
+	if g.ActScope && g.Actor == "" && g.SystemPolicy == "" {
+		s.withholdAll(jobs, outcomes, "the job has no recorded actor and no system authority", nil)
+		return
 	}
 	job := jobs[0].job
 	in.Job = &job

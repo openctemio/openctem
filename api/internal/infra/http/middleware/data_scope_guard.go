@@ -18,6 +18,14 @@ type DataScopeAsserter interface {
 	AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error
 }
 
+// TaskWorkAsserter is the optional extra of an asserter: the finding check
+// for a route of the fix workflow, which admits the owner of a live task
+// holding the finding too. viaTask reports that the task relation, not the
+// data scope, admitted the caller.
+type TaskWorkAsserter interface {
+	AssertFindingForFixWork(ctx context.Context, tenantID, findingID shared.ID) (viaTask bool, err error)
+}
+
 // dataScopeKind is the kind of object a guarded path names.
 type dataScopeKind int
 
@@ -75,7 +83,16 @@ func DataScopeGuard(a DataScopeAsserter) func(http.Handler) http.Handler {
 					return
 				}
 			case dataScopeFinding:
-				if a.AssertFinding(r.Context(), tenantID, id) != nil {
+				if tw, ok := a.(TaskWorkAsserter); ok && fixWorkRoute(r.Method, r.URL.Path) {
+					via, err := tw.AssertFindingForFixWork(r.Context(), tenantID, id)
+					if err != nil {
+						apierror.NotFound("Finding").WriteJSON(w)
+						return
+					}
+					if via {
+						r = r.WithContext(shared.WithTaskOwnerView(r.Context()))
+					}
+				} else if a.AssertFinding(r.Context(), tenantID, id) != nil {
 					apierror.NotFound("Finding").WriteJSON(w)
 					return
 				}
@@ -105,4 +122,34 @@ func dataScopeTarget(p string) (dataScopeKind, shared.ID, bool) {
 		return g.kind, id, true
 	}
 	return 0, shared.ID{}, false
+}
+
+// fixWorkRoute reports whether a request under /api/v1/findings/{id} is a
+// read or a step of the fix workflow that the owner of a live task holding
+// the finding may make without the finding being in their data scope: any
+// read, a comment, a status change (the status path narrows it to the fix
+// moves), a manual evidence note, a proof-of-fix check and a retest request.
+// Everything else (assign, severity, classify, tags, duplicates,
+// correlation, approvals, tickets, delete, ...) keeps the finding's real
+// scope.
+func fixWorkRoute(method, p string) bool {
+	rest, found := strings.CutPrefix(path.Clean("/"+p), "/api/v1/findings/")
+	if !found {
+		return false
+	}
+	_, sub, _ := strings.Cut(rest, "/")
+	switch method {
+	case http.MethodGet, http.MethodHead:
+		return true
+	case http.MethodPost:
+		switch sub {
+		case "comments", "evidence", "validate", "retests":
+			return true
+		}
+	case http.MethodPut, http.MethodDelete:
+		return strings.HasPrefix(sub, "comments/") && strings.Count(sub, "/") == 1
+	case http.MethodPatch:
+		return sub == "status"
+	}
+	return false
 }

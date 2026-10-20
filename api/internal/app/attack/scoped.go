@@ -22,9 +22,10 @@ import (
 //   - the exposure-chain summary is recomputed from the chains kept; the
 //     attack-path summary likewise.
 //
-// GetAttackPathScores / GetExposureChains stay unscoped: priority
+// GetAttackPathScores / GetExposureChains stay unscoped and uncapped: priority
 // classification (reachability oracle) and threat models depend on the full
-// graph and run on behalf of the tenant, not one member.
+// graph and run on behalf of the tenant, not one member. The row cap of the
+// chain list is applied here, after the scope.
 
 // SetDataScope wires the Layer 2 data-scope enforcer (nil = unrestricted).
 func (s *SurfaceService) SetDataScope(e *datascope.Enforcer) {
@@ -126,6 +127,7 @@ func (s *SurfaceService) ExposureChainsForCaller(ctx context.Context, tenantID s
 		return res, err
 	}
 	if scope == nil {
+		res.Chains = capChains(res.Chains)
 		return res, nil
 	}
 	var ids []shared.ID
@@ -157,7 +159,19 @@ func (s *SurfaceService) ExposureChainsForCaller(ctx context.Context, tenantID s
 	res.Summary.TotalChains = len(chains)
 	res.Summary.EntryPoints = len(entries)
 	res.Summary.TargetsAtRisk = len(targets)
+	// The cap comes last: it bounds the rows shown, from the chains this
+	// caller may see, never the chains considered.
+	res.Chains = capChains(res.Chains)
 	return res, nil
+}
+
+// capChains keeps the highest-ranked exposureChainCap chains (the list is
+// already sorted by urgency).
+func capChains(chains []ExposureChain) []ExposureChain {
+	if len(chains) > exposureChainCap {
+		return chains[:exposureChainCap]
+	}
+	return chains
 }
 
 func chainInScope(c ExposureChain, keep func(shared.ID) bool) bool {

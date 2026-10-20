@@ -29,7 +29,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 - [REST API overview](api/README.md) and [reference notes](api/endpoints.md) (the spec is served at `/openapi.yaml`; see the reference notes for who can read it in production)
 - [API conventions](architecture/api-conventions.md), [dashboard metrics](architecture/dashboard-metrics.md), [list query contract](architecture/list-query-contract.md), [custom query language](architecture/query-language.md)
-- [Tenant API keys](architecture/api-keys.md), [MCP server](architecture/mcp-server.md)
+- [Tenant API keys](architecture/api-keys.md), [MCP server](architecture/mcp-server.md), [attack paths](architecture/attack-paths.md)
 - [Credential import](api/credential-import.md), [suppressions](api/suppressions.md)
 
 ## Architecture
@@ -49,7 +49,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 **Assets and scope**
 - [Asset inventory v2](architecture/asset-inventory-v2.md), [asset schema](architecture/asset-schema.md), [asset properties schema](asset-properties-schema.md)
 - [Asset identity resolution](architecture/asset-identity-resolution.md), [IP/hostname correlation](architecture/asset-ip-hostname-correlation.md), [deduplication](architecture/deduplication.md), [source priority](architecture/asset-source-priority.md)
-- [Asset ownership](architecture/asset-ownership.md), [asset deletion](architecture/asset-deletion.md), [asset group recalculation](architecture/asset-group-recalculation.md), [criticality propagation](architecture/criticality-propagation.md), [asset risk score](architecture/asset-risk-score.md), [scoring versions](architecture/scoring-versions.md), [finding severity override](architecture/finding-severity-override.md)
+- [Asset ownership](architecture/asset-ownership.md), [asset deletion](architecture/asset-deletion.md), [asset group recalculation](architecture/asset-group-recalculation.md), [criticality propagation](architecture/criticality-propagation.md), [asset risk score](architecture/asset-risk-score.md), [scoring versions](architecture/scoring-versions.md), [finding severity override](architecture/finding-severity-override.md), [asset risk governance](architecture/asset-risk-governance.md)
 - [Data provenance](architecture/data-sources.md), [component relationships](architecture/component-relationship-best-practices.md), [web surface](architecture/web-surface.md)
 - [Scoping overview](architecture/scoping-overview.md), [active-probe gate](architecture/active-probe-gate.md)
 - [EASM](architecture/easm.md), [EASM DNS checks](architecture/easm-dns-checks.md), [certificate transparency monitoring](architecture/certificate-transparency-monitoring.md), [change detection](architecture/change-detection.md)
@@ -67,7 +67,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 **Findings and prioritization**
 - [Vulnerability model](architecture/vulnerability-model.md), [emerging-threat alerts](architecture/emerging-threat-alerts.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md), [finding write concurrency (row_version)](architecture/finding-row-version.md)
 - [Global catalog trust](architecture/global-catalog-trust.md), [priority explainability](architecture/priority-explainability.md), [CTEM-ID catalog](architecture/ctem-id-catalog.md), [AI triage](architecture/ai-triage.md)
-- [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md)
+- [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md), [finding retest checks](architecture/finding-retest-checks.md)
 
 **Mobilization, automation and reporting**
 - [Remediation tasks](architecture/remediation-tasks.md), [remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
@@ -97,3 +97,5 @@ because they change with it:
 - [Least-privilege database roles](deployment/database-roles.md)
 - [Rotating `APP_ENCRYPTION_KEY`](deployment/encryption-key-rotation.md)
 - [Docker (development)](deployment/docker.md), [Kubernetes requirements](deployment/kubernetes.md), [Redis](redis-production-guide.md)
+- [Install from the release archives (no containers, systemd)](deployment/binary-install.md)
+- [Private registries and air-gapped installs](deployment/air-gapped.md)

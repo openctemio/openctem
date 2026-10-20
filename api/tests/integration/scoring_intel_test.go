@@ -73,7 +73,7 @@ func TestScoringIntel_OnlyChangedCVEsAreQueued(t *testing.T) {
 
 	// The daily feeds arrive.
 	for c, v := range map[string]float64{cve("1"): 0.60, cve("2"): 0.21, cve("5"): 0.35} {
-		if _, err := fx.db.Exec(`INSERT INTO epss_scores (cve_id, epss_score, percentile, score_date) VALUES ($1, $2, 0.9, CURRENT_DATE)`, c, v); err != nil {
+		if _, err := fx.db.Exec(`INSERT INTO epss_scores (cve_id, epss_score) VALUES ($1, $2)`, c, v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -134,7 +134,7 @@ func TestScoringIntel_StoredEPSSFeedsTheCIGate(t *testing.T) {
 	set(ta, open, cve, 0.2, "new")
 	set(ta, closed, cve, 0.2, "resolved")
 	set(tb, other, "CVE-2098-"+sfx+"X", 0.2, "new")
-	if _, err := fx.db.Exec(`INSERT INTO epss_scores (cve_id, epss_score, percentile, score_date) VALUES ($1, 0.4, 0.93, CURRENT_DATE)`, cve); err != nil {
+	if _, err := fx.db.Exec(`INSERT INTO epss_scores (cve_id, epss_score) VALUES ($1, 0.4)`, cve); err != nil {
 		t.Fatal(err)
 	}
 	// Setting the CVE queues the asset (a classifier input); the test is about

@@ -27,7 +27,7 @@ func TestDashboardSummaries_FollowTheViewer_DB(t *testing.T) {
 	hostA, hostB, jewel := shared.NewID().String(), shared.NewID().String(), shared.NewID().String()
 
 	h.exec(`INSERT INTO kev_catalog (cve_id, vulnerability_name, date_added, due_date) VALUES ($1, 'wp4', CURRENT_DATE - 60, CURRENT_DATE - 30)`, cve)
-	h.exec(`INSERT INTO epss_scores (cve_id, epss_score, score_date) VALUES ($1, 0.9, CURRENT_DATE)`, cve)
+	h.exec(`INSERT INTO epss_scores (cve_id, epss_score) VALUES ($1, 0.9)`, cve)
 	t.Cleanup(func() {
 		_, _ = h.db.Exec(`DELETE FROM kev_catalog WHERE cve_id = $1`, cve)
 		_, _ = h.db.Exec(`DELETE FROM epss_scores WHERE cve_id = $1`, cve)

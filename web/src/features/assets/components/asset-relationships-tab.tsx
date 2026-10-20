@@ -371,8 +371,9 @@ export function AssetRelationshipsTab({
 
       {view === 'graph' && graphAvailable ? (
         <div className="space-y-2">
-          <div className="h-[360px] rounded-md border">
+          <div className="h-[360px]">
             <RelationshipGraphView
+              className="h-full"
               graph={graphData}
               centralNodeId={assetId}
               onNodeClick={(nodeId) => {
