@@ -6,6 +6,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
+	participationdom "github.com/openctemio/openctem/api/pkg/domain/participation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -131,11 +132,17 @@ func (s *VulnerabilityService) afterStatusChange(ctx context.Context, tenantID s
 		if s.workflowStatusDispatch != nil {
 			s.workflowStatusDispatch(ctx, tenantID, c.f, c.old.String(), newStatus.String())
 		}
-		s.notifyAssignee(ctx, c.f, actorID,
-			notification.TypeFindingStatusChange,
-			fmt.Sprintf("Finding status changed: %s → %s", c.old, newStatus),
-			c.f.Message(),
-		)
+		watches := participationdom.ReasonStatusChanged
+		if newStatus == vulnerability.FindingStatusFixApplied {
+			watches = participationdom.ReasonFixClaimed
+		}
+		s.notifyFinding(ctx, c.f, findingEvent{
+			actorID:      actorID,
+			typ:          notification.TypeFindingStatusChange,
+			title:        fmt.Sprintf("Finding status changed: %s → %s", c.old, newStatus),
+			body:         c.f.Message(),
+			actorWatches: watches,
+		})
 		if newStatus == vulnerability.FindingStatusFixApplied {
 			fixClaims = append(fixClaims, c.f.ID())
 		}

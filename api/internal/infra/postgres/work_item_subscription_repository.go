@@ -269,3 +269,34 @@ func (r *WorkItemSubscriptionRepository) AssetOwners(ctx context.Context, tenant
 	}
 	return out, rows.Err()
 }
+
+// ListStates returns the people who watch the item and the people who stopped
+// watching it.
+func (r *WorkItemSubscriptionRepository) ListStates(ctx context.Context, tenantID shared.ID, item participation.Item) (subscribed, unsubscribed []shared.ID, err error) {
+	col, err := itemColumn(item)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT user_id, state FROM work_item_subscriptions
+		WHERE tenant_id = $1 AND `+col+` = $2 LIMIT $3`,
+		tenantID.String(), item.ID.String(), participation.MaxWatchersPerItem*4)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list subscription states: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id    shared.ID
+			state string
+		)
+		if err := rows.Scan(&id, &state); err != nil {
+			return nil, nil, fmt.Errorf("scan subscription state: %w", err)
+		}
+		if participation.State(state) == participation.StateSubscribed {
+			subscribed = append(subscribed, id)
+		} else {
+			unsubscribed = append(unsubscribed, id)
+		}
+	}
+	return subscribed, unsubscribed, rows.Err()
+}

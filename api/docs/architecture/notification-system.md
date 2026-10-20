@@ -534,6 +534,14 @@ against it.
 exists yet, and no in-app notification is emailed individually, so the in-app
 filters above have no email path to apply to.
 
+### Why you got it, and folded events
+
+`notifications.reason` says why a person got a notice about a work item (`assigned`: they are the
+assignee; `watching`: they watch it); the API returns it as `reason`. Events on one finding within
+10 minutes are folded into the person's unread notice of the same type (`coalesced_count`). The
+recipients of finding events come from `participation.Service.Recipients`; see
+[participants-and-watchers.md](./participants-and-watchers.md).
+
 ### Real-time push
 
 Each recipient gets the notification on their own channel,

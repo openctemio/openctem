@@ -37,12 +37,14 @@ func (a ParticipationAccess) CallerAccess(ctx context.Context, tenantID, finding
 	return participation.Access{ClientOnly: acc.ClientOnly}, nil
 }
 
-// UserMayRead reports whether the person could read the finding on their own
-// account (data scope, or the pentest campaign).
-func (a ParticipationAccess) UserMayRead(ctx context.Context, tenantID, findingID, userID shared.ID) (bool, error) {
+// UserAccess reports whether the person could read the finding on their own
+// account (data scope, or the pentest campaign) and whether they are a
+// campaign client (who never see team-only comments).
+func (a ParticipationAccess) UserAccess(ctx context.Context, tenantID, findingID, userID shared.ID) (participation.Access, bool, error) {
 	f, err := a.s.findingRepo.GetByID(ctx, tenantID, findingID)
 	if err != nil {
-		return false, err
+		return participation.Access{}, false, err
 	}
-	return a.s.userMayReadFinding(ctx, f, userID)
+	ok, clientOnly, err := a.s.userFindingAccess(ctx, f, userID)
+	return participation.Access{ClientOnly: clientOnly}, ok, err
 }

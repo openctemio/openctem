@@ -27,8 +27,8 @@ func NewNotificationRepository(db *DB) *NotificationRepository {
 // Create inserts a new notification.
 func (r *NotificationRepository) Create(ctx context.Context, n *notification.Notification) error {
 	query := `
-		INSERT INTO notifications (id, tenant_id, audience, audience_id, notification_type, title, body, severity, resource_type, resource_id, url, actor_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
+		INSERT INTO notifications (id, tenant_id, audience, audience_id, notification_type, title, body, severity, resource_type, resource_id, url, actor_id, created_at, reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NULLIF($14, ''))`
 
 	var audienceID, resourceID, actorID *string
 	if n.AudienceID() != nil {
@@ -58,11 +58,53 @@ func (r *NotificationRepository) Create(ctx context.Context, n *notification.Not
 		n.URL(),
 		actorID,
 		n.CreatedAt(),
+		n.Reason(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create notification: %w", err)
 	}
 	return nil
+}
+
+// CreateCoalesced stores a notification for one user, folding it into that
+// user's unread notification of the same type about the same resource when
+// one was sent within notification.CoalesceWindow: the existing row takes the
+// new title, body, severity, actor and time and counts one more event, so a
+// busy item is one line in the inbox, not a flood. Reports whether it
+// merged. Tenant and user come from the notification itself and every
+// statement filters on both.
+func (r *NotificationRepository) CreateCoalesced(ctx context.Context, n *notification.Notification) (merged bool, err error) {
+	if n.Audience() != notification.AudienceUser || n.AudienceID() == nil || n.ResourceID() == nil {
+		return false, r.Create(ctx, n)
+	}
+	var actorID *string
+	if n.ActorID() != nil {
+		s := n.ActorID().String()
+		actorID = &s
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE notifications SET title = $5, body = $6, severity = $7, actor_id = $8, url = $9,
+		       reason = COALESCE(NULLIF($10, ''), reason), created_at = $11, coalesced_count = coalesced_count + 1
+		WHERE id = (
+			SELECT x.id FROM notifications x
+			LEFT JOIN notification_state ns ON ns.tenant_id = x.tenant_id AND ns.user_id = $2
+			WHERE x.tenant_id = $1 AND x.audience = 'user' AND x.audience_id = $2
+			  AND x.notification_type = $3 AND x.resource_type = $12 AND x.resource_id = $4
+			  AND x.created_at > $11::timestamptz - $13::interval
+			  AND x.created_at > COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)
+			  AND NOT EXISTS (SELECT 1 FROM notification_reads nr WHERE nr.notification_id = x.id AND nr.user_id = $2)
+			ORDER BY x.created_at DESC LIMIT 1
+			FOR UPDATE OF x SKIP LOCKED)`,
+		n.TenantID(), n.AudienceID().String(), n.NotificationType(), n.ResourceID().String(),
+		n.Title(), n.Body(), n.Severity(), actorID, n.URL(), n.Reason(), n.CreatedAt(), n.ResourceType(),
+		fmt.Sprintf("%d seconds", int(notification.CoalesceWindow.Seconds())))
+	if err != nil {
+		return false, fmt.Errorf("failed to coalesce notification: %w", err)
+	}
+	if rows, _ := res.RowsAffected(); rows > 0 {
+		return true, nil
+	}
+	return false, r.Create(ctx, n)
 }
 
 // List returns notifications visible to a user with audience filtering and read status.
@@ -86,6 +128,7 @@ func (r *NotificationRepository) List(
 			n.notification_type, n.title, n.body, n.severity,
 			n.resource_type, n.resource_id, n.url,
 			n.actor_id, n.created_at,
+			COALESCE(n.reason, ''), n.coalesced_count,
 			(nr.notification_id IS NOT NULL OR n.created_at <= COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)) AS is_read,
 			COUNT(*) OVER() AS total_count
 		FROM notifications n
@@ -306,7 +349,7 @@ func (r *NotificationRepository) DeleteOlderThan(ctx context.Context, age time.D
 // GetPreferences returns user notification preferences.
 func (r *NotificationRepository) GetPreferences(ctx context.Context, tenantID, userID shared.ID) (*notification.Preferences, error) {
 	query := `
-		SELECT tenant_id, user_id, in_app_enabled, email_digest, muted_types, min_severity, updated_at
+		SELECT tenant_id, user_id, in_app_enabled, email_digest, muted_types, min_severity, updated_at, auto_watch
 		FROM notification_preferences
 		WHERE tenant_id = $1 AND user_id = $2`
 
@@ -317,10 +360,11 @@ func (r *NotificationRepository) GetPreferences(ctx context.Context, tenantID, u
 		mutedTypesJSON sql.NullString
 		minSeverity    sql.NullString
 		updatedAt      time.Time
+		autoWatch      bool
 	)
 
 	err := r.db.QueryRowContext(ctx, query, tenantID, userID).Scan(
-		&tID, &uID, &inAppEnabled, &emailDigest, &mutedTypesJSON, &minSeverity, &updatedAt,
+		&tID, &uID, &inAppEnabled, &emailDigest, &mutedTypesJSON, &minSeverity, &updatedAt, &autoWatch,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -336,7 +380,22 @@ func (r *NotificationRepository) GetPreferences(ctx context.Context, tenantID, u
 		}
 	}
 
-	return notification.ReconstitutePref(tID, uID, inAppEnabled, emailDigest, mutedTypes, minSeverity.String, updatedAt), nil
+	return notification.ReconstitutePref(tID, uID, inAppEnabled, emailDigest, mutedTypes, minSeverity.String, updatedAt).WithAutoWatch(autoWatch), nil
+}
+
+// AutoWatchEnabled reports whether the person is watched automatically on the
+// items they take part in. No preferences row means on.
+func (r *NotificationRepository) AutoWatchEnabled(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	var on bool
+	err := r.db.QueryRowContext(ctx, `SELECT auto_watch FROM notification_preferences WHERE tenant_id = $1 AND user_id = $2`,
+		tenantID.String(), userID.String()).Scan(&on)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read auto watch preference: %w", err)
+	}
+	return on, nil
 }
 
 // UpsertPreferences creates or updates notification preferences.
@@ -361,16 +420,17 @@ func (r *NotificationRepository) UpsertPreferences(
 	}
 
 	query := `
-		INSERT INTO notification_preferences (tenant_id, user_id, in_app_enabled, email_digest, muted_types, min_severity, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+		INSERT INTO notification_preferences (tenant_id, user_id, in_app_enabled, email_digest, muted_types, min_severity, updated_at, auto_watch)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), COALESCE($7, TRUE))
 		ON CONFLICT (tenant_id, user_id)
 		DO UPDATE SET
 			in_app_enabled = $3,
 			email_digest = $4,
 			muted_types = $5,
 			min_severity = $6,
+			auto_watch = COALESCE($7, notification_preferences.auto_watch),
 			updated_at = NOW()
-		RETURNING tenant_id, user_id, in_app_enabled, email_digest, muted_types, min_severity, updated_at`
+		RETURNING tenant_id, user_id, in_app_enabled, email_digest, muted_types, min_severity, updated_at, auto_watch`
 
 	var (
 		tID, uID          shared.ID
@@ -379,10 +439,11 @@ func (r *NotificationRepository) UpsertPreferences(
 		retMutedTypesJSON sql.NullString
 		retMinSeverity    sql.NullString
 		updatedAt         time.Time
+		autoWatch         bool
 	)
 
-	err := r.db.QueryRowContext(ctx, query, tenantID, userID, params.InAppEnabled, params.EmailDigest, mutedTypesJSON, minSev).Scan(
-		&tID, &uID, &inAppEnabled, &emailDigest, &retMutedTypesJSON, &retMinSeverity, &updatedAt,
+	err := r.db.QueryRowContext(ctx, query, tenantID, userID, params.InAppEnabled, params.EmailDigest, mutedTypesJSON, minSev, params.AutoWatch).Scan(
+		&tID, &uID, &inAppEnabled, &emailDigest, &retMutedTypesJSON, &retMinSeverity, &updatedAt, &autoWatch,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upsert preferences: %w", err)
@@ -395,7 +456,7 @@ func (r *NotificationRepository) UpsertPreferences(
 		}
 	}
 
-	return notification.ReconstitutePref(tID, uID, inAppEnabled, emailDigest, retMutedTypes, retMinSeverity.String, updatedAt), nil
+	return notification.ReconstitutePref(tID, uID, inAppEnabled, emailDigest, retMutedTypes, retMinSeverity.String, updatedAt).WithAutoWatch(autoWatch), nil
 }
 
 // ============================================
@@ -505,6 +566,8 @@ func (r *NotificationRepository) scanNotificationWithTotal(scanner notifRowScann
 		url              sql.NullString
 		actorIDStr       sql.NullString
 		createdAt        time.Time
+		reason           string
+		count            int
 		isRead           bool
 		totalCount       int
 	)
@@ -513,7 +576,7 @@ func (r *NotificationRepository) scanNotificationWithTotal(scanner notifRowScann
 		&id, &tenantID, &audience, &audienceIDStr,
 		&notificationType, &title, &body, &severity,
 		&resourceType, &resourceIDStr, &url,
-		&actorIDStr, &createdAt, &isRead, &totalCount,
+		&actorIDStr, &createdAt, &reason, &count, &isRead, &totalCount,
 	)
 	if err != nil {
 		return nil, 0, err
@@ -539,10 +602,12 @@ func (r *NotificationRepository) scanNotificationWithTotal(scanner notifRowScann
 		}
 	}
 
-	return notification.Reconstitute(
+	n := notification.Reconstitute(
 		id, tenantID, audience, audienceID,
 		notificationType, title, body.String, severity,
 		resourceType.String, resourceID, url.String,
 		actorID, createdAt, isRead,
-	), totalCount, nil
+	)
+	n.SetDelivery(reason, count)
+	return n, totalCount, nil
 }
