@@ -39,7 +39,7 @@ secrets() { # secrets <name>: the cipher passphrase plus s3/sftp material
 	printf '%s' 'secretexample' > "$d/s3_secret_key"
 	printf '%s' 'PRIVATE-KEY-PLACEHOLDER' > "$d/sftp_private_key"
 }
-fp=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+fp=a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
 
 secrets s3
 out="$(render s3 BACKUP_TARGET=s3 BACKUP_S3_ENDPOINT=x.r2.example BACKUP_S3_BUCKET=b BACKUP_S3_REGION=auto BACKUP_S3_URI_STYLE=path)"
