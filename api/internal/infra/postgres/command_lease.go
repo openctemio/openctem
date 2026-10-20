@@ -146,6 +146,7 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 		    acknowledged_at = NULL, started_at = NULL,
 		    lease_expires_at = NULL,
 		    dispatch_attempts = c.dispatch_attempts + 1,
+		    `+requeueSQL("c.")+`,
 		    error_message = $1
 		FROM (
 			SELECT id, sensor_id AS old_sensor_id, lease_epoch AS old_epoch
@@ -223,6 +224,8 @@ func (r *CommandRepository) ReleaseHeldBySensor(ctx context.Context, tenantID, s
 		    started_at = CASE WHEN held.routed THEN NULL ELSE c.started_at END,
 		    completed_at = CASE WHEN held.routed THEN NULL ELSE NOW() END,
 		    error_message = CASE WHEN held.routed THEN $3 ELSE $4 END,
+		    requeue_count = c.requeue_count + CASE WHEN held.routed THEN 1 ELSE 0 END,
+		    scheduled_at = CASE WHEN held.routed THEN `+requeueDueSQL("c.")+` ELSE c.scheduled_at END,
 		    lease_expires_at = NULL
 		FROM (
 			SELECT id, status AS old_status, lease_epoch AS old_epoch,

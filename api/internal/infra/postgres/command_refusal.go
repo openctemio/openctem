@@ -45,7 +45,8 @@ func (r *CommandRepository) CommandRefusals(ctx context.Context, tenantID, comma
 // RequeueRefused puts a command the fenced sensor holds back to pending,
 // unpinned with its zone kept, records the refusal and excludes the sensor
 // from later claims. One more dispatch attempt is counted, as for a lease
-// re-queue.
+// re-queue, and the return is counted without a delay: other sensors may
+// take it at once (the refusing sensor is excluded, at most 16 can refuse).
 func (r *CommandRepository) RequeueRefused(ctx context.Context, tenantID, commandID shared.ID, fence command.Fence, rec command.RefusalRecord, message string) (bool, error) {
 	recJSON, err := json.Marshal(rec)
 	if err != nil {
@@ -57,6 +58,7 @@ func (r *CommandRepository) RequeueRefused(ctx context.Context, tenantID, comman
 		    acknowledged_at = NULL, started_at = NULL,
 		    lease_expires_at = NULL,
 		    dispatch_attempts = dispatch_attempts + 1,
+		    `+requeueCountSQL("")+`,
 		    error_message = $6,
 		    refused_by = array_append(refused_by, $3::uuid),
 		    refusals = refusals || jsonb_build_array($7::jsonb)

@@ -141,3 +141,12 @@ type LeaseReaper interface {
 type FencedUpdater interface {
 	FencedUpdate(ctx context.Context, cmd *Command, expect Fence) (bool, error)
 }
+
+// MaxRequeues is how many times a command may return to the queue (handed
+// back, refused, unclaimed, released, re-queued after a lost lease, a stall or
+// a scan window) before the sweep fails it. Each return delays the next offer
+// (up to five minutes), so the cap is reached in hours, not seconds.
+const MaxRequeues = 50
+
+// RequeueExhaustedMessage is the error of a command failed for reaching MaxRequeues.
+const RequeueExhaustedMessage = "failed: the command returned to the queue too many times (max re-queues exceeded)"
