@@ -71,7 +71,9 @@ groups. Every change carries the task's `version`; a stale one answers `409`.
 
 A restricted member sees a task through its findings in their scope: counters, deadline and risk are over those
 findings and `hidden_members` counts the others. A task with none of their findings is `404`. They may change a
-task only when `hidden_members` is 0, and every finding they name must be in their scope.
+task only when it has no member outside their scope, primary or related (`hidden_members` shows the primary ones
+only), and every finding they name must be in their scope. The `finding_id` list filter applies the same scope: for a
+finding outside it the list is empty.
 
 ## Suggestions
 
