@@ -161,6 +161,8 @@ type SplitRemediationTaskRequest struct {
 	Title           string   `json:"title,omitempty"`
 	AssigneeUserID  string   `json:"assignee_user_id,omitempty"`
 	AssigneeGroupID string   `json:"assignee_group_id,omitempty"`
+	// ConfirmOwnerAccess: see CreateRemediationTaskRequest.
+	ConfirmOwnerAccess bool `json:"confirm_owner_access,omitempty"`
 }
 
 // Split creates a task of the same fix from some of a task's findings.
@@ -192,7 +194,8 @@ func (h *RemediationTaskHandler) Split(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	in := remediationapp.SplitInput{TenantID: tid, TaskID: id, Version: req.Version, Title: req.Title, ActorID: callerID(r)}
+	in := remediationapp.SplitInput{TenantID: tid, TaskID: id, Version: req.Version, Title: req.Title, ActorID: callerID(r),
+		CanExtendOwnerAccess: middleware.HasPermission(r.Context(), permission.FindingsAssign.String()), ConfirmOwnerAccess: req.ConfirmOwnerAccess}
 	var err error
 	if in.FindingIDs, err = parseIDList("finding_ids", req.FindingIDs); err != nil {
 		h.handleError(w, err)
