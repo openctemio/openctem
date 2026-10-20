@@ -278,6 +278,11 @@ func (r *ScannerTemplateRepository) Delete(ctx context.Context, tenantID, id sha
 	query := "DELETE FROM scanner_templates WHERE id = $1 AND tenant_id = $2"
 	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
 	if err != nil {
+		if isForeignKeyViolation(err) {
+			// A finding's retest check uses it (finding_retest_checks).
+			return shared.NewDomainError("TEMPLATE_IN_USE",
+				"a finding's retest check uses this template; detach it first", shared.ErrConflict)
+		}
 		return fmt.Errorf("failed to delete scanner template: %w", err)
 	}
 
