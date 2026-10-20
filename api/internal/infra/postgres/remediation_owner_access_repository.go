@@ -63,6 +63,9 @@ func (r *RemediationOwnerAccessRepository) OpenFindingRefs(ctx context.Context, 
 	}
 	defer func() { _ = rows.Close() }()
 	out, err := scanFindingRefs(rows)
+	if err == nil {
+		err = rows.Err()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read finding refs: %w", err)
 	}
@@ -85,6 +88,9 @@ func (r *RemediationOwnerAccessRepository) TaskOpenPrimaryRefs(ctx context.Conte
 	}
 	defer func() { _ = rows.Close() }()
 	out, err := scanFindingRefs(rows)
+	if err == nil {
+		err = rows.Err()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read task finding refs: %w", err)
 	}
