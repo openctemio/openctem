@@ -26,14 +26,22 @@ func TestTriggerScanAction_RunSaysAutomation(t *testing.T) {
 		automation.AutomationCause{RunID: automationRun, WorkflowID: automationID, NodeKey: "rescan", ChainDepth: 1})
 
 	h := automation.NewPipelineTriggerHandler(nil, svc, logger.NewNop())
-	out, err := h.Execute(ctx, &automation.ActionInput{
+	principal := shared.NewID()
+	input := &automation.ActionInput{
 		TenantID:     tenantID,
 		WorkflowID:   automationID,
 		RunID:        automationRun,
 		NodeKey:      "rescan",
 		ActionType:   automationdom.ActionTypeTriggerScan,
 		ActionConfig: map[string]any{"scan_id": s.ID.String()},
-	})
+		Principal:    principal,
+	}
+	// A step with no person to act as starts no scan.
+	if _, err := h.Execute(ctx, &automation.ActionInput{TenantID: tenantID, WorkflowID: automationID, ActionType: automationdom.ActionTypeTriggerScan,
+		ActionConfig: input.ActionConfig}); err == nil {
+		t.Error("a trigger_scan step without a principal started a scan")
+	}
+	out, err := h.Execute(ctx, input)
 	if err != nil {
 		t.Fatalf("trigger_scan: %v", err)
 	}
@@ -43,6 +51,9 @@ func TestTriggerScanAction_RunSaysAutomation(t *testing.T) {
 	}
 	if run.TriggerType != scanworkflow.TriggerTypeAutomation {
 		t.Errorf("trigger_type = %q, want automation", run.TriggerType)
+	}
+	if run.TriggeredBy != principal.String() {
+		t.Errorf("triggered_by = %q, want the step's principal", run.TriggeredBy)
 	}
 	if run.TenantID != tenantID {
 		t.Errorf("run tenant = %s, want the automation's tenant", run.TenantID)
