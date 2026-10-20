@@ -32,8 +32,10 @@ rows in the middle:
 1. read up to 1000 of the chain's oldest entries logged before the cutoff,
    stopping at the first newer one;
 2. write them, chain entry plus the audit row as stored, to
-   `AUDIT_ARCHIVE_DIR/<tenant>/audit-<first>-<last>-<time>.jsonl.gz`
-   (mode 0600, synced to disk) and hash the file;
+   `<tenant>-audit-<first>-<last>-<time>.jsonl.gz` in the server storage
+   provider (`STORAGE_PROVIDER`: the local filesystem or the S3-compatible
+   bucket, namespace `audit-archive`, which an organization's storage erase
+   never touches) and hash the file;
 3. in one transaction, under the same advisory lock appends take: check the
    entries are still exactly the chain's oldest ones and the last still has the
    hash that was read, insert an `audit_chain_anchors` row (anchor hash = the
@@ -41,8 +43,13 @@ rows in the middle:
    delete the entries, their rebaseline archive rows and their audit rows.
 
 A chain that changed in between (a rebaseline, a racing append) is skipped and
-retried next run; its archive file is removed. Without `AUDIT_ARCHIVE_DIR`
-nothing is deleted and the controller logs one warning.
+retried next run; its archive file is removed. Retention is on by default;
+`AUDIT_RETENTION_ENABLED=false` holds all audit history. The chain of an
+organization that is suspended (how a legal hold is applied) or pending deletion
+is skipped until it is active again; the system chain and the chains of
+organizations that no longer exist are pruned. Nothing is deleted when the
+archive cannot be written (the run fails and retries). Back up the storage
+provider like the database: the archive is the only copy of pruned entries.
 
 Every walk starts from the newest anchor instead of `""`: verify, classify and
 rebaseline expect the first remaining entry to link to it, and an append to a

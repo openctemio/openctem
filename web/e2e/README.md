@@ -43,6 +43,7 @@ tests that cover the console's most user-visible flows.
 | `18-pentest-finding-editor.spec.ts`         | New pentest finding: evidence, publish, closed campaign    |
 | `19-scan-lifecycle.spec.ts`                 | Scan create, edit (name, targets, duration), run, run view |
 | `20-sensor-tool-settings-drawer.spec.ts`    | Expanded tool settings stay reachable in the sensor drawer |
+| `21-remediation-task-from-findings.spec.ts` | Create a task from findings, open it, hold and resume it   |
 
 Each spec is designed to:
 
