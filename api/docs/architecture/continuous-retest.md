@@ -244,7 +244,7 @@ page ("Retest check" section, next to "Retest"):
   YAML, an uploaded `.yaml`/`.yml` file (read in the browser, at most 256 KB) or a
   template picked from the organization's library (shown to users with
   `scans:templates:read`). **Validate** calls
-  `POST /api/v1/findings/{id}/retest-check/validate` and shows the errors per
+  `POST /api/v1/findings/{id}/retest-check/test` and shows the errors per
   field, the tier with its reason and the template that would run; **Save**
   (`PUT …/retest-check`) is enabled only after a valid validation of exactly the
   current input; **Remove** (`DELETE …/retest-check`) detaches it and leaves the
