@@ -336,5 +336,7 @@
   "remediationHub.panel.joinsTask": "Thêm {n, plural, other {# phát hiện}} vào công việc hiện có của người phụ trách cho bản sửa này.",
   "remediationHub.panel.createsTasks": "{n, plural, one {Tạo # công việc:} other {Tạo # công việc, mỗi người phụ trách một công việc:}}",
   "remediationHub.toast.skipped": "Đã bỏ qua {n, plural, other {# phát hiện}} thuộc công việc khác.",
-  "remediationHub.toast.movedFrom": "Đã chuyển {n, plural, other {# phát hiện}} từ công việc khác."
+  "remediationHub.toast.movedFrom": "Đã chuyển {n, plural, other {# phát hiện}} từ công việc khác.",
+  "remediationHub.people.title": "Người liên quan",
+  "remediationHub.people.owner": "Chủ sở hữu"
 }
