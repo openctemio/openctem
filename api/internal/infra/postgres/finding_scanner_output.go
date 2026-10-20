@@ -24,7 +24,10 @@ const maxScannerEvidenceBatch = 1000
 // UpdateScannerEvidenceBatch stores each sighting's scanner output and
 // vectors on the tenant's finding with that fingerprint. An empty value
 // keeps the stored one; a new output replaces the old one and stamps
-// scanner_output_at. Values are sanitized again here (defense in depth).
+// scanner_output_at. A sighting that carries what the finding already stores
+// writes nothing (a re-seen finding keeps one row version per ingest), so
+// scanner_output_at means "the output last changed". Values are sanitized
+// again here (defense in depth).
 func (r *FindingRepository) UpdateScannerEvidenceBatch(ctx context.Context, tenantID shared.ID, updates []vulnerability.ScannerEvidenceUpdate) (int64, error) {
 	var total int64
 	for start := 0; start < len(updates); start += maxScannerEvidenceBatch {
@@ -51,11 +54,15 @@ func (r *FindingRepository) UpdateScannerEvidenceBatch(ctx context.Context, tena
 		res, err := r.db.ExecContext(ctx, `
 			UPDATE findings AS f SET
 				scanner_output = COALESCE(d.output, f.scanner_output),
-				scanner_output_at = CASE WHEN d.output IS NOT NULL THEN now() ELSE f.scanner_output_at END,
+				scanner_output_at = CASE WHEN d.output IS NOT NULL AND d.output IS DISTINCT FROM f.scanner_output
+				                         THEN now() ELSE f.scanner_output_at END,
 				cvss_v2_vector = COALESCE(d.v2, f.cvss_v2_vector),
 				cvss_v3_vector = COALESCE(d.v3, f.cvss_v3_vector)
 			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS d(fingerprint, output, v2, v3)
-			WHERE f.tenant_id = $1 AND f.fingerprint = d.fingerprint`,
+			WHERE f.tenant_id = $1 AND f.fingerprint = d.fingerprint
+			  AND ((d.output IS NOT NULL AND d.output IS DISTINCT FROM f.scanner_output)
+			    OR (d.v2 IS NOT NULL AND d.v2 IS DISTINCT FROM f.cvss_v2_vector)
+			    OR (d.v3 IS NOT NULL AND d.v3 IS DISTINCT FROM f.cvss_v3_vector))`,
 			tenantID.String(), pq.Array(fps), pq.Array(outs), pq.Array(v2s), pq.Array(v3s))
 		if err != nil {
 			return total, fmt.Errorf("update scanner evidence: %w", err)
