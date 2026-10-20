@@ -11,7 +11,9 @@ Status: shipped. Planned work is listed at the end. Design and decisions:
 ## Who turns it on
 
 - **Platform administrator**: sets up the platform AI provider in the
-  console (System > AI provider: provider, model, write-only key), or with
+  console (System > AI provider: provider, model, write-only key; for a
+  self-hosted or gateway model, the `openai_compatible` provider with a base
+  URL and an optional key), or with
   an environment key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `GEMINI_API_KEY`), which pins the provider. A key makes platform AI
   available; nothing is sent until an organization turns AI triage on.
@@ -160,6 +162,35 @@ verdict never changes the priority class. A result with validation warnings
 severity change) is flagged `needs_review`, audited, and side-effect
 workflows skip it.
 
+## Providers
+
+`claude`, `openai`, `gemini` and `openai_compatible`. The last one speaks
+the OpenAI chat-completions API at a base URL (`<base>/chat/completions`)
+and a model name the administrator sets, so one adapter covers Azure
+OpenAI's v1 endpoint, vLLM, Ollama, LM Studio, LiteLLM, OpenRouter and cloud
+gateways. The API key is optional for it (a server inside the network may
+not need one). The former `azure_openai` and `agent` modes are removed.
+
+Every provider call uses the SSRF-safe HTTP client (`pkg/httpsec`): the host
+is resolved once, every answer is vetted and the connection goes to the
+vetted address, so DNS rebinding cannot redirect it. Redirects are not
+followed, and a self-hosted server's error text is never relayed (only the
+status).
+
+- **Platform provider** (console, super admin, fresh step-up, reason, critical
+  audit): the toggle "allow private addresses" lets the base URL be on a
+  private network (RFC1918 and ULA ranges, plain http). Loopback, link-local
+  and cloud-metadata addresses, carrier-grade NAT and `localhost` stay
+  blocked, toggle or not. Changing the toggle is part of the audited change
+  (`previous_allow_private`, `allow_private`). With the toggle off, a private
+  address is refused when the setting is saved and again at every connection.
+- **Organization's own provider** (`openai_compatible` base URL): public
+  addresses and https only, never the toggle, so an organization cannot reach
+  the platform's network. The URL is vetted when the provider is built and at
+  every connection.
+- **Model allow-list** (console): when set, the platform model must be one
+  of the listed models.
+
 ## Keys
 
 The console's platform provider key (`platform_settings` key `ai.platform`,
@@ -178,14 +209,14 @@ carries them over.
   of a verdict; the AI data-egress policy at request time and in the worker;
   monthly budgets and per-organization fair share;
   data scope and pentest membership on the routes; tenant-scoped queries
-  everywhere; fixed provider URLs through the SSRF-safe client; encrypted,
+  everywhere; every provider call through the SSRF-safe client, an
+  organization's base URL public-only; encrypted,
   write-only keys in the rekey registry; failure codes instead of raw
   errors.
 
 ## Planned
 
-Own-key (BYOK) and self-hosted (OpenAI-compatible base URL) providers in
-Settings > AI, context enrichment and redaction with a "what was sent"
+Own-key (BYOK) providers in Settings > AI, context enrichment and redaction with a "what was sent"
 record, a structured result schema, the result card with apply actions and
 history, "Triage selected" bulk on a fair-share queue with a result cache,
 an atomic de-duplication index, and an evaluation set (RFC-119).

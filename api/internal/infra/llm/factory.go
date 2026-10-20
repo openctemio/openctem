@@ -31,6 +31,22 @@ type Factory struct {
 type PlatformSource interface {
 	// PlatformAI returns the provider, model and key when platform AI is on.
 	PlatformAI(ctx context.Context) (provider, model, apiKey string, ok bool)
+	// PlatformAIEndpoint is the OpenAI-compatible base URL and whether an
+	// administrator allowed it on a private network.
+	PlatformAIEndpoint(ctx context.Context) (baseURL string, allowPrivate bool)
+}
+
+// Spec is a provider configuration: the platform's (environment or console)
+// or an organization's own.
+type Spec struct {
+	Provider string
+	Model    string
+	APIKey   string
+	// BaseURL is for ProviderOpenAICompatible only.
+	BaseURL string
+	// AllowPrivate is honored only for the platform's provider (a console
+	// toggle); an organization's URL is always public-only.
+	AllowPrivate bool
 }
 
 // SetPlatformSource wires the console's platform AI configuration.
@@ -154,7 +170,8 @@ func (f *Factory) createPlatformProvider(scope, tenantID string) (Provider, erro
 		if !ok {
 			return nil, fmt.Errorf("%w: platform AI is not turned on", ErrProviderNotConfigured)
 		}
-		p, err := f.BuildPlatformProvider(provider, model, key)
+		baseURL, allowPrivate := f.platformSource.PlatformAIEndpoint(ctx)
+		p, err := f.BuildPlatformProvider(Spec{Provider: provider, Model: model, APIKey: key, BaseURL: baseURL, AllowPrivate: allowPrivate})
 		return f.tenantShare(f.rateLimited(p, err, scope))(tenantID)
 	}
 	var key, envName string
@@ -171,7 +188,7 @@ func (f *Factory) createPlatformProvider(scope, tenantID string) (Provider, erro
 	if key == "" {
 		return nil, fmt.Errorf("%w: %s not configured", ErrProviderNotConfigured, envName)
 	}
-	p, err := f.BuildPlatformProvider(f.platformConfig.PlatformProvider, f.platformConfig.PlatformModel, key)
+	p, err := f.BuildPlatformProvider(Spec{Provider: f.platformConfig.PlatformProvider, Model: f.platformConfig.PlatformModel, APIKey: key})
 	return f.tenantShare(f.rateLimited(p, err, scope))(tenantID)
 }
 
@@ -192,19 +209,28 @@ func (f *Factory) tenantShare(p Provider, err error) func(tenantID string) (Prov
 	}
 }
 
-// BuildPlatformProvider builds a provider from a platform configuration
-// (also the console's key test), without the rate limit.
-func (f *Factory) BuildPlatformProvider(provider, model, key string) (Provider, error) {
+// BuildPlatformProvider builds a provider from a configuration (also the
+// console's key test), without the rate limit.
+func (f *Factory) BuildPlatformProvider(spec Spec) (Provider, error) {
+	return f.build(spec)
+}
+
+// build is the one place a provider is constructed, for the platform's
+// configuration and an organization's own alike.
+func (f *Factory) build(spec Spec) (Provider, error) {
 	timeout := time.Duration(f.platformConfig.TimeoutSeconds) * time.Second
-	switch provider {
+	switch spec.Provider {
 	case "claude", "":
-		return NewClaudeProvider(ClaudeConfig{APIKey: key, Model: model, Timeout: timeout, MaxRetries: 3})
+		return NewClaudeProvider(ClaudeConfig{APIKey: spec.APIKey, Model: spec.Model, Timeout: timeout, MaxRetries: 3})
 	case "openai":
-		return NewOpenAIProvider(OpenAIConfig{APIKey: key, Model: model, Timeout: timeout, MaxRetries: 3})
+		return NewOpenAIProvider(OpenAIConfig{APIKey: spec.APIKey, Model: spec.Model, Timeout: timeout, MaxRetries: 3})
 	case "gemini":
-		return NewGeminiProvider(GeminiConfig{APIKey: key, Model: model, Timeout: timeout, MaxRetries: 3})
+		return NewGeminiProvider(GeminiConfig{APIKey: spec.APIKey, Model: spec.Model, Timeout: timeout, MaxRetries: 3})
+	case ProviderOpenAICompatible:
+		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{BaseURL: spec.BaseURL, APIKey: spec.APIKey,
+			Model: spec.Model, AllowPrivate: spec.AllowPrivate, Timeout: timeout, MaxRetries: 3})
 	default:
-		return nil, fmt.Errorf("%w: unknown platform provider: %s", ErrInvalidProvider, provider)
+		return nil, fmt.Errorf("%w: unknown provider: %s", ErrInvalidProvider, spec.Provider)
 	}
 }
 
@@ -220,53 +246,38 @@ func (f *Factory) createBYOKProvider(settings tenant.AISettings, scope string) (
 		return nil, fmt.Errorf("%w: %v", ErrProviderNotConfigured, err)
 	}
 
-	switch settings.Provider {
-	case tenant.LLMProviderClaude:
-		model := settings.ModelOverride
-		if model == "" {
-			model = defaultClaudeModel
-		}
-		p, err := NewClaudeProvider(ClaudeConfig{
-			APIKey:     apiKey,
-			Model:      model,
-			Timeout:    time.Duration(f.platformConfig.TimeoutSeconds) * time.Second,
-			MaxRetries: 3,
-		})
-		return f.rateLimited(p, err, scope)
-
-	case tenant.LLMProviderOpenAI:
-		model := settings.ModelOverride
-		if model == "" {
-			model = defaultOpenAIModel
-		}
-		p, err := NewOpenAIProvider(OpenAIConfig{
-			APIKey:     apiKey,
-			Model:      model,
-			Timeout:    time.Duration(f.platformConfig.TimeoutSeconds) * time.Second,
-			MaxRetries: 3,
-		})
-		return f.rateLimited(p, err, scope)
-
-	case tenant.LLMProviderGemini:
-		model := settings.ModelOverride
-		if model == "" {
-			model = defaultGeminiModel
-		}
-		p, err := NewGeminiProvider(GeminiConfig{
-			APIKey:     apiKey,
-			Model:      model,
-			Timeout:    time.Duration(f.platformConfig.TimeoutSeconds) * time.Second,
-			MaxRetries: 3,
-		})
-		return f.rateLimited(p, err, scope)
-
-	case tenant.LLMProviderAzureOpenAI:
-		// Azure OpenAI support planned for Phase 2.
-		return nil, fmt.Errorf("%w: Azure OpenAI provider not yet implemented", ErrInvalidProvider)
-
-	default:
+	provider := string(settings.Provider)
+	if !settings.Provider.IsValid() {
 		return nil, fmt.Errorf("%w: unknown provider: %s", ErrInvalidProvider, settings.Provider)
 	}
+	model := settings.ModelOverride
+	if model == "" {
+		model = defaultModel(provider)
+	}
+	// SECURITY: an organization's own endpoint is public-only (AllowPrivate
+	// is never set here), so it cannot reach the platform's network. It is
+	// vetted again here (a stored URL may predate a rule) and at every dial.
+	if provider == ProviderOpenAICompatible {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := ValidateBaseURL(ctx, settings.BaseURL, false); err != nil {
+			return nil, err
+		}
+	}
+	p, err := f.build(Spec{Provider: provider, Model: model, APIKey: apiKey, BaseURL: settings.BaseURL})
+	return f.rateLimited(p, err, scope)
+}
+
+func defaultModel(provider string) string {
+	switch provider {
+	case "claude":
+		return defaultClaudeModel
+	case "openai":
+		return defaultOpenAIModel
+	case "gemini":
+		return defaultGeminiModel
+	}
+	return "" // openai_compatible: the organization names the model
 }
 
 // IsPlatformEnabled reports whether an environment provider key is set.

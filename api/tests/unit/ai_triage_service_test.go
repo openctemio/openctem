@@ -704,8 +704,8 @@ func aiTriageExtractAISettings(settings map[string]any) tenant.AISettings {
 	if apiKey, ok := aiMap["api_key"].(string); ok {
 		result.APIKey = apiKey
 	}
-	if endpoint, ok := aiMap["azure_endpoint"].(string); ok {
-		result.AzureEndpoint = endpoint
+	if endpoint, ok := aiMap["base_url"].(string); ok {
+		result.BaseURL = endpoint
 	}
 	if model, ok := aiMap["model_override"].(string); ok {
 		result.ModelOverride = model
@@ -738,7 +738,7 @@ func TestAITriage_ExtractAISettings_FullConfig(t *testing.T) {
 			"mode":                      "byok",
 			"provider":                  "openai",
 			"api_key":                   "sk-test123",
-			"azure_endpoint":            "https://myendpoint.openai.azure.com",
+			"base_url":                  "https://myendpoint.openai.azure.com",
 			"model_override":            "gpt-4-turbo",
 			"auto_triage_enabled":       true,
 			"auto_triage_severities":    []any{"critical", "high"},
@@ -758,8 +758,8 @@ func TestAITriage_ExtractAISettings_FullConfig(t *testing.T) {
 	if result.APIKey != "sk-test123" {
 		t.Errorf("expected API key 'sk-test123', got %q", result.APIKey)
 	}
-	if result.AzureEndpoint != "https://myendpoint.openai.azure.com" {
-		t.Errorf("expected azure endpoint, got %q", result.AzureEndpoint)
+	if result.BaseURL != "https://myendpoint.openai.azure.com" {
+		t.Errorf("expected azure endpoint, got %q", result.BaseURL)
 	}
 	if result.ModelOverride != "gpt-4-turbo" {
 		t.Errorf("expected model 'gpt-4-turbo', got %q", result.ModelOverride)
@@ -1614,43 +1614,6 @@ func TestAITriage_GetAIConfig_BYOKMode_DefaultModels(t *testing.T) {
 				t.Errorf("expected default model %q for %s, got %q", p.expectedModel, p.provider, info.Model)
 			}
 		})
-	}
-}
-
-func TestAITriage_GetAIConfig_AgentMode(t *testing.T) {
-	t.Parallel()
-
-	tenantID := shared.NewID()
-	now := time.Now().UTC()
-	tenantRepo := newMockAITriageTenantRepo()
-	tenantRepo.tenants[tenantID.String()] = tenant.Reconstitute(
-		tenantID, "test", "test", "", "",
-		map[string]any{
-			"ai": map[string]any{
-				"mode":       "agent",
-				"enabled_at": "2026-01-01T00:00:00Z",
-			},
-		},
-		"creator", now, now,
-	)
-
-	log := logger.NewNop()
-	svc := aitriagesvc.NewAITriageService(
-		newMockAITriageRepo(),
-		nil, tenantRepo, nil, nil,
-		config.AITriageConfig{},
-		log,
-	)
-
-	info, err := svc.GetAIConfig(context.Background(), tenantID.String())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if info.Provider != "agent" {
-		t.Errorf("expected provider 'agent', got %q", info.Provider)
-	}
-	if info.Model != "self-hosted" {
-		t.Errorf("expected model 'self-hosted', got %q", info.Model)
 	}
 }
 

@@ -115,7 +115,7 @@ the alert webhook).
 | Deployment region, once, before the first organization (the platform's system tenant does not count) | Settings > Configuration | `/admin/settings/region` | `DEPLOYMENT_REGION` locks it | guarded; immutable once set |
 | Default storage quota per organization (an organization's `storage_mb` limit wins; 0 = no quota) | Settings > Limits | `/admin/settings/storage-quota` | `STORAGE_TENANT_QUOTA_MB` is the default until the console stores one | super admin + step-up, audited |
 | Alert webhook (HTTPS only, SSRF-guarded, optional HMAC signature), with "send a test alert" | Settings > Alerts | `/admin/settings/alerts`, `/test` | none (the kit's host probes stay host-side) | guarded; the previous receiver is told first |
-| Platform AI provider, model and key, off by default, with "test the key" | Settings > AI provider | `/admin/settings/ai`, `/test` | any of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` locks it | guarded |
+| Platform AI provider (Claude, OpenAI, Gemini or an OpenAI-compatible server with a base URL), model and key, a toggle to allow a private-network server, a model allow-list, off by default, with "test the key" | Settings > AI provider | `/admin/settings/ai`, `/test` | any of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` locks it | guarded |
 
 How each applies without a restart:
 

@@ -70,16 +70,16 @@ type CompletionResponse struct {
 type ProviderType string
 
 const (
-	ProviderTypeClaude      ProviderType = "claude"
-	ProviderTypeOpenAI      ProviderType = "openai"
-	ProviderTypeAzureOpenAI ProviderType = "azure_openai"
-	ProviderTypeGemini      ProviderType = "gemini"
+	ProviderTypeClaude           ProviderType = "claude"
+	ProviderTypeOpenAI           ProviderType = "openai"
+	ProviderTypeOpenAICompatible ProviderType = ProviderOpenAICompatible
+	ProviderTypeGemini           ProviderType = "gemini"
 )
 
 // IsValid checks if the provider type is valid.
 func (p ProviderType) IsValid() bool {
 	switch p {
-	case ProviderTypeClaude, ProviderTypeOpenAI, ProviderTypeAzureOpenAI, ProviderTypeGemini:
+	case ProviderTypeClaude, ProviderTypeOpenAI, ProviderTypeOpenAICompatible, ProviderTypeGemini:
 		return true
 	}
 	return false
@@ -87,12 +87,12 @@ func (p ProviderType) IsValid() bool {
 
 // ProviderConfig holds configuration for creating a provider.
 type ProviderConfig struct {
-	Type          ProviderType
-	APIKey        string
-	Model         string
-	AzureEndpoint string // Only for Azure OpenAI
-	Timeout       int    // Timeout in seconds
-	MaxRetries    int
+	Type       ProviderType
+	APIKey     string
+	Model      string
+	BaseURL    string // Only for openai_compatible
+	Timeout    int    // Timeout in seconds
+	MaxRetries int
 }
 
 // Errors
