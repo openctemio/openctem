@@ -98,6 +98,9 @@ var (
 	// ErrTaskFindingNotFound is the one answer for a finding of another
 	// organization, of none, or outside the caller's data scope.
 	ErrTaskFindingNotFound = fmt.Errorf("%w: one or more findings were not found", shared.ErrNotFound)
+	// ErrTaskFindingPentest: a pentest finding is fixed through its pentest
+	// campaign, so it never becomes the primary member of a task.
+	ErrTaskFindingPentest = fmt.Errorf("%w: pentest findings are fixed through their pentest campaign and cannot join a remediation task", shared.ErrValidation)
 	// ErrTaskFindingClosed: a closed finding never joins a task.
 	ErrTaskFindingClosed = fmt.Errorf("%w: closed findings cannot join a remediation task", shared.ErrValidation)
 	// ErrTaskNoFindings: a task needs at least one finding.
@@ -229,6 +232,15 @@ func (s *TaskService) checkFindings(ctx context.Context, tenantID shared.ID, all
 			return ErrTaskFindingClosed
 		}
 	}
+	if len(primary) > 0 {
+		pentest, err := s.repo.PentestFindingIDs(ctx, tenantID, primary)
+		if err != nil {
+			return err
+		}
+		if len(pentest) > 0 {
+			return ErrTaskFindingPentest
+		}
+	}
 	return nil
 }
 
@@ -314,7 +326,8 @@ func (s *TaskService) GetTask(ctx context.Context, tenantID, taskID shared.ID) (
 	if err != nil {
 		return nil, err
 	}
-	if scope == nil {
+	ctx, narrowed := s.viewerCtx(ctx)
+	if scope == nil && !narrowed {
 		return t, nil
 	}
 	if err := s.applyScope(ctx, tenantID, []*remediationdom.Task{t}, scope); err != nil {
@@ -326,8 +339,28 @@ func (s *TaskService) GetTask(ctx context.Context, tenantID, taskID shared.ID) (
 	return t, nil
 }
 
+// viewerCtx records the person reading, so the repository applies the
+// findings list's pentest member rule on top of the asset scope (a pentest
+// finding only for the members of its campaign, no draft one for the client
+// role). narrowed reports whether that can hide anything: it cannot for an
+// administrator, and it does not apply to a call that is not on behalf of a
+// user (the background reconcile). Use the returned context for reads only:
+// the stored counters are always over every member.
+func (s *TaskService) viewerCtx(ctx context.Context) (context.Context, bool) {
+	if s.dataScope == nil {
+		return ctx, false
+	}
+	if c := s.dataScope.CallerOf(ctx); c.UserID == "" && !c.APIKey {
+		return ctx, false
+	}
+	vctx := s.dataScope.WithFindingViewer(ctx)
+	v, _ := shared.FindingViewerOf(vctx)
+	return vctx, !v.Admin
+}
+
 // applyScope replaces the counters of each task, in memory, with the ones
-// over the members in scope, and sets HiddenMembers.
+// over the members the caller may see (asset scope and pentest rule), and
+// sets HiddenMembers.
 func (s *TaskService) applyScope(ctx context.Context, tenantID shared.ID, tasks []*remediationdom.Task, scope *shared.DataScope) error {
 	if len(tasks) == 0 {
 		return nil
@@ -385,11 +418,12 @@ func (s *TaskService) ListTasks(ctx context.Context, in ListTasksInput, page pag
 		return pagination.Result[*remediationdom.Task]{}, err
 	}
 	f.Scope = scope
+	ctx, narrowed := s.viewerCtx(ctx)
 	res, err := s.repo.ListTasks(ctx, in.TenantID, f, page)
 	if err != nil {
 		return res, err
 	}
-	if scope != nil {
+	if scope != nil || narrowed {
 		if err := s.applyScope(ctx, in.TenantID, res.Data, scope); err != nil {
 			return res, err
 		}
@@ -620,6 +654,7 @@ func (s *TaskService) ListMembers(ctx context.Context, tenantID, taskID shared.I
 		return pagination.Result[remediationdom.TaskMember]{}, err
 	}
 	f.Scope = scope
+	ctx, _ = s.viewerCtx(ctx)
 	return s.repo.ListMembers(ctx, tenantID, taskID, f, page)
 }
 

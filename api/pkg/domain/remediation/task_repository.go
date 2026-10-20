@@ -92,6 +92,10 @@ type TaskRepository interface {
 	ListMembers(ctx context.Context, tenantID, taskID shared.ID, f MemberFilter, page pagination.Pagination) (pagination.Result[TaskMember], error)
 	ListEvents(ctx context.Context, tenantID, taskID shared.ID, page pagination.Pagination) (pagination.Result[TaskEvent], error)
 	FindingStatuses(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]string, error)
+	// PentestFindingIDs returns the ids among ids (of the tenant) that are
+	// pentest findings. They are fixed through their pentest campaign and
+	// never become the primary member of a task.
+	PentestFindingIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
 	CampaignInTenant(ctx context.Context, tenantID, campaignID shared.ID) (bool, error)
 	// LiveTaskIDsByCampaign lists the campaign's tasks that still take work.
 	LiveTaskIDsByCampaign(ctx context.Context, tenantID, campaignID shared.ID) ([]shared.ID, error)

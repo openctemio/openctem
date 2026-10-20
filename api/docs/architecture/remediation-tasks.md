@@ -73,6 +73,12 @@ A restricted member sees a task through its findings in their scope: counters, d
 findings and `hidden_members` counts the others. A task with none of their findings is `404`. They may change a
 task only when `hidden_members` is 0, and every finding they name must be in their scope.
 
+The pentest member rule of the findings list applies on top of the asset scope, also to a full-data caller who has
+no asset scope: a pentest finding is a visible member only for the members of its campaign, and a draft or in-review
+one never for the campaign's client role. Members, counters, `hidden_members` and the task list read through it
+(an administrator sees every pentest finding). A pentest finding is fixed through its pentest campaign, so it cannot
+be the primary member of a task (`400`).
+
 ## Suggestions
 
 The generator only proposes; nothing is created until a person accepts.
