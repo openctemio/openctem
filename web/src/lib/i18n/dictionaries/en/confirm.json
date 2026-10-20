@@ -376,5 +376,6 @@
   "confirm.asset.bulkDeleteButtonOne": "Delete 1 asset",
   "confirm.asset.bulkDeleteButton": "Delete {count} assets",
   "confirm.asset.bulkWithFindingsOne": "1 of them has findings, so it is not deleted; you can archive it afterwards.",
-  "confirm.asset.bulkWithFindings": "{count} of them have findings, so they are not deleted; you can archive them afterwards."
+  "confirm.asset.bulkWithFindings": "{count} of them have findings, so they are not deleted; you can archive them afterwards.",
+  "confirm.savedView.trigger": "Views"
 }

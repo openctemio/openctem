@@ -195,13 +195,18 @@ export function SavedViewsMenu({
             variant="outline"
             size="sm"
             className="h-9 max-w-[14rem]"
+            // The name stays readable when only the icon shows (narrow toolbar).
+            aria-label={active ? active.name : t('confirm.savedView.trigger', 'Views')}
             onPointerEnter={() => setWanted(true)}
             onFocus={() => setWanted(true)}
           >
-            <Bookmark className="h-4 w-4 md:me-2" />
-            <span className="hidden truncate md:inline">{active ? active.name : 'Views'}</span>
+            {/* Label by the list toolbar's width (DataTable's size container). */}
+            <Bookmark className="h-4 w-4 @2xl/toolbar:me-2" />
+            <span className="hidden truncate @2xl/toolbar:inline">
+              {active ? active.name : t('confirm.savedView.trigger', 'Views')}
+            </span>
             {active && modified && (
-              <span className="ms-1 hidden text-xs text-muted-foreground md:inline">
+              <span className="ms-1 hidden text-xs text-muted-foreground @2xl/toolbar:inline">
                 (modified)
               </span>
             )}

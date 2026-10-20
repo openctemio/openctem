@@ -376,5 +376,6 @@
   "confirm.asset.bulkDeleteButtonOne": "Xóa 1 tài sản",
   "confirm.asset.bulkDeleteButton": "Xóa {count} tài sản",
   "confirm.asset.bulkWithFindingsOne": "1 tài sản trong số đó có phát hiện nên sẽ không bị xóa; bạn có thể lưu trữ nó sau.",
-  "confirm.asset.bulkWithFindings": "{count} tài sản trong số đó có phát hiện nên sẽ không bị xóa; bạn có thể lưu trữ chúng sau."
+  "confirm.asset.bulkWithFindings": "{count} tài sản trong số đó có phát hiện nên sẽ không bị xóa; bạn có thể lưu trữ chúng sau.",
+  "confirm.savedView.trigger": "Chế độ xem"
 }
