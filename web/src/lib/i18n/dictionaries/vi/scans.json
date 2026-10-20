@@ -872,7 +872,6 @@
   "scans.approval.selfDesc": "Không có người phê duyệt nào khác. Xác nhận bằng mã từ ứng dụng xác thực và nêu lý do; mọi quản trị viên được thông báo.",
   "scans.approval.reason": "Lý do",
   "scans.approval.noteOptional": "Ghi chú (không bắt buộc)",
-  "scans.approval.code": "Mã từ ứng dụng xác thực",
   "scans.approval.submitted": "Đã lưu \"{name}\" và gửi phê duyệt",
   "scans.approval.submitFailed": "Đã lưu \"{name}\" nhưng chưa gửi phê duyệt được: {error}",
   "scans.approval.submitForApproval": "Gửi phê duyệt",
