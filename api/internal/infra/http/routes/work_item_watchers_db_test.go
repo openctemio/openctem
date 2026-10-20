@@ -57,6 +57,7 @@ func newWatchHarness(t *testing.T) *watchHarness {
 	svc.SetItemAccess(participationdom.ItemFinding, vuln.ParticipationAccess())
 	svc.SetItemAccess(participationdom.ItemTask, tasks.ParticipationAccess())
 	svc.SetAuditLogger(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	svc.SetAutoWatchPreference(postgres.NewNotificationRepository(db))
 
 	router := infrahttp.NewChiRouter()
 	registerParticipationRoutes(router, handler.NewParticipationHandler(svc, log), Middleware(ds.dsAuth), nil, passthrough, log)

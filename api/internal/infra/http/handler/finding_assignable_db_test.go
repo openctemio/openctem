@@ -170,6 +170,13 @@ func TestFindingAssign_AssigneeMustReadFinding_DB(t *testing.T) {
 		t.Errorf("search q=ine = %s", w.Body.String())
 	}
 
+	// A limit that is not a positive whole number is refused.
+	w = httptest.NewRecorder()
+	h.ListAssignableMembers(w, req(http.MethodGet, tenantA, caller, finding, "assignable?limit=abc", ""))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("limit=abc = %d, want 400", w.Code)
+	}
+
 	// Cross-tenant: tenant B's caller gets 404 for tenant A's finding.
 	w = httptest.NewRecorder()
 	h.ListAssignableMembers(w, req(http.MethodGet, tenantB, tenantBUser, finding, "assignable", ""))
