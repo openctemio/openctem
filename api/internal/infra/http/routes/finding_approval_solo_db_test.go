@@ -150,20 +150,24 @@ func TestFindingApprovals_SoleOwnerSelfApproval_DB(t *testing.T) {
 	a2 := h.requestStatus(owner, fp2, "false_positive")
 	h.selfApprove(owner, a2, "111111", http.StatusForbidden)
 
-	// An accepted risk is cut to the self-approval limit: 7 days for KEV.
+	// Risk acceptance is always four-eyes: a sole member cannot approve their
+	// own accepted risk, even with a valid code. It stays pending, the refusal
+	// is audited, and the code is not spent (it still works for a false positive).
 	kev := h.newFinding(org, "high")
 	h.exec(`UPDATE findings SET is_in_kev = true WHERE id = $1`, kev)
-	a3 := h.requestAccept(owner, kev, time.Now().AddDate(0, 0, 25)) // within the 30-day KEV cap
-	got = h.selfApprove(owner, a3, "222222", http.StatusOK)
-	if got["end_shortened"] != true {
-		t.Fatalf("a 25-day acceptance was not shortened: %v", got)
+	a3 := h.requestAccept(owner, kev, time.Now().AddDate(0, 0, 25))
+	out := h.selfApprove(owner, a3, "222222", http.StatusForbidden)
+	if out["code"] != "SELF_APPROVAL_FALSE_POSITIVE_ONLY" {
+		t.Fatalf("accepted risk self-approval refusal: %v", out)
 	}
-	var end time.Time
-	if err := h.db.QueryRowContext(context.Background(), `SELECT acceptance_expires_at FROM findings WHERE id = $1`, kev).Scan(&end); err != nil {
-		t.Fatal(err)
+	if n := h.countRows(`SELECT COUNT(*) FROM finding_status_approvals WHERE id = $1 AND status = 'pending'`, a3); n != 1 {
+		t.Fatal("the accepted-risk request did not stay pending")
 	}
-	if d := time.Until(end); d > 7*24*time.Hour+time.Minute || d < 6*24*time.Hour {
-		t.Fatalf("KEV self-acceptance ends in %v, want 7 days", d)
+	if n := h.countRows(`SELECT COUNT(*) FROM findings WHERE id = $1 AND status = 'accepted'`, kev); n != 0 {
+		t.Fatal("the finding was accepted without a second approver")
+	}
+	if n := h.countRows(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding_approval.self_approval_refused' AND resource_id = $2`, org, a3); n != 1 {
+		t.Fatalf("refusal audit rows for the accepted risk: %d", n)
 	}
 
 	// A second active person closes the path at once (checked at decision time).

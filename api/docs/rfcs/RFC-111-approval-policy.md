@@ -67,7 +67,7 @@ most needs more than accepting it elsewhere.
 | `dual` | two other people, distinct, at least one from the security pool | recent re-authentication, each |
 
 The **sole member** of an organization (exactly one active person) keeps the existing own-approval path
-(fresh authenticator code, reason, halved acceptance caps, alerts). It is the only way a person approves
+(fresh authenticator code, reason, alerts), for false positives only: an accepted risk is always four-eyes and waits for a second member. It is the only way a person approves
 their own request, and it is not a tier: it is refused while a second active person exists, whether or not
 that person holds the approve permission (taking the permission from the others does not open it). This holds
 for suppression rules too. A rule that matches more open findings than the approval cap is refused as too

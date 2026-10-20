@@ -767,3 +767,126 @@ func TestRiskScoringHandler_Preview_RateLimitedPerTenant(t *testing.T) {
 	tenantB := shared.NewID()
 	assert.NotEqual(t, http.StatusTooManyRequests, call(tenantB).Code)
 }
+
+// =============================================================================
+// Tests: a PATCH merges into the stored settings and refuses unsafe maps
+// =============================================================================
+
+func patchRiskScoring(t *testing.T, h *handler.TenantHandler, tenantID shared.ID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/tenants/test-org/settings/risk-scoring", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withTeamContext(req, tenantID)
+	rr := httptest.NewRecorder()
+	h.UpdateRiskScoringSettings(rr, req)
+	return rr
+}
+
+func storedRiskScoring(t *testing.T, repo *mockTenantRepo, tenantID shared.ID) tenant.RiskScoringSettings {
+	t.Helper()
+	return repo.tenants[tenantID.String()].TypedSettings().RiskScoring
+}
+
+// Omitting a block keeps the stored block. A body with only the finding
+// impact used to decode exposure_scores and criticality_scores to zero, so
+// every asset then scored 0.
+func TestRiskScoringHandler_Update_OmittedBlocksKeepStoredValues(t *testing.T) {
+	for name, body := range map[string]string{
+		"only the ownership floor":   `{"floor_unowned_at_p2":true}`,
+		"only the risk levels":       `{"risk_levels":{"critical_min":90,"high_min":70,"medium_min":50,"low_min":30}}`,
+		"one field of one block":     `{"exposure_scores":{"isolated":20}}`,
+		"empty body (nothing to do)": `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := newMockTenantRepo()
+			_, tenantID := createTenantWithSettings(repo)
+			h := newTenantHandlerForScoring(repo)
+			before := storedRiskScoring(t, repo, tenantID)
+
+			rr := patchRiskScoring(t, h, tenantID, body)
+			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+			after := storedRiskScoring(t, repo, tenantID)
+			assert.Equal(t, before.Weights, after.Weights)
+			assert.Equal(t, before.CriticalityScores, after.CriticalityScores)
+			assert.Equal(t, before.ExposureMultipliers, after.ExposureMultipliers)
+			assert.Equal(t, before.FindingImpact, after.FindingImpact)
+			assert.NotZero(t, after.ExposureScores.Public, "an omitted exposure block must not be zeroed")
+			assert.NotZero(t, after.CriticalityScores.Critical)
+			if name == "one field of one block" {
+				want := before.ExposureScores
+				want.Isolated = 20
+				assert.Equal(t, want, after.ExposureScores, "only the named field changes")
+			}
+		})
+	}
+}
+
+func TestRiskScoringHandler_Update_UnsafeMapsRefused(t *testing.T) {
+	for name, body := range map[string]string{
+		"all-zero exposure scores":     `{"exposure_scores":{"public":0,"restricted":0,"private":0,"isolated":0,"unknown":0}}`,
+		"inverted exposure scores":     `{"exposure_scores":{"public":20,"restricted":50,"private":70,"isolated":90,"unknown":50}}`,
+		"exposure score below minimum": `{"exposure_scores":{"isolated":5}}`,
+		"all-zero criticality scores":  `{"criticality_scores":{"critical":0,"high":0,"medium":0,"low":0,"none":0}}`,
+		"inverted criticality scores":  `{"criticality_scores":{"critical":10,"high":40,"medium":60,"low":80,"none":0}}`,
+		"criticality score below min":  `{"criticality_scores":{"low":3}}`,
+		"unordered risk levels":        `{"risk_levels":{"critical_min":30,"high_min":60,"medium_min":40,"low_min":20}}`,
+		"weights that do not sum":      `{"weights":{"exposure":10,"criticality":10,"findings":10,"ctem":10}}`,
+		"negative score":               `{"exposure_scores":{"public":-5}}`,
+		"wrong type":                   `{"exposure_scores":"high"}`,
+		"unknown composition mode":     `{"score_composition_mode":"bogus"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := newMockTenantRepo()
+			_, tenantID := createTenantWithSettings(repo)
+			h := newTenantHandlerForScoring(repo)
+			before := storedRiskScoring(t, repo, tenantID)
+
+			rr := patchRiskScoring(t, h, tenantID, body)
+			assert.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+			assert.Equal(t, 0, repo.updateCalls, "nothing is saved")
+			assert.Equal(t, before, storedRiskScoring(t, repo, tenantID))
+		})
+	}
+}
+
+// Every shipped preset, and the defaults, pass the stricter save rules, so
+// applying a preset keeps working.
+func TestRiskScoringSettings_PresetsPassValidateForSave(t *testing.T) {
+	for name, p := range tenant.AllRiskScoringPresets {
+		p := p
+		assert.NoError(t, p.ValidateForSave(), name)
+	}
+	d := tenant.DefaultSettings().RiskScoring
+	assert.NoError(t, d.ValidateForSave(), "defaults")
+}
+
+// Saving another section of the settings never trips over a stored risk map
+// that predates the save rules (Validate stays the lenient check).
+func TestRiskScoringSettings_StoredLegacyValuesDoNotBlockOtherSaves(t *testing.T) {
+	zeroed := tenant.DefaultSettings()
+	zeroed.RiskScoring.ExposureScores = tenant.ExposureScoreConfig{}
+	assert.NoError(t, zeroed.RiskScoring.Validate())
+	assert.Error(t, zeroed.RiskScoring.ValidateForSave())
+}
+
+// The preview reads the body like the save: omitted blocks keep the stored value.
+func TestRiskScoringHandler_Preview_OmittedBlocksKeepStoredValues(t *testing.T) {
+	repo := newMockTenantRepo()
+	_, tenantID := createTenantWithSettings(repo)
+	assetRepo := &scoringHandlerMockAssetRepo{MockAssetRepository: MockAssetRepository{assets: make(map[string]*asset.Asset)}}
+	h := newHandlerWithAssetService(repo, assetRepo)
+
+	req := httptest.NewRequest(http.MethodPost, "/settings/risk-scoring/preview", bytes.NewReader([]byte(`{"floor_unowned_at_p2":false}`)))
+	req = withTeamContext(req, tenantID)
+	rr := httptest.NewRecorder()
+	h.PreviewRiskScoringChanges(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	bad := httptest.NewRequest(http.MethodPost, "/settings/risk-scoring/preview",
+		bytes.NewReader([]byte(`{"exposure_scores":{"public":0,"restricted":0,"private":0,"isolated":0,"unknown":0}}`)))
+	bad = withTeamContext(bad, tenantID)
+	rr = httptest.NewRecorder()
+	h.PreviewRiskScoringChanges(rr, bad)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
