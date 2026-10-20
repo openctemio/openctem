@@ -1,0 +1,59 @@
+# OpenCTEM API server, from the openctem-server release archive
+# (api/docs/deployment/binary-install.md). Install to /etc/systemd/system/.
+#
+# Paths: /opt/openctem/server -> the unpacked archive (a symlink, so an
+# upgrade or rollback switches one link); /etc/openctem/server.env holds the
+# settings and secrets (root:openctem 0640); /var/lib/openctem/server is the
+# only writable directory (attachments, sensor CA).
+[Unit]
+Description=OpenCTEM API server
+Documentation=https://docs.openctem.io
+After=network-online.target postgresql.service redis-server.service redis.service openctem-signer.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openctem
+Group=openctem
+EnvironmentFile=/etc/openctem/server.env
+# The server reads ./migrations (schema check), ./configs and
+# ./api/openapi/swagger.yaml relative to its working directory.
+WorkingDirectory=/opt/openctem/server
+ExecStart=/opt/openctem/server/bin/openctem-server
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+StateDirectory=openctem/server
+StateDirectoryMode=0750
+LimitNOFILE=65536
+UMask=0027
+
+# Hardening: no privileges, read-only system, only its state directory writable.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

@@ -65,13 +65,7 @@ func (p *FindingProcessor) secretIdentity(tenantID, assetID shared.ID, f *ctis.F
 	}
 	var formers []string
 	maskKey, maskOK := vulnerability.SecretMaskIdentity(asset, maskedHMAC, path, rule, stype, line)
-	secretHMAC := ""
-	if v := f.PartialFingerprints[partialSecretHMAC]; v != "" {
-		secretHMAC = p.secretFingerprinter.ProducerFingerprint(tenantID, v)
-	}
-	if secretHMAC == "" {
-		secretHMAC = f.PartialFingerprints[partialServerSecretHMAC]
-	}
+	secretHMAC := p.rawSecretHMAC(tenantID, f)
 	if k, ok := vulnerability.SecretIdentity(asset, secretHMAC, path); ok {
 		if maskOK {
 			formers = append(formers, maskKey.Fingerprint())
@@ -326,4 +320,22 @@ func applyIdentityToFinding(f *vulnerability.Finding, identity *vulnerability.Id
 func VersionOneFingerprint(assetID shared.ID, f *ctis.Finding, tool *ctis.Tool) string {
 	fp, _ := generateFindingFingerprint(assetID, f, tool)
 	return fp
+}
+
+// rawSecretHMAC is the keyed hash of a secret's raw value: the producer's
+// (secretHMAC/v1) re-keyed per tenant with the server secret, else the
+// server's own when the report carried the raw value (keyRawSecrets). It is
+// the only thing a secret's identity and rotation group may be derived from:
+// a mask ("REDACTED", "AKIA********") is shared by unrelated secrets. Empty
+// when the report carried neither.
+func (p *FindingProcessor) rawSecretHMAC(tenantID shared.ID, f *ctis.Finding) string {
+	if f == nil {
+		return ""
+	}
+	if v := f.PartialFingerprints[partialSecretHMAC]; v != "" {
+		if h := p.secretFingerprinter.ProducerFingerprint(tenantID, v); h != "" {
+			return h
+		}
+	}
+	return f.PartialFingerprints[partialServerSecretHMAC]
 }

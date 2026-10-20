@@ -19,6 +19,61 @@ import (
 // Coverage-scoped auto-resolve of non-repository findings: the queries behind
 // ingest.Service.EvaluateCommandCoverage.
 
+// secretFindingSQL is true for a leaked-secret finding (by type or source) of
+// the table alias. A secret is never closed by a scan that stops seeing it:
+// removing it from the branch does not revoke it, and history keeps it.
+func secretFindingSQL(alias string) string {
+	return "(" + alias + ".finding_type = 'secret' OR " + alias + ".source = 'secret')"
+}
+
+// markSecretsNotObserved marks open, present secret findings stale
+// (observation_state; the status stays) with a timeline entry. branch is true
+// for default-branch (repository) findings. Tenant-scoped; the UPDATE
+// re-checks status, type and branch, so a finding someone triaged since the
+// candidates were read is left alone.
+func (r *FindingRepository) markSecretsNotObserved(ctx context.Context, tenantID shared.ID, ids []shared.ID, message, actor string, branch bool) ([]shared.ID, error) {
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
+		return nil, nil
+	}
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+	where := "f.branch_id IS NULL"
+	if branch {
+		where = "f.branch_id IS NOT NULL"
+	}
+	// The status does not change, so the status trigger writes no timeline
+	// entry: write it here, for the findings that just went stale only.
+	out, err := r.db.queryIDsWithTransition(ctx, findingTransition{
+		Source: "secret_not_observed", Reason: "secret_not_observed", ActorType: "scanner", ActorName: actor,
+		Message: message,
+	}, `
+		WITH upd AS (
+			UPDATE findings f
+			SET observation_state = 'stale', updated_at = NOW()
+			WHERE f.tenant_id = $1
+				AND f.id = ANY($2::uuid[])
+				AND `+where+`
+				AND f.status IN `+staleFromSQL+`
+				AND f.observation_state = 'present'
+				AND f.source NOT IN `+coverageProtectedSources+`
+				AND `+secretFindingSQL("f")+`
+			RETURNING f.id, f.tenant_id
+		), act AS (
+			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
+			SELECT u.tenant_id, u.id, 'metadata_updated', 'scanner', $3,
+			       jsonb_build_object('observation_state', 'stale', 'reason', 'secret_not_observed'),
+			       'secret_not_observed', $4
+			FROM upd u
+		)
+		SELECT id::text FROM upd`, tenantID.String(), pq.Array(idStrs), actor, message)
+	if err != nil {
+		return nil, fmt.Errorf("mark secret findings not observed: %w", err)
+	}
+	return out, nil
+}
+
 // coverageProtectedSources are never closed by a scan.
 const coverageProtectedSources = `('pentest', 'manual', 'bug_bounty', 'red_team')`
 
@@ -91,7 +146,25 @@ func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, comma
 // that tool those assets have (for the blinding guard). A finding whose last
 // sighting cannot be tied to a run (v1 ingest, an import) is never a
 // candidate: proof of coverage needs like-for-like runs.
+//
+// A leaked secret is never a candidate (its absence does not revoke it);
+// MarkCoverageSecretsNotObserved marks it instead.
 func (r *FindingRepository) CoverageStaleFindings(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery) ([]shared.ID, int, error) {
+	return r.coverageStale(ctx, tenantID, q, false)
+}
+
+// MarkCoverageSecretsNotObserved marks the open secret findings a covered scan
+// of the query no longer reported as stale (observation_state; the status
+// stays) with a timeline entry. It never resolves.
+func (r *FindingRepository) MarkCoverageSecretsNotObserved(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery) ([]shared.ID, error) {
+	ids, _, err := r.coverageStale(ctx, tenantID, q, true)
+	if err != nil || len(ids) == 0 {
+		return nil, err
+	}
+	return r.markSecretsNotObserved(ctx, tenantID, ids, "A covered scan no longer reported it; a secret stays exposed until it is rotated", "system: covered scan", false)
+}
+
+func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery, secrets bool) ([]shared.ID, int, error) {
 	if len(q.AssetIDs) == 0 || q.ToolName == "" {
 		return nil, 0, nil
 	}
@@ -113,6 +186,7 @@ func (r *FindingRepository) CoverageStaleFindings(ctx context.Context, tenantID 
 				AND f.branch_id IS NULL
 				AND f.status IN `+autoResolveFromSQL+`
 				AND f.source NOT IN `+coverageProtectedSources+`
+				AND `+secretFindingSQL("f")+` = $6
 		)
 		SELECT o.id::text, COUNT(*) OVER () AS open_total,
 			(
@@ -132,7 +206,7 @@ func (r *FindingRepository) CoverageStaleFindings(ctx context.Context, tenantID 
 				)
 			) AS stale
 		FROM open_findings o`,
-		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen), q.ProfileID)
+		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen), q.ProfileID, secrets)
 	if err != nil {
 		return nil, 0, fmt.Errorf("coverage stale findings: %w", err)
 	}
@@ -193,6 +267,7 @@ func (r *FindingRepository) ResolveCoverageStale(ctx context.Context, tenantID s
 			AND f.branch_id IS NULL
 			AND f.status IN `+autoResolveFromSQL+`
 			AND f.source NOT IN `+coverageProtectedSources+`
+			AND NOT `+secretFindingSQL("f")+`
 		RETURNING f.id::text`, tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("resolve coverage-stale findings: %w", err)
