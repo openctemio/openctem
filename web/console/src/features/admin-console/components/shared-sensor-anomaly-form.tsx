@@ -21,7 +21,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorAnomalyThresholds } from '../api/use-scan-policy'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 const FIELDS = [
@@ -153,20 +153,13 @@ export function SharedSensorAnomalyForm({
               onChange={(e) => setReason(e.target.value)}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-code`}>{t('admin.scanPolicy.code')}</Label>
-            <Input
-              id={`${id}-code`}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={8}
-              aria-invalid={!!codeError}
-            />
-            <StepUpCodeHint optional={codeOptional} />
-            {codeError && <p className="text-sm text-destructive">{codeError}</p>}
-          </div>
+          <StepUpCodeField
+            id={`${id}-code`}
+            value={code}
+            onChange={setCode}
+            optional={codeOptional}
+            error={codeError}
+          />
         </div>
       </ConfirmDialog>
     </>

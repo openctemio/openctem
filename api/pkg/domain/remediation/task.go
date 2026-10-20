@@ -283,7 +283,15 @@ type Task struct {
 	// caller's data scope (set per request, never stored). The counters
 	// above are then over the visible members only.
 	HiddenMembers int
+	// HiddenRelated is the same for related members. It is not shown, but a
+	// restricted caller may not change a task that has any (HasHidden).
+	HiddenRelated int
 }
+
+// HasHidden reports whether the task has an active member, primary or
+// related, outside the caller's data scope. Such a task is read-only for the
+// caller.
+func (t *Task) HasHidden() bool { return t.HiddenMembers > 0 || t.HiddenRelated > 0 }
 
 // TaskMember is one finding of a task, with what a member table shows.
 type TaskMember struct {

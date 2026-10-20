@@ -4,7 +4,7 @@ package scan
 // coverage planner starts one capability on a batch of due assets. Like an
 // enrichment run, one target that may not be scanned never refuses the
 // batch: it is reported with the gate's code and the rest runs. The run acts
-// as the system (scope entries only, no member's act scope), at the
+// with the coverage policy's system authority (scope entries only, no member's act scope), at the
 // capability's tier; an intrusive capability is never started this way.
 
 import (
@@ -15,6 +15,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -78,11 +79,13 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		tier, intensity = scopedom.TierPassive, scan.IntensityPassive
 	}
 	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
-		TenantID:    in.TenantID,
-		Targets:     in.Targets,
-		ActScope:    true,
-		PassiveOnly: passive,
-		Tier:        &tier,
+		TenantID: in.TenantID,
+		Targets:  in.Targets,
+		// The policy's explicit system authority: scope entries and the
+		// tier, never a member's act scope (and never "no actor").
+		SystemPolicy: string(scan.ManagedByCoverage),
+		PassiveOnly:  passive,
+		Tier:         &tier,
 		// Zone routing here: a target no zone can place is refused on its
 		// own (zone_none, zone_no_sensor), so the rest of the batch runs.
 		MaxTargets: maxCoverageTargets,
@@ -132,7 +135,10 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		TenantID:      in.TenantID.String(),
 		ScanID:        sc.ID.String(),
 		SkipIfRunning: true,
-		Context:       map[string]any{"trigger": "auto_coverage", "capability": in.Capability, "target_count": len(res.Kept)},
+		// The run is the coverage policy's: no person is behind it.
+		TriggerType: scanworkflow.TriggerTypeSystem,
+		TriggeredBy: PolicyTriggerPrefix + string(scan.ManagedByCoverage),
+		Context:     map[string]any{"trigger": "auto_coverage", "capability": in.Capability, "target_count": len(res.Kept)},
 	})
 	if err != nil {
 		if errors.Is(err, ErrScanRunInProgress) {

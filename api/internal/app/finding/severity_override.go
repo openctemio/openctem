@@ -459,6 +459,9 @@ func (s *VulnerabilityService) ApproveSeverityRequest(ctx context.Context, in De
 		s.logger.Warn("severity request: save recomputed priority", "finding_id", f.ID().String(), "error", err)
 	}
 	s.recordSeverityChanged(ctx, f, req.PreviousSeverity, req.Reason, author, &severityApproval{requestID: req.ID, approvedBy: approver}, in.Audit)
+	if req.RequestedBy != nil {
+		s.notifyRequesterDecided(ctx, f.TenantID(), f.ID(), *req.RequestedBy, approver, "severity change", decisionApproved)
+	}
 	return &SeverityChangeResult{Finding: f, Applied: true}, nil
 }
 
@@ -508,6 +511,9 @@ func (s *VulnerabilityService) closeSeverityRequest(ctx context.Context, f *vuln
 	})
 	s.auditSeverity(ctx, actx, auditdom.ActionFindingSeverityRequestClosed, f, "Closed a severity request ("+string(status)+")",
 		map[string]any{"request_id": req.ID.String(), "status": string(status), "requested_severity": req.RequestedSeverity.String(), "note": note})
+	if status == vulnerability.ApprovalStatusRejected && req.RequestedBy != nil {
+		s.notifyRequesterDecided(ctx, f.TenantID(), f.ID(), *req.RequestedBy, actor, "severity change", decisionRejected)
+	}
 	return &SeverityChangeResult{Finding: f}, nil
 }
 
