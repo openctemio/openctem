@@ -83,6 +83,16 @@ type RunRecorder interface {
 	FinishRetestRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error
 }
 
+// unableRunFinisher settles a retest's run as blocked, not failed, when the
+// tool could not run the check (the scan run service).
+type unableRunFinisher interface {
+	FinishRetestRunUnable(ctx context.Context, tenantID, runID shared.ID, message, code string) error
+}
+
+// RunCodeToolUnable is the refusal code of a retest run whose tool could not
+// run the check.
+const RunCodeToolUnable = "RETEST_UNAVAILABLE"
+
 // runLinker stores a retest's run id (*postgres.FindingRetestRepository).
 type runLinker interface {
 	SetRun(ctx context.Context, tenantID, id, runID shared.ID) error
@@ -941,6 +951,12 @@ func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestd
 	// run the check, so its own addresses and paths are masked on the run
 	// (the run is shown on the Runs page, beside platform-run scans).
 	msg := sensordom.RedactPlatformText(evidence.RedactText(v.Reason))
+	if f, ok := s.runs.(unableRunFinisher); ok && v.Outcome == retestdom.OutcomeInconclusive && v.Code == retestdom.ReasonError {
+		if err := f.FinishRetestRunUnable(ctx, rt.TenantID, *rt.RunID, msg, RunCodeToolUnable); err != nil {
+			s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
+		}
+		return
+	}
 	if err := s.runs.FinishRetestRun(ctx, rt.TenantID, *rt.RunID, succeeded, msg, strings.ToUpper(string(v.Code))); err != nil {
 		s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
 	}

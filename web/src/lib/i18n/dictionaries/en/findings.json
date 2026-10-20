@@ -503,7 +503,7 @@
   "findings.retestPanel.inconclusiveWhy.endpoint_mismatch": "another endpoint was checked",
   "findings.retestPanel.inconclusiveWhy.template_changed": "template changed",
   "findings.retestPanel.inconclusiveWhy.no_result": "no result",
-  "findings.retestPanel.inconclusiveWhy.error": "error",
+  "findings.retestPanel.inconclusiveWhy.error": "the tool could not run the check",
   "findings.retestPanel.running": "Retest running",
   "findings.retestPanel.fixedResolved": "Fixed — verified and resolved",
   "findings.retestPanel.verifiedFixed": "Verified fixed — awaiting confirmation",

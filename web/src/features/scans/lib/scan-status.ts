@@ -53,6 +53,7 @@ const REFUSAL_CODES = new Set([
   'TOOL_NOT_FOUND',
   'SENSOR_POLICY_REFUSED',
   'MAX_CONCURRENT_RUNS',
+  'RETEST_UNAVAILABLE',
 ])
 
 /** One line on why a blocked or failed run ended, for hover text. */
