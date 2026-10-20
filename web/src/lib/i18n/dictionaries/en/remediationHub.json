@@ -336,5 +336,7 @@
   "remediationHub.panel.joinsTask": "Adds {n, plural, one {# finding} other {# findings}} to the owner's existing task for this fix.",
   "remediationHub.panel.createsTasks": "{n, plural, one {Creates # task:} other {Creates # tasks, one per owner:}}",
   "remediationHub.toast.skipped": "{n, plural, one {# finding in another task was skipped.} other {# findings in other tasks were skipped.}}",
-  "remediationHub.toast.movedFrom": "{n, plural, one {# finding was moved from another task.} other {# findings were moved from other tasks.}}"
+  "remediationHub.toast.movedFrom": "{n, plural, one {# finding was moved from another task.} other {# findings were moved from other tasks.}}",
+  "remediationHub.people.title": "People",
+  "remediationHub.people.owner": "Owner"
 }
