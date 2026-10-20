@@ -340,7 +340,6 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// The probe ceiling of every step (RFC-071), from the scan, never from
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
-	runContext["routing_tags"] = sc.Tags
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
 	} else {
@@ -492,7 +491,6 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		delete(runContext, RunContextKeyCIDRMode)
 	}
 	runContext["targets_per_job"] = sc.TargetsPerJob
-	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
 
 	// Smart filtering: filter assets based on scanner compatibility
@@ -866,15 +864,13 @@ func (s *Service) scannerPayload(
 		scannerConfig = withoutTargetKeys(scannerConfig)
 	}
 	payloadMap := map[string]any{
-		"run_id":             run.ID.String(),
-		"scan_id":            sc.ID.String(),
-		"scanner_name":       sc.ScannerName,
-		"scanner_config":     scannerConfig,
-		"asset_group_id":     sc.AssetGroupID.String(),
-		"targets_per_job":    sc.TargetsPerJob,
-		"routing_tags":       sc.Tags,
-		"tenant_runner_only": sc.RunOnTenantRunner,
-		"context":            StepRunContext(runContext, nil),
+		"run_id":          run.ID.String(),
+		"scan_id":         sc.ID.String(),
+		"scanner_name":    sc.ScannerName,
+		"scanner_config":  scannerConfig,
+		"asset_group_id":  sc.AssetGroupID.String(),
+		"targets_per_job": sc.TargetsPerJob,
+		"context":         StepRunContext(runContext, nil),
 		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
 		// single `target`, not `scanner_name`/`scanner_config` — send both sets
 		// so the command dispatches correctly (contract drift previously left
