@@ -140,6 +140,9 @@ func (r *AuditRepository) PruneChainPrefix(ctx context.Context, anchor audit.Cha
 		return fmt.Errorf("begin prune: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return err
+	}
 
 	if _, err := tx.ExecContext(ctx, chainLockQuery, tenant); err != nil {
 		return fmt.Errorf("lock chain: %w", err)
