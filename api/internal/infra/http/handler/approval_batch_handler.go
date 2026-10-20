@@ -24,6 +24,9 @@ import (
 
 // TaskExceptionRequest asks for one exception over a task's open findings.
 type TaskExceptionRequest struct {
+	// Version is the task version the caller read: required to request the
+	// exception (409 when stale), optional on a preview.
+	Version int `json:"version"`
 	// RequestedStatus is accepted or false_positive.
 	RequestedStatus string `json:"requested_status" enums:"accepted,false_positive"`
 	// ClosureReason is the structured reason (closure reason catalog).
@@ -139,7 +142,7 @@ func toGroupPreviewResponse(p *finding.GroupExceptionPreview) GroupExceptionPrev
 
 func (req TaskExceptionRequest) input(tid, taskID shared.ID, actor *shared.ID) (remediationapp.TaskExceptionInput, error) {
 	in := remediationapp.TaskExceptionInput{
-		TenantID: tid, TaskID: taskID, RequestedStatus: req.RequestedStatus, ClosureReason: req.ClosureReason,
+		TenantID: tid, TaskID: taskID, Version: req.Version, RequestedStatus: req.RequestedStatus, ClosureReason: req.ClosureReason,
 		Justification: req.Justification, Approved: req.Approved,
 	}
 	if actor != nil {
