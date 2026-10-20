@@ -1694,6 +1694,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
+	// An owner who cannot see the task's findings: the picker explains it and naming one needs findings:assign.
+	s.RemediationTask.SetOwnerAccess(repos.RemediationOwnerAccess)
 	s.RemediationTask.SetAuditLogger(s.Audit)
 	// Campaign <-> task: the campaign checks every task it takes; a task's
 	// own campaign change goes through the campaign's write check.

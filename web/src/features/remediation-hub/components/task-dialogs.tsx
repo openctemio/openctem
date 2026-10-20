@@ -3,6 +3,7 @@
 /** Mark a task fixed, split findings off it, cancel it. */
 
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,7 +20,10 @@ import {
 } from '@/components/ui/dialog'
 import type { MarkFixedResult, RemediationTask } from '../api/types'
 import { useOwnerNames } from '../api/use-owner-names'
-import { OwnerCombobox, type OwnerValue } from './owner-combobox'
+import { usePermissions } from '@/context/permission-provider'
+import { Permission } from '@/lib/permissions'
+import { requestOwnerAccess, useOwnerCandidates, type OwnerCandidate } from '../api/use-owner-access'
+import { OwnerCombobox, gapOf, type OwnerValue } from './owner-combobox'
 
 export function MarkFixedDialog({
   task,
@@ -104,6 +108,7 @@ export function MarkFixedDialog({
 export function SplitDialog({
   task,
   count,
+  findingIds,
   open,
   onOpenChange,
   onConfirm,
@@ -111,12 +116,15 @@ export function SplitDialog({
 }: {
   task: RemediationTask
   count: number
+  /** The findings being split off: what a new owner has to be able to see. */
+  findingIds?: string[]
   open: boolean
   onOpenChange: (o: boolean) => void
   onConfirm: (body: {
     title: string
     assignee_user_id?: string
     assignee_group_id?: string
+    confirm_owner_access?: boolean
   }) => void
   busy?: boolean
 }) {
@@ -124,12 +132,36 @@ export function SplitDialog({
   const owners = useOwnerNames()
   const [title, setTitle] = useState('')
   const [owner, setOwner] = useState<OwnerValue | null>(null)
+  const [consent, setConsent] = useState(false)
+  const { hasPermission } = usePermissions()
+  const canAssign = hasPermission(Permission.FindingsAssign)
+  const { data: access } = useOwnerCandidates({ findingIds }, '', open && !!findingIds?.length)
   useEffect(() => {
     if (open) {
       setTitle(task.title)
       setOwner(null)
+      setConsent(false)
     }
   }, [open, task.title])
+  // A new owner who cannot see the findings needs the assigner's consent.
+  const gap = owner ? gapOf(access, owner) : undefined
+  const needsConsent = !!gap && (!canAssign || !consent)
+  const requestAccess = async (c: OwnerCandidate) => {
+    if (!findingIds?.[0]) return
+    try {
+      await requestOwnerAccess(
+        findingIds[0],
+        t('remediationHub.ownerAccess.requestComment', undefined, {
+          name: c.name,
+          findings: c.missing_findings,
+          assets: c.missing_assets,
+        })
+      )
+      toast.success(t('remediationHub.ownerAccess.requested'))
+    } catch {
+      toast.error(t('remediationHub.ownerAccess.requestFailed'))
+    }
+  }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="md">
@@ -160,6 +192,11 @@ export function SplitDialog({
               groups={owners.groups}
               usersState={owners.usersState}
               groupsState={owners.groupsState}
+              access={access}
+              canAssign={canAssign}
+              consent={consent}
+              onConsentChange={setConsent}
+              onRequestAccess={requestAccess}
             />
             <p className="text-muted-foreground text-xs">{t('remediationHub.split.keepOwner')}</p>
           </div>
@@ -169,12 +206,13 @@ export function SplitDialog({
             {t('remediationHub.actions.cancel')}
           </Button>
           <Button
-            disabled={busy || !title.trim()}
+            disabled={busy || !title.trim() || needsConsent}
             onClick={() =>
               onConfirm({
                 title: title.trim(),
                 ...(owner?.userId ? { assignee_user_id: owner.userId } : {}),
                 ...(owner?.groupId ? { assignee_group_id: owner.groupId } : {}),
+                ...(gap && consent ? { confirm_owner_access: true } : {}),
               })
             }
           >

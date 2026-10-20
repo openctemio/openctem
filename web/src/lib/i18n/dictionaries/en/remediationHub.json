@@ -336,5 +336,14 @@
   "remediationHub.panel.joinsTask": "Adds {n, plural, one {# finding} other {# findings}} to the owner's existing task for this fix.",
   "remediationHub.panel.createsTasks": "{n, plural, one {Creates # task:} other {Creates # tasks, one per owner:}}",
   "remediationHub.toast.skipped": "{n, plural, one {# finding in another task was skipped.} other {# findings in other tasks were skipped.}}",
-  "remediationHub.toast.movedFrom": "{n, plural, one {# finding was moved from another task.} other {# findings were moved from other tasks.}}"
+  "remediationHub.toast.movedFrom": "{n, plural, one {# finding was moved from another task.} other {# findings were moved from other tasks.}}",
+  "remediationHub.ownerAccess.gap": "Needs access to {findings, plural, one {# finding} other {# findings}} on {assets, plural, one {# asset} other {# assets}}",
+  "remediationHub.ownerAccess.teamGap": "{missing} of {members} members need access to {findings, plural, one {# finding} other {# findings}}",
+  "remediationHub.ownerAccess.request": "Request access",
+  "remediationHub.ownerAccess.requested": "Access requested: a comment was left on the finding. Nothing was shared.",
+  "remediationHub.ownerAccess.requestFailed": "The request could not be sent.",
+  "remediationHub.ownerAccess.requestComment": "Access requested for {name}, who cannot see {findings, plural, one {# open finding} other {# open findings}} on {assets, plural, one {# asset} other {# assets}} of this work. Someone who may assign findings can share them.",
+  "remediationHub.ownerAccess.consent": "{name} will be able to see {findings, plural, one {these # finding} other {these # findings}} (not the other findings of their assets) while they own this task. This is recorded in the audit log.",
+  "remediationHub.ownerAccess.consentCheck": "Share these findings with the owner",
+  "remediationHub.ownerAccess.noPermission": "This owner cannot see all the findings, and you may not share findings. Choose someone with access or request it."
 }
