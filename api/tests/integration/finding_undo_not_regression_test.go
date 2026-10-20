@@ -75,7 +75,7 @@ func TestRegression_UndoIsNotARegression(t *testing.T) {
 	bulk := newFinding("undo-2")
 	move(bulk, "resolved")
 	if _, err := svc.BulkUpdateFindingsStatus(ctx, tenant.String(), finding.BulkUpdateStatusInput{
-		FindingIDs: []string{bulk.String()}, Status: "confirmed", ActorID: person.String(), HasVerifyPermission: true,
+		FindingIDs: []string{bulk.String()}, Status: "confirmed", ActorID: person.String(), HasVerifyPermission: true, HasStatusPermission: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
