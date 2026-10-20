@@ -4,7 +4,9 @@
 -- Both columns are nullable without a default: no table rewrite.
 ALTER TABLE scans
     ADD COLUMN managed_by text NULL,
-    ADD COLUMN managed_key text NULL,
+    ADD COLUMN managed_key text NULL;
+
+ALTER TABLE scans
     ADD CONSTRAINT scans_managed_by_check CHECK (
         (managed_by IS NULL AND managed_key IS NULL)
         OR (managed_by IN ('coverage', 'enrichment') AND managed_key IS NOT NULL AND managed_key <> '')
