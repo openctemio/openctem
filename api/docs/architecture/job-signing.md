@@ -76,11 +76,50 @@ API:
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `SIGNER_SOCKET` | the signer's socket. Unset: no signing, claims as before | unset |
+| `SIGNER_SOCKET` | the signer's socket. Unset: no signing; a production API then refuses to start | set by the default compose file |
+| `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS` | lets a production API start without `SIGNER_SOCKET` (development only; logged as a security warning) | false |
 | `SIGNER_TIMEOUT` | bound of one call to the signer | 2s |
 
-Compose: `deploy/docker-compose.job-signer.yml` (an opt-in overlay with
-setup steps). Helm is not covered yet.
+Signer: `SIGNER_GENERATE_KEY=true` creates the signing key on first start
+when the key file does not exist (never replaces one) and logs its id.
+
+### On by default (research/191 A-1)
+
+Signed jobs are the default posture (owner decision D2, Community
+included):
+
+- `deploy/docker-compose.yml` runs the `signer` service (own container,
+  own user, no network, key volume never mounted into the API) and sets
+  `SIGNER_SOCKET` on the API. The key is created on first start; back up the
+  `signer-keys` volume offline. `docker-compose.job-signer.yml` now only
+  repeats it and documents the key set and scope ledger steps.
+- The all-in-one image starts the signer as a separate process with its own
+  key file under `/data/signer` (same container, so weaker separation than
+  the split deployment; `OPENCTEM_SIGNER=off` or an external
+  `SIGNER_SOCKET` replaces it).
+- A production API refuses to start without `SIGNER_SOCKET` unless
+  `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS=true`.
+- **Scope ledger on an existing install:** a new signer enforces the
+  ledger at once, so jobs outside it (an empty ledger: every job) are
+  refused. Run the ledger bootstrap ([Scope ledger](#scope-ledger)) or set
+  `SIGNER_LEDGER=audit` until it is done.
+- Sensors (sdk-go): a newly paired identity records `require_signed_jobs`
+  and requires signed jobs whatever the platform served; with nothing
+  pinned it does not start until `SENSOR_JOB_SIGNING_ROOT` or
+  `SENSOR_JOB_SIGNING_KEYS` is set, and `SENSOR_REQUIRE_SIGNED_JOBS=false`
+  cannot lower it.
+- **Root out of band:** with a key set, the console's pairing command is
+  `SENSOR_JOB_SIGNING_ROOT=<root id> openctemio-sensor pair <code>` (the
+  pairing view's `job_signing_root`). The sensor pins that root only when
+  the key set the platform serves is signed by it, and refuses to pair
+  otherwise. The value comes from the signer's key set, which the database
+  cannot change, but the console receives it from the API: a compromised API
+  can show a root of its own, so the console's value is trust on first use
+  of the API, not out of band. The out-of-band form is the root id the
+  operator recorded at `root keygen`, compared with (or used instead of) the
+  console's value.
+
+Helm is not covered yet.
 
 ## Key sets and the offline root (K3)
 

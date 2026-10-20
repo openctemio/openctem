@@ -82,7 +82,28 @@ func prodEnv(t *testing.T) {
 		"DB_SSLMODE": "require", "REDIS_PASSWORD": strings.Repeat("r", 40), "REDIS_TLS_ENABLED": "true",
 		"AUTH_COOKIE_SECURE": "true", "AUTH_REQUIRE_EMAIL_VERIFICATION": "true", "LOG_LEVEL": "info",
 		"CORS_ALLOWED_ORIGINS": "https://ctem.example.com", "AUTH_JWT_SECRET": "", "OAUTH_STATE_SECRET": "",
+		"SIGNER_SOCKET": "/run/openctem-signer/signer.sock", "SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS": "",
 	} {
 		t.Setenv(k, v)
+	}
+}
+
+// Production refuses to start without the job signer (research/191 A-1),
+// unless the operator accepts unsigned jobs by name.
+func TestLoad_ProductionRequiresTheJobSigner(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("SIGNER_SOCKET", "")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SIGNER_SOCKET") {
+		t.Fatalf("err = %v, want SIGNER_SOCKET required", err)
+	}
+	t.Setenv("SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS", "true")
+	if _, err := Load(); err != nil {
+		t.Fatalf("with the explicit override: %v", err)
+	}
+	t.Setenv("SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "")
+	if _, err := Load(); err != nil && strings.Contains(err.Error(), "SIGNER_SOCKET") {
+		t.Fatalf("development must not require the signer: %v", err)
 	}
 }

@@ -645,6 +645,7 @@
   "sensors.pair.getCode": "Lấy mã",
   "sensors.pair.runOnHost": "Chạy lệnh này trên máy chủ sensor:",
   "sensors.pair.pairCommand": "Lệnh ghép đôi",
+  "sensors.pair.signingRootNote": "Lệnh mang theo gốc khóa ký công việc: sensor đối chiếu bộ ký công việc của nền tảng với gốc này và từ chối ghép đôi nếu không khớp.",
   "sensors.pair.expired": "Mã đã hết hạn. Hãy lấy mã mới.",
   "sensors.pair.rejected": "Yêu cầu ghép đôi này đã bị từ chối.",
   "sensors.pair.waiting": "Đang chờ sensor kết nối · hết hạn sau {time}",

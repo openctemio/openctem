@@ -123,6 +123,8 @@ type Service struct {
 	notifier InAppNotifier
 	hook     ApprovalHook
 	log      *logger.Logger
+	// jobRoot reads the job-signing root the views carry (nil: none).
+	jobRoot func(ctx context.Context) string
 
 	adminAudit AdminAuditWriter
 
@@ -474,7 +476,16 @@ type View struct {
 	// StepUp is what the viewer must present to approve ("totp",
 	// "password" or "fresh_sign_in").
 	StepUp string `json:"step_up,omitempty"`
+	// JobSigningRoot is the id of the offline root that signs the job
+	// signer's key set ("" without one). The pairing command passes it as
+	// SENSOR_JOB_SIGNING_ROOT, so the sensor checks the key set the
+	// platform serves against a root it got from the administrator.
+	JobSigningRoot string `json:"job_signing_root,omitempty"`
 }
+
+// SetJobSigningRoot sets where the views read the job-signing root from
+// (signerclient.Client.RootKeyID). Optional.
+func (s *Service) SetJobSigningRoot(f func(ctx context.Context) string) { s.jobRoot = f }
 
 func (s *Service) view(ctx context.Context, actor Actor, p *sensordom.Pairing) *View {
 	v := &View{ID: p.ID.String(), Mode: string(p.Mode), Status: string(p.Status), SAS: p.SAS,
@@ -487,6 +498,9 @@ func (s *Service) view(ctx context.Context, actor Actor, p *sensordom.Pairing) *
 	}
 	if p.SensorID != nil {
 		v.SensorID = p.SensorID.String()
+	}
+	if s.jobRoot != nil {
+		v.JobSigningRoot = s.jobRoot(ctx)
 	}
 	if p.RepairSensorID != nil && s.sensors != nil {
 		if sen, err := s.sensors.GetByTenantAndID(ctx, actor.TenantID, *p.RepairSensorID); err == nil && sen != nil {

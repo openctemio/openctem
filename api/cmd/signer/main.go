@@ -148,11 +148,34 @@ func verifyLog() error {
 	return nil
 }
 
+// ensureKey creates the signing key on first start when SIGNER_GENERATE_KEY
+// is true and the key file does not exist yet (the default compose file
+// sets it, so signed jobs work without a manual step). An existing key is
+// never replaced; any other error is returned.
+func ensureKey(keyFile string, logger *slog.Logger) error {
+	if os.Getenv("SIGNER_GENERATE_KEY") != "true" {
+		return nil
+	}
+	if _, err := os.Stat(keyFile); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return nil // present, or LoadKey reports the problem
+	}
+	pub, err := signer.GenerateKey(keyFile)
+	if err != nil {
+		return err
+	}
+	k := jobsign.NewPublicKey(pub)
+	logger.Info("signing key created on first start; back up the key volume offline", "keyid", k.KeyID, "public_key", k.PublicKey)
+	return nil
+}
+
 func serve() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("service", "openctem-signer")
 	keyFile, socket, stateDir := os.Getenv("SIGNER_KEY_FILE"), os.Getenv("SIGNER_SOCKET"), os.Getenv("SIGNER_STATE_DIR")
 	if keyFile == "" || socket == "" || stateDir == "" {
 		return errors.New("SIGNER_KEY_FILE, SIGNER_SOCKET and SIGNER_STATE_DIR are required")
+	}
+	if err := ensureKey(keyFile, logger); err != nil {
+		return err
 	}
 	key, err := signer.LoadKey(keyFile)
 	if err != nil {

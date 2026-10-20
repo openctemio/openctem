@@ -245,6 +245,22 @@ func (c *Client) fetchKeys(ctx context.Context) ([]jobsign.PublicKey, error) {
 	return out, nil
 }
 
+// RootKeyID is the id of the offline root that signs the key set the signer
+// serves ("" without a key set, or one that does not parse). The console's
+// install snippets show it so a sensor pins the root out of band
+// (SENSOR_JOB_SIGNING_ROOT) instead of trusting the platform at pairing.
+func (c *Client) RootKeyID(ctx context.Context) string {
+	_, raw := c.snapshot(ctx, true)
+	if len(raw) == 0 {
+		return ""
+	}
+	ks, _, err := jobsign.ParseKeySet(raw)
+	if err != nil {
+		return ""
+	}
+	return ks.RootKeyID
+}
+
 // Hello is the hello's signed_jobs block.
 func (c *Client) Hello(ctx context.Context) *protov2.SignedJobs {
 	keys, ks := c.snapshot(ctx, true)

@@ -2080,6 +2080,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// (widenings before they are saved), which signs only inside it.
 		s.Scope.SetLedger(s.JobSigner)
 		log.Info("sensor jobs are signed by the job signer", "socket", sock)
+		// The pairing command carries the key set's root, so a sensor
+		// checks the platform's signer against it (research/191 A-1).
+		if s.SensorPairing != nil {
+			s.SensorPairing.SetJobSigningRoot(s.JobSigner.RootKeyID)
+		}
+	} else if !cfg.IsDevelopment() {
+		log.Warn("SECURITY: sensor jobs are NOT signed (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS); a compromised API or database can hand any sensor any job, and sensors paired from now on refuse to start")
 	}
 	// research/122: completed scan commands teach per-target durations.
 	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
