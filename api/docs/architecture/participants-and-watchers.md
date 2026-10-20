@@ -85,6 +85,17 @@ Adding or removing **another** person is audited (`work_item.watcher_added`, `wo
 target user id in the metadata). A person's own bell and automatic rows are not (high volume, no
 security weight).
 
+## Console
+
+The finding's side panel (page and drawer) and the remediation task page show a **People** section
+(`web/src/features/findings/components/detail/finding-people.tsx`,
+`web/src/features/remediation-hub/components/task-people.tsx`, both on the shared
+`features/shared/components/watchers-block.tsx`): the assignee or owner, the watchers with a reason chip
+each, the owners of the finding's asset as context, an Add control (shown from the route's gate; the
+picker lists only the members the API says can read the item) and the bell. Without the member list
+permission (viewers, pentest clients) the section shows the count and the bell only. The person's own
+switch for automatic watching is in Settings > Notifications.
+
 ## Code
 
 `pkg/domain/participation` (types, repository interface), `internal/infra/postgres/work_item_subscription_repository.go`,
