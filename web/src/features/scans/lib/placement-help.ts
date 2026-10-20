@@ -53,6 +53,17 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   NO_CONFINED_SENSOR: 'sensors',
   TARGET_UNREACHABLE: 'zones',
   DEADLINE_TOO_CLOSE: null,
+  // Retest reason codes (api pkg/domain/retest).
+  UNREACHABLE: null,
+  BLOCKED: 'sensors',
+  AUTH_CHANGED: null,
+  SERVER_ERROR: null,
+  ENDPOINT_MISMATCH: null,
+  NO_ENDPOINT_PROOF: null,
+  TEMPLATE_CHANGED: null,
+  NO_RESULT: 'sensors',
+  ERROR: null,
+  RETEST_UNAVAILABLE: null,
 }
 
 /** Placement reason codes (api pkg/domain/command/placement.go) and their fix. */
