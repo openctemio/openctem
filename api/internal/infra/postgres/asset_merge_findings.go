@@ -72,6 +72,10 @@ var findingMergeRefs = []mergeRef{
 	// survivor already links is dropped (one link per finding and issue).
 	{table: "ticket_links", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"integration_id", "external_key"}}}},
+	// Watchers follow the finding; a person who already has a row on the
+	// survivor keeps that one (an unsubscribe on the survivor wins).
+	{table: "work_item_subscriptions", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"user_id"}}}},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},
