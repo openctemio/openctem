@@ -125,10 +125,6 @@ type Repository interface {
 	// before linking child rows (e.g. findings) to it.
 	UpsertBatch(ctx context.Context, assets []*Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error)
 
-	// UpdateFindingCounts updates finding counts for multiple assets in batch.
-	// This is used after bulk finding ingestion to refresh asset statistics.
-	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
-
 	// ListDistinctTags returns the tags of the assets of a tenant that
 	// access admits (data scope; never an asset hidden from the caller),
 	// most used first, and, when asked, the system tags the caller may see.

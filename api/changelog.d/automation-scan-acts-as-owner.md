@@ -1,0 +1,3 @@
+### Security: a scan an automation starts acts as the automation's owner
+
+- A `trigger_scan` step started the scan with `triggered_by = workflow:<id>`, which is no user, so the run's act scope (chained stages, the claim-time re-check) fell back to the scan's own owner. A member with `findings:workflows:write` and `scans:write` could therefore fire an administrator's wide scan on an event with the administrator's scope. The step now starts the scan as the person it was authorized as (the automation's owner); the automation cause stays on the run, so it is still labelled "Automation". A step with no person to act as starts no scan.

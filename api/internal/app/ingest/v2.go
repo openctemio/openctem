@@ -285,28 +285,19 @@ func SensorDeclaresTool(tools []string, toolName string) bool {
 // CommitV2Report runs the report-level steps once, after every segment of a
 // committed report was processed: auto-resolve over the assets the report
 // touched (full coverage on a default branch, a tool the sensor declares,
-// behind the blinding guard), the per-branch occurrence sweep and the asset
-// finding counts. Failures are logged; they never fail the report, as in v1.
+// behind the blinding guard), the per-branch occurrence sweep. Failures are logged; they never fail the report, as in v1.
 //
 //nolint:cyclop // a sequence of guarded, independent steps
 func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2Header, touched []shared.ID, guard BlindingGuard) CommitResult {
 	res := CommitResult{AutoResolve: protov2.AutoResolveSkipped}
 	tenantID := prov.TenantID
-	defer func() {
-		if len(touched) > 0 {
-			if err := s.assetProcessor.UpdateFindingCounts(ctx, tenantID, touched); err != nil {
-				s.logger.Warn("failed to update finding counts", "error", err)
-			}
-		}
-	}()
 
 	if header.Tool == nil || s.findingRepo == nil || len(touched) == 0 {
 		return res
 	}
 	// RFC-040 §5.3: a report without a command never auto-resolves in a
 	// tenant whose mode is quarantine; a bound one resolves only on the
-	// assets its command covers. finding counts still cover every touched
-	// asset (deferred above).
+	// assets its command covers.
 	scoped := touched
 	if prov.CommandID == nil {
 		if s.ResultPolicy(ctx, tenantID).Mode != sensorresult.ModeWarn {
