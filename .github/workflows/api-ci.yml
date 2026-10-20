@@ -6,18 +6,22 @@ name: API CI
 # for api/ and shared files only (rules: .github/scripts/changed.sh), so a
 # web-only change costs this workflow two ~10 s jobs and nothing else.
 #
-# Two tiers:
-#   pull_request    `API static checks` (one job, every short gate as a step) +
-#                   `Tests (Postgres + Redis)`: the whole suite with -race
-#                   against real Postgres and Redis, so the tenant-isolation and
-#                   other DB-backed tests fail on the PR, not first in the merge
-#                   queue (owner decision D-30). PR runs are cancelled by a newer
-#                   push to the same PR (concurrency below).
-#   merge_group,    the same, plus `Release Binaries`, and on main the Docker
-#   push            build.
-# `API CI OK` needs the DB-backed tests on every event, so nothing reaches
-# develop/main without them, and they ran on the PR already. `Tests
-# (least-privilege DB role)` (D-6) runs on every event too.
+# Two tiers (`changes` decides; the `full` output of .github/scripts/changed.sh):
+#   fast            pull_request. `API static checks` (one job: every short gate
+#                   and the linters as steps) + `Tests (Postgres + Redis)`: the
+#                   whole suite against real Postgres and Redis in 2 + 2 shards
+#                   without the race detector, so the tenant-isolation and other
+#                   DB-backed tests fail on the PR, not first in the merge queue
+#                   (owner decision D-30). `Tests (least-privilege DB role)` and
+#                   `Migrations (PostgreSQL 18)` run on a PR only when it changes
+#                   a migration or the role script. PR runs are cancelled by a
+#                   newer push to the same PR (concurrency below).
+#   full            merge_group, push, and a PR with the `ci:full` label or a
+#                   changed CI definition. The suite in 4 + 4 shards with -race,
+#                   the least-privilege suite (D-6), PostgreSQL 18, plus
+#                   `Release Binaries` (not on a PR), and on main the Docker build.
+# `API CI OK` refuses a merge_group or push run that was not the full tier, so
+# nothing reaches develop/main without it.
 # Job bodies are carried over from openctemio/api's ci.yml; see git log for the
 # reasoning behind each gate.
 
@@ -55,8 +59,14 @@ jobs:
   changes:
     name: Detect API changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # the `ci:full` label (changed.sh reads it live)
     outputs:
       api: ${{ steps.f.outputs.api }}
+      full: ${{ steps.f.outputs.full }}
+      migrations: ${{ steps.f.outputs.migrations }}
+      test_matrix: ${{ steps.tier.outputs.test_matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,7 +77,24 @@ jobs:
           EVENT_BEFORE: ${{ github.event.before }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+
+      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 4 + 4
+      # shards with -race. Fast: 2 + 2 shards without it (same tests, about half
+      # the runner time; the race detector runs in the queue and on push).
+      # `API static checks` proves both splits cover every test exactly once.
+      - id: tier
+        working-directory: .
+        env:
+          FULL: ${{ steps.f.outputs.full }}
+        run: |
+          if [ "$FULL" = true ]; then n=4 race=true; else n=2 race=false; fi
+          m="$(jq -nc --argjson n "$n" --argjson race "$race" \
+            '[range($n) | {kind: "unit", shard: ., total: $n, race: $race}] + [range($n) | {kind: "pkgs", shard: ., total: $n, race: $race}]')"
+          echo "test_matrix=$m" | tee -a "$GITHUB_OUTPUT"
 
       # Runs on every PR, also a docs-only one that skips the jobs below.
       # Changelog entries live one file per change in api/changelog.d/, so
@@ -110,6 +137,20 @@ jobs:
           go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
+
+      # The analysis caches of golangci-lint, and the installed staticcheck
+      # binary (its version is in the key), so a run only re-analyses what
+      # changed. A cache is a speed-up only: a miss runs the same checks.
+      - name: Cache lint tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/golangci-lint
+            ~/go/bin/staticcheck
+          key: lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-${{ github.sha }}
+          restore-keys: |
+            lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-
+            lint-${{ runner.os }}-
 
       - name: Fetch base branch
         if: github.event_name == 'pull_request'
@@ -265,47 +306,16 @@ jobs:
 
       # The shards of the two DB-backed jobs below cover every package and
       # every top-level test of tests/unit exactly once.
+      # 4 + 4: full tier, 2 + 2: fast tier, 3 + 3: least-privilege.
       - name: Test shards cover every test
-        run: bash ../.github/scripts/go-shard.sh check 4 4 && bash ../.github/scripts/go-shard.sh check 3 3
+        run: |
+          bash ../.github/scripts/go-shard.sh check 4 4
+          bash ../.github/scripts/go-shard.sh check 2 2
+          bash ../.github/scripts/go-shard.sh check 3 3
 
-  # vet, staticcheck and golangci-lint run in their own job, in parallel with
-  # the gates in `API static checks` (they were two thirds of that job's time).
-  lint:
-    name: API lint
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0 # base branch for golangci --new-from-rev
-
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: api/go.mod
-          cache: true
-          cache-dependency-path: api/go.sum
-
-      # The analysis caches of golangci-lint, and the installed staticcheck
-      # binary (its version is in the key), so a run only re-analyses what
-      # changed. A cache is a speed-up only: a miss runs the same checks.
-      - name: Cache lint tools
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/golangci-lint
-            ~/go/bin/staticcheck
-          key: lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-${{ github.sha }}
-          restore-keys: |
-            lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-
-            lint-${{ runner.os }}-
-
-      - name: Fetch base branch
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags origin "${{ github.base_ref }}"
-
+      # vet, staticcheck and golangci-lint: steps of this job (one runner, one
+      # checkout, one setup-go) rather than a job of their own. The test shards
+      # take longer, so this adds no wall time.
       - name: Lint (go vet)
         run: go vet ./...
 
@@ -324,7 +334,8 @@ jobs:
           make lint-new BASE_REF="$base"
 
   # Every event (PRs included): the whole suite against real Postgres and
-  # Redis, so the DB-backed tests run too.
+  # Redis, so the DB-backed tests run too. The shard list comes from `changes`
+  # (fast tier 2 + 2 without -race, full tier 4 + 4 with -race).
   test:
     name: Tests (Postgres + Redis)
     needs: changes
@@ -336,15 +347,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { kind: unit, shard: 0, total: 4 }
-          - { kind: unit, shard: 1, total: 4 }
-          - { kind: unit, shard: 2, total: 4 }
-          - { kind: unit, shard: 3, total: 4 }
-          - { kind: pkgs, shard: 0, total: 4 }
-          - { kind: pkgs, shard: 1, total: 4 }
-          - { kind: pkgs, shard: 2, total: 4 }
-          - { kind: pkgs, shard: 3, total: 4 }
+        include: ${{ fromJSON(needs.changes.outputs.test_matrix) }}
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -419,6 +422,7 @@ jobs:
           KIND: ${{ matrix.kind }}
           SHARD: ${{ matrix.shard }}
           TOTAL: ${{ matrix.total }}
+          WITH_RACE: ${{ matrix.race }}
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: openctem
@@ -435,7 +439,9 @@ jobs:
             mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
             set -- "${pk[@]}"
           fi
-          go test -json -race -timeout 20m -coverprofile=coverage.out -covermode=atomic "$@" \
+          race_flag=()
+          if [ "$WITH_RACE" = true ]; then race_flag=(-race); fi
+          go test -json "${race_flag[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic "$@" \
             | tee test.json \
             | jq -Rrj '. as $l | (try fromjson catch null) as $e
                 | if $e == null then $l + "\n"
@@ -453,11 +459,12 @@ jobs:
         with:
           files: ./api/coverage.out
           flags: api
-          name: api-${{ matrix.kind }}-${{ matrix.shard }}
+          name: api-${{ matrix.kind }}-${{ matrix.shard }}-of-${{ matrix.total }}
           fail_ci_if_error: false
 
   # D-6: the API connects as a least-privilege role (docs/deployment/database-roles.md).
-  # Both tiers: bootstrap a fresh database with deploy/postgres/least-privilege-roles.sql,
+  # Full tier, and on a PR that changes a migration or the role script (where a
+  # missing grant comes from): bootstrap a fresh database with deploy/postgres/least-privilege-roles.sql,
   # apply every migration AS THE MIGRATOR (no migration may need a superuser),
   # re-run the script (idempotent), then run the DB-backed suite AS THE APP ROLE.
   # Tests that replay a migration use DATABASE_MIGRATE_URL (testdb.MigratorURL).
@@ -465,7 +472,7 @@ jobs:
   least-privilege:
     name: Tests (least-privilege DB role)
     needs: changes
-    if: needs.changes.outputs.api == 'true'
+    if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -593,11 +600,12 @@ jobs:
   # The next PostgreSQL major: every migration on a fresh PostgreSQL 18
   # database plus the schema probes that read the catalog (PostgreSQL 18
   # records NOT NULL constraints in pg_constraint, which a catalog query must
-  # allow for). The full suite runs on the supported 17 above.
+  # allow for). The full suite runs on the supported 17 above. Same tiers as
+  # the least-privilege job.
   pg18:
     name: Migrations (PostgreSQL 18)
     needs: changes
-    if: needs.changes.outputs.api == 'true'
+    if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -723,7 +731,7 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, lint, test, least-privilege, pg18, binaries, docker]
+    needs: [changes, static, test, least-privilege, pg18, binaries, docker]
     runs-on: ubuntu-latest
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
@@ -731,6 +739,8 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           API: ${{ needs.changes.outputs.api }}
+          FULL: ${{ needs.changes.outputs.full }}
+          MIGRATIONS: ${{ needs.changes.outputs.migrations }}
           EVENT: ${{ github.event_name }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
@@ -740,8 +750,17 @@ jobs:
           # Skipped is fine only when the area did not change. When it did,
           # the tier for this event must have RUN and passed, so a mistyped
           # condition cannot wave a queued PR through without its tests.
+          if [ "$(echo "$NEEDS" | jq -r '.changes.result')" != success ]; then
+            echo "::error::changes must pass"; exit 1
+          fi
+          # Only a pull request may run the fast tier.
+          if [ "$EVENT" != pull_request ] && [ "$FULL" != true ]; then
+            echo "::error::$EVENT must run the full tier (full=$FULL)"; exit 1
+          fi
           if [ "$API" = true ]; then
-            if [ "$EVENT" = pull_request ]; then required="changes static lint test least-privilege pg18"; else required="changes static lint test least-privilege pg18 binaries"; fi
+            required="changes static test"
+            if [ "$FULL" = true ] || [ "$MIGRATIONS" = true ]; then required="$required least-privilege pg18"; fi
+            if [ "$EVENT" != pull_request ]; then required="$required binaries"; fi
             for j in $required; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass for $EVENT, got: $r"; exit 1; fi

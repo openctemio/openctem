@@ -43,13 +43,18 @@ func (p *FindingProcessor) keyRawSecrets(tenantID shared.ID, report *ctis.Report
 
 // looksMasked reports whether a reported secret value is already a mask
 // (the same test the CTIS redaction applies): empty, only mask characters,
-// a run of them, or "redacted".
+// a run of them, "redacted", or a producer preview with one "…".
 func looksMasked(s string) bool {
 	t := strings.TrimSpace(s)
 	if t == "" || strings.Trim(t, "*•") == "" {
 		return true
 	}
-	return strings.Contains(t, "***") || strings.Contains(t, "•••") || strings.Contains(strings.ToLower(t), "redacted")
+	if strings.Contains(t, "***") || strings.Contains(t, "•••") || strings.Contains(strings.ToLower(t), "redacted") {
+		return true
+	}
+	// A preview a producer made ("AKIA…MPLE") is a mask too: hashing it as if
+	// it were the secret would give every secret with that preview one key.
+	return strings.Count(t, "…") == 1 && vulnerability.IsSecretPreviewSafe(t)
 }
 
 // redactReportSecrets masks raw secret values in every free-text field of
@@ -86,7 +91,26 @@ func redactReportSecrets(report *ctis.Report) {
 		if secretTool && (typ == "" || typ == ctis.FindingTypeVulnerability) {
 			f.Type = ctis.FindingTypeSecret
 		}
+		// A preview the producer made ("AKIA…MPLE") is already masked, but the
+		// CTIS redaction takes anything without a run of mask characters for a
+		// raw value and turns it into the word REDACTED. Hold the preview out
+		// of the walk and put it back; the receiving finding re-checks it
+		// against the secret's length (Finding.SetSecretPreview).
+		preview := ""
+		if f.Secret != nil && isProducerPreview(f.Secret.MaskedValue) {
+			preview, f.Secret.MaskedValue = f.Secret.MaskedValue, "REDACTED"
+		}
 		ctis.RedactSecretFinding(f)
+		if preview != "" && f.Secret != nil {
+			f.Secret.MaskedValue = preview
+		}
 		f.Type = typ
 	}
+}
+
+// isProducerPreview reports whether v is a preview in the form a producer
+// makes: one "…" and at most 8 visible characters, with something visible.
+func isProducerPreview(v string) bool {
+	t := strings.TrimSpace(v)
+	return strings.Count(t, "…") == 1 && vulnerability.IsSecretPreviewSafe(t) && !vulnerability.IsSecretMaskOnly(t)
 }
