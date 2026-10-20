@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -144,30 +145,52 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 }
 
 // coverageScan returns the tenant's coverage scan of a capability, creating
-// it on first use. It is ad hoc (hidden from the configurations list).
+// it on first use. The scan is found by its managed key, never by name: a
+// person's scan that carries the coverage scan's name is left alone and the
+// managed scan is created under a different name. It is ad hoc (hidden from
+// the configurations list).
 func (s *Service) coverageScan(ctx context.Context, tenantID shared.ID, capability string) (*scan.Scan, error) {
-	name := CoverageScanName(capability)
-	sc, err := s.scanRepo.GetByName(ctx, tenantID, name)
+	sc, err := s.scanRepo.GetManaged(ctx, tenantID, scan.ManagedByCoverage, capability)
 	if err == nil {
 		return sc, nil
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("load coverage scan: %w", err)
 	}
-	sc, err = scan.NewScan(tenantID, name, shared.ID{}, scan.ScanTypeSingle)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create scan: %w", err)
+	base := CoverageScanName(capability)
+	var createErr error
+	for _, name := range []string{base, base + " (platform)", ""} {
+		if name == "" {
+			name = fmt.Sprintf("%s (%s)", base, shared.NewID().String()[:8])
+		}
+		sc, err = scan.NewScan(tenantID, name, shared.ID{}, scan.ScanTypeSingle)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create scan: %w", err)
+		}
+		sc.AdHoc = true
+		sc.ManagedBy, sc.ManagedKey = scan.ManagedByCoverage, capability
+		sc.Description = "Continuous coverage of every asset that needs " + capability
+		sc.SetTags([]string{CoverageTag})
+		if err := sc.SetSingleScanner(stageTool(capability), map[string]any{}, 1); err != nil {
+			return nil, fmt.Errorf("failed to set scanner: %w", err)
+		}
+		if createErr = s.scanRepo.Create(ctx, sc); createErr == nil {
+			s.logAudit(ctx, AuditContext{TenantID: tenantID.String()},
+				NewSuccessEvent(audit.ActionScanConfigManagedCreated, audit.ResourceTypeScanConfig, sc.ID.String()).
+					WithResourceName(sc.Name).
+					WithMetadata("managed_by", string(scan.ManagedByCoverage)).
+					WithMetadata("managed_key", capability))
+			return sc, nil
+		}
+		if !errors.Is(createErr, shared.ErrAlreadyExists) {
+			break
+		}
+		// Another replica created it first, or the name is taken: look again.
+		if got, gerr := s.scanRepo.GetManaged(ctx, tenantID, scan.ManagedByCoverage, capability); gerr == nil {
+			return got, nil
+		}
 	}
-	sc.AdHoc = true
-	sc.Description = "Continuous coverage of every asset that needs " + capability
-	sc.SetTags([]string{CoverageTag})
-	if err := sc.SetSingleScanner(stageTool(capability), map[string]any{}, 1); err != nil {
-		return nil, fmt.Errorf("failed to set scanner: %w", err)
-	}
-	if err := s.scanRepo.Create(ctx, sc); err != nil {
-		return nil, fmt.Errorf("failed to create coverage scan: %w", err)
-	}
-	return sc, nil
+	return nil, fmt.Errorf("failed to create coverage scan: %w", createErr)
 }
 
 func stageTool(capability string) string {
