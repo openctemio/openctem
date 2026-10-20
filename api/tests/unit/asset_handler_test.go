@@ -191,10 +191,6 @@ func (m *HandlerMockRepository) UpsertBatch(ctx context.Context, assets []*asset
 	return created, updated, persistedIDs, nil
 }
 
-func (m *HandlerMockRepository) UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {
-	return nil
-}
-
 func (m *HandlerMockRepository) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, q asset.TagListQuery) (asset.TagList, error) {
 	m.lastTagQuery = q
 	out := asset.TagList{Tags: []string{"env-prod"}}
