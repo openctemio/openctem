@@ -18,10 +18,16 @@ import { ArrowLeft, Loader2, ShieldCheck } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { OneTimeCodeInput, RecoveryCodesPanel, SecretKey, TotpQrCode } from '@/components/security'
+import {
+  ACCOUNT_RECOVERY_CODE,
+  RecoveryCodesPanel,
+  SecretKey,
+  TOTP_CODE_LENGTH,
+  TotpQrCode,
+  VerificationCodeInput,
+} from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
 
 import {
@@ -90,14 +96,15 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const canSubmit = useRecovery ? value.trim().length >= 10 : value.length === 6
+  const complete = (code: string) =>
+    code.length === (useRecovery ? ACCOUNT_RECOVERY_CODE.length : TOTP_CODE_LENGTH)
+  const canSubmit = complete(value)
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!canSubmit) return
+  function send(code: string) {
+    if (!complete(code) || isPending) return
     setError(null)
     startTransition(async () => {
-      const result = await verifyMfaAction(useRecovery ? { recoveryCode: value } : { code: value })
+      const result = await verifyMfaAction(useRecovery ? { recoveryCode: code } : { code })
       if (isCompleted(result)) {
         onDone(result)
         return
@@ -110,6 +117,11 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       setError(msg)
       setValue('')
     })
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    send(value)
   }
 
   return (
@@ -130,40 +142,19 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         </p>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="mfa-code">
-          {useRecovery
-            ? t('auth.mfa.recoveryLabel', 'Recovery code')
-            : t('auth.mfa.codeLabel', 'Authentication code')}
-        </Label>
-        {useRecovery ? (
-          <Input
-            id="mfa-code"
-            autoComplete="off"
-            autoFocus
-            placeholder="xxxxx-xxxxx"
-            className="font-mono"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            disabled={isPending}
-            aria-invalid={!!error}
-          />
-        ) : (
-          <OneTimeCodeInput
-            id="mfa-code"
-            autoFocus
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            disabled={isPending}
-            aria-invalid={!!error}
-          />
-        )}
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
+      <VerificationCodeInput
+        key={useRecovery ? 'recovery' : 'totp'}
+        id="mfa-code"
+        mode={useRecovery ? 'alphanumeric' : 'numeric'}
+        length={useRecovery ? ACCOUNT_RECOVERY_CODE.length : TOTP_CODE_LENGTH}
+        groups={useRecovery ? [...ACCOUNT_RECOVERY_CODE.groups] : undefined}
+        autoFocus
+        value={value}
+        onChange={setValue}
+        onComplete={send}
+        disabled={isPending}
+        error={error}
+      />
 
       <Button type="submit" disabled={!canSubmit || isPending}>
         {isPending ? (
@@ -229,12 +220,11 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
     })
   }, [])
 
-  function confirm(e: React.FormEvent) {
-    e.preventDefault()
-    if (code.length !== 6) return
+  function sendCode(value: string) {
+    if (value.length !== TOTP_CODE_LENGTH || !setup || isPending) return
     setError(null)
     startTransition(async () => {
-      const result = await confirmMfaEnrollmentAction(code)
+      const result = await confirmMfaEnrollmentAction(value)
       if (result.success) {
         setFinished(result)
         return
@@ -247,6 +237,11 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       setError(msg)
       setCode('')
     })
+  }
+
+  function confirm(e: React.FormEvent) {
+    e.preventDefault()
+    sendCode(code)
   }
 
   if (finished) {
@@ -326,23 +321,16 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         <Skeleton className="mx-auto h-44 w-44" />
       )}
 
-      <div className="space-y-2">
-        <Label htmlFor="enroll-code">{t('auth.mfa.codeLabel', 'Authentication code')}</Label>
-        <OneTimeCodeInput
-          id="enroll-code"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          disabled={!setup || isPending}
-          aria-invalid={!!error}
-        />
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
+      <VerificationCodeInput
+        id="enroll-code"
+        value={code}
+        onChange={setCode}
+        onComplete={sendCode}
+        disabled={!setup || isPending}
+        error={error}
+      />
 
-      <Button type="submit" disabled={!setup || code.length !== 6 || isPending}>
+      <Button type="submit" disabled={!setup || code.length !== TOTP_CODE_LENGTH || isPending}>
         {isPending ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (

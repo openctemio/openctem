@@ -67,6 +67,10 @@ func TestDispatchAttempts_HandBackIsNotAnAttempt(t *testing.T) {
 		command.ReleasedBySensorPrefix + "no free slot",
 	}
 	for i := range 6 {
+		// The back-off between returns is not under test here.
+		if _, err := sqlDB.ExecContext(ctx, `UPDATE commands SET scheduled_at = NULL WHERE id = $1`, cmd.ID.String()); err != nil {
+			t.Fatal(err)
+		}
 		if ok, err := cmds.ClaimForSensor(ctx, tenant, cmd.ID, a.String()); err != nil || !ok {
 			t.Fatalf("claim %d: %v %v", i, ok, err)
 		}

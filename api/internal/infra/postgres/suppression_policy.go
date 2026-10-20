@@ -15,6 +15,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 )
@@ -173,7 +174,7 @@ func (r *SuppressionRepository) findingFacts(ctx context.Context, tenant string,
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.severity, COALESCE(f.priority_class, ''), COALESCE(f.is_in_kev, false), f.epss_score::float8,
 		       COALESCE(f.validation_outcome = 'reproducible', false),
-		       COALESCE(a.is_crown_jewel, false), COALESCE(a.is_internet_accessible, false)
+		       COALESCE(a.is_crown_jewel, false), COALESCE(`+asset.InternetFacingSQL("a")+`, false)
 		FROM findings f
 		LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])`, tenant, pq.Array(ids))
