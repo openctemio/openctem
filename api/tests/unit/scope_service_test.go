@@ -259,10 +259,6 @@ func (m *mockAssetRepo) GetByNames(_ context.Context, _ shared.ID, _ []string) (
 func (m *mockAssetRepo) UpsertBatch(_ context.Context, _ []*asset.Asset) (int, int, map[string]shared.ID, error) {
 	return 0, 0, nil, nil
 }
-func (m *mockAssetRepo) UpdateFindingCounts(_ context.Context, _ shared.ID, _ []shared.ID) error {
-	return nil
-}
-
 func (m *mockAssetRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, _ asset.TagListQuery) (asset.TagList, error) {
 	return asset.TagList{Tags: []string{}}, nil
 }
