@@ -62,6 +62,21 @@ Team roles are used for team management operations:
 | `member` | 2 | Team member - create/edit resources |
 | `viewer` | 1 | Team viewer - read-only access |
 
+### Editing a custom role
+
+`PUT /api/v1/roles/{id}` is held to the delegation ceiling on **both** sides:
+
+- The editor must hold every permission the role carries **now** and every one
+  it will carry afterwards (and full data access when either side has it). A
+  delegated role manager can neither add a permission they lack nor strip one
+  they lack, so they cannot sabotage a "risk approver" role they could never
+  grant. Owners pass; delete, grant and revoke apply the same rule.
+- A change that makes the role gain a privileged permission, an approval-type
+  permission (any `*:approve`) or organization-wide data grade needs the
+  editor's recent re-authentication when the role has holders, and for a
+  team-bound role it is also owner-only. Giving a user a custom role that
+  carries such a permission needs the same step-up.
+
 ### One authority for the team role
 
 A person's team role is the highest system role they hold in `user_roles`, read
@@ -2567,6 +2582,18 @@ organization, its members and its settings, so 000771 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
 
+**Governed classification.** `PATCH /findings/{id}/classify` (needs
+`findings:severity`) sets the CVE, CVSS, CWE and OWASP ids. A non-empty CVE is
+accepted only on a finding of type `vulnerability` (422
+`CLASSIFY_CVE_NOT_APPLICABLE` for a secret, misconfiguration, compliance, web3
+or license finding). A change of the CVE that lowers the finding's risk tier
+(it drops its KEV standing, or its P0 priority, which is derived from the CVE)
+also needs `findings:approve` (403 `CLASSIFY_LOWERS_RISK`); the tier after the
+change counts the new CVE's KEV membership and no priority class. Each change
+writes a `metadata_updated` timeline entry (`field: classification`, old and
+new values) and the audit action `finding.classified`. A request that changes
+nothing writes neither.
+
 **Split from `findings:write` (migration 001534).** `findings:severity` gates
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
 finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
@@ -2628,7 +2655,7 @@ accountable for it (`service_owner_id`, the creator), and never signs in.
 
 Routes: `GET /api/v1/service-accounts` (`team:members:read`), `POST` and
 `DELETE /{id}` (`team:members:write`). Its keys:
-`GET /{id}/api-keys` (`team:members:read` and `integrations:api_keys:read`),
+`GET /{id}/api-keys` (owner or administrator only, plus `team:members:read` and `integrations:api_keys:read`),
 `POST /{id}/api-keys` (`team:members:write` and `integrations:api_keys:write`, recent
 sign-in) and `DELETE /{id}/api-keys/{key_id}` (`team:members:write` and
 `integrations:api_keys:delete`, recent sign-in). Another organization's account, a person,

@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,11 +32,13 @@ import (
 type groupExceptionHarness struct {
 	*approvalPolicyHarness
 	tasks *remediationapp.TaskService
+	rec   *approvalNoticeRecorder
 }
 
 func newGroupExceptionHarness(t *testing.T) *groupExceptionHarness {
 	gate := &approverStepUp{}
-	out := &groupExceptionHarness{approvalPolicyHarness: &approvalPolicyHarness{findingApprovalHarness: &findingApprovalHarness{}, stepUp: gate}}
+	out := &groupExceptionHarness{approvalPolicyHarness: &approvalPolicyHarness{findingApprovalHarness: &findingApprovalHarness{}, stepUp: gate},
+		rec: &approvalNoticeRecorder{}}
 	changeAuditExtraHandlers = func(hs *Handlers, db *postgres.DB) {
 		log := logger.NewNop()
 		ts := tenantapp.NewTenantService(postgres.NewTenantRepository(db), log,
@@ -44,7 +47,8 @@ func newGroupExceptionHarness(t *testing.T) *groupExceptionHarness {
 		svc.SetApprovalRepository(postgres.NewFindingApprovalRepository(db))
 		actors := postgres.NewScopeActorRepository(db)
 		svc.SetSoloApproval(actors, nil, ts)
-		svc.SetApprovalNotifier(actors, nil, nil, "")
+		svc.SetApprovalNotifier(actors, out.rec, nil, "")
+		svc.SetAssigneeChecker(postgres.NewAccessControlRepository(db))
 		svc.SetStepUpGate(gate)
 		vh := handler.NewVulnerabilityHandler(svc, validator.New(), log)
 		vh.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
@@ -348,4 +352,51 @@ func TestGroupException_ListFiltersBySource_DB(t *testing.T) {
 		t.Fatalf("unfiltered list: %+v", list)
 	}
 	h.expect(requester, http.MethodGet, "/api/v1/approvals/batches?source_id=not-an-id", "", http.StatusBadRequest)
+}
+
+// The requester of a group exception is told how it ended: one notice with the
+// number of findings, never the justification or the rejection reason; and not
+// when they withdraw it themselves.
+func TestGroupException_RequesterToldOfDecision_DB(t *testing.T) {
+	h := newGroupExceptionHarness(t)
+	org := h.org()
+	requester, a1 := h.member(org, "admin"), h.member(org, "admin")
+	toRequester := func() []string {
+		var out []string
+		for _, p := range h.rec.inApp {
+			if p.AudienceID != nil && p.AudienceID.String() == requester.id && strings.HasPrefix(p.Title, "Your ") {
+				out = append(out, p.Title+" | "+p.Body)
+			}
+		}
+		return out
+	}
+	request := func() batchOut {
+		f1, _ := h.findingOnAsset(org, "low")
+		f2, _ := h.findingOnAsset(org, "medium")
+		task := h.task(org, f1, f2)
+		var b batchOut
+		_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(30), http.StatusCreated)), &b)
+		return b
+	}
+
+	b := request()
+	h.rec.reset()
+	h.expect(a1, http.MethodPost, "/api/v1/approvals/batches/"+b.ID+"/reject", `{"reason":"SECRET-BATCH-REASON"}`, http.StatusOK)
+	if got := toRequester(); len(got) != 1 || got[0] != "Your accepted risk group request was rejected | 2 findings" {
+		t.Fatalf("rejected group notice: %v", got)
+	}
+
+	b = request()
+	h.rec.reset()
+	h.expect(a1, http.MethodPost, "/api/v1/approvals/batches/"+b.ID+"/approve", "", http.StatusOK)
+	if got := toRequester(); len(got) != 1 || got[0] != "Your accepted risk group request was approved | 2 findings" {
+		t.Fatalf("approved group notice: %v", got)
+	}
+
+	b = request()
+	h.rec.reset()
+	h.expect(requester, http.MethodPost, "/api/v1/approvals/batches/"+b.ID+"/cancel", "", http.StatusOK)
+	if got := toRequester(); len(got) != 0 {
+		t.Fatalf("withdrawal produced a decision notice: %v", got)
+	}
 }

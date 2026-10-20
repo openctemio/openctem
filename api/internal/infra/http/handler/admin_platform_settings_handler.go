@@ -496,6 +496,9 @@ type PlatformAIResponse struct {
 	Enabled             bool     `json:"enabled"`
 	Provider            string   `json:"provider"`
 	Model               string   `json:"model"`
+	BaseURL             string   `json:"base_url"`
+	AllowPrivate        bool     `json:"allow_private"`
+	AllowedModels       []string `json:"allowed_models"`
 	KeySet              bool     `json:"key_set"`
 	LockedByEnvironment bool     `json:"locked_by_environment"`
 	Providers           []string `json:"providers"`
@@ -508,6 +511,13 @@ type UpdatePlatformAIRequest struct {
 	Enabled  bool   `json:"enabled"`
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
+	// BaseURL is the OpenAI-compatible server (provider openai_compatible).
+	BaseURL string `json:"base_url"`
+	// AllowPrivate lets that server be on a private network (RFC1918 / ULA)
+	// and use http. Loopback, link-local and cloud metadata stay blocked.
+	AllowPrivate bool `json:"allow_private"`
+	// AllowedModels limits the models usable on the platform provider (empty: any).
+	AllowedModels []string `json:"allowed_models"`
 	// APIKey: omit to keep the stored key, "" to remove it.
 	APIKey  *string `json:"api_key,omitempty"`
 	Reason  string  `json:"reason"`
@@ -515,7 +525,12 @@ type UpdatePlatformAIRequest struct {
 }
 
 func (h *AdminPlatformSettingsHandler) aiResponse(ctx context.Context, s platformai.Settings) PlatformAIResponse {
-	return PlatformAIResponse{Enabled: s.Enabled, Provider: s.Provider, Model: s.Model, KeySet: s.KeySet,
+	models := s.AllowedModels
+	if models == nil {
+		models = []string{}
+	}
+	return PlatformAIResponse{Enabled: s.Enabled, Provider: s.Provider, Model: s.Model, BaseURL: s.BaseURL,
+		AllowPrivate: s.AllowPrivate, AllowedModels: models, KeySet: s.KeySet,
 		LockedByEnvironment: s.LockedByEnvironment, Providers: platformai.Providers, Version: s.Version,
 		SettingChange: h.change(ctx, s.UpdatedAt, s.UpdatedBy)}
 }
@@ -539,7 +554,7 @@ func (h *AdminPlatformSettingsHandler) GetPlatformAI(w http.ResponseWriter, r *h
 
 // UpdatePlatformAI changes the platform AI provider.
 // @Summary      Change the platform AI provider
-// @Description  Super admin with a fresh confirmation and a reason. Off by default; turning it on needs a provider, a model and a key. The key is encrypted at rest and never returned. Refused (409 SETTING_LOCKED_BY_ENVIRONMENT) while an AI key is set on the server. Audited critical, every administrator is told.
+// @Description  Super admin with a fresh confirmation and a reason. Off by default; turning it on needs a provider, a model and a key (an OpenAI-compatible server: its base URL, the key optional). allow_private lets the OpenAI-compatible server sit on a private network; it is audited with the rest. The key is encrypted at rest and never returned. Refused (409 SETTING_LOCKED_BY_ENVIRONMENT) while an AI key is set on the server. Audited critical, every administrator is told.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -559,7 +574,7 @@ func (h *AdminPlatformSettingsHandler) UpdatePlatformAI(w http.ResponseWriter, r
 		return
 	}
 	s, err := h.AI.Update(r.Context(), actor, platformai.Input{Enabled: req.Enabled, Provider: req.Provider, Model: req.Model,
-		APIKey: req.APIKey, Reason: req.Reason}, req.Version, middleware.ClientIP(r), r.UserAgent())
+		APIKey: req.APIKey, Reason: req.Reason, BaseURL: req.BaseURL, AllowPrivate: req.AllowPrivate, AllowedModels: req.AllowedModels}, req.Version, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
 		h.writeSettingError(w, "AI provider", err)
 		return

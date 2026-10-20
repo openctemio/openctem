@@ -19,7 +19,9 @@ name: Web E2E
 #   develop       on every push, under the same rule
 #   pull request  only with the `run-e2e` label, or when the suite itself
 #                 (web/e2e/, this workflow) changed, and the web or the API's
-#                 HTTP layer (api/internal/infra/http/) changed
+#                 HTTP layer (api/internal/infra/http/) changed. With the
+#                 `ci:full` label or a changed CI definition (.github/workflows/,
+#                 .github/scripts/, .github/actions/): the merge-queue rule.
 #
 # How it stays fast
 #   build    the three images are built once per run (bake, GitHub Actions layer
@@ -44,9 +46,11 @@ on:
     branches: [develop]
   merge_group:
 
+# A newer push to the same PR cancels the older run. Never a queued group (a
+# cancelled check ejects it) or a develop push (the branch's baseline).
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -57,6 +61,9 @@ jobs:
   changes:
     name: Detect web changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # the `ci:full` label (changed.sh reads it live)
     outputs:
       web: ${{ steps.f.outputs.web }}
       api: ${{ steps.f.outputs.api }}
@@ -72,6 +79,9 @@ jobs:
           EVENT_BEFORE: ${{ github.event.before }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
       # The API's HTTP layer (handlers, routes, middleware) is where the contract
       # the web compiles against comes from. Its generated files are not
@@ -117,12 +127,16 @@ jobs:
           API: ${{ steps.f.outputs.api }}
           HTTP: ${{ steps.http.outputs.changed }}
           SUITE: ${{ steps.suite.outputs.changed }}
+          FULL: ${{ steps.f.outputs.full }}
           LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'run-e2e') }}
         run: |
           run=false
           case "$EVENT" in
             pull_request)
-              if { [ "$WEB" = true ] || [ "$HTTP" = true ]; } && { [ "$SUITE" = true ] || [ "$LABELED" = true ]; }; then run=true; fi ;;
+              # ci:full or a changed CI definition: the merge-queue rule below.
+              if [ "$FULL" = true ]; then
+                if [ "$WEB" = true ] || [ "$API" = true ]; then run=true; fi
+              elif { [ "$WEB" = true ] || [ "$HTTP" = true ]; } && { [ "$SUITE" = true ] || [ "$LABELED" = true ]; }; then run=true; fi ;;
             *)
               # merge_group, push: web/, api/ or a shared file changed.
               if [ "$WEB" = true ] || [ "$API" = true ]; then run=true; fi ;;

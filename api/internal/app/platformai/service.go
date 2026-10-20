@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
+	"github.com/openctemio/openctem/api/internal/infra/llm"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
@@ -42,7 +43,10 @@ const SettingKey = "ai.platform"
 const ActionChanged = "platform.ai_provider_changed"
 
 // Providers the platform can use.
-var Providers = []string{"claude", "openai", "gemini"}
+var Providers = []string{"claude", "openai", "gemini", llm.ProviderOpenAICompatible}
+
+// maxAllowedModels bounds the model allow-list.
+const maxAllowedModels = 50
 
 // EnvKeys are the environment variables that pin the provider.
 var EnvKeys = []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
@@ -65,13 +69,36 @@ type stored struct {
 	Provider     string `json:"provider,omitempty"`
 	Model        string `json:"model,omitempty"`
 	KeyEncrypted string `json:"key_encrypted,omitempty"`
+	// BaseURL is the OpenAI-compatible server (openai_compatible only).
+	BaseURL string `json:"base_url,omitempty"`
+	// AllowPrivate lets the base URL be on a private network (RFC1918 / ULA)
+	// and plain http: a self-hosted model server. Never applies to an
+	// organization's own provider.
+	AllowPrivate bool `json:"allow_private,omitempty"`
+	// AllowedModels, when not empty, limits the models the platform
+	// provider (and an organization that picks a model on it) may use.
+	AllowedModels []string `json:"allowed_models,omitempty"`
+}
+
+// usable reports whether the stored configuration can make a call: an
+// OpenAI-compatible server may run without a key, any other provider needs one.
+func (st stored) usable() bool {
+	if st.Provider == "" || st.Model == "" {
+		return false
+	}
+	if st.Provider == llm.ProviderOpenAICompatible {
+		return st.BaseURL != ""
+	}
+	return st.KeyEncrypted != ""
 }
 
 // Platform is the configuration the AI client uses.
 type Platform struct {
-	Provider string
-	Model    string
-	APIKey   string
+	Provider     string
+	Model        string
+	APIKey       string
+	BaseURL      string
+	AllowPrivate bool
 }
 
 // Settings is what an administrator sees: never the key.
@@ -79,6 +106,9 @@ type Settings struct {
 	Enabled             bool
 	Provider            string
 	Model               string
+	BaseURL             string
+	AllowPrivate        bool
+	AllowedModels       []string
 	KeySet              bool
 	LockedByEnvironment bool
 	Version             int
@@ -94,6 +124,10 @@ type Input struct {
 	Model    string
 	APIKey   *string
 	Reason   string
+	// BaseURL, AllowPrivate and AllowedModels: see stored.
+	BaseURL       string
+	AllowPrivate  bool
+	AllowedModels []string
 }
 
 // Tester sends one minimal request with a configuration (the AI client
@@ -141,15 +175,35 @@ func (s *Service) Platform(ctx context.Context) (Platform, bool) {
 		s.log.Warn("platform AI setting unreadable; platform AI off", "error", err)
 		return Platform{}, false
 	}
-	if !st.Enabled || st.KeyEncrypted == "" {
+	if !st.Enabled || !st.usable() {
 		return Platform{}, false
 	}
-	key, err := s.encryptor.DecryptString(st.KeyEncrypted)
-	if err != nil {
-		s.log.Error("platform AI key does not decrypt (was APP_ENCRYPTION_KEY rotated without rekey?); platform AI off")
-		return Platform{}, false
+	var key string
+	if st.KeyEncrypted != "" {
+		key, err = s.encryptor.DecryptString(st.KeyEncrypted)
+		if err != nil {
+			s.log.Error("platform AI key does not decrypt (was APP_ENCRYPTION_KEY rotated without rekey?); platform AI off")
+			return Platform{}, false
+		}
 	}
-	return Platform{Provider: st.Provider, Model: st.Model, APIKey: key}, true
+	return Platform{Provider: st.Provider, Model: st.Model, APIKey: key, BaseURL: st.BaseURL, AllowPrivate: st.AllowPrivate}, true
+}
+
+// PlatformAIEndpoint is the OpenAI-compatible base URL of the platform
+// provider and whether it may be on a private network.
+func (s *Service) PlatformAIEndpoint(ctx context.Context) (baseURL string, allowPrivate bool) {
+	p, _ := s.Platform(ctx)
+	return p.BaseURL, p.AllowPrivate
+}
+
+// ModelAllowed reports whether model may be used on the platform provider:
+// always when no allow-list is set.
+func (s *Service) ModelAllowed(ctx context.Context, model string) bool {
+	st, _, err := s.store.Get(ctx)
+	if err != nil || len(st.AllowedModels) == 0 {
+		return err == nil
+	}
+	return slices.Contains(st.AllowedModels, model)
 }
 
 // PlatformAI is Platform in the shape the AI client factory asks for.
@@ -173,7 +227,8 @@ func (s *Service) Get(ctx context.Context) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
-	return Settings{Enabled: st.Enabled, Provider: st.Provider, Model: st.Model, KeySet: st.KeyEncrypted != "",
+	return Settings{Enabled: st.Enabled, Provider: st.Provider, Model: st.Model, BaseURL: st.BaseURL,
+		AllowPrivate: st.AllowPrivate, AllowedModels: st.AllowedModels, KeySet: st.KeyEncrypted != "",
 		Version: m.Version, UpdatedAt: m.UpdatedAt, UpdatedBy: m.UpdatedBy}, nil
 }
 
@@ -198,11 +253,30 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	if in.Model != "" && !modelRE.MatchString(in.Model) {
 		return Settings{}, fmt.Errorf("%w: the model name has an unexpected shape", ErrInvalid)
 	}
+	models, err := cleanModels(in.AllowedModels)
+	if err != nil {
+		return Settings{}, err
+	}
+	if len(models) > 0 && in.Model != "" && !slices.Contains(models, in.Model) {
+		return Settings{}, fmt.Errorf("%w: the model must be one of the allowed models", ErrInvalid)
+	}
+	in.BaseURL = strings.TrimSpace(in.BaseURL)
+	if in.Provider == llm.ProviderOpenAICompatible {
+		// SECURITY: a private address is reachable only with the explicit
+		// toggle, never loopback, link-local or cloud metadata.
+		in.BaseURL, err = llm.ValidateBaseURL(ctx, in.BaseURL, in.AllowPrivate)
+		if err != nil {
+			return Settings{}, fmt.Errorf("%w: %s", ErrInvalid, strings.TrimPrefix(err.Error(), llm.ErrInvalidProvider.Error()+": "))
+		}
+	} else {
+		in.BaseURL, in.AllowPrivate = "", false
+	}
 	prev, _, err := s.store.Fresh(ctx)
 	if err != nil {
 		return Settings{}, err
 	}
-	next := stored{Enabled: in.Enabled, Provider: in.Provider, Model: in.Model, KeyEncrypted: prev.KeyEncrypted}
+	next := stored{Enabled: in.Enabled, Provider: in.Provider, Model: in.Model, KeyEncrypted: prev.KeyEncrypted,
+		BaseURL: in.BaseURL, AllowPrivate: in.AllowPrivate, AllowedModels: models}
 	keyChanged := false
 	if in.APIKey != nil {
 		keyChanged = true
@@ -222,8 +296,8 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	if prev.Provider != "" && next.Provider != prev.Provider && !keyChanged {
 		next.KeyEncrypted = ""
 	}
-	if next.Enabled && (next.Provider == "" || next.Model == "" || next.KeyEncrypted == "") {
-		return Settings{}, fmt.Errorf("%w: choose a provider and a model and set its key to turn platform AI on", ErrInvalid)
+	if next.Enabled && !next.usable() {
+		return Settings{}, fmt.Errorf("%w: choose a provider and a model and set its key (an OpenAI-compatible server: its base URL) to turn platform AI on", ErrInvalid)
 	}
 	if _, err := s.store.Put(ctx, next, expectedVersion, actor.ID()); err != nil {
 		return Settings{}, err
@@ -235,6 +309,9 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 			"previous_enabled": prev.Enabled, "enabled": next.Enabled,
 			"previous_provider": prev.Provider, "provider": next.Provider,
 			"previous_model": prev.Model, "model": next.Model,
+			"previous_base_url": prev.BaseURL, "base_url": next.BaseURL,
+			"previous_allow_private": prev.AllowPrivate, "allow_private": next.AllowPrivate,
+			"allowed_models": next.AllowedModels,
 			// Never the value: only that it changed.
 			"key_changed": keyChanged || (prev.KeyEncrypted != "" && next.KeyEncrypted == ""),
 		},
@@ -257,15 +334,37 @@ func (s *Service) Test(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if st.Provider == "" || st.Model == "" || st.KeyEncrypted == "" {
+	if !st.usable() {
 		return ErrNotConfigured
 	}
-	key, err := s.encryptor.DecryptString(st.KeyEncrypted)
-	if err != nil {
-		return ErrNotConfigured
+	var key string
+	if st.KeyEncrypted != "" {
+		key, err = s.encryptor.DecryptString(st.KeyEncrypted)
+		if err != nil {
+			return ErrNotConfigured
+		}
 	}
-	p = Platform{Provider: st.Provider, Model: st.Model, APIKey: key}
+	p = Platform{Provider: st.Provider, Model: st.Model, APIKey: key, BaseURL: st.BaseURL, AllowPrivate: st.AllowPrivate}
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return s.tester(cctx, p)
+}
+
+// cleanModels trims, validates and de-duplicates the model allow-list.
+func cleanModels(in []string) ([]string, error) {
+	if len(in) > maxAllowedModels {
+		return nil, fmt.Errorf("%w: at most %d allowed models", ErrInvalid, maxAllowedModels)
+	}
+	out := make([]string, 0, len(in))
+	for _, m := range in {
+		m = strings.TrimSpace(m)
+		if m == "" || slices.Contains(out, m) {
+			continue
+		}
+		if !modelRE.MatchString(m) {
+			return nil, fmt.Errorf("%w: an allowed model name has an unexpected shape", ErrInvalid)
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }

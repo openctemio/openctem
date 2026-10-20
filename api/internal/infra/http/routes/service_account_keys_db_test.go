@@ -63,15 +63,18 @@ func TestServiceAccountKeys(t *testing.T) {
 	// The caller: a delegated member (not an administrator) who holds
 	// findings:read and assets:read but not findings:verify.
 	callerPerms := []string{"findings:read", "assets:read", "integrations:api_keys:write", "integrations:api_keys:read", "integrations:api_keys:delete", "team:members:write", "team:members:read"}
-	call := func(tenant shared.ID, method, path, body string) *httptest.ResponseRecorder {
+	callAs := func(admin bool, tenant shared.ID, method, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		c := context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String())
 		c = context.WithValue(c, middleware.UserIDKey, h.lead.String())
 		c = context.WithValue(c, middleware.PermissionsKey, callerPerms)
-		c = context.WithValue(c, middleware.IsAdminKey, false)
+		c = context.WithValue(c, middleware.IsAdminKey, admin)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req.WithContext(c))
 		return w
+	}
+	call := func(tenant shared.ID, method, path, body string) *httptest.ResponseRecorder {
+		return callAs(false, tenant, method, path, body)
 	}
 	mint := func(tenant, account shared.ID, scopes string) *httptest.ResponseRecorder {
 		return call(tenant, http.MethodPost, "/"+account.String()+"/api-keys",
@@ -119,12 +122,16 @@ func TestServiceAccountKeys(t *testing.T) {
 	personKey := shared.NewID()
 	h.exec(`INSERT INTO api_keys (id, tenant_id, user_id, name, key_hash, key_prefix, status) VALUES ($1, $2, $3, 'person', $4, 'oct_pers', 'active')`,
 		personKey.String(), h.tenant.String(), h.member.String(), "hash-"+personKey.String())
-	w = call(h.tenant, http.MethodGet, "/"+a.ID.String()+"/api-keys", "")
+	// A delegated member who holds every permission still cannot list them.
+	if w := call(h.tenant, http.MethodGet, "/"+a.ID.String()+"/api-keys", ""); w.Code != http.StatusForbidden {
+		t.Errorf("a non-admin listed the account's keys: %d %s", w.Code, w.Body)
+	}
+	w = callAs(true, h.tenant, http.MethodGet, "/"+a.ID.String()+"/api-keys", "")
 	var list handler.ListResponse[handler.APIKeyResponse]
 	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || w.Code != http.StatusOK || len(list.Data) != 1 || list.Data[0].ID != created.ID {
 		t.Fatalf("list: %d %s", w.Code, w.Body)
 	}
-	if w := call(h.other, http.MethodGet, "/"+a.ID.String()+"/api-keys", ""); w.Code != http.StatusNotFound {
+	if w := callAs(true, h.other, http.MethodGet, "/"+a.ID.String()+"/api-keys", ""); w.Code != http.StatusNotFound {
 		t.Errorf("listed from another organization: %d", w.Code)
 	}
 
