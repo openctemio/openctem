@@ -1038,14 +1038,16 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 // clientPartialFingerprints is a report's partial fingerprints without the
 // keys only the server writes: the pre-composite base an asset merge re-keys
 // by (composite/*) and the sensor's own fingerprint (sensor/*). A report that
-// set them could choose the key its finding takes after a merge.
+// set them could choose the key its finding takes after a merge. The
+// producer's keyed hash of a raw secret (secretHMAC/v1) is dropped too: it
+// has done its work as an identity input and is never stored.
 func clientPartialFingerprints(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(in))
 	for k, v := range in {
-		if vulnerability.IsServerPartialFingerprintKey(k) {
+		if vulnerability.IsServerPartialFingerprintKey(k) || vulnerability.IsSecretHashPartialFingerprintKey(k) {
 			continue
 		}
 		out[k] = v
