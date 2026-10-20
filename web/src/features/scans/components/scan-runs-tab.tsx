@@ -47,6 +47,7 @@ import {
   runListRefreshInterval,
   runKindLabel,
   runSubjectFindingId,
+  runTargetNote,
   runTriggeredByLabel,
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
@@ -240,7 +241,7 @@ function ScanRunsTable() {
         cell: ({ row }) => (
           <div className="space-y-0.5">
             <div className="flex flex-wrap items-center gap-1">
-              <RunStatusBadge status={row.original.status} />
+              <RunStatusBadge status={row.original.status} note={runTargetNote(row.original, t)} />
               <IntensityBadge intensity={row.original.intensity} />
             </div>
             {row.original.error_message && (

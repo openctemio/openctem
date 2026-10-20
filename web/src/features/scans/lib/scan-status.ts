@@ -10,6 +10,25 @@ import { enTranslate, type Translate } from './translate'
  * as if it were a run state.
  */
 
+/**
+ * A platform policy owns the scan (continuous coverage, automatic
+ * enrichment): it has no owner, cannot be edited, run, scheduled or taken
+ * over here, and is listed under the System origin.
+ */
+export function isManagedScan(config: Pick<ScanConfig, 'managed_by' | 'owner_state'>): boolean {
+  return Boolean(config.managed_by) || config.owner_state === 'managed'
+}
+
+/** What a managed scan carries, in words ("Automatic coverage"). */
+export function managedScanLabel(
+  config: Pick<ScanConfig, 'managed_by'>,
+  t: Translate = enTranslate
+): string {
+  return config.managed_by === 'enrichment'
+    ? t('scans.trigger.policy.enrichment')
+    : t('scans.trigger.policy.coverage')
+}
+
 /** A scan has a schedule to switch on or off (not manual-only). */
 export function hasSchedule(config: Pick<ScanConfig, 'schedule_type'>): boolean {
   return config.schedule_type !== 'manual'

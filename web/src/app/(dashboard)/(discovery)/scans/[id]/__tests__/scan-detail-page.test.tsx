@@ -226,4 +226,80 @@ describe('Scan page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Clone' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('Cloning Nightly recon')
   })
+
+  // A scan a platform policy owns (continuous coverage): a banner in place of
+  // the "no active owner" notice, a System badge and "Automatic coverage"
+  // instead of schedule and state, and none of Edit, Run now, schedule or
+  // Take ownership. Clone stays and says what it makes.
+  describe('a managed scan', () => {
+    beforeEach(() => {
+      config = {
+        ...config,
+        name: 'Continuous coverage: probe.http',
+        managed_by: 'coverage',
+        owner_state: 'managed',
+        schedule_type: 'manual',
+        ad_hoc: true,
+      }
+      runsByPage = () => ({
+        data: [
+          run('r1', {
+            status: 'completed',
+            trigger_type: 'system',
+            triggered_by: 'policy:coverage',
+            trigger: { type: 'policy', id: 'coverage' },
+            unreachable_target_count: 3,
+          }),
+        ],
+        total: 1,
+        page: 1,
+        per_page: 25,
+        total_pages: 1,
+      })
+    })
+
+    it('says the platform manages it and links to the coverage settings', () => {
+      render(<ScanDetailPage />)
+      const banner = screen.getByTestId('managed-scan-banner')
+      expect(banner).toHaveTextContent('Managed by the platform · Continuous coverage')
+      expect(within(banner).getByRole('link', { name: 'Open coverage settings' })).toHaveAttribute(
+        'href',
+        '/settings/scope'
+      )
+      expect(screen.queryByTestId('scan-owner-banner')).toBeNull()
+      expect(screen.queryByText('No active owner')).toBeNull()
+    })
+
+    it('has no Edit, Run now, schedule switch or Take ownership', () => {
+      render(<ScanDetailPage />)
+      for (const name of [
+        /^Edit$/,
+        /Run now/,
+        /Take ownership/,
+        /Schedule (on|off)/,
+        /Delete scan/,
+      ]) {
+        expect(screen.queryByRole('button', { name })).toBeNull()
+      }
+      expect(screen.queryByText('Manual')).toBeNull()
+    })
+
+    it("shows the System badge and clones as the caller's own scan", async () => {
+      render(<ScanDetailPage />)
+      expect(screen.getByText('System')).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Clone as my scan' }))
+      expect(screen.getByRole('dialog')).toHaveTextContent(
+        'Cloning Continuous coverage: probe.http'
+      )
+    })
+
+    it('labels a policy run "Automatic coverage" and notes its unreachable targets', () => {
+      render(<ScanDetailPage />)
+      const row = within(screen.getByRole('table')).getAllByRole('row')[1]
+      expect(row).toHaveTextContent('Automatic coverage')
+      expect(row).not.toHaveTextContent('System')
+      expect(row).toHaveTextContent('Completed')
+      expect(row).toHaveTextContent('3 unreachable')
+    })
+  })
 })
