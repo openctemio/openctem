@@ -2606,7 +2606,7 @@ accountable for it (`service_owner_id`, the creator), and never signs in.
 
 Routes: `GET /api/v1/service-accounts` (`team:members:read`), `POST` and
 `DELETE /{id}` (`team:members:write`). Its keys:
-`GET /{id}/api-keys` (`team:members:read` and `integrations:api_keys:read`),
+`GET /{id}/api-keys` (owner or administrator only, plus `team:members:read` and `integrations:api_keys:read`),
 `POST /{id}/api-keys` (`team:members:write` and `integrations:api_keys:write`, recent
 sign-in) and `DELETE /{id}/api-keys/{key_id}` (`team:members:write` and
 `integrations:api_keys:delete`, recent sign-in). Another organization's account, a person,

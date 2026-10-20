@@ -23,7 +23,7 @@ are separate credentials and are not covered here.
 | `scopes` | Permissions, validated against `permission.AllPermissions()` and against the creator's own permissions when minted. |
 | `rate_limit` | Requests per hour (0 = unlimited). |
 | `expires_at`, `status` | Expiry and revocation. |
-| `last_used_at`, `last_used_ip`, `use_count` | Updated on every authenticated request. |
+| `last_used_at`, `last_used_ip`, `use_count` | Updated on every authenticated request. `last_used_ip` is returned to owners and administrators only. |
 
 Who sees which keys: owners and administrators list every key of the
 organization; anyone else (`integrations:api_keys:read` without the admin
