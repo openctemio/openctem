@@ -232,10 +232,6 @@ func (m *MockAssetRepository) UpsertBatch(_ context.Context, assets []*asset.Ass
 	return created, updated, persistedIDs, nil
 }
 
-func (m *MockAssetRepository) UpdateFindingCounts(_ context.Context, _ shared.ID, _ []shared.ID) error {
-	return nil
-}
-
 func (m *MockAssetRepository) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, _ asset.TagListQuery) (asset.TagList, error) {
 	return asset.TagList{Tags: []string{}}, nil
 }
