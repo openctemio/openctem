@@ -432,7 +432,12 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </p>
       )}
 
-      <TaskQueryPanel taskId={task.id} taskVersion={task.version} writable={writable} onChanged={() => void mutate()} />
+      <TaskQueryPanel
+        taskId={task.id}
+        taskVersion={task.version}
+        writable={writable}
+        onChanged={() => void mutate()}
+      />
 
       <section className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-2 rounded-lg border p-4">
