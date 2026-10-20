@@ -188,7 +188,7 @@ describe('LoginForm two-factor step', () => {
     loginAction.mockResolvedValueOnce({ success: true, mfaRequired: true, mfaPurpose: 'verify' })
     await signIn()
     expect(await screen.findByText('Two-factor authentication')).toBeInTheDocument()
-    expect(screen.getByLabelText('Authentication code')).toBeInTheDocument()
+    expect(screen.getByLabelText('Code from your authenticator app')).toBeInTheDocument()
     expect(href).not.toHaveBeenCalled()
   })
 
@@ -202,9 +202,8 @@ describe('LoginForm two-factor step', () => {
     const user = await signIn()
     const verify = screen.getByRole('button', { name: /verify/i })
     expect(verify).toBeDisabled()
-    await user.type(await screen.findByLabelText('Authentication code'), '12a3456')
-    expect(screen.getByLabelText('Authentication code')).toHaveValue('123456')
-    await user.click(verify)
+    // The sixth digit submits on its own.
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '12a3456')
     await waitFor(() => expect(href).toHaveBeenCalledWith('/findings'))
     expect(verifyMfaAction).toHaveBeenCalledWith({ code: '123456' })
   })
@@ -213,8 +212,7 @@ describe('LoginForm two-factor step', () => {
     loginAction.mockResolvedValueOnce({ success: true, mfaRequired: true, mfaPurpose: 'verify' })
     verifyMfaAction.mockResolvedValueOnce({ success: false, error: 'Invalid verification code' })
     const user = await signIn()
-    await user.type(await screen.findByLabelText('Authentication code'), '000000')
-    await user.click(screen.getByRole('button', { name: /verify/i }))
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '000000')
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid verification code')
     expect(screen.getByText('Two-factor authentication')).toBeInTheDocument()
     expect(href).not.toHaveBeenCalled()
@@ -229,10 +227,10 @@ describe('LoginForm two-factor step', () => {
     const user = await signIn()
     await user.click(await screen.findByRole('button', { name: /use a recovery code/i }))
     await user.type(screen.getByLabelText('Recovery code'), 'abcde-fghjk')
-    await user.click(screen.getByRole('button', { name: /verify/i }))
     await waitFor(() =>
-      expect(verifyMfaAction).toHaveBeenCalledWith({ recoveryCode: 'abcde-fghjk' })
+      expect(verifyMfaAction).toHaveBeenCalledWith({ recoveryCode: 'abcdefghjk' })
     )
+    expect(verifyMfaAction).toHaveBeenCalledTimes(1)
   })
 
   it('goes back to the password form when the challenge expired', async () => {
@@ -242,8 +240,7 @@ describe('LoginForm two-factor step', () => {
       error: 'Your sign-in verification expired or is no longer valid. Please sign in again.',
     })
     const user = await signIn()
-    await user.type(await screen.findByLabelText('Authentication code'), '123456')
-    await user.click(screen.getByRole('button', { name: /verify/i }))
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '123456')
     expect(await screen.findByLabelText('Password')).toBeInTheDocument()
   })
 
@@ -269,8 +266,7 @@ describe('LoginForm two-factor step', () => {
     expect(await screen.findByText('Set up two-factor authentication')).toBeInTheDocument()
     expect(await screen.findByRole('img', { name: /qr code/i })).toBeInTheDocument()
     expect(screen.getByText('JBSW Y3DP EHPK 3PXP')).toBeInTheDocument()
-    await user.type(screen.getByLabelText('Authentication code'), '654321')
-    await user.click(screen.getByRole('button', { name: /turn on and continue/i }))
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '654321')
     expect(await screen.findByText('aaaaa-bbbbb')).toBeInTheDocument()
     const cont = screen.getByRole('button', { name: /^continue$/i })
     expect(cont).toBeDisabled()

@@ -346,14 +346,12 @@ const (
 	AIModePlatform AIMode = "platform"
 	// AIModeBYOK means tenant brings their own API key.
 	AIModeBYOK AIMode = "byok"
-	// AIModeAgent means tenant uses a self-hosted AI agent.
-	AIModeAgent AIMode = "agent"
 )
 
 // IsValid checks if the AI mode is valid.
 func (m AIMode) IsValid() bool {
 	switch m {
-	case AIModeDisabled, AIModePlatform, AIModeBYOK, AIModeAgent:
+	case AIModeDisabled, AIModePlatform, AIModeBYOK:
 		return true
 	}
 	return false
@@ -363,16 +361,18 @@ func (m AIMode) IsValid() bool {
 type LLMProvider string
 
 const (
-	LLMProviderClaude      LLMProvider = "claude"
-	LLMProviderOpenAI      LLMProvider = "openai"
-	LLMProviderAzureOpenAI LLMProvider = "azure_openai"
-	LLMProviderGemini      LLMProvider = "gemini"
+	LLMProviderClaude LLMProvider = "claude"
+	LLMProviderOpenAI LLMProvider = "openai"
+	// LLMProviderOpenAICompatible is any server speaking the OpenAI chat
+	// completions API, at a base URL the organization sets (public only).
+	LLMProviderOpenAICompatible LLMProvider = "openai_compatible"
+	LLMProviderGemini           LLMProvider = "gemini"
 )
 
 // IsValid checks if the LLM provider is valid.
 func (p LLMProvider) IsValid() bool {
 	switch p {
-	case LLMProviderClaude, LLMProviderOpenAI, LLMProviderAzureOpenAI, LLMProviderGemini:
+	case LLMProviderClaude, LLMProviderOpenAI, LLMProviderOpenAICompatible, LLMProviderGemini:
 		return true
 	}
 	return false
@@ -384,9 +384,9 @@ type AISettings struct {
 	Mode AIMode `json:"mode"`
 
 	// BYOK (Bring Your Own Key) Configuration - only used when Mode = "byok"
-	Provider      LLMProvider `json:"provider,omitempty"`       // claude, openai, azure_openai
+	Provider      LLMProvider `json:"provider,omitempty"`       // claude, openai, gemini, openai_compatible
 	APIKey        string      `json:"api_key,omitempty"`        // Encrypted API key (set via special endpoint)
-	AzureEndpoint string      `json:"azure_endpoint,omitempty"` // For Azure OpenAI
+	BaseURL       string      `json:"base_url,omitempty"`       // openai_compatible only; public https
 	ModelOverride string      `json:"model_override,omitempty"` // Optional model preference
 
 	// Auto-Triage Configuration
@@ -1031,12 +1031,12 @@ func (s *AISettings) Validate() error {
 			return fmt.Errorf("%w: invalid LLM provider", shared.ErrValidation)
 		}
 		// API key validation is done separately (encrypted storage)
-		if s.Provider == LLMProviderAzureOpenAI && s.AzureEndpoint == "" {
-			return fmt.Errorf("%w: azure_endpoint is required for Azure OpenAI", shared.ErrValidation)
-		}
-		if s.AzureEndpoint != "" {
-			if _, err := url.ParseRequestURI(s.AzureEndpoint); err != nil {
-				return fmt.Errorf("%w: invalid Azure endpoint URL", shared.ErrValidation)
+		if s.Provider == LLMProviderOpenAICompatible {
+			if s.BaseURL == "" || s.ModelOverride == "" {
+				return fmt.Errorf("%w: base_url and model are required for an OpenAI-compatible provider", shared.ErrValidation)
+			}
+			if u, err := url.ParseRequestURI(s.BaseURL); err != nil || u.Scheme != "https" {
+				return fmt.Errorf("%w: invalid base URL (https required)", shared.ErrValidation)
 			}
 		}
 	}
