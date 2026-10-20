@@ -72,6 +72,10 @@ var findingMergeRefs = []mergeRef{
 	// survivor already links is dropped (one link per finding and issue).
 	{table: "ticket_links", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"integration_id", "external_key"}}}},
+	// One retest check per finding: the survivor's own check stands, a loser's
+	// is dropped when the survivor has one and moves otherwise.
+	{table: "finding_retest_checks", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{}}},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},
