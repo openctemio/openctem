@@ -78,7 +78,9 @@ func TestScanManaged_KeyUniqueAndOrigin_DB(t *testing.T) {
 	if err := repo.Create(ctx, elsewhere); err != nil {
 		t.Fatalf("same key in another tenant: %v", err)
 	}
-	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM scans WHERE id = $1`, elsewhere.ID.String()) })
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM scans WHERE id = $1`, elsewhere.ID.String())
+	})
 
 	// An update never rewrites the owner columns.
 	got.Description = "changed"
