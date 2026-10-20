@@ -1184,5 +1184,15 @@
   "findings.aiTriage.requestError.AI_PLATFORM_NOT_CONFIGURED": "Hệ thống này chưa thiết lập AI. Quản trị viên nền tảng thiết lập nhà cung cấp AI trong console.",
   "findings.aiTriage.requestError.AI_POLICY_RESTRICTED": "Chính sách dữ liệu AI của tổ chức không cho gửi phát hiện này tới AI (chiến dịch pentest vượt giới hạn TLP cho AI, hoặc AI đã bị tắt cho chiến dịch).",
   "findings.aiTriage.requestError.CONFLICT": "Phát hiện này đang được phân tích.",
-  "findings.aiTriage.requestError.RATE_LIMIT_EXCEEDED": "Quá nhiều yêu cầu phân loại bằng AI. Hãy đợi một phút rồi thử lại."
+  "findings.aiTriage.requestError.RATE_LIMIT_EXCEEDED": "Quá nhiều yêu cầu phân loại bằng AI. Hãy đợi một phút rồi thử lại.",
+  "findings.toolbar.searchPlaceholder": "Tìm theo tiêu đề, CVE, quy tắc hoặc vị trí…",
+  "findings.toolbar.searchLabel": "Tìm phát hiện",
+  "findings.toolbar.groupLabel": "Nhóm phát hiện",
+  "findings.toolbar.groupNone": "Nhóm",
+  "findings.toolbar.refresh": "Làm mới",
+  "findings.toolbar.export": "Xuất",
+  "findings.toolbar.exportCsv": "Xuất CSV",
+  "findings.toolbar.exportJson": "Xuất JSON",
+  "findings.toolbar.moreActions": "Thao tác khác",
+  "findings.toolbar.assignOwners": "Giao cho chủ sở hữu tài sản"
 }

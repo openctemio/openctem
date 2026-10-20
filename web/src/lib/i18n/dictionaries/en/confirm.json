@@ -367,5 +367,6 @@
   "confirm.workflowStep.deleteTitle": "Delete this step?",
   "confirm.mcpClient.blockTitle": "Block {name} everywhere?",
   "confirm.mcpClient.blockDesc": "Every organization on this deployment loses the use of this application at once: its tokens stop working and it cannot be authorized again until you unblock it.",
-  "confirm.mcpClient.block": "Block"
+  "confirm.mcpClient.block": "Block",
+  "confirm.savedView.trigger": "Views"
 }

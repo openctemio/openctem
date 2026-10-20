@@ -1184,5 +1184,15 @@
   "findings.aiTriage.requestError.AI_PLATFORM_NOT_CONFIGURED": "AI is not set up on this installation. A platform administrator sets up the AI provider in the console.",
   "findings.aiTriage.requestError.AI_POLICY_RESTRICTED": "Your organization’s AI data policy keeps this finding away from AI (pentest campaign above the TLP limit for AI, or AI turned off for the campaign).",
   "findings.aiTriage.requestError.CONFLICT": "An analysis is already running for this finding.",
-  "findings.aiTriage.requestError.RATE_LIMIT_EXCEEDED": "Too many AI triage requests. Wait a minute and try again."
+  "findings.aiTriage.requestError.RATE_LIMIT_EXCEEDED": "Too many AI triage requests. Wait a minute and try again.",
+  "findings.toolbar.searchPlaceholder": "Search title, CVE, rule or location…",
+  "findings.toolbar.searchLabel": "Search findings",
+  "findings.toolbar.groupLabel": "Group findings",
+  "findings.toolbar.groupNone": "Group",
+  "findings.toolbar.refresh": "Refresh",
+  "findings.toolbar.export": "Export",
+  "findings.toolbar.exportCsv": "Export as CSV",
+  "findings.toolbar.exportJson": "Export as JSON",
+  "findings.toolbar.moreActions": "More actions",
+  "findings.toolbar.assignOwners": "Assign to asset owners"
 }
