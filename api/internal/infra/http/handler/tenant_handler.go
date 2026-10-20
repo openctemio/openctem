@@ -2396,6 +2396,8 @@ type UpdatePentestSettingsRequest struct {
 	Methodologies []tenant.ConfigOption `json:"methodologies" validate:"dive"`
 	// RequireAuthorizationBeforeStart: absent = unchanged.
 	RequireAuthorizationBeforeStart *bool `json:"require_authorization_before_start"`
+	// TicketMaxTLP is the tracker TLP limit: absent = unchanged, "" = amber.
+	TicketMaxTLP *string `json:"ticket_max_tlp"`
 }
 
 // FindingCorrelationSettingsRequest changes the correlation switches;
@@ -2584,6 +2586,7 @@ func (h *TenantHandler) UpdatePentestSettings(w http.ResponseWriter, r *http.Req
 		Methodologies: req.Methodologies,
 
 		RequireAuthorizationBeforeStart: req.RequireAuthorizationBeforeStart,
+		TicketMaxTLP:                    req.TicketMaxTLP,
 	}
 
 	actx := h.buildAuditContext(r)

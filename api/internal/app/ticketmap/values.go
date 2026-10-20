@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	ticketmapdom "github.com/openctemio/openctem/api/pkg/domain/ticketmap"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -23,8 +24,10 @@ type UserInfo struct {
 	Name  string
 }
 
-// FindingValues flattens a finding into mapping values. Secret findings never
-// expose their description: only the masked value reaches any field.
+// FindingValues flattens a finding into mapping values. The outbound gate
+// decides what text may leave (ticketing.FindingContent): a secret finding
+// exposes no description, preview, snippet, fingerprint or commit context; a
+// finding that exposes data exposes no title, description or fix guidance.
 func FindingValues(f *vulnerability.Finding, asset *AssetInfo, assignee *UserInfo, webBase string) ticketmapdom.Values {
 	v := ticketmapdom.Values{
 		"finding.id":            ticketmapdom.Text(f.ID().String()),
@@ -64,20 +67,21 @@ func FindingValues(f *vulnerability.Finding, asset *AssetInfo, assignee *UserInf
 	if d := f.SLADeadline(); d != nil {
 		v["finding.sla_deadline"] = ticketmapdom.Date(*d)
 	}
-	if r := f.Remediation(); r != nil {
+	content := ticketing.FindingContent(f)
+	if r := f.Remediation(); r != nil && content != ticketing.ContentPersonalData {
 		if b := strings.TrimSpace(r.MobilizationBrief()); b != "" {
 			v["finding.fix_guidance"] = ticketmapdom.Text(b)
 		}
 	}
-	isSecret := f.Source() == vulnerability.FindingSourceSecret || f.FindingType() == vulnerability.FindingTypeSecret
-	if isSecret {
-		desc := "A secret was detected. The value is redacted; open the finding for details."
-		if mv := f.SecretMaskedValue(); mv != "" {
-			desc += " Masked value: " + mv
+	switch content {
+	case ticketing.ContentSecret:
+		v["finding.description"] = ticketmapdom.Text("A secret was detected. Its value is not sent to trackers; open the finding for details.")
+	case ticketing.ContentPersonalData:
+		v["finding.description"] = ticketmapdom.Text("This finding exposes data. Its details are not sent to trackers; open the finding for details.")
+	case ticketing.ContentFull:
+		if d := strings.TrimSpace(f.Description()); d != "" {
+			v["finding.description"] = ticketmapdom.Text(d)
 		}
-		v["finding.description"] = ticketmapdom.Text(desc)
-	} else if d := strings.TrimSpace(f.Description()); d != "" {
-		v["finding.description"] = ticketmapdom.Text(d)
 	}
 	if asset != nil {
 		v["finding.asset_name"] = ticketmapdom.Text(asset.Name)
@@ -179,8 +183,12 @@ func TaskStateOf(t *remediation.Task) string {
 	return ticketmapdom.TaskOpen
 }
 
-// findingTitle is the finding's title, or its message when it has none.
+// findingTitle is the finding's title, or its message when it has none
+// (a generic title for a finding that exposes data).
 func findingTitle(f *vulnerability.Finding) string {
+	if ticketing.FindingContent(f) == ticketing.ContentPersonalData {
+		return ticketing.PersonalDataTitle
+	}
 	if t := strings.TrimSpace(f.Title()); t != "" {
 		return t
 	}

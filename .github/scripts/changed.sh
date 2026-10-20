@@ -8,6 +8,18 @@
 #                    route permission map) also runs the web checks: Web CI's
 #                    contract job generates base and head and decides.
 #   docs=true|false  a documentation file changed (informational).
+#   migrations=true|false  a database migration or the database role script
+#                    changed (api/migrations/, api/deploy/postgres/): the
+#                    least-privilege and PostgreSQL 18 jobs then also run on
+#                    a pull request.
+#   full=true|false  run the full tier (what the merge queue runs). Always
+#                    true except on pull_request, where it is true when the PR
+#                    has the `ci:full` label or changes a CI definition
+#                    (.github/workflows/, .github/scripts/, .github/actions/).
+#                    The labels are read live through the API (GH_TOKEN,
+#                    PR_NUMBER), so adding the label and re-running the jobs
+#                    is enough; PR_LABELS (the event's label names as a JSON
+#                    array) is the fallback.
 #
 # Documentation never counts as code for api/web: Markdown anywhere, all of
 # api/docs/, and the agent notes under .claude/. A docs-only PR therefore runs
@@ -40,7 +52,7 @@ api_paths=(api/ "${shared[@]}")
 web_paths=(web/ "${shared[@]}")
 
 out() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/stdout}"; echo "$1=$2${3:+ ($3)}"; }
-all() { out api true "$1"; out web true "$1"; out docs true "$1"; exit 0; }
+all() { out api true "$1"; out web true "$1"; out docs true "$1"; out migrations true "$1"; out full true "$1"; exit 0; }
 
 case "${GITHUB_EVENT_NAME:-}" in
   pull_request)
@@ -100,3 +112,18 @@ echo "changed files in $range (first 50):"; awk 'NR <= 50 { print "  " $0 }' <<<
 if [[ -n "$docs" ]]; then out docs true "$docs"; else out docs false "no documentation file"; fi
 if hit="$(matches "${api_paths[@]}")"; then out api true "$hit"; else out api false "nothing under ${api_paths[*]}"; fi
 if hit="$(matches "${web_paths[@]}")"; then out web true "$hit"; else out web false "nothing under ${web_paths[*]}"; fi
+if hit="$(matches api/migrations/ api/deploy/postgres/)"; then out migrations true "$hit"; else out migrations false "no migration or role script"; fi
+
+# The full tier: every event except a pull request (the others returned
+# through all() or reach here as push / merge_group).
+if [[ "${GITHUB_EVENT_NAME}" != pull_request ]]; then
+  out full true "${GITHUB_EVENT_NAME}"
+elif hit="$(matches .github/workflows/ .github/scripts/ .github/actions/)"; then
+  out full true "CI definition changed: $hit"
+else
+  labels="$(jq -r '.[]?' <<<"${PR_LABELS:-[]}" 2>/dev/null || true)"
+  if [[ -n "${PR_NUMBER:-}" && -n "${GH_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
+    if live="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" --jq '.[].name' 2>/dev/null)"; then labels="$live"; fi
+  fi
+  if grep -qxF 'ci:full' <<<"$labels"; then out full true "label ci:full"; else out full false "pull request without ci:full"; fi
+fi

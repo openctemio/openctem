@@ -143,3 +143,47 @@ func TestFindingTemplateProvenance_OtherAbsolutePathDropped(t *testing.T) {
 		}
 	}
 }
+
+// secretRepo adds the secret not-observed mark to the coverage fake.
+type secretRepo struct {
+	*coverageFindingRepo
+	marked []shared.ID
+	calls  int
+}
+
+func (r *secretRepo) MarkCoverageSecretsNotObserved(_ context.Context, _ shared.ID, _ ingestreport.CoverageQuery) ([]shared.ID, error) {
+	r.calls++
+	id := shared.NewID()
+	r.marked = append(r.marked, id)
+	return []shared.ID{id}, nil
+}
+
+// A covered scan that stops seeing a secret marks it not observed in enforce
+// mode (even when nothing else is stale) and never in dry run; the ordinary
+// stale finding still resolves.
+func TestEvaluateCommandCoverage_SecretsAreMarkedNotResolved(t *testing.T) {
+	svc, base := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"})
+	repo := &secretRepo{coverageFindingRepo: base}
+	svc.findingRepo = repo
+	out := svc.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID())
+	if len(base.resolved) != 1 || repo.calls != 1 || len(out.NotObserved) != 1 || out.NotObserved[0] != repo.marked[0] {
+		t.Fatalf("enforce: resolved %v, mark calls %d, outcome %+v", base.resolved, repo.calls, out)
+	}
+
+	// Nothing else stale: the secret is still marked.
+	svc2, base2 := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"})
+	base2.stale = nil
+	repo2 := &secretRepo{coverageFindingRepo: base2}
+	svc2.findingRepo = repo2
+	if out := svc2.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID()); repo2.calls != 1 || len(out.NotObserved) != 1 {
+		t.Fatalf("no ordinary stale: mark calls %d, outcome %+v", repo2.calls, out)
+	}
+
+	// Dry run writes nothing.
+	svc3, base3 := coverageService(t, CoverageAutoResolveDryRun, []string{"nuclei"})
+	repo3 := &secretRepo{coverageFindingRepo: base3}
+	svc3.findingRepo = repo3
+	if svc3.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID()); repo3.calls != 0 || len(base3.resolved) != 0 {
+		t.Fatalf("dry run: mark calls %d resolved %v", repo3.calls, base3.resolved)
+	}
+}
