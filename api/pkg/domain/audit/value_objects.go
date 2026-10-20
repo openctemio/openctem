@@ -241,6 +241,9 @@ const (
 	ActionFindingRetestCheckSaved    Action = "finding.retest_check_saved"
 	ActionFindingRetestCheckRemoved  Action = "finding.retest_check_removed"
 	ActionFindingRetestCheckApproved Action = "finding.retest_check_approved"
+	// ActionFindingClassified records a change to a finding's classification
+	// (CVE, CVSS, CWE, OWASP ids): the old and new values.
+	ActionFindingClassified Action = "finding.classified"
 	// ActionFindingCommentReactionRemoved records an administrator removing
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
@@ -786,7 +789,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionFindingsRefingerprinted, ActionAssetsMerged,
@@ -917,7 +920,7 @@ func (a Action) Category() string {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingsRefingerprinted,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:

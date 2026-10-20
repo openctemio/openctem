@@ -13,7 +13,7 @@ import { invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
 import type { ScanConfig } from '@/lib/api/scan-types'
 import { Can, Permission } from '@/lib/permissions'
 import { useScanTrigger } from '../hooks/use-scan-trigger'
-import { hasSchedule, scheduleOn } from '../lib/scan-status'
+import { hasSchedule, isManagedScan, scheduleOn } from '../lib/scan-status'
 import { enTranslate, type Translate } from '../lib/translate'
 
 /**
@@ -26,6 +26,7 @@ import { enTranslate, type Translate } from '../lib/translate'
  * - Schedule on / off: only a scan with a schedule. A manual scan has no
  *   schedule to switch.
  * - Enable: a disabled scan, which runs for nobody.
+ * - A managed scan (a platform policy owns it) has none of them.
  */
 export function ScanControls({
   config,
@@ -45,6 +46,10 @@ export function ScanControls({
     onSettled: onChanged,
   })
   const triggering = isTriggering(config.id)
+
+  // A platform policy owns a managed scan: no Run now, no schedule switch, no
+  // enable here (the API refuses them with SCAN_MANAGED_BY_POLICY).
+  if (isManagedScan(config)) return null
 
   const setState = async (action: 'pause' | 'activate', done: string) => {
     setBusy(true)
@@ -132,9 +137,12 @@ export function ScanControls({
  * Manual scans: "Manual" (or "Disabled"). Scheduled: "Schedule on/off".
  */
 export function scanStateLabel(
-  config: Pick<ScanConfig, 'status' | 'schedule_type'>,
+  config: Pick<ScanConfig, 'status' | 'schedule_type'> &
+    Partial<Pick<ScanConfig, 'managed_by' | 'owner_state'>>,
   t: Translate = enTranslate
 ): string {
+  // A managed scan is never "Manual": its policy decides when it runs.
+  if (isManagedScan(config)) return t('scans.managed.state')
   if (config.status === 'disabled') return t('scans.state.disabled')
   if (!hasSchedule(config)) return t('scans.state.manual')
   return scheduleOn(config) ? t('scans.state.scheduleOn') : t('scans.state.scheduleOff')

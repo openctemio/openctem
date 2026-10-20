@@ -234,7 +234,7 @@ services:
   # platform console's identity tables (administrators, console sessions) are
   # written by that role alone, and the API's DB_USER only reads admin_users.
   db-roles: &db-roles
-    image: postgres:${POSTGRES_VERSION:-17}
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -589,7 +589,7 @@ services:
   # it). Using managed Postgres/Redis instead: set DB_HOST/REDIS_HOST (and
   # REDIS_TLS_CA_FILE if their CA is not public) and drop these services.
   datastore-tls:
-    image: postgres:${POSTGRES_VERSION:-17} # only for its openssl
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17} # only for its openssl
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -626,7 +626,7 @@ services:
     logging: *default-logging
 
   postgres:
-    image: postgres:${POSTGRES_VERSION:-17}
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17}
     command:
       - postgres
       - -c
@@ -653,6 +653,10 @@ services:
       - random_page_cost=${PG_RANDOM_PAGE_COST:-1.1}
       - -c
       - max_wal_size=${PG_MAX_WAL_SIZE:-2GB}
+      # Large jsonb/text values compress with lz4: cheaper to read and write
+      # than the built-in pglz. Applies to values written from now on.
+      - -c
+      - default_toast_compression=${PG_TOAST_COMPRESSION:-lz4}
     # Parallel queries share memory through /dev/shm (64 MB by default).
     shm_size: ${PG_SHM_SIZE:-256m}
     environment:
@@ -690,7 +694,7 @@ services:
     logging: *default-logging
 
   redis:
-    image: redis:${REDIS_VERSION:-7-alpine}
+    image: ${REDIS_IMAGE:-redis}:${REDIS_VERSION:-7-alpine}
     command:
       - sh
       - -c

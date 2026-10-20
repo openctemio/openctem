@@ -68,6 +68,15 @@ func registerAssetRoutes(
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
 		// Why the risk score is what it is (docs/architecture/asset-risk-score.md).
 		r.GET("/{id}/risk", h.GetRisk, middleware.Require(permission.AssetsRead))
+		// Lowering exposure, criticality or the crown-jewel flag: the impact on
+		// the open findings, and the requests that wait for a second person
+		// (docs/architecture/asset-risk-governance.md). Deciding needs the same
+		// permission as approving a finding decision.
+		r.POST("/{id}/risk-impact", h.PreviewRiskChange, middleware.Require(permission.AssetsWrite))
+		r.GET("/{id}/risk-requests/pending", h.GetPendingRiskRequest, middleware.Require(permission.AssetsRead))
+		r.POST("/{id}/risk-requests/{request_id}/approve", h.ApproveRiskRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/risk-requests/{request_id}/reject", h.RejectRiskRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/risk-requests/{request_id}/cancel", h.CancelRiskRequest, middleware.Require(permission.AssetsWrite))
 
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))

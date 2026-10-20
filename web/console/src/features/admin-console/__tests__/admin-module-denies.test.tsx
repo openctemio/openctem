@@ -95,7 +95,7 @@ describe('OrganizationModulesPanel', () => {
     expect(deny).toBeDisabled() // a reason and a code are required
     await userEvent.type(within(dialog).getByLabelText('Reason'), 'Contract ended')
     expect(deny).toBeDisabled()
-    await userEvent.type(within(dialog).getByLabelText('Code from your authenticator'), '123456')
+    await userEvent.type(within(dialog).getByLabelText('Code from your authenticator app'), '123456')
     await userEvent.click(deny)
 
     await waitFor(() =>
@@ -115,7 +115,7 @@ describe('OrganizationModulesPanel', () => {
 
     const dialog = await screen.findByRole('dialog')
     await userEvent.type(within(dialog).getByLabelText('Reason'), 'Contract renewed in October')
-    await userEvent.type(within(dialog).getByLabelText('Code from your authenticator'), '654321')
+    await userEvent.type(within(dialog).getByLabelText('Code from your authenticator app'), '654321')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Allow again' }))
     await waitFor(() =>
       expect(deleteModuleDeny).toHaveBeenCalledWith('t1', 'compliance', {
