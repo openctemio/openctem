@@ -214,6 +214,18 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 | `/remediation/tasks/{id}` | header (state, deadline and its source, owner, risk left), fix steps with the command to copy, progress, findings grouped by asset in a windowed list that loads as it scrolls, select and Move to… (palette with the server's compatibility warnings) or drag onto a task of the same fix, Split, Mark fixed, Request exception (or the pending exception), hold/resume/cancel, timeline; every move offers Undo |
 | `/remediation/campaigns` | the campaigns: programs of tasks (remediation-campaigns.md) |
 
+Status work inside a task (web only; no API change). Each primary finding row has the finding's own status menu
+(`StatusSelect`: the moves come from `GET /findings/{id}/transitions` for the caller, blocked ones disabled with the
+reason) driven by the same triage rules as the finding drawer: a claim or resolve opens its note/evidence dialog,
+false positive and accepted risk become approval requests, and a write carries the finding's `row_version` as
+`If-Match` (read from `GET /findings/{id}` when the row is first pointed at or focused; a stale version reloads the
+finding). Clicking a row opens the finding in the shared finding drawer with `?finding={id}` on the task URL (opening
+pushes history, moving inside replaces it, so Back closes the drawer), "n of N" with previous/next, and `j`/`k` through
+the list (also with the drawer closed, `Enter` opens the highlighted row). After Start or a fix claim the drawer moves
+to the next finding in `new`, `confirmed` or `in_progress` unless the person turned that off (kept in the browser
+only). The drawer's "Open full details" and the finding page carry `?from=task:{id}`, which shows
+"Remediation tasks > {task}" above the finding page.
+
 Strings are in the `remediationHub` dictionary (en, vi). Write actions show only with
 `findings:remediation:write` (Mark fixed also `findings:fix_apply`); the API stays the authority. A member with only
 `findings:remediation:read` sees "Accept as owner" (and the `a` key) on `join` and `task_route` suggestions, and
