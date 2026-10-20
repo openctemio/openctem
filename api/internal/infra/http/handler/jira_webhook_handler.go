@@ -132,8 +132,8 @@ func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request
 	}
 
 	result, err := h.service.CreateTicketFromFinding(r.Context(), jira.CreateTicketInput{
-		TenantID:   tenantID,
-		FindingID:  findingID,
+		TenantID:      tenantID,
+		FindingID:     findingID,
 		ProjectKey:    req.ProjectKey,
 		IssueType:     req.IssueType,
 		IntegrationID: req.IntegrationID,
