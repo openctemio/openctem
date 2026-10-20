@@ -58,6 +58,8 @@ type Handlers struct {
 	MCPOAuth *handler.MCPOAuthHandler
 	// MCPSettings is the organization MCP policy (RFC-062 §8).
 	MCPSettings *handler.MCPSettingsHandler
+	// AISettings is the organization's AI settings (consent, source, own provider).
+	AISettings *handler.AISettingsHandler
 	// MCPConnections is the connected applications (RFC-062 §12), tenant
 	// and platform console; nil without the authorization server.
 	MCPConnections *handler.MCPConnectionsHandler
@@ -676,7 +678,7 @@ func Register(
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
-	registerAISettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerAISettingsRoutes(router, h.AISettings, authMiddleware, userSync)
 	registerEmergingThreatRoutes(router, h.EmergingThreat, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
