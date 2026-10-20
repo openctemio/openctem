@@ -158,6 +158,10 @@ func (s *Service) validate(ctx context.Context, tenantID, findingID shared.ID, i
 			return fail("assertion", "ASSERTION", "an http_assertion check takes an assertion only")
 		}
 		if issues := in.Assertion.Validate(); len(issues) > 0 {
+			// Fields are named from the request body ("assertion.path").
+			for i := range issues {
+				issues[i].Field = "assertion." + issues[i].Field
+			}
 			v.Issues = issues
 			return v, nil
 		}
