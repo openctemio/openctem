@@ -237,8 +237,8 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter) (string, []any)
 		conds = append(conds, "(t.title ILIKE "+p+" OR a.title ILIKE "+p+")")
 	}
 	if f.Scope != nil {
-		cond, scopeArgs := dataScopeCondAt("sf.asset_id", f.Scope, len(args)+1)
-		args = append(args, scopeArgs...)
+		cond, args2 := taskViewScopeCond("sf.asset_id", "sf.id", f.Scope, args)
+		args = args2
 		conds = append(conds, `EXISTS (SELECT 1 FROM remediation_task_members sm
 			JOIN findings sf ON sf.id = sm.finding_id AND sf.tenant_id = sm.tenant_id
 			WHERE sm.tenant_id = t.tenant_id AND sm.task_id = t.id AND sm.left_at IS NULL AND `+cond+`)`)
@@ -749,7 +749,7 @@ type rowsQuerier interface {
 
 func memberCounts(ctx context.Context, q rowsQuerier, tenantID shared.ID, taskIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]remediation.TaskCounts, error) {
 	args := []any{tenantID.String(), pq.Array(rtIDStrings(taskIDs)), closedStatusArray(), fixAppliedStatuses}
-	cond, args := dataScopeCond("f.asset_id", scope, args)
+	cond, args := taskViewScopeCond("f.asset_id", "f.id", scope, args)
 	rows, err := q.QueryContext(ctx, memberCountsSQL(cond), args...)
 	if err != nil {
 		return nil, fmt.Errorf("count task members: %w", err)
@@ -974,7 +974,7 @@ func (r *RemediationTaskRepository) ListMembers(ctx context.Context, tenantID, t
 		args = append(args, f.Status)
 		conds = append(conds, fmt.Sprintf("f.status = $%d", len(args)))
 	}
-	cond, args := dataScopeCond("f.asset_id", f.Scope, args)
+	cond, args := taskViewScopeCond("f.asset_id", "f.id", f.Scope, args)
 	conds = append(conds, cond)
 	from := ` FROM remediation_task_members tm
 		JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
