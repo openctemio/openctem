@@ -252,3 +252,64 @@ func TestCommandLease_NoCompletionAfterRequeue(t *testing.T) {
 		t.Fatalf("a completed command was re-queued: %v", err)
 	}
 }
+
+// A lease that expires puts an unpinned command back for every eligible
+// sensor, and a command addressed to one sensor on purpose back for that
+// sensor only: sensor_id doubles as the holder, so the pin is recorded at
+// the claim.
+func TestCommandLease_RequeueKeepsAddressedPin(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, sqlDB)()
+	db := &DB{DB: sqlDB}
+	cmds := NewCommandRepository(db)
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	a := seedZoneSensor(ctx, t, sqlDB, &tenant, "a", zoneSensorOpts{tools: []string{"nuclei"}})
+	b := seedZoneSensor(ctx, t, sqlDB, &tenant, "b", zoneSensorOpts{tools: []string{"nuclei"}})
+
+	unpinned := newLeaseTestCommand(ctx, t, cmds, tenant)
+	raw, _ := json.Marshal(map[string]any{"scanner": "nuclei", "target": uniqueTestHost()})
+	addr, err := command.NewCommand(tenant, command.CommandTypeScan, command.CommandPriorityNormal, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr.SetSensorID(a)
+	if err := cmds.Create(ctx, addr); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []shared.ID{unpinned, addr.ID} {
+		if ok, err := cmds.ClaimForSensor(ctx, tenant, id, a.String()); err != nil || !ok {
+			t.Fatalf("claim %s: %v %v", id, ok, err)
+		}
+		expireLease(ctx, t, sqlDB, id)
+	}
+	if _, err := cmds.RequeueExpiredLeases(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := cmds.GetByTenantAndID(ctx, tenant, unpinned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != command.CommandStatusPending || got.SensorID != nil {
+		t.Fatalf("unpinned command: status %s sensor %v", got.Status, got.SensorID)
+	}
+	got, err = cmds.GetByTenantAndID(ctx, tenant, addr.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != command.CommandStatusPending || got.SensorID == nil || *got.SensorID != a {
+		t.Fatalf("addressed command: status %s sensor %v", got.Status, got.SensorID)
+	}
+
+	// Another sensor claims the unpinned command, never the addressed one.
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, addr.ID, b.String()); err != nil || ok {
+		t.Fatalf("another sensor claimed an addressed command: %v %v", ok, err)
+	}
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, unpinned, b.String()); err != nil || !ok {
+		t.Fatalf("unpinned command not claimable by another sensor: %v %v", ok, err)
+	}
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, addr.ID, a.String()); err != nil || !ok {
+		t.Fatalf("addressed command not claimable by its sensor: %v %v", ok, err)
+	}
+}
