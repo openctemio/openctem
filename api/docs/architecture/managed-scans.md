@@ -38,3 +38,29 @@ table rewrite). The backfill marks only **ownerless** rows (`created_by IS
 NULL`): scans tagged `auto-coverage` with the coverage name, and scans tagged
 `auto-enrichment`. A scan a person created or took over is never marked, even
 when it carries the platform's name or tag.
+
+## Read-only through the scan API
+
+A managed scan is changed only through the policy that owns it. These calls
+are refused with `409 SCAN_MANAGED_BY_POLICY` and change nothing:
+
+| Call | Refused |
+|---|---|
+| `PUT /scans/{id}` (any field, schedule included) | yes |
+| `DELETE /scans/{id}`, `POST /scans/bulk/delete` | yes |
+| `POST /scans/{id}/pause`, `/activate`, `/disable` and the bulk forms | yes |
+| `POST /scans/{id}/take-ownership` | yes |
+| `POST /scans/{id}/save` (promote to a configuration) | yes |
+| `POST /scans/{id}/trigger` ("Run now"), an approved or emergency run of a member, an automation's `trigger_scan` step | yes |
+| `POST /scans/{id}/clone` | allowed: the copy is an ordinary scan owned by the caller, without `managed_by` and without the platform's marker tag |
+
+The policy's own runs (the coverage planner, the retry of a failed run) are
+not affected. A managed scan has no owner: `owner_state` is `managed` and
+`managed_by` names the policy, so a client shows it as a platform scan, not as
+an orphaned one. `GET /scans/{id}` and the run history stay readable with
+`scans:read`.
+
+Threat model: before this, any member with `scans:write` could edit, pause,
+schedule or delete a coverage scan, or (administrators) take it over so that
+every later coverage run acted as them. Cross-tenant ids resolve to 404 as
+for any scan.

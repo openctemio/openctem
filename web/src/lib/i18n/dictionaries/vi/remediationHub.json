@@ -336,5 +336,14 @@
   "remediationHub.panel.joinsTask": "Thêm {n, plural, other {# phát hiện}} vào công việc hiện có của người phụ trách cho bản sửa này.",
   "remediationHub.panel.createsTasks": "{n, plural, one {Tạo # công việc:} other {Tạo # công việc, mỗi người phụ trách một công việc:}}",
   "remediationHub.toast.skipped": "Đã bỏ qua {n, plural, other {# phát hiện}} thuộc công việc khác.",
-  "remediationHub.toast.movedFrom": "Đã chuyển {n, plural, other {# phát hiện}} từ công việc khác."
+  "remediationHub.toast.movedFrom": "Đã chuyển {n, plural, other {# phát hiện}} từ công việc khác.",
+  "remediationHub.drawer.nav": "Các phát hiện của tác vụ này",
+  "remediationHub.drawer.prev": "Phát hiện trước",
+  "remediationHub.drawer.next": "Phát hiện tiếp theo",
+  "remediationHub.drawer.position": "Phát hiện {index} / {total}",
+  "remediationHub.detail.autoNext": "Chuyển sang phát hiện mở tiếp theo sau mỗi thao tác",
+  "remediationHub.detail.openFinding": "Mở {title}",
+  "remediationHub.crumb.label": "Bạn đến từ đâu",
+  "remediationHub.crumb.tasks": "Tác vụ khắc phục",
+  "remediationHub.crumb.finding": "Phát hiện"
 }
