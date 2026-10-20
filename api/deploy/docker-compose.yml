@@ -234,7 +234,7 @@ services:
   # platform console's identity tables (administrators, console sessions) are
   # written by that role alone, and the API's DB_USER only reads admin_users.
   db-roles: &db-roles
-    image: postgres:${POSTGRES_VERSION:-17}
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -589,7 +589,7 @@ services:
   # it). Using managed Postgres/Redis instead: set DB_HOST/REDIS_HOST (and
   # REDIS_TLS_CA_FILE if their CA is not public) and drop these services.
   datastore-tls:
-    image: postgres:${POSTGRES_VERSION:-17} # only for its openssl
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17} # only for its openssl
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -626,7 +626,7 @@ services:
     logging: *default-logging
 
   postgres:
-    image: postgres:${POSTGRES_VERSION:-17}
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17}
     command:
       - postgres
       - -c
@@ -690,7 +690,7 @@ services:
     logging: *default-logging
 
   redis:
-    image: redis:${REDIS_VERSION:-7-alpine}
+    image: ${REDIS_IMAGE:-redis}:${REDIS_VERSION:-7-alpine}
     command:
       - sh
       - -c
