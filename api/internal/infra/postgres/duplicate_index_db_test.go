@@ -49,7 +49,7 @@ func TestDropDuplicateUniqueIndexesKeepsForeignKeys_DB(t *testing.T) {
 	db := testdb.PrivateDatabase(t, "dup_unique", dir)
 	var gone int
 	if err := db.QueryRow(`SELECT count(*) FROM pg_class WHERE relname IN
-		('ux_findings_id_tenant','uq_groups_tenant_id_id','uq_remediation_campaigns_tenant_id_id',
+		('uq_findings_tenant_id_id','uq_groups_tenant_id_id','uq_remediation_campaigns_tenant_id_id',
 		 'idx_findings_tenant_id_pk','idx_integrations_tenant_id_pk','idx_asset_change_events_tenant')`).Scan(&gone); err != nil {
 		t.Fatal(err)
 	}
