@@ -43,6 +43,7 @@ func callerTransitionPermissions(r *http.Request) finding.TransitionPermissions 
 		FixApply: has(permission.FindingsFixApply),
 		Triage:   has(permission.FindingsTriage),
 		Write:    has(permission.FindingsWrite),
+		Approve:  has(permission.FindingsApprove),
 	}
 }
 

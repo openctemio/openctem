@@ -2264,38 +2264,6 @@ func (r *AssetRepository) countedTags(ctx context.Context, tenantID shared.ID, a
 	return tags, rows.Err()
 }
 
-// UpdateFindingCounts updates finding counts for multiple assets in batch.
-// This recalculates the finding_count from the findings table.
-func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {
-	if len(assetIDs) == 0 {
-		return nil
-	}
-
-	// Convert IDs to strings for the query
-	idStrings := make([]string, len(assetIDs))
-	for i, id := range assetIDs {
-		idStrings[i] = id.String()
-	}
-
-	// Update finding_count using a subquery
-	// Note: finding_count is a computed field in our SELECT, but we might want to
-	// cache it for performance. This query updates a physical column if it exists.
-	// If finding_count is always computed via subquery (current implementation),
-	// this is a no-op but we keep it for future optimization.
-	query := `
-		UPDATE assets a
-		SET updated_at = NOW()
-		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2)
-	`
-
-	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(idStrings))
-	if err != nil {
-		return fmt.Errorf("failed to update finding counts: %w", err)
-	}
-
-	return nil
-}
-
 // BatchUpdateRiskScores stores the risk_score of several assets of one tenant
 // in a single query and stamps risk_scored_at. A row whose score did not
 // change and that was scored before is left alone, so a periodic rescore does

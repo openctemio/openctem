@@ -932,14 +932,6 @@ func (p *AssetProcessor) processBatch(
 	return assetMap, nil
 }
 
-// UpdateFindingCounts updates finding counts for processed assets.
-func (p *AssetProcessor) UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {
-	if len(assetIDs) == 0 {
-		return nil
-	}
-	return p.repo.UpdateFindingCounts(ctx, tenantID, assetIDs)
-}
-
 // ensureRepositoryExtension creates or updates the repository extension for a repository asset.
 // It derives the web_url from the asset name (e.g., github.com/org/repo -> https://github.com/org/repo).
 func (p *AssetProcessor) ensureRepositoryExtension(ctx context.Context, domainAsset *asset.Asset, assetName string) error {
