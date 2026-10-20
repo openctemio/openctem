@@ -22,7 +22,11 @@ import type { MarkFixedResult, RemediationTask } from '../api/types'
 import { useOwnerNames } from '../api/use-owner-names'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
-import { requestOwnerAccess, useOwnerCandidates, type OwnerCandidate } from '../api/use-owner-access'
+import {
+  requestOwnerAccess,
+  useOwnerCandidates,
+  type OwnerCandidate,
+} from '../api/use-owner-access'
 import { OwnerCombobox, gapOf, type OwnerValue } from './owner-combobox'
 
 export function MarkFixedDialog({

@@ -90,7 +90,9 @@ describe('OwnerCombobox access explanation', () => {
         onConsentChange={onConsent}
       />
     )
-    expect(screen.getByTestId('owner-consent')).toHaveTextContent('Sam will be able to see these 3 findings')
+    expect(screen.getByTestId('owner-consent')).toHaveTextContent(
+      'Sam will be able to see these 3 findings'
+    )
     await userEvent.setup().click(screen.getByRole('checkbox'))
     expect(onConsent).toHaveBeenCalledWith(true)
   })
