@@ -24,6 +24,10 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   the projects the organization configured for ticketing (default project,
   routing rules, mapping profiles); the issue's current project is checked
   after the tracker resolves the key, so a moved issue cannot slip through.
+  Linking needs `findings:fix_apply` in addition to `findings:write`: moving
+  a linked issue to Done is a fix claim, which a member without
+  `findings:fix_apply` could not make directly (unlinking needs
+  `findings:write` only).
 - **Task issues** (one issue per remediation task): `POST /api/v1/remediation/tasks/{task_id}/ticket-links`
   creates the task's issue (title, fix, finding count, deadline, link back; no
   finding details) in a configured project; the task ticket controller then
@@ -170,16 +174,59 @@ action, so it is a durable job (`durable_jobs`, see
 with retry/backoff. A status change can no longer lose its push to a Redis outage,
 and a Jira failure never fails the originating status change.
 
+## Outbound gate
+
+Every path that sends finding or task content to a tracker asks one gate first,
+`ticketing.EgressGate` (`internal/app/ticketing/egress.go`), for Jira and GitHub
+alike:
+
+| Route | Callers | Pentest findings |
+|---|---|---|
+| finding (generic) | `POST /findings/{id}/create-ticket` (Jira and GitHub) | refused |
+| automation | workflow `create_ticket` and `update_ticket` actions | refused |
+| task | `POST /remediation/tasks/{task_id}/ticket-links` (every member of the task counts) | refused |
+| campaign | `POST /pentest/campaigns/{id}/jira/tickets` (campaign lead only) | allowed within the TLP limit |
+| status sync | finding status pushes (Jira, GitHub), comments on a linked issue, task issue moves | allowed within the TLP limit |
+
+- A finding is pentest content when its source is `pentest` or it names a
+  campaign. Its campaign must be readable in the same tenant; otherwise it is
+  refused (`pentest_without_campaign`).
+- TLP: a campaign at TLP:RED is never sent (`tlp_red`), whatever the limit. A
+  campaign above the organization's tracker limit is refused
+  (`tlp_above_tracker_limit`). The limit is the pentest setting
+  `ticket_max_tlp` (`PATCH /api/v1/tenants/{tenant}/settings/pentest`, owner
+  or admin with `settings:write`, audited): `clear`, `green`, `amber`
+  (default) or `amber_strict`; `red` is refused. A stored value the gate
+  cannot read fails closed (`clear`), and a read error refuses the request.
+- A refused create answers 403 with code `TICKET_EGRESS_REFUSED` and
+  `details.reason` (`pentest_campaign_route_only`, `pentest_without_campaign`,
+  `tlp_red`, `tlp_above_tracker_limit`). A refused background push is skipped
+  and logged (a task issue records "not sent: refused by the outbound gate" as
+  its sync error); a read error is retried.
+- Content (`ticketing.FindingContent`), applied by the Jira description, the
+  GitHub body and mapping profile values:
+  - secret findings: title (redacted) and location only. No preview (masked
+    value), snippet, fingerprint, commit context or description;
+  - findings whose data exposure risk is above `none`: severity, status and
+    location only. The title becomes "Data exposure finding"; no description
+    or fix guidance (they may quote the exposed records);
+  - every other finding: title, description and fix guidance, redacted and
+    encoded as below.
+- Data scope comes first: by-id routes are behind the data scope guard
+  (out-of-scope and other-tenant findings answer 404), and task issues need
+  every member in the caller's scope (`TaskForChange`).
+
 ## Safety properties (shipped)
 
 - **Idempotent create** (#134): a finding already ticketed in the target project
   (its `WorkItemURIs` contains `/browse/<PROJECT>-`) is not re-created.
-- **Secret redaction** (#135): secret-leak findings never copy the raw value into
-  a ticket; descriptions are run through redaction patterns as defense-in-depth.
+- **Secret redaction** (#135): secret-leak findings never copy the raw value, the
+  masked preview, the snippet or the fingerprint into a ticket (outbound gate);
+  descriptions are run through redaction patterns as defense-in-depth.
 - **Output encoding** (RFC-040 §5.4): finding text is attacker-influenced (a
   scanned page title, a file path, a sensor report) and the description is Jira
   wiki markup (REST API v2). Every value is secret-redacted first, then encoded
-  by `pkg/safetext`. One-line values (title, location, masked value) are
+  by `pkg/safetext`. One-line values (title, location) are
   backslash-escaped (`JiraWikiInline`), and the scanner description goes into
   a `{noformat}` block it cannot close (`JiraWikiBlock`). URLs are defanged
   (`https[:]//…`), and control, bidi and zero-width characters are removed
