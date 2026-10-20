@@ -272,8 +272,11 @@ escalation that raises severity queues its asset through the severity
 trigger. Closed findings are never queued.
 
 The thresholds only decide what is **recomputed**. After the queueing, the
-controller writes the catalog EPSS score and percentile onto every open
-finding whose CVE's values changed (`ScoringRepository.RefreshFindingEPSS`):
+controller writes the catalog EPSS score onto every open finding whose
+CVE's score changed (`ScoringRepository.RefreshFindingEPSS`; the percentile
+is not compared or copied, because it moves for almost every CVE on every
+feed and would rewrite nearly every open finding daily; a finding's stored
+percentile is the rank in force when its score last moved or it was scored):
 a plain column update, tenant by tenant, in batches of 2000, rows held by
 another writer skipped until the next run. Readers of the stored score that
 use their own threshold, such as the CI gate's `epss_threshold`, therefore
