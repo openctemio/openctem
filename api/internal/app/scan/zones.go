@@ -373,7 +373,7 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 			s.cancelCreated(ctx, created)
 			return err
 		}
-		cmd, err := command.NewCommand(sc.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
+		cmd, err := command.NewCommand(sc.TenantID, command.CommandTypeScan, CommandPriorityOf(run), payload)
 		if err != nil {
 			s.cancelCreated(ctx, created)
 			return err

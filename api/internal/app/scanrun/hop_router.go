@@ -403,10 +403,11 @@ func (s *Service) gateCandidates(ctx context.Context, run *scanrun.Run, st stage
 	byKey := make(map[string]hopCandidate, len(cands.gate))
 	in := scanapp.DispatchTargetsInput{
 		TenantID: run.TenantID, ActScope: true, FallbackUser: runActor(run),
-		PassiveOnly: st.Tier.Passive(),
-		Tier:        stageTier(st),
-		Targets:     make([]string, 0, len(cands.gate)),
-		Assets:      make(map[string]scanapp.DispatchAsset, len(cands.gate)),
+		SystemPolicy: scanapp.RunSystemPolicy(run),
+		PassiveOnly:  st.Tier.Passive(),
+		Tier:         stageTier(st),
+		Targets:      make([]string, 0, len(cands.gate)),
+		Assets:       make(map[string]scanapp.DispatchAsset, len(cands.gate)),
 	}
 	for _, c := range cands.gate {
 		byKey[c.key] = c
@@ -472,6 +473,10 @@ func sameZone(runZone *shared.ID, z *scanzone.Zone) bool {
 // on the run (the person who triggered it, else the scan's owner), else the
 // run's triggered_by user, else nobody (a system run).
 func runActor(run *scanrun.Run) *shared.ID {
+	// A platform policy's run acts as its policy, never as a person.
+	if scanapp.RunSystemPolicy(run) != "" {
+		return nil
+	}
 	if v, ok := run.Context[scanapp.RunContextKeyActor].(string); ok {
 		if id, err := shared.IDFromString(v); err == nil && !id.IsZero() {
 			return &id

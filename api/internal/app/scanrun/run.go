@@ -612,6 +612,12 @@ func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.Disp
 		g.Tier = int(resolved.Stage.Tier)
 		g.Passive = resolved.Stage.Tier.Passive()
 	}
+	// A platform policy's run acts with its explicit system authority and
+	// has no actor.
+	if policy := scanapp.RunSystemPolicy(run); policy != "" {
+		g.SystemPolicy = policy
+		return g
+	}
 	if actor := runActor(run); actor != nil {
 		g.Actor = actor.String()
 	}
@@ -712,7 +718,7 @@ func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanw
 	if err != nil {
 		return nil, err
 	}
-	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payloadBytes)
+	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, scanapp.CommandPriorityOf(run), payloadBytes)
 	if err != nil {
 		return nil, err
 	}

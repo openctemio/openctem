@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/ctis/addrscope"
@@ -20,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -67,6 +69,13 @@ type DispatchTargetsInput struct {
 	// a person starts; system paths (coverage, validation) leave it off.
 	ActScope     bool
 	FallbackUser *shared.ID
+	// SystemPolicy is the platform policy dispatching the targets (see
+	// SystemPolicies): the explicit system authority. No member's act scope
+	// applies, the tenant's scope entries (and the tier) still do, and every
+	// other gate runs as for anyone. ActScope without a user in the context,
+	// a FallbackUser or a SystemPolicy is refused: a missing actor never
+	// means unrestricted. An unknown policy is refused.
+	SystemPolicy string
 	// PassiveOnly gates targets for a passive (T0) stage of a chain
 	// (research/27 §5.7): the ownership gate refuses only rejected names
 	// (a rejection tombstone, a rejected record, or a name under a rejected
@@ -635,17 +644,32 @@ func (s *Service) refuseOverTier(ctx context.Context, in DispatchTargetsInput, k
 	return allowed, nil
 }
 
+// SystemPolicies are the platform policies that may dispatch work as the
+// system (DispatchTargetsInput.SystemPolicy, command.DispatchGate): the
+// managed_by values of the scans they carry their runs on.
+var SystemPolicies = []string{string(scan.ManagedByCoverage), string(scan.ManagedByEnrichment)}
+
+// ValidSystemPolicy reports whether p names a platform policy.
+func ValidSystemPolicy(p string) bool { return slices.Contains(SystemPolicies, p) }
+
 // refuseOutOfActScopeTargets moves every kept target the actor may not scan
 // to Refused, when the input asks for the act-scope check. The caller scope
 // seam of the gate: one call per dispatch, before any command exists.
 func (s *Service) refuseOutOfActScopeTargets(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) ([]string, error) {
-	if !in.ActScope || len(kept) == 0 {
+	system := in.SystemPolicy != ""
+	if system && !ValidSystemPolicy(in.SystemPolicy) {
+		return nil, fmt.Errorf("%w: unknown system policy %q", shared.ErrValidation, in.SystemPolicy)
+	}
+	if system && in.FallbackUser != nil {
+		return nil, fmt.Errorf("%w: a system policy dispatch names no user", shared.ErrValidation)
+	}
+	if (!in.ActScope && !system) || len(kept) == 0 {
 		return kept, nil
 	}
 	if s.actScope == nil {
 		return nil, ErrActScopeUnavailable
 	}
-	check := actscope.Input{TenantID: in.TenantID, FallbackUser: in.FallbackUser}
+	check := actscope.Input{TenantID: in.TenantID, FallbackUser: in.FallbackUser, System: system, RequireActor: true}
 	for _, t := range kept {
 		a, ok := assetOf(in.Assets, t)
 		if !ok || len(a.IDs) == 0 || !in.ActScopeAssetsByID {

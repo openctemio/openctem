@@ -44,6 +44,12 @@ func scanDispatchGate(sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
 		// The claim refuses the job above the scan's intensity (RFC-071).
 		Intensity: string(sc.EffectiveIntensity()),
 	}
+	// A managed scan's runs act with their policy's system authority and
+	// have no actor.
+	if policy := systemPolicyOf(sc); policy != "" {
+		g.SystemPolicy = policy
+		return g
+	}
 	recorded, _ := run.Context[RunContextKeyActor].(string)
 	actor := userIDPtr(recorded)
 	if actor == nil {

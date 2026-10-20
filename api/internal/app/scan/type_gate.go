@@ -48,6 +48,13 @@ const RunContextKeyTargetTypes = "target_types"
 // bookkeeping: never sent to a sensor.
 const RunContextKeyActor = "actor_user_id"
 
+// RunContextKeySystemPolicy is the run-context key naming the platform
+// policy a run belongs to (the managed_by of its scan): the run then acts
+// with that policy's explicit system authority and has no actor. Set by the
+// scan trigger from the scan alone, never from a caller's context. Platform
+// bookkeeping: never sent to a sensor.
+const RunContextKeySystemPolicy = "system_policy"
+
 // Error codes of the gate.
 const (
 	codeNoCompatibleTargets  = "NO_COMPATIBLE_TARGETS"
@@ -264,6 +271,7 @@ func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 	out := maps.Clone(runContext)
 	delete(out, RunContextKeyTargetTypes)
 	delete(out, RunContextKeyActor)
+	delete(out, RunContextKeySystemPolicy)
 	delete(out, RunContextKeyWindowWaits)
 	delete(out, RunContextKeyTargetExpansion)
 	delete(out, RunContextKeySelectorRoots)
