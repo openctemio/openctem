@@ -49,6 +49,8 @@ func TestBulkStatus_RowThatChangedSinceReadIsNotOverwritten(t *testing.T) {
 		FindingIDs: []string{ok.ID().String(), raced.ID().String()},
 		Status:     vulnerability.FindingStatusConfirmed.String(),
 		ActorID:    shared.NewID().String(),
+		// A person's bulk move carries findings:status (#2633).
+		HasStatusPermission: true,
 	})
 	if err != nil {
 		t.Fatal(err)
