@@ -12,6 +12,7 @@ set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 p=bkp-drill
 img=$p-pg:test
+BASE_IMAGE="${DRILL_POSTGRES_IMAGE:-postgres:17}" # also postgres:17-alpine
 S3_IMG="${DRILL_S3_IMAGE:-bitnamilegacy/minio:latest}"
 SFTP_IMG="${DRILL_SFTP_IMAGE:-atmoz/sftp:alpine}"
 target="${DRILL_TARGET:-s3}" # s3 (MinIO over TLS) or sftp
@@ -48,7 +49,8 @@ chmod 644 "$work/certs/private.key"
 cp "$work/certs/public.crt" "$work/sec/s3_ca.pem"
 
 log "build image"
-docker build -q -t $img "$here" > /dev/null
+docker build -q --build-arg POSTGRES_IMAGE="$BASE_IMAGE" -t $img "$here" > /dev/null
+pguid="$(docker run --rm --entrypoint id $img -u postgres)"
 docker network create $net > /dev/null
 docker volume create $p-data > /dev/null
 docker volume create $p-sock > /dev/null
@@ -81,13 +83,13 @@ else
 fi
 env_args+=(-e DB_SUPERUSER=drill -e BACKUP_ARCHIVE_TIMEOUT=30)
 mounts=(-v $p-data:/var/lib/postgresql/data -v $p-sock:/var/run/postgresql -v "$work/sec":/run/backup-secrets:ro)
-tmpfs=(--tmpfs /etc/pgbackrest:mode=0750 --tmpfs /var/spool/pgbackrest:mode=0750,uid=999,gid=999)
+tmpfs=(--tmpfs /etc/pgbackrest:mode=0750 --tmpfs /var/spool/pgbackrest:mode=0750,uid=$pguid,gid=$pguid)
 
 log "start PostgreSQL with archiving, and the backup service"
 docker run -d --name $p-pg --network $net --entrypoint pg-entrypoint.sh "${env_args[@]}" -e POSTGRES_USER=drill \
 	-e POSTGRES_PASSWORD="$pgpass" -e POSTGRES_DB=drill "${mounts[@]}" "${tmpfs[@]}" $img postgres > /dev/null
 docker run -d --name $p-bk --network $net --entrypoint backup-entrypoint.sh "${env_args[@]}" \
-	"${mounts[@]}" "${tmpfs[@]}" --tmpfs /var/log/pgbackrest:mode=0750,uid=999,gid=999 $img scheduler > /dev/null
+	"${mounts[@]}" "${tmpfs[@]}" --tmpfs /var/log/pgbackrest:mode=0750,uid=$pguid,gid=$pguid $img scheduler > /dev/null
 psql() { docker exec -i $p-pg psql -qAtX -U drill -d drill "$@"; }
 pgb() { docker exec $p-bk gosu postgres pgbackrest --stanza=openctem "$@"; }
 t0=$(now)
@@ -122,7 +124,7 @@ docker stop $p-bk $p-pg > /dev/null
 t1=$(now)
 docker run --name $p-restore --rm --network $net --entrypoint backup-entrypoint.sh "${env_args[@]}" \
 	-v $p-data2:/var/lib/postgresql/data -v "$work/sec":/run/backup-secrets:ro "${tmpfs[@]}" \
-	--tmpfs /var/log/pgbackrest:mode=0750,uid=999,gid=999 $img restore --type=time "--target=$marker" --target-action=promote > "$work/restore.log" 2>&1
+	--tmpfs /var/log/pgbackrest:mode=0750,uid=$pguid,gid=$pguid $img restore --type=time "--target=$marker" --target-action=promote > "$work/restore.log" 2>&1
 t2=$(now)
 log "restore (download + unpack) took $(printf '%.1f' "$(echo "$t2 - $t1" | bc)") s"
 # The verification container must not archive into the repository.

@@ -60,6 +60,13 @@ It is **off by default**: without the overlay the stack is unchanged. The tool i
    Enabling archiving restarts PostgreSQL once (a brief outage: do it in a maintenance window).
    The `postgres` image is rebuilt from the same PostgreSQL release plus pgBackRest.
 
+   If your data directory was created by the Alpine image (`postgres:17-alpine`; the stack in
+   this directory uses the Debian image), build on that one instead:
+   `BACKUP_POSTGRES_IMAGE=postgres:17-alpine`, `BACKUP_IMAGE_TAG=17-alpine`, `BACKUP_PG_UID=70`.
+   Never switch an existing data directory between the two flavours: the C library differs, and
+   with it text sort order, which can corrupt indexes. `DRILL_POSTGRES_IMAGE=postgres:17-alpine
+   deploy/backup/drill.sh` rehearses the Alpine build.
+
 4. Watch the first run: `docker compose logs -f backup`. It creates the repository, checks
    archiving end to end, and takes the first full backup. `docker compose exec backup
    gosu postgres pgbackrest --stanza=openctem info` lists the backups.
@@ -79,6 +86,7 @@ Settings (`.env`; defaults in parentheses):
 | `BACKUP_ARCHIVE_TIMEOUT` (300) | seconds after which an idle WAL segment is closed (RPO) |
 | `BACKUP_PROCESS_MAX` (2) | parallel upload/compression workers |
 | `BACKUP_SECRETS_DIR` (`./backup-secrets`) | directory with the secret files |
+| `BACKUP_POSTGRES_IMAGE`, `BACKUP_IMAGE_TAG`, `BACKUP_PG_UID` | base image, local image tag and the postgres user id (999 Debian, 70 Alpine) |
 | `BACKUP_STANZA` (openctem) | repository name; one stack per repository path |
 
 ## Target: AWS S3
