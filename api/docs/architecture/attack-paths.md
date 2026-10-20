@@ -40,7 +40,22 @@ caller's data scope.
 
 ## Data scope
 
-Planned in this series; see the section below once shipped.
+Both reads are narrowed to the caller's data scope after the whole-graph
+computation, and the scope is applied before any row cap:
+
+- Attack-path scores: the ranked list of every asset is narrowed to the caller's
+  assets, then the top 50 are taken. A member whose assets rank below 50
+  tenant-wide still sees them. `reachable_from` keeps counting every entry point,
+  in or out of scope (a count, no identity).
+- Exposure chains: a chain is shown when its target is in scope; chains are then
+  ranked and capped at 100. A step on the way that is out of scope (including an
+  out-of-scope entry point) is returned as `{"hidden": true}` with no id, name,
+  type or exposure, so an owner learns that their asset is reachable without
+  learning what lies in between. The hop count stays visible. The summary
+  counts the chains the caller may see; its entry-point figure is a count of
+  distinct entry points behind those chains.
+- Callers with no restriction (owners, administrators, full-data roles) get the
+  unfiltered result. The MCP exposure-chains tool follows the same rules.
 
 ## Linear computation
 
