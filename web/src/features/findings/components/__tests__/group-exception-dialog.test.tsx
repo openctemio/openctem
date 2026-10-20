@@ -71,6 +71,7 @@ async function chooseReason(user: ReturnType<typeof userEvent.setup>, label: str
 function renderDialog(extra: Partial<React.ComponentProps<typeof GroupExceptionDialog>> = {}) {
   const props = {
     taskId: 'task-1',
+    taskVersion: 7,
     open: true,
     onOpenChange: vi.fn(),
     onCreated: vi.fn(),
@@ -149,6 +150,7 @@ describe('GroupExceptionDialog', () => {
 
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(1))
     const body = api.request.mock.calls[0][1]
+    expect(body.version).toBe(7)
     expect(body.justification).toBe('No maintenance window until December')
     expect(body.closure_reason).toBe('risk_accepted')
     expect(toast.success).toHaveBeenCalledWith('Exception requested', expect.anything())

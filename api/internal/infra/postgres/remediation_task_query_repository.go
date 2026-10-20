@@ -90,7 +90,7 @@ func (r *RemediationTaskRepository) GetTaskQuery(ctx context.Context, tenantID, 
 // only; a reason is stored with suspended alone). A suspension applies only
 // to an active query, so two concurrent passes (several API replicas)
 // suspend it once: the second answers ErrNotAutoMode.
-func (r *RemediationTaskRepository) SetAutoState(ctx context.Context, tenantID, taskID shared.ID, state remediation.AutoState, reason *remediation.AutoReason) error {
+func (r *RemediationTaskRepository) SetAutoState(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int, state remediation.AutoState, reason *remediation.AutoReason) error {
 	var rs any
 	if state == remediation.AutoStateSuspended {
 		if reason == nil {
@@ -98,7 +98,22 @@ func (r *RemediationTaskRepository) SetAutoState(ctx context.Context, tenantID, 
 		}
 		rs = string(*reason)
 	}
-	res, err := r.db.ExecContext(ctx, `
+	var exec interface {
+		ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	} = r.db
+	var tx *sql.Tx
+	if expectedVersion > 0 {
+		var err error
+		if tx, err = r.db.BeginTx(ctx, nil); err != nil {
+			return fmt.Errorf("begin set auto state: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := lockTaskInTx(ctx, tx, tenantID, taskID, expectedVersion); err != nil {
+			return err
+		}
+		exec = tx
+	}
+	res, err := exec.ExecContext(ctx, `
 		UPDATE remediation_task_queries SET auto_state = $3, auto_reason = $4, updated_at = now()
 		WHERE tenant_id = $1 AND task_id = $2 AND mode = 'auto'
 		  AND ($3 <> 'suspended' OR auto_state = 'active')`,
@@ -108,6 +123,9 @@ func (r *RemediationTaskRepository) SetAutoState(ctx context.Context, tenantID, 
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return remediation.ErrNotAutoMode
+	}
+	if tx != nil {
+		return tx.Commit()
 	}
 	return nil
 }
@@ -139,7 +157,7 @@ func (r *RemediationTaskRepository) ClaimQueryFindings(ctx context.Context, c re
 		return nil, fmt.Errorf("begin query claim: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	t, err := lockTaskInTx(ctx, tx, c.TenantID, c.TaskID, 0)
+	t, err := lockTaskInTx(ctx, tx, c.TenantID, c.TaskID, c.ExpectedVersion)
 	if err != nil {
 		return nil, err
 	}
