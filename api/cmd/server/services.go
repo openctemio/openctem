@@ -1864,8 +1864,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
 	// request); resolves the tenant's GitHub integration credentials on demand.
 	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
-	s.GitHubTicket.SetLifecycles(s.FindingLifecycle)
-	s.GitHubTicket.SetActivityRecorder(s.FindingActivity)
+	// Inbound issue events take the same finding service path as Jira:
+	// transition map, data scope, pentest and approval gates, "mark fixed"
+	// with the integration as the actor, for every finding linked to the
+	// issue.
+	s.GitHubTicket.SetInboundApplier(s.Vulnerability)
+	s.GitHubTicket.SetWorkItemFindingLister(repos.Finding)
 
 	// Initialize integration & notification services
 	s.Integration = integration.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
@@ -2435,6 +2439,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.JiraSync != nil && s.FindingActions != nil && repos.Finding != nil {
 		rescanHook := jira.NewRescanHook(proofOfFix, repos.Finding, log)
 		s.JiraSync.SetPostFixAppliedHook(rescanHook.Hook)
+		// A GitHub issue closed as completed is the same fix claim.
+		if s.GitHubTicket != nil {
+			s.GitHubTicket.SetFixClaimHook(rescanHook.Hook)
+		}
 	}
 
 	// RFC-039 Phase 2: a regression (a retest or a scan seeing a finding closed

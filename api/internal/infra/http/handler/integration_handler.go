@@ -1753,9 +1753,9 @@ func jiraWebhookConfig(integrationID string, hasSecret bool, secret string) Jira
 	}
 }
 
-// jiraIntegrationID parses the {id} of a Jira webhook route with the
-// caller's tenant.
-func (h *IntegrationHandler) jiraIntegrationID(w http.ResponseWriter, r *http.Request) (tid, id shared.ID, ok bool) {
+// webhookIntegrationID parses the {id} of an inbound webhook route (Jira or
+// GitHub) with the caller's tenant.
+func (h *IntegrationHandler) webhookIntegrationID(w http.ResponseWriter, r *http.Request) (tid, id shared.ID, ok bool) {
 	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
 		apierror.BadRequest("invalid tenant id").WriteJSON(w)
@@ -1785,7 +1785,7 @@ func (h *IntegrationHandler) jiraIntegrationID(w http.ResponseWriter, r *http.Re
 // @Security     BearerAuth
 // @Router       /integrations/{id}/jira-webhook [get]
 func (h *IntegrationHandler) GetJiraWebhook(w http.ResponseWriter, r *http.Request) {
-	tid, id, ok := h.jiraIntegrationID(w, r)
+	tid, id, ok := h.webhookIntegrationID(w, r)
 	if !ok {
 		return
 	}
@@ -1815,7 +1815,7 @@ func (h *IntegrationHandler) GetJiraWebhook(w http.ResponseWriter, r *http.Reque
 // @Security     BearerAuth
 // @Router       /integrations/{id}/jira-webhook/secret/rotate [post]
 func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
-	tid, id, ok := h.jiraIntegrationID(w, r)
+	tid, id, ok := h.webhookIntegrationID(w, r)
 	if !ok {
 		return
 	}
@@ -1825,7 +1825,7 @@ func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *h
 		return
 	}
 	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, id.String(), "Jira inbound webhook", nil, nil,
-		auditdom.SeverityHigh, "Jira inbound webhook secret rotated", map[string]any{"provider": "jira"})
+		auditdom.SeverityCritical, "Jira inbound webhook secret rotated", map[string]any{"provider": "jira"})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(id.String(), true, secret))
 }
@@ -1852,7 +1852,7 @@ type SetJiraWebhookSecretRequest struct {
 // @Security     BearerAuth
 // @Router       /integrations/{id}/jira-webhook/secret [put]
 func (h *IntegrationHandler) SetJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
-	tid, id, ok := h.jiraIntegrationID(w, r)
+	tid, id, ok := h.webhookIntegrationID(w, r)
 	if !ok {
 		return
 	}
@@ -1866,68 +1866,104 @@ func (h *IntegrationHandler) SetJiraWebhookSecret(w http.ResponseWriter, r *http
 		return
 	}
 	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, id.String(), "Jira inbound webhook", nil, nil,
-		auditdom.SeverityHigh, "Jira inbound webhook secret set", map[string]any{"provider": "jira", "source": "entered"})
+		auditdom.SeverityCritical, "Jira inbound webhook secret set", map[string]any{"provider": "jira", "source": "entered"})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(id.String(), true, ""))
 }
 
-// GitHubWebhookConfigResponse describes how to configure a GitHub webhook so it
-// verifies against this tenant's secret.
+// GitHubWebhookConfigResponse tells an administrator how to configure the
+// inbound webhook of one GitHub integration. WebhookSecret is set only in
+// the response of a rotation: a secret is shown once and never returned
+// again.
 type GitHubWebhookConfigResponse struct {
-	WebhookSecret  string `json:"webhook_secret"`
-	WebhookURL     string `json:"webhook_url"`
-	ContentType    string `json:"content_type"`
-	SignatureType  string `json:"signature_type"`
-	RecommendedFor string `json:"recommended_events"`
+	WebhookURL        string `json:"webhook_url"`
+	SignatureHeader   string `json:"signature_header"`
+	ContentType       string `json:"content_type"`
+	RecommendedEvents string `json:"recommended_events"`
+	HasSecret         bool   `json:"has_secret"`
+	WebhookSecret     string `json:"webhook_secret,omitempty"`
 }
 
-func githubWebhookConfig(tenantID, secret string) GitHubWebhookConfigResponse {
+// GitHubWebhookPath is the per-integration inbound webhook path.
+func GitHubWebhookPath(integrationID string) string {
+	return "/hooks/github-integrations/" + integrationID
+}
+
+func githubWebhookConfig(integrationID string, hasSecret bool, secret string) GitHubWebhookConfigResponse {
 	return GitHubWebhookConfigResponse{
-		WebhookSecret:  secret,
-		WebhookURL:     "/api/v1/webhooks/incoming/github?tenant=" + tenantID,
-		ContentType:    "application/json",
-		SignatureType:  "X-Hub-Signature-256 (HMAC-SHA256)",
-		RecommendedFor: "push",
+		WebhookURL:        GitHubWebhookPath(integrationID),
+		SignatureHeader:   "X-Hub-Signature-256",
+		ContentType:       "application/json",
+		RecommendedEvents: "push, issues",
+		HasSecret:         hasSecret,
+		WebhookSecret:     secret,
 	}
 }
 
-// GetGitHubWebhookSecret handles GET /api/v1/integrations/github/webhook-secret.
-func (h *IntegrationHandler) GetGitHubWebhookSecret(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+// GetGitHubWebhook handles GET /api/v1/integrations/{id}/github-webhook: the
+// webhook URL and whether a secret is set (never the secret).
+// @Summary      Inbound GitHub webhook of an integration
+// @Description  The webhook URL to configure in GitHub and whether a secret is set (the secret is never returned).
+// @Tags         Integrations
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Integration ID"  format(uuid)
+// @Success      200  {object}  GitHubWebhookConfigResponse
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden"
+// @Failure      404  {object}  map[string]string  "Not found (no such GitHub integration in this organization)"
+// @Security     BearerAuth
+// @Router       /integrations/{id}/github-webhook [get]
+func (h *IntegrationHandler) GetGitHubWebhook(w http.ResponseWriter, r *http.Request) {
+	tid, id, ok := h.webhookIntegrationID(w, r)
+	if !ok {
 		return
 	}
-	secret, err := h.service.EnsureGitHubWebhookSecret(r.Context(), tid)
+	has, err := h.service.GitHubWebhookHasSecret(r.Context(), tid, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-	// The response carries the raw secret: every read is audited.
-	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRead, tenantID, "GitHub inbound webhook", nil, nil,
-		auditdom.SeverityHigh, "GitHub inbound webhook secret viewed", map[string]any{"provider": "github"})
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
+	_ = json.NewEncoder(w).Encode(githubWebhookConfig(id.String(), has, ""))
 }
 
-// RotateGitHubWebhookSecret handles POST /api/v1/integrations/github/webhook-secret/rotate.
+// RotateGitHubWebhookSecret handles POST /api/v1/integrations/{id}/github-webhook/secret/rotate:
+// a new random secret, returned in this response only. The previous secret
+// stops verifying immediately.
+// @Summary      Generate a new inbound GitHub webhook secret
+// @Description  Generates a new secret and returns it in this response only; the old one stops working at once. Requires step-up.
+// @Tags         Integrations
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Integration ID"  format(uuid)
+// @Success      200  {object}  GitHubWebhookConfigResponse
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden (permission or step-up)"
+// @Failure      404  {object}  map[string]string  "Not found (no such GitHub integration in this organization)"
+// @Security     BearerAuth
+// @Router       /integrations/{id}/github-webhook/secret/rotate [post]
 func (h *IntegrationHandler) RotateGitHubWebhookSecret(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+	tid, id, ok := h.webhookIntegrationID(w, r)
+	if !ok {
 		return
 	}
-	secret, err := h.service.RotateGitHubWebhookSecret(r.Context(), tid)
+	// A GitHub integration is an SCM connection: changing it also needs
+	// integrations:scm:write.
+	if !h.allowSCMChange(w, r, id.String(), tid.String(), permission.SCMConnectionsWrite) {
+		return
+	}
+	secret, err := h.service.RotateGitHubWebhookSecret(r.Context(), tid, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, tenantID, "GitHub inbound webhook", nil, nil,
-		auditdom.SeverityHigh, "GitHub inbound webhook secret rotated", map[string]any{"provider": "github"})
+	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, id.String(), "GitHub inbound webhook", nil, nil,
+		auditdom.SeverityCritical, "GitHub inbound webhook secret rotated", map[string]any{"provider": "github"})
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
+	_ = json.NewEncoder(w).Encode(githubWebhookConfig(id.String(), true, secret))
 }
 
 // allowSCMChange refuses a change to an SCM connection when the caller lacks

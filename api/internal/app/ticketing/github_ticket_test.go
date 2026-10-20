@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -263,48 +264,178 @@ func TestGitHubTicket_ValidationErrors(t *testing.T) {
 	}
 }
 
-func TestHandleIssueEvent_ClosedTransitionsFinding(t *testing.T) {
-	f := newTestFinding(t, vulnerability.FindingSourceSCA)
-	// Move into a state from which fix_applied is reachable: new→confirmed→in_progress.
-	if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil); err != nil {
-		t.Fatalf("to confirmed: %v", err)
-	}
-	if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil); err != nil {
-		t.Fatalf("to in_progress: %v", err)
-	}
-	fr := &fakeFindingRepo{finding: f}
-	svc := NewGitHubTicketService(fr, &fakeIntegrationRepo{}, nil, logger.NewNop())
+// fakeApplier records the shared inbound calls.
+type fakeApplier struct {
+	applied   []vulnerability.FindingStatus
+	requested []vulnerability.FindingStatus
+	tenants   []shared.ID
+	actors    []string
+	refs      []string
+	result    []shared.ID
+}
 
-	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), "https://github.com/o/r/issues/5", "closed"); err != nil {
-		t.Fatalf("HandleIssueEvent: %v", err)
+func (a *fakeApplier) ApplyTicketStatus(_ context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, actor string,
+) (*findingapp.TicketStatusOutcome, error) {
+	if integration != "github" {
+		return nil, errors.New("unexpected integration " + integration)
 	}
-	if fr.findingUpdates != 1 {
-		t.Fatalf("expected finding persisted once, got %d", fr.findingUpdates)
+	a.applied = append(a.applied, target)
+	a.tenants = append(a.tenants, tenantID)
+	a.actors = append(a.actors, actor)
+	a.refs = append(a.refs, ref)
+	return &findingapp.TicketStatusOutcome{Applied: a.result}, nil
+}
+
+func (a *fakeApplier) RequestTicketDisposition(_ context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, actor string,
+) (*findingapp.TicketRequestOutcome, error) {
+	if integration != "github" {
+		return nil, errors.New("unexpected integration " + integration)
 	}
-	if f.Status() != vulnerability.FindingStatusFixApplied {
-		t.Fatalf("closed should move finding to fix_applied, got %s", f.Status())
+	a.requested = append(a.requested, target)
+	a.tenants = append(a.tenants, tenantID)
+	a.actors = append(a.actors, actor)
+	return &findingapp.TicketRequestOutcome{Requested: ids}, nil
+}
+
+type fakeWorkItems struct {
+	ids    []shared.ID
+	tenant shared.ID
+	uri    string
+}
+
+func (w *fakeWorkItems) ListIDsByWorkItemURI(_ context.Context, tenantID shared.ID, uri string, _ int) ([]shared.ID, error) {
+	w.tenant, w.uri = tenantID, uri
+	return w.ids, nil
+}
+
+func newInboundService(t *testing.T, linked ...shared.ID) (*GitHubTicketService, *fakeApplier, *fakeWorkItems, *[]shared.ID) {
+	t.Helper()
+	fr := &fakeFindingRepo{}
+	svc := NewGitHubTicketService(fr, &fakeIntegrationRepo{}, nil, logger.NewNop())
+	ap := &fakeApplier{result: linked}
+	wi := &fakeWorkItems{ids: linked}
+	var hooked []shared.ID
+	svc.SetInboundApplier(ap)
+	svc.SetWorkItemFindingLister(wi)
+	svc.SetFixClaimHook(func(_ context.Context, _ shared.ID, id shared.ID) error {
+		hooked = append(hooked, id)
+		return nil
+	})
+	return svc, ap, wi, &hooked
+}
+
+const issueURL = "https://github.com/o/r/issues/5"
+
+// Closed as completed is a fix claim through the shared path for every
+// linked finding, and the proof of fix is requested for each claimed one.
+func TestHandleIssueEvent_CompletedIsAFixClaimWithProof(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	svc, ap, wi, hooked := newInboundService(t, a, b)
+	tenant := shared.NewID()
+	for _, reason := range []string{"completed", ""} {
+		ap.applied, *hooked = nil, nil
+		if err := svc.HandleIssueEvent(context.Background(), tenant, GitHubIssueEvent{
+			Action: "closed", IssueURL: issueURL, StateReason: reason, Sender: "octocat",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if len(ap.applied) != 1 || ap.applied[0] != vulnerability.FindingStatusFixApplied || len(ap.requested) != 0 {
+			t.Fatalf("reason %q: applied %v requested %v, want one fix claim", reason, ap.applied, ap.requested)
+		}
+		if len(*hooked) != 2 {
+			t.Fatalf("reason %q: proof of fix requested for %d findings, want 2", reason, len(*hooked))
+		}
+	}
+	if wi.tenant != tenant || wi.uri != issueURL || ap.tenants[0] != tenant {
+		t.Fatal("the lookup and the move must be scoped to the delivery's tenant")
+	}
+	if ap.actors[0] != "octocat" || ap.refs[0] != "#5" {
+		t.Fatalf("actor %q ref %q, want the sender login and #5", ap.actors[0], ap.refs[0])
 	}
 }
 
-func TestHandleIssueEvent_UnknownActionNoop(t *testing.T) {
+// Closed as not planned is never a fix claim: it opens a pending risk
+// acceptance request (an approver decides) and queues no proof of fix.
+func TestHandleIssueEvent_NotPlannedRequestsRiskAcceptance(t *testing.T) {
+	svc, ap, _, hooked := newInboundService(t, shared.NewID())
+	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), GitHubIssueEvent{
+		Action: "closed", IssueURL: issueURL, StateReason: "not_planned",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ap.applied) != 0 {
+		t.Fatalf("not_planned applied %v; it must not claim a fix", ap.applied)
+	}
+	if len(ap.requested) != 1 || ap.requested[0] != vulnerability.FindingStatusAccepted {
+		t.Fatalf("requested %v, want one risk acceptance request", ap.requested)
+	}
+	if len(*hooked) != 0 {
+		t.Fatal("no proof of fix after a not planned close")
+	}
+}
+
+// Duplicate and unknown close reasons, and unmapped actions, change nothing.
+func TestHandleIssueEvent_DuplicateAndUnknownChangeNothing(t *testing.T) {
+	svc, ap, _, _ := newInboundService(t, shared.NewID())
+	for _, ev := range []GitHubIssueEvent{
+		{Action: "closed", StateReason: "duplicate"},
+		{Action: "closed", StateReason: "something_new"},
+		{Action: "labeled"},
+		{Action: "edited"},
+	} {
+		ev.IssueURL = issueURL
+		if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(ap.applied)+len(ap.requested) != 0 {
+		t.Fatalf("applied %v requested %v, want nothing", ap.applied, ap.requested)
+	}
+}
+
+// Reopened takes the Jira in-progress path (work resumed), no proof of fix.
+func TestHandleIssueEvent_ReopenedIsInProgress(t *testing.T) {
+	svc, ap, _, hooked := newInboundService(t, shared.NewID())
+	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), GitHubIssueEvent{Action: "reopened", IssueURL: issueURL}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ap.applied) != 1 || ap.applied[0] != vulnerability.FindingStatusInProgress || len(*hooked) != 0 {
+		t.Fatalf("applied %v hooked %d, want in_progress and no proof", ap.applied, len(*hooked))
+	}
+}
+
+// Without the shared path nothing is applied (fail closed), and an issue no
+// finding is linked to is ignored.
+func TestHandleIssueEvent_FailClosedAndUnlinked(t *testing.T) {
 	fr := &fakeFindingRepo{finding: newTestFinding(t, vulnerability.FindingSourceSCA)}
 	svc := NewGitHubTicketService(fr, &fakeIntegrationRepo{}, nil, logger.NewNop())
-	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), "https://github.com/o/r/issues/5", "labeled"); err != nil {
-		t.Fatalf("HandleIssueEvent: %v", err)
+	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), GitHubIssueEvent{Action: "closed", IssueURL: issueURL}); err != nil {
+		t.Fatal(err)
 	}
 	if fr.findingUpdates != 0 {
-		t.Fatalf("unmapped action must not update a finding, got %d", fr.findingUpdates)
+		t.Fatal("without the applier a finding was written")
+	}
+
+	svc2, ap, _, _ := newInboundService(t)
+	if err := svc2.HandleIssueEvent(context.Background(), shared.NewID(), GitHubIssueEvent{Action: "closed", IssueURL: issueURL}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ap.applied) != 0 {
+		t.Fatal("an unlinked issue moved findings")
 	}
 }
 
-func TestHandleIssueEvent_NoLinkedFindingNoop(t *testing.T) {
-	fr := &fakeFindingRepo{uriLookupFails: true}
-	svc := NewGitHubTicketService(fr, &fakeIntegrationRepo{}, nil, logger.NewNop())
-	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), "https://github.com/o/r/issues/9", "closed"); err != nil {
-		t.Fatalf("expected nil when no finding linked, got %v", err)
-	}
-	if fr.findingUpdates != 0 {
-		t.Fatalf("no linked finding must not update, got %d", fr.findingUpdates)
+// A sender that is not a login's shape is not recorded.
+func TestGitHubLogin(t *testing.T) {
+	for in, want := range map[string]string{
+		"octocat": "octocat", "dependabot[bot]": "dependabot[bot]",
+		"<script>": "", "a b": "", "": "", strings.Repeat("a", 40): "",
+	} {
+		if got := githubLogin(in); got != want {
+			t.Errorf("githubLogin(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
