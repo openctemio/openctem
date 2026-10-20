@@ -21,7 +21,7 @@
 | **Collector** (role) | A sensor that pushes data from systems inside the customer network. |
 | **Integration** | An external system the *platform* calls (Jira, Slack, Splunk out, …); no software of ours runs for it. |
 | `type` | The legacy v1 classification (`worker`, `scanner`, `sensor`, `collector`, `runner`). Kept as input and storage until role + deployment replace it (RFC-023 §9.1). |
-| AI agent | The AI-triage "agent" mode (`AIModeAgent`, module `ai_triage.agent`): an LLM agent, unrelated to sensors. |
+| AI agent | The `ai_triage.agent` module (an LLM agent, unrelated to sensors); the `agent` AI mode is removed. |
 
 Until 2026-10 the code, database and API called sensors "agents". The rename
 is complete in the API: packages, types, tables, columns, permissions
