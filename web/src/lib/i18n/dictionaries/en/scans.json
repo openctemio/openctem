@@ -872,7 +872,6 @@
   "scans.approval.selfDesc": "No other approver can approve it. Confirm with a code from your authenticator and say why; every administrator is told.",
   "scans.approval.reason": "Reason",
   "scans.approval.noteOptional": "Note (optional)",
-  "scans.approval.code": "Code from your authenticator",
   "scans.approval.submitted": "Saved \"{name}\" and submitted it for approval",
   "scans.approval.submitFailed": "Saved \"{name}\", but it was not submitted for approval: {error}",
   "scans.approval.submitForApproval": "Submit for approval",
