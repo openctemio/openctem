@@ -221,7 +221,9 @@ func (f *Factory) build(spec Spec) (Provider, error) {
 
 // createBYOKProvider creates a provider using tenant's own API key.
 func (f *Factory) createBYOKProvider(settings tenant.AISettings, scope string) (Provider, error) {
-	if settings.APIKey == "" {
+	// An OpenAI-compatible server may need no key (the settings allow that);
+	// every other provider does.
+	if settings.APIKey == "" && settings.Provider != tenant.LLMProviderOpenAICompatible {
 		return nil, fmt.Errorf("%w: tenant API key not configured", ErrProviderNotConfigured)
 	}
 
