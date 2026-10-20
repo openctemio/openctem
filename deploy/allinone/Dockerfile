@@ -84,7 +84,8 @@ RUN printf '%s\n' 'package main' \
 # third) time in new layers.
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS final
 # One user per process (supervise.sh starts each child under its own uid):
-# nextjs = web, openctem-api, openctem-console, openctem-gateway.
+# nextjs = web, openctem-api, openctem-console, openctem-gateway,
+# openctem-signer (the job signer: the only user that can read its key).
 RUN apk add --no-cache tini bash ca-certificates tzdata wget postgresql17-client setpriv \
       libstdc++ libgcc libatomic \
  && addgroup -S -g 1001 nodejs \
@@ -94,7 +95,9 @@ RUN apk add --no-cache tini bash ca-certificates tzdata wget postgresql17-client
  && addgroup -S -g 1003 openctem-console \
  && adduser -S -D -H -u 1003 -G openctem-console -h /opt/openctem/console openctem-console \
  && addgroup -S -g 1004 openctem-gateway \
- && adduser -S -D -H -u 1004 -G openctem-gateway -h /opt/openctem openctem-gateway
+ && adduser -S -D -H -u 1004 -G openctem-gateway -h /opt/openctem openctem-gateway \
+ && addgroup -S -g 1005 openctem-signer \
+ && adduser -S -D -H -u 1005 -G openctem-signer -h /data/signer openctem-signer
 COPY --from=web /usr/local/bin/node /usr/local/bin/node
 RUN node --version
 

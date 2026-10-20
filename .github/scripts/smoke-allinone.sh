@@ -93,6 +93,15 @@ for uid in 1001 1003 1004; do
   echo "$procs" | awk -v u="$uid" '$2==u{f=1} END{exit !f}' || { echo "no process runs as uid $uid; got:" >&2; echo "$procs" >&2; exit 1; }
 done
 echo "  ok    api, web, console and gateway each run under their own uid"
+# The job signer runs as its own uid 1005; the API (1002) reaches its socket
+# but can read neither its key nor its ledger.
+echo "$procs" | grep -q " 1005 openctem-signer\$" || { echo "the job signer does not run as uid 1005; got:" >&2; echo "$procs" >&2; exit 1; }
+if docker exec -u 1002:1002 "$name-on" sh -c 'cat /data/signer/keys/signer.pem >/dev/null 2>&1 || ls /data/signer/state >/dev/null 2>&1'; then
+  echo "  FAIL  the API uid can read the job signer's key or state" >&2; exit 1
+fi
+docker exec -u 1002:1002 "$name-on" sh -c 'test -r /tmp/openctem-signer/signer.sock && test -w /tmp/openctem-signer/signer.sock' \
+  || { echo "  FAIL  the API uid cannot open the job signer's socket" >&2; exit 1; }
+echo "  ok    the job signer runs under its own uid; the API reaches its socket but not its key"
 api_pid=$(echo "$procs" | awk '$2==1002 && $3=="server"{print $1; exit}')
 # environ_of <uid> <pid>: a process's environment, read with CAP_SYS_PTRACE
 # (--privileged): Caddy carries a file capability, which makes its process

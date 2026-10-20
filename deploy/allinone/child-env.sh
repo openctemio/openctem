@@ -8,6 +8,7 @@
 #            migrations are the only user of DB_MIGRATE_* / DATABASE_MIGRATE_URL)
 #   web      the web console: its own NEXT_* / cookie / legal settings
 #   console  the platform console: the same, plus ADMIN_API_URL
+#   signer   the job signer: SIGNER_* only (its key and ledger settings)
 #   gateway  Caddy and its entrypoint: OPENCTEM_*, TLS, ACME, proxies
 #
 # A variable that is not listed here does not reach web, console or gateway.
@@ -53,6 +54,9 @@ child_env_keep() {
           ADMIN_API_URL) return 0 ;;
         esac
       fi
+      ;;
+    signer)
+      case "$name" in SIGNER_*) return 0 ;; esac
       ;;
     gateway)
       case "$name" in

@@ -57,6 +57,8 @@ child_user() { # child_user <role> -> user:group
     web) echo nextjs:nodejs ;;
     console) echo openctem-console:openctem-console ;;
     gateway) echo openctem-gateway:openctem-gateway ;;
+    signer) echo openctem-signer:openctem-signer ;;
+    *) echo "[supervise] internal error: no user defined for role '$1'" >&2; return 1 ;;
   esac
 }
 
@@ -67,7 +69,7 @@ child_user() { # child_user <role> -> user:group
 # follows a symbolic link: a planted link must not hand a root-owned file
 # (the supervisor itself, say) to a process's user.
 own() {
-  local dir="$1" ug; ug="$(child_user "$2")"
+  local dir="$1" ug; ug="$(child_user "$2")" || exit 1
   if [ -L "$dir" ]; then echo "[supervise] $dir is a symbolic link; refusing to change its owner" >&2; exit 1; fi
   mkdir -p "$dir"
   if [ "$(stat -c %U:%G "$dir")" != "$ug" ]; then chown -hR "$ug" "$dir"; fi
@@ -238,7 +240,8 @@ start() { # start <tag> <dir> <cmd...>; <tag> is also the role (child-env.sh)
     cd "$dir"
     child_env_scrub "$tag"
     if [ "$ISOLATED" = true ]; then
-      local ug nnp=--no-new-privs; ug="$(child_user "$tag")"
+      local ug nnp=--no-new-privs; ug="$(child_user "$tag")" || exit 1
+      [ -n "${ug%%:*}" ] && [ -n "${ug##*:}" ] || { echo "[supervise] no uid/gid for role $tag" >&2; exit 1; }
       # The gateway's Caddy binds 443 through a file capability, which
       # no-new-privileges would cancel; it still starts with none of its own.
       [ "$tag" = gateway ] && nnp=
@@ -267,7 +270,18 @@ trap on_signal TERM INT
 # OPENCTEM_SIGNER=off starts none.
 if [ -z "${SIGNER_SOCKET:-}" ] && [ "${OPENCTEM_SIGNER:-on}" = on ]; then
   mkdir -p /data/signer/keys /data/signer/state /tmp/openctem-signer
-  chmod 0700 /data/signer /data/signer/keys /data/signer/state /tmp/openctem-signer
+  if [ "$ISOLATED" = true ]; then
+    # Key and ledger belong to the signer alone (0700): the API cannot read
+    # them. The socket's directory is the one thing they share: group
+    # openctem-api, setgid so the socket (0660) inherits that group.
+    own /data/signer signer 0700
+    own /data/signer/keys signer 0700
+    own /data/signer/state signer 0700
+    chown -h openctem-signer:openctem-api /tmp/openctem-signer
+    chmod 2750 /tmp/openctem-signer
+  else
+    chmod 0700 /data/signer /data/signer/keys /data/signer/state /tmp/openctem-signer
+  fi
   start signer /opt/openctem/api env SIGNER_KEY_FILE=/data/signer/keys/signer.pem SIGNER_GENERATE_KEY=true \
     SIGNER_STATE_DIR=/data/signer/state SIGNER_SOCKET=/tmp/openctem-signer/signer.sock ./openctem-signer serve
   for _ in $(seq 1 30); do
