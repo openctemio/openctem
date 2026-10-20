@@ -119,6 +119,8 @@ set_value OPENCTEM_HOSTNAME "$host"
 if [[ -n "$acme_email" ]]; then
   set_value OPENCTEM_TLS_MODE acme
   set_value ACME_EMAIL "$acme_email"
+  # No internal CA in this mode: the bundled sensor trusts the gateway's public certificate.
+  printf 'SENSOR_CA_CERT_FILE=\n' >> "$tmp"
 fi
 set_value OPENCTEM_ADMIN_SITE "$admin_site"
 [[ -z "$admin_host" ]] || set_value OPENCTEM_ADMIN_HOST "$admin_host"

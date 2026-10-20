@@ -45,3 +45,21 @@ func TestVerdicts_BestAcrossTasks(t *testing.T) {
 		t.Error("target keys are not case-insensitive")
 	}
 }
+
+// A target the sensor could not reach is never settled as covered, with or
+// without per-target outcomes, even though the run it belongs to completes
+// (an unreachable target does not make a run partial).
+func TestVerdicts_UnreachedTargetIsNotCovered(t *testing.T) {
+	withOutcomes := json.RawMessage(`{"target_outcomes": [{"target": "a", "state": "done"}, {"target": "b", "state": "done"}],
+		"metadata": {"unreached_targets": [{"target": "B", "class": "timeout"}]}}`)
+	withoutOutcomes := json.RawMessage(`{"metadata": {"unreached_targets": [{"target": "B", "class": "timeout"}]}}`)
+	for name, result := range map[string]json.RawMessage{"with outcomes": withOutcomes, "without outcomes": withoutOutcomes} {
+		v := Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a", "b"}, Result: result}}, nil)
+		if v["a"].Kind != VerdictCovered {
+			t.Errorf("%s: a = %+v, want covered", name, v["a"])
+		}
+		if v["b"].Kind != VerdictFailed || v["b"].Outcome != "unreachable" {
+			t.Errorf("%s: b = %+v, want failed unreachable", name, v["b"])
+		}
+	}
+}
