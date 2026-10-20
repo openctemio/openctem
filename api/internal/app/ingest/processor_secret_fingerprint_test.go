@@ -27,11 +27,12 @@ func TestSetSecretFields_FingerprintIsKeyedByServerSecret(t *testing.T) {
 		}
 		return f
 	}
-	ctisFinding := &ctis.Finding{Secret: &ctis.SecretDetails{SecretType: "api_key", MaskedValue: reported}}
+	ctisFinding := &ctis.Finding{Secret: &ctis.SecretDetails{SecretType: "api_key", MaskedValue: reported},
+		PartialFingerprints: map[string]string{partialServerSecretHMAC: "rawhash"}}
 
 	unwired := NewFindingProcessor(nil, nil, nil, logger.NewNop())
 	f := newFinding()
-	unwired.setSecretFields(f, ctisFinding)
+	unwired.setSecretFields(f, &ctis.Finding{Secret: ctisFinding.Secret})
 	if f.SecretFingerprint() != "" {
 		t.Fatalf("no key configured, got fingerprint %q", f.SecretFingerprint())
 	}
@@ -41,8 +42,8 @@ func TestSetSecretFields_FingerprintIsKeyedByServerSecret(t *testing.T) {
 	wired.SetSecretFingerprinter(fpr)
 	f = newFinding()
 	wired.setSecretFields(f, ctisFinding)
-	if f.SecretFingerprint() == "" || f.SecretFingerprint() != fpr.Fingerprint(tenant, reported) {
-		t.Fatalf("fingerprint %q, want the keyed one", f.SecretFingerprint())
+	if f.SecretFingerprint() != "rawhash" {
+		t.Fatalf("fingerprint %q, want the server's keyed hash of the raw value", f.SecretFingerprint())
 	}
 	mac := hmac.New(sha256.New, []byte("openctem/secret-fingerprint/v1/"+tenant.String()))
 	mac.Write([]byte(reported))

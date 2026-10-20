@@ -8,6 +8,8 @@ package integration
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -85,7 +87,18 @@ func scaFinding(cve, version, fixed string) ctis.Finding {
 			AffectedVersion: version, FixedVersion: fixed}}
 }
 
-func secretFinding(rule, path, value string) ctis.Finding {
+// secretFinding is a secret the producer masked; raw, when set, is the value
+// its keyed hash (secretHMAC/v1) was taken of. A rotation group needs the hash.
+func secretFinding(rule, path, value string, raw ...string) ctis.Finding {
+	f := secretFindingMasked(rule, path, value)
+	if len(raw) > 0 {
+		sum := sha256.Sum256([]byte("test-producer-key/" + raw[0]))
+		f.PartialFingerprints = map[string]string{"secretHMAC/v1": hex.EncodeToString(sum[:])}
+	}
+	return f
+}
+
+func secretFindingMasked(rule, path, value string) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeSecret, Title: "Leaked key", Severity: ctis.SeverityCritical,
 		RuleID: rule, Location: &ctis.FindingLocation{Path: path, StartLine: 3},
 		Remediation: &ctis.Remediation{Recommendation: "Rotate the secret"},
@@ -100,8 +113,8 @@ func TestRemediationKeys_ThroughIngest(t *testing.T) {
 		scaFinding("CVE-2026-0001", "4.2.20", "5.2.8, 4.2.30"),
 		scaFinding("CVE-2026-0002", "4.2.25", "4.2.30"))
 	ingestFindings(t, svc, tn, "betterleaks",
-		secretFinding("aws-1", "config/a.env", "AKIA************7Q2X"),
-		secretFinding("aws-2", "config/b.env", "ASIA************KE99"))
+		secretFinding("aws-1", "config/a.env", "AKIA************7Q2X", "AKIAIOSFODNN7Q2XEXAM"),
+		secretFinding("aws-2", "config/b.env", "ASIA************KE99", "ASIAIOSFODNN7KE99EXA"))
 
 	keys := remediationKeys(t, r, tn.tenant)
 	// Two installed versions that one upgrade fixes share one readable group.
