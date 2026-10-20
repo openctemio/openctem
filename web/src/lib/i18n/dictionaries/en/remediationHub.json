@@ -336,5 +336,14 @@
   "remediationHub.panel.joinsTask": "Adds {n, plural, one {# finding} other {# findings}} to the owner's existing task for this fix.",
   "remediationHub.panel.createsTasks": "{n, plural, one {Creates # task:} other {Creates # tasks, one per owner:}}",
   "remediationHub.toast.skipped": "{n, plural, one {# finding in another task was skipped.} other {# findings in other tasks were skipped.}}",
-  "remediationHub.toast.movedFrom": "{n, plural, one {# finding was moved from another task.} other {# findings were moved from other tasks.}}"
+  "remediationHub.toast.movedFrom": "{n, plural, one {# finding was moved from another task.} other {# findings were moved from other tasks.}}",
+  "remediationHub.drawer.nav": "Findings of this task",
+  "remediationHub.drawer.prev": "Previous finding",
+  "remediationHub.drawer.next": "Next finding",
+  "remediationHub.drawer.position": "Finding {index} of {total}",
+  "remediationHub.detail.autoNext": "Go to the next open finding after an action",
+  "remediationHub.detail.openFinding": "Open {title}",
+  "remediationHub.crumb.label": "Where you came from",
+  "remediationHub.crumb.tasks": "Remediation tasks",
+  "remediationHub.crumb.finding": "Finding"
 }

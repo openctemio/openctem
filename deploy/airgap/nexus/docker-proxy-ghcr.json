@@ -1,0 +1,11 @@
+{
+  "name": "ghcr-proxy",
+  "online": true,
+  "storage": { "blobStoreName": "default", "strictContentTypeValidation": true },
+  "cleanup": null,
+  "proxy": { "remoteUrl": "https://ghcr.io", "contentMaxAge": 1440, "metadataMaxAge": 60 },
+  "negativeCache": { "enabled": true, "timeToLive": 1 },
+  "httpClient": { "blocked": false, "autoBlock": true },
+  "docker": { "v1Enabled": false, "forceBasicAuth": true, "httpsPort": 8443 },
+  "dockerProxy": { "indexType": "REGISTRY" }
+}

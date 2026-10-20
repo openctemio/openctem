@@ -66,7 +66,7 @@ describe('InstanceScanZonesCard', () => {
     await user.type(screen.getByLabelText('Organization IDs'), 'o7')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     await user.type(screen.getByLabelText('Reason'), 'lab scanners')
-    await user.type(screen.getByLabelText('Code from your authenticator'), '123456')
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
     expect(api.createInstanceScanZone).toHaveBeenCalledWith({

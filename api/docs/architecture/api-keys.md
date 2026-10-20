@@ -23,7 +23,7 @@ are separate credentials and are not covered here.
 | `scopes` | Permissions, validated against `permission.AllPermissions()` and against the creator's own permissions when minted. |
 | `rate_limit` | Requests per hour (0 = unlimited). |
 | `expires_at`, `status` | Expiry and revocation. |
-| `last_used_at`, `last_used_ip`, `use_count` | Updated on every authenticated request. |
+| `last_used_at`, `last_used_ip`, `use_count` | Updated on every authenticated request. `last_used_ip` is returned to owners and administrators only. |
 
 Keys are read-only, so a key may carry **read scopes only** (`*:read`, `*:view`):
 minting with any other scope answers 400 even for a caller who holds it, and the
