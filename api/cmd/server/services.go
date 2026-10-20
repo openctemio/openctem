@@ -1464,8 +1464,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Close-the-loop: feed attack-path reachability (from the exposure-chain
 	// graph) into prioritization, so an internal asset on a validated
 	// internet→KEV/crown-jewel path is treated as reachable. Cached 5m/tenant.
+	// One oracle serves both consumers (classification and exposure enrichment):
+	// the underlying chains are cached per tenant by the surface service.
+	var reachOracle *reachabilityOracle
 	if s.AttackSurface != nil {
-		s.PriorityClassification.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+		reachOracle = newReachabilityOracle(s.AttackSurface, time.Minute)
+		s.PriorityClassification.SetReachabilityOracle(reachOracle)
 	}
 
 	// CTEM Discovery: enrich EXPOSURE events on the read path with the SAME
@@ -1476,8 +1480,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Exposure != nil {
 		exposureEnricher := exposure.NewExposureEnricher(repos.Asset, log)
 		exposureEnricher.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
-		if s.AttackSurface != nil {
-			exposureEnricher.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+		if reachOracle != nil {
+			exposureEnricher.SetReachabilityOracle(reachOracle)
 		}
 		exposureEnricher.SetThreatIntel(exposureEPSSShim{epssAdapter}, exposureKEVShim{kevAdapter})
 		s.Exposure.SetEnricher(exposureEnricher)

@@ -16,7 +16,10 @@ type FindingRiskCounter interface {
 	KEVCriticalCountsByAsset(ctx context.Context, tenantID shared.ID) (kev, critical map[string]int, err error)
 }
 
-// exposureChainCap bounds the number of chains returned (highest-scored first).
+// exposureChainCap bounds the number of chains an API response returns
+// (highest-scored first). It applies to what a caller is shown, after the
+// caller's data scope; GetExposureChains itself returns every chain, because
+// priority classification and threat models need the whole result.
 const exposureChainCap = 100
 
 // ChainHop is one asset on an exposure chain.
@@ -69,9 +72,21 @@ type ExposureChainResult struct {
 	Chains  []ExposureChain      `json:"chains"`
 }
 
-// GetExposureChains computes exposure chains for the tenant. Returns an empty
-// result (not an error) when no finding-risk counter is wired.
+// GetExposureChains returns the tenant's exposure chains: every chain, not a
+// capped page. The result comes from a short-lived per-tenant cache shared by
+// every reader (API, MCP, priority oracle, threat models); concurrent callers
+// for the same tenant wait on one computation. Returns an empty result (not an
+// error) when no finding-risk counter is wired.
+//
+// The returned value is the caller's own copy of the chain list; hops are shared
+// and must not be modified.
 func (s *SurfaceService) GetExposureChains(ctx context.Context, tenantID shared.ID) (*ExposureChainResult, error) {
+	return s.chains.get(ctx, tenantID, func(ctx context.Context) (*ExposureChainResult, error) {
+		return s.computeExposureChains(ctx, tenantID)
+	})
+}
+
+func (s *SurfaceService) computeExposureChains(ctx context.Context, tenantID shared.ID) (*ExposureChainResult, error) {
 	nodes, err := s.assetRepo.ListAllNodes(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("load nodes: %w", err)
@@ -93,7 +108,7 @@ func (s *SurfaceService) GetExposureChains(ctx context.Context, tenantID shared.
 }
 
 // buildExposureChains is the pure core (no IO) so it is unit-testable with
-// synthetic graphs. For every asset that carries a KEV or critical finding it
+// synthetic graphs. It returns every chain (no cap). For every asset that carries a KEV or critical finding it
 // finds the shortest path from any public entry point, following attack-path
 // relationship types, and ranks the resulting chains by urgency.
 func buildExposureChains(
@@ -185,16 +200,11 @@ func buildExposureChains(
 		return chains[i].TargetName < chains[j].TargetName
 	})
 
-	totalChains := len(chains)
-	if len(chains) > exposureChainCap {
-		chains = chains[:exposureChainCap]
-	}
-
 	return &ExposureChainResult{
 		Summary: ExposureChainSummary{
 			EntryPoints:         len(entryPoints),
 			TargetsAtRisk:       len(best),
-			TotalChains:         totalChains,
+			TotalChains:         len(chains),
 			HasRelationshipData: len(edges) > 0,
 		},
 		Chains: chains,
