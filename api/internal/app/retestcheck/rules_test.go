@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	dom "github.com/openctemio/openctem/api/pkg/domain/retestcheck"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 const okTemplate = `id: xss-search-check
@@ -143,5 +144,14 @@ func TestCompiledAssertionPassesRules(t *testing.T) {
 	a := AnalyzeTemplate(context.Background(), content)
 	if !a.Valid() || a.FirstPath != "/admin" || a.NucleiID != "retest-check-0f0e0d0c0000" {
 		t.Fatalf("got %+v\n%s", a, content)
+	}
+}
+
+func TestValidate_AssertionFieldsNamedFromBody(t *testing.T) {
+	svc := &Service{}
+	v, err := svc.validate(context.Background(), shared.NewID(), shared.NewID(), Input{Kind: dom.KindHTTPAssertion,
+		Assertion: &dom.HTTPAssertion{Method: "GET", Path: "x", Matchers: []dom.Matcher{{Type: "status", Status: []int{200}}}}})
+	if err != nil || v.Valid || len(v.Issues) == 0 || v.Issues[0].Field != "assertion.path" {
+		t.Fatalf("got %+v %v", v, err)
 	}
 }
