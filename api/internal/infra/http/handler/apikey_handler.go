@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -116,7 +117,7 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := CreateAPIKeyResponse{
-		APIKeyResponse: toAPIKeyResponse(result.Key),
+		APIKeyResponse: toAPIKeyResponse(r.Context(), result.Key),
 		Key:            result.Plaintext,
 	}
 
@@ -171,7 +172,7 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	data := make([]APIKeyResponse, len(result.Data))
 	for i, key := range result.Data {
-		data[i] = toAPIKeyResponse(key)
+		data[i] = toAPIKeyResponse(r.Context(), key)
 	}
 
 	response := ListResponse[APIKeyResponse]{
@@ -209,7 +210,7 @@ func (h *APIKeyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toAPIKeyResponse(key))
+	_ = json.NewEncoder(w).Encode(toAPIKeyResponse(r.Context(), key))
 }
 
 // Revoke handles POST /api/v1/api-keys/{id}/revoke
@@ -241,7 +242,7 @@ func (h *APIKeyHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toAPIKeyResponse(key))
+	_ = json.NewEncoder(w).Encode(toAPIKeyResponse(r.Context(), key))
 }
 
 // Delete handles DELETE /api/v1/api-keys/{id}
@@ -276,7 +277,10 @@ func apiKeyAuditContext(r *http.Request, tenantID string) *audit.AuditContext {
 	}
 }
 
-func toAPIKeyResponse(k *apikeydom.APIKey) APIKeyResponse {
+// toAPIKeyResponse renders a key. The last-used IP is shown to owners and
+// administrators only: it tells where a credential is used from, which a
+// member or viewer has no business reading (owner decision 2026-10-02).
+func toAPIKeyResponse(ctx context.Context, k *apikeydom.APIKey) APIKeyResponse {
 	resp := APIKeyResponse{
 		ID:          k.ID().String(),
 		TenantID:    k.TenantID().String(),
@@ -288,11 +292,14 @@ func toAPIKeyResponse(k *apikeydom.APIKey) APIKeyResponse {
 		Status:      string(k.Status()),
 		ExpiresAt:   k.ExpiresAt(),
 		LastUsedAt:  k.LastUsedAt(),
-		LastUsedIP:  k.LastUsedIP(),
 		UseCount:    k.UseCount(),
 		CreatedAt:   k.CreatedAt(),
 		UpdatedAt:   k.UpdatedAt(),
 		RevokedAt:   k.RevokedAt(),
+	}
+
+	if middleware.IsAdmin(ctx) {
+		resp.LastUsedIP = k.LastUsedIP()
 	}
 
 	if k.UserID() != nil {
