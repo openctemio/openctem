@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { savePlatformAI, testPlatformAI } from '../api/use-platform-settings'
+import { saveOrgAIPolicy, savePlatformAI, testPlatformAI } from '../api/use-platform-settings'
 import type { PlatformAISettings } from '../types'
 import {
   LockedByEnvironment,
@@ -60,6 +60,8 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
   const [key, setKey] = useState('')
   const [clearKey, setClearKey] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [allowOrg, setAllowOrg] = useState(settings.allow_org_provider)
+  const [policyConfirmOpen, setPolicyConfirmOpen] = useState(false)
   const [testing, setTesting] = useState(false)
 
   useEffect(() => {
@@ -69,6 +71,7 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
     setBaseUrl(settings.base_url)
     setAllowPrivate(settings.allow_private)
     setAllowedModels(settings.allowed_models.join(', '))
+    setAllowOrg(settings.allow_org_provider)
     setKey('')
     setClearKey(false)
   }, [settings])
@@ -117,6 +120,31 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
         version: settings.version,
       })
       toast.success(t('admin.ai.saved', 'AI provider saved'))
+      onSaved()
+    } catch (e) {
+      if (
+        handleSaveConflict(
+          e,
+          onSaved,
+          t(
+            'admin.settings.conflict',
+            'Another administrator changed this setting. The latest values are shown.'
+          )
+        )
+      )
+        return
+      throw e
+    }
+  }
+
+  const savePolicy = async (reason: string) => {
+    try {
+      await saveOrgAIPolicy({
+        allow_org_provider: allowOrg,
+        reason,
+        version: settings.org_policy_version,
+      })
+      toast.success(t('admin.ai.policySaved', 'Policy saved'))
       onSaved()
     } catch (e) {
       if (
@@ -322,6 +350,65 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
           )}
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('admin.ai.policyTitle', "Organizations' own AI providers")}</CardTitle>
+          <CardDescription>
+            {t(
+              'admin.ai.policyDescription',
+              'Let organizations send their findings to their own AI provider with their own key (Settings > AI > Own provider). Their addresses must be public https; the private-address toggle above never applies to them.'
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+            <Label htmlFor={`${id}-allow-org`} className="grid gap-1 font-normal">
+              <span className="font-medium">
+                {t('admin.ai.policyAllow', 'Allow organizations to use their own provider')}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {t(
+                  'admin.ai.policyAllowHelp',
+                  'Off: every organization on its own provider stops at its next call. It never falls back to the platform key.'
+                )}
+              </span>
+            </Label>
+            <Switch
+              id={`${id}-allow-org`}
+              checked={allowOrg}
+              onCheckedChange={setAllowOrg}
+              disabled={!canEdit}
+            />
+          </div>
+          {canEdit ? (
+            <div className="flex justify-end">
+              <Button
+                onClick={() => setPolicyConfirmOpen(true)}
+                disabled={allowOrg === settings.allow_org_provider}
+              >
+                {t('admin.ai.policySave', 'Save policy')}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+      <ReasonConfirmDialog
+        open={policyConfirmOpen}
+        onOpenChange={setPolicyConfirmOpen}
+        title={t(
+          'admin.ai.policyConfirmTitle',
+          "Change the policy on organizations' own providers?"
+        )}
+        desc={t(
+          'admin.ai.policyConfirmDesc',
+          'Applies at once to every organization. Recorded in the admin audit log and sent to every administrator.'
+        )}
+        onConfirm={savePolicy}
+      />
       <ReasonConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}

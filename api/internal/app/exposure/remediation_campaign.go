@@ -1039,11 +1039,16 @@ func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, t
 // each open finding, which each finding then verifies on its own; never a
 // close). Returns the refusals, whether the issue was a campaign epic, and
 // an error.
-func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, jiraAccount string) ([]string, bool, error) {
-	if s.ticketRepo == nil {
+//
+// site is the base URL of the integration the delivery came from: the epic
+// is matched by its key at its browse URL on that site, so a campaign whose
+// epic is SEC-1 on another Jira site is not moved. No site matches nothing.
+func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, site, issueKey, jiraStatus, jiraAccount string) ([]string, bool, error) {
+	if s.ticketRepo == nil || strings.TrimSpace(site) == "" {
 		return nil, false, nil
 	}
-	link, err := s.ticketRepo.GetByIssueKey(ctx, tenantID, "jira", issueKey)
+	issueURL := strings.TrimRight(strings.TrimSpace(site), "/") + "/browse/" + issueKey
+	link, err := s.ticketRepo.GetByIssue(ctx, tenantID, "jira", issueKey, issueURL)
 	if err != nil {
 		if errors.Is(err, remediation.ErrCampaignTicketNotFound) {
 			return nil, false, nil // not a campaign epic

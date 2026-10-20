@@ -769,6 +769,8 @@ export interface PlatformAISettings extends SettingChange {
   base_url: string
   allow_private: boolean
   allowed_models: string[]
+  allow_org_provider: boolean
+  org_policy_version: number
   key_set: boolean
   locked_by_environment: boolean
   providers: string[]

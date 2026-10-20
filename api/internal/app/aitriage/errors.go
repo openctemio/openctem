@@ -17,6 +17,9 @@ var (
 	ErrPlatformAINotSetUp = errors.New("platform AI is not set up on this installation")
 	// ErrAIDisabled: AI triage is off for the organization.
 	ErrAIDisabled = errors.New("AI triage is turned off for this organization")
+	// ErrOwnProviderNotAllowed: the organization uses its own AI provider and
+	// the platform policy no longer allows that.
+	ErrOwnProviderNotAllowed = errors.New("the platform does not allow organizations to use their own AI provider")
 	// ErrPolicyRestricted: the organization's AI data policy keeps this
 	// finding's content on the platform (pentest TLP limit, campaign with AI
 	// off).
@@ -78,9 +81,15 @@ func PublicFailureCode(stored string) string {
 
 // categorizeError maps a provider error to a failure code. The error itself
 // is logged by the caller and never stored.
+func categorizeError(err error) string {
+	return FailureCode(err)
+}
+
+// FailureCode maps a provider error to one of the fixed failure codes. The
+// raw error text is never part of the answer.
 //
 //nolint:cyclop // Switch/case for error categorization is naturally branchy.
-func categorizeError(err error) string {
+func FailureCode(err error) string {
 	if err == nil {
 		return FailInternal
 	}
