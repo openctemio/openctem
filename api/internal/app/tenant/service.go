@@ -947,7 +947,9 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	// accounts' keys they minted: those keys are organization secrets that
 	// outlive the role. Revoke them and say so in the audit event.
 	revokedSAKeys := 0
-	if tenantdom.PrivilegeRank(role) < tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) &&
+	// Only a drop below administrator loses service_accounts:manage; owner to
+	// administrator keeps it, so it revokes nothing.
+	if tenantdom.PrivilegeRank(role) < tenantdom.PrivilegeRank(tenantdom.RoleAdmin) &&
 		tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) >= tenantdom.PrivilegeRank(tenantdom.RoleAdmin) &&
 		s.lifecycle != nil {
 		var by *shared.ID
