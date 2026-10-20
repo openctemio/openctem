@@ -162,6 +162,7 @@ func (s *TenantService) offboardMember(ctx context.Context, membershipID string,
 		WithMetadata("removed_groups", result.RemovedGroups).
 		WithMetadata("removed_grants", result.RemovedGrants).
 		WithMetadata("removed_campaigns", result.RemovedCampaigns).
+		WithMetadata("removed_watches", result.RemovedWatches).
 		WithMetadata("reassigned_schedules", result.ReassignedSchedules).
 		WithMetadata("reassigned_findings", result.ReassignedFindings).
 		WithMetadata("reassigned_assets", result.ReassignedAssets)

@@ -145,6 +145,7 @@ type OffboardResult struct {
 	RemovedGroups       int           `json:"removed_groups"`
 	RemovedGrants       int           `json:"removed_grants"`
 	RemovedCampaigns    int           `json:"removed_campaigns"`
+	RemovedWatches      int           `json:"removed_watches"`
 	ReassignedSchedules int           `json:"reassigned_schedules"`
 	ReassignedFindings  int           `json:"reassigned_findings"`
 	ReassignedAssets    int           `json:"reassigned_assets"`
