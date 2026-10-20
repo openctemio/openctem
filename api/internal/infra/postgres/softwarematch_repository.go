@@ -561,9 +561,10 @@ func (r *SoftwareMatchRepository) EnsureDefinitions(ctx context.Context, cves []
 		SELECT c.cve_id, c.cve_id, 'CVE', 'vulnerability', LEFT(c.cve_id, 500), c.description,
 			`+corpusSeveritySQL+`,
 			c.cvss_score, c.cvss_vector, c.cvss_version, c.published_at, c.last_modified_at, 'nvd',
-			e.epss_score, e.percentile, k.date_added::timestamptz, k.due_date::timestamptz, (k.cve_id IS NOT NULL)
+			e.epss_score, ec.percentile, k.date_added::timestamptz, k.due_date::timestamptz, (k.cve_id IS NOT NULL)
 		FROM cve_records c
 		LEFT JOIN epss_scores e ON e.cve_id = c.cve_id
+		LEFT JOIN epss_percentile_curve ec ON ec.score = e.epss_score
 		LEFT JOIN kev_catalog k ON k.cve_id = c.cve_id
 		WHERE c.cve_id = ANY($1)
 		ON CONFLICT (cve_id) DO NOTHING`, pq.Array(ids)); err != nil {
