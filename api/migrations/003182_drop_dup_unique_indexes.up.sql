@@ -1,6 +1,6 @@
 -- Three unique indexes repeat another unique index on the same two columns
 -- (column order swapped, which a unique index serves equally):
---   findings              ux_findings_id_tenant            = uq_findings_tenant_id_id
+--   findings              uq_findings_tenant_id_id         = ux_findings_id_tenant
 --   groups                uq_groups_tenant_id_id           = groups_id_tenant_key
 --   remediation_campaigns uq_remediation_campaigns_tenant_id_id = ux_remediation_campaigns_id_tenant
 -- Foreign keys may be bound to the index being dropped, and PostgreSQL cannot
@@ -18,7 +18,7 @@ BEGIN
 
   FOR t IN
     SELECT * FROM (VALUES
-      ('findings',              'ux_findings_id_tenant',                 'uq_findings_tenant_id_id',          false),
+      ('findings',              'uq_findings_tenant_id_id',              'ux_findings_id_tenant',             false),
       ('groups',                'uq_groups_tenant_id_id',                'groups_id_tenant_key',              true),
       ('remediation_campaigns', 'uq_remediation_campaigns_tenant_id_id', 'ux_remediation_campaigns_id_tenant', true)
     ) AS v(tbl, dropped, kept, is_constraint)
