@@ -240,7 +240,16 @@ func TestSignedJobs_SignerFailureHandsOutNothing(t *testing.T) {
 	unpinned := h.newCommand(h.tenantID, "")
 	pinned := h.newCommand(h.tenantID, s.id)
 
+	// A command handed back is delayed by the requeue backoff; the test
+	// reclaims at once, so it clears the delay between rounds.
+	retry := func() {
+		if _, err := h.db.ExecContext(context.Background(), `UPDATE commands SET scheduled_at = NULL WHERE id IN ($1, $2)`, unpinned, pinned); err != nil {
+			t.Fatalf("clear backoff: %v", err)
+		}
+	}
+
 	for _, failure := range []error{errors.New("signer down"), command.ErrJobRefused} {
+		retry()
 		fake.fail(failure)
 		asked := fake.calls()
 		resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/commands?limit=10", nil, capacityHeader...)
@@ -267,6 +276,7 @@ func TestSignedJobs_SignerFailureHandsOutNothing(t *testing.T) {
 		}
 
 		// A claim by id answers 503 and leaves the command pending.
+		retry()
 		resp, raw = h.call(s.key, http.MethodPost, "/api/v2/sensor/commands/"+unpinned+"/claim", nil)
 		h.want(resp, raw, http.StatusServiceUnavailable, protov2.ProblemUnavailable.URI())
 		if st, sensor, _ := h.commandState(unpinned); st != "pending" || sensor != nil {
@@ -275,6 +285,7 @@ func TestSignedJobs_SignerFailureHandsOutNothing(t *testing.T) {
 	}
 
 	// The signer is back: the same commands go out, signed.
+	retry()
 	fake.fail(nil)
 	resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/commands?limit=10", nil, capacityHeader...)
 	h.want(resp, raw, 200, "")
