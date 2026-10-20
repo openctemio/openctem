@@ -685,17 +685,6 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		}
 	}
 
-	// Step 4: Update asset finding counts
-	if len(assetMap) > 0 {
-		assetIDs := make([]shared.ID, 0, len(assetMap))
-		for _, id := range assetMap {
-			assetIDs = append(assetIDs, id)
-		}
-		if err := s.assetProcessor.UpdateFindingCounts(ctx, tenantID, assetIDs); err != nil {
-			s.logger.Warn("failed to update finding counts", "error", err)
-		}
-	}
-
 	// Step 5: Update sensor statistics (with proper error handling). A v2
 	// report counts once, when it completes (recordV2ReportStats).
 	if !opts.DeferSensorStats {

@@ -127,8 +127,16 @@ func TestWfRunAuthz_PrincipalAndSubject(t *testing.T) {
 	if nr := f.run(t, &owner, automation.TriggerTypeFindingCreated, nil, data); nr.Status != automation.NodeRunStatusCompleted {
 		t.Fatalf("event step = %s (%s)", nr.Status, nr.ErrorMessage)
 	}
+	// The action handler is told the person it runs as (a step that starts a
+	// scan starts it as them).
+	if f.handler.lastInput == nil || f.handler.lastInput.Principal != owner {
+		t.Fatalf("event step's handler principal = %+v, want the automation owner", f.handler.lastInput)
+	}
 	if nr := f.run(t, &owner, automation.TriggerTypeManual, &caller, data); nr.Status != automation.NodeRunStatusCompleted {
 		t.Fatalf("manual step = %s (%s)", nr.Status, nr.ErrorMessage)
+	}
+	if f.handler.lastInput == nil || f.handler.lastInput.Principal != caller {
+		t.Fatalf("manual step's handler principal = %+v, want the member who started it", f.handler.lastInput)
 	}
 	// An event run of an automation with no owner asks with no principal
 	// (which the production authorizer refuses).

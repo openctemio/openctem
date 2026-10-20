@@ -183,8 +183,8 @@ func TestScoringIntel_StoredEPSSFeedsTheCIGate(t *testing.T) {
 		}
 		return s, p
 	}
-	if s, p := score(ta, open); s != 0.4 || p != 0.93 {
-		t.Fatalf("open finding epss = %v / %v, want 0.4 / 0.93", s, p)
+	if s, p := score(ta, open); s != 0.4 || p != 0.5 {
+		t.Fatalf("open finding epss = %v / %v, want 0.4 / 0.5 (score refreshed, percentile left as scored)", s, p)
 	}
 	if s, _ := score(ta, closed); s != 0.2 {
 		t.Fatalf("closed finding epss = %v, want kept at 0.2", s)

@@ -49,6 +49,24 @@ EXISTS`, constraints guarded by a `pg_constraint` lookup, `ON CONFLICT DO
 NOTHING`), with a no-op down. `002894_repair_skipped_migrations` is the
 reference.
 
+### Indexes
+
+Every index is maintained on every write to its table, so no table may carry
+two indexes with the same keys, operator classes, sort options, predicate and
+expressions (`TestNoDuplicateIndexes_DB` fails on one). A unique index also
+serves lookups with its columns in the other order, so a second unique index
+on the same two columns swapped is a duplicate too; the test cannot see that
+case, so check for it in review.
+
+- Create and drop an index on an existing table with `CONCURRENTLY`, as the
+  only statement in its file (it cannot run inside a transaction block).
+  A partitioned parent cannot use `CONCURRENTLY`: set `lock_timeout` and keep
+  the statement short.
+- Before dropping a unique index, check `pg_constraint.conindid`: a foreign
+  key bound to it blocks the drop, and PostgreSQL cannot re-point it.
+  `003191_drop_dup_unique_indexes` shows the pattern (drop the dependent keys,
+  drop the index, re-add the keys unchanged and validate them).
+
 ## Migration baseline
 
 [RFC-053](../rfcs/RFC-053-migration-baseline.md). The chain of earlier

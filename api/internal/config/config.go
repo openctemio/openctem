@@ -213,12 +213,13 @@ const ScanZoneResolverSystem = "system"
 const DefaultPublicZoneResolver = "1.1.1.1:53"
 
 // AuditRetentionConfig controls tenant audit-log retention. Entries older than
-// Days are written to a gzip JSONL archive under ArchiveDir, the chain head
-// they leave is recorded as an anchor, then they are deleted. Without an
-// ArchiveDir nothing is deleted. Days below 365 are raised to 365.
+// Days are written to a gzip JSONL archive in the storage provider
+// (STORAGE_PROVIDER), the chain head they leave is recorded as an anchor, then
+// they are deleted. On by default; chains of suspended organizations (a legal
+// hold) are skipped. Days below 365 are raised to 365.
 type AuditRetentionConfig struct {
-	Days       int    // AUDIT_RETENTION_DAYS, default 365, minimum 365
-	ArchiveDir string // AUDIT_ARCHIVE_DIR, default "" (retention off)
+	Days    int  // AUDIT_RETENTION_DAYS, default 365, minimum 365
+	Enabled bool // AUDIT_RETENTION_ENABLED, default true; false holds all audit history
 }
 
 // AdminAuditRetentionConfig controls the admin-audit-log retention controller.
@@ -1794,8 +1795,8 @@ func Load() (*Config, error) {
 		},
 		AssetChangeRetentionDays: getEnvInt("ASSET_CHANGE_RETENTION_DAYS", 400),
 		AuditRetention: AuditRetentionConfig{
-			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
-			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
+			Days:    getEnvInt("AUDIT_RETENTION_DAYS", 365),
+			Enabled: getEnvBool("AUDIT_RETENTION_ENABLED", true),
 		},
 		GitHubApp: GitHubAppConfig{
 			AppID:          getEnvInt64("GITHUB_APP_ID", 0),

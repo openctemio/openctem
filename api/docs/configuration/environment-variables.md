@@ -426,7 +426,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `ADMIN_AUDIT_RETENTION_DRY_RUN` | bool | `true` |  |  | Report what would be deleted instead of deleting. Set `false` to enforce retention (irreversible). |
 | `ADMIN_AUDIT_RETENTION_ENABLED` | bool | `true` |  |  | Run the platform admin audit-log retention controller. |
 | `ADMIN_AUDIT_RETENTION_INTERVAL` | duration | `24h` |  |  | How often the controller runs. |
-| `AUDIT_ARCHIVE_DIR` | string | empty |  |  | Directory for the gzip JSONL archives. Empty: nothing is deleted. Back it up like the database. |
+| `AUDIT_RETENTION_ENABLED` | bool | `true` |  |  | Archive and prune organization audit entries older than AUDIT_RETENTION_DAYS. The archives go through the storage provider (STORAGE_PROVIDER), namespace audit-archive; back that storage up like the database. false holds all audit history (nothing is archived or deleted). Chains of suspended organizations are always skipped. |
 | `AUDIT_RETENTION_DAYS` | int | `365` |  |  | Organization audit entries older than this are archived and deleted, keeping the hash chain verifiable. |
 
 ### Authentication

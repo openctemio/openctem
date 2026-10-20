@@ -40,6 +40,11 @@ type ActionInput struct {
 	ActionConfig map[string]any
 	TriggerData  map[string]any
 	Context      map[string]any
+	// Principal is the person the step runs as: the member who started a
+	// manual run, otherwise the automation's owner (the person the step
+	// authorization already checked). A step that starts other work (a scan)
+	// starts it as this person, never as another account.
+	Principal shared.ID
 }
 
 // NotificationHandler defines the interface for notification handlers.

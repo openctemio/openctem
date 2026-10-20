@@ -401,7 +401,7 @@ func (h *MCPHandler) toolListFindingTransitions(ctx context.Context, tenantID st
 	has := func(p permission.Permission) bool { return middleware.HasPermission(ctx, string(p)) }
 	transitions, status, err := h.findings.ListFindingTransitions(ctx, tenantID, id, actingUser(ctx), finding.TransitionPermissions{
 		Status: has(permission.FindingsStatus), Verify: has(permission.FindingsVerify), FixApply: has(permission.FindingsFixApply),
-		Triage: has(permission.FindingsTriage), Write: has(permission.FindingsWrite),
+		Triage: has(permission.FindingsTriage), Write: has(permission.FindingsWrite), Approve: has(permission.FindingsApprove),
 	})
 	if err != nil {
 		return nil, err

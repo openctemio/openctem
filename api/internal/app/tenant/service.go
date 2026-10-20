@@ -2303,9 +2303,25 @@ func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string)
 
 // UpdateRiskScoringSettings updates only the risk scoring settings.
 func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID string, rs tenantdom.RiskScoringSettings, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	var before tenantdom.RiskScoringSettings
+	return s.PatchRiskScoringSettings(ctx, tenantID, func(cur *tenantdom.RiskScoringSettings) error {
+		*cur = rs
+		return nil
+	}, actx)
+}
+
+// PatchRiskScoringSettings applies patch to the stored risk scoring settings
+// inside the section's write (so a concurrent save is retried or refused, not
+// overwritten) and saves the result after ValidateForSave. A patch that
+// decodes a request body into cur merges: what the body omits keeps its
+// stored value. A patch error is returned as is.
+func (s *TenantService) PatchRiskScoringSettings(ctx context.Context, tenantID string, patch func(cur *tenantdom.RiskScoringSettings) error, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
+	var before, rs tenantdom.RiskScoringSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionRiskScoring, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().RiskScoring
+		rs = before
+		if err := patch(&rs); err != nil {
+			return err
+		}
 		return t.UpdateRiskScoringSettings(rs)
 	})
 	if err != nil {
