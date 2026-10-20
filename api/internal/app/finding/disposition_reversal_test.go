@@ -39,6 +39,7 @@ func TestBulkStatus_LeavingADisposition(t *testing.T) {
 				FindingIDs:           []string{f.ID().String()},
 				Status:               vulnerability.FindingStatusConfirmed.String(),
 				ActorID:              shared.NewID().String(),
+				HasStatusPermission:  true,
 				HasApprovePermission: c.approve,
 			})
 			if err != nil {
