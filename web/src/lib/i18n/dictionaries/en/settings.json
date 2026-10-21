@@ -527,5 +527,6 @@
   "settings.twoFactor.newCodesBody": "Your old recovery codes no longer work.",
   "settings.twoFactor.regenerateTitle": "Generate new recovery codes",
   "settings.twoFactor.regenerateBody": "This replaces all of your recovery codes. Enter a code from your authenticator app to confirm.",
-  "settings.twoFactor.generate": "Generate"
+  "settings.twoFactor.generate": "Generate",
+  "settings.twoFactor.codeLabel": "Authentication code"
 }

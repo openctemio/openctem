@@ -54,6 +54,7 @@ export function StepUpCodeField({
   return (
     <VerificationCodeInput
       id={id}
+      label={t('components.verificationCode.label', 'Code from your authenticator app')}
       value={value}
       onChange={onChange}
       required={!optional}

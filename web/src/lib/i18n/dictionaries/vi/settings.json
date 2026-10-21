@@ -527,5 +527,6 @@
   "settings.twoFactor.newCodesBody": "Các mã khôi phục cũ không còn dùng được.",
   "settings.twoFactor.regenerateTitle": "Tạo mã khôi phục mới",
   "settings.twoFactor.regenerateBody": "Thao tác này thay thế toàn bộ mã khôi phục của bạn. Nhập mã từ ứng dụng xác thực để xác nhận.",
-  "settings.twoFactor.generate": "Tạo"
+  "settings.twoFactor.generate": "Tạo",
+  "settings.twoFactor.codeLabel": "Mã xác thực"
 }

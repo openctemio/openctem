@@ -117,6 +117,7 @@ export function TotpStepForm({
       )}
       <VerificationCodeInput
         id="admin-code"
+        label={t('components.verificationCode.label', 'Code from your authenticator app')}
         value={code}
         onChange={setCode}
         onComplete={(c) => void send(c)}
