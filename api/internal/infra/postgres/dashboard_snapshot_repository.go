@@ -175,7 +175,9 @@ func (r *DashboardSnapshotRepository) TakeRefreshBudget(ctx context.Context, ten
 }
 
 // ScopeFingerprint implements dashboard.SnapshotStore. The key holds hashes
-// only (never ids), and every read is bound to the tenant.
+// only (never ids), and every read is bound to the tenant. The id lists are
+// digested in the database, so a scope of many assets costs one row of 32
+// characters per open instead of the whole list.
 func (r *DashboardSnapshotRepository) ScopeFingerprint(ctx context.Context, tenantID, userID shared.ID, scope *shared.DataScope, allCampaigns bool) (string, error) {
 	mode, assets := "all", ""
 	switch {
@@ -183,14 +185,14 @@ func (r *DashboardSnapshotRepository) ScopeFingerprint(ctx context.Context, tena
 	case scope.Unrestricted:
 		mode = "unrestricted"
 		//nolint:gosec // G202: HiddenAssetWhere is fixed SQL with numbered placeholders
-		q := `SELECT COALESCE(string_agg(ph.id::text, ',' ORDER BY ph.id), '') FROM assets ph WHERE ` + filterspec.HiddenAssetWhere(1, 2)
+		q := `SELECT md5(COALESCE(string_agg(ph.id::text, ',' ORDER BY ph.id), '')) FROM assets ph WHERE ` + filterspec.HiddenAssetWhere(1, 2)
 		if err := r.db.QueryRowContext(ctx, q, userID.String(), tenantID.String()).Scan(&assets); err != nil {
 			return "", fmt.Errorf("fingerprint hidden assets: %w", err)
 		}
 	default:
 		mode = "restricted"
 		if err := r.db.QueryRowContext(ctx, `
-			SELECT COALESCE(string_agg(asset_id::text, ',' ORDER BY asset_id), '')
+			SELECT md5(COALESCE(string_agg(asset_id::text, ',' ORDER BY asset_id), ''))
 			FROM user_accessible_assets WHERE user_id = $1 AND tenant_id = $2`,
 			userID.String(), tenantID.String()).Scan(&assets); err != nil {
 			return "", fmt.Errorf("fingerprint scope rows: %w", err)
@@ -199,7 +201,7 @@ func (r *DashboardSnapshotRepository) ScopeFingerprint(ctx context.Context, tena
 	campaigns := "*"
 	if !allCampaigns {
 		if err := r.db.QueryRowContext(ctx, `
-			SELECT COALESCE(string_agg(campaign_id::text, ',' ORDER BY campaign_id), '')
+			SELECT md5(COALESCE(string_agg(campaign_id::text, ',' ORDER BY campaign_id), ''))
 			FROM pentest_campaign_members WHERE user_id = $1 AND tenant_id = $2`,
 			userID.String(), tenantID.String()).Scan(&campaigns); err != nil {
 			return "", fmt.Errorf("fingerprint campaigns: %w", err)

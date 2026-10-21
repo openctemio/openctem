@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -220,4 +223,60 @@ func TestDashboardSnapshots_Refresher_DB(t *testing.T) {
 		t.Errorf("second pass refreshed %d", n)
 	}
 	_ = widgets.StateReady
+}
+
+// Concurrent Refresh now requests of one organization never pass more than
+// the hourly budget, and the scope key moves when campaign membership or
+// administrator standing changes (so a personal snapshot computed with the
+// old campaign rule is not served).
+func TestDashboardSnapshots_BudgetRaceAndCampaignKey_DB(t *testing.T) {
+	e := newWidgetEnv(t)
+	h := e.h
+	repo := postgres.NewDashboardSnapshotRepository(&postgres.DB{DB: h.db})
+	ctx := context.Background()
+
+	const callers = 40
+	var (
+		wg     sync.WaitGroup
+		passed atomic.Int32
+	)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ok, _, err := repo.TakeRefreshBudget(ctx, h.tenant, shared.NewID(), shared.NewID())
+			if err != nil {
+				t.Errorf("take budget: %v", err)
+				return
+			}
+			if ok {
+				passed.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := int(passed.Load()); got != dashboard.MaxTenantRefreshesPerHour {
+		t.Errorf("concurrent refreshes passed = %d, want exactly %d", got, dashboard.MaxTenantRefreshesPerHour)
+	}
+
+	scope := &shared.DataScope{TenantID: h.tenant, UserID: e.tester}
+	member, err := repo.ScopeFingerprint(ctx, h.tenant, e.tester, scope, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asAdmin, err := repo.ScopeFingerprint(ctx, h.tenant, e.tester, scope, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member == asAdmin {
+		t.Error("scope key ignores the campaign rule (administrator vs member)")
+	}
+	h.exec(`DELETE FROM pentest_campaign_members WHERE tenant_id = $1 AND user_id = $2`, h.tenant.String(), e.tester.String())
+	left, err := repo.ScopeFingerprint(ctx, h.tenant, e.tester, scope, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left == member {
+		t.Error("scope key did not change when the campaign membership was removed")
+	}
 }

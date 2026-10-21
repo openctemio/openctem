@@ -9,7 +9,10 @@
 //     dashboard service checked dashboards:org:view and the audience; list
 //     rows (finding titles) still follow the viewer's campaign membership.
 //
-// Nothing is cached across callers: every read computes for its own scope.
+// Results are stored per dashboard (snapshot.go): a personal snapshot is
+// served only to its owner and only while their scope is the one it was
+// computed for; an organization snapshot holds organization-wide figures and
+// is served to every permitted viewer, its list rows filtered per viewer.
 package widgets
 
 import (
