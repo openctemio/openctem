@@ -15,37 +15,41 @@ const (
 	// attack surface changes slowly and every reader (page, MCP, priority
 	// oracle, threat models) accepts a result a few minutes old.
 	chainCacheTTL = 5 * time.Minute
-	// chainComputeTimeout bounds one computation, so a huge graph cannot hold
+	// scoreCacheTTL is the same for attack-path scores.
+	scoreCacheTTL = 5 * time.Minute
+	// graphComputeTimeout bounds one computation, so a huge graph cannot hold
 	// a request (and the callers waiting on it) indefinitely.
-	chainComputeTimeout = 30 * time.Second
+	graphComputeTimeout = 30 * time.Second
 )
 
-// chainCache holds the full exposure-chain result per tenant for a short time.
-// The key is the tenant id only: the result is tenant-wide and unscoped, and
-// every member-facing read narrows it to the caller's data scope afterwards.
-type chainCache struct {
-	ttl time.Duration
-	now func() time.Time
+// tenantCache holds a tenant-wide, unscoped graph result per tenant for a short
+// time (exposure chains, attack-path scores). The key is the tenant id only:
+// every member-facing read narrows its copy to the caller's data scope
+// afterwards.
+type tenantCache[T any] struct {
+	ttl   time.Duration
+	now   func() time.Time
+	clone func(*T) *T
 
 	mu      sync.Mutex
-	entries map[string]chainCacheEntry
+	entries map[string]cacheEntry[T]
 	group   singleflight.Group
 }
 
-type chainCacheEntry struct {
-	res *ExposureChainResult
+type cacheEntry[T any] struct {
+	res *T
 	exp time.Time
 }
 
-func newChainCache(ttl time.Duration) *chainCache {
-	return &chainCache{ttl: ttl, now: time.Now, entries: make(map[string]chainCacheEntry)}
+func newTenantCache[T any](ttl time.Duration, clone func(*T) *T) *tenantCache[T] {
+	return &tenantCache[T]{ttl: ttl, now: time.Now, clone: clone, entries: make(map[string]cacheEntry[T])}
 }
 
 // get returns a copy of the tenant's cached result, computing it with compute
 // on a miss. Concurrent misses for one tenant share one computation, which runs
 // detached from the first caller's cancellation (a canceled request must not
-// fail the others) under chainComputeTimeout.
-func (c *chainCache) get(ctx context.Context, tenantID shared.ID, compute func(context.Context) (*ExposureChainResult, error)) (*ExposureChainResult, error) {
+// fail the others) under graphComputeTimeout.
+func (c *tenantCache[T]) get(ctx context.Context, tenantID shared.ID, compute func(context.Context) (*T, error)) (*T, error) {
 	key := tenantID.String()
 	if res, ok := c.lookup(key); ok {
 		return res, nil
@@ -54,7 +58,7 @@ func (c *chainCache) get(ctx context.Context, tenantID shared.ID, compute func(c
 		if res, ok := c.lookup(key); ok {
 			return res, nil
 		}
-		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chainComputeTimeout)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), graphComputeTimeout)
 		defer cancel()
 		res, err := compute(cctx)
 		if err != nil {
@@ -66,20 +70,20 @@ func (c *chainCache) get(ctx context.Context, tenantID shared.ID, compute func(c
 	if err != nil {
 		return nil, err
 	}
-	return cloneChainResult(v.(*ExposureChainResult)), nil
+	return c.clone(v.(*T)), nil
 }
 
-func (c *chainCache) lookup(key string) (*ExposureChainResult, bool) {
+func (c *tenantCache[T]) lookup(key string) (*T, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.entries[key]
 	if !ok || !c.now().Before(e.exp) {
 		return nil, false
 	}
-	return cloneChainResult(e.res), true
+	return c.clone(e.res), true
 }
 
-func (c *chainCache) store(key string, res *ExposureChainResult) {
+func (c *tenantCache[T]) store(key string, res *T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
@@ -88,7 +92,7 @@ func (c *chainCache) store(key string, res *ExposureChainResult) {
 			delete(c.entries, k)
 		}
 	}
-	c.entries[key] = chainCacheEntry{res: res, exp: now.Add(c.ttl)}
+	c.entries[key] = cacheEntry[T]{res: res, exp: now.Add(c.ttl)}
 }
 
 // cloneChainResult copies the summary and the chain list so a reader can
@@ -98,4 +102,13 @@ func cloneChainResult(r *ExposureChainResult) *ExposureChainResult {
 	out := &ExposureChainResult{Summary: r.Summary, Chains: make([]ExposureChain, len(r.Chains))}
 	copy(out.Chains, r.Chains)
 	return out
+}
+
+// cloneScoreResult copies what a reader may modify: the summary, the ranked
+// list and the basis pointer. The basis itself is read-only and shared.
+func cloneScoreResult(r *PathScoringResult) *PathScoringResult {
+	out := *r
+	out.TopAssets = make([]AssetPathScore, len(r.TopAssets))
+	copy(out.TopAssets, r.TopAssets)
+	return &out
 }

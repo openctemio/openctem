@@ -52,7 +52,8 @@ type AssetPathScore struct {
 	RiskScore int `json:"risk_score"`
 	// IsCrownJewel marks high-value target assets.
 	IsCrownJewel bool `json:"is_crown_jewel"`
-	// FindingCount is the number of open findings on this asset.
+	// FindingCount is the number of open findings on this asset (closed and
+	// dispositioned findings are not counted).
 	FindingCount int `json:"finding_count"`
 
 	// ReachableFrom is the count of distinct public entry points that can
@@ -163,6 +164,11 @@ func (s *SurfaceService) ComputeAttackPathScores(
 	protected := make(map[string]bool)
 
 	for _, e := range edges {
+		// A relationship whose end is not a live asset (a deleted asset) is
+		// ignored: it neither bridges a path nor marks a protected asset.
+		if nodeByID[e.SourceAssetID] == nil || nodeByID[e.TargetAssetID] == nil {
+			continue
+		}
 		if controlRelationshipTypes[e.Type] {
 			// Direction follows relationship-types.yaml: "A protected_by B"
 			// (A = website, B = the WAF) protects the SOURCE, while
