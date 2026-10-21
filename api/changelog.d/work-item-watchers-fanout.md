@@ -5,3 +5,4 @@
 - Notifications carry a `reason` (`assigned` or `watching`) and fold into the unread notification of the same type about the same finding when they come within 10 minutes (`coalesced_count`).
 - The comment notification title is now "New comment on a finding" (it also goes to watchers).
 - Migration `notification_reason_and_auto_watch`: `notifications.reason`, `notifications.coalesced_count`, `notification_preferences.auto_watch` (metadata-only adds with constant defaults).
+- A status-change notice on a pentest finding is team-only (its title names the old status, which the activity feed already hides from campaign clients), so a client who watches such a finding is not sent it. The list of who stopped watching an item is never truncated, and a fan-out reads the finding once instead of once per recipient.

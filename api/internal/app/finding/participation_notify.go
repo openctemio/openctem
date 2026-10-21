@@ -99,7 +99,7 @@ func (s *VulnerabilityService) notifyFinding(ctx context.Context, f *vulnerabili
 			pe.Direct = []shared.ID{*a}
 		}
 	}
-	recipients, err := s.participants.Recipients(ctx, f.TenantID(), pe)
+	recipients, err := s.participants.Recipients(withLoadedFinding(ctx, f), f.TenantID(), pe)
 	if err != nil {
 		s.logger.Warn("finding event: recipients", "error", logger.SanitizeError(err), "type", ev.typ)
 		return

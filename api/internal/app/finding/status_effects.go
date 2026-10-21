@@ -142,10 +142,13 @@ func (s *VulnerabilityService) afterStatusChange(ctx context.Context, tenantID s
 			}
 		}
 		s.notifyFinding(ctx, c.f, findingEvent{
-			actorID:      actorID,
-			typ:          notification.TypeFindingStatusChange,
-			title:        fmt.Sprintf("Finding status changed: %s → %s", c.old, newStatus),
-			body:         c.f.Message(),
+			actorID: actorID,
+			typ:     notification.TypeFindingStatusChange,
+			title:   fmt.Sprintf("Finding status changed: %s → %s", c.old, newStatus),
+			body:    c.f.Message(),
+			// The feed hides status changes from pentest clients (they may
+			// not see the old status the title names), so the notice does too.
+			teamOnly:     isPentest(c.f),
 			actorWatches: watches,
 		})
 		if newStatus == vulnerability.FindingStatusFixApplied {

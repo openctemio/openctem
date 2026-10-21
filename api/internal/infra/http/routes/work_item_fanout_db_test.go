@@ -21,6 +21,7 @@ import (
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	participationdom "github.com/openctemio/openctem/api/pkg/domain/participation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -367,5 +368,63 @@ func TestCreateCoalesced_ReturnsStoredID_DB(t *testing.T) {
 	}
 	if second.ID() != first.ID() {
 		t.Errorf("folded notice id = %s, want the stored row %s", second.ID(), first.ID())
+	}
+}
+
+// A pentest client who watches the finding is not told a status change: the
+// notice names the old status, which clients never see (the feed hides it).
+func TestPentestFindingStatusChange_NotToClientWatcher_DB(t *testing.T) {
+	h := newFanoutHarness(t)
+	campaign, f := shared.NewID(), shared.NewID()
+	h.exec(`INSERT INTO pentest_campaigns (id, tenant_id, name) VALUES ($1, $2, 'status campaign')`, campaign.String(), h.tenant.String())
+	for user, role := range map[shared.ID]string{h.memberA: "lead", h.memberStrict: "tester", h.scoped: "client"} {
+		h.exec(`INSERT INTO pentest_campaign_members (tenant_id, campaign_id, user_id, role) VALUES ($1, $2, $3, $4)`,
+			h.tenant.String(), campaign.String(), user.String(), role)
+	}
+	h.exec(`INSERT INTO findings (id, tenant_id, source, tool_name, message, severity, fingerprint, status, pentest_campaign_id)
+		VALUES ($1, $2, 'pentest', 'manual', 'pentest finding', 'high', $3, 'confirmed', $4)`, f.String(), h.tenant.String(), "fp-"+f.String(), campaign.String())
+	for _, u := range []shared.ID{h.scoped, h.memberStrict} {
+		h.exec(`INSERT INTO work_item_subscriptions (tenant_id, finding_id, user_id, reason) VALUES ($1, $2, $3, 'manual')`, h.tenant.String(), f.String(), u.String())
+	}
+	// The pentest module applies the move; its side effects run here.
+	h.vuln.AfterStatusMoves(h.ctx(), h.tenant, h.owner.String(), []vulnerability.StatusMove{
+		{FindingID: f, Old: vulnerability.FindingStatusConfirmed, New: vulnerability.FindingStatusInProgress}})
+	rows, err := h.db.Query(`SELECT audience_id::text FROM notifications WHERE tenant_id = $1 AND resource_id = $2 AND notification_type = 'finding_status_change'`, h.tenant.String(), f.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	got := map[string]bool{}
+	for rows.Next() {
+		var id string
+		_ = rows.Scan(&id)
+		got[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !got[h.memberStrict.String()] || got[h.scoped.String()] {
+		t.Fatalf("status change reached %v, want the tester and not the client", got)
+	}
+}
+
+// ListStates never drops an unsubscribe, however many rows the item has.
+func TestListStates_KeepsEveryUnsubscribe_DB(t *testing.T) {
+	h := newFanoutHarness(t)
+	h.exec(`INSERT INTO users (id, email, name) SELECT gen_random_uuid(), 'ls-' || g || '-' || $1::text || '@fan.test', 'LS ' || g FROM generate_series(1, 260) g`, h.tenant.String())
+	t.Cleanup(func() {
+		_, _ = h.db.Exec(`DELETE FROM users WHERE email LIKE 'ls-%-' || $1 || '@fan.test'`, h.tenant.String())
+	})
+	h.exec(`INSERT INTO work_item_subscriptions (tenant_id, finding_id, user_id, state, reason)
+		SELECT $1, $2, u.id, CASE WHEN u.rn <= 110 THEN 'subscribed' ELSE 'unsubscribed' END, 'manual'
+		FROM (SELECT id, row_number() OVER (ORDER BY id) rn FROM users WHERE email LIKE 'ls-%-' || $3 || '@fan.test') u`,
+		h.tenant.String(), h.findingA.String(), h.tenant.String())
+	repo := postgres.NewWorkItemSubscriptionRepository(&postgres.DB{DB: h.db})
+	sub, unsub, err := repo.ListStates(context.Background(), h.tenant, participationdom.Item{Kind: participationdom.ItemFinding, ID: h.findingA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sub) != 110 || len(unsub) != 150 {
+		t.Fatalf("got %d subscribed, %d unsubscribed; want 110 and 150", len(sub), len(unsub))
 	}
 }
