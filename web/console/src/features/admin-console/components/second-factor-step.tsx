@@ -268,6 +268,7 @@ function RecoveryCodeForm({
     <form method="post" onSubmit={submit} className="space-y-4">
       <VerificationCodeInput
         id="admin-recovery-code"
+        label={t('components.verificationCode.recoveryLabel', 'Recovery code')}
         mode="alphanumeric"
         length={CONSOLE_RECOVERY_CODE.length}
         groups={[...CONSOLE_RECOVERY_CODE.groups]}
