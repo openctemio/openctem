@@ -251,6 +251,10 @@ func (n *Notification) Count() int {
 // Coalesce reports whether the notice is folded into an unread one.
 func (n *Notification) Coalesce() bool { return n.coalesce }
 
+// MergedInto points the notice at the stored row it was folded into, so the
+// live push names a notification that exists.
+func (n *Notification) MergedInto(id ID) { n.id = id }
+
 // SetDelivery sets the reason and event count read from persistence.
 func (n *Notification) SetDelivery(reason string, count int) {
 	n.reason, n.count = reason, count
