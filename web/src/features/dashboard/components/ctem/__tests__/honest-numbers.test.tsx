@@ -4,6 +4,7 @@ import { ExposureHero } from '../exposure-hero'
 import { CtemLoop } from '../ctem-loop'
 import { CoverageHygiene } from '../coverage-hygiene'
 import { ThreatIntelCard } from '../threat-intel-card'
+import { STATE_STRIPE } from '../../../lib/ctem-colors'
 import type { ExecutiveSummary, ThreatIntelStats } from '../../../hooks/use-ctem-dashboard'
 
 vi.mock('@/components/charts', () => {
@@ -82,8 +83,10 @@ describe('not-measured figures render as a dash', () => {
     const stage = screen.getByText('Mobilize').closest('a') as HTMLElement
     expect(within(stage).getByText('—')).toBeInTheDocument()
     // Not measured is neutral grey, never the green "good" stripe.
-    expect(stage.querySelector('.bg-muted-foreground\\/30')).not.toBeNull()
-    expect(stage.querySelector('.bg-emerald-500')).toBeNull()
+    const stripe = (state: keyof typeof STATE_STRIPE) =>
+      stage.querySelector(`[class~="${STATE_STRIPE[state]}"]`)
+    expect(stripe('none')).not.toBeNull()
+    expect(stripe('good')).toBeNull()
   })
 
   it('the CTEM loop shows the tenant open KEV findings, not the catalog size', () => {
