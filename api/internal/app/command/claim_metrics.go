@@ -28,6 +28,9 @@ const (
 	skipProgramHold  = "program_hold"
 	skipToolSettings = "tool_settings"
 	skipTaken        = "taken"
+	// skipEgressUnsupported: the sensor's jobs use a proxy pool it cannot
+	// honor (egress.go).
+	skipEgressUnsupported = "egress_unsupported"
 )
 
 // claimSkipped counts the candidates one step of the poll left out.

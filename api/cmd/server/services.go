@@ -102,6 +102,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
+	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
@@ -698,6 +699,7 @@ type Services struct {
 	// SensorGrant manages per-sensor grants (RFC-052 §5).
 	SensorGrant *sensorgrant.Service
 	ScanZone    *scanzoneapp.Service
+	ProxyPool   *proxypoolapp.Service
 	// ScanWindow manages scan window policies and overrides (RFC-067);
 	// ScanWindowResolver finds what governs targets for the claim, the
 	// trigger and the API.
@@ -2136,7 +2138,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			}
 			return t.Slug(), nil
 		}))
+	// Proxy pools for scan traffic: credentials encrypted with the
+	// credentials key, never stored in clear.
+	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
+		// Each scan and retest job carries the claiming sensor's proxy pool.
+		command.WithEgress(s.ProxyPool),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
 		// from sensors without a policy.
