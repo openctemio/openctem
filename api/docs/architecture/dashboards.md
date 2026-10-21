@@ -291,9 +291,12 @@ How each figure is computed (`internal/app/dashboard/widgets`,
   unchanged, an organization snapshot for every permitted viewer. Reads are
   bounded: 2 at a time per user, 6 per organization, 12 per API process
   (429 with `Retry-After`), 5 s per statement and 20 s per dashboard.
-- Known gap: F2 has no source column, so a pentest finding without a
-  campaign (all-zero campaign id) counts in flows and time to fix for every
-  viewer; it is never listed and never counted in current figures.
+- A pentest finding without a campaign is stored under the all-f campaign
+  id, which matches no membership: like any campaign finding it counts in
+  flows and time to fix only for organization-wide and administrator reads
+  (F2 has no source column, so the campaign id alone decides).
+- Previews are limited per person: a burst of 24, then one every 2 s (per
+  API process; 429 with `Retry-After`).
 - Tests: `dashboard_widget_data_db_test.go` (figures equal the findings list
   for a scoped member, a campaign tester, a full-data member, a member
   without scope rows and an administrator; another tenant's and unpublished
@@ -321,7 +324,14 @@ and `last_refresh_error`.
 - **Refresh now budget**: once a minute per person and dashboard, 30 an hour
   per organization whoever asks (`dash_refresh_requests`; the check and the
   insert run under a per-tenant transaction lock, so concurrent requests
-  cannot both pass). Over budget: 429 with `Retry-After`.
+  cannot both pass). Over budget: 429 with `Retry-After`. A refresh that
+  took the budget and then could not compute (no read slot free, or the
+  computation failed) gives it back.
+- **One refresh per dashboard at a time**: Refresh now and the refresher take
+  the dashboard's lock (`pg_try_advisory_xact_lock`, held by an open
+  transaction until the recompute ends, so a crashed request frees it). A
+  Refresh now while another runs answers 429 without using the budget; the
+  refresher skips a dashboard that is being refreshed.
 - **Refresher** (`dashboard-snapshots` controller, every minute, one replica):
   claims the snapshots whose `next_refresh_at` is due with `FOR UPDATE SKIP
   LOCKED` and a 5-minute lease, recomputes them, and sets the next time from
@@ -335,7 +345,9 @@ and `last_refresh_error`.
   membership (administrator and owner from the role, scope through
   `datascope.ResolveForStrict`, which fails when the enforcer is not wired).
   An owner who is no longer an active member has the snapshot removed and
-  nothing computed on their behalf. `scope_key` fingerprints the kind of
+  nothing computed on their behalf. A trigger on `tenant_members` deletes a
+  member's personal snapshots as soon as the membership is deleted, suspended
+  or offboarded (migration `dashboard_snapshots_member_removal`). `scope_key` fingerprints the kind of
   scope, the owner's scope rows (restricted) or the private program assets
   hidden from them (unrestricted), and their pentest campaigns (hashes only);
   a snapshot whose key differs from the owner's current key is never served,
@@ -355,7 +367,11 @@ and `last_refresh_error`.
   narrowed take effect at once; layout change; another person's dashboard
   404; failed refresh shown as stale; one organization snapshot, per-viewer
   campaign rows, no campaign fields in responses; the refresher recomputes
-  due snapshots and drops the one of a member who left).
+  due snapshots and drops the one of a member who left);
+  `dashboard_snapshot_hardening_db_test.go` (one refresh in flight per
+  dashboard, refund, preview limit, pentest findings without a campaign in
+  the trends); `dashboard_snapshot_migrations_db_test.go` (member removal
+  trigger, the all-f campaign id and the rebuild request, up and down).
 
 ## Fact layer
 
@@ -399,8 +415,11 @@ What is stored, exactly:
   out by default). The lens follows `pkg/domain/vulnerability/finding_lens.go`;
   `dash_finding_lens()` is its SQL form, and a test fails if the two differ.
 - **Pentest findings keep their campaign.** For `source = 'pentest'`,
-  `pentest_campaign_id` is the campaign (the all-zero id when the finding has
-  none); for every other source it is the all-zero id. A viewer-scope read
+  `pentest_campaign_id` is the campaign (the all-f id
+  `ffffffff-ffff-ffff-ffff-ffffffffffff` when the finding has none, which no
+  campaign membership matches; migration
+  `dashboard_facts_pentest_no_campaign`, which also requested a full
+  rebuild); for every other source it is the all-zero id. A viewer-scope read
   applies the campaign membership rule on it
   (`source <> 'pentest' OR pentest_campaign_id IN <the viewer's campaigns>`),
   and a published read can leave pentest findings out or include them.

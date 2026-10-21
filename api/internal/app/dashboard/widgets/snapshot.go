@@ -31,6 +31,11 @@ func (e *ErrRefreshBudget) Error() string {
 	return "refresh budget used up; try again later"
 }
 
+// ErrRefreshRunning is returned when the dashboard is already being
+// recomputed (429): one Refresh now or scheduled refresh per dashboard at
+// a time.
+var ErrRefreshRunning = errors.New("this dashboard is already being refreshed; try again in a moment")
+
 // MembershipReader reads a member's role and state (the tenant repository).
 type MembershipReader = dashboardapp.MembershipReader
 
@@ -185,14 +190,11 @@ func (s *Service) RefreshPersonal(ctx context.Context, c dashboardapp.Caller, id
 	if err != nil {
 		return nil, err
 	}
-	if err := s.takeBudget(ctx, c, d.ID()); err != nil {
-		return nil, err
-	}
 	scope, err := s.personalScope(ctx, c)
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.read(ctx, c, d, scope, true)
+	out, err := s.refreshNow(ctx, c, d, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -207,14 +209,40 @@ func (s *Service) RefreshOrg(ctx context.Context, c dashboardapp.Caller, id stri
 	if err != nil {
 		return nil, err
 	}
-	if err := s.takeBudget(ctx, c, d.ID()); err != nil {
-		return nil, err
-	}
-	out, err := s.read(ctx, c, d.Dashboard, orgScope(c.TenantID), true)
+	out, err := s.refreshNow(ctx, c, d.Dashboard, orgScope(c.TenantID))
 	if err != nil {
 		return nil, err
 	}
 	return s.forViewer(ctx, out, c, s.campaignViewer(ctx, c))
+}
+
+// refreshNow recomputes d for scope under the dashboard's refresh lock and
+// within the budget. A refresh already running for the dashboard answers
+// ErrRefreshRunning without using the budget; a refresh that takes the
+// budget and then cannot compute (busy, failed) gives it back.
+func (s *Service) refreshNow(ctx context.Context, c dashboardapp.Caller, d *dashboard.Dashboard, scope dashboard.ReadScope) (*DashboardData, error) {
+	if s.snapshots == nil {
+		return s.read(ctx, c, d, scope, true)
+	}
+	release, ok, err := s.snapshots.TryRefreshLock(ctx, d.TenantID(), d.ID())
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrRefreshRunning
+	}
+	defer release()
+	if err := s.takeBudget(ctx, c, d.ID()); err != nil {
+		return nil, err
+	}
+	out, err := s.read(ctx, c, d, scope, true)
+	if err != nil {
+		if rerr := s.snapshots.RefundRefreshBudget(context.WithoutCancel(ctx), c.TenantID, d.ID(), c.UserID); rerr != nil {
+			s.logger.Warn("refund dashboard refresh budget", "dashboard_id", d.ID().String(), "error", rerr.Error())
+		}
+		return nil, err
+	}
+	return out, nil
 }
 
 func (s *Service) takeBudget(ctx context.Context, c dashboardapp.Caller, dashboardID shared.ID) error {
@@ -285,6 +313,16 @@ func (s *Service) refreshOne(ctx context.Context, ds dashboard.DueSnapshot) (boo
 	if err != nil {
 		return false, s.markFailed(ctx, ds, nil, err)
 	}
+	// A Refresh now of this dashboard is running and stores a fresh
+	// snapshot with its own next refresh time: nothing to do.
+	release, ok, err := s.snapshots.TryRefreshLock(ctx, ds.TenantID, ds.DashboardID)
+	if err != nil {
+		return false, s.markFailed(ctx, ds, d, err)
+	}
+	if !ok {
+		return false, nil
+	}
+	defer release()
 	key, err := s.scopeKey(ctx, d, scope)
 	if err != nil {
 		return false, s.markFailed(ctx, ds, d, err)
