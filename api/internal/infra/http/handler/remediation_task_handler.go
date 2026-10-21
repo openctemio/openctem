@@ -18,6 +18,7 @@ import (
 	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -325,6 +326,9 @@ type CreateRemediationTaskRequest struct {
 	Deadline          string   `json:"deadline"`
 	// Conflicts resolves findings of another active task.
 	Conflicts *RemediationConflictsInput `json:"conflicts,omitempty"`
+	// ConfirmOwnerAccess accepts that an owner who cannot see some of the
+	// findings will see them (needs findings:assign).
+	ConfirmOwnerAccess bool `json:"confirm_owner_access,omitempty"`
 }
 
 // Create creates a task.
@@ -338,6 +342,7 @@ type CreateRemediationTaskRequest struct {
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
+// @Failure      422  {object}  apierror.Error  "OWNER_NEEDS_ACCESS: the owner cannot see some findings"
 // @Security     BearerAuth
 // @Router       /remediation/tasks [post]
 func (h *RemediationTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -350,7 +355,8 @@ func (h *RemediationTaskHandler) Create(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	in := remediationapp.CreateTaskInput{TenantID: tid, ActorID: callerID(r), Title: req.Title, Description: req.Description}
+	in := remediationapp.CreateTaskInput{TenantID: tid, ActorID: callerID(r), Title: req.Title, Description: req.Description,
+		CanExtendOwnerAccess: middleware.HasPermission(r.Context(), permission.FindingsAssign.String()), ConfirmOwnerAccess: req.ConfirmOwnerAccess}
 	var err error
 	if in.FindingIDs, err = parseIDList("finding_ids", req.FindingIDs); err != nil {
 		h.handleError(w, err)
@@ -471,6 +477,8 @@ func (h *RemediationTaskHandler) Update(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	in.TenantID, in.TaskID, in.ActorID = tid, id, callerID(r)
+	in.CanExtendOwnerAccess = middleware.HasPermission(r.Context(), permission.FindingsAssign.String())
+	in.ConfirmOwnerAccess = confirmOwnerAccess(raw)
 	t, err := h.service.UpdateTask(r.Context(), in, h.auditContext(r))
 	if err != nil {
 		h.handleError(w, err)
@@ -493,11 +501,25 @@ type UpdateRemediationTaskRequest struct {
 	Hold            *bool   `json:"hold,omitempty"`
 	Cancel          *bool   `json:"cancel,omitempty"`
 	Note            *string `json:"note,omitempty"`
+	// ConfirmOwnerAccess accepts that a new owner who cannot see some of
+	// the task's findings will see them (needs findings:assign).
+	ConfirmOwnerAccess bool `json:"confirm_owner_access,omitempty"`
+}
+
+// confirmOwnerAccess reads the consent flag of a PATCH body (parseTaskUpdate
+// ignores it as a field of the task itself).
+func confirmOwnerAccess(raw map[string]json.RawMessage) bool {
+	var b bool
+	if v, ok := raw["confirm_owner_access"]; ok {
+		_ = json.Unmarshal(v, &b)
+	}
+	return b
 }
 
 var taskUpdateFields = map[string]bool{
 	"version": true, "title": true, "description": true, "assignee_user_id": true, "assignee_group_id": true,
 	"deadline": true, "campaign_id": true, "hold": true, "cancel": true, "note": true,
+	"confirm_owner_access": true,
 }
 
 func parseTaskUpdate(raw map[string]json.RawMessage) (remediationapp.UpdateTaskInput, error) {
@@ -604,6 +626,8 @@ type AddRemediationTaskMembersRequest struct {
 	Role       string   `json:"role"`
 	// Conflicts resolves primary findings of another active task.
 	Conflicts *RemediationConflictsInput `json:"conflicts,omitempty"`
+	// ConfirmOwnerAccess: see CreateRemediationTaskRequest.
+	ConfirmOwnerAccess bool `json:"confirm_owner_access,omitempty"`
 }
 
 // AddMembers adds findings to a task.
@@ -647,6 +671,7 @@ func (h *RemediationTaskHandler) AddMembers(w http.ResponseWriter, r *http.Reque
 	t, err := h.service.AddMembers(r.Context(), remediationapp.AddMembersInput{
 		TenantID: tid, TaskID: id, ActorID: callerID(r), Version: req.Version, FindingIDs: ids,
 		Role: remediation.MemberRole(req.Role), Conflicts: conflicts,
+		CanExtendOwnerAccess: middleware.HasPermission(r.Context(), permission.FindingsAssign.String()), ConfirmOwnerAccess: req.ConfirmOwnerAccess,
 	}, h.auditContext(r))
 	if err != nil {
 		h.handleError(w, err)
@@ -797,6 +822,17 @@ func (h *RemediationTaskHandler) handleError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"code": "FINDINGS_IN_OTHER_TASK", "message": e.Error(),
 			"details": map[string]any{"conflicts": toConflictResps(e.Conflicts)},
+		})
+		return
+	}
+	if oe, ok := remediationapp.AsOwnerAccessError(err); ok {
+		code := "OWNER_ACCESS_CONFIRMATION_REQUIRED"
+		if oe.NeedsPermission {
+			code = "OWNER_NEEDS_ACCESS"
+		}
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"code": code, "message": oe.Error(),
+			"details": map[string]any{"missing_findings": oe.MissingFindings, "missing_assets": oe.MissingAssets},
 		})
 		return
 	}
