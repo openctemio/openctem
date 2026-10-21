@@ -69,6 +69,7 @@ import {
   useTasks,
 } from '../api/use-remediation-hub'
 import { useOwnerNames } from '../api/use-owner-names'
+import { TaskPeople } from './task-people'
 import { fixSteps, groupByAsset, isTypingTarget } from '../lib/hub'
 import { FixStepsBlock } from './fix-steps'
 import { MovePalette, type MoveTarget } from './move-palette'
@@ -518,18 +519,21 @@ export function TaskDetail({ taskId }: { taskId: string }) {
           <h2 className="text-sm font-semibold">{t('remediationHub.detail.fix')}</h2>
           <FixStepsBlock steps={steps} />
         </div>
-        <div className="space-y-2 rounded-lg border p-4">
-          <h2 className="text-sm font-semibold">{t('remediationHub.detail.progress')}</h2>
-          <TaskProgress task={task} />
-          <dl className="grid grid-cols-2 gap-1 text-sm">
-            {(['verified', 'closed', 'fix_applied', 'in_progress', 'open'] as const).map((k) => (
-              <div key={k} className="contents">
-                <dt className="text-muted-foreground">{t(`remediationHub.detail.count.${k}`)}</dt>
-                <dd className="text-end font-mono">{task.counts[k]}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="text-muted-foreground text-xs">{t('remediationHub.detail.doneRule')}</p>
+        <div className="space-y-4">
+          <div className="space-y-2 rounded-lg border p-4">
+            <h2 className="text-sm font-semibold">{t('remediationHub.detail.progress')}</h2>
+            <TaskProgress task={task} />
+            <dl className="grid grid-cols-2 gap-1 text-sm">
+              {(['verified', 'closed', 'fix_applied', 'in_progress', 'open'] as const).map((k) => (
+                <div key={k} className="contents">
+                  <dt className="text-muted-foreground">{t(`remediationHub.detail.count.${k}`)}</dt>
+                  <dd className="text-end font-mono">{task.counts[k]}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-muted-foreground text-xs">{t('remediationHub.detail.doneRule')}</p>
+          </div>
+          <TaskPeople taskId={task.id} owner={owner} />
         </div>
       </section>
 

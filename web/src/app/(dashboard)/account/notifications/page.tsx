@@ -57,6 +57,7 @@ export default function NotificationsSettingsPage() {
   const [inAppEnabled, setInAppEnabled] = useState(true)
   const [mutedTypes, setMutedTypes] = useState<string[]>([])
   const [minSeverity, setMinSeverity] = useState('info')
+  const [autoWatch, setAutoWatch] = useState(true)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
@@ -64,6 +65,7 @@ export default function NotificationsSettingsPage() {
       setInAppEnabled(preferences.in_app_enabled)
       setMutedTypes(preferences.muted_types ?? [])
       setMinSeverity(preferences.min_severity)
+      setAutoWatch(preferences.auto_watch ?? true)
       setDirty(false)
     }
   }, [preferences])
@@ -89,6 +91,7 @@ export default function NotificationsSettingsPage() {
         in_app_enabled: inAppEnabled,
         muted_types: mutedTypes,
         min_severity: minSeverity,
+        auto_watch: autoWatch,
       }
       await updateNotificationPreferences(update)
       await invalidatePreferencesCache()
@@ -174,6 +177,37 @@ export default function NotificationsSettingsPage() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5" />
+            {t('notificationTypes.autoWatch.title', 'Watching')}
+          </CardTitle>
+          <CardDescription>
+            {t(
+              'notificationTypes.autoWatch.subtitle',
+              'Findings and tasks you take part in can be watched for you.'
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label htmlFor="auto-watch">
+                {t('notificationTypes.autoWatch.label', 'Watch what I take part in')}
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'notificationTypes.autoWatch.description',
+                  'When you comment, change a status, claim a fix or are assigned, you start watching it. Stopping on one item always sticks.'
+                )}
+              </p>
+            </div>
+            <Switch id="auto-watch" checked={autoWatch} onCheckedChange={edit(setAutoWatch)} />
           </div>
         </CardContent>
       </Card>
