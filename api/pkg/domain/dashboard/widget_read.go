@@ -57,6 +57,11 @@ type RankItem struct {
 	SortAt        *time.Time
 	SLADeadline   *time.Time
 	KEV           bool
+	// Pentest marks a pentest finding; CampaignID is its campaign (zero
+	// when it has none). Organization lists keep them so the viewer's
+	// campaign membership can be applied on read.
+	Pentest    bool
+	CampaignID shared.ID
 }
 
 // RankKind names a rank list of the facts.
@@ -88,4 +93,7 @@ type FactReader interface {
 	// Rank returns up to limit findings of a rank list (F3), merged across
 	// the in-scope assets, with their list fields, still open.
 	Rank(ctx context.Context, scope ReadScope, kind RankKind, f WidgetFilter, limit int) ([]RankItem, error)
+	// CampaignsOf lists the pentest campaigns userID is a member of in the
+	// tenant.
+	CampaignsOf(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
 }

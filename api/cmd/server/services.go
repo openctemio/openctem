@@ -55,6 +55,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/assignment"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
+	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/participation"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
@@ -682,7 +683,9 @@ type Services struct {
 
 	// Per-user customizable dashboards (RFC-021)
 	UserDashboard *dashboardapp.Service
-	SavedView     *savedviewapp.Service
+	// DashboardWidgets computes widget results and keeps their snapshots.
+	DashboardWidgets *dashwidgets.Service
+	SavedView        *savedviewapp.Service
 
 	// Integrations & Notifications
 	Integration    *integration.IntegrationService
@@ -1247,6 +1250,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.UserDashboard.SetLimitReader(s.Entitlement)
 	s.UserDashboard.SetMembershipReader(repos.Tenant)
 	s.UserDashboard.SetSettingsStore(s.Tenant)
+	// Widget results from the fact tables, stored as snapshots.
+	s.DashboardWidgets = dashwidgets.NewService(s.UserDashboard, s.DataScope, repos.DashboardWidget, log)
+	s.DashboardWidgets.SetSnapshots(repos.DashboardSnapshot, repos.UserDashboard, repos.Tenant, s.Tenant)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
