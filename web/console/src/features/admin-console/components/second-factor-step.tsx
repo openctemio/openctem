@@ -4,8 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { KeyRound, Loader2 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { VerificationCodeInput } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminSignInWithKey, adminSignInWithRecoveryCode } from '../api/use-console-factors'
 import { isWebAuthnSupported } from '../lib/webauthn'
@@ -14,6 +13,9 @@ import { TotpStepForm, adminErrorMessage, type TotpStep } from './totp-step-form
 import type { AdminIdentity, AdminSignInMethod } from '../types'
 
 type Method = 'webauthn' | 'totp' | 'recovery'
+
+/** Printed format of a console recovery code ("ABCD-EFGH-JKMN"). */
+const CONSOLE_RECOVERY_CODE = { length: 12, groups: [4, 4, 4] } as const
 
 export interface SecondFactorStepProps {
   step: TotpStep & { methods?: AdminSignInMethod[] }
@@ -238,12 +240,12 @@ function RecoveryCodeForm({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
+  const send = async (value: string) => {
+    if (value.length !== CONSOLE_RECOVERY_CODE.length || busy || disabled) return
     setBusy(true)
     setError(null)
     try {
-      onVerified(await adminSignInWithRecoveryCode(code.trim()))
+      onVerified(await adminSignInWithRecoveryCode(value))
     } catch (err) {
       setError(
         adminErrorMessage(
@@ -257,37 +259,36 @@ function RecoveryCodeForm({
     }
   }
 
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    void send(code)
+  }
+
   return (
     <form method="post" onSubmit={submit} className="space-y-4">
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      <div className="space-y-2">
-        <Label htmlFor="admin-recovery-code">
-          {t('admin.login.recoveryCode', 'Recovery code')}
-        </Label>
-        <Input
-          id="admin-recovery-code"
-          autoComplete="off"
-          autoCapitalize="off"
-          spellCheck={false}
-          required
-          autoFocus
-          maxLength={64}
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          className="font-mono tracking-wider"
-        />
-        <p className="text-xs text-muted-foreground">
-          {t(
-            'admin.login.recoveryHint',
-            'One of the recovery codes you saved when you set up your security keys. Each code works once.'
-          )}
-        </p>
-      </div>
-      <Button type="submit" className="w-full" disabled={busy || disabled || !code.trim()}>
+      <VerificationCodeInput
+        id="admin-recovery-code"
+        mode="alphanumeric"
+        length={CONSOLE_RECOVERY_CODE.length}
+        groups={[...CONSOLE_RECOVERY_CODE.groups]}
+        placeholder="XXXX-XXXX-XXXX"
+        value={code}
+        onChange={setCode}
+        onComplete={(c) => void send(c)}
+        disabled={busy || disabled}
+        error={error}
+        required
+        autoFocus
+        hint={t(
+          'admin.login.recoveryHint',
+          'One of the recovery codes you saved when you set up your security keys. Each code works once.'
+        )}
+      />
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={busy || disabled || code.length !== CONSOLE_RECOVERY_CODE.length}
+      >
         {busy && <Loader2 className="me-2 size-4 animate-spin" />}
         {t('admin.login.continue', 'Continue')}
       </Button>

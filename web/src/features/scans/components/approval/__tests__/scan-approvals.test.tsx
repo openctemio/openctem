@@ -176,8 +176,8 @@ describe('Approvals inbox', () => {
     const confirm = screen.getAllByRole('button', { name: 'Approve' }).pop()!
     expect(confirm).toBeDisabled()
     await user.type(screen.getByLabelText('Reason'), 'only owner')
-    await user.type(screen.getByLabelText('Code from your authenticator'), '123456')
-    await user.click(confirm)
+    // With the reason given, the sixth digit approves on its own.
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     await waitFor(() => expect(api.selfApprove).toHaveBeenCalledWith('r1', 'only owner', '123456'))
   })
 })

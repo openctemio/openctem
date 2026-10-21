@@ -269,6 +269,7 @@ func (r *CommandRepository) RequeueStopped(ctx context.Context, cmd *command.Com
 		SET status = 'pending', sensor_id = NULL,
 		    acknowledged_at = NULL, started_at = NULL, lease_expires_at = NULL,
 		    dispatch_attempts = dispatch_attempts + 1,
+		    `+requeueSQL("")+`,
 		    `+clearProgressSQL+`,
 		    error_message = $6
 		WHERE id = $1 AND tenant_id = $2 AND sensor_id = $3
@@ -307,6 +308,7 @@ func (r *CommandRepository) RequeueStalledCommands(ctx context.Context) ([]comma
 		    acknowledged_at = NULL, started_at = NULL,
 		    lease_expires_at = NULL,
 		    dispatch_attempts = c.dispatch_attempts + 1,
+		    `+requeueSQL("c.")+`,
 		    `+clearProgressSQL+`,
 		    error_message = s.msg
 		FROM (

@@ -1378,7 +1378,7 @@ func (c *EncryptionConfig) IsConfigured() bool {
 
 // AITriageConfig holds AI triage configuration for the platform.
 // This is the platform-level configuration. Tenant-specific settings
-// are stored in tenant.Settings.AI.
+// are stored in tenant_ai_settings.
 type AITriageConfig struct {
 	// Platform AI Provider Configuration
 	// Used when tenants choose "platform" mode (don't provide their own keys)

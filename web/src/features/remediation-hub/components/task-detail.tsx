@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWRInfinite from 'swr/infinite'
 import {
   DndContext,
@@ -78,6 +79,10 @@ import { DeadlinePill, TaskCampaignLink, TaskProgress, TaskStatePill } from './t
 import { useTaskException } from './task-exception'
 import { TaskQueryPanel } from './task-query-panel'
 import { VirtualRows } from './virtual-rows'
+import { TaskFindingDrawer } from './task-finding-drawer'
+import { TaskRowStatus } from './task-row-status'
+import { nextWorkFinding, positionOf, stepFinding } from '../lib/task-nav'
+import type { FindingStatus } from '@/features/findings/types'
 
 const MEMBER_PAGE = 200
 const ROW_HEIGHT = 44
@@ -110,6 +115,36 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const [fixResult, setFixResult] = useState<MarkFixedResult | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  // The finding open in the side drawer lives in the URL (?finding=), so it
+  // can be shared; opening pushes (Back closes it), moving inside it replaces.
+  const router = useRouter()
+  const pathname = usePathname()
+  const search = useSearchParams()
+  const searchStr = search.toString()
+  const findingId = search.get('finding')
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [autoNext, setAutoNext] = useState(true)
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem('remediationHub.autoNext') === '0') setAutoNext(false)
+    } catch {
+      // no storage: keep the default
+    }
+  }, [])
+  const showFinding = useCallback(
+    (id: string | null, mode: 'push' | 'replace') => {
+      const q = new URLSearchParams(searchStr)
+      if (id) q.set('finding', id)
+      else q.delete('finding')
+      const qs = q.toString()
+      const url = qs ? `${pathname}?${qs}` : pathname
+      if (mode === 'push') router.push(url, { scroll: false })
+      else router.replace(url, { scroll: false })
+      if (id) setActiveId(id)
+    },
+    [pathname, router, searchStr, setActiveId]
+  )
   const { data: siblings } = useTasks(
     {
       actionId: task?.action_id,
@@ -138,9 +173,29 @@ export function TaskDetail({ taskId }: { taskId: string }) {
     return out
   }, [loaded, t])
 
+  const order = useMemo(
+    () => rows.flatMap((r) => (r.kind === 'member' ? [r.member.finding_id] : [])),
+    [rows]
+  )
+  const position = positionOf(order, findingId)
+  const onFindingStatus = useCallback(
+    (id: string, status: FindingStatus) => {
+      void members.mutate()
+      void revalidate()
+      if (!autoNext || findingId !== id || !['in_progress', 'fix_applied'].includes(status)) return
+      const next = nextWorkFinding(
+        order,
+        (x) => (x === id ? status : loaded.find((m) => m.finding_id === x)?.status),
+        id
+      )
+      if (next) showFinding(next, 'replace')
+    },
+    [autoNext, findingId, loaded, members, order, revalidate, showFinding]
+  )
+
   const writable =
     !!task && canWrite && !TERMINAL_TASK_STATES.has(task.state) && task.hidden_members === 0
-  const exception = useTaskException(taskId, writable)
+  const exception = useTaskException(taskId, task?.version ?? 0, writable)
 
   const doMove = useCallback(
     async (target: MoveTarget) => {
@@ -278,7 +333,17 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         isTypingTarget(e.target)
       )
         return
-      if (e.key === 'm' && writable && selected.size > 0) setMoveOpen(true)
+      const dialogs = document.querySelectorAll('[role="dialog"][data-state="open"]').length
+      if (dialogs > (findingId ? 1 : 0)) return
+      if (e.key === 'j' || e.key === 'k') {
+        const to = stepFinding(order, findingId ?? activeId, e.key === 'j' ? 1 : -1)
+        if (to) {
+          if (findingId) showFinding(to, 'replace')
+          else setActiveId(to)
+        }
+      } else if (e.key === 'Enter' && !findingId && activeId && e.target === document.body) {
+        showFinding(activeId, 'push')
+      } else if (e.key === 'm' && writable && selected.size > 0) setMoveOpen(true)
       else if (
         e.key === 's' &&
         writable &&
@@ -304,6 +369,10 @@ export function TaskDetail({ taskId }: { taskId: string }) {
     canFix,
     selected.size,
     task,
+    findingId,
+    activeId,
+    order,
+    showFinding,
   ])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
@@ -433,7 +502,12 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </p>
       )}
 
-      <TaskQueryPanel taskId={task.id} writable={writable} onChanged={() => void mutate()} />
+      <TaskQueryPanel
+        taskId={task.id}
+        taskVersion={task.version}
+        writable={writable}
+        onChanged={() => void mutate()}
+      />
 
       <section className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-2 rounded-lg border p-4">
@@ -465,6 +539,20 @@ export function TaskDetail({ taskId }: { taskId: string }) {
               <h2 className="text-sm font-semibold">
                 {t('remediationHub.detail.findings', undefined, { n: totalMembers })}
               </h2>
+              <label className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                <Checkbox
+                  checked={autoNext}
+                  onCheckedChange={(v) => {
+                    setAutoNext(v === true)
+                    try {
+                      window.localStorage.setItem('remediationHub.autoNext', v === true ? '1' : '0')
+                    } catch {
+                      // not stored: applies to this visit
+                    }
+                  }}
+                />
+                {t('remediationHub.detail.autoNext')}
+              </label>
               {writable && selected.size > 0 && (
                 <div className="ms-auto flex flex-wrap items-center gap-2">
                   <span className="text-muted-foreground text-xs">
@@ -510,6 +598,11 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                 rowHeight={ROW_HEIGHT}
                 height={480}
                 label={t('remediationHub.detail.findingsList')}
+                scrollToIndex={
+                  activeId
+                    ? rows.findIndex((r) => r.kind === 'member' && r.member.finding_id === activeId)
+                    : null
+                }
                 rowKey={(r) => (r.kind === 'group' ? `g:${r.key}` : r.member.finding_id)}
                 onEndReached={() => {
                   if (loaded.length < totalMembers && !members.isValidating)
@@ -526,6 +619,10 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                       member={r.member}
                       selectable={writable}
                       selected={selected.has(r.member.finding_id)}
+                      active={activeId === r.member.finding_id}
+                      statusMenu={!TERMINAL_TASK_STATES.has(task.state)}
+                      onOpen={() => showFinding(r.member.finding_id, 'push')}
+                      onStatus={onFindingStatus}
                       onSelect={(v) =>
                         setSelected((cur) => {
                           const n = new Set(cur)
@@ -613,6 +710,14 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         result={fixResult}
       />
       {exception.dialog}
+      <TaskFindingDrawer
+        taskId={taskId}
+        findingId={findingId}
+        position={position}
+        onClose={() => showFinding(null, 'replace')}
+        onGo={(id) => showFinding(id, 'replace')}
+        onStatusChange={onFindingStatus}
+      />
       <CancelTaskDialog
         open={cancelOpen}
         onOpenChange={setCancelOpen}
@@ -628,11 +733,19 @@ function MemberRow({
   selectable,
   selected,
   onSelect,
+  active,
+  statusMenu,
+  onOpen,
+  onStatus,
 }: {
   member: TaskMember
   selectable: boolean
   selected: boolean
   onSelect: (v: boolean) => void
+  active: boolean
+  statusMenu: boolean
+  onOpen: () => void
+  onStatus: (findingId: string, status: FindingStatus) => void
 }) {
   const { t } = useTranslation()
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -648,7 +761,8 @@ function MemberRow({
       style={style}
       className={cn(
         'flex h-full items-center gap-2 border-b px-3 text-sm',
-        isDragging && 'bg-muted opacity-70'
+        isDragging && 'bg-muted opacity-70',
+        active && 'bg-primary/5 ring-primary/50 ring-1 ring-inset'
       )}
     >
       {selectable && m.role === 'primary' && (
@@ -670,15 +784,24 @@ function MemberRow({
         </>
       )}
       <SeverityBadge severity={m.severity as Severity} />
-      <Link href={`/findings/${m.finding_id}`} className="min-w-0 flex-1 truncate hover:underline">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="min-w-0 flex-1 truncate text-start hover:underline"
+        aria-label={t('remediationHub.detail.openFinding', undefined, { title: m.title })}
+      >
         {m.title}
-      </Link>
+      </button>
       {m.role === 'related' && (
         <span className="text-muted-foreground text-xs">{t('remediationHub.detail.related')}</span>
       )}
-      <span className="text-muted-foreground hidden text-xs sm:inline">
-        {t(`remediationHub.findingStatus.${m.status}`, m.status)}
-      </span>
+      {statusMenu && m.role === 'primary' ? (
+        <TaskRowStatus member={m} onChanged={onStatus} />
+      ) : (
+        <span className="text-muted-foreground hidden text-xs sm:inline">
+          {t(`remediationHub.findingStatus.${m.status}`, m.status)}
+        </span>
+      )}
       {m.verified && (
         <CheckCheck
           className="size-4 text-success"
