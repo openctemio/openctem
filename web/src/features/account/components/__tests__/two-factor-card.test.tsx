@@ -63,7 +63,7 @@ describe('TwoFactorCard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Set up' }))
     expect(await screen.findByRole('img', { name: /qr code/i })).toBeInTheDocument()
-    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await user.type(screen.getByLabelText('Authentication code'), '123456')
     expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled()
     await user.type(screen.getByLabelText('Current password'), 'my-password')
     await user.click(screen.getByRole('button', { name: 'Turn on' }))
@@ -90,10 +90,10 @@ describe('TwoFactorCard', () => {
     await screen.findByRole('img', { name: /qr code/i })
     await user.type(screen.getByLabelText('Current password'), 'my-password')
     // With the password given, the sixth digit submits on its own.
-    await user.type(screen.getByLabelText('Code from your authenticator app'), '000000')
+    await user.type(screen.getByLabelText('Authentication code'), '000000')
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid verification code')
     expect(enableTwoFactor).toHaveBeenCalledTimes(1)
-    expect(screen.getByLabelText('Code from your authenticator app')).toHaveValue('')
+    expect(screen.getByLabelText('Authentication code')).toHaveValue('')
   })
 
   it('turning off needs the password and a code', async () => {

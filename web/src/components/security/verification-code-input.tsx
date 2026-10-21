@@ -74,10 +74,11 @@ export function formatCodeGroups(code: string, groups?: number[]): string {
 
 export interface VerificationCodeInputProps {
   /**
-   * The field's visible label and the input's accessible name. Default:
-   * "Code from your authenticator app" (numeric) or "Recovery code".
+   * The field's visible label and the input's accessible name. Required:
+   * every code field must be nameable by a screen reader, and the caller
+   * knows which code it asks for.
    */
-  label?: string
+  label: string
   /** Keep the label for screen readers only. */
   hideLabel?: boolean
   /** The normalised code. */
@@ -236,10 +237,7 @@ export function VerificationCodeInput({
   return (
     <div className={cn('space-y-2', className)}>
       <Label htmlFor={inputId} className={cn(hideLabel && 'sr-only')}>
-        {label ??
-          (mode === 'numeric'
-            ? t('components.verificationCode.label', 'Code from your authenticator app')
-            : t('components.verificationCode.recoveryLabel', 'Recovery code'))}
+        {label}
       </Label>
       {mode === 'numeric' ? (
         <div
