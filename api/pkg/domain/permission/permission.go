@@ -245,6 +245,12 @@ const (
 	ScanZonesWrite  Permission = "sensors:zones:write"
 	ScanZonesDelete Permission = "sensors:zones:delete"
 
+	// Proxy pools for scan traffic (sensors:egress:*, RFC-034). Write
+	// covers pools, their credentials and the network path of sensors.
+	SensorEgressRead   Permission = "sensors:egress:read"
+	SensorEgressWrite  Permission = "sensors:egress:write"
+	SensorEgressDelete Permission = "sensors:egress:delete"
+
 	// Pairing and per-sensor grants (RFC-052). Pair: look up a pairing
 	// code, expect a sensor, deny a request. Approve: bind a sensor key to
 	// the organization (with step-up). GrantNarrow / GrantWiden: narrow or
@@ -514,6 +520,7 @@ func AllPermissions() []Permission {
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorEgressRead, SensorEgressWrite, SensorEgressDelete,
 		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 
 		// Team module

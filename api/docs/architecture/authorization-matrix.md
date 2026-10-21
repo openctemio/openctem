@@ -29,7 +29,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
-| Sensors | 14 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
+| Sensors | 17 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:egress:read/write/delete` (proxy pools), `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
@@ -493,6 +493,29 @@ create's target validator, exclusions, zone routing) in one call.
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
 
+#### Proxy pools (`/api/v1/proxy-pools`, RFC-034)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/proxy-pools` · `/{id}` · `/assignments` | `sensors:egress:read` |
+| `POST /api/v1/proxy-pools` | `sensors:egress:write` |
+| `PATCH /api/v1/proxy-pools/{id}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/{id}/endpoints` · `PATCH /{id}/endpoints/{endpointId}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/assignments/{sensorId}` | `sensors:egress:write` |
+| `DELETE /api/v1/proxy-pools/{id}` | `sensors:egress:delete` |
+
+> Seeded by migration `sensor_proxy_pools`: owner and admin only (a pool
+> decides where every scan's traffic exits and holds credentials);
+> `sensors:egress:write` and `:delete` are admin-only, so no custom role may
+> carry them (trigger extended in the same migration). Object level: every
+> query carries `tenant_id`; endpoints and assignments have composite foreign
+> keys `(tenant_id, pool_id)` and `(tenant_id, sensor_id)`, so a pool or
+> sensor of another tenant, or a shared sensor, cannot be linked. No response
+> carries a credential. The sensor side
+> (`POST /api/v2/sensor/commands/{id}/egress-credentials` and `/egress-report`)
+> answers only the sensor holding the command's lease. See
+> [sensor-proxies.md](sensor-proxies.md).
+
 #### Content catalog (`/api/v1/content`, RFC-099)
 
 | Endpoint | Permission Required |
@@ -547,7 +570,8 @@ authenticator code, and is audited.
 >
 > **No custom role may carry them** (settings decision B1, 2026-10-04):
 > `sensors:write`, `sensors:delete`,
-> `sensors:zones:write` and `sensors:zones:delete` are admin-only
+> `sensors:zones:write`, `sensors:zones:delete`, `sensors:egress:write` and
+> `sensors:egress:delete` are admin-only
 > (`pkg/domain/permission/admin_only.go`). The role service refuses them on
 > create and update, whoever edits the role (400), and a trigger on
 > `role_permissions` refuses a row that would put one on a custom role
