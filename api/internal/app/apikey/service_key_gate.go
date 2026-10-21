@@ -2,6 +2,7 @@ package apikey
 
 import (
 	"context"
+	"errors"
 
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -37,8 +38,10 @@ type ServiceKeyGate interface {
 	CreatorRefusal(ctx context.Context, tenantID shared.ID, createdBy *shared.ID) (string, error)
 }
 
-// NewServiceKeyGate returns the ServiceKeyGate production wires. members and
-// holder are the same resolvers every key request already uses; holder should
+// NewServiceKeyGate returns the ServiceKeyGate production wires. members must
+// not carry the organization gate: Authenticate already refuses every key of a
+// suspended organization, and the sweep must not revoke keys over an
+// organization suspension that may be lifted. holder should
 // read the role tables directly (not a cache), because a team membership ends
 // by the clock, which no cache invalidation can signal.
 func NewServiceKeyGate(accounts ServiceAccountSource, members MembershipChecker, holder HolderPermissions) ServiceKeyGate {
@@ -67,6 +70,11 @@ func (g serviceKeyGate) CreatorRefusal(ctx context.Context, tenantID shared.ID, 
 		return ReasonCreatorMissing, nil
 	}
 	active, err := g.members.IsActiveMember(ctx, tenantID, *createdBy)
+	if errors.Is(err, shared.ErrNotFound) {
+		// No membership (removed) or no user row: the creator is gone, which
+		// is a refusal, not a lookup failure, so the sweep revokes the keys.
+		return ReasonCreatorInactive, nil
+	}
 	if err != nil {
 		return ReasonCreatorLookup, err
 	}

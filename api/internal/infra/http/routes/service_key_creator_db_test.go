@@ -156,7 +156,7 @@ func TestServiceKeyCreator_StopsWorkingWhenManageIsLost(t *testing.T) {
 		{"removed from the organization", func() (shared.ID, func()) {
 			u, _ := f.manager()
 			return u, func() { h.exec(`DELETE FROM tenant_members WHERE user_id = $1 AND tenant_id = $2`, u.String(), tid) }
-		}, apikey.ReasonCreatorLookup},
+		}, apikey.ReasonCreatorInactive},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -170,13 +170,6 @@ func TestServiceKeyCreator_StopsWorkingWhenManageIsLost(t *testing.T) {
 				t.Fatal("the key still works after its creator lost service_accounts:manage")
 			}
 			reason, err := f.gate.Refusal(context.Background(), h.tenant, f.sa, &creator)
-			if c.reason == apikey.ReasonCreatorLookup {
-				// A missing membership is a lookup failure: refused, fail closed.
-				if err == nil {
-					t.Errorf("reason %q, err nil", reason)
-				}
-				return
-			}
 			if err != nil || reason != c.reason {
 				t.Errorf("reason = %q (err %v), want %q", reason, err, c.reason)
 			}
@@ -231,8 +224,11 @@ func TestServiceKeyCreator_SweepRevokesKeys(t *testing.T) {
 	db := &postgres.DB{DB: h.db}
 	lost, role := f.manager()
 	kept, _ := f.manager()
+	removed, _ := f.manager()
 	lostKey, keptKey, orphanKey := f.mint(f.sa, lost), f.mint(f.sa, kept), f.mint(f.sa, shared.ID{})
+	removedKey := f.mint(f.sa, removed)
 	h.exec(`DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2`, lost.String(), role.String())
+	h.exec(`DELETE FROM tenant_members WHERE user_id = $1 AND tenant_id = $2`, removed.String(), h.tenant.String())
 
 	repo := postgres.NewServiceAccountRepository(db)
 	c := controller.NewServiceKeyCreatorController(repo, f.gate, postgres.NewMemberLifecycleRepository(db), time.Minute, logger.NewNop())
@@ -240,8 +236,8 @@ func TestServiceKeyCreator_SweepRevokesKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n < 2 {
-		t.Errorf("revoked %d keys, want at least the lost creator's and the orphan", n)
+	if n < 3 {
+		t.Errorf("revoked %d keys, want at least the lost creator's, the removed creator's and the orphan", n)
 	}
 	status := func(raw string) string {
 		var s string
@@ -250,6 +246,9 @@ func TestServiceKeyCreator_SweepRevokesKeys(t *testing.T) {
 	}
 	if got := status(lostKey); got != "revoked" {
 		t.Errorf("the key of a creator who lost manage is %q", got)
+	}
+	if got := status(removedKey); got != "revoked" {
+		t.Errorf("the key of a creator removed from the organization is %q", got)
 	}
 	if got := status(orphanKey); got != "revoked" {
 		t.Errorf("the key with no creator is %q", got)
