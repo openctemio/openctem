@@ -384,7 +384,7 @@ func (h *ProxyPoolHandler) SetAssignment(w http.ResponseWriter, r *http.Request)
 	}
 	actx := buildScanZoneAuditContext(r)
 	sensorID := chi.URLParam(r, "sensor_id")
-	if err := h.service.SetAssignment(r.Context(), actx.TenantID, sensorID, req.Mode, req.PoolID, actx); err != nil {
+	if err := h.service.AssignSensor(r.Context(), actx.TenantID, sensorID, req.Mode, req.PoolID, actx); err != nil {
 		h.handleError(w, err)
 		return
 	}
