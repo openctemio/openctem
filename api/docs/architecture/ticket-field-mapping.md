@@ -38,7 +38,9 @@ simulate: state ──► BFS path + screen values      tracker status (+resolut
 - `SyncService.CreateTicketFromFinding` asks `ProfileSource.RenderFindingCreate` (the mapping service) for the
   published profile of the destination (the client's own integration, project, issue type). With one, the issue
   is created from the rendered fields (`CreateIssueFields`, issue type by id); in dry run the profile's fields are
-  logged and the built-in fields are sent.
+  logged and the built-in fields are sent. The issue type is matched by id (preferred) or name; when the caller
+  names no type and the project has more than one published profile of the kind, none is chosen and the built-in
+  mapping applies, rather than the first profile in list order.
 - `SyncFindingStatusToTicket` asks `FindingStatusTarget` first. A published profile for the issue's project is
   its own opt-in: the state's target status is reached by `runStatusPath` (`internal/app/jira/profile_engine.go`):
   read the current status and the transitions available now, follow the shortest path of the published workflow
