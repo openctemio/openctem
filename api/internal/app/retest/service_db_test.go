@@ -44,6 +44,11 @@ func (s sensorsOnline) HasRetestSensor(context.Context, shared.ID, string) (bool
 	return false, nil
 }
 
+// HasRetestTemplatesSensor: no sensor runs custom checks.
+func (s sensorsOnline) HasRetestTemplatesSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+
 // RetestTools: the template re-verify rung only, when online.
 func (s sensorsOnline) RetestTools(context.Context, shared.ID) ([]string, error) {
 	if !s {
@@ -62,6 +67,10 @@ func (onlyToolRetest) HasNucleiValidationSensor(context.Context, shared.ID) (boo
 
 func (o onlyToolRetest) HasRetestSensor(_ context.Context, _ shared.ID, tool string) (bool, error) {
 	return tool == string(o), nil
+}
+
+func (o onlyToolRetest) HasRetestTemplatesSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
 }
 
 func (o onlyToolRetest) RetestTools(context.Context, shared.ID) ([]string, error) {
@@ -508,7 +517,14 @@ func TestRetestDB_IneligibleFindingsAreRefused(t *testing.T) {
 	notNuclei := fx.newFinding(fx.asset, "confirmed", "tpl-x")
 	fx.exec(`UPDATE findings SET tool_name = 'trivy' WHERE id = $1`, notNuclei.String())
 	destructive := fx.newFinding(fx.asset, "confirmed", "apache-dos-check")
-	for name, f := range map[string]shared.ID{"false positive": fp, "destructive template": destructive} {
+	// A leaked secret is never verified by a re-check that stops matching it,
+	// by type or by source, even for an otherwise retestable nuclei finding.
+	secretByType := fx.newFinding(fx.asset, "confirmed", "tpl-secret-type")
+	fx.exec(`UPDATE findings SET finding_type = 'secret' WHERE id = $1`, secretByType.String())
+	secretBySource := fx.newFinding(fx.asset, "confirmed", "tpl-secret-source")
+	fx.exec(`UPDATE findings SET source = 'secret' WHERE id = $1`, secretBySource.String())
+	for name, f := range map[string]shared.ID{"false positive": fp, "destructive template": destructive,
+		"secret by type": secretByType, "secret by source": secretBySource} {
 		_, err := svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: f, Trigger: retestdom.TriggerManual, RequestedBy: &user})
 		if !errors.Is(err, retestdom.ErrNotEligible) {
 			t.Errorf("%s: err = %v, want not eligible", name, err)

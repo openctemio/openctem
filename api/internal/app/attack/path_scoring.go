@@ -29,7 +29,8 @@ var attackPathRelationshipTypes = map[asset.RelationshipType]bool{
 }
 
 // controlRelationshipTypes are relationships that indicate security controls.
-// Assets protected by these add a "protected" flag to scored nodes.
+// Assets protected by these add a "protected" flag to scored nodes. The
+// protected asset is the source of protected_by and the target of monitors.
 var controlRelationshipTypes = map[asset.RelationshipType]bool{
 	asset.RelTypeProtectedBy: true,
 	asset.RelTypeMonitors:    true,
@@ -160,10 +161,14 @@ func (s *SurfaceService) ComputeAttackPathScores(
 
 	for _, e := range edges {
 		if controlRelationshipTypes[e.Type] {
-			// source asset is protected (protected_by / monitors points FROM protected TO control)
-			// convention: "A protected_by B" means A is target, B is source when edge direction
-			// is stored as source=A → target=B? Let's treat target as the protected asset.
-			protected[e.TargetAssetID] = true
+			// Direction follows relationship-types.yaml: "A protected_by B"
+			// (A = website, B = the WAF) protects the SOURCE, while
+			// "A monitors B" (A = the SIEM, B = the host) observes the TARGET.
+			if e.Type == asset.RelTypeProtectedBy {
+				protected[e.SourceAssetID] = true
+			} else {
+				protected[e.TargetAssetID] = true
+			}
 			continue
 		}
 		if attackPathRelationshipTypes[e.Type] {

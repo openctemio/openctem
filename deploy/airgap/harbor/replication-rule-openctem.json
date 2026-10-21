@@ -1,0 +1,15 @@
+{
+  "name": "openctem-release-images",
+  "description": "Pull OpenCTEM release images into openctem-staging. Exact names, release tags only.",
+  "src_registry": { "id": 0 },
+  "dest_namespace": "openctem-staging",
+  "dest_namespace_replace_count": 1,
+  "filters": [
+    { "type": "name", "value": "openctemio/{openctem-api,openctem-web,openctem-console,openctem-gateway,migrations,seed,admin-cli}" },
+    { "type": "tag", "value": "v[0-9]*" }
+  ],
+  "trigger": { "type": "scheduled", "trigger_settings": { "cron": "0 0 */6 * * *" } },
+  "override": false,
+  "enabled": true,
+  "speed": -1
+}

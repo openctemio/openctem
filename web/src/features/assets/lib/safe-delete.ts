@@ -14,6 +14,7 @@
 import { toast } from 'sonner'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { archiveAsset, deleteAsset } from '../hooks/use-assets'
+import { defaultT, type TFn } from './default-t'
 
 export const ASSET_HAS_FINDINGS = 'asset_has_findings'
 
@@ -75,18 +76,32 @@ export async function bulkArchiveAssets(ids: string[]): Promise<BulkArchiveOutco
   return out
 }
 
-function plural(n: number, word: string) {
-  return `${n} ${word}${n === 1 ? '' : 's'}`
-}
-
 /** Archives the given assets and reports the result. */
-export async function archiveAndReport(ids: string[], onChanged?: () => unknown) {
+export async function archiveAndReport(
+  ids: string[],
+  onChanged?: () => unknown,
+  t: TFn = defaultT
+) {
   const res = await bulkArchiveAssets(ids)
-  if (res.archived.length > 0) {
-    toast.success(`Archived ${plural(res.archived.length, 'asset')}; their findings are kept`)
+  const archived = res.archived.length
+  const failed = res.failed.length
+  if (archived > 0) {
+    toast.success(
+      archived === 1
+        ? t('assets.safeDelete.archivedOne', 'Archived 1 asset; its findings are kept')
+        : t('assets.safeDelete.archived', 'Archived {count} assets; their findings are kept', {
+            count: archived,
+          })
+    )
   }
-  if (res.failed.length > 0) {
-    toast.error(`Could not archive ${plural(res.failed.length, 'asset')}`)
+  if (failed > 0) {
+    toast.error(
+      failed === 1
+        ? t('assets.safeDelete.archiveFailedOne', 'Could not archive 1 asset')
+        : t('assets.safeDelete.archiveFailed', 'Could not archive {count} assets', {
+            count: failed,
+          })
+    )
   }
   await onChanged?.()
   return res
@@ -99,46 +114,88 @@ export async function archiveAndReport(ids: string[], onChanged?: () => unknown)
 export async function deleteAssetSafely(
   id: string,
   name: string,
-  onChanged?: () => unknown
+  onChanged?: () => unknown,
+  t: TFn = defaultT
 ): Promise<'deleted' | 'refused' | 'failed'> {
   try {
     await deleteAsset(id)
-    toast.success(`${name} deleted`)
+    toast.success(t('assets.safeDelete.deleted', '{name} deleted', { name }))
     await onChanged?.()
     return 'deleted'
   } catch (err) {
     if (isAssetHasFindingsError(err)) {
       const n = findingCountOf(err)
       toast.warning(
-        `${name} was not deleted: it has ${n !== undefined ? plural(n, 'finding') : 'findings'}. Archive it to hide it and keep its finding history.`,
+        n === undefined
+          ? t(
+              'assets.safeDelete.refused',
+              '{name} was not deleted: it has findings. Archive it to hide it and keep its finding history.',
+              { name }
+            )
+          : t(
+              'assets.safeDelete.refusedCount',
+              '{name} was not deleted: it has {count} findings. Archive it to hide it and keep its finding history.',
+              { name, count: n }
+            ),
         {
           duration: 15000,
-          action: { label: 'Archive', onClick: () => void archiveAndReport([id], onChanged) },
+          action: {
+            label: t('assets.safeDelete.archiveAction', 'Archive'),
+            onClick: () => void archiveAndReport([id], onChanged, t),
+          },
         }
       )
       return 'refused'
     }
-    toast.error(getErrorMessage(err, `Failed to delete ${name}`))
+    toast.error(
+      getErrorMessage(err, t('assets.safeDelete.deleteFailed', 'Failed to delete {name}', { name }))
+    )
     return 'failed'
   }
 }
 
 /** Reports a bulk delete: deleted, refused (with an Archive action), failed. */
-export function reportBulkDelete(outcome: BulkDeleteOutcome, onChanged?: () => unknown) {
-  if (outcome.deleted.length > 0) {
-    toast.success(`Deleted ${plural(outcome.deleted.length, 'asset')}`)
+export function reportBulkDelete(
+  outcome: BulkDeleteOutcome,
+  onChanged?: () => unknown,
+  t: TFn = defaultT
+) {
+  const deleted = outcome.deleted.length
+  if (deleted > 0) {
+    toast.success(
+      deleted === 1
+        ? t('assets.safeDelete.bulkDeletedOne', 'Deleted 1 asset')
+        : t('assets.safeDelete.bulkDeleted', 'Deleted {count} assets', { count: deleted })
+    )
   }
   if (outcome.refused.length > 0) {
     const refused = [...outcome.refused]
     toast.warning(
-      `${plural(refused.length, 'asset')} not deleted because ${refused.length === 1 ? 'it has' : 'they have'} findings. Archive ${refused.length === 1 ? 'it' : 'them'} to keep the finding history.`,
+      refused.length === 1
+        ? t(
+            'assets.safeDelete.bulkRefusedOne',
+            '1 asset was not deleted because it has findings. Archive it to keep the finding history.'
+          )
+        : t(
+            'assets.safeDelete.bulkRefused',
+            '{count} assets were not deleted because they have findings. Archive them to keep the finding history.',
+            { count: refused.length }
+          ),
       {
         duration: 15000,
-        action: { label: 'Archive', onClick: () => void archiveAndReport(refused, onChanged) },
+        action: {
+          label: t('assets.safeDelete.archiveAction', 'Archive'),
+          onClick: () => void archiveAndReport(refused, onChanged, t),
+        },
       }
     )
   }
-  if (outcome.failed.length > 0) {
-    toast.error(`Failed to delete ${plural(outcome.failed.length, 'asset')}`)
+  const failed = outcome.failed.length
+  if (failed > 0) {
+    toast.error(
+      failed === 1
+        ? t('assets.safeDelete.bulkFailedOne', 'Failed to delete 1 asset')
+        : t('assets.safeDelete.bulkFailed', 'Failed to delete {count} assets', { count: failed })
+    )
   }
 }
