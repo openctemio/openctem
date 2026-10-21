@@ -17,6 +17,8 @@ interface ExposureChainSummaryResponse {
 }
 
 interface ChainHopResponse {
+  /** A step outside the caller's data scope: every other field is empty. */
+  hidden?: boolean
   asset_id: string
   name: string
   asset_type: string
@@ -54,6 +56,8 @@ export interface ExposureChainSummary {
 }
 
 export interface ChainHop {
+  /** True for a step the viewer may not see (no id, name or type). */
+  hidden: boolean
   assetId: string
   name: string
   assetType: string
@@ -101,6 +105,7 @@ function transformResponse(data: ExposureChainsResponse): ExposureChains {
         isCrownJewel: c.is_crown_jewel,
         hops:
           c.hops?.map((h) => ({
+            hidden: h.hidden === true,
             assetId: h.asset_id,
             name: h.name,
             assetType: h.asset_type,
