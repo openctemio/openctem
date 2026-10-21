@@ -95,6 +95,8 @@ dash_asset_rank
 dash_asset_state
 dash_dirty_assets
 dash_fact_status
+dash_refresh_requests
+dash_snapshots
 dashboard_audience
 definition_identifiers
 definition_relations

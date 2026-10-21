@@ -25,6 +25,7 @@ import (
 // the facts built.
 type widgetEnv struct {
 	*ptEnv
+	svc *widgets.Service
 }
 
 func newWidgetEnv(t *testing.T) *widgetEnv {
@@ -37,6 +38,9 @@ func newWidgetEnv(t *testing.T) *widgetEnv {
 	dash.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	dash.SetMembershipReader(postgres.NewTenantRepository(db))
 	wsvc := widgets.NewService(dash, h.enforcer, postgres.NewDashboardWidgetRepository(db), log)
+	tenants := postgres.NewTenantRepository(db)
+	wsvc.SetSnapshots(postgres.NewDashboardSnapshotRepository(db), postgres.NewUserDashboardRepository(db), tenants, nil)
+	e.svc = wsvc
 	registerUserDashboardRoutes(h.router, handler.NewUserDashboardHandler(dash, log).SetWidgetData(wsvc), Middleware(h.dsAuth), nil)
 
 	facts := postgres.NewDashboardFactsRepository(db)
@@ -101,10 +105,14 @@ var widgetLayout = []any{
 }
 
 type dataResp struct {
-	Scope      string                `json:"scope"`
-	Restricted bool                  `json:"restricted"`
-	Built      *string               `json:"facts_built_at"`
-	Widgets    []widgets.WidgetValue `json:"widgets"`
+	Scope            string                `json:"scope"`
+	Restricted       bool                  `json:"restricted"`
+	Built            *string               `json:"facts_built_at"`
+	RefreshSchedule  string                `json:"refresh_schedule"`
+	NextRefreshAt    *string               `json:"next_refresh_at"`
+	Stale            bool                  `json:"stale"`
+	LastRefreshError string                `json:"last_refresh_error"`
+	Widgets          []widgets.WidgetValue `json:"widgets"`
 }
 
 func (e *widgetEnv) data(t *testing.T, user shared.ID, admin bool, perms []string, path string) dataResp {

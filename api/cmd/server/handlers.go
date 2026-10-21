@@ -15,7 +15,6 @@ import (
 	"time"
 
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
-	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/app/supportaccess"
@@ -572,9 +571,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
-		UserDashboard: handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(
-			dashwidgets.NewService(svc.UserDashboard, svc.DataScope, repos.DashboardWidget, log)),
-		SavedView: handler.NewSavedViewHandler(svc.SavedView, log),
+		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
+		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,
