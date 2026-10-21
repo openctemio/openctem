@@ -45,6 +45,7 @@ var permSeedMigrations = []string{
 	"finding_lifecycles_permission",           // findings:lifecycles:write (RFC-110)
 	"dashboard_ownership",                     // dashboards:org:manage
 	"reports_manage_permission",               // reports:manage
+	"service_accounts_manage_permission",      // service_accounts:manage
 	"permission_findings_retest_checks",       // findings:retest_checks:write
 }
 

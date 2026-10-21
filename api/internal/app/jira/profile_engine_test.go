@@ -21,6 +21,8 @@ type profileClient struct {
 	stepFields   []map[string]string
 	stepComments []string
 	transErr     error
+	issueType    string
+	createErr    error
 }
 
 var wfTransitions = []ticketmap.WorkflowTransition{
@@ -32,9 +34,13 @@ var wfTransitions = []ticketmap.WorkflowTransition{
 
 var wfStatuses = []ticketmap.WorkflowStatus{{ID: "1", Category: "new"}, {ID: "3", Category: "indeterminate"}, {ID: "4", Category: "indeterminate"}, {ID: "10", Category: "done"}}
 
-func (c *profileClient) IntegrationID() shared.ID { return c.integration }
-func (c *profileClient) SiteURL() string          { return "https://x.atlassian.net" }
-func (c *profileClient) CreateIssueFields(_ context.Context, _ string, typeID string, f map[string]any) (*CreateIssueResult, error) {
+func (c *profileClient) IntegrationID() shared.ID                            { return c.integration }
+func (c *profileClient) SiteURL() string                                     { return "https://x.atlassian.net" }
+func (c *profileClient) IssueTypeOf(context.Context, string) (string, error) { return c.issueType, nil }
+func (c *profileClient) CreateIssueFields(_ context.Context, _ string, typeID string, f map[string]any, _ *IssueMarker) (*CreateIssueResult, error) {
+	if c.createErr != nil {
+		return nil, c.createErr
+	}
 	c.createdWith, c.createdType = f, typeID
 	return &CreateIssueResult{Key: "SEC-7", BrowseURL: "https://x.atlassian.net/browse/SEC-7"}, nil
 }
@@ -74,13 +80,34 @@ type stubProfiles struct {
 	projects []string
 	inbound  *ticketmap.StatusMap
 	inErr    error
+
+	// task profiles and lookups by destination
+	taskCreate *ProfileCreate
+	taskStatus *ProfileStatus
+	// inboundBy answers InboundStatusMap per kind and issue type
+	// ("kind/type"); nil falls back to inbound.
+	inboundBy map[string]*ticketmap.StatusMap
+	gotType   string // the issue type of the last lookup
+	gotKinds  []ticketmap.ObjectKind
+	drifted   []shared.ID
 }
 
-func (p *stubProfiles) RenderFindingCreate(_ context.Context, _, integrationID shared.ID, _, _ string, _ shared.ID) (*ProfileCreate, error) {
-	p.gotInt = integrationID
+func (p *stubProfiles) RenderFindingCreate(_ context.Context, _, integrationID shared.ID, _, issueType string, _ shared.ID) (*ProfileCreate, error) {
+	p.gotInt, p.gotType = integrationID, issueType
 	return p.create, nil
 }
-func (p *stubProfiles) InboundStatusMap(context.Context, shared.ID, shared.ID, ticketmap.ObjectKind, string) (*ticketmap.StatusMap, error) {
+
+func (p *stubProfiles) RenderTaskCreate(_ context.Context, _, integrationID shared.ID, _, issueType string, _ shared.ID) (*ProfileCreate, error) {
+	p.gotInt, p.gotType = integrationID, issueType
+	return p.taskCreate, nil
+}
+
+func (p *stubProfiles) InboundStatusMap(_ context.Context, _, _ shared.ID, kind ticketmap.ObjectKind, _, issueTypeID string) (*ticketmap.StatusMap, error) {
+	p.gotType = issueTypeID
+	p.gotKinds = append(p.gotKinds, kind)
+	if p.inboundBy != nil {
+		return p.inboundBy[string(kind)+"/"+issueTypeID], p.inErr
+	}
 	return p.inbound, p.inErr
 }
 
@@ -88,9 +115,19 @@ func (p *stubProfiles) ProjectKeys(context.Context, shared.ID, shared.ID) ([]str
 	return p.projects, nil
 }
 
-func (p *stubProfiles) FindingStatusTarget(_ context.Context, _, integrationID shared.ID, _ string, _ shared.ID) (*ProfileStatus, error) {
-	p.gotInt = integrationID
+func (p *stubProfiles) FindingStatusTarget(_ context.Context, _, integrationID shared.ID, _, issueTypeID string, _ shared.ID) (*ProfileStatus, error) {
+	p.gotInt, p.gotType = integrationID, issueTypeID
 	return p.status, nil
+}
+
+func (p *stubProfiles) TaskStatusTarget(_ context.Context, _, integrationID shared.ID, _, issueTypeID string, _ shared.ID) (*ProfileStatus, error) {
+	p.gotInt, p.gotType = integrationID, issueTypeID
+	return p.taskStatus, nil
+}
+
+func (p *stubProfiles) MarkDrifted(_ context.Context, _, profileID shared.ID) error {
+	p.drifted = append(p.drifted, profileID)
+	return nil
 }
 
 func TestCreateTicket_UsesThePublishedProfile(t *testing.T) {

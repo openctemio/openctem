@@ -62,6 +62,10 @@ func registerRemediationTaskRoutes(
 		// Tasks from a query: the query runs as the caller (their scope).
 		r.POST("/query/preview", h.PreviewQueryTask, runsQuery, queryLimiter.UserMiddleware())
 		r.POST("/query", h.CreateQueryTask, runsQuery, queryLimiter.UserMiddleware())
+		// Who can own a task, and what each cannot see (counts only): the
+		// same per-user rate limit as the queries, each call evaluates scopes.
+		r.GET("/owner-candidates", h.NewTaskOwnerCandidates, middleware.RequireAll(permission.RemediationWrite, permission.FindingsRead), queryLimiter.UserMiddleware())
+		r.GET("/{task_id}/owner-candidates", h.OwnerCandidates, middleware.Require(permission.RemediationWrite), queryLimiter.UserMiddleware())
 		r.GET("/{task_id}/query", h.GetTaskQuery, middleware.Require(permission.RemediationRead))
 		r.POST("/{task_id}/query/preview", h.PreviewQueryRerun, runsQuery, queryLimiter.UserMiddleware())
 		r.POST("/{task_id}/query/run", h.RerunQuery, runsQuery, queryLimiter.UserMiddleware())

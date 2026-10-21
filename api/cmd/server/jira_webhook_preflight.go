@@ -12,9 +12,9 @@ import (
 // Startup check for inbound Jira webhook secrets.
 //
 // The inbound Jira webhook verifies every delivery with the HMAC secret of
-// the organization named in ?tenant= (there is no platform-wide secret). A
-// connected Jira integration without its own secret therefore has every
-// delivery refused, which is safe but silent. This check runs once at
+// the integration named in its URL (/hooks/jira-integrations/{id}; there is
+// no platform-wide secret). A connected Jira integration without its own
+// secret therefore has every delivery refused, which is safe but silent. This check runs once at
 // startup and logs a warning so the operator sees the gap.
 //
 // It never refuses to start: a missing secret only affects that
