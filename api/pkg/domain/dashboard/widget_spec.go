@@ -37,7 +37,7 @@ const (
 	maxNoteTextLen     = 2000
 	maxFilterValues    = 20
 	maxAssetGroups     = 10
-	maxItemsLimit      = 50
+	maxItemsLimit      = 10
 	defaultItemsLimit  = 10
 	maxCategoryLimit   = 50
 	defaultTimeRange   = TimeRangeInherit
