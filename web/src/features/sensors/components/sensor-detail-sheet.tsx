@@ -68,6 +68,7 @@ import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-sect
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
 import { SensorPostureSection } from './sensor-posture'
 import { SensorGrantSection } from './sensor-grant-section'
+import { SensorNetworkPathSection } from '@/features/proxy-pools'
 import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorToolSettingsSection } from './sensor-tool-settings'
 import { SensorSetupTab } from './config-check-list'
@@ -1137,6 +1138,7 @@ export function SensorDetailSheet({
             {sensor.posture && <SensorPostureSection sensor={sensor} />}
             {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
             <SensorGrantSection sensorId={sensor.id} sensorType={sensor.type} />
+            {!oneShot && <SensorNetworkPathSection sensorId={sensor.id} />}
             <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />
             <ConnectionAndIdentity
               sensor={sensor}

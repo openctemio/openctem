@@ -69,6 +69,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldHalf,
+  Waypoints,
   Timer,
   User,
   UserCog,
@@ -660,6 +661,17 @@ export const settingsNav: SettingsNavGroup[] = [
             keywords: ['platform sensors', 'opt out'],
           },
         ],
+      },
+      {
+        id: 'proxies',
+        title: 'Proxies',
+        description:
+          "Send your sensors' scan traffic through proxies, with automatic health checks.",
+        url: '/settings/scanning/proxies',
+        icon: Waypoints,
+        permission: Permission.SensorEgressRead,
+        module: 'sensors',
+        keywords: ['proxy', 'socks5', 'http connect', 'egress', 'network path', 'outbound'],
       },
       {
         id: 'scan-profiles',

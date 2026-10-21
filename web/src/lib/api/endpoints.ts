@@ -27,6 +27,7 @@ export const API_BASE = {
   SENSORS: '/api/v1/sensors',
   COMMANDS: '/api/v1/commands',
   SCAN_ZONES: '/api/v1/scan-zones',
+  PROXY_POOLS: '/api/v1/proxy-pools',
   SCAN_PROFILES: '/api/v1/scan-profiles',
   SCANNER_TEMPLATES: '/api/v1/scanner-templates',
   TEMPLATE_SOURCES: '/api/v1/template-sources',
@@ -1458,6 +1459,23 @@ export const scanWorkflowEndpoints = {
 /**
  * Scan run endpoints: one execution of a scan (scans:read)
  */
+/**
+ * Sensor proxy pool endpoints: tenant from the JWT. Reads need
+ * sensors:egress:read, writes sensors:egress:write, delete sensors:egress:delete.
+ */
+export const proxyPoolEndpoints = {
+  list: () => API_BASE.PROXY_POOLS,
+  create: () => API_BASE.PROXY_POOLS,
+  get: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}`,
+  update: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}`,
+  delete: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}`,
+  endpoints: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}/endpoints`,
+  endpoint: (poolId: string, endpointId: string) =>
+    `${API_BASE.PROXY_POOLS}/${poolId}/endpoints/${endpointId}`,
+  assignments: () => `${API_BASE.PROXY_POOLS}/assignments`,
+  assignment: (sensorId: string) => `${API_BASE.PROXY_POOLS}/assignments/${sensorId}`,
+} as const
+
 /**
  * Scan zone endpoints (RFC-023): tenant from the JWT.
  */

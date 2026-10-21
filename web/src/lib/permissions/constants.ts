@@ -237,6 +237,11 @@ export const Permission = {
   ScanZonesWrite: 'sensors:zones:write',
   ScanZonesDelete: 'sensors:zones:delete',
 
+  // Sensor proxy pools (sensors:egress:*)
+  SensorEgressRead: 'sensors:egress:read',
+  SensorEgressWrite: 'sensors:egress:write',
+  SensorEgressDelete: 'sensors:egress:delete',
+
   // Pairing and per-sensor grants (RFC-052)
   SensorsPair: 'sensors:pair',
   SensorsApprove: 'sensors:approve',
