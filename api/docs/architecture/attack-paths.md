@@ -78,4 +78,13 @@ graphs.
 
 ## Scoring cache and finding counts
 
-Planned in this series; see the section below once shipped.
+Attack-path scores (`GET /attack-surface/attack-paths`) use the same kind of
+cache as the chains: one result per tenant for 5 minutes, concurrent callers
+share one computation, which runs under a 30 second deadline. Data-scope
+narrowing works on the caller's copy.
+
+- A relationship whose source or target is not a live asset (a deleted asset) is
+  ignored: it does not bridge a path and does not mark an asset as protected.
+- `finding_count` on a scored asset counts open findings only (the open status
+  set), so resolved, closed and dispositioned findings do not raise the score.
+  Branch-only findings are still left out.

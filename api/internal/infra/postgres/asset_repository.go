@@ -2917,7 +2917,7 @@ func (r *AssetRepository) SetCrownJewel(ctx context.Context, tenantID, assetID s
 // Used by attack path scoring to build the full in-memory directed graph.
 // Only the columns needed for scoring are fetched.
 func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) ([]asset.AssetNode, error) {
-	const query = `
+	query := `
 		SELECT
 			a.id,
 			a.name,
@@ -2933,11 +2933,13 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 		-- over the tenant's findings (hash aggregate) joined by asset id. The
 		-- per-asset LATERAL count it replaces ran one index probe per asset:
 		-- 2-10 s for a 110k-asset / 525k-finding tenant against 0.75-1.2 s.
-		-- Counts all findings of the asset, matching prior behavior.
+		-- Counts the OPEN findings of the asset (the OpenStatuses set): closed
+		-- and dispositioned findings must not raise an asset's attack-path score.
 		LEFT JOIN (
 			SELECT f.asset_id, COUNT(*) AS finding_count
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.asset_id IS NOT NULL AND NOT f.branch_only
+				AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			GROUP BY f.asset_id
 		) fc ON fc.asset_id = a.id
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
