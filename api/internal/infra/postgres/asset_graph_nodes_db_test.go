@@ -11,9 +11,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/testdb"
 )
 
-// ListAllNodes counts each asset's findings from one aggregate over the
-// tenant's findings: branch-only findings are left out, an asset without
-// findings has 0, and another tenant's findings never count.
+// ListAllNodes counts each asset's OPEN findings from one aggregate over the
+// tenant's findings: closed and dispositioned findings and branch-only ones
+// are left out, an asset without findings has 0, and another tenant's
+// findings never count.
 func TestListAllNodes_FindingCounts_DB(t *testing.T) {
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -41,6 +42,8 @@ func TestListAllNodes_FindingCounts_DB(t *testing.T) {
 
 	seedFinding(ctx, t, db, tenant, busy, "dast", "high", "new")
 	seedFinding(ctx, t, db, tenant, busy, "dast", "low", "resolved")
+	seedFinding(ctx, t, db, tenant, busy, "dast", "low", "false_positive")
+	seedFinding(ctx, t, db, tenant, busy, "dast", "high", "confirmed")
 	branchOnly := seedFinding(ctx, t, db, tenant, busy, "dast", "medium", "new")
 	if _, err := db.ExecContext(ctx, `UPDATE findings SET branch_only = true WHERE id = $1`, branchOnly.String()); err != nil {
 		t.Fatalf("mark branch-only: %v", err)
@@ -59,7 +62,7 @@ func TestListAllNodes_FindingCounts_DB(t *testing.T) {
 		t.Fatalf("nodes = %d, want the tenant's 2 assets only: %v", len(got), got)
 	}
 	if got[busy.String()] != 2 {
-		t.Errorf("busy asset count = %d, want 2 (branch-only excluded, resolved counted)", got[busy.String()])
+		t.Errorf("busy asset count = %d, want 2 (two open; resolved, false_positive and branch-only excluded)", got[busy.String()])
 	}
 	if c, ok := got[idle.String()]; !ok || c != 0 {
 		t.Errorf("idle asset count = %d (present %v), want 0", c, ok)
