@@ -72,6 +72,7 @@ type Service struct {
 	windows WindowSource
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
+	egress     EgressSource
 	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
 	toolSettings ToolSettingsSource
 }
@@ -339,6 +340,15 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	// Tool settings of the sensor: checked against its current manifest
 	// (tool_settings.go).
 	cmds, layers := s.settingsHold(ctx, tenantID, sensorID, cmds)
+	// Proxy pool (egress.go): kept from a sensor that cannot honor it,
+	// else carried by every scan and retest job.
+	eg, err := s.egressFor(ctx, tenantID, input.SensorID, cmds)
+	if err != nil {
+		return nil, err
+	}
+	if cmds, err = eg.stamp(eg.withoutEgressJobs(cmds)); err != nil {
+		return nil, err
+	}
 	return s.deliver(ctx, input.SensorID, cmds, withWindowRates(rules, rates), layers)
 }
 
@@ -399,6 +409,13 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	if err != nil {
 		return nil, err
 	}
+	// Proxy pool (egress.go): a sensor that cannot honor its pool claims
+	// no scan or retest job; the others carry the pool.
+	eg, err := s.egressFor(ctx, tenantID, input.SensorID, cands)
+	if err != nil {
+		return nil, err
+	}
+	cands = eg.withoutEgressJobs(cands)
 	if len(cands) == 0 {
 		return nil, nil
 	}
@@ -431,8 +448,11 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	}
 	claimSkipped(skipTaken, len(ids), len(claimed))
 	observeClaimed(claimModePoll, out, time.Now())
-	// The organization's HTTP policy and the template signatures go into the
-	// payload first, so the job signature covers them.
+	// The proxy pool, the organization's HTTP policy and the template
+	// signatures go into the payload first, so the job signature covers them.
+	if out, err = eg.stamp(out); err != nil {
+		return nil, err
+	}
 	delivered, err := s.deliver(ctx, input.SensorID, out, rules, layers)
 	if err != nil {
 		return nil, err

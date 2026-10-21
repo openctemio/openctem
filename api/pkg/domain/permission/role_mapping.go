@@ -48,6 +48,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorEgressRead, SensorEgressWrite, SensorEgressDelete,
 		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 		// Team
 		TeamRead, TeamUpdate, TeamDelete,
@@ -129,6 +130,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorEgressRead, SensorEgressWrite, SensorEgressDelete,
 		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 		// Team (no team:delete)
 		TeamRead, TeamUpdate,
