@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/jira"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -27,6 +28,8 @@ type TicketMappingHandler struct {
 	svc    *appticketmap.Service
 	audit  *auditapp.AuditService
 	logger *logger.Logger
+	// policy serves the ticket create policy routes (nil: not served).
+	policy *jira.PolicyGate
 }
 
 // NewTicketMappingHandler builds the handler.

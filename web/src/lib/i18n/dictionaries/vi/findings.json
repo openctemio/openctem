@@ -1289,5 +1289,13 @@
   "findings.retestPanel.startedDescCheck": "Phép kiểm tra lại của phát hiện đang chạy trên mục tiêu của nó.",
   "findings.retestPanel.notYetCheck": "Chưa kiểm tra lại. Một lần kiểm tra lại sẽ chạy kiểm tra tùy chỉnh {name} trên mục tiêu của phát hiện này.",
   "findings.retestPanel.checkedWith": "Đã kiểm tra bằng kiểm tra tùy chỉnh {name}",
-  "findings.retestPanel.checkedWithUnnamed": "Đã kiểm tra bằng một kiểm tra tùy chỉnh"
+  "findings.retestPanel.checkedWithUnnamed": "Đã kiểm tra bằng một kiểm tra tùy chỉnh",
+  "findings.createTicket.belowTitle": "Dưới ngưỡng tạo issue",
+  "findings.createTicket.belowDesc": "Tự động hóa chỉ tạo issue cho phát hiện từ mức {severity} trở lên. Vẫn tạo issue này? Thao tác được ghi vào nhật ký kiểm tra.",
+  "findings.createTicket.belowDescClass": "Tự động hóa chỉ tạo issue cho phát hiện từ mức {severity} trở lên, hoặc ưu tiên {cls} trở lên. Vẫn tạo issue này? Thao tác được ghi vào nhật ký kiểm tra.",
+  "findings.createTicket.createAnyway": "Vẫn tạo",
+  "findings.ticketHolds.belowThreshold": "Chưa gửi sang Jira — dưới ngưỡng tạo issue",
+  "findings.ticketHolds.dailyCap": "Chưa gửi sang Jira — đã đạt giới hạn hôm nay",
+  "findings.ticketHolds.createFailed": "Chưa gửi sang Jira — lần thử gần nhất thất bại",
+  "findings.ticketHolds.createAnyway": "Vẫn tạo"
 }

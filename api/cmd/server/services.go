@@ -429,13 +429,29 @@ func workflowPrincipalContext(ctx context.Context, p automation.Principal) conte
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
 // action's JiraTicketService (primitive params, so the workflow package needn't
 // import app/jira — that would cycle through the app shim).
-type workflowJiraTicketAdapter struct{ svc *jira.SyncService }
+// With a create policy, the automatic create holds findings below the
+// integration's policy or over its daily cap instead of filing them.
+type workflowJiraTicketAdapter struct {
+	svc    *jira.SyncService
+	policy *jira.PolicyGate
+}
 
 func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (automation.TicketRef, error) {
-	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
+	in := jira.CreateTicketInput{
 		TenantID: tenantID, FindingID: findingID, ProjectKey: projectKey, IssueType: issueType,
 		Route: ticketing.RouteAutomation,
-	})
+	}
+	if a.policy != nil {
+		info, held, err := a.policy.AutoCreate(ctx, in)
+		if err != nil {
+			return automation.TicketRef{}, err
+		}
+		if held != nil {
+			return automation.TicketRef{Held: true, HeldReason: held.Reason}, nil
+		}
+		return automation.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+	}
+	info, err := a.svc.CreateTicketFromFinding(ctx, in)
 	if err != nil {
 		return automation.TicketRef{}, err
 	}
@@ -834,6 +850,10 @@ type Services struct {
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
+	// TicketPolicy is the per-integration ticket create policy in front of
+	// the automatic and manual finding → issue paths (nil without its
+	// repository).
+	TicketPolicy *jira.PolicyGate
 	// TicketMapping manages ticket field and status mapping profiles.
 	TicketMapping *appticketmap.Service
 
@@ -1885,6 +1905,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetEgressGate(ticketEgress)
 	s.JiraSync.SetWebBaseURL(cfg.SMTP.BaseURL)
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
+	if repos.TicketCreatePolicy != nil {
+		s.TicketPolicy = jira.NewPolicyGate(s.JiraSync, repos.TicketCreatePolicy, repos.Integration, log)
+	}
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
 	// data scope.
@@ -2612,7 +2635,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// so a nil service yields a nil interface (not a non-nil box over nil).
 	var wfJira automation.JiraTicketService
 	if s.JiraSync != nil {
-		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync}
+		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync, policy: s.TicketPolicy}
 	}
 	var wfGitHub automation.GitHubTicketService
 	if s.GitHubTicket != nil {
