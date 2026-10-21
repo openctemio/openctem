@@ -581,7 +581,9 @@ type Report struct {
 }
 
 // ApplyReport folds a sensor's report into the health of the pool's
-// endpoints. The pool must be the tenant's; unknown endpoints are ignored.
+// endpoints. The pool must be the one the reporting sensor's jobs use now
+// (as in CredentialsFor): a sensor never moves the health of a pool it does
+// not use, even one of its own organization. Unknown endpoints are ignored.
 // An endpoint the platform quarantines is audited.
 func (s *Service) ApplyReport(ctx context.Context, tenantID, sensorID shared.ID, r Report) error {
 	pid, err := parseRef(r.PoolID, pooldom.ErrPoolNotFound)
@@ -590,6 +592,13 @@ func (s *Service) ApplyReport(ctx context.Context, tenantID, sensorID shared.ID,
 	}
 	if len(r.Endpoints) == 0 {
 		return nil
+	}
+	p, _, err := s.Effective(ctx, tenantID, sensorID)
+	if err != nil {
+		return err
+	}
+	if p == nil || p.ID != pid {
+		return pooldom.ErrPoolNotFound
 	}
 	now := s.now().UTC()
 	type change struct{ addr, state, lastError string }
