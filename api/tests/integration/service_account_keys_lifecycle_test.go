@@ -7,10 +7,13 @@ package integration
 
 import (
 	"context"
+	"database/sql"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -159,17 +162,27 @@ func TestServiceAccountKeys_DemotionRollsBackWhenTheRevokeFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, mine := f.seedServiceAccountKey(t, f.tenantID, nil, f.memberID)
-	if _, err := f.db.Exec(`CREATE FUNCTION test_refuse_key_revoke() RETURNS trigger LANGUAGE plpgsql AS $$
-		BEGIN IF NEW.status = 'revoked' THEN RAISE EXCEPTION 'revoke refused for the test'; END IF; RETURN NEW; END; $$`); err != nil {
+	// Creating a trigger is DDL, which the least-privileged app role cannot do:
+	// the injection goes through the migrator connection, the code under test
+	// stays on the app role. The trigger is scoped to this one key and uniquely
+	// named so parallel tests on the shared database are unaffected.
+	mdb, err := sql.Open("postgres", testdb.MigratorURL())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.Exec(`CREATE TRIGGER test_refuse_key_revoke BEFORE UPDATE ON api_keys FOR EACH ROW EXECUTE FUNCTION test_refuse_key_revoke()`); err != nil {
+	t.Cleanup(func() { _ = mdb.Close() })
+	fn := "test_refuse_revoke_" + strings.ReplaceAll(mine.String(), "-", "")[:12]
+	if _, err := mdb.Exec(`CREATE FUNCTION ` + fn + `() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN IF NEW.id = '` + mine.String() + `' AND NEW.status = 'revoked' THEN RAISE EXCEPTION 'revoke refused for the test'; END IF; RETURN NEW; END; $$`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = f.db.Exec(`DROP TRIGGER IF EXISTS test_refuse_key_revoke ON api_keys`)
-		_, _ = f.db.Exec(`DROP FUNCTION IF EXISTS test_refuse_key_revoke()`)
+		_, _ = mdb.Exec(`DROP TRIGGER IF EXISTS ` + fn + ` ON api_keys`)
+		_, _ = mdb.Exec(`DROP FUNCTION IF EXISTS ` + fn + `()`)
 	})
+	if _, err := mdb.Exec(`CREATE TRIGGER ` + fn + ` BEFORE UPDATE ON api_keys FOR EACH ROW EXECUTE FUNCTION ` + fn + `()`); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := f.svc.UpdateMemberRole(ctx, f.mshipID.String(), tenant.UpdateMemberRoleInput{Role: "viewer"}, f.ownerCtx()); err == nil {
 		t.Fatal("the demotion succeeded although the key revoke failed")
