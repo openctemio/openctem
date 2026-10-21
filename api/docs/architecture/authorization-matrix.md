@@ -500,8 +500,8 @@ create's target validator, exclusions, zone routing) in one call.
 | `GET /api/v1/proxy-pools` · `/{id}` · `/assignments` | `sensors:egress:read` |
 | `POST /api/v1/proxy-pools` | `sensors:egress:write` |
 | `PATCH /api/v1/proxy-pools/{id}` | `sensors:egress:write` |
-| `PUT /api/v1/proxy-pools/{id}/endpoints` · `PATCH /{id}/endpoints/{endpointId}` | `sensors:egress:write` |
-| `PUT /api/v1/proxy-pools/assignments/{sensorId}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/{id}/endpoints` · `PATCH /{id}/endpoints/{endpoint_id}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/assignments/{sensor_id}` | `sensors:egress:write` |
 | `DELETE /api/v1/proxy-pools/{id}` | `sensors:egress:delete` |
 
 > Seeded by migration `sensor_proxy_pools`: owner and admin only (a pool

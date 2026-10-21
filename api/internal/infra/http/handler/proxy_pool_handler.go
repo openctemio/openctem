@@ -301,14 +301,14 @@ func (h *ProxyPoolHandler) ReplaceEndpoints(w http.ResponseWriter, r *http.Reque
 	writeScanZoneJSON(w, http.StatusOK, toProxyPoolResponse(p))
 }
 
-// UpdateEndpoint handles PATCH /api/v1/proxy-pools/{id}/endpoints/{endpointId}
+// UpdateEndpoint handles PATCH /api/v1/proxy-pools/{id}/endpoints/{endpoint_id}
 // @Summary      Enable, disable or reset a proxy endpoint
 // @Description  reset_health puts a quarantined endpoint back in probation at once.
 // @Tags         Proxy Pools
 // @Accept       json
 // @Produce      json
 // @Param        id          path      string                      true  "Proxy pool ID"
-// @Param        endpointId  path      string                      true  "Endpoint ID"
+// @Param        endpoint_id path      string                      true  "Endpoint ID"
 // @Param        body        body      UpdateProxyEndpointRequest  true  "Changes"
 // @Success      200         {object}  ProxyPoolResponse
 // @Failure      400         {object}  apierror.Error
@@ -316,7 +316,7 @@ func (h *ProxyPoolHandler) ReplaceEndpoints(w http.ResponseWriter, r *http.Reque
 // @Failure      403         {object}  apierror.Error
 // @Failure      404         {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /proxy-pools/{id}/endpoints/{endpointId} [patch]
+// @Router       /proxy-pools/{id}/endpoints/{endpoint_id} [patch]
 func (h *ProxyPoolHandler) UpdateEndpoint(w http.ResponseWriter, r *http.Request) {
 	var req UpdateProxyEndpointRequest
 	if !decodeProxyPoolBody(w, r, &req) {
@@ -324,7 +324,7 @@ func (h *ProxyPoolHandler) UpdateEndpoint(w http.ResponseWriter, r *http.Request
 	}
 	actx := buildScanZoneAuditContext(r)
 	p, err := h.service.UpdateEndpoint(r.Context(), proxypoolapp.UpdateEndpointInput{TenantID: actx.TenantID,
-		PoolID: chi.URLParam(r, "id"), EndpointID: chi.URLParam(r, "endpointId"), Enabled: req.Enabled,
+		PoolID: chi.URLParam(r, "id"), EndpointID: chi.URLParam(r, "endpoint_id"), Enabled: req.Enabled,
 		ResetHealth: req.ResetHealth}, actx)
 	if err != nil {
 		h.handleError(w, err)
@@ -362,13 +362,13 @@ func (h *ProxyPoolHandler) ListAssignments(w http.ResponseWriter, r *http.Reques
 	writeScanZoneJSON(w, http.StatusOK, out)
 }
 
-// SetAssignment handles PUT /api/v1/proxy-pools/assignments/{sensorId}
+// SetAssignment handles PUT /api/v1/proxy-pools/assignments/{sensor_id}
 // @Summary      Set a sensor's network path
 // @Description  inherit (the organization default pool, public targets only), direct, or pool (a pool of the organization, all targets). Shared sensors cannot be assigned.
 // @Tags         Proxy Pools
 // @Accept       json
 // @Produce      json
-// @Param        sensorId  path      string                     true  "Sensor ID"
+// @Param        sensor_id path      string                     true  "Sensor ID"
 // @Param        body      body      SetProxyAssignmentRequest  true  "Network path"
 // @Success      200       {object}  ProxyAssignmentResponse
 // @Failure      400       {object}  apierror.Error
@@ -376,14 +376,14 @@ func (h *ProxyPoolHandler) ListAssignments(w http.ResponseWriter, r *http.Reques
 // @Failure      403       {object}  apierror.Error
 // @Failure      404       {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /proxy-pools/assignments/{sensorId} [put]
+// @Router       /proxy-pools/assignments/{sensor_id} [put]
 func (h *ProxyPoolHandler) SetAssignment(w http.ResponseWriter, r *http.Request) {
 	var req SetProxyAssignmentRequest
 	if !decodeProxyPoolBody(w, r, &req) {
 		return
 	}
 	actx := buildScanZoneAuditContext(r)
-	sensorID := chi.URLParam(r, "sensorId")
+	sensorID := chi.URLParam(r, "sensor_id")
 	if err := h.service.SetAssignment(r.Context(), actx.TenantID, sensorID, req.Mode, req.PoolID, actx); err != nil {
 		h.handleError(w, err)
 		return
