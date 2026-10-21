@@ -39,6 +39,7 @@ type Repositories struct {
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
 	DashboardFacts          *postgres.DashboardFactsRepository          // Dashboard fact layer upkeep
+	DashboardWidget         *postgres.DashboardWidgetRepository         // Typed widget reads over the facts
 	APISpec                 *postgres.APISpecRepository                 // API descriptions of web origins (RFC-056)
 	AssetStateHistory       *postgres.AssetStateHistoryRepository       // CTEM: State change audit log
 	AssetRelationship       *postgres.AssetRelationshipRepository       // CTEM: Asset topology graph
@@ -400,6 +401,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
 		DashboardFacts:          postgres.NewDashboardFactsRepository(db),
+		DashboardWidget:         postgres.NewDashboardWidgetRepository(db),
 		APISpec:                 postgres.NewAPISpecRepository(db),
 		AssetStateHistory:       postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:       postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
