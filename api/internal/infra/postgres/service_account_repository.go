@@ -144,13 +144,20 @@ func (r *ServiceAccountRepository) IsServiceAccount(ctx context.Context, userID 
 }
 
 // RoleHasServiceAccountHolder reports whether a service account of the tenant
-// holds the role, directly or through a team binding.
+// holds the role, directly or through a team binding. Inactive teams and
+// expired team memberships count (unlike v_user_role_grants): re-activating
+// the team would otherwise hand the account a full-data role.
 func (r *ServiceAccountRepository) RoleHasServiceAccountHolder(ctx context.Context, tenantID, roleID shared.ID) (bool, error) {
 	var ok bool
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM v_user_role_grants g JOIN users u ON u.id = g.user_id
-			WHERE g.tenant_id = $1 AND g.role_id = $2 AND u.kind = 'service')`,
+			SELECT 1 FROM user_roles ur JOIN users u ON u.id = ur.user_id
+			WHERE ur.tenant_id = $1 AND ur.role_id = $2 AND u.kind = 'service'
+		) OR EXISTS (
+			SELECT 1 FROM group_role_bindings b
+			JOIN group_members gm ON gm.group_id = b.group_id
+			JOIN users u ON u.id = gm.user_id
+			WHERE b.tenant_id = $1 AND b.role_id = $2 AND u.kind = 'service')`,
 		tenantID.String(), roleID.String()).Scan(&ok); err != nil {
 		return false, fmt.Errorf("check service account role holders: %w", err)
 	}
