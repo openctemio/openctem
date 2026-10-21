@@ -132,7 +132,11 @@ type Metric struct {
 
 var f1Dims = []Dimension{DimSeverity, DimPriorityClass, DimSource, DimSLAState, DimAgeBand, DimKEV, DimReachable, DimAssetGroup}
 var f2Dims = []Dimension{DimSeverity, DimPriorityClass, DimAssetGroup}
-var f3Dims = []Dimension{DimSeverity, DimPriorityClass, DimAssetGroup}
+
+// The rank fact keeps the top 10 per asset by its own order, so a merged
+// list is exact for up to 10 rows only without filters that cut into that
+// order: rank lists take the asset group filter alone.
+var f3Dims = []Dimension{DimAssetGroup}
 var groupableF1 = []Dimension{DimSeverity, DimPriorityClass, DimSource, DimSLAState, DimAgeBand, DimKEV, DimReachable}
 
 var catalog = []Metric{
@@ -150,8 +154,10 @@ var catalog = []Metric{
 		Polarity: PolarityLowerBetter, Timed: true},
 	{ID: "flow.new_vs_fixed", Group: "remediation", Kind: MetricKindSeries, Filters: f2Dims, Polarity: PolarityNeutral, Timed: true,
 		DefaultViz: VizDiverging, Flow: true},
-	{ID: "fix.next", Group: "exposure", Kind: MetricKindItems, Filters: f3Dims, Polarity: PolarityNeutral,
-		DefaultFilter: WidgetFilter{PriorityClass: []string{"P0", "P1", "P2"}}},
+	// Open P0-P2 findings in rank order (priority, severity, newest); P3 and
+	// unclassified come after all of them in the rank, so leaving them out
+	// keeps the merged list exact.
+	{ID: "fix.next", Group: "exposure", Kind: MetricKindItems, Filters: f3Dims, Polarity: PolarityNeutral},
 	{ID: "sla.at_risk", Group: "remediation", Kind: MetricKindItems, Filters: f3Dims, Polarity: PolarityNeutral},
 }
 
