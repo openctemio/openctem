@@ -124,6 +124,11 @@ const (
 	// findings:read; publishing also needs a recent sign-in (step-up).
 	FindingsLifecyclesWrite Permission = "findings:lifecycles:write"
 
+	// FindingsRetestChecksWrite attaches, changes and removes a finding's
+	// retest check (docs/architecture/finding-retest-checks.md). Reading it
+	// needs findings:read; approving an intrusive check needs scope:approve.
+	FindingsRetestChecksWrite Permission = "findings:retest_checks:write"
+
 	// Vulnerability permissions (findings:vulnerabilities:*)
 	VulnerabilitiesRead Permission = "findings:vulnerabilities:read"
 
@@ -266,6 +271,12 @@ const (
 	MembersRead   Permission = "team:members:read"
 	MembersInvite Permission = "team:members:invite"
 	MembersWrite  Permission = "team:members:write"
+
+	// ServiceAccountsManage creates and deletes service accounts and mints and
+	// deletes their API keys (organization-owned integration identities and
+	// their credentials). Owners and administrators hold it; a custom role
+	// may carry it.
+	ServiceAccountsManage Permission = "service_accounts:manage"
 
 	// Group permissions (team:groups:*)
 	GroupsRead    Permission = "team:groups:read"
@@ -478,7 +489,7 @@ func AllPermissions() []Permission {
 		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
-		FindingsLifecyclesWrite,
+		FindingsLifecyclesWrite, FindingsRetestChecksWrite,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
@@ -507,7 +518,7 @@ func AllPermissions() []Permission {
 
 		// Team module
 		TeamRead, TeamUpdate, TeamDelete,
-		MembersRead, MembersInvite, MembersWrite,
+		MembersRead, MembersInvite, MembersWrite, ServiceAccountsManage,
 		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,

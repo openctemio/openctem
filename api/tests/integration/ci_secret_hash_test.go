@@ -93,6 +93,13 @@ func TestCISecretHash_KeepsIdentityWithoutTheRawValue(t *testing.T) {
 	if leaked != 0 {
 		t.Fatal("a raw secret was stored")
 	}
+	// The producer's keyed hash identified the finding but is not stored with it.
+	var hashed int
+	_ = r.db.QueryRowContext(ctx, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND finding_type = 'secret'
+		AND partial_fingerprints::text ILIKE '%secrethmac%'`, r.tenant.String()).Scan(&hashed)
+	if hashed != 0 {
+		t.Fatalf("%d secret findings store the producer's keyed secret hash", hashed)
+	}
 	// Another repository gets another key.
 	_, _, other := exchange("acme/web", "4")
 	if hmac.Equal(other, key) {

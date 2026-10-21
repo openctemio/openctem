@@ -73,7 +73,7 @@ func TestCIRunTokenLeastPrivilege_DB(t *testing.T) {
 	runPath := "/api/v1/ci/runs/" + stub.run.ID.String()
 
 	userID := h.member(tenantID, "owner")
-	apiKey, _ := h.mint(tenantID, userID, 0, "assets:read", "scans:ci:read", "scans:ci:write")
+	apiKey, _ := h.mintLegacy(tenantID, userID, 0, "assets:read", "scans:ci:read", "scans:ci:write")
 
 	bearer := func(tok string) map[string]string { return map[string]string{"Authorization": "Bearer " + tok} }
 

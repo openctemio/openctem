@@ -453,7 +453,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AI_AUTO_TRIAGE_DELAY` | duration | `60s` |  |  | Delay before an automatic triage job runs. |
 | `AI_MAX_TOKENS` | int | `4096` |  |  | Maximum tokens per request. |
 | `AI_PLATFORM_MODEL` | string | `claude-sonnet-4-20250514` |  |  | Model name passed to the provider. |
-| `AI_PLATFORM_PROVIDER` | string | `claude` |  |  | Provider used for organizations in platform mode: `claude`, `openai` or `gemini`. |
+| `AI_PLATFORM_PROVIDER` | string | `claude` |  |  | Provider used for organizations in platform mode: `claude`, `openai` or `gemini`. A self-hosted or gateway model (`openai_compatible`, with a base URL) is set in the console, not here. |
 | `AI_RATE_LIMIT_RPM` | int | `60` |  |  | Completions per minute per API key. `0` or less turns the cap off. |
 | `AI_RATE_LIMIT_TENANT_RPM` | int | `20` |  |  | Each organization's share of the platform key's completions per minute (a bucket per organization in front of `AI_RATE_LIMIT_RPM`), so one organization cannot starve the others. `0` turns it off. Organizations with their own key have their own allowance. |
 | `AI_TEMPERATURE` | float | `0.1` |  |  | Sampling temperature (0.0 to 1.0). |
@@ -586,6 +586,7 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `UI_IMAGE` | string | `ghcr.io/openctemio/openctem-web` |  |  | Image repository of the web console. |
 | `CONSOLE_IMAGE` | string | `ghcr.io/openctemio/openctem-console` |  |  | Image repository of the platform console. |
 | `MIGRATIONS_IMAGE` | string | `ghcr.io/openctemio/migrations` |  |  | Image repository of the migrations job. |
+| `GATEWAY_IMAGE` | string | `ghcr.io/openctemio/openctem-gateway` |  |  | Image repository of the gateway (Caddy with the layer4 module). |
 | `API_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `UI_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `CONSOLE_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
@@ -598,6 +599,8 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `CADDY_VERSION` | string | `2.11.4-alpine` |  |  | Image tag of the bundled gateway. |
 | `POSTGRES_VERSION` | string | `17` |  |  | Image tag of the bundled PostgreSQL. |
 | `REDIS_VERSION` | string | `7-alpine` |  |  | Image tag of the bundled Redis. |
+| `POSTGRES_IMAGE` | string | `postgres` |  |  | Image repository of the bundled PostgreSQL (and of the one-shot jobs that use its tools), for a private registry: `registry.example.internal/library/postgres`. The tag is `POSTGRES_VERSION`. |
+| `REDIS_IMAGE` | string | `redis` |  |  | Image repository of the bundled Redis, for a private registry. The tag is `REDIS_VERSION`. |
 | `DB_SUPERUSER` | string | `DB_USER` |  |  | PostgreSQL superuser, used only by `initdb` and the `db-roles` job. |
 | `DB_SUPERUSER_PASSWORD` | string | `DB_PASSWORD` |  | yes | Password of `DB_SUPERUSER`. |
 | `DB_MIGRATE_USER` | string | `unset` |  |  | Schema-owner role the migrations run as. Set to turn on the least-privilege layout. |

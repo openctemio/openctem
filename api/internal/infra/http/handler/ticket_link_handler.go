@@ -37,7 +37,21 @@ type TicketLinkResponse struct {
 	LastStatus    string  `json:"last_status,omitempty"`
 	LastSyncedAt  *string `json:"last_synced_at,omitempty"`
 	SyncError     string  `json:"sync_error,omitempty"`
-	CreatedAt     string  `json:"created_at"`
+	// ExternalAssignee is the tracker's assignee of the issue (a label: never
+	// a platform user); absent when unassigned or not seen yet. Plain text:
+	// escape it when rendering.
+	ExternalAssignee *TicketExternalAssignee `json:"external_assignee,omitempty"`
+	// ExternalStatusCategory is the issue's status category in the tracker:
+	// todo, in_progress or done; absent when not seen yet.
+	ExternalStatusCategory string  `json:"external_status_category,omitempty"`
+	ExternalUpdatedAt      *string `json:"external_updated_at,omitempty"`
+	CreatedAt              string  `json:"created_at"`
+}
+
+// TicketExternalAssignee is a tracker account shown on a ticket link.
+type TicketExternalAssignee struct {
+	AccountID   string `json:"account_id"`
+	DisplayName string `json:"display_name"`
 }
 
 func toTicketLinkResponse(l *ticketlink.Link) TicketLinkResponse {
@@ -47,6 +61,14 @@ func toTicketLinkResponse(l *ticketlink.Link) TicketLinkResponse {
 	if l.LastSyncedAt != nil {
 		s := l.LastSyncedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
 		out.LastSyncedAt = &s
+	}
+	if l.External.AssigneeID != "" {
+		out.ExternalAssignee = &TicketExternalAssignee{AccountID: l.External.AssigneeID, DisplayName: l.External.AssigneeName}
+	}
+	out.ExternalStatusCategory = l.External.StatusCategory
+	if l.External.UpdatedAt != nil {
+		s := l.External.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+		out.ExternalUpdatedAt = &s
 	}
 	return out
 }
@@ -125,6 +147,9 @@ func (h *JiraWebhookHandler) ListTicketLinks(w http.ResponseWriter, r *http.Requ
 // browse URL on the integration's site.
 type LinkTicketIssueRequest struct {
 	Issue string `json:"issue"`
+	// IntegrationID names the Jira integration the issue is on; empty means
+	// the default (the first connected one).
+	IntegrationID string `json:"integration_id,omitempty"`
 }
 
 // LinkTicketIssue handles POST /api/v1/findings/{id}/ticket-links.
@@ -156,7 +181,11 @@ func (h *JiraWebhookHandler) LinkTicketIssue(w http.ResponseWriter, r *http.Requ
 	if u := middleware.GetLocalUserID(r.Context()); !u.IsZero() {
 		by = &u
 	}
-	l, err := h.service.LinkExistingIssue(r.Context(), tid, fid, req.Issue, by)
+	integrationID, ok := optionalIntegrationID(w, req.IntegrationID)
+	if !ok {
+		return
+	}
+	l, err := h.service.LinkExistingIssue(r.Context(), tid, fid, integrationID, req.Issue, by)
 	if err != nil {
 		h.linkError(w, err)
 		return
@@ -247,6 +276,24 @@ func (h *JiraWebhookHandler) ListTaskTicketLinks(w http.ResponseWriter, r *http.
 // integration's default project.
 type CreateTaskIssueRequest struct {
 	ProjectKey string `json:"project_key"`
+	// IntegrationID names the Jira integration to create the issue on; empty
+	// means the default (the first connected one).
+	IntegrationID string `json:"integration_id,omitempty"`
+}
+
+// optionalIntegrationID parses an optional integration id from a request
+// body (empty: the zero id, the default integration). The service resolves
+// it within the caller's tenant only.
+func optionalIntegrationID(w http.ResponseWriter, raw string) (shared.ID, bool) {
+	if raw == "" {
+		return shared.ID{}, true
+	}
+	id, err := shared.IDFromString(raw)
+	if err != nil {
+		apierror.BadRequest("invalid integration_id").WriteJSON(w)
+		return shared.ID{}, false
+	}
+	return id, true
 }
 
 // CreateTaskIssue handles POST /api/v1/remediation/tasks/{task_id}/ticket-links.
@@ -284,7 +331,11 @@ func (h *JiraWebhookHandler) CreateTaskIssue(w http.ResponseWriter, r *http.Requ
 	if uid, err := shared.IDFromString(middleware.GetUserID(r.Context())); err == nil {
 		by = &uid
 	}
-	l, err := h.service.CreateTaskIssue(r.Context(), jira.CreateTaskIssueInput{TenantID: tid, TaskID: taskID, ProjectKey: req.ProjectKey, By: by})
+	integrationID, ok := optionalIntegrationID(w, req.IntegrationID)
+	if !ok {
+		return
+	}
+	l, err := h.service.CreateTaskIssue(r.Context(), jira.CreateTaskIssueInput{TenantID: tid, TaskID: taskID, IntegrationID: integrationID, ProjectKey: req.ProjectKey, By: by})
 	if err != nil {
 		h.taskIssueError(w, err)
 		return
@@ -303,6 +354,9 @@ func (h *JiraWebhookHandler) CreateTaskIssue(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *JiraWebhookHandler) taskIssueError(w http.ResponseWriter, err error) {
+	if writeEgressRefusal(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("task").WriteJSON(w)

@@ -1,0 +1,9 @@
+{
+  "name": "github-api",
+  "online": true,
+  "storage": { "blobStoreName": "default", "strictContentTypeValidation": false },
+  "cleanup": null,
+  "proxy": { "remoteUrl": "https://api.github.com/", "contentMaxAge": 30, "metadataMaxAge": 30 },
+  "negativeCache": { "enabled": false, "timeToLive": 1 },
+  "httpClient": { "blocked": false, "autoBlock": true }
+}

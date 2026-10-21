@@ -79,6 +79,10 @@ const (
 	ReasonTemplateChanged  ReasonCode = "template_changed"
 	ReasonNoResult         ReasonCode = "no_result"
 	ReasonError            ReasonCode = "error"
+	// ReasonCheckUncalibrated: a custom retest check did not match, but this
+	// version of the check never matched the finding, so the no-match does
+	// not prove a fix (docs/architecture/finding-retest-checks.md).
+	ReasonCheckUncalibrated ReasonCode = "check_uncalibrated"
 )
 
 // Verdict is a decided outcome with its reason code and a human reason.
@@ -114,6 +118,9 @@ var (
 	// ErrNoSensor: no sensor that can re-check the finding is online (no
 	// retest handler for its tool, nor a nuclei validation sensor).
 	ErrNoSensor = fmt.Errorf("%w: no sensor that can retest this finding is online for this tenant", shared.ErrValidation)
+	// ErrNoCheckSensor: the finding has a custom retest check, and no online
+	// sensor of the tenant can run delivered templates in a retest.
+	ErrNoCheckSensor = fmt.Errorf("%w: no online sensor of this organization can run custom retest checks (a sensor update adds it)", shared.ErrValidation)
 )
 
 // Retest is one retest attempt of one finding.
@@ -143,7 +150,13 @@ type Retest struct {
 	// logs and the outcome, so the retest shows up in Runs.
 	RunID *shared.ID
 	// SensorID is the sensor that ran the check (set when the retest settles).
-	SensorID    *shared.ID
+	SensorID *shared.ID
+	// CheckID, CheckDigest and CheckPath are set when the retest ran the
+	// finding's custom retest check: which check, the exact content digest
+	// sent, and the path on the target it had to prove it requested.
+	CheckID     *shared.ID
+	CheckDigest string
+	CheckPath   string
 	DeadlineAt  time.Time
 	CreatedAt   time.Time
 	CompletedAt *time.Time
@@ -217,6 +230,34 @@ func ApplyTemplateDrift(v Verdict, baseline, digest string, requireDigest bool) 
 		return inconclusive(ReasonTemplateChanged, "the re-run reported no template digest, so it cannot be tied to the template recorded at the last sighting ("+shortDigest(baseline)+"); a new scan sighting re-baselines it")
 	case digest != "" && digest != baseline:
 		return inconclusive(ReasonTemplateChanged, "the template changed since the last sighting (recorded "+shortDigest(baseline)+", re-run "+shortDigest(digest)+"); a new scan sighting re-baselines it")
+	}
+	return v
+}
+
+// ApplyCheckCalibration decides what a custom retest check's verdict proves
+// (docs/architecture/finding-retest-checks.md). sent is the digest of the
+// check the platform sent, reported the digest the sensor says it ran,
+// calibrated the digest that matched the finding once ("" when none).
+//
+//   - a conclusive verdict about other content than was sent is
+//     inconclusive (template_changed);
+//   - a match is still vulnerable (and calibrates the check, the caller's
+//     job);
+//   - a no-match proves a fix only when this exact version matched the
+//     finding before; otherwise it is not reproduced (check_uncalibrated),
+//     so a check that can never match cannot close a finding.
+func ApplyCheckCalibration(v Verdict, sent, reported, calibrated string) Verdict {
+	if !v.Outcome.Conclusive() {
+		return v
+	}
+	if sent == "" || reported != sent {
+		return inconclusive(ReasonTemplateChanged, "the sensor did not report running the retest check that was sent ("+
+			shortDigest(sent)+"); the attempt cannot count")
+	}
+	if v.Outcome == OutcomeConfirmedFixed && calibrated != sent {
+		return Verdict{Outcome: OutcomeNotReproduced, Code: ReasonCheckUncalibrated,
+			Reason: "the retest check did not match, but this version of it has never matched the finding, so the no-match does not prove a fix; " +
+				"a check proves a fix only after it reproduced the issue once"}
 	}
 	return v
 }

@@ -498,6 +498,14 @@ func (e *Enforcer) FilterFindings(ctx context.Context, scope *shared.DataScope, 
 	return setOf(in), nil
 }
 
+// HasActor reports whether the request context carries a user to act as (a
+// member, or an administrator). Without one CanActOnAssets answers "the
+// system, unrestricted": a path that must act for a person asks first.
+func (e *Enforcer) HasActor(ctx context.Context) bool {
+	c := e.CallerOf(ctx)
+	return c.UserID != "" || c.IsAdmin
+}
+
 // CanActOnAssets is the one check of "may this actor act on (scan, probe)
 // these assets". The actor is the request's caller; without a user in the
 // context (a scheduled run) it is fallbackUser, resolved like ForUser; with
@@ -717,4 +725,14 @@ func MembershipOwnerLookup(members MembershipReader) OwnerLookup {
 		}
 		return m.IsActive() && m.IsOwner(), nil
 	}
+}
+
+// IsAdmin reports whether userID is an administrator of the tenant, using the
+// admin lookup (false without one, or for an empty user). It is for callers
+// that decide about a user other than the request's caller.
+func (e *Enforcer) IsAdmin(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	if e == nil || e.adminLookup == nil || userID.IsZero() {
+		return false, nil
+	}
+	return e.adminLookup(ctx, tenantID, userID)
 }

@@ -110,12 +110,14 @@ describe('Findings context chips', () => {
     const search = screen.getByLabelText('Search findings')
     const below = screen.getByTestId('data-table-toolbar-below')
     expect(below.contains(chip)).toBe(true)
-    // The toolbar row (search box, state tabs, views, export) holds no chip,
-    // so a chip can never make it taller or shift its end controls.
+    // Neither toolbar row (search + views + group; state lens + actions)
+    // holds a chip, so a chip can never make one taller or shift its controls.
     const toolbarRow = below.previousElementSibling as HTMLElement
     expect(toolbarRow.contains(search)).toBe(true)
-    expect(toolbarRow.contains(screen.getByRole('radiogroup'))).toBe(true)
     expect(toolbarRow.querySelector('[data-testid="context-filter-chips"]')).toBeNull()
+    const primaryRow = screen.getByTestId('findings-toolbar-primary')
+    expect(primaryRow.contains(screen.getByRole('radiogroup'))).toBe(true)
+    expect(primaryRow.querySelector('[data-testid="context-filter-chips"]')).toBeNull()
   })
 
   it('renders no row under the toolbar without a context filter', () => {

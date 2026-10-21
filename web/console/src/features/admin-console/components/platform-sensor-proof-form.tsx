@@ -23,13 +23,12 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 export interface PlatformSensorProofFormProps {
@@ -174,20 +173,13 @@ export function PlatformSensorProofForm({
               onChange={(e) => setReason(e.target.value)}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-code`}>{t('admin.scanPolicy.code')}</Label>
-            <Input
-              id={`${id}-code`}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={8}
-              aria-invalid={!!codeError}
-            />
-            <StepUpCodeHint optional={codeOptional} />
-            {codeError && <p className="text-sm text-destructive">{codeError}</p>}
-          </div>
+          <StepUpCodeField
+            id={`${id}-code`}
+            value={code}
+            onChange={setCode}
+            optional={codeOptional}
+            error={codeError}
+          />
         </div>
       </ConfirmDialog>
     </>

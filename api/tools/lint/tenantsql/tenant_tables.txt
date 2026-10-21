@@ -22,6 +22,7 @@ asset_merge_log
 asset_program_links
 asset_relationships
 asset_risk_queue
+asset_risk_requests
 asset_services
 asset_software
 asset_software_edges
@@ -127,6 +128,7 @@ finding_injection_points
 finding_priority_queue
 finding_rekey_runs
 finding_remediation_keys
+finding_retest_checks
 finding_retest_cursors
 finding_retests
 finding_severity_requests
@@ -239,6 +241,7 @@ support_grants
 support_sessions
 suppression_rules
 template_sources
+tenant_ai_settings
 tenant_feature_denies
 tenant_identity_providers
 tenant_idle_lifecycle

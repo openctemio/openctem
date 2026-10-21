@@ -26,7 +26,7 @@ import { AdminApiError } from '@console/lib/admin-api/client'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 import { importContentPack, uploadContentPack } from '../api/use-content-packs'
 import { ContentLintReportView, asLintReport } from './content-lint-report'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 export const KNOWN_KINDS = ['nuclei-templates', 'semgrep-rules', 'wordlist'] as const
 const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/
@@ -289,20 +289,12 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                     )}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={id.code}>
-                    {t('admin.confirm.code', 'Code from your authenticator')}
-                  </Label>
-                  <Input
-                    id={id.code}
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    className="w-36 font-mono tracking-widest"
-                  />
-                  <StepUpCodeHint optional={codeOptional} />
-                </div>
+                <StepUpCodeField
+                  id={id.code}
+                  value={code}
+                  onChange={setCode}
+                  optional={codeOptional}
+                />
               </div>
               {error && (
                 <Alert variant="destructive">

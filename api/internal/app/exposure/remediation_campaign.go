@@ -605,6 +605,19 @@ func (s *RemediationCampaignService) RemoveCampaignTask(ctx context.Context, ten
 	if len(refs) != 1 || refs[0].CampaignID == nil || *refs[0].CampaignID != cid {
 		return nil, ErrCampaignTaskNotInCampaign
 	}
+	// The campaign's deadline cap and rollups follow the task, so taking it
+	// out is a change of the task: the caller must be able to change it too
+	// (as when adding it). A task they cannot see is not found; one with
+	// findings outside their data scope is refused.
+	if s.tasks == nil {
+		return nil, ErrCampaignTaskNotFound
+	}
+	if err := s.tasks.CheckTaskWritable(ctx, tid, tk); err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, ErrCampaignTaskNotFound
+		}
+		return nil, err
+	}
 	changed, err := s.repo.SetTasksCampaign(ctx, tid, []shared.ID{tk}, nil, optionalID(actorID))
 	if err != nil {
 		return nil, err
@@ -1026,11 +1039,16 @@ func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, t
 // each open finding, which each finding then verifies on its own; never a
 // close). Returns the refusals, whether the issue was a campaign epic, and
 // an error.
-func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, jiraAccount string) ([]string, bool, error) {
-	if s.ticketRepo == nil {
+//
+// site is the base URL of the integration the delivery came from: the epic
+// is matched by its key at its browse URL on that site, so a campaign whose
+// epic is SEC-1 on another Jira site is not moved. No site matches nothing.
+func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, site, issueKey, jiraStatus, jiraAccount string) ([]string, bool, error) {
+	if s.ticketRepo == nil || strings.TrimSpace(site) == "" {
 		return nil, false, nil
 	}
-	link, err := s.ticketRepo.GetByIssueKey(ctx, tenantID, "jira", issueKey)
+	issueURL := strings.TrimRight(strings.TrimSpace(site), "/") + "/browse/" + issueKey
+	link, err := s.ticketRepo.GetByIssue(ctx, tenantID, "jira", issueKey, issueURL)
 	if err != nil {
 		if errors.Is(err, remediation.ErrCampaignTicketNotFound) {
 			return nil, false, nil // not a campaign epic

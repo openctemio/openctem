@@ -188,8 +188,25 @@ func (r *RemediationTaskRepository) GetAction(ctx context.Context, tenantID, act
 	return &a, nil
 }
 
-// taskListWhere builds the WHERE clause of a task list.
-func taskListWhere(tenantID shared.ID, f remediation.TaskFilter) (string, []any) {
+// pentestVisibilityCond is the findings list's pentest member rule for the
+// finding row under alias, for the viewer recorded in ctx (the one rule in
+// vulnerability.FindingMemberVisibilitySQL): a pentest finding only for the
+// members of its campaign, no draft or in-review one for the client role.
+// tenantExpr is a SQL expression for the tenant. It is "TRUE" for an
+// administrator and for a call that is not on behalf of a user (the
+// background recompute), so only the read paths of a person narrow by it.
+func pentestVisibilityCond(ctx context.Context, alias, tenantExpr string) string {
+	v, ok := shared.FindingViewerOf(ctx)
+	if !ok || v.Admin {
+		return sqlTrue
+	}
+	return vulnerability.FindingMemberVisibilitySQL(alias, tenantExpr, "'"+v.UserID.String()+"'::uuid")
+}
+
+// taskListWhere builds the WHERE clause of a task list. visible is the
+// pentest visibility condition over the member finding alias "sf" ("" or
+// "TRUE" for none).
+func taskListWhere(tenantID shared.ID, f remediation.TaskFilter, visible string) (string, []any) {
 	args := []any{tenantID.String()}
 	conds := []string{"t.tenant_id = $1"}
 	next := func(v any) string {
@@ -227,7 +244,18 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter) (string, []any)
 		conds = append(conds, "t.campaign_id IS NULL")
 	}
 	if f.FindingID != nil {
-		conds = append(conds, "EXISTS (SELECT 1 FROM remediation_task_members fm WHERE fm.tenant_id = t.tenant_id AND fm.task_id = t.id AND fm.left_at IS NULL AND fm.finding_id = "+next(f.FindingID.String())+")")
+		// Under a data scope the finding itself must be in scope: otherwise
+		// the filter answers, for a finding the caller cannot see, which of
+		// their visible tasks hold it.
+		p := next(f.FindingID.String())
+		scoped, scopeJoin := "", ""
+		if f.Scope != nil {
+			cond, scoped2 := taskViewScopeCond("ff.asset_id", "ff.id", f.Scope, args)
+			args = scoped2
+			scopeJoin = " JOIN findings ff ON ff.id = fm.finding_id AND ff.tenant_id = fm.tenant_id"
+			scoped = " AND " + cond
+		}
+		conds = append(conds, "EXISTS (SELECT 1 FROM remediation_task_members fm"+scopeJoin+" WHERE fm.tenant_id = t.tenant_id AND fm.task_id = t.id AND fm.left_at IS NULL AND fm.finding_id = "+p+scoped+")")
 	}
 	if f.Overdue {
 		conds = append(conds, "t.deadline IS NOT NULL AND t.deadline < NOW()")
@@ -236,12 +264,21 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter) (string, []any)
 		p := next("%" + escapeLikePattern(s) + "%")
 		conds = append(conds, "(t.title ILIKE "+p+" OR a.title ILIKE "+p+")")
 	}
-	if f.Scope != nil {
-		cond, scopeArgs := dataScopeCondAt("sf.asset_id", f.Scope, len(args)+1)
-		args = append(args, scopeArgs...)
+	if f.Scope != nil || (visible != "" && visible != sqlTrue) {
+		// A task is visible through a member the caller may see: in their
+		// asset scope and passing the pentest member rule.
+		memberConds := []string{"sm.tenant_id = t.tenant_id", "sm.task_id = t.id", "sm.left_at IS NULL"}
+		if f.Scope != nil {
+			cond, scoped := taskViewScopeCond("sf.asset_id", "sf.id", f.Scope, args)
+			args = scoped
+			memberConds = append(memberConds, cond)
+		}
+		if visible != "" {
+			memberConds = append(memberConds, visible)
+		}
 		conds = append(conds, `EXISTS (SELECT 1 FROM remediation_task_members sm
 			JOIN findings sf ON sf.id = sm.finding_id AND sf.tenant_id = sm.tenant_id
-			WHERE sm.tenant_id = t.tenant_id AND sm.task_id = t.id AND sm.left_at IS NULL AND `+cond+`)`)
+			WHERE `+strings.Join(memberConds, " AND ")+`)`)
 	}
 	return strings.Join(conds, " AND "), args
 }
@@ -261,7 +298,7 @@ func taskOrderBy(s remediation.TaskSort) string {
 
 // ListTasks lists the tenant's tasks.
 func (r *RemediationTaskRepository) ListTasks(ctx context.Context, tenantID shared.ID, f remediation.TaskFilter, page pagination.Pagination) (pagination.Result[*remediation.Task], error) {
-	where, args := taskListWhere(tenantID, f)
+	where, args := taskListWhere(tenantID, f, pentestVisibilityCond(ctx, "sf", "t.tenant_id"))
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*)`+taskFrom+` WHERE `+where, args...).Scan(&total); err != nil {
 		return pagination.Result[*remediation.Task]{}, fmt.Errorf("count remediation tasks: %w", err)
@@ -285,6 +322,29 @@ func (r *RemediationTaskRepository) ListTasks(ctx context.Context, tenantID shar
 		return pagination.Result[*remediation.Task]{}, fmt.Errorf("list remediation tasks: %w", err)
 	}
 	return pagination.NewResult(out, total, page), nil
+}
+
+// PentestFindingIDs returns the tenant's findings among ids whose source is
+// pentest.
+func (r *RemediationTaskRepository) PentestFindingIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM findings WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND source = 'pentest'`,
+		tenantID.String(), pq.Array(rtIDStrings(ids)))
+	if err != nil {
+		return nil, fmt.Errorf("read pentest findings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("read pentest findings: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // FindingStatuses returns the status of each of the tenant's findings among
@@ -747,9 +807,12 @@ type rowsQuerier interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-func memberCounts(ctx context.Context, q rowsQuerier, tenantID shared.ID, taskIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]remediation.TaskCounts, error) {
+func memberCounts(ctx context.Context, q rowsQuerier, tenantID shared.ID, taskIDs []shared.ID, scope *shared.DataScope, visible string) (map[shared.ID]remediation.TaskCounts, error) {
 	args := []any{tenantID.String(), pq.Array(rtIDStrings(taskIDs)), closedStatusArray(), fixAppliedStatuses}
-	cond, args := dataScopeCond("f.asset_id", scope, args)
+	cond, args := taskViewScopeCond("f.asset_id", "f.id", scope, args)
+	if visible != "" {
+		cond = cond + " AND " + visible
+	}
 	rows, err := q.QueryContext(ctx, memberCountsSQL(cond), args...)
 	if err != nil {
 		return nil, fmt.Errorf("count task members: %w", err)
@@ -781,7 +844,27 @@ func (r *RemediationTaskRepository) ScopedCounts(ctx context.Context, tenantID s
 	if len(taskIDs) == 0 {
 		return map[shared.ID]remediation.TaskCounts{}, nil
 	}
-	return memberCounts(ctx, r.db, tenantID, taskIDs, scope)
+	return memberCounts(ctx, r.db, tenantID, taskIDs, scope, pentestVisibilityCond(ctx, "f", "$1"))
+}
+
+type recomputeReportKey struct{}
+
+// reportOf is the report the background reconcile asked a recompute to fill
+// (nil for every other caller).
+func reportOf(ctx context.Context) *remediation.RecomputeReport {
+	rep, _ := ctx.Value(recomputeReportKey{}).(*remediation.RecomputeReport)
+	return rep
+}
+
+// ReconcileTasks recomputes tasks as the platform and reports what changed.
+// The report is only meaningful when the call succeeds (the whole recompute
+// is one transaction).
+func (r *RemediationTaskRepository) ReconcileTasks(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID) (*remediation.RecomputeReport, error) {
+	rep := &remediation.RecomputeReport{}
+	if err := r.Recompute(context.WithValue(ctx, recomputeReportKey{}, rep), tenantID, taskIDs, nil); err != nil {
+		return nil, err
+	}
+	return rep, nil
 }
 
 // Recompute derives the state, deadline and counters of the tenant's tasks
@@ -803,6 +886,7 @@ func (r *RemediationTaskRepository) Recompute(ctx context.Context, tenantID shar
 }
 
 type taskDerivationInput struct {
+	title    string
 	manual   *remediation.ManualState
 	archived bool
 	manualDL *time.Time
@@ -816,7 +900,7 @@ type taskDerivationInput struct {
 // besides the members.
 func readDerivationInputs(ctx context.Context, tx *sql.Tx, tenantID shared.ID, taskIDs []shared.ID) (map[shared.ID]taskDerivationInput, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT t.id, t.manual_state, t.archived_at IS NOT NULL, t.manual_deadline,
+		SELECT t.id, t.title, t.manual_state, t.archived_at IS NOT NULL, t.manual_deadline,
 		       (c.due_date::timestamp AT TIME ZONE 'UTC') + interval '1 day' - interval '1 second',
 		       t.state, t.closed_at
 		FROM remediation_tasks t
@@ -840,7 +924,7 @@ func readDerivationInputs(ctx context.Context, tx *sql.Tx, tenantID shared.ID, t
 			closedAt         sql.NullTime
 			state            string
 		)
-		if err := rows.Scan(&id, &manual, &in.archived, &manualDL, &campDL, &state, &closedAt); err != nil {
+		if err := rows.Scan(&id, &in.title, &manual, &in.archived, &manualDL, &campDL, &state, &closedAt); err != nil {
 			return nil, fmt.Errorf("read tasks to recompute: %w", err)
 		}
 		if manual.Valid {
@@ -858,7 +942,7 @@ func readDerivationInputs(ctx context.Context, tx *sql.Tx, tenantID shared.ID, t
 }
 
 func (r *RemediationTaskRepository) recomputeInTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, taskIDs []shared.ID, actor *shared.ID) error {
-	counts, err := memberCounts(ctx, tx, tenantID, taskIDs, nil)
+	counts, err := memberCounts(ctx, tx, tenantID, taskIDs, nil, "")
 	if err != nil {
 		return err
 	}
@@ -877,7 +961,7 @@ func (r *RemediationTaskRepository) recomputeInTx(ctx context.Context, tx *sql.T
 				return err
 			}
 			regressions = append(regressions, newID)
-			again, err := memberCounts(ctx, tx, tenantID, []shared.ID{id}, nil)
+			again, err := memberCounts(ctx, tx, tenantID, []shared.ID{id}, nil, "")
 			if err != nil {
 				return err
 			}
@@ -917,6 +1001,9 @@ func (r *RemediationTaskRepository) recomputeInTx(ctx context.Context, tx *sql.T
 			if err := insertTaskEventInTx(ctx, tx, tenantID, id, remediation.TaskEventStateChanged, actor,
 				map[string]any{"from": string(in.state), "to": string(state)}); err != nil {
 				return err
+			}
+			if rep := reportOf(ctx); rep != nil {
+				rep.StateChanges = append(rep.StateChanges, remediation.StateChange{TaskID: id, Title: in.title, From: in.state, To: state})
 			}
 		}
 	}
@@ -974,8 +1061,8 @@ func (r *RemediationTaskRepository) ListMembers(ctx context.Context, tenantID, t
 		args = append(args, f.Status)
 		conds = append(conds, fmt.Sprintf("f.status = $%d", len(args)))
 	}
-	cond, args := dataScopeCond("f.asset_id", f.Scope, args)
-	conds = append(conds, cond)
+	cond, args := taskViewScopeCond("f.asset_id", "f.id", f.Scope, args)
+	conds = append(conds, cond, pentestVisibilityCond(ctx, "f", "$1"))
 	from := ` FROM remediation_task_members tm
 		JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
@@ -1141,6 +1228,10 @@ func (r *RemediationTaskRepository) regressInTx(ctx context.Context, tx *sql.Tx,
 	if err := insertTaskEventInTx(ctx, tx, tenantID, src.ID, remediation.TaskEventRegressed, actor,
 		map[string]any{"count": len(reopened), "regression_task_id": child.ID.String()}); err != nil {
 		return shared.ID{}, err
+	}
+	if rep := reportOf(ctx); rep != nil {
+		rep.Regressions = append(rep.Regressions, remediation.Regression{SourceID: src.ID, SourceTitle: src.Title,
+			TaskID: child.ID, Title: child.Title, Findings: len(reopened)})
 	}
 	return child.ID, nil
 }

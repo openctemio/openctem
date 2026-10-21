@@ -1,0 +1,7 @@
+{
+  "name": "openctem-hosted",
+  "online": true,
+  "storage": { "blobStoreName": "default", "strictContentTypeValidation": true, "writePolicy": "ALLOW" },
+  "cleanup": null,
+  "docker": { "v1Enabled": false, "forceBasicAuth": true, "httpsPort": 8444 }
+}

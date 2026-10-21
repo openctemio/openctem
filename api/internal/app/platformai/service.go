@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
+	"github.com/openctemio/openctem/api/internal/infra/llm"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
@@ -38,11 +39,21 @@ import (
 // SettingKey is the platform_settings key.
 const SettingKey = "ai.platform"
 
+// OrgPolicyKey is the platform_settings key of the policy on organizations'
+// own providers.
+const OrgPolicyKey = "ai.org_policy"
+
+// ActionOrgPolicyChanged is the admin audit action of a change of that policy.
+const ActionOrgPolicyChanged = "platform.ai_org_policy_changed"
+
 // ActionChanged is the admin audit action of a change.
 const ActionChanged = "platform.ai_provider_changed"
 
 // Providers the platform can use.
-var Providers = []string{"claude", "openai", "gemini"}
+var Providers = []string{"claude", "openai", "gemini", llm.ProviderOpenAICompatible}
+
+// maxAllowedModels bounds the model allow-list.
+const maxAllowedModels = 50
 
 // EnvKeys are the environment variables that pin the provider.
 var EnvKeys = []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
@@ -60,18 +71,48 @@ var (
 	keyRE   = regexp.MustCompile(`^[\x21-\x7e]{8,512}$`)
 )
 
+// orgPolicy is the platform policy on organizations' own AI providers. A
+// missing value means allowed: security and privacy are not paid features, and
+// an organization's own key lowers the platform's cost.
+type orgPolicy struct {
+	AllowOwnProvider *bool `json:"allow_own_provider,omitempty"`
+}
+
 type stored struct {
 	Enabled      bool   `json:"enabled"`
 	Provider     string `json:"provider,omitempty"`
 	Model        string `json:"model,omitempty"`
 	KeyEncrypted string `json:"key_encrypted,omitempty"`
+	// BaseURL is the OpenAI-compatible server (openai_compatible only).
+	BaseURL string `json:"base_url,omitempty"`
+	// AllowPrivate lets the base URL be on a private network (RFC1918 / ULA)
+	// and plain http: a self-hosted model server. Never applies to an
+	// organization's own provider.
+	AllowPrivate bool `json:"allow_private,omitempty"`
+	// AllowedModels, when not empty, limits the models the platform
+	// provider (and an organization that picks a model on it) may use.
+	AllowedModels []string `json:"allowed_models,omitempty"`
+}
+
+// usable reports whether the stored configuration can make a call: an
+// OpenAI-compatible server may run without a key, any other provider needs one.
+func (st stored) usable() bool {
+	if st.Provider == "" || st.Model == "" {
+		return false
+	}
+	if st.Provider == llm.ProviderOpenAICompatible {
+		return st.BaseURL != ""
+	}
+	return st.KeyEncrypted != ""
 }
 
 // Platform is the configuration the AI client uses.
 type Platform struct {
-	Provider string
-	Model    string
-	APIKey   string
+	Provider     string
+	Model        string
+	APIKey       string
+	BaseURL      string
+	AllowPrivate bool
 }
 
 // Settings is what an administrator sees: never the key.
@@ -79,6 +120,9 @@ type Settings struct {
 	Enabled             bool
 	Provider            string
 	Model               string
+	BaseURL             string
+	AllowPrivate        bool
+	AllowedModels       []string
 	KeySet              bool
 	LockedByEnvironment bool
 	Version             int
@@ -94,6 +138,10 @@ type Input struct {
 	Model    string
 	APIKey   *string
 	Reason   string
+	// BaseURL, AllowPrivate and AllowedModels: see stored.
+	BaseURL       string
+	AllowPrivate  bool
+	AllowedModels []string
 }
 
 // Tester sends one minimal request with a configuration (the AI client
@@ -103,6 +151,7 @@ type Tester func(ctx context.Context, p Platform) error
 // Service reads and changes the platform AI provider.
 type Service struct {
 	store       *consolesetting.Store[stored]
+	policy      *consolesetting.Store[orgPolicy]
 	encryptor   crypto.Encryptor
 	recorder    *consolesetting.Recorder
 	envLocked   bool
@@ -119,7 +168,8 @@ func NewService(repo platformsetting.Repository, encryptor crypto.Encryptor, rec
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &Service{store: consolesetting.NewStore[stored](repo, SettingKey), encryptor: encryptor, recorder: recorder,
+	return &Service{store: consolesetting.NewStore[stored](repo, SettingKey),
+		policy: consolesetting.NewStore[orgPolicy](repo, OrgPolicyKey), encryptor: encryptor, recorder: recorder,
 		envLocked: envLocked, envProvider: envProvider, envModel: envModel, log: log.With("service", "platform_ai")}
 }
 
@@ -141,15 +191,35 @@ func (s *Service) Platform(ctx context.Context) (Platform, bool) {
 		s.log.Warn("platform AI setting unreadable; platform AI off", "error", err)
 		return Platform{}, false
 	}
-	if !st.Enabled || st.KeyEncrypted == "" {
+	if !st.Enabled || !st.usable() {
 		return Platform{}, false
 	}
-	key, err := s.encryptor.DecryptString(st.KeyEncrypted)
-	if err != nil {
-		s.log.Error("platform AI key does not decrypt (was APP_ENCRYPTION_KEY rotated without rekey?); platform AI off")
-		return Platform{}, false
+	var key string
+	if st.KeyEncrypted != "" {
+		key, err = s.encryptor.DecryptString(st.KeyEncrypted)
+		if err != nil {
+			s.log.Error("platform AI key does not decrypt (was APP_ENCRYPTION_KEY rotated without rekey?); platform AI off")
+			return Platform{}, false
+		}
 	}
-	return Platform{Provider: st.Provider, Model: st.Model, APIKey: key}, true
+	return Platform{Provider: st.Provider, Model: st.Model, APIKey: key, BaseURL: st.BaseURL, AllowPrivate: st.AllowPrivate}, true
+}
+
+// PlatformAIEndpoint is the OpenAI-compatible base URL of the platform
+// provider and whether it may be on a private network.
+func (s *Service) PlatformAIEndpoint(ctx context.Context) (baseURL string, allowPrivate bool) {
+	p, _ := s.Platform(ctx)
+	return p.BaseURL, p.AllowPrivate
+}
+
+// ModelAllowed reports whether model may be used on the platform provider:
+// always when no allow-list is set.
+func (s *Service) ModelAllowed(ctx context.Context, model string) bool {
+	st, _, err := s.store.Get(ctx)
+	if err != nil || len(st.AllowedModels) == 0 {
+		return err == nil
+	}
+	return slices.Contains(st.AllowedModels, model)
 }
 
 // PlatformAI is Platform in the shape the AI client factory asks for.
@@ -173,7 +243,8 @@ func (s *Service) Get(ctx context.Context) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
-	return Settings{Enabled: st.Enabled, Provider: st.Provider, Model: st.Model, KeySet: st.KeyEncrypted != "",
+	return Settings{Enabled: st.Enabled, Provider: st.Provider, Model: st.Model, BaseURL: st.BaseURL,
+		AllowPrivate: st.AllowPrivate, AllowedModels: st.AllowedModels, KeySet: st.KeyEncrypted != "",
 		Version: m.Version, UpdatedAt: m.UpdatedAt, UpdatedBy: m.UpdatedBy}, nil
 }
 
@@ -198,11 +269,30 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	if in.Model != "" && !modelRE.MatchString(in.Model) {
 		return Settings{}, fmt.Errorf("%w: the model name has an unexpected shape", ErrInvalid)
 	}
+	models, err := cleanModels(in.AllowedModels)
+	if err != nil {
+		return Settings{}, err
+	}
+	if len(models) > 0 && in.Model != "" && !slices.Contains(models, in.Model) {
+		return Settings{}, fmt.Errorf("%w: the model must be one of the allowed models", ErrInvalid)
+	}
+	in.BaseURL = strings.TrimSpace(in.BaseURL)
+	if in.Provider == llm.ProviderOpenAICompatible {
+		// SECURITY: a private address is reachable only with the explicit
+		// toggle, never loopback, link-local or cloud metadata.
+		in.BaseURL, err = llm.ValidateBaseURL(ctx, in.BaseURL, in.AllowPrivate)
+		if err != nil {
+			return Settings{}, fmt.Errorf("%w: %s", ErrInvalid, strings.TrimPrefix(err.Error(), llm.ErrInvalidProvider.Error()+": "))
+		}
+	} else {
+		in.BaseURL, in.AllowPrivate = "", false
+	}
 	prev, _, err := s.store.Fresh(ctx)
 	if err != nil {
 		return Settings{}, err
 	}
-	next := stored{Enabled: in.Enabled, Provider: in.Provider, Model: in.Model, KeyEncrypted: prev.KeyEncrypted}
+	next := stored{Enabled: in.Enabled, Provider: in.Provider, Model: in.Model, KeyEncrypted: prev.KeyEncrypted,
+		BaseURL: in.BaseURL, AllowPrivate: in.AllowPrivate, AllowedModels: models}
 	keyChanged := false
 	if in.APIKey != nil {
 		keyChanged = true
@@ -222,8 +312,8 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	if prev.Provider != "" && next.Provider != prev.Provider && !keyChanged {
 		next.KeyEncrypted = ""
 	}
-	if next.Enabled && (next.Provider == "" || next.Model == "" || next.KeyEncrypted == "") {
-		return Settings{}, fmt.Errorf("%w: choose a provider and a model and set its key to turn platform AI on", ErrInvalid)
+	if next.Enabled && !next.usable() {
+		return Settings{}, fmt.Errorf("%w: choose a provider and a model and set its key (an OpenAI-compatible server: its base URL) to turn platform AI on", ErrInvalid)
 	}
 	if _, err := s.store.Put(ctx, next, expectedVersion, actor.ID()); err != nil {
 		return Settings{}, err
@@ -235,6 +325,9 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 			"previous_enabled": prev.Enabled, "enabled": next.Enabled,
 			"previous_provider": prev.Provider, "provider": next.Provider,
 			"previous_model": prev.Model, "model": next.Model,
+			"previous_base_url": prev.BaseURL, "base_url": next.BaseURL,
+			"previous_allow_private": prev.AllowPrivate, "allow_private": next.AllowPrivate,
+			"allowed_models": next.AllowedModels,
 			// Never the value: only that it changed.
 			"key_changed": keyChanged || (prev.KeyEncrypted != "" && next.KeyEncrypted == ""),
 		},
@@ -257,15 +350,96 @@ func (s *Service) Test(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if st.Provider == "" || st.Model == "" || st.KeyEncrypted == "" {
+	if !st.usable() {
 		return ErrNotConfigured
 	}
-	key, err := s.encryptor.DecryptString(st.KeyEncrypted)
-	if err != nil {
-		return ErrNotConfigured
+	var key string
+	if st.KeyEncrypted != "" {
+		key, err = s.encryptor.DecryptString(st.KeyEncrypted)
+		if err != nil {
+			return ErrNotConfigured
+		}
 	}
-	p = Platform{Provider: st.Provider, Model: st.Model, APIKey: key}
+	p = Platform{Provider: st.Provider, Model: st.Model, APIKey: key, BaseURL: st.BaseURL, AllowPrivate: st.AllowPrivate}
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return s.tester(cctx, p)
+}
+
+// cleanModels trims, validates and de-duplicates the model allow-list.
+func cleanModels(in []string) ([]string, error) {
+	if len(in) > maxAllowedModels {
+		return nil, fmt.Errorf("%w: at most %d allowed models", ErrInvalid, maxAllowedModels)
+	}
+	out := make([]string, 0, len(in))
+	for _, m := range in {
+		m = strings.TrimSpace(m)
+		if m == "" || slices.Contains(out, m) {
+			continue
+		}
+		if !modelRE.MatchString(m) {
+			return nil, fmt.Errorf("%w: an allowed model name has an unexpected shape", ErrInvalid)
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+// OrgPolicy is the platform policy on organizations' own AI providers.
+type OrgPolicy struct {
+	// AllowOwnProvider: organizations may use their own provider and key.
+	AllowOwnProvider bool
+	Version          int
+	UpdatedAt        time.Time
+	UpdatedBy        *shared.ID
+}
+
+// GetOrgPolicy returns the policy (allowed by default).
+func (s *Service) GetOrgPolicy(ctx context.Context) (OrgPolicy, error) {
+	p, m, err := s.policy.Get(ctx)
+	if err != nil {
+		return OrgPolicy{}, err
+	}
+	return OrgPolicy{AllowOwnProvider: p.AllowOwnProvider == nil || *p.AllowOwnProvider,
+		Version: m.Version, UpdatedAt: m.UpdatedAt, UpdatedBy: m.UpdatedBy}, nil
+}
+
+// OrgProviderAllowed reports whether organizations may use their own
+// provider. An unreadable policy refuses (fail closed); the organization's own
+// key is not used until the platform can say it is allowed.
+func (s *Service) OrgProviderAllowed(ctx context.Context) bool {
+	p, err := s.GetOrgPolicy(ctx)
+	if err != nil {
+		s.log.Warn("AI organization policy unreadable; own providers refused", "error", err)
+		return false
+	}
+	return p.AllowOwnProvider
+}
+
+// ChangeOrgPolicy changes the policy. The caller checked the actor's role and a
+// fresh confirmation. Turning it off stops every organization's own provider
+// at its next call, without a fall back to the platform key.
+func (s *Service) ChangeOrgPolicy(ctx context.Context, actor *admin.AdminUser, allow bool, reason string, expectedVersion int, ip, userAgent string) (OrgPolicy, error) {
+	if actor == nil {
+		return OrgPolicy{}, ErrNoActor
+	}
+	reason, err := consolesetting.CheckReason(reason)
+	if err != nil {
+		return OrgPolicy{}, err
+	}
+	prev, _, err := s.policy.Fresh(ctx)
+	if err != nil {
+		return OrgPolicy{}, err
+	}
+	was := prev.AllowOwnProvider == nil || *prev.AllowOwnProvider
+	if _, err := s.policy.Put(ctx, orgPolicy{AllowOwnProvider: &allow}, expectedVersion, actor.ID()); err != nil {
+		return OrgPolicy{}, err
+	}
+	s.recorder.Record(ctx, actor, consolesetting.Change{
+		Action: ActionOrgPolicyChanged, Key: OrgPolicyKey, Title: "Organizations' own AI providers",
+		Method: "PUT", Path: "/api/v1/admin/settings/ai/org-policy", Reason: reason,
+		Details:  map[string]any{"previous_allow_own_provider": was, "allow_own_provider": allow},
+		Critical: true, Notify: true,
+	}, ip, userAgent)
+	return s.GetOrgPolicy(ctx)
 }
