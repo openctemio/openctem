@@ -343,6 +343,7 @@ function EnableTwoFactorDialog({
                 />
               </div>
               <VerificationCodeInput
+                label={t('settings.twoFactor.codeLabel', 'Authentication code')}
                 value={code}
                 onChange={setCode}
                 onComplete={(value) => void send(value)}
