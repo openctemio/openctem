@@ -76,6 +76,22 @@ export function MemberAccessReportView({
             <DetailChipList chips={chips(report.api_keys)} label="API keys" />
           </DetailSection>
           <DetailSection
+            title={t('org.lifecycle.serviceAccountKeys', 'Service account keys')}
+            icon={KeyRound}
+            count={report.service_account_keys?.length ?? 0}
+          >
+            <p className="mb-2 text-xs text-muted-foreground">
+              {t(
+                'org.lifecycle.serviceAccountKeysNote',
+                'Keys this member minted for service accounts. They are revoked when the member is offboarded or loses the administrator role.'
+              )}
+            </p>
+            <DetailChipList
+              chips={chips(report.service_account_keys)}
+              label={t('org.lifecycle.serviceAccountKeys', 'Service account keys')}
+            />
+          </DetailSection>
+          <DetailSection
             title="Pentest engagements"
             icon={Swords}
             count={report.campaigns?.length ?? 0}

@@ -2,14 +2,14 @@ package ticketing
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
 
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/brand"
@@ -70,8 +70,8 @@ var githubIssueURLRe = regexp.MustCompile(`/([^/]+)/([^/]+)/issues/(\d+)(?:[/#?]
 // resolve the tenant's GitHub integration → load finding → idempotency via
 // work_item_uris → create issue → link the issue URL back onto the finding.
 //
-// CREATE + link only. Inbound status sync (webhooks) is a documented
-// follow-up; see docs/architecture/github-issue-ticketing.md.
+// Inbound issue events (HandleIssueEvent) move linked findings through the
+// finding service rules; see docs/architecture/github-issue-ticketing.md.
 type GitHubTicketService struct {
 	findingRepo     vulnerability.FindingRepository
 	integrationRepo integration.Repository
@@ -82,13 +82,11 @@ type GitHubTicketService struct {
 	// base URL. Overridable in tests; defaults to the real SCM client.
 	clientFactory func(token, baseURL string) (issueCreator, error)
 
-	// activity records inbound status changes with the integration as actor.
-	activity statusActivityRecorder
-
-	// lifecycles are the organization's finding lifecycles (RFC-110): a
-	// webhook's move is also decided by the scheme selected for the
-	// finding, which can only narrow it. nil = the platform alone.
-	lifecycles lifecycleSchemes
+	// applier moves linked findings through the finding service rules;
+	// workItems finds them; fixClaimHook queues the proof of fix.
+	applier      inboundApplier
+	workItems    workItemFindingLister
+	fixClaimHook FixClaimHook
 
 	// egress is the outbound gate (egress.go); nil refuses pentest content.
 	egress *EgressGate
@@ -96,14 +94,6 @@ type GitHubTicketService struct {
 
 // SetEgressGate wires the outbound gate.
 func (s *GitHubTicketService) SetEgressGate(g *EgressGate) { s.egress = g }
-
-// lifecycleSchemes returns a tenant's published finding lifecycle schemes.
-type lifecycleSchemes interface {
-	Candidates(ctx context.Context, tenantID shared.ID) ([]lc.Candidate, error)
-}
-
-// SetLifecycles wires the organization lifecycles.
-func (s *GitHubTicketService) SetLifecycles(l lifecycleSchemes) { s.lifecycles = l }
 
 // NewGitHubTicketService constructs a GitHubTicketService.
 //
@@ -192,13 +182,22 @@ func (s *GitHubTicketService) CreateTicketFromFinding(ctx context.Context, in Gi
 		return nil, fmt.Errorf("%w: failed to build GitHub client: %v", shared.ErrValidation, err)
 	}
 
-	title := issueTitle(finding)
-	body := buildIssueBody(finding)
-	labels := []string{"openctem", "security", string(finding.Severity())}
-
-	number, htmlURL, err := client.CreateIssue(ctx, owner, repo, title, body, labels)
+	// A previous attempt may have created the issue and lost the response
+	// or failed to record it: adopt the issue that carries this finding's
+	// marker instead of opening a second one.
+	bodyMarker := issueMarker(tenantID, findingID)
+	number, htmlURL, err := s.findMarkedIssue(ctx, client, owner, repo, bodyMarker)
 	if err != nil {
-		return nil, fmt.Errorf("create github issue: %w", err)
+		return nil, err
+	}
+	if number == 0 {
+		title := issueTitle(finding)
+		body := buildIssueBody(finding) + "\n\n" + bodyMarker + "\n"
+		labels := []string{"openctem", "security", string(finding.Severity())}
+		number, htmlURL, err = client.CreateIssue(ctx, owner, repo, title, body, labels)
+		if err != nil {
+			return nil, fmt.Errorf("create github issue: %w", err)
+		}
 	}
 
 	// Auto-link the created issue back onto the finding. A persist failure is
@@ -221,6 +220,46 @@ func (s *GitHubTicketService) CreateTicketFromFinding(ctx context.Context, in Gi
 		TicketURL: htmlURL,
 		LinkedAt:  time.Now().UTC(),
 	}, nil
+}
+
+// issueMarker is the hidden marker a created issue's body ends with: the
+// finding's id and a tag of its tenant (a hash, so the tenant id itself is
+// not written into the repository). A retry looks for it before creating.
+func issueMarker(tenantID, findingID shared.ID) string {
+	sum := sha256.Sum256([]byte("openctem-tenant:" + tenantID.String()))
+	return "<!-- openctem:k=finding;o=" + findingID.String() + ";t=" + hex.EncodeToString(sum[:8]) + " -->"
+}
+
+// markedIssueLister is a client that can list a repository's recent issues.
+type markedIssueLister interface {
+	RecentIssues(ctx context.Context, owner, repo, label string) ([]scm.IssueSummary, error)
+}
+
+// findMarkedIssue returns the oldest recent issue of owner/repo labeled
+// openctem whose body ends with exactly this marker (this finding of this
+// tenant), or 0. A marker of another finding or tenant never matches.
+func (s *GitHubTicketService) findMarkedIssue(ctx context.Context, client issueCreator, owner, repo, marker string) (int, string, error) {
+	l, ok := client.(markedIssueLister)
+	if !ok {
+		return 0, "", nil
+	}
+	issues, err := l.RecentIssues(ctx, owner, repo, "openctem")
+	if err != nil {
+		// Without the lookup a retry could duplicate the issue.
+		return 0, "", fmt.Errorf("look up an issue already created for this finding: %w", err)
+	}
+	number, htmlURL := 0, ""
+	for _, i := range issues { // newest first: the last match is the oldest
+		// The marker is the body's last line (finding text placed above it
+		// cannot stand in for it).
+		if i.Number > 0 && strings.HasSuffix(strings.TrimSpace(i.Body), marker) {
+			number, htmlURL = i.Number, i.HTMLURL
+		}
+	}
+	if number != 0 {
+		s.logger.Info("github: adopted the issue already created for the finding", "ticket_url", logger.SanitizeValue(htmlURL))
+	}
+	return number, htmlURL, nil
 }
 
 // SyncFindingStatus is the outbound half of GitHub Issues sync: when a finding's
@@ -419,90 +458,212 @@ func issueKeyFromURL(uri string) string {
 // compile-time assurance that the real SCM client satisfies issueCreator.
 var _ issueCreator = (*scm.GitHubClient)(nil)
 
-// HandleIssueEvent is the inbound half of GitHub Issues sync: a webhook reporting
-// a linked issue closed/reopened updates the finding's status. Mirrors the Jira
-// inbound path. No-op when the action isn't a state change, no finding is linked
-// to the issue URL, or the resulting transition isn't allowed. Best-effort —
-// errors are returned for logging but a not-found link is a clean nil.
-func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID shared.ID, issueHTMLURL, action string) error {
-	target, ok := issueActionToStatus(action)
-	if !ok {
-		return nil // action we don't map (assigned, labeled, edited, …)
-	}
-	if strings.TrimSpace(issueHTMLURL) == "" {
+// GitHubIssueEvent is the part of a verified GitHub "issues" delivery the
+// inbound sync uses.
+type GitHubIssueEvent struct {
+	// Action is the delivery's action ("closed", "reopened", ...).
+	Action string
+	// IssueURL is the issue's browse URL (issue.html_url), the key findings
+	// are linked by.
+	IssueURL string
+	// StateReason is issue.state_reason on a close: "completed",
+	// "not_planned" or "duplicate" ("" from a server that does not send it).
+	StateReason string
+	// Sender is the GitHub login that made the change (sender.login),
+	// recorded as the tracker account in the timeline.
+	Sender string
+}
+
+// inboundApplier applies a linked ticket's status, or its request for a
+// disposition, through the finding service rules: tenant and data scope,
+// the transition map, the pentest and approval gates, "mark fixed" with the
+// integration as the actor (the server wires an adapter over
+// *finding.VulnerabilityService; this package cannot import the finding
+// service, which reaches the integration service and so this package).
+type inboundApplier interface {
+	ApplyTicketStatus(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
+		target vulnerability.FindingStatus, integration, ref, externalActor string) (*InboundStatusOutcome, error)
+	RequestTicketDisposition(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
+		target vulnerability.FindingStatus, integration, ref, externalActor string) (*InboundRequestOutcome, error)
+}
+
+// InboundRefusal is a linked finding the rules kept where it is, with the
+// reason.
+type InboundRefusal struct {
+	FindingID string
+	Reason    string
+}
+
+// InboundStatusOutcome is the result of applying an issue's status.
+type InboundStatusOutcome struct {
+	Applied []shared.ID
+	Refused []InboundRefusal
+}
+
+// InboundRequestOutcome is the result of requesting a disposition.
+type InboundRequestOutcome struct {
+	Requested []shared.ID
+	Pending   []shared.ID
+	Refused   []InboundRefusal
+}
+
+// workItemFindingLister lists every finding of the tenant linked to an
+// issue URL (one issue may track several findings).
+type workItemFindingLister interface {
+	ListIDsByWorkItemURI(ctx context.Context, tenantID shared.ID, uri string, limit int) ([]shared.ID, error)
+}
+
+// FixClaimHook is called for each finding a GitHub close claimed fixed; it
+// queues the proof of fix (a retest or a covered scan). It must be
+// idempotent.
+type FixClaimHook func(ctx context.Context, tenantID, findingID shared.ID) error
+
+// maxInboundFindings bounds the findings one issue event moves.
+const maxInboundFindings = 500
+
+// githubTicketIntegration is the integration name recorded as the actor.
+const githubTicketIntegration = "github"
+
+// SetInboundApplier wires the finding service path for inbound issue
+// events. Without it inbound events change nothing (fail closed).
+func (s *GitHubTicketService) SetInboundApplier(a inboundApplier) { s.applier = a }
+
+// SetWorkItemFindingLister wires the lookup of every finding linked to an
+// issue.
+func (s *GitHubTicketService) SetWorkItemFindingLister(l workItemFindingLister) { s.workItems = l }
+
+// SetFixClaimHook wires the proof-of-fix request after a fix claim.
+func (s *GitHubTicketService) SetFixClaimHook(h FixClaimHook) { s.fixClaimHook = h }
+
+// HandleIssueEvent is the inbound half of GitHub Issues sync. A verified
+// issues delivery for an issue linked to findings goes through the same
+// rules as a Jira status change (finding.ApplyTicketStatus):
+//
+//   - closed as completed: a fix claim for every linked open finding, then
+//     the proof of fix is queued. A ticket never closes a finding;
+//   - closed as not planned: a pending risk-acceptance request per finding
+//     (finding.RequestTicketDisposition), decided by an approver;
+//   - closed as duplicate: nothing changes (the work lives in another issue);
+//   - reopened: the linked findings go back to in progress.
+//
+// Other actions, and issues no finding is linked to, are ignored. Refusals
+// (a closed or pentest finding, a move the lifecycle does not allow) are
+// logged; nothing is written for them.
+func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID shared.ID, ev GitHubIssueEvent) error {
+	intent := issueIntent(ev.Action, ev.StateReason)
+	if intent == intentNone || strings.TrimSpace(ev.IssueURL) == "" {
 		return nil
 	}
-
-	finding, err := s.findingRepo.GetByWorkItemURI(ctx, tenantID, issueHTMLURL)
+	if intent == intentDuplicate {
+		s.logger.Info("github webhook: issue closed as duplicate; linked findings unchanged",
+			"issue_url", logger.SanitizeValue(ev.IssueURL))
+		return nil
+	}
+	if s.applier == nil || s.workItems == nil {
+		// Fail closed: without the finding service path nothing is applied.
+		s.logger.Error("github webhook: inbound status applier not wired; change not applied",
+			"issue_url", logger.SanitizeValue(ev.IssueURL))
+		return nil
+	}
+	ids, err := s.workItems.ListIDsByWorkItemURI(ctx, tenantID, ev.IssueURL, maxInboundFindings)
 	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
-			return nil // no finding linked to this issue — ignore
+		return fmt.Errorf("lookup findings by issue url: %w", err)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	ref := issueKeyFromURL(ev.IssueURL)
+	actor := githubLogin(ev.Sender)
+
+	if intent == intentRiskRequest {
+		out, err := s.applier.RequestTicketDisposition(ctx, tenantID, ids, vulnerability.FindingStatusAccepted, githubTicketIntegration, ref, actor)
+		if err != nil {
+			return fmt.Errorf("request risk acceptance from github issue: %w", err)
 		}
-		return fmt.Errorf("lookup finding by issue url: %w", err)
+		s.logger.Info("github webhook: issue closed as not planned; risk acceptance requested",
+			"issue_url", logger.SanitizeValue(ev.IssueURL), "linked", len(ids),
+			"requested", len(out.Requested), "pending", len(out.Pending), "refused", len(out.Refused))
+		s.logRefusals(ev.IssueURL, out.Refused)
+		return nil
 	}
 
-	// A ticket never closes a finding: the transition engine allows a ticket
-	// work-state moves only (IsTicketInboundTarget), along the lifecycle.
-	ticket := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorTicket}
-	facts := vulnerability.TransitionFacts{Status: finding.Status(), Source: finding.Source(), Severity: finding.Severity()}
-	var cands []lc.Candidate
-	if s.lifecycles != nil {
-		if cands, err = s.lifecycles.Candidates(ctx, tenantID); err != nil {
-			return fmt.Errorf("load finding lifecycle: %w", err)
-		}
+	target := vulnerability.FindingStatusFixApplied
+	if intent == intentReopen {
+		target = vulnerability.FindingStatusInProgress
 	}
-	lf := lc.Facts{TransitionFacts: facts, ClosureReason: finding.ClosureReason(),
-		FindingType: string(finding.FindingType()), ToolName: finding.ToolName()}
-	if id := finding.SubStatusID(); id != nil {
-		lf.SubStatus = *id
+	out, err := s.applier.ApplyTicketStatus(ctx, tenantID, ids, target, githubTicketIntegration, ref, actor)
+	if err != nil {
+		return fmt.Errorf("apply github issue status to linked findings: %w", err)
 	}
-	if d := lc.EvaluateMove(lc.SelectScheme(cands, lf.ConditionFacts()), lf, lc.Actor{TransitionActor: ticket},
-		lc.Target{Status: target}); !d.Allowed {
-		s.logger.Warn("github webhook: the transition engine refused the move",
-			"finding_id", finding.ID().String(), "current", finding.Status(), "target", target, "error", d.Err())
-		return nil
-	}
-	oldStatus := finding.Status()
-	note := fmt.Sprintf("Synced from GitHub issue (%s)", action)
-	if terr := finding.TransitionStatus(target, note, nil); terr != nil {
-		// Not a hard error — the transition may be blocked (e.g. accepted/false_positive).
-		s.logger.Warn("github webhook: finding status transition not allowed",
-			"finding_id", finding.ID().String(), "current", finding.Status(), "target", target, "error", terr)
-		return nil
-	}
-	if uerr := s.findingRepo.Update(ctx, finding); uerr != nil {
-		return fmt.Errorf("update finding from github issue event: %w", uerr)
-	}
-	s.logger.Info("github webhook synced finding status",
-		"finding_id", logger.SanitizeValue(finding.ID().String()), "issue_url", logger.SanitizeValue(issueHTMLURL), "action", logger.SanitizeValue(action), "status", logger.SanitizeValue(target.String()))
-	if s.activity != nil && oldStatus != target {
-		if aerr := s.activity.RecordIntegrationStatusChange(ctx, tenantID, finding.ID(),
-			oldStatus.String(), target.String(), "github", issueKeyFromURL(issueHTMLURL)); aerr != nil {
-			s.logger.Warn("github webhook: failed to record activity", "finding_id", finding.ID().String(), "error", aerr)
+	s.logger.Info("github webhook applied issue status",
+		"issue_url", logger.SanitizeValue(ev.IssueURL), "finding_status", target,
+		"linked", len(ids), "applied", len(out.Applied), "refused", len(out.Refused))
+	s.logRefusals(ev.IssueURL, out.Refused)
+
+	// A fix claim asks for the proof of fix of each claimed finding. Hook
+	// errors are logged: the claim stands and a scan still verifies it.
+	if target == vulnerability.FindingStatusFixApplied && s.fixClaimHook != nil {
+		for _, id := range out.Applied {
+			if herr := s.fixClaimHook(ctx, tenantID, id); herr != nil {
+				s.logger.Warn("github webhook: proof-of-fix request failed; the claim stands",
+					"finding_id", id.String(), "error", herr)
+			}
 		}
 	}
 	return nil
 }
 
-// statusActivityRecorder records a status change whose actor is an
-// integration (see activity.FindingActivityService.RecordIntegrationStatusChange).
-type statusActivityRecorder interface {
-	RecordIntegrationStatusChange(ctx context.Context, tenantID, findingID shared.ID, oldStatus, newStatus, integration, ref string) error
+func (s *GitHubTicketService) logRefusals(issueURL string, refused []InboundRefusal) {
+	for _, r := range refused {
+		s.logger.Info("github webhook: linked finding not moved",
+			"issue_url", logger.SanitizeValue(issueURL), "finding_id", r.FindingID, "reason", r.Reason)
+	}
 }
 
-// SetActivityRecorder wires the finding-activity recorder for inbound changes.
-func (s *GitHubTicketService) SetActivityRecorder(r statusActivityRecorder) { s.activity = r }
+// inboundIntent is what a GitHub issues action means for linked findings.
+type inboundIntent int
 
-// issueActionToStatus maps a GitHub issues webhook action to a finding status.
-// closed → fix_applied (pending verification, mirrors Jira Done); reopened →
-// in_progress (work resumed). Other actions are not mapped.
-func issueActionToStatus(action string) (vulnerability.FindingStatus, bool) {
+const (
+	intentNone inboundIntent = iota
+	intentFixClaim
+	intentRiskRequest
+	intentDuplicate
+	intentReopen
+)
+
+// issueIntent maps an issues action and its state_reason to an intent.
+// Only a close as completed (or a close without a reason, from a server
+// that does not send one) is a fix claim; a reason it does not know
+// changes nothing.
+func issueIntent(action, stateReason string) inboundIntent {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "closed":
-		return vulnerability.FindingStatusFixApplied, true
+		switch strings.ToLower(strings.TrimSpace(stateReason)) {
+		case "", "completed":
+			return intentFixClaim
+		case "not_planned":
+			return intentRiskRequest
+		case "duplicate":
+			return intentDuplicate
+		default:
+			return intentNone
+		}
 	case "reopened":
-		return vulnerability.FindingStatusInProgress, true
+		return intentReopen
 	default:
-		return "", false
+		return intentNone
 	}
+}
+
+// githubLoginRe is the shape of a GitHub login (an app's bot account ends in
+// "[bot]").
+var githubLoginRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}(\[bot\])?$`)
+
+// githubLogin returns the sender login when it has a login's shape, else ""
+// (the timeline then names the integration only).
+func githubLogin(login string) string {
+	if githubLoginRe.MatchString(login) {
+		return login
+	}
+	return ""
 }

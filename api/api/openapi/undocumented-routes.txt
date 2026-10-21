@@ -134,7 +134,6 @@ GET /api/v1/findings/{}/evidence/notes
 GET /api/v1/findings/{}/priority-explanation
 GET /api/v1/groups/{}/scope-rules
 GET /api/v1/groups/{}/scope-rules/{}
-GET /api/v1/integrations/github/webhook-secret
 GET /api/v1/integrations/jira/projects
 GET /api/v1/invitations/{}
 GET /api/v1/invitations/{}/preview
@@ -297,7 +296,6 @@ POST /api/v1/groups/{}/scope-rules
 POST /api/v1/groups/{}/scope-rules/reconcile
 POST /api/v1/groups/{}/scope-rules/{}/preview
 POST /api/v1/integrations/defectdojo/sync
-POST /api/v1/integrations/github/webhook-secret/rotate
 POST /api/v1/invitations/{}/accept
 POST /api/v1/invitations/{}/accept-with-refresh
 POST /api/v1/invitations/{}/decline
@@ -352,7 +350,6 @@ POST /api/v1/threat-actors
 POST /api/v1/threat-models/generate
 POST /api/v1/users/{}/roles
 POST /api/v1/validation/evidence
-POST /api/v1/webhooks/incoming/github
 POST /api/v1/workflow-runs/{}/cancel
 POST /api/v1/workflows
 POST /api/v1/workflows/{}/edges

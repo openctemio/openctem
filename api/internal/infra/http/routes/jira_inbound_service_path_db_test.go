@@ -17,6 +17,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -64,37 +65,6 @@ func (g *onceGuard) FirstDelivery(_ context.Context, key string, _ time.Duration
 	return true, nil
 }
 
-// testTicketApplier is the composition-root adapter (cmd/server) for the test.
-type testTicketApplier struct{ vuln *finding.VulnerabilityService }
-
-func (a testTicketApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref, externalActor string,
-) ([]shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
-	if err != nil {
-		return nil, nil, err
-	}
-	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
-	for _, r := range out.Refused {
-		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
-	}
-	return out.Applied, refused, nil
-}
-
-func (a testTicketApplier) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref, externalActor string,
-) ([]shared.ID, []shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.RequestTicketDisposition(ctx, tenantID, ids, target, integration, ref, externalActor)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
-	for _, r := range out.Refused {
-		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
-	}
-	return out.Requested, out.Pending, refused, nil
-}
-
 func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	h := newGroupScopeHarness(t)
 	db := &postgres.DB{DB: h.db}
@@ -127,7 +97,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 
 	client := &commentClient{}
 	sync := jira.NewSyncService(findingRepo, client, logger.NewNop())
-	sync.SetInboundApplier(testTicketApplier{vuln: h.vuln})
+	sync.SetInboundApplier(ticketbridge.Jira{Vuln: h.vuln})
 	sync.SetWorkItemFindingLister(findingRepo)
 	sync.SetRefusalCommentGuard(&onceGuard{seen: map[string]bool{}})
 	// The delivering integration: its site and its configured project.
