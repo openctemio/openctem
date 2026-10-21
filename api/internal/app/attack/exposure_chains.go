@@ -22,8 +22,11 @@ type FindingRiskCounter interface {
 // priority classification and threat models need the whole result.
 const exposureChainCap = 100
 
-// ChainHop is one asset on an exposure chain.
+// ChainHop is one asset on an exposure chain. A hop the caller may not see
+// (outside their data scope) is returned with Hidden set and every other field
+// empty: it says only that something sits at that step.
 type ChainHop struct {
+	Hidden    bool   `json:"hidden,omitempty"`
 	AssetID   string `json:"asset_id"`
 	Name      string `json:"name"`
 	AssetType string `json:"asset_type"`
@@ -48,9 +51,6 @@ type ExposureChain struct {
 	Hops []ChainHop `json:"hops"`
 	// Length is the number of edges traversed (len(Hops)-1); 0 = directly exposed.
 	Length int `json:"length"`
-	// ReachableFromEntryPoints is how many distinct public entry points can reach
-	// this target (blast-radius width).
-	ReachableFromEntryPoints int `json:"reachable_from_entry_points"`
 	// KEVCount/CriticalCount are the open KEV / critical findings on the target.
 	KEVCount      int `json:"kev_count"`
 	CriticalCount int `json:"critical_count"`
@@ -108,9 +108,11 @@ func (s *SurfaceService) computeExposureChains(ctx context.Context, tenantID sha
 }
 
 // buildExposureChains is the pure core (no IO) so it is unit-testable with
-// synthetic graphs. It returns every chain (no cap). For every asset that carries a KEV or critical finding it
-// finds the shortest path from any public entry point, following attack-path
-// relationship types, and ranks the resulting chains by urgency.
+// synthetic graphs. It returns every chain (no cap). One breadth-first pass
+// starts from all public entry points at once, so each asset is visited once
+// (O(nodes + edges)) and every asset that carries a KEV or critical finding
+// gets the shortest path from its nearest entry point, following attack-path
+// relationship types. The chains are ranked by urgency.
 func buildExposureChains(
 	nodes []asset.AssetNode,
 	edges []asset.RelationshipEdge,
@@ -121,12 +123,18 @@ func buildExposureChains(
 		nodeByID[nodes[i].ID] = &nodes[i]
 	}
 
-	// Directed adjacency over attack-path edges only (same set the scorer uses).
+	// Directed adjacency over attack-path edges only (same set the scorer
+	// uses). An edge whose end is not a live asset is dropped, so a path never
+	// runs through a deleted asset.
 	adj := make(map[string][]string, len(nodes))
 	for _, e := range edges {
-		if attackPathRelationshipTypes[e.Type] {
-			adj[e.SourceAssetID] = append(adj[e.SourceAssetID], e.TargetAssetID)
+		if !attackPathRelationshipTypes[e.Type] {
+			continue
 		}
+		if nodeByID[e.SourceAssetID] == nil || nodeByID[e.TargetAssetID] == nil {
+			continue
+		}
+		adj[e.SourceAssetID] = append(adj[e.SourceAssetID], e.TargetAssetID)
 	}
 
 	// A "target" is any node carrying at least one KEV or critical finding.
@@ -139,65 +147,47 @@ func buildExposureChains(
 		}
 	}
 
-	// best[target] = the shortest chain found so far to that target.
-	best := make(map[string]*ExposureChain)
-	// reachCount[target] = number of distinct entry points that can reach it.
-	reachCount := make(map[string]int)
-
+	// Multi-source BFS. parent[x] is the previous hop on the shortest path
+	// from the nearest entry point (empty for an entry point itself).
+	parent := make(map[string]string, len(nodes))
+	queue := make([]string, 0, len(nodes))
 	for _, ep := range entryPoints {
-		// BFS from this entry point capturing predecessors, so we can reconstruct
-		// the actual hop path (the scorer discards these).
-		parent := map[string]string{ep: ""}
-		visited := map[string]bool{ep: true}
-		queue := []string{ep}
-		reachedTargets := map[string]bool{}
-
-		// The entry point itself may be a dangerous asset (directly exposed).
-		if isTarget(ep) {
-			reachedTargets[ep] = true
-			considerChain(best, ep, ep, parent, nodeByID, kev, critical)
+		parent[ep] = ""
+		queue = append(queue, ep)
+	}
+	best := make(map[string]*ExposureChain)
+	for head := 0; head < len(queue); head++ {
+		cur := queue[head]
+		if isTarget(cur) {
+			considerChain(best, cur, parent, nodeByID, kev, critical)
 		}
-
-		for len(queue) > 0 {
-			cur := queue[0]
-			queue = queue[1:]
-			for _, nb := range adj[cur] {
-				if visited[nb] {
-					continue
-				}
-				visited[nb] = true
-				parent[nb] = cur
-				queue = append(queue, nb)
-				if isTarget(nb) {
-					reachedTargets[nb] = true
-					considerChain(best, ep, nb, parent, nodeByID, kev, critical)
-				}
+		for _, nb := range adj[cur] {
+			if _, seen := parent[nb]; seen {
+				continue
 			}
-		}
-		for tgt := range reachedTargets {
-			reachCount[tgt]++
+			parent[nb] = cur
+			queue = append(queue, nb)
 		}
 	}
 
 	chains := make([]ExposureChain, 0, len(best))
-	for tgt, ch := range best {
-		ch.ReachableFromEntryPoints = reachCount[tgt]
+	for _, ch := range best {
 		ch.Score = chainScore(ch)
 		chains = append(chains, *ch)
 	}
 
-	// Rank by urgency, then blast-radius, then shorter path, then name for stability.
+	// Rank by urgency, then shorter path, then name for stability.
 	sort.Slice(chains, func(i, j int) bool {
 		if chains[i].Score != chains[j].Score {
 			return chains[i].Score > chains[j].Score
 		}
-		if chains[i].ReachableFromEntryPoints != chains[j].ReachableFromEntryPoints {
-			return chains[i].ReachableFromEntryPoints > chains[j].ReachableFromEntryPoints
-		}
 		if chains[i].Length != chains[j].Length {
 			return chains[i].Length < chains[j].Length
 		}
-		return chains[i].TargetName < chains[j].TargetName
+		if chains[i].TargetName != chains[j].TargetName {
+			return chains[i].TargetName < chains[j].TargetName
+		}
+		return chains[i].TargetID < chains[j].TargetID
 	})
 
 	return &ExposureChainResult{
@@ -211,33 +201,27 @@ func buildExposureChains(
 	}
 }
 
-// considerChain reconstructs the path entry→…→target via the parent map and keeps
-// it if it is shorter than any chain already recorded for that target.
+// considerChain reconstructs the path entry→…→target via the parent map and
+// records it for the target.
 func considerChain(
 	best map[string]*ExposureChain,
-	entry, target string,
+	target string,
 	parent map[string]string,
 	nodeByID map[string]*asset.AssetNode,
 	kev, critical map[string]int,
 ) {
-	// Reconstruct target → entry, then reverse.
+	// Reconstruct target → entry (the entry has no parent), then reverse.
 	var rev []string
-	for cur := target; cur != ""; cur = parent[cur] {
+	for cur := target; ; cur = parent[cur] {
 		rev = append(rev, cur)
-		if cur == entry {
+		if parent[cur] == "" {
 			break
 		}
 	}
+	entry := rev[len(rev)-1]
 	hops := make([]ChainHop, 0, len(rev))
 	for i := len(rev) - 1; i >= 0; i-- {
 		n := nodeByID[rev[i]]
-		if n == nil {
-			// A hop references an asset missing from the node set (a dangling
-			// relationship / stale edge). Emitting a gapped path would misreport
-			// the chain's length and route, so skip this chain entirely — a
-			// clean path from another entry point still records the target.
-			return
-		}
 		hops = append(hops, ChainHop{
 			AssetID:   n.ID,
 			Name:      n.Name,
@@ -246,29 +230,20 @@ func considerChain(
 			Exposure:  n.Exposure,
 		})
 	}
-	length := len(hops) - 1
-	if existing, ok := best[target]; ok && existing.Length <= length {
-		return
-	}
 
-	tn := nodeByID[target]
-	ch := &ExposureChain{
-		EntryPointID:  entry,
-		TargetID:      target,
-		KEVCount:      kev[target],
-		CriticalCount: critical[target],
-		Hops:          hops,
-		Length:        length,
+	tn, en := nodeByID[target], nodeByID[entry]
+	best[target] = &ExposureChain{
+		EntryPointID:      entry,
+		EntryPointName:    en.Name,
+		TargetID:          target,
+		TargetName:        tn.Name,
+		TargetCriticality: tn.Criticality,
+		IsCrownJewel:      tn.IsCrownJewel,
+		KEVCount:          kev[target],
+		CriticalCount:     critical[target],
+		Hops:              hops,
+		Length:            len(hops) - 1,
 	}
-	if en := nodeByID[entry]; en != nil {
-		ch.EntryPointName = en.Name
-	}
-	if tn != nil {
-		ch.TargetName = tn.Name
-		ch.TargetCriticality = tn.Criticality
-		ch.IsCrownJewel = tn.IsCrownJewel
-	}
-	best[target] = ch
 }
 
 // chainScore ranks a chain: dangerous findings (KEV weighted heavily) scaled by

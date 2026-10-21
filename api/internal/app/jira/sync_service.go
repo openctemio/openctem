@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
+	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/safetext"
@@ -150,11 +151,16 @@ type CreateIssueInput struct {
 	ProjectKey  string
 	Summary     string
 	Description string
+	// IssueType is the issue type's name; IssueTypeID, when set, wins (the
+	// type is then sent by id).
 	IssueType   string
+	IssueTypeID string
 	Priority    string
 	Labels      []string
 	// ParentKey makes the issue a child of this issue (an epic).
 	ParentKey string
+	// Marker is written into the create request (see IssueMarker).
+	Marker *IssueMarker
 }
 
 // CreateIssueResult contains the response from creating a Jira issue.
@@ -216,6 +222,8 @@ type SyncService struct {
 	// profiles renders published ticket mapping profiles (nil → built-in
 	// fields and status sync only).
 	profiles ProfileSource
+	// typeHealth records create refusals of a kind on the integration.
+	typeHealth IssueTypeHealth
 
 	// campaignSink receives inbound epic status changes so a linked remediation
 	// campaign can be completed (epic Done → campaign completed). nil → inbound
@@ -748,33 +756,45 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	// reproduce the original critical→Highest … low→Low table).
 	priority := mapping.PriorityForSeverity(string(finding.Severity()))
 
-	// Issue type: explicit request wins, else the matched route's override, else
-	// the tenant default, else "Bug".
-	issueType := strings.TrimSpace(input.IssueType)
-	if issueType == "" {
-		issueType = routeIssueType
+	// Issue type: explicit request wins, else the matched route's override,
+	// else the integration's finding type (by id in its default project).
+	issueType := IssueTypeRef{Name: strings.TrimSpace(input.IssueType)}
+	if issueType.Name == "" {
+		issueType.Name = routeIssueType
 	}
-	if issueType == "" {
-		issueType = mapping.DefaultIssueType
-	}
-	if issueType == "" {
-		issueType = "Bug"
+	if issueType.Name == "" {
+		issueType = mapping.IssueTypeFor(IssueKindFinding, projectKey)
 	}
 
-	result, handled, err := s.createFromProfile(ctx, jiraClient, tenantID, findingID, projectKey, issueType, strings.TrimSpace(input.ParentKey))
+	// A previous attempt may have created the issue and lost the response
+	// or failed to record it: adopt that issue instead of creating another.
+	marker := markerFor(jiraClient, MarkerKindFinding, findingID)
+	result, err := s.findMarked(ctx, jiraClient, marker, func(key string) bool {
+		return strings.EqualFold(ticketlink.ProjectOf(key), projectKey)
+	})
 	if err != nil {
 		return nil, err
+	}
+	handled := result != nil
+	if !handled {
+		result, handled, err = s.createFromProfile(ctx, jiraClient, tenantID, ticketmap.ObjectFinding, findingID, projectKey, issueType.Lookup(), strings.TrimSpace(input.ParentKey), marker)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if !handled {
 		result, err = jiraClient.CreateIssue(ctx, CreateIssueInput{
 			ProjectKey:  projectKey,
 			Summary:     ticketSummary(finding),
 			Description: ticketDescription(finding),
-			IssueType:   issueType,
+			IssueType:   issueType.Name,
+			IssueTypeID: issueType.ID,
 			Priority:    priority,
 			Labels:      []string{"openctem", "security", string(finding.Severity())},
 			ParentKey:   strings.TrimSpace(input.ParentKey),
+			Marker:      marker,
 		})
+		s.noteCreate(ctx, tenantID, integrationID, IssueKindFinding, issueType, err)
 		if err != nil {
 			return nil, fmt.Errorf("create jira ticket: %w", err)
 		}
@@ -835,13 +855,24 @@ func (s *SyncService) CreateEpic(ctx context.Context, tenantID shared.ID, projec
 	if err != nil {
 		return "", "", err
 	}
+	// The integration's epic type (a custom one included), else Epic.
+	issueType := IssueTypeRef{Name: stockIssueTypes[IssueKindEpic]}
+	var integrationID shared.ID
+	if ii, ok := client.(IssueIdentifier); ok {
+		integrationID = ii.IntegrationID()
+		if mapping, merr := s.mappingFor(ctx, tenantID, integrationID); merr == nil {
+			issueType = mapping.IssueTypeFor(IssueKindEpic, projectKey)
+		}
+	}
 	result, err := client.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  projectKey,
 		Summary:     safetext.SingleLine(safetext.RedactSecrets(summary), safetext.MaxTitleRunes),
 		Description: safetext.JiraWikiBlock(safetext.RedactSecrets(description), safetext.MaxDescriptionRunes),
-		IssueType:   "Epic",
+		IssueType:   issueType.Name,
+		IssueTypeID: issueType.ID,
 		Labels:      labels,
 	})
+	s.noteCreate(ctx, tenantID, integrationID, IssueKindEpic, issueType, err)
 	if err != nil {
 		return "", "", fmt.Errorf("create jira epic: %w", err)
 	}

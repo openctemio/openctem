@@ -139,15 +139,38 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 		}
 	}
 
-	res, err := client.CreateIssue(ctx, CreateIssueInput{
-		ProjectKey:  project,
-		Summary:     taskIssueSummary(task),
-		Description: s.taskIssueDescription(task),
-		IssueType:   mapping.DefaultIssueType,
-		Labels:      []string{"openctem", "openctem-task"},
-	})
+	// A previous attempt may have created the issue and lost the response
+	// or failed to record the link: adopt that issue (in a configured
+	// project) instead of creating a second one.
+	marker := markerFor(client, MarkerKindTask, in.TaskID)
+	res, err := s.findMarked(ctx, client, marker, func(key string) bool { return allowed[ticketlink.ProjectOf(key)] })
 	if err != nil {
-		return nil, fmt.Errorf("create the task's issue: %w", err)
+		return nil, err
+	}
+	if res == nil {
+		// The integration's task type (by id in its default project); the
+		// published task profile of that type fills its fields.
+		issueType := mapping.IssueTypeFor(IssueKindTask, project)
+		var handled bool
+		res, handled, err = s.createFromProfile(ctx, client, in.TenantID, ticketmap.ObjectTask, in.TaskID, project, issueType.Lookup(), "", marker)
+		if err != nil {
+			return nil, err
+		}
+		if !handled {
+			res, err = client.CreateIssue(ctx, CreateIssueInput{
+				ProjectKey:  project,
+				Summary:     taskIssueSummary(task),
+				Description: s.taskIssueDescription(task),
+				IssueType:   issueType.Name,
+				IssueTypeID: issueType.ID,
+				Labels:      []string{"openctem", "openctem-task"},
+				Marker:      marker,
+			})
+			s.noteCreate(ctx, in.TenantID, ii.IntegrationID(), IssueKindTask, issueType, err)
+			if err != nil {
+				return nil, fmt.Errorf("create the task's issue: %w", err)
+			}
+		}
 	}
 	l, err := ticketlink.New(in.TenantID, ii.IntegrationID(), ticketlink.ForTask(in.TaskID), res.Key, res.ID,
 		ii.SiteURL(), ticketlink.BrowseURL(ii.SiteURL(), res.Key), ticketlink.RoleOwn, ticketlink.SourcePerson, in.By)
@@ -159,7 +182,7 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 	if err != nil {
 		s.logger.Error("create task issue: the issue exists but its link was not recorded",
 			"task_id", in.TaskID.String(), "issue_key", res.Key, "error", err)
-		return nil, fmt.Errorf("issue %s was created but could not be recorded on the task; link it again: %w", res.Key, err)
+		return nil, fmt.Errorf("issue %s was created but could not be recorded on the task; create it again to record it (the same issue is reused): %w", res.Key, err)
 	}
 	return l, nil
 }
@@ -248,6 +271,22 @@ func (s *SyncService) SyncTaskIssue(ctx context.Context, tenantID, taskID shared
 
 	comment := taskMoveComment(task)
 	status := link.LastStatus
+	if handled, moved, err := s.syncTaskFromProfile(ctx, client, tenantID, task, link.ExternalKey, comment); handled {
+		if err != nil {
+			_ = s.links.RecordSync(ctx, tenantID, link.ID, link.LastStatus, safetext.SingleLine(err.Error(), 200), time.Now().UTC())
+			if isPermanent(err) {
+				// A mapping problem: retrying cannot help, and the state is
+				// recorded so the next pass does not try again until it moves.
+				return s.links.RecordPush(ctx, tenantID, link.ID, string(task.State), status, time.Now().UTC())
+			}
+			return err
+		}
+		if moved != "" {
+			status = moved
+		}
+		s.logger.Info("task issue synced from the mapping profile", "task_id", taskID.String(), "issue_key", logger.SanitizeValue(link.ExternalKey), "state", task.State)
+		return s.links.RecordPush(ctx, tenantID, link.ID, string(task.State), status, time.Now().UTC())
+	}
 	if target, ok := taskStatusTargets[task.State]; ok {
 		terr := client.TransitionToStatus(ctx, link.ExternalKey, target, comment)
 		switch {
@@ -268,6 +307,55 @@ func (s *SyncService) SyncTaskIssue(ctx context.Context, tenantID, taskID shared
 	}
 	s.logger.Info("task issue synced", "task_id", taskID.String(), "issue_key", logger.SanitizeValue(link.ExternalKey), "state", task.State)
 	return s.links.RecordPush(ctx, tenantID, link.ID, string(task.State), status, time.Now().UTC())
+}
+
+// syncTaskFromProfile moves a task's issue along the published task profile
+// of the issue's project and issue type. handled is false without such a
+// profile (the built-in names then apply); moved is the status the issue
+// was moved to ("" when the state does not move it).
+func (s *SyncService) syncTaskFromProfile(ctx context.Context, c Client, tenantID shared.ID, task *remediation.Task, issueKey, comment string) (handled bool, moved string, err error) {
+	pc, ok := s.profileClient(c)
+	if !ok {
+		return false, "", nil
+	}
+	ps, err := s.profileStatusTarget(ctx, pc, tenantID, ticketmap.ObjectTask, task.ID, issueKey)
+	if err != nil {
+		return true, "", fmt.Errorf("mapping profile status: %w", err)
+	}
+	if ps == nil {
+		return false, "", nil
+	}
+	if ps.DryRun {
+		s.logger.Info("ticket mapping dry run: would move the task's issue",
+			"profile_id", ps.ProfileID.String(), "issue_key", logger.SanitizeValue(issueKey), "state", ps.State)
+		return true, "", nil
+	}
+	if ps.Target == nil {
+		// The state does not move the issue: the progress comment still
+		// tells the people on it, as without a profile.
+		if cerr := c.AddComment(ctx, issueKey, comment); cerr != nil && !isPermanent(cerr) {
+			return true, "", cerr
+		}
+		return true, "", nil
+	}
+	final := ""
+	if ps.Target.Comment {
+		final = comment
+	}
+	if err := runStatusPath(ctx, pc, issueKey, *ps.Target, ps.Workflow, final); err != nil {
+		if errors.Is(err, ErrNoPath) {
+			s.logger.Warn("ticket mapping: the task's issue cannot reach the mapped status",
+				"profile_id", ps.ProfileID.String(), "issue_key", logger.SanitizeValue(issueKey), "state", ps.State,
+				"error", logger.SanitizeValue(err.Error()))
+			return true, "", &pathError{err: err}
+		}
+		return true, "", err
+	}
+	name := ps.Target.StatusID
+	if st, ok := ps.Workflow.Status(ps.Target.StatusID); ok && st.Name != "" {
+		name = st.Name
+	}
+	return true, name, nil
 }
 
 func isPermanent(err error) bool {
