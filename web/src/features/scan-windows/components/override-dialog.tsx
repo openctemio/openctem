@@ -229,6 +229,7 @@ export function OverrideDialog({ open, onOpenChange, policies }: OverrideDialogP
             </div>
             <VerificationCodeInput
               id="override-code"
+              label={t('scanWindows.override.codeLabel', 'Authentication code')}
               value={code}
               onChange={setCode}
               onComplete={(c) => void submit(c)}
