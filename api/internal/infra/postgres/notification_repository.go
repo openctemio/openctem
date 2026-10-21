@@ -82,7 +82,8 @@ func (r *NotificationRepository) CreateCoalesced(ctx context.Context, n *notific
 		s := n.ActorID().String()
 		actorID = &s
 	}
-	res, err := r.db.ExecContext(ctx, `
+	var mergedID string
+	err = r.db.QueryRowContext(ctx, `
 		UPDATE notifications SET title = $5, body = $6, severity = $7, actor_id = $8, url = $9,
 		       reason = COALESCE(NULLIF($10, ''), reason), created_at = $11, coalesced_count = coalesced_count + 1
 		WHERE id = (
@@ -94,17 +95,24 @@ func (r *NotificationRepository) CreateCoalesced(ctx context.Context, n *notific
 			  AND x.created_at > COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)
 			  AND NOT EXISTS (SELECT 1 FROM notification_reads nr WHERE nr.notification_id = x.id AND nr.user_id = $2)
 			ORDER BY x.created_at DESC LIMIT 1
-			FOR UPDATE OF x SKIP LOCKED)`,
+			FOR UPDATE OF x SKIP LOCKED)
+		RETURNING id`,
 		n.TenantID(), n.AudienceID().String(), n.NotificationType(), n.ResourceID().String(),
 		n.Title(), n.Body(), n.Severity(), actorID, n.URL(), n.Reason(), n.CreatedAt(), n.ResourceType(),
-		fmt.Sprintf("%d seconds", int(notification.CoalesceWindow.Seconds())))
+		fmt.Sprintf("%d seconds", int(notification.CoalesceWindow.Seconds()))).Scan(&mergedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, r.Create(ctx, n)
+	}
 	if err != nil {
 		return false, fmt.Errorf("failed to coalesce notification: %w", err)
 	}
-	if rows, _ := res.RowsAffected(); rows > 0 {
-		return true, nil
+	// The live push names the row that exists, not the unsaved new id.
+	id, err := shared.IDFromString(mergedID)
+	if err != nil {
+		return true, fmt.Errorf("coalesced notification id: %w", err)
 	}
-	return false, r.Create(ctx, n)
+	n.MergedInto(id)
+	return true, nil
 }
 
 // List returns notifications visible to a user with audience filtering and read status.

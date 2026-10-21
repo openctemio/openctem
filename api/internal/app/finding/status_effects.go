@@ -132,9 +132,14 @@ func (s *VulnerabilityService) afterStatusChange(ctx context.Context, tenantID s
 		if s.workflowStatusDispatch != nil {
 			s.workflowStatusDispatch(ctx, tenantID, c.f, c.old.String(), newStatus.String())
 		}
-		watches := participationdom.ReasonStatusChanged
-		if newStatus == vulnerability.FindingStatusFixApplied {
-			watches = participationdom.ReasonFixClaimed
+		// Only a change to one finding makes the actor a watcher: a bulk or
+		// group move would subscribe them to every finding it touched.
+		var watches participationdom.Reason
+		if len(changes) == 1 {
+			watches = participationdom.ReasonStatusChanged
+			if newStatus == vulnerability.FindingStatusFixApplied {
+				watches = participationdom.ReasonFixClaimed
+			}
 		}
 		s.notifyFinding(ctx, c.f, findingEvent{
 			actorID:      actorID,
