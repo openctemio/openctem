@@ -65,8 +65,9 @@ before.
 the same type: the row takes the latest title, body and actor and its `coalesced_count` goes up. Once
 read, the next event is a new notification.
 
-**Taking part.** The author of a comment, the person who changes a status or claims a fix, the new
-assignee, and the requester and the decider of an approval become watchers (reasons `commented`,
+**Taking part.** The author of a comment, the person who changes the status of one finding or claims a
+fix (a bulk or group move subscribes nobody), the new assignee, and the requester of an approval (an
+approver who applies it changes the status) become watchers (reasons `commented`,
 `status_changed`, `fix_claimed`, `assigned`, `approval`) through `AutoWatch`, unless they turned
 **auto watch** off in their notification preferences (`auto_watch`, default on; `PUT
 /api/v1/notifications/preferences`). An existing row is never touched, so a stop wins.
