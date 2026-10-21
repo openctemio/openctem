@@ -29,7 +29,8 @@ var attackPathRelationshipTypes = map[asset.RelationshipType]bool{
 }
 
 // controlRelationshipTypes are relationships that indicate security controls.
-// Assets protected by these add a "protected" flag to scored nodes.
+// Assets protected by these add a "protected" flag to scored nodes. The
+// protected asset is the source of protected_by and the target of monitors.
 var controlRelationshipTypes = map[asset.RelationshipType]bool{
 	asset.RelTypeProtectedBy: true,
 	asset.RelTypeMonitors:    true,
@@ -51,7 +52,8 @@ type AssetPathScore struct {
 	RiskScore int `json:"risk_score"`
 	// IsCrownJewel marks high-value target assets.
 	IsCrownJewel bool `json:"is_crown_jewel"`
-	// FindingCount is the number of open findings on this asset.
+	// FindingCount is the number of open findings on this asset (closed and
+	// dispositioned findings are not counted).
 	FindingCount int `json:"finding_count"`
 
 	// ReachableFrom is the count of distinct public entry points that can
@@ -106,6 +108,9 @@ type pathBasis struct {
 	edgeNodes map[string]bool
 }
 
+// attackPathTopN is the number of ranked assets an API response returns.
+const attackPathTopN = 50
+
 // criticalityMultiplier returns an impact multiplier for a criticality level.
 func criticalityMultiplier(criticality string) float64 {
 	switch criticality {
@@ -159,11 +164,20 @@ func (s *SurfaceService) ComputeAttackPathScores(
 	protected := make(map[string]bool)
 
 	for _, e := range edges {
+		// A relationship whose end is not a live asset (a deleted asset) is
+		// ignored: it neither bridges a path nor marks a protected asset.
+		if nodeByID[e.SourceAssetID] == nil || nodeByID[e.TargetAssetID] == nil {
+			continue
+		}
 		if controlRelationshipTypes[e.Type] {
-			// source asset is protected (protected_by / monitors points FROM protected TO control)
-			// convention: "A protected_by B" means A is target, B is source when edge direction
-			// is stored as source=A → target=B? Let's treat target as the protected asset.
-			protected[e.TargetAssetID] = true
+			// Direction follows relationship-types.yaml: "A protected_by B"
+			// (A = website, B = the WAF) protects the SOURCE, while
+			// "A monitors B" (A = the SIEM, B = the host) observes the TARGET.
+			if e.Type == asset.RelTypeProtectedBy {
+				protected[e.SourceAssetID] = true
+			} else {
+				protected[e.TargetAssetID] = true
+			}
 			continue
 		}
 		if attackPathRelationshipTypes[e.Type] {
@@ -288,9 +302,8 @@ func (s *SurfaceService) ComputeAttackPathScores(
 	})
 
 	all := scored
-	// Cap at 50
-	if len(scored) > 50 {
-		scored = scored[:50]
+	if len(scored) > attackPathTopN {
+		scored = scored[:attackPathTopN]
 	}
 
 	summary := PathSummary{

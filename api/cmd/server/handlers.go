@@ -103,6 +103,14 @@ func newPriorityRuleHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Servi
 	return h
 }
 
+// newVerificationChecklistHandler wires the checklist service with the data
+// scope enforcer and the audit log.
+func newVerificationChecklistHandler(db *sql.DB, log *logger.Logger, svc *Services) *handler.VerificationChecklistHandler {
+	h := handler.NewVerificationChecklistHandler(finding.NewVerificationChecklistService(db, svc.DataScope), log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
 // newThreatModelHandler wires the continuous-threat-modeling handler, or nil
 // when the generation service was not initialized (e.g. no database).
 func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatModelHandler {
@@ -248,6 +256,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetTechnologyReader(repos.AssetTechnology)
 	assetHandler.SetAuditService(svc.Audit)
+	assetHandler.SetRiskGovernance(svc.AssetRiskGovernance)
 
 	// Command handler with scan run service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
@@ -384,9 +393,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	jiraWebhookHandler.SetOrganizationGate(svc.OrganizationGate)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
 	jiraWebhookHandler.SetAuditService(svc.Audit)
+	jiraWebhookHandler.SetCreatePolicy(svc.TicketPolicy)
 	var ticketMappingHandler *handler.TicketMappingHandler
 	if svc.TicketMapping != nil {
 		ticketMappingHandler = handler.NewTicketMappingHandler(svc.TicketMapping, svc.Audit, log)
+		ticketMappingHandler.SetCreatePolicy(svc.TicketPolicy)
 	}
 	// Inbound Jira deliveries: the integration in the URL and its own secret
 	// authenticate them; replays are ignored for 24 hours (all replicas).
@@ -397,9 +408,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	githubWebhookHandler.SetOrganizationGate(svc.OrganizationGate)
-	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
+	// Inbound GitHub issue closed/reopened → linked findings, through the
+	// finding service rules (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
-	// Replays of a verified delivery are ignored for 24 hours (all replicas).
+	// Replays of a verified delivery (same body or same delivery id) are
+	// ignored for 24 hours (all replicas). Without Redis every delivery is
+	// refused (503).
 	if deps.RedisClient != nil {
 		githubWebhookHandler.SetDeliveryGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
 	}
@@ -460,6 +474,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// (access tokens are checked by the authorization server).
 	var mcpPolicies middleware.MCPPolicyReader
 	var mcpSettings *handler.MCPSettingsHandler
+	var aiSettings *handler.AISettingsHandler
+	if svc.TenantAI != nil {
+		aiSettings = handler.NewAISettingsHandler(svc.TenantAI, v, log)
+	}
 	if svc.Tenant != nil {
 		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
 		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
@@ -500,6 +518,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCPDiscovery:   mcpDiscovery,
 		MCPOAuth:       mcpOAuthHandler,
 		MCPSettings:    mcpSettings,
+		AISettings:     aiSettings,
 		MCPConnections: mcpConnections,
 		MCPClients:     mcpClients,
 		APIKeyAuth:     apiKeyAuth,
@@ -567,6 +586,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
+		FindingRetestCheck:   handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
 		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:          jiraWebhookHandler,
 		TicketMapping:        ticketMappingHandler,
@@ -679,6 +699,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Remediation Campaigns
 		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),
 		RemediationTask:     handler.NewRemediationTaskHandler(svc.RemediationTask, log),
+		Participation:       handler.NewParticipationHandler(svc.Participation, log),
 		RemediationSuggest:  handler.NewRemediationSuggestionHandler(svc.RemediationSuggest, log),
 
 		// Business Units
@@ -770,7 +791,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
 		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant),
-		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
+		VerificationChecklist: newVerificationChecklistHandler(deps.DB.DB, log, svc),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
 		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log).WithDataScope(svc.DataScope),
@@ -1875,6 +1896,13 @@ type findingAccessGuard struct {
 
 func (g findingAccessGuard) AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error {
 	return g.findings.AssertFindingAccess(ctx, tenantID, findingID)
+}
+
+// AssertFindingForFixWork is the by-id guard's finding check for a route of
+// the fix workflow: it also admits the owner of a live task holding the
+// finding (middleware.TaskWorkAsserter).
+func (g findingAccessGuard) AssertFindingForFixWork(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	return g.findings.AssertFindingForFixWork(ctx, tenantID, findingID)
 }
 
 // byIDGuardAsserter is the asserter of the by-id data-scope guard (nil

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
@@ -38,6 +39,10 @@ type TaskReader interface {
 	GetTask(ctx context.Context, tenantID, taskID shared.ID) (*remediation.Task, error)
 	// OpenMemberIDs lists the task's active primary members (at most limit).
 	OpenMemberIDs(ctx context.Context, tenantID, taskID shared.ID, limit int) ([]shared.ID, error)
+	// EgressMemberIDs lists every current member of the task (primary and
+	// related, any status) for the outbound gate; an error when they cannot
+	// all be listed (the gate then fails closed).
+	EgressMemberIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error)
 }
 
 // SetTaskSources wires the task access check and the platform task reader.
@@ -60,10 +65,13 @@ const taskCreateLock = 30 * time.Second
 
 // CreateTaskIssueInput asks for a task's issue.
 type CreateTaskIssueInput struct {
-	TenantID   shared.ID
-	TaskID     shared.ID
-	ProjectKey string // "" = the integration's default project
-	By         *shared.ID
+	TenantID shared.ID
+	TaskID   shared.ID
+	// IntegrationID names the Jira integration to create the issue on; the
+	// zero id means the tenant's default integration.
+	IntegrationID shared.ID
+	ProjectKey    string // "" = the integration's default project
+	By            *shared.ID
 }
 
 // CreateTaskIssue creates the task's issue in the tracker and records the
@@ -79,6 +87,13 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 	if task.State == remediation.TaskStateCanceled || task.State == remediation.TaskStateArchived {
 		return nil, ErrTaskClosedForIssue
 	}
+	members, err := s.taskEgressMembers(ctx, in.TenantID, in.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.egress.Check(ctx, in.TenantID, ticketing.RouteTask, members...); err != nil {
+		return nil, err
+	}
 	existing, err := s.links.ListForTask(ctx, in.TenantID, in.TaskID)
 	if err != nil {
 		return nil, err
@@ -88,7 +103,7 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 			return nil, ErrTaskHasIssue
 		}
 	}
-	client, err := s.resolveClient(ctx, in.TenantID)
+	client, err := s.clientFor(ctx, in.TenantID, in.IntegrationID)
 	if err != nil {
 		return nil, err
 	}
@@ -96,14 +111,18 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 	if !ok {
 		return nil, ErrLinksUnavailable
 	}
+	mapping, err := s.mappingFor(ctx, in.TenantID, ii.IntegrationID())
+	if err != nil {
+		return nil, err
+	}
 	project := strings.ToUpper(strings.TrimSpace(in.ProjectKey))
 	if project == "" {
-		project = strings.ToUpper(s.resolveMapping(ctx, in.TenantID).DefaultProjectKey)
+		project = strings.ToUpper(mapping.DefaultProjectKey)
 	}
 	if project == "" {
 		return nil, fmt.Errorf("%w: choose a project (the integration has no default project)", shared.ErrValidation)
 	}
-	allowed, err := s.allowedProjects(ctx, in.TenantID, ii.IntegrationID())
+	allowed, err := s.allowedProjectsOf(ctx, in.TenantID, ii.IntegrationID(), mapping)
 	if err != nil {
 		return nil, err
 	}
@@ -120,15 +139,38 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 		}
 	}
 
-	res, err := client.CreateIssue(ctx, CreateIssueInput{
-		ProjectKey:  project,
-		Summary:     taskIssueSummary(task),
-		Description: s.taskIssueDescription(task),
-		IssueType:   s.resolveMapping(ctx, in.TenantID).DefaultIssueType,
-		Labels:      []string{"openctem", "openctem-task"},
-	})
+	// A previous attempt may have created the issue and lost the response
+	// or failed to record the link: adopt that issue (in a configured
+	// project) instead of creating a second one.
+	marker := markerFor(client, MarkerKindTask, in.TaskID)
+	res, err := s.findMarked(ctx, client, marker, func(key string) bool { return allowed[ticketlink.ProjectOf(key)] })
 	if err != nil {
-		return nil, fmt.Errorf("create the task's issue: %w", err)
+		return nil, err
+	}
+	if res == nil {
+		// The integration's task type (by id in its default project); the
+		// published task profile of that type fills its fields.
+		issueType := mapping.IssueTypeFor(IssueKindTask, project)
+		var handled bool
+		res, handled, err = s.createFromProfile(ctx, client, in.TenantID, ticketmap.ObjectTask, in.TaskID, project, issueType.Lookup(), "", marker)
+		if err != nil {
+			return nil, err
+		}
+		if !handled {
+			res, err = client.CreateIssue(ctx, CreateIssueInput{
+				ProjectKey:  project,
+				Summary:     taskIssueSummary(task),
+				Description: s.taskIssueDescription(task),
+				IssueType:   issueType.Name,
+				IssueTypeID: issueType.ID,
+				Labels:      []string{"openctem", "openctem-task"},
+				Marker:      marker,
+			})
+			s.noteCreate(ctx, in.TenantID, ii.IntegrationID(), IssueKindTask, issueType, err)
+			if err != nil {
+				return nil, fmt.Errorf("create the task's issue: %w", err)
+			}
+		}
 	}
 	l, err := ticketlink.New(in.TenantID, ii.IntegrationID(), ticketlink.ForTask(in.TaskID), res.Key, res.ID,
 		ii.SiteURL(), ticketlink.BrowseURL(ii.SiteURL(), res.Key), ticketlink.RoleOwn, ticketlink.SourcePerson, in.By)
@@ -140,7 +182,7 @@ func (s *SyncService) CreateTaskIssue(ctx context.Context, in CreateTaskIssueInp
 	if err != nil {
 		s.logger.Error("create task issue: the issue exists but its link was not recorded",
 			"task_id", in.TaskID.String(), "issue_key", res.Key, "error", err)
-		return nil, fmt.Errorf("issue %s was created but could not be recorded on the task; link it again: %w", res.Key, err)
+		return nil, fmt.Errorf("issue %s was created but could not be recorded on the task; create it again to record it (the same issue is reused): %w", res.Key, err)
 	}
 	return l, nil
 }
@@ -208,17 +250,43 @@ func (s *SyncService) SyncTaskIssue(ctx context.Context, tenantID, taskID shared
 	if string(task.State) == link.LastPushedState {
 		return nil
 	}
-	client, err := s.resolveClient(ctx, tenantID)
+	members, err := s.taskEgressMembers(ctx, tenantID, taskID)
 	if err != nil {
 		return err
 	}
-	if ii, ok := client.(IssueIdentifier); ok && ii.IntegrationID() != link.IntegrationID {
-		// The tenant's integration changed: this link's issue is not on it.
-		return s.links.RecordSync(ctx, tenantID, link.ID, link.LastStatus, "the issue belongs to another integration", time.Now().UTC())
+	if ok, err := s.egressAllowed(ctx, tenantID, ticketing.RouteStatusSync, members...); !ok {
+		if err != nil {
+			return err
+		}
+		return s.links.RecordSync(ctx, tenantID, link.ID, link.LastStatus, "not sent: refused by the outbound gate", time.Now().UTC())
+	}
+	// The issue lives on the link's own integration.
+	client, err := s.clientFor(ctx, tenantID, link.IntegrationID)
+	if err != nil {
+		if errors.Is(err, ErrNoTicketingIntegration) {
+			return s.links.RecordSync(ctx, tenantID, link.ID, link.LastStatus, "the issue's integration is not connected", time.Now().UTC())
+		}
+		return err
 	}
 
 	comment := taskMoveComment(task)
 	status := link.LastStatus
+	if handled, moved, err := s.syncTaskFromProfile(ctx, client, tenantID, task, link.ExternalKey, comment); handled {
+		if err != nil {
+			_ = s.links.RecordSync(ctx, tenantID, link.ID, link.LastStatus, safetext.SingleLine(err.Error(), 200), time.Now().UTC())
+			if isPermanent(err) {
+				// A mapping problem: retrying cannot help, and the state is
+				// recorded so the next pass does not try again until it moves.
+				return s.links.RecordPush(ctx, tenantID, link.ID, string(task.State), status, time.Now().UTC())
+			}
+			return err
+		}
+		if moved != "" {
+			status = moved
+		}
+		s.logger.Info("task issue synced from the mapping profile", "task_id", taskID.String(), "issue_key", logger.SanitizeValue(link.ExternalKey), "state", task.State)
+		return s.links.RecordPush(ctx, tenantID, link.ID, string(task.State), status, time.Now().UTC())
+	}
 	if target, ok := taskStatusTargets[task.State]; ok {
 		terr := client.TransitionToStatus(ctx, link.ExternalKey, target, comment)
 		switch {
@@ -239,6 +307,55 @@ func (s *SyncService) SyncTaskIssue(ctx context.Context, tenantID, taskID shared
 	}
 	s.logger.Info("task issue synced", "task_id", taskID.String(), "issue_key", logger.SanitizeValue(link.ExternalKey), "state", task.State)
 	return s.links.RecordPush(ctx, tenantID, link.ID, string(task.State), status, time.Now().UTC())
+}
+
+// syncTaskFromProfile moves a task's issue along the published task profile
+// of the issue's project and issue type. handled is false without such a
+// profile (the built-in names then apply); moved is the status the issue
+// was moved to ("" when the state does not move it).
+func (s *SyncService) syncTaskFromProfile(ctx context.Context, c Client, tenantID shared.ID, task *remediation.Task, issueKey, comment string) (handled bool, moved string, err error) {
+	pc, ok := s.profileClient(c)
+	if !ok {
+		return false, "", nil
+	}
+	ps, err := s.profileStatusTarget(ctx, pc, tenantID, ticketmap.ObjectTask, task.ID, issueKey)
+	if err != nil {
+		return true, "", fmt.Errorf("mapping profile status: %w", err)
+	}
+	if ps == nil {
+		return false, "", nil
+	}
+	if ps.DryRun {
+		s.logger.Info("ticket mapping dry run: would move the task's issue",
+			"profile_id", ps.ProfileID.String(), "issue_key", logger.SanitizeValue(issueKey), "state", ps.State)
+		return true, "", nil
+	}
+	if ps.Target == nil {
+		// The state does not move the issue: the progress comment still
+		// tells the people on it, as without a profile.
+		if cerr := c.AddComment(ctx, issueKey, comment); cerr != nil && !isPermanent(cerr) {
+			return true, "", cerr
+		}
+		return true, "", nil
+	}
+	final := ""
+	if ps.Target.Comment {
+		final = comment
+	}
+	if err := runStatusPath(ctx, pc, issueKey, *ps.Target, ps.Workflow, final); err != nil {
+		if errors.Is(err, ErrNoPath) {
+			s.logger.Warn("ticket mapping: the task's issue cannot reach the mapped status",
+				"profile_id", ps.ProfileID.String(), "issue_key", logger.SanitizeValue(issueKey), "state", ps.State,
+				"error", logger.SanitizeValue(err.Error()))
+			return true, "", &pathError{err: err}
+		}
+		return true, "", err
+	}
+	name := ps.Target.StatusID
+	if st, ok := ps.Workflow.Status(ps.Target.StatusID); ok && st.Name != "" {
+		name = st.Name
+	}
+	return true, name, nil
 }
 
 func isPermanent(err error) bool {
@@ -304,56 +421,95 @@ func taskMoveComment(t *remediation.Task) string {
 		label, c.Closed, c.Total, c.Verified, c.FixApplied, c.InProgress, c.Open)
 }
 
-// linkedFindingsOf lists the findings an issue's status change applies to:
-// the findings linked to the issue, and the open primary members of the
-// tasks whose issue it is. A task issue's change that is the echo of our own
+// linkedFindingsOf lists the findings an issue's status change applies to,
+// within the delivery's integration only: the findings that name the issue's
+// browse URL on the integration's site, the findings linked to the issue,
+// and the open primary members of the tasks whose issue it is. Links are
+// matched by the issue's id, and by its key only when the link has no id or
+// the same id (a key on another integration, or a key now worn by another
+// issue, matches nothing). A task issue's change that is the echo of our own
 // push (the status we moved it to, within the echo window) applies to none
 // of the task's members.
-func (s *SyncService) linkedFindingsOf(ctx context.Context, tenantID shared.ID, payload WebhookPayload, jiraStatus string) ([]shared.ID, error) {
-	ids, err := s.linkedFindings(ctx, tenantID, deriveJiraTicketURL(payload.Issue))
+func (s *SyncService) linkedFindingsOf(ctx context.Context, in inboundRef, payload WebhookPayload, jiraStatus string) ([]shared.ID, error) {
+	tenantID := in.tenantID
+	key := strings.ToUpper(strings.TrimSpace(payload.Issue.Key))
+	var ids []shared.ID
+	if in.mapping.SiteURL != "" && ticketlink.ValidKey(key) {
+		var err error
+		if ids, err = s.linkedFindings(ctx, tenantID, ticketlink.BrowseURL(in.mapping.SiteURL, key)); err != nil {
+			return nil, err
+		}
+	}
+	if s.links == nil {
+		return ids, nil
+	}
+	links, err := s.issueLinks(ctx, in, payload.Issue.ID, key)
 	if err != nil {
 		return nil, err
-	}
-	if s.links == nil || s.taskReader == nil {
-		return ids, nil
-	}
-	client, err := s.resolveClient(ctx, tenantID)
-	if err != nil {
-		return ids, nil //nolint:nilerr // no integration: the findings path reports it
-	}
-	ii, ok := client.(IssueIdentifier)
-	if !ok {
-		return ids, nil
-	}
-	links, err := s.links.FindByIssue(ctx, tenantID, ii.IntegrationID(), strings.ToUpper(payload.Issue.Key))
-	if err != nil {
-		return nil, fmt.Errorf("lookup the issue's task links: %w", err)
 	}
 	seen := make(map[shared.ID]bool, len(ids))
 	for _, id := range ids {
 		seen[id] = true
 	}
+	add := func(id shared.ID) {
+		if !seen[id] && len(ids) < maxInboundFindings {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
 	now := time.Now()
 	for _, l := range links {
-		if l.TaskID == nil || l.Role != ticketlink.RoleOwn {
-			continue
-		}
-		if isTaskEcho(l, jiraStatus, now) {
-			s.logger.Debug("jira webhook: echo of our own task issue move; ignored", "issue_key", logger.SanitizeValue(payload.Issue.Key))
-			continue
-		}
-		members, err := s.taskReader.OpenMemberIDs(ctx, tenantID, *l.TaskID, maxInboundFindings)
-		if err != nil {
-			return nil, fmt.Errorf("list the task's findings: %w", err)
-		}
-		for _, id := range members {
-			if !seen[id] && len(ids) < maxInboundFindings {
-				seen[id] = true
-				ids = append(ids, id)
+		switch {
+		case l.FindingID != nil:
+			add(*l.FindingID)
+		case l.TaskID != nil && l.Role == ticketlink.RoleOwn && s.taskReader != nil:
+			if isTaskEcho(l, jiraStatus, now) {
+				s.logger.Debug("jira webhook: echo of our own task issue move; ignored", "issue_key", logger.SanitizeValue(payload.Issue.Key))
+				continue
+			}
+			members, err := s.taskReader.OpenMemberIDs(ctx, tenantID, *l.TaskID, maxInboundFindings)
+			if err != nil {
+				return nil, fmt.Errorf("list the task's findings: %w", err)
+			}
+			for _, id := range members {
+				add(id)
 			}
 		}
 	}
 	return ids, nil
+}
+
+// issueLinks lists the active links of one issue of the delivery's
+// integration: by the issue's id, then by its key for links that carry no
+// id or the same id.
+func (s *SyncService) issueLinks(ctx context.Context, in inboundRef, issueID, key string) ([]*ticketlink.Link, error) {
+	out := make([]*ticketlink.Link, 0, 4)
+	seen := map[shared.ID]bool{}
+	if issueID = strings.TrimSpace(issueID); issueID != "" {
+		byID, err := s.links.FindByIssueID(ctx, in.tenantID, in.integrationID, issueID)
+		if err != nil {
+			return nil, fmt.Errorf("lookup the issue's links by id: %w", err)
+		}
+		for _, l := range byID {
+			seen[l.ID] = true
+			out = append(out, l)
+		}
+	}
+	if !ticketlink.ValidKey(key) {
+		return out, nil
+	}
+	byKey, err := s.links.FindByIssue(ctx, in.tenantID, in.integrationID, key)
+	if err != nil {
+		return nil, fmt.Errorf("lookup the issue's links by key: %w", err)
+	}
+	for _, l := range byKey {
+		if seen[l.ID] || (l.ExternalID != "" && issueID != "" && l.ExternalID != issueID) {
+			continue
+		}
+		seen[l.ID] = true
+		out = append(out, l)
+	}
+	return out, nil
 }
 
 // isTaskEcho reports whether a task issue's change is the echo of the move

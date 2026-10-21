@@ -54,6 +54,8 @@ export interface NotificationPreferences {
   email_digest: string
   muted_types: string[]
   min_severity: string
+  /** Watch the findings and tasks you take part in (default on). */
+  auto_watch?: boolean
   updated_at: string
 }
 

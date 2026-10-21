@@ -62,6 +62,21 @@ Team roles are used for team management operations:
 | `member` | 2 | Team member - create/edit resources |
 | `viewer` | 1 | Team viewer - read-only access |
 
+### Editing a custom role
+
+`PUT /api/v1/roles/{id}` is held to the delegation ceiling on **both** sides:
+
+- The editor must hold every permission the role carries **now** and every one
+  it will carry afterwards (and full data access when either side has it). A
+  delegated role manager can neither add a permission they lack nor strip one
+  they lack, so they cannot sabotage a "risk approver" role they could never
+  grant. Owners pass; delete, grant and revoke apply the same rule.
+- A change that makes the role gain a privileged permission, an approval-type
+  permission (any `*:approve`) or organization-wide data grade needs the
+  editor's recent re-authentication when the role has holders, and for a
+  team-bound role it is also owner-only. Giving a user a custom role that
+  carries such a permission needs the same step-up.
+
 ### One authority for the team role
 
 A person's team role is the highest system role they hold in `user_roles`, read
@@ -203,7 +218,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/organization/leave`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
-- `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
+- `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT .../{id}/jira-webhook/secret`, `POST .../{id}/github-webhook/secret/rotate`
 - `POST /api/v1/integrations`, `POST .../integrations/notifications`, `PUT`/`DELETE /api/v1/integrations/{id}`, `POST .../{id}/disable`, `PUT .../{id}/notification`
 - `PUT /api/v1/scim-tokens/group-mappings`
 - `PATCH /api/v1/attachments/storage-config`
@@ -253,7 +268,11 @@ Details: [api-keys.md](./api-keys.md).
 | `GET /api/v1/assets` | `assets:read` |
 | `GET /api/v1/assets/{id}` | `assets:read` |
 | `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
-| `PUT /api/v1/assets/{id}` | `assets:write` |
+| `PUT /api/v1/assets/{id}` | `assets:write`. Lowering exposure or criticality is decided under the organization's approval policy when it would drop an open P0/P1 finding on the asset (202, the lowered fields wait; [asset risk governance](asset-risk-governance.md)) |
+| `PATCH /api/v1/assets/{id}/crown-jewel` · `PUT /{id}/attribute-sources/{attribute}/lock` | `assets:write`; unmarking a crown jewel and locking a lower exposure or criticality follow the same decision |
+| `POST /api/v1/assets/{id}/risk-impact` · `GET /{id}/risk-requests/pending` | `assets:write` (preview) · `assets:read` (the pending request); the asset must be in the caller's data scope (404 otherwise) |
+| `POST /api/v1/assets/{id}/risk-requests/{request_id}/approve` · `/reject` | `findings:approve`, the asset in the caller's data scope; the requester and the asset's owners never approve (403); step-up when the tier asks for it |
+| `POST /api/v1/assets/{id}/risk-requests/{request_id}/cancel` | `assets:write`, the requester only |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` + data scope. Refused with 409 (`asset_has_findings`) while the asset has any finding (archive it instead); otherwise a soft delete, audited `asset.deleted` (see [asset-deletion.md](asset-deletion.md)) |
 
 #### Business units (`/api/v1/business-units`)
@@ -311,10 +330,11 @@ and SBOM import write it.
 | `GET /api/v1/findings/{id}` | `findings:read` |
 | `POST /api/v1/findings` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` (hard delete; the activity timeline goes with the row. An audit event `finding.deleted` is written first with the actor, title, severity, status, source, CVE, asset, fingerprint, tool and the number of activities removed; if that write fails the finding is not deleted) |
-| `PATCH /api/v1/findings/{id}/status` | `findings:status` |
+| `PATCH /api/v1/findings/{id}/status` | `findings:status`; moving a finding **out of** an approved false positive or an accepted risk needs `findings:approve` as well (403 otherwise), on this route and on bulk status. A workflow, automation action or ticket webhook cannot move a finding out of a decided status at all (false positive, accepted risk, duplicate; a workflow also not out of resolved) |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
-| `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
+| `POST /api/v1/findings/bulk/status` | `findings:bulk_update` **and** `findings:status` (the bulk permission widens the reach of a move; it does not replace the right to make it) |
+| `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
 
 > The finding **action** routes (status, triage, assign, bulk, verify) are gated on
@@ -333,6 +353,9 @@ and SBOM import write it.
 | `POST /api/v1/lifecycle-sub-statuses` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/reactivate` | `findings:lifecycles:write` |
 | `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
 | `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
+| `GET /api/v1/findings/{id}/retest-check` | `findings:read` (finding data scope) |
+| `PUT` · `DELETE /api/v1/findings/{id}/retest-check`, `POST /api/v1/findings/{id}/retest-check/test` | `findings:retest_checks:write` (finding data scope; [retest checks](finding-retest-checks.md)) |
+| `POST /api/v1/findings/{id}/retest-check/approve` | `scope:approve` + step-up; never the author of the version |
 
 > Organization configuration (no finding data), tenant from the token; another
 > organization's sub-status, lifecycle or version is 404. A lifecycle can only
@@ -1448,6 +1471,27 @@ one needs `team:groups:write` on top of `assets:write`/`assets:delete`.
   scope. Changing the campaign still needs every one of its findings in
   their own scope.
 
+- The **owner of a remediation task** (`remediation_tasks.assignee_user_id`,
+  or an active, unexpired member of `assignee_group_id`) sees exactly the
+  task's active primary findings while the task is live (open, in progress,
+  verifying, on hold) and the finding's asset is not hidden from them
+  (`filterspec.TaskOwnerFindingSQL`; `DataScopeRepository.FindingIDsOwnedViaTask`).
+  It is computed on every read, nothing is stored: it ends when the owner
+  changes, the finding leaves the task, the task closes, or the team
+  membership ends, expires or is suspended. It covers the task's own views
+  (members, counters, filters), the by-id routes of the fix workflow (reads,
+  comments, status change, manual evidence, proof-of-fix and retest
+  requests; `middleware.fixWorkRoute`, flagged with `shared.WithTaskOwnerView`
+  and re-checked by the services), the fix-claim ownership (`FixAppliers`),
+  and the bulk status path for the fix moves only. A status change through
+  the relation is limited to confirmed, in progress and fix applied
+  (`TransitionFacts.TaskOwnerOnly`, block `not_in_scope`) and is audited
+  `remediation_task.owner_moved_finding`. Everything else (false positive,
+  accepted risk, resolve, severity, classify, tags, assign, approvals,
+  tickets, delete, the findings list, export and dashboards) still needs the
+  finding in the actor's own scope. Pentest findings keep their
+  campaign-membership rule; an API key never gets the relation.
+
 What the assignee may do is their role's. The view is computed from the
 assignment on every request, so unassigning removes it at once; assignments
 are recorded in the finding activity and the campaign audit. The
@@ -1955,6 +1999,15 @@ finding the step names in its config inside their data scope. A failed check
 fails the step with `AUTOMATION_RUN_NOT_AUTHORIZED` and changes nothing. The
 step then runs with the principal in its context, so the services it calls
 apply the same scope. An automation with no owner runs no step.
+
+A `trigger_scan` step starts the scan **as the principal**: the run's
+`triggered_by` is the principal's user id, so the run's act scope (chained
+stages, the claim-time re-check) is the principal's, never the scan owner's. The
+automation that caused it stays in the run context (`automation_cause`) and
+the run is recorded as an automation run (`trigger_type = automation`), so the
+console still labels it "Automation". A step without a principal starts no
+scan. The scan's owner (`scans.created_by`) is who acts only for the scan's
+own schedule.
 
 Editing needs the same permissions: building a node needs its permission,
 and any change to what an existing automation does (an edge, deleting a
@@ -2536,6 +2589,18 @@ organization, its members and its settings, so 000771 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
 
+**Governed classification.** `PATCH /findings/{id}/classify` (needs
+`findings:severity`) sets the CVE, CVSS, CWE and OWASP ids. A non-empty CVE is
+accepted only on a finding of type `vulnerability` (422
+`CLASSIFY_CVE_NOT_APPLICABLE` for a secret, misconfiguration, compliance, web3
+or license finding). A change of the CVE that lowers the finding's risk tier
+(it drops its KEV standing, or its P0 priority, which is derived from the CVE)
+also needs `findings:approve` (403 `CLASSIFY_LOWERS_RISK`); the tier after the
+change counts the new CVE's KEV membership and no priority class. Each change
+writes a `metadata_updated` timeline entry (`field: classification`, old and
+new values) and the audit action `finding.classified`. A request that changes
+nothing writes neither.
+
 **Split from `findings:write` (migration 001534).** `findings:severity` gates
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
 finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
@@ -2593,13 +2658,21 @@ accountable for it (`service_owner_id`, the creator), and never signs in.
 | Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member |
 | Starts with nothing | created with no role: roles come from the role APIs (grant ceiling) and teams; data scope from teams |
 | Acts through keys | keys are minted for it with `POST /api/v1/service-accounts/{id}/api-keys` (`user_id` = the account); each scope must be held by the person minting it, and at request time a key carries only the scopes the account still holds, within its data scope; keys are read-only on the REST API, and no key reaches `/api/v1/service-accounts` |
+| Keys outlive their minter? No | the active keys a person minted for service accounts are revoked (audited, `revoked_by` = the acting administrator) when that person is offboarded or leaves, or is demoted from administrator or owner to member or viewer; the access report lists them first (`service_account_keys`) and the offboarding result and the audit event count them (`revoked_service_account_keys`) |
 | Removal | `DELETE /api/v1/service-accounts/{id}` removes the account with its roles, team memberships and keys at once |
 
+A team binding is held to the same ceiling in both orders: binding a full-data
+role to a team that has a service account, and adding a service account to a
+team that has one bound, are refused by the service and by triggers on
+`group_role_bindings` and `group_members`.
+
 Routes: `GET /api/v1/service-accounts` (`team:members:read`), `POST` and
-`DELETE /{id}` (`team:members:write`). Its keys:
-`GET /{id}/api-keys` (`team:members:read` and `integrations:api_keys:read`),
-`POST /{id}/api-keys` (`team:members:write` and `integrations:api_keys:write`, recent
-sign-in) and `DELETE /{id}/api-keys/{key_id}` (`team:members:write` and
+`DELETE /{id}` (`service_accounts:manage`, held by owners and administrators; a
+custom role may carry it, and team:members:write alone no longer creates or
+deletes an integration identity). Its keys:
+`GET /{id}/api-keys` (owner or administrator only, plus `team:members:read` and `integrations:api_keys:read`),
+`POST /{id}/api-keys` (`service_accounts:manage` and `integrations:api_keys:write`, recent
+sign-in) and `DELETE /{id}/api-keys/{key_id}` (`service_accounts:manage` and
 `integrations:api_keys:delete`, recent sign-in). Another organization's account, a person,
 or a key that is not the account's reads as not found. Creation and deletion
 are audited (`user.created` / `user.deleted`, metadata `kind=service`;

@@ -433,6 +433,53 @@ func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body
 	return created.Number, created.HTMLURL, nil
 }
 
+// IssueSummary is an issue listed by RecentIssues.
+type IssueSummary struct {
+	Number  int
+	HTMLURL string
+	Body    string
+}
+
+// RecentIssues lists the newest issues (open and closed, pull requests left
+// out) of owner/repo carrying label, newest first, at most 100. The list is
+// read from the repository (not the search index), so an issue created a
+// moment ago is in it.
+func (c *GitHubClient) RecentIssues(ctx context.Context, owner, repo, label string) ([]IssueSummary, error) {
+	q := url.Values{}
+	q.Set("labels", label)
+	q.Set("state", "all")
+	q.Set("sort", "created")
+	q.Set("direction", "desc")
+	q.Set("per_page", "100")
+	path := fmt.Sprintf("/repos/%s/%s/issues?%s", url.PathEscape(owner), url.PathEscape(repo), q.Encode())
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("failed to list github issues: unexpected status %d", resp.StatusCode)
+	}
+	var raw []struct {
+		Number      int             `json:"number"`
+		HTMLURL     string          `json:"html_url"`
+		Body        string          `json:"body"`
+		PullRequest json.RawMessage `json:"pull_request"`
+	}
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &raw); err != nil {
+		return nil, fmt.Errorf("failed to decode issues: %w", err)
+	}
+	out := make([]IssueSummary, 0, len(raw))
+	for _, i := range raw {
+		if len(i.PullRequest) > 0 {
+			continue
+		}
+		out = append(out, IssueSummary{Number: i.Number, HTMLURL: i.HTMLURL, Body: i.Body})
+	}
+	return out, nil
+}
+
 // UpdateIssueState sets a GitHub issue's state ("open" or "closed").
 // Used by outbound finding→issue status sync. owner/repo are path-escaped; on a
 // non-200 response the error carries only the status code (no body leak).

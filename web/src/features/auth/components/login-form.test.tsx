@@ -202,9 +202,8 @@ describe('LoginForm two-factor step', () => {
     const user = await signIn()
     const verify = screen.getByRole('button', { name: /verify/i })
     expect(verify).toBeDisabled()
+    // The sixth digit submits on its own.
     await user.type(await screen.findByLabelText('Authentication code'), '12a3456')
-    expect(screen.getByLabelText('Authentication code')).toHaveValue('123456')
-    await user.click(verify)
     await waitFor(() => expect(href).toHaveBeenCalledWith('/findings'))
     expect(verifyMfaAction).toHaveBeenCalledWith({ code: '123456' })
   })
@@ -214,7 +213,6 @@ describe('LoginForm two-factor step', () => {
     verifyMfaAction.mockResolvedValueOnce({ success: false, error: 'Invalid verification code' })
     const user = await signIn()
     await user.type(await screen.findByLabelText('Authentication code'), '000000')
-    await user.click(screen.getByRole('button', { name: /verify/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid verification code')
     expect(screen.getByText('Two-factor authentication')).toBeInTheDocument()
     expect(href).not.toHaveBeenCalled()
@@ -229,10 +227,10 @@ describe('LoginForm two-factor step', () => {
     const user = await signIn()
     await user.click(await screen.findByRole('button', { name: /use a recovery code/i }))
     await user.type(screen.getByLabelText('Recovery code'), 'abcde-fghjk')
-    await user.click(screen.getByRole('button', { name: /verify/i }))
     await waitFor(() =>
-      expect(verifyMfaAction).toHaveBeenCalledWith({ recoveryCode: 'abcde-fghjk' })
+      expect(verifyMfaAction).toHaveBeenCalledWith({ recoveryCode: 'abcdefghjk' })
     )
+    expect(verifyMfaAction).toHaveBeenCalledTimes(1)
   })
 
   it('goes back to the password form when the challenge expired', async () => {
@@ -243,7 +241,6 @@ describe('LoginForm two-factor step', () => {
     })
     const user = await signIn()
     await user.type(await screen.findByLabelText('Authentication code'), '123456')
-    await user.click(screen.getByRole('button', { name: /verify/i }))
     expect(await screen.findByLabelText('Password')).toBeInTheDocument()
   })
 
@@ -270,7 +267,6 @@ describe('LoginForm two-factor step', () => {
     expect(await screen.findByRole('img', { name: /qr code/i })).toBeInTheDocument()
     expect(screen.getByText('JBSW Y3DP EHPK 3PXP')).toBeInTheDocument()
     await user.type(screen.getByLabelText('Authentication code'), '654321')
-    await user.click(screen.getByRole('button', { name: /turn on and continue/i }))
     expect(await screen.findByText('aaaaa-bbbbb')).toBeInTheDocument()
     const cont = screen.getByRole('button', { name: /^continue$/i })
     expect(cont).toBeDisabled()

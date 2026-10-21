@@ -176,11 +176,17 @@ type SplitInput struct {
 	AssigneeUserID  *shared.ID
 	AssigneeGroupID *shared.ID
 	ActorID         *shared.ID
+	// CanExtendOwnerAccess and ConfirmOwnerAccess: see CreateTaskInput.
+	CanExtendOwnerAccess bool
+	ConfirmOwnerAccess   bool
 }
 
 // Split creates a task of the same fix from some of a task's findings and
 // moves them there. The new task keeps the owner unless another is named.
 func (s *TaskService) Split(ctx context.Context, in SplitInput, actx auditapp.AuditContext) (*MoveOutcome, error) {
+	if in.Version <= 0 {
+		return nil, ErrTaskVersionRequired
+	}
 	src, err := s.writableTask(ctx, in.TenantID, in.TaskID)
 	if err != nil {
 		return nil, err
@@ -211,6 +217,19 @@ func (s *TaskService) Split(ctx context.Context, in SplitInput, actx auditapp.Au
 	if err := s.checkFindings(ctx, in.TenantID, ids, nil); err != nil {
 		return nil, err
 	}
+	// A newly named owner must be able to see the split findings (or the
+	// assigner consents); the kept owner already works on the task.
+	var ownerGap OwnerGap
+	if in.AssigneeUserID != nil || in.AssigneeGroupID != nil {
+		if ownerGap, err = s.checkOwnerAccess(ctx, in.TenantID, ownerAccessCheck{
+			user: in.AssigneeUserID, group: in.AssigneeGroupID, canExtend: in.CanExtendOwnerAccess, confirmed: in.ConfirmOwnerAccess,
+			refs: func() ([]remediationdom.OwnerFindingRef, error) {
+				return s.ownerAccess.OpenFindingRefs(ctx, in.TenantID, ids)
+			},
+		}); err != nil {
+			return nil, err
+		}
+	}
 	childID, res, err := s.repo.SplitTask(ctx, remediationdom.SplitRequest{TenantID: in.TenantID, TaskID: src.ID, Version: in.Version,
 		FindingIDs: ids, Title: title, Owner: owner, ActorID: in.ActorID})
 	if err != nil {
@@ -226,6 +245,7 @@ func (s *TaskService) Split(ctx context.Context, in SplitInput, actx auditapp.Au
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskSplit, auditdom.ResourceTypeRemediationTask, src.ID.String()).
 		WithResourceName(src.Title).WithMessage(fmt.Sprintf("%d finding(s) of %q split into a new task %q", len(res.Moved), src.Title, title)).
 		WithMetadata("new_task_id", childID.String()).WithMetadata("findings", len(res.Moved)))
+	s.auditOwnerAccess(ctx, actx, childID, title, ownerGap, owner.UserID, owner.GroupID)
 	s.notifyMove(ctx, remediationdom.TaskMoveEvent{TenantID: in.TenantID, Kind: remediationdom.MoveKindSplit, FromTaskID: src.ID,
 		FromTitle: src.Title, ToTaskID: &childID, ToTitle: title, Findings: len(res.Moved), ActorID: in.ActorID})
 	return out, nil

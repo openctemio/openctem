@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/infra/telemetry"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -64,8 +65,17 @@ type PriorityClassificationService struct {
 	ownershipFloor OwnershipFloorPolicy
 	logger         *logger.Logger
 
+	// dataScope narrows the dry run to the findings the caller may see. The
+	// dry run refuses to run without it (it never reads unscoped).
+	dataScope *datascope.Enforcer
+
 	// attribution caps findings on unconfirmed assets at P2 (RFC-036 §6.8).
 	attribution AttributionLookup
+}
+
+// SetDataScope wires the enforcer that scopes DryRunRule to the caller.
+func (s *PriorityClassificationService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
 }
 
 // SetControlLookup wires the compensating control lookup for priority calculation.
@@ -1016,6 +1026,10 @@ type DryRunSample struct {
 // to DefaultDryRunCap); when the tenant has more, Capped is set and the counts
 // are a sample. sampleSize (non-positive → DefaultDryRunSampleSize) bounds the
 // returned sample.
+//
+// The run covers only the findings the calling request may see (Layer 2 data
+// scope plus pentest membership, same rules as the findings list); counts,
+// distribution and sample are all computed over that set.
 func (s *PriorityClassificationService) DryRunRule(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -1035,8 +1049,15 @@ func (s *PriorityClassificationService) DryRunRule(
 	}
 	draftClass := draft.PriorityClass()
 
+	// Only what the caller may see: the data scope and the pentest-membership
+	// rule the findings list applies (draft pentest findings are also outside
+	// the active statuses). An unwired enforcer is an error, not "all".
 	filter := vulnerability.NewFindingFilter().WithTenantID(tenantID)
 	filter.Statuses = vulnerability.ActiveFindingStatuses()
+	filter, err := visibleFilterStrict(ctx, s.dataScope, tenantID, filter)
+	if err != nil {
+		return DryRunResult{}, err
+	}
 	sort := pagination.NewSortOption(vulnerability.FindingAllowedSortFields()).Parse("-created_at")
 	opts := vulnerability.NewFindingListOptions().WithSort(sort)
 	assets := map[shared.ID]*asset.Asset{}

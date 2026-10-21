@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import useSWR from 'swr'
 import { toast } from 'sonner'
-import { ExternalLink, Link2, Unlink } from 'lucide-react'
+import { CircleSlash, ExternalLink, Link2, Unlink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +23,13 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { sanitizeExternalUrl } from '@/lib/utils'
+import { usePermissions } from '@/context/permission-provider'
 import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
+import { CreateTicketDialog } from '../create-ticket-dialog'
+import {
+  useFindingTicketHolds,
+  type TicketHold,
+} from '@/features/integrations/api/use-ticket-create-policy'
 
 export interface TicketLink {
   id: string
@@ -51,6 +57,10 @@ export function FindingTicketLinks({
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const canLink = useCanCreateTicket()
+  // Linking an existing issue also needs findings:fix_apply (its Done is a
+  // fix claim); the API refuses it otherwise.
+  const { hasPermission } = usePermissions()
+  const canLinkExisting = canLink && hasPermission('findings:fix_apply')
   const key = currentTenant ? `/api/v1/findings/${findingId}/ticket-links` : null
   const { data, mutate } = useSWR<{ links: TicketLink[] }>(
     key,
@@ -64,6 +74,9 @@ export function FindingTicketLinks({
   const [issue, setIssue] = useState('')
   const [saving, setSaving] = useState(false)
   const [unlinking, setUnlinking] = useState<TicketLink | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const { data: holdData } = useFindingTicketHolds(findingId)
+  const holds = holdData?.holds ?? []
 
   const active = (data?.links ?? []).filter((l) => l.state === 'active')
   const linkedUrls = new Set(active.map((l) => l.url.toLowerCase()))
@@ -88,7 +101,21 @@ export function FindingTicketLinks({
     }
   }
 
-  if (active.length === 0 && others.length === 0 && !canLink)
+  const holdText = (h: TicketHold) => {
+    switch (h.reason) {
+      case 'daily_cap':
+        return t('findings.ticketHolds.dailyCap', 'Not sent to Jira yet — today’s limit is reached')
+      case 'create_failed':
+        return t('findings.ticketHolds.createFailed', 'Not sent to Jira — the last attempt failed')
+      default:
+        return t(
+          'findings.ticketHolds.belowThreshold',
+          'Not sent to Jira — below the create policy'
+        )
+    }
+  }
+
+  if (active.length === 0 && others.length === 0 && holds.length === 0 && !canLink)
     return <span className="text-muted-foreground">—</span>
 
   return (
@@ -139,7 +166,28 @@ export function FindingTicketLinks({
           <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
         </a>
       ))}
-      {canLink && (
+      {active.length === 0 &&
+        holds.map((h) => (
+          <span
+            key={h.integration_id}
+            className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-1.5 text-xs"
+            title={h.detail || undefined}
+          >
+            <CircleSlash className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {holdText(h)}
+            {canLink && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                onClick={() => setCreateOpen(true)}
+              >
+                {t('findings.ticketHolds.createAnyway', 'Create anyway')}
+              </Button>
+            )}
+          </span>
+        ))}
+      {canLinkExisting && (
         <Button
           variant="link"
           size="sm"
@@ -191,6 +239,10 @@ export function FindingTicketLinks({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {createOpen && (
+        <CreateTicketDialog findingId={findingId} open={createOpen} onOpenChange={setCreateOpen} />
+      )}
 
       <ConfirmDialog
         open={!!unlinking}

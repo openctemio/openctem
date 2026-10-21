@@ -1,0 +1,57 @@
+# OpenCTEM web console, from the openctem-web release archive
+# (api/docs/deployment/binary-install.md). Needs Node.js at the major version
+# in the archive's NODE_VERSION file, at /usr/bin/node.
+#
+# /opt/openctem/web -> the unpacked archive; /etc/openctem/web.env holds the
+# settings; the Next.js cache (.next/cache) is the only writable path, bound
+# from /var/cache/openctem/web.
+[Unit]
+Description=OpenCTEM web console
+Documentation=https://docs.openctem.io
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openctem-web
+Group=openctem-web
+EnvironmentFile=/etc/openctem/web.env
+Environment=NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+WorkingDirectory=/opt/openctem/web/app
+ExecStart=/usr/bin/node server-with-ws.mjs
+Restart=on-failure
+RestartSec=5s
+CacheDirectory=openctem/web
+CacheDirectoryMode=0750
+BindPaths=/var/cache/openctem/web:/opt/openctem/web/app/.next/cache
+UMask=0027
+
+# Hardening. MemoryDenyWriteExecute stays off: the JavaScript engine compiles
+# code at run time.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

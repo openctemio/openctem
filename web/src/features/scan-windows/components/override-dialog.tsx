@@ -14,6 +14,7 @@ import Link from '@/components/link'
 import { AlertTriangle, Loader2, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { TOTP_CODE_LENGTH, VerificationCodeInput } from '@/components/security'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,7 +27,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -89,10 +89,10 @@ export function OverrideDialog({ open, onOpenChange, policies }: OverrideDialogP
   }, [open])
 
   const reasonOk = reason.trim().length >= MIN_REASON && reason.trim().length <= MAX_REASON
-  const codeOk = /^\d{6,8}$/.test(code)
+  const codeOk = code.length === TOTP_CODE_LENGTH
 
-  const submit = async () => {
-    if (!reasonOk || !codeOk) return
+  const submit = async (totp: string = code) => {
+    if (!reasonOk || totp.length !== TOTP_CODE_LENGTH || saving) return
     setSaving(true)
     setError(null)
     try {
@@ -100,7 +100,7 @@ export function OverrideDialog({ open, onOpenChange, policies }: OverrideDialogP
         policy_id: policyId === ALL ? undefined : policyId,
         reason: reason.trim(),
         duration_minutes: Number(duration),
-        totp_code: code,
+        totp_code: totp,
       })
       toast.success(t('scanWindows.override.started', 'Scan windows overridden'))
       await invalidateScanWindows()
@@ -227,20 +227,14 @@ export function OverrideDialog({ open, onOpenChange, policies }: OverrideDialogP
                 )}
               </p>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="override-code">
-                {t('scanWindows.override.code', 'Code from your authenticator app')}
-              </Label>
-              <Input
-                id="override-code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={8}
-                className="w-40"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              />
-            </div>
+            <VerificationCodeInput
+              id="override-code"
+              label={t('scanWindows.override.codeLabel', 'Authentication code')}
+              value={code}
+              onChange={setCode}
+              onComplete={(c) => void submit(c)}
+              disabled={saving}
+            />
           </DialogBody>
           <DialogFooter>
             <Button

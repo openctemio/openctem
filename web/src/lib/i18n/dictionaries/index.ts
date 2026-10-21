@@ -60,6 +60,7 @@ import en_siemIntegration from './en/siemIntegration.json'
 import en_sla from './en/sla.json'
 import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
+import en_ticketPolicy from './en/ticketPolicy.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
 import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
@@ -131,6 +132,7 @@ import vi_siemIntegration from './vi/siemIntegration.json'
 import vi_sla from './vi/sla.json'
 import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
+import vi_ticketPolicy from './vi/ticketPolicy.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
 import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
@@ -208,6 +210,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   sla: en_sla,
   integrationsHub: en_integrationsHub,
   ticketMapping: en_ticketMapping,
+  ticketPolicy: en_ticketPolicy,
   ticketingIntegration: en_ticketingIntegration,
   scans: en_scans,
   scope: en_scope,
@@ -282,6 +285,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   sla: vi_sla,
   integrationsHub: vi_integrationsHub,
   ticketMapping: vi_ticketMapping,
+  ticketPolicy: vi_ticketPolicy,
   ticketingIntegration: vi_ticketingIntegration,
   scans: vi_scans,
   scope: vi_scope,

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -89,9 +89,11 @@ describe('TwoFactorCard', () => {
     await user.click(screen.getByRole('button', { name: 'Set up' }))
     await screen.findByRole('img', { name: /qr code/i })
     await user.type(screen.getByLabelText('Current password'), 'my-password')
+    // With the password given, the sixth digit submits on its own.
     await user.type(screen.getByLabelText('Authentication code'), '000000')
-    await user.click(screen.getByRole('button', { name: 'Turn on' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid verification code')
+    expect(enableTwoFactor).toHaveBeenCalledTimes(1)
+    expect(screen.getByLabelText('Authentication code')).toHaveValue('')
   })
 
   it('turning off needs the password and a code', async () => {
@@ -114,9 +116,28 @@ describe('TwoFactorCard', () => {
     const submit = screen.getAllByRole('button', { name: 'Turn off' }).at(-1)!
     expect(submit).toBeDisabled()
     await user.type(screen.getByLabelText('Current password'), 'Secret-123')
-    await user.type(screen.getByLabelText(/authentication code or recovery code/i), '123456')
-    await user.click(submit)
-    expect(disableTwoFactor).toHaveBeenCalledWith({ password: 'Secret-123', code: '123456' })
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await waitFor(() =>
+      expect(disableTwoFactor).toHaveBeenCalledWith({ password: 'Secret-123', code: '123456' })
+    )
+  })
+
+  it('turning off accepts a recovery code instead', async () => {
+    status.mockReturnValue({
+      status: { ...base, enabled: true, recovery_codes_remaining: 2 },
+      isLoading: false,
+      mutate,
+    })
+    disableTwoFactor.mockResolvedValue({ message: 'ok' })
+    const user = userEvent.setup()
+    render(<TwoFactorCard />)
+    await user.click(screen.getByRole('button', { name: 'Turn off' }))
+    await user.type(screen.getByLabelText('Current password'), 'Secret-123')
+    await user.click(screen.getByRole('button', { name: 'Use a recovery code instead' }))
+    await user.type(screen.getByLabelText('Recovery code'), 'abcde-fghjk')
+    await waitFor(() =>
+      expect(disableTwoFactor).toHaveBeenCalledWith({ password: 'Secret-123', code: 'abcdefghjk' })
+    )
   })
 
   it('regenerates recovery codes with a TOTP code', async () => {
@@ -129,8 +150,8 @@ describe('TwoFactorCard', () => {
     const user = userEvent.setup()
     render(<TwoFactorCard />)
     await user.click(screen.getByRole('button', { name: /new recovery codes/i }))
-    await user.type(screen.getByLabelText('Authentication code'), '123456')
-    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await waitFor(() => expect(regenerateRecoveryCodes).toHaveBeenCalledTimes(1))
     expect(regenerateRecoveryCodes).toHaveBeenCalledWith('123456')
     expect(await screen.findByText('zzzzz-yyyyy')).toBeInTheDocument()
   })

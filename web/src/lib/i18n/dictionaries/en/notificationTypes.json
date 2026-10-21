@@ -36,5 +36,9 @@
   "notificationTypes.subtitle": "Turn individual kinds of notification on or off.",
   "notificationTypes.system_alert.description": "Important system-level notifications",
   "notificationTypes.system_alert.name": "System Alerts",
-  "notificationTypes.title": "Notification types"
+  "notificationTypes.title": "Notification types",
+  "notificationTypes.autoWatch.title": "Watching",
+  "notificationTypes.autoWatch.subtitle": "Findings and tasks you take part in can be watched for you.",
+  "notificationTypes.autoWatch.label": "Watch what I take part in",
+  "notificationTypes.autoWatch.description": "When you comment, change a status, claim a fix or are assigned, you start watching it. Stopping on one item always sticks."
 }

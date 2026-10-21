@@ -118,6 +118,9 @@ type Notification struct {
 	actorID          *shared.ID
 	createdAt        time.Time
 	isRead           bool // computed field, not stored directly
+	reason           string
+	count            int // events this notice stands for (1 unless coalesced)
+	coalesce         bool
 }
 
 // NotificationParams contains parameters for creating a new notification.
@@ -133,7 +136,25 @@ type NotificationParams struct {
 	ResourceID       *shared.ID
 	URL              string
 	ActorID          *shared.ID
+	// Reason says why the person got it (ReasonAssigned, ReasonWatching, ...);
+	// empty for notices that are not about a person's role.
+	Reason string
+	// Coalesce folds the notice into the person's unread notice of the same
+	// type and resource sent within CoalesceWindow, instead of adding a row.
+	// Only for an audience of one user.
+	Coalesce bool
 }
+
+// Reasons a person gets a notification about a work item (RFC-120).
+const (
+	ReasonAssigned = "assigned" // they are the assignee
+	ReasonWatching = "watching" // they watch the item
+	ReasonApproval = "approval" // they asked for or decided an approval
+)
+
+// CoalesceWindow is how long a new event on one item is folded into the
+// unread notice the person already has.
+const CoalesceWindow = 10 * time.Minute
 
 // defaultSeverity is used when a caller does not set one. The severity column
 // has a CHECK constraint and the INSERT writes the value verbatim, so an empty
@@ -159,6 +180,9 @@ func NewNotification(params NotificationParams) *Notification {
 		url:              params.URL,
 		actorID:          params.ActorID,
 		createdAt:        time.Now(),
+		reason:           params.Reason,
+		count:            1,
+		coalesce:         params.Coalesce && params.Audience == AudienceUser,
 	}
 }
 
@@ -213,6 +237,29 @@ func (n *Notification) ActorID() *shared.ID      { return n.actorID }
 func (n *Notification) CreatedAt() time.Time     { return n.createdAt }
 func (n *Notification) IsRead() bool             { return n.isRead }
 
+// Reason is why the person got the notice (empty when it is not about a role).
+func (n *Notification) Reason() string { return n.reason }
+
+// Count is how many events the notice stands for (1 unless coalesced).
+func (n *Notification) Count() int {
+	if n.count < 1 {
+		return 1
+	}
+	return n.count
+}
+
+// Coalesce reports whether the notice is folded into an unread one.
+func (n *Notification) Coalesce() bool { return n.coalesce }
+
+// MergedInto points the notice at the stored row it was folded into, so the
+// live push names a notification that exists.
+func (n *Notification) MergedInto(id ID) { n.id = id }
+
+// SetDelivery sets the reason and event count read from persistence.
+func (n *Notification) SetDelivery(reason string, count int) {
+	n.reason, n.count = reason, count
+}
+
 // Preferences represents user notification preferences.
 type Preferences struct {
 	tenantID     shared.ID
@@ -222,6 +269,7 @@ type Preferences struct {
 	mutedTypes   []string
 	minSeverity  string
 	updatedAt    time.Time
+	autoWatch    bool
 }
 
 // PreferencesParams contains parameters for creating/updating preferences.
@@ -230,6 +278,8 @@ type PreferencesParams struct {
 	EmailDigest  string
 	MutedTypes   []string
 	MinSeverity  string
+	// AutoWatch switches "watch what I take part in" (nil keeps the value).
+	AutoWatch *bool
 }
 
 // DefaultPreferences returns default preferences.
@@ -240,6 +290,7 @@ func DefaultPreferences(tenantID, userID shared.ID) *Preferences {
 		inAppEnabled: true,
 		emailDigest:  "none",
 		updatedAt:    time.Now(),
+		autoWatch:    true,
 	}
 }
 
@@ -261,8 +312,20 @@ func ReconstitutePref(
 		mutedTypes:   mutedTypes,
 		minSeverity:  minSeverity,
 		updatedAt:    updatedAt,
+		autoWatch:    true,
 	}
 }
+
+// WithAutoWatch sets the "watch what I take part in" switch read from
+// persistence; a preferences row that predates it means on.
+func (p *Preferences) WithAutoWatch(v bool) *Preferences {
+	p.autoWatch = v
+	return p
+}
+
+// AutoWatch reports whether the person is watched automatically on the items
+// they take part in (default on).
+func (p *Preferences) AutoWatch() bool { return p.autoWatch }
 
 // Getters
 func (p *Preferences) TenantID() shared.ID  { return p.tenantID }

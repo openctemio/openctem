@@ -15,7 +15,7 @@ function fill() {
   fireEvent.change(screen.getByLabelText('Reason'), {
     target: { value: 'incident 4711 needs a rescan' },
   })
-  fireEvent.change(screen.getByLabelText('Code from your authenticator app'), {
+  fireEvent.change(screen.getByLabelText('Authentication code'), {
     target: { value: '123456' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Override' }))
@@ -58,9 +58,7 @@ describe('OverrideDialog', () => {
     fill()
     const alert = await screen.findByTestId('override-error')
     expect(alert.textContent).toContain('That code is not valid')
-    expect(
-      (screen.getByLabelText('Code from your authenticator app') as HTMLInputElement).value
-    ).toBe('')
+    expect((screen.getByLabelText('Authentication code') as HTMLInputElement).value).toBe('')
   })
 
   it('does not send without a reason and a code', () => {

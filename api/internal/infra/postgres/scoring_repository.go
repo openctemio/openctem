@@ -227,7 +227,7 @@ func (r *ScoringRepository) EnqueueReconcile(ctx context.Context, delay time.Dur
 		// A batch racing an asset delete (foreign key violation) is retried:
 		// its next snapshot no longer sees the asset.
 		for attempt := 0; attempt < 3; attempt++ {
-			err = r.db.QueryRowContext(ctx, q, tid, delay.Seconds(), scoring.PriorityModelVersion).Scan(&n)
+			err = queryRowWithTimeout(ctx, r.db.DB, timeoutHeavy, q, []any{tid, delay.Seconds(), scoring.PriorityModelVersion}, &n)
 			if !isForeignKeyViolation(err) {
 				break
 			}
@@ -423,7 +423,7 @@ func (r *ScoringRepository) EnqueueIntelChanges(ctx context.Context) (int64, err
 		var res sql.Result
 		var err error
 		for attempt := 0; attempt < 3; attempt++ {
-			res, err = r.db.ExecContext(ctx, q)
+			res, err = execWithTimeout(ctx, r.db.DB, timeoutHeavy, q)
 			if !isForeignKeyViolation(err) {
 				break
 			}
@@ -521,26 +521,31 @@ const (
 // epssRefreshBatch bounds one EPSS refresh statement (rows locked at once).
 const epssRefreshBatch = 2000
 
-// RefreshFindingEPSS writes the catalog EPSS score and percentile onto every
-// open finding whose CVE's catalog values differ from the stored ones: a
+// RefreshFindingEPSS writes the catalog EPSS score onto every
+// open finding whose CVE's catalog score differs from the stored one: a
 // plain column update, tenant by tenant, in batches of epssRefreshBatch
 // (rows another writer holds are skipped and picked up by the next run).
 // Run it after EnqueueIntelChanges, which compares the stored values with
 // the catalog to find threshold crossings. Closed findings keep the values
 // they had when closed. Returns how many findings were written.
+//
+// Only the score is compared and written. The percentile is a rank that moves
+// for almost every CVE on every feed; copying it rewrote nearly every open
+// finding daily. A finding's stored percentile is the one in force when its
+// score last moved (or when it was scored); the current rank is the catalog's.
 func (r *ScoringRepository) RefreshFindingEPSS(ctx context.Context) (int64, error) {
 	tenants, err := r.tenantIDs(ctx)
 	if err != nil {
 		return 0, err
 	}
 	q := `
-		UPDATE findings f SET epss_score = s.epss_score, epss_percentile = s.percentile
+		UPDATE findings f SET epss_score = s.epss_score
 		FROM (
-			SELECT f2.id, e.epss_score, e.percentile
+			SELECT f2.id, e.epss_score
 			FROM findings f2
 			JOIN epss_scores e ON e.cve_id = f2.cve_id
 			WHERE f2.tenant_id = $1 AND ` + vulnerability.OpenStatusSQL("f2.status") + `
-			  AND (f2.epss_score IS DISTINCT FROM e.epss_score OR f2.epss_percentile IS DISTINCT FROM e.percentile)
+			  AND f2.epss_score IS DISTINCT FROM e.epss_score
 			ORDER BY f2.id
 			LIMIT $2
 			FOR UPDATE OF f2 SKIP LOCKED
@@ -552,7 +557,7 @@ func (r *ScoringRepository) RefreshFindingEPSS(ctx context.Context) (int64, erro
 			if err := ctx.Err(); err != nil {
 				return total, err
 			}
-			res, err := r.db.ExecContext(ctx, q, tid, epssRefreshBatch)
+			res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, q, tid, epssRefreshBatch)
 			if err != nil {
 				return total, fmt.Errorf("refresh finding epss: %w", err)
 			}

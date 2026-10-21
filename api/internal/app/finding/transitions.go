@@ -26,6 +26,7 @@ type TransitionPermissions struct {
 	FixApply bool // findings:fix_apply
 	Triage   bool // findings:triage
 	Write    bool // findings:write
+	Approve  bool // findings:approve
 }
 
 // transitionActor is the engine actor of a request: a workflow when the
@@ -34,7 +35,7 @@ type TransitionPermissions struct {
 func transitionActor(ctx context.Context, actorID string, p TransitionPermissions) vulnerability.TransitionActor {
 	a := vulnerability.TransitionActor{
 		Kind:      vulnerability.TransitionActorAPIKey,
-		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write,
+		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write, CanApprove: p.Approve,
 	}
 	// A verified Jira/GitHub webhook is the ticket actor: the engine lets it
 	// report work state only (never a close).
@@ -67,8 +68,10 @@ func (s *VulnerabilityService) transitionFacts(ctx context.Context, tenantID sha
 	if (target == "" || target == vulnerability.FindingStatusFixApplied) && a.IsPerson() && s.fixAppliers != nil && len(findings) > 0 {
 		claimable = s.fixAppliers(ctx, tenantID, a.UserID, findings)
 	}
+	taskOnly := s.taskOwnerOnly(ctx, tenantID, a, findings)
 	for _, f := range findings {
 		facts := transitionFactsOf(f)
+		facts.TaskOwnerOnly = taskOnly[f.ID()]
 		facts.CanClaimFix = s.fixAppliers == nil || claimable[f.ID()]
 		if (target == "" || target == vulnerability.FindingStatusResolved) && s.db != nil {
 			if err := loadResolveEvidence(ctx, s.db, tenantID, f.ID(), &facts); err != nil {
@@ -94,7 +97,7 @@ func transitionFactsOf(f *vulnerability.Finding) vulnerability.TransitionFacts {
 func personActor(uid shared.ID, p TransitionPermissions) vulnerability.TransitionActor {
 	return vulnerability.TransitionActor{
 		Kind: vulnerability.TransitionActorPerson, UserID: uid,
-		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write,
+		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write, CanApprove: p.Approve,
 	}
 }
 
@@ -111,6 +114,13 @@ func priorityClassString(f *vulnerability.Finding) string {
 // finding it is. nil when the move is allowed and every input it needs is
 // there (note is the request's note).
 func transitionError(d vulnerability.TransitionDecision, note string) error {
+	// A task owner without the finding in scope never reaches an approval
+	// flow or a picker: the move is refused outright.
+	for _, b := range d.Blocked {
+		if b.Code == vulnerability.BlockNotInScope {
+			return d.Err()
+		}
+	}
 	switch d.Mode {
 	case vulnerability.TransitionRequest:
 		return &vulnerability.ApprovalRequiredError{Status: d.To}
@@ -132,7 +142,9 @@ func transitionError(d vulnerability.TransitionDecision, note string) error {
 		return ErrResolveRequiresVerify
 	case has(vulnerability.BlockMissingPermission, "findings:fix_apply"):
 		return ErrFixApplyRequiresPermission
-	case has(vulnerability.BlockTicketCannotClose, ""), has(vulnerability.BlockNotALifecycleMove, ""):
+	case has(vulnerability.BlockMissingPermission, "findings:approve"):
+		return ErrRevokeRequiresApprove
+	case has(vulnerability.BlockTicketCannotClose, ""), has(vulnerability.BlockNotALifecycleMove, ""), has(vulnerability.BlockDecidedStatus, ""):
 		return d.Err()
 	}
 	for _, r := range d.Requires {
@@ -229,11 +241,11 @@ func (s *VulnerabilityService) EvaluateFindingTransitions(ctx context.Context, t
 	if err != nil {
 		return nil, fmt.Errorf("failed to read findings: %w", err)
 	}
-	visible, err := s.visibleFindings(ctx, tid, findings)
+	a := transitionActor(ctx, actorID, perms)
+	visible, err := s.visibleForMove(ctx, tid, a, findings)
 	if err != nil {
 		return nil, err
 	}
-	a := transitionActor(ctx, actorID, perms)
 	list := make([]*vulnerability.Finding, 0, len(visible))
 	for _, f := range visible {
 		list = append(list, f)

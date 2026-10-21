@@ -102,7 +102,7 @@ func (r *LicensePolicyRepository) SetVerdicts(ctx context.Context, tenantID shar
 	args := &sqlArgs{}
 	tenant := args.add(tenantID.String())
 	k, sc, ac, ru := args.add(pq.Array(keys)), args.add(pq.Array(scopes)), args.add(pq.Array(actions)), args.add(pq.Array(rules))
-	res, err := r.db.ExecContext(ctx, `
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `
 		UPDATE asset_software s SET license_verdict = v.verdict, license_rule = v.rule
 		FROM unnest(`+k+`::text[], `+sc+`::text[], `+ac+`::text[], `+ru+`::text[]) AS v(k, scope, verdict, rule)
 		WHERE s.tenant_id = `+tenant+` AND s.source = 'package'
@@ -138,7 +138,7 @@ func truncateRule(s string) string {
 func (r *LicensePolicyRepository) ClearVerdicts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {
 	args := &sqlArgs{}
 	tenant := args.add(tenantID.String())
-	_, err := r.db.ExecContext(ctx, `UPDATE asset_software s SET license_verdict = NULL, license_rule = NULL
+	_, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `UPDATE asset_software s SET license_verdict = NULL, license_rule = NULL
 		WHERE s.tenant_id = `+tenant+` AND s.source = 'package' AND s.license_verdict IS NOT NULL`+
 		assetFilter(args, "s.asset_id", assetIDs), args.vals...)
 	if err != nil {

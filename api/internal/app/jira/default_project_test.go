@@ -36,7 +36,7 @@ func TestCreateTicketFromFinding_FallsBackToDefaultProject(t *testing.T) {
 	s := newSync(repo, client)
 	mapping := DefaultMappingConfig()
 	mapping.DefaultProjectKey = "PAY"
-	mapping.DefaultIssueType = "Task"
+	mapping.IssueTypes = map[string]IssueTypeChoice{IssueKindFinding: {Name: "Task"}}
 	s.SetMappingResolver(stubMappingResolver{mapping: mapping})
 
 	if _, err := s.CreateTicketFromFinding(context.Background(), CreateTicketInput{

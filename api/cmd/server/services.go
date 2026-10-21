@@ -42,6 +42,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
+	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
@@ -55,6 +56,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/command"
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
+	"github.com/openctemio/openctem/api/internal/app/participation"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
@@ -102,6 +104,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
+	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
@@ -111,6 +114,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/app/tenantai"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
@@ -140,6 +144,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
+	participationdom "github.com/openctemio/openctem/api/pkg/domain/participation"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
@@ -229,6 +234,22 @@ func (v validationSensorAvailability) HasRetestSensor(ctx context.Context, tenan
 	return len(sensors) > 0, nil
 }
 
+// HasRetestTemplatesSensor reports whether a sensor of the tenant is online,
+// with capacity, whose retest handler for tool runs delivered templates
+// (both "retest:<tool>" and "retest-templates:<tool>"), what a retest with
+// a custom check requires.
+func (v validationSensorAvailability) HasRetestTemplatesSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
+	if !validation.ValidRetestTool(tool) {
+		return false, nil
+	}
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID,
+		[]string{validation.RetestCapability(tool), validation.RetestTemplatesCapability(tool)}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(sensors) > 0, nil
+}
+
 // RetestTools lists the tools whose findings an online sensor of the tenant,
 // with capacity, can re-check now (validation.RetestToolsOf over their
 // capabilities).
@@ -266,38 +287,6 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 	return &id, nil
 }
 
-// ticketStatusApplier adapts the finding service's inbound ticket path to
-// the Jira sync service.
-type ticketStatusApplier struct{ vuln *finding.VulnerabilityService }
-
-func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref, externalActor string,
-) ([]shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
-	if err != nil {
-		return nil, nil, err
-	}
-	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
-	for _, r := range out.Refused {
-		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
-	}
-	return out.Applied, refused, nil
-}
-
-func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref, externalActor string,
-) ([]shared.ID, []shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.RequestTicketDisposition(ctx, tenantID, ids, target, integration, ref, externalActor)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
-	for _, r := range out.Refused {
-		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
-	}
-	return out.Requested, out.Pending, refused, nil
-}
-
 // taskIssueReader is the platform's read of remediation tasks for their
 // tracker issues (no caller scope: the background sync and the inbound
 // webhook act for the organization).
@@ -320,6 +309,30 @@ func (r taskIssueReader) OpenMemberIDs(ctx context.Context, tenantID, taskID sha
 		ids = append(ids, m.FindingID)
 	}
 	return ids, nil
+}
+
+// maxEgressTaskMembers bounds the members the outbound gate reads for one
+// task; a larger task is refused (fail closed) rather than half checked.
+const maxEgressTaskMembers = 10000
+
+func (r taskIssueReader) EgressMemberIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error) {
+	const pageSize = 500
+	var ids []shared.ID
+	for page := 1; ; page++ {
+		res, err := r.repo.ListMembers(ctx, tenantID, taskID, remediationdom.MemberFilter{}, pagination.New(page, pageSize))
+		if err != nil {
+			return nil, err
+		}
+		if res.Total > maxEgressTaskMembers {
+			return nil, fmt.Errorf("%w: the task has more than %d findings to check before sending it to a tracker", shared.ErrValidation, maxEgressTaskMembers)
+		}
+		for _, m := range res.Data {
+			ids = append(ids, m.FindingID)
+		}
+		if len(res.Data) < pageSize || int64(len(ids)) >= res.Total {
+			return ids, nil
+		}
+	}
 }
 
 // httpDataScopeCaller reads the acting user and the admin decision from the
@@ -418,19 +431,41 @@ func workflowPrincipalContext(ctx context.Context, p automation.Principal) conte
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
 // action's JiraTicketService (primitive params, so the workflow package needn't
 // import app/jira — that would cycle through the app shim).
-type workflowJiraTicketAdapter struct{ svc *jira.SyncService }
+// With a create policy, the automatic create holds findings below the
+// integration's policy or over its daily cap instead of filing them.
+type workflowJiraTicketAdapter struct {
+	svc    *jira.SyncService
+	policy *jira.PolicyGate
+}
 
 func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (automation.TicketRef, error) {
-	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
+	in := jira.CreateTicketInput{
 		TenantID: tenantID, FindingID: findingID, ProjectKey: projectKey, IssueType: issueType,
-	})
+		Route: ticketing.RouteAutomation,
+	}
+	if a.policy != nil {
+		info, held, err := a.policy.AutoCreate(ctx, in)
+		if err != nil {
+			return automation.TicketRef{}, err
+		}
+		if held != nil {
+			return automation.TicketRef{Held: true, HeldReason: held.Reason}, nil
+		}
+		return automation.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+	}
+	info, err := a.svc.CreateTicketFromFinding(ctx, in)
 	if err != nil {
 		return automation.TicketRef{}, err
 	}
 	return automation.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
+// SyncFindingStatus is the workflow update_ticket action: workflows never
+// carry pentest content, so the gate is asked on the automation route first.
 func (a workflowJiraTicketAdapter) SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error {
+	if err := a.svc.CheckFindingEgress(ctx, tenantID, findingID, ticketing.RouteAutomation); err != nil {
+		return err
+	}
 	return a.svc.SyncFindingStatus(ctx, tenantID, findingID)
 }
 
@@ -443,6 +478,7 @@ type workflowGitHubTicketAdapter struct {
 func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (automation.TicketRef, error) {
 	info, err := a.svc.CreateTicketFromFinding(ctx, ticketing.GitHubTicketInput{
 		TenantID: tenantID, FindingID: findingID, Owner: owner, Repo: repo,
+		Route: ticketing.RouteAutomation,
 	})
 	if err != nil {
 		return automation.TicketRef{}, err
@@ -561,9 +597,11 @@ type Services struct {
 	Session *auth.SessionService
 
 	// Core
-	Audit  *audit.AuditService
-	User   *tenantapp.UserService
-	Tenant *tenantapp.TenantService
+	Audit *audit.AuditService
+	// AuditArchive is where audit retention writes its archives (the server storage provider).
+	AuditArchive audit.ArchiveStore
+	User         *tenantapp.UserService
+	Tenant       *tenantapp.TenantService
 	// UserProvisioning creates accounts on behalf of administrators.
 	UserProvisioning *tenantapp.UserProvisioningService
 
@@ -745,6 +783,7 @@ type Services struct {
 
 	// Priority Classification (RFC-004)
 	PriorityClassification *finding.PriorityClassificationService
+	AssetRiskGovernance    *finding.AssetRiskGovernance
 	// VulnMatch is inventory vulnerability matching (RFC-066).
 	VulnMatch *vulnmatch.Service
 
@@ -785,6 +824,8 @@ type Services struct {
 	ValidationEvidence *validation.EvidenceIngestService
 	// Retest runs continuous retests (RFC-039): Retest now, settle, auto ticks.
 	Retest *retestapp.Service
+	// RetestCheck manages findings' custom retest checks.
+	RetestCheck *retestcheckapp.Service
 	// Evidence: masked finding evidence, encrypted secret values, audited reveal.
 	Evidence *evidenceapp.Service
 
@@ -797,6 +838,7 @@ type Services struct {
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
 	RemediationTask     *remediation.TaskService
+	Participation       *participation.Service // watchers of findings and tasks
 	// Query runs custom queries (one instance: its concurrency caps are
 	// per process).
 	Query              *queryapp.Service
@@ -811,6 +853,10 @@ type Services struct {
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
+	// TicketPolicy is the per-integration ticket create policy in front of
+	// the automatic and manual finding → issue paths (nil without its
+	// repository).
+	TicketPolicy *jira.PolicyGate
 	// TicketMapping manages ticket field and status mapping profiles.
 	TicketMapping *appticketmap.Service
 
@@ -877,6 +923,8 @@ type Services struct {
 	StorageQuota     *storagequota.Service
 	PlatformAlert    *platformalert.Service
 	PlatformAI       *platformai.Service
+	// TenantAI is the organizations' AI settings (consent, source, own provider).
+	TenantAI *tenantai.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -1223,8 +1271,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
-	s.Vulnerability.SetAssetRefChecker(s.DataScope) // POST /findings asset_id: tenant + caller scope
-	s.Vulnerability.SetBranchLookup(repos.Branch)   // a finding branch must belong to its asset
+	s.Vulnerability.SetMemberSearcher(repos.Tenant)        // the assignee picker lists only members who can read the finding
+	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
+	s.Vulnerability.SetAssetRefChecker(s.DataScope)        // POST /findings asset_id: tenant + caller scope
+	s.Vulnerability.SetBranchLookup(repos.Branch)          // a finding branch must belong to its asset
 	s.FindingActivity = activity.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
@@ -1373,6 +1423,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.PriorityRule, repos.PriorityAudit, log,
 	)
 	// Wire compensating controls into priority classification (RFC-005 Gap 6)
+	s.PriorityClassification.SetDataScope(s.DataScope)
 	s.PriorityClassification.SetControlLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
 
 	// Business-aligned prioritization: raise an asset's effective criticality to
@@ -1393,6 +1444,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PriorityClassification.SetAttributionLookup(repos.Attribution)
 	}
 
+	// Edits that lower an asset's exposure, criticality or crown-jewel flag are
+	// decided under the organization's approval policy when they would drop an
+	// open P0/P1 finding (docs/architecture/asset-risk-governance.md).
+	s.AssetRiskGovernance = finding.NewAssetRiskGovernance(s.Vulnerability, s.PriorityClassification,
+		repos.Asset, repos.AssetRiskRequest, s.Asset, log)
+	s.Asset.SetRiskGovernor(assetRiskGovernor{s.AssetRiskGovernance})
+
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
 	// bursts while keeping the classification itself intact on the
@@ -1402,8 +1460,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Close-the-loop: feed attack-path reachability (from the exposure-chain
 	// graph) into prioritization, so an internal asset on a validated
 	// internet→KEV/crown-jewel path is treated as reachable. Cached 5m/tenant.
+	// One oracle serves both consumers (classification and exposure enrichment):
+	// the underlying chains are cached per tenant by the surface service.
+	var reachOracle *reachabilityOracle
 	if s.AttackSurface != nil {
-		s.PriorityClassification.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+		reachOracle = newReachabilityOracle(s.AttackSurface, time.Minute)
+		s.PriorityClassification.SetReachabilityOracle(reachOracle)
 	}
 
 	// CTEM Discovery: enrich EXPOSURE events on the read path with the SAME
@@ -1414,8 +1476,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Exposure != nil {
 		exposureEnricher := exposure.NewExposureEnricher(repos.Asset, log)
 		exposureEnricher.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
-		if s.AttackSurface != nil {
-			exposureEnricher.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+		if reachOracle != nil {
+			exposureEnricher.SetReachabilityOracle(reachOracle)
 		}
 		exposureEnricher.SetThreatIntel(exposureEPSSShim{epssAdapter}, exposureKEVShim{kevAdapter})
 		s.Exposure.SetEnricher(exposureEnricher)
@@ -1535,6 +1597,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	fileStorage = storage.Instrument(fileStorage, storage.BackendServer)
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
+	s.AuditArchive = fileStorage
 	s.Attachment.SetMetrics(storage.Metrics{})
 	s.Attachment.SetDirectDownloads(cfg.Storage.DirectDownload)
 	s.Attachment.SetTenantQuota(cfg.Storage.TenantQuotaMB << 20)
@@ -1690,6 +1753,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
+	// An owner who cannot see the task's findings: the picker explains it and naming one needs findings:assign.
+	s.RemediationTask.SetOwnerAccess(repos.RemediationOwnerAccess)
 	s.RemediationTask.SetAuditLogger(s.Audit)
 	// Campaign <-> task: the campaign checks every task it takes; a task's
 	// own campaign change goes through the campaign's write check.
@@ -1700,6 +1765,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// One exception over a task's open findings (RFC-111 §7).
 	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
+	// Watchers of findings and tasks (RFC-120): the item services own the read
+	// rules, so a watcher can never see more than a member could open.
+	s.Participation = participation.NewService(repos.WorkItemSubscription, repos.AccessControl, log)
+	s.Participation.SetItemAccess(participationdom.ItemFinding, s.Vulnerability.ParticipationAccess())
+	s.Participation.SetItemAccess(participationdom.ItemTask, s.RemediationTask.ParticipationAccess())
+	s.Participation.SetAuditLogger(s.Audit)
+	s.Participation.SetAutoWatchPreference(repos.Notification)
+	// Comments, status changes, fix claims and assignments reach the watchers;
+	// people who take part become watchers.
+	s.Vulnerability.SetParticipants(s.Participation)
 	if deps.DB != nil {
 		s.Query = queryapp.NewService(postgres.NewQueryExecutor(&postgres.DB{DB: deps.DB}, postgres.InteractiveQueryTimeout), s.DataScope, log)
 	}
@@ -1739,9 +1814,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		)
 		s.AITriage.SetAuditService(s.Audit)
 		s.AITriage.SetDataScope(s.DataScope)
+		s.AITriage.SetAISettingsRepository(repos.TenantAISettings)
+		var orgPolicy tenantai.OrgPolicy // nil: own providers allowed
 		if s.PlatformAI != nil {
 			s.AITriage.SetPlatformAISource(s.PlatformAI)
+			s.AITriage.SetOrgProviderPolicy(s.PlatformAI)
+			orgPolicy = s.PlatformAI
 		}
+		s.TenantAI = tenantai.NewService(repos.TenantAISettings, s.Encryptor, s.Audit, llmFactory, orgPolicy, log)
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// The organization's AI data-egress policy, shared with MCP: pentest
@@ -1821,7 +1901,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Inbound status changes go through the finding service rules (transition
 	// map, gates, "mark fixed" with proof of fix) for every finding linked to
 	// the issue; refusals are commented back once per window (all replicas).
-	s.JiraSync.SetInboundApplier(ticketStatusApplier{vuln: s.Vulnerability})
+	s.JiraSync.SetInboundApplier(ticketbridge.Jira{Vuln: s.Vulnerability})
 	s.JiraSync.SetWorkItemFindingLister(repos.Finding)
 	if deps.RedisClient != nil {
 		s.JiraSync.SetRefusalCommentGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
@@ -1833,8 +1913,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Task issues: a person creates a task's issue (a change of the task, in
 	// their data scope); the platform keeps its status in step.
 	s.JiraSync.SetTaskSources(s.RemediationTask, taskIssueReader{repo: repos.RemediationTask})
+	// One outbound gate for every tracker path (Jira and GitHub).
+	ticketEgress := ticketing.NewEgressGate(trackerTLPLimit{tenants: s.Tenant}, repos.PentestCampaign)
+	s.JiraSync.SetEgressGate(ticketEgress)
 	s.JiraSync.SetWebBaseURL(cfg.SMTP.BaseURL)
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
+	if repos.TicketCreatePolicy != nil {
+		s.TicketPolicy = jira.NewPolicyGate(s.JiraSync, repos.TicketCreatePolicy, repos.Integration, log)
+	}
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
 	// data scope.
@@ -1846,7 +1932,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Published profiles drive issue creation and status moves for their
 		// destinations; without one the built-in behavior is unchanged.
 		s.JiraSync.SetProfileSource(s.TicketMapping)
+		// Saving an issue type whose required fields need a mapping asks
+		// whether that destination has a published profile.
+		jiraResolver.SetProfileCoverage(s.TicketMapping.HasPublishedProfile)
 	}
+	// Create refusals naming fields are shown per kind on the ticketing page.
+	s.JiraSync.SetIssueTypeHealth(infrajira.IssueTypeHealthStore{Repo: repos.Integration})
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
@@ -1860,8 +1951,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
 	// request); resolves the tenant's GitHub integration credentials on demand.
 	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
-	s.GitHubTicket.SetLifecycles(s.FindingLifecycle)
-	s.GitHubTicket.SetActivityRecorder(s.FindingActivity)
+	// Inbound issue events take the same finding service path as Jira:
+	// transition map, data scope, pentest and approval gates, "mark fixed"
+	// with the integration as the actor, for every finding linked to the
+	// issue.
+	s.GitHubTicket.SetInboundApplier(ticketbridge.GitHub{Vuln: s.Vulnerability})
+	s.GitHubTicket.SetWorkItemFindingLister(repos.Finding)
+	s.GitHubTicket.SetEgressGate(ticketEgress)
 
 	// Initialize integration & notification services
 	s.Integration = integration.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
@@ -1875,6 +1971,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Without it a Jira integration never leaves "pending", and jiraResolver
 	// only uses connected integrations — ticket creation would stay inert.
 	s.Integration.SetTicketingConnectionTester(jiraResolver)
+	// Issue types chosen for a ticketing integration are checked against
+	// Jira before they are saved.
+	s.Integration.SetTicketingIssueTypeChecker(jiraResolver)
 
 	s.Outbox = outbox.NewService(
 		repos.Outbox,
@@ -2250,6 +2349,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
 
+	// A finding's custom retest check: content in the template library
+	// above, run by the retest service.
+	s.RetestCheck = retestcheckapp.NewService(repos.FindingRetestCheck, repos.Finding,
+		retestcheckapp.LibraryTemplates{Svc: s.ScannerTemplate}, s.Audit, log)
+	s.Retest.SetCheckSource(retestcheckapp.RetestSource{Svc: s.RetestCheck})
+
 	// Initialize credential service for template sources
 	// Decode hex key to bytes (64 hex chars -> 32 bytes for AES-256)
 	var encryptionKey []byte
@@ -2431,6 +2536,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.JiraSync != nil && s.FindingActions != nil && repos.Finding != nil {
 		rescanHook := jira.NewRescanHook(proofOfFix, repos.Finding, log)
 		s.JiraSync.SetPostFixAppliedHook(rescanHook.Hook)
+		// A GitHub issue closed as completed is the same fix claim.
+		if s.GitHubTicket != nil {
+			s.GitHubTicket.SetFixClaimHook(rescanHook.Hook)
+		}
 	}
 
 	// RFC-039 Phase 2: a regression (a retest or a scan seeing a finding closed
@@ -2547,7 +2656,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// so a nil service yields a nil interface (not a non-nil box over nil).
 	var wfJira automation.JiraTicketService
 	if s.JiraSync != nil {
-		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync}
+		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync, policy: s.TicketPolicy}
 	}
 	var wfGitHub automation.GitHubTicketService
 	if s.GitHubTicket != nil {
@@ -3199,6 +3308,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	if s.Scan != nil {
 		s.Scan.SetOwnerNotifications(repos.MemberLifecycle, s.Notification)
 	}
+	// A new task owner and the owners of tasks a move touches are told in the
+	// app; the inbox and push show a task notice only to members who can read
+	// one of its findings.
+	if s.RemediationTask != nil && s.Notification != nil {
+		s.RemediationTask.SetNotifier(s.Notification)
+	}
 	// Tasks from a query: the query runs as the creator; auto mode re-reads
 	// the owner's membership and permissions on every run and tells them
 	// of additions and suspensions.
@@ -3523,6 +3638,18 @@ func (r pentestPolicyReader) RequireAuthorizationBeforeStart(ctx context.Context
 	return ps.RequireAuthorizationBeforeStart, nil
 }
 
+// trackerTLPLimit reads the organization's TLP limit for trackers (pentest
+// settings) for the outbound ticket gate.
+type trackerTLPLimit struct{ tenants *tenantapp.TenantService }
+
+func (r trackerTLPLimit) TrackerMaxTLP(ctx context.Context, tenantID shared.ID) (string, error) {
+	ps, err := r.tenants.GetPentestSettings(ctx, tenantID.String())
+	if err != nil {
+		return "", err
+	}
+	return ps.TicketMaxTLP, nil
+}
+
 // pentestJiraTicketing adapts the Jira sync service to the pentest
 // campaign's ticket links and finding tickets.
 type pentestJiraTicketing struct{ svc *jira.SyncService }
@@ -3544,8 +3671,11 @@ func (a pentestJiraTicketing) SearchJiraIssues(ctx context.Context, tenantID sha
 }
 
 func (a pentestJiraTicketing) CreateFindingTicket(ctx context.Context, tenantID, findingID shared.ID, projectKey, parentKey string) (string, error) {
+	// The campaign route: the lead's action (route gate), for the
+	// campaign's own findings.
 	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
 		TenantID: tenantID.String(), FindingID: findingID.String(), ProjectKey: projectKey, ParentKey: parentKey,
+		Route: ticketing.RouteCampaign,
 	})
 	if err != nil {
 		return "", err
@@ -3590,4 +3720,16 @@ func learnComponentReleases(f *releasefeed.Feed) {
 		learned[k] = versions.Learned{Version: c.Version, Digest: c.Digest}
 	}
 	versions.SetLearned(learned)
+}
+
+// assetRiskGovernor adapts the finding package's risk governance to the asset
+// service's decision hook (the two packages do not import each other).
+type assetRiskGovernor struct{ g *finding.AssetRiskGovernance }
+
+func (a assetRiskGovernor) GovernRisk(ctx context.Context, in asset.RiskGovernInput) (asset.RiskGovernOutcome, error) {
+	out, err := a.g.Govern(ctx, finding.GovernInput{
+		TenantID: in.TenantID, AssetID: in.AssetID, Before: in.Before, After: in.After,
+		Actor: in.Actor, CanApprove: in.CanApprove, Reason: in.Reason, Audit: in.Audit,
+	})
+	return asset.RiskGovernOutcome{Held: out.Held}, err
 }

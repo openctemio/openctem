@@ -110,8 +110,11 @@ false-positive step and every tenant rule:
   (`ruleClassification`). Creating, changing or deleting a rule needs a
   recent sign-in (step-up, [step-up re-authentication](step-up-reauth.md)).
   The rule dry run (`POST /api/v1/priority-rules/dry-run`) classifies the
-  tenant's open findings with the real engine, floors included, up to 20,000
-  findings: `open_findings` is the tenant total, `capped` marks a sample, and
+  open findings the caller may see (the same data scope and pentest-campaign
+  membership rules as the findings list; drafts are not open) with the real
+  engine, floors included, up to 20,000 findings. Counts, distribution and
+  sample cover only that set, and the run is refused when the data scope is not
+  available. `open_findings` is the total in the caller's view, `capped` marks a sample, and
   `floored` counts matches a floor keeps above the rule's class. It is rate
   limited to 6 per minute per tenant.
 

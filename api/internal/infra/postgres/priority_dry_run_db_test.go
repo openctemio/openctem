@@ -7,6 +7,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -59,6 +60,7 @@ func TestDryRunRule_MatchesAndCap(t *testing.T) {
 		fakeRuleRepo{}, fakeAuditRepo{},
 		log,
 	)
+	classifier.SetDataScope(datascope.New(NewDataScopeRepository(&DB{DB: db}), nil, log))
 
 	// Draft rule: severity == critical → P0.
 	draft, err := vulnerability.NewPriorityOverrideRule(
@@ -160,6 +162,7 @@ func TestDryRunRule_FloorKeepsKEVAboveRule(t *testing.T) {
 	classifier := finding.NewPriorityClassificationService(
 		NewFindingRepository(&DB{DB: db}), NewAssetRepository(&DB{DB: db}),
 		fakeEPSSRepo{}, fakeKEVRepo{}, fakeRuleRepo{}, fakeAuditRepo{}, logger.NewNop())
+	classifier.SetDataScope(datascope.New(NewDataScopeRepository(&DB{DB: db}), nil, logger.NewNop()))
 	draft, err := vulnerability.NewPriorityOverrideRule(tenantID, "dry-run", vulnerability.PriorityP3,
 		[]vulnerability.RuleCondition{{Field: "severity", Operator: "eq", Value: "critical"}}, shared.NewID())
 	if err != nil {
@@ -228,5 +231,138 @@ func TestPriorityRules_EqualOrderIsDeterministic(t *testing.T) {
 			}
 			t.Fatalf("pass %d: rules %v, want [older newer] (no other tenant's rule)", i, names)
 		}
+	}
+}
+
+type dryRunCallerKey struct{}
+
+type dryRunCaller struct {
+	userID  string
+	isAdmin bool
+}
+
+// TestDryRunRule_DataScope: the dry run covers only what the caller may see.
+// A member with one access row sees that asset's open findings (counts and
+// sample), never another asset's, another tenant's, a draft, or a pentest
+// finding of a campaign they are not in; an admin sees the tenant's open
+// findings; an unwired enforcer is refused rather than reading everything.
+func TestDryRunRule_DataScope(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB execution check")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	tenantID := seedTestTenant(ctx, t, db)
+	otherTenant := seedTestTenant(ctx, t, db)
+	assetA := seedPublicAsset(ctx, t, db, tenantID)
+	assetB := seedPublicAsset(ctx, t, db, tenantID)
+	otherAsset := seedPublicAsset(ctx, t, db, otherTenant)
+
+	member := shared.NewID()
+	admin := shared.NewID()
+	for _, u := range []shared.ID{member, admin} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'dry')`,
+			u.String(), u.String()+"@dry.test"); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+		uid := u
+		t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, uid.String()) })
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type)
+		VALUES ($1, $2, $3, 'secondary')`, member.String(), tenantID.String(), assetA.String()); err != nil {
+		t.Fatalf("seed access row: %v", err)
+	}
+
+	inScope := []shared.ID{
+		seedFinding(ctx, t, db, tenantID, assetA, "sca", "critical", "new"),
+		seedFinding(ctx, t, db, tenantID, assetA, "sca", "critical", "confirmed"),
+	}
+	seedFinding(ctx, t, db, tenantID, assetA, "pentest", "critical", "draft")         // draft: not open
+	seedFinding(ctx, t, db, tenantID, assetA, "pentest", "critical", "new")           // campaign member only
+	outOfScope := seedFinding(ctx, t, db, tenantID, assetB, "sca", "critical", "new") // other asset
+	seedFinding(ctx, t, db, tenantID, assetB, "sca", "critical", "new")
+	foreign := seedFinding(ctx, t, db, otherTenant, otherAsset, "sca", "critical", "new")
+
+	classifier := finding.NewPriorityClassificationService(
+		NewFindingRepository(&DB{DB: db}), NewAssetRepository(&DB{DB: db}),
+		fakeEPSSRepo{}, fakeKEVRepo{}, fakeRuleRepo{}, fakeAuditRepo{}, logger.NewNop())
+	classifier.SetDataScope(datascope.New(NewDataScopeRepository(&DB{DB: db}),
+		func(c context.Context) datascope.Caller {
+			v, _ := c.Value(dryRunCallerKey{}).(dryRunCaller)
+			return datascope.Caller{UserID: v.userID, IsAdmin: v.isAdmin}
+		}, logger.NewNop()))
+
+	draft, err := vulnerability.NewPriorityOverrideRule(tenantID, "dry-run", vulnerability.PriorityP0,
+		[]vulnerability.RuleCondition{{Field: "severity", Operator: "eq", Value: "critical"}}, shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := func(u shared.ID, isAdmin bool) context.Context {
+		return context.WithValue(ctx, dryRunCallerKey{}, dryRunCaller{userID: u.String(), isAdmin: isAdmin})
+	}
+
+	res, err := classifier.DryRunRule(as(member, false), tenantID, draft, 0, 25)
+	if err != nil {
+		t.Fatalf("member DryRunRule: %v", err)
+	}
+	if res.OpenFindings != 2 || res.Evaluated != 2 || res.Matched != 2 || len(res.Sample) != 2 {
+		t.Fatalf("member open=%d evaluated=%d matched=%d sample=%d, want 2/2/2/2",
+			res.OpenFindings, res.Evaluated, res.Matched, len(res.Sample))
+	}
+	seen := map[string]bool{}
+	for _, smp := range res.Sample {
+		seen[smp.FindingID] = true
+	}
+	for _, id := range inScope {
+		if !seen[id.String()] {
+			t.Fatalf("in-scope finding %s missing from the member's sample", id)
+		}
+	}
+	if seen[outOfScope.String()] || seen[foreign.String()] {
+		t.Fatal("member's sample lists a finding outside their data scope or tenant")
+	}
+
+	// A member with no access rows reads nothing.
+	nobody := shared.NewID()
+	if _, err := db.ExecContext(ctx, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'dry')`, nobody.String(), nobody.String()+"@dry.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, nobody.String())
+	})
+	res, err = classifier.DryRunRule(as(nobody, false), tenantID, draft, 0, 25)
+	if err != nil || res.OpenFindings != 0 || res.Evaluated != 0 || len(res.Sample) != 0 {
+		t.Fatalf("member without scope rows: err=%v res=%+v, want nothing", err, res)
+	}
+
+	// Admin: every open finding of this tenant (4 sca + 1 pentest), none of the other tenant's.
+	res, err = classifier.DryRunRule(as(admin, true), tenantID, draft, 0, 25)
+	if err != nil {
+		t.Fatalf("admin DryRunRule: %v", err)
+	}
+	if res.OpenFindings != 5 {
+		t.Fatalf("admin open=%d, want 5 (draft and other tenant excluded)", res.OpenFindings)
+	}
+	for _, smp := range res.Sample {
+		if smp.FindingID == foreign.String() {
+			t.Fatal("admin's sample contains another tenant's finding")
+		}
+	}
+
+	// An unwired enforcer is refused, not treated as unrestricted.
+	bare := finding.NewPriorityClassificationService(
+		NewFindingRepository(&DB{DB: db}), NewAssetRepository(&DB{DB: db}),
+		fakeEPSSRepo{}, fakeKEVRepo{}, fakeRuleRepo{}, fakeAuditRepo{}, logger.NewNop())
+	if _, err := bare.DryRunRule(ctx, tenantID, draft, 0, 25); err == nil {
+		t.Fatal("dry run without a data scope enforcer must fail closed")
 	}
 }

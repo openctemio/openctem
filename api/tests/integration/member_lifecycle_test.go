@@ -480,3 +480,155 @@ func TestMemberLifecycle_EraseAnonymisesAndKeepsReferences(t *testing.T) {
 		t.Error("erase left a federated identity: a later sign-in would find the anonymised account")
 	}
 }
+
+// A person who leaves stops watching in the offboarding transaction, others'
+// rows stay, and erasure removes any row that is left (RFC-120).
+func TestMemberLifecycle_OffboardAndEraseRemoveWatches(t *testing.T) {
+	f := newLifecycleFixture(t)
+	ctx := context.Background()
+	tid, uid, peer := f.tenantID.String(), f.memberID.String(), f.peerID.String()
+	watch := func(user string) {
+		t.Helper()
+		if _, err := f.db.ExecContext(ctx, `INSERT INTO work_item_subscriptions (tenant_id, finding_id, user_id, reason) VALUES ($1, $2, $3, 'manual')`,
+			tid, f.findingID.String(), user); err != nil {
+			t.Fatalf("watch: %v", err)
+		}
+	}
+	watch(uid)
+	watch(peer)
+	res, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenant.OffboardMemberInput{
+		SchedulesTo: peer, FindingsTo: peer, AssetsTo: peer,
+	}, f.ownerCtx())
+	if err != nil {
+		t.Fatalf("offboard: %v", err)
+	}
+	if res.RemovedWatches != 1 {
+		t.Errorf("removed watches = %d, want 1", res.RemovedWatches)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM work_item_subscriptions WHERE tenant_id = $1 AND user_id = $2`, tid, uid); n != 0 {
+		t.Errorf("the offboarded member still watches %d items", n)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM work_item_subscriptions WHERE tenant_id = $1 AND user_id = $2`, tid, peer); n != 1 {
+		t.Errorf("another member's watch changed: %d rows", n)
+	}
+	// A row that appeared after the offboarding goes with the erasure.
+	watch(uid)
+	if err := f.svc.EraseMemberPersonalData(ctx, f.mshipID.String(), f.ownerCtx()); err != nil {
+		t.Fatalf("erase: %v", err)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM work_item_subscriptions WHERE user_id = $1`, uid); n != 0 {
+		t.Errorf("erasure left %d watched items", n)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM work_item_subscriptions WHERE user_id = $1`, peer); n != 1 {
+		t.Errorf("erasure touched another member's watch")
+	}
+}
+
+// Offboarding hands the member's open remediation tasks and campaigns to the
+// plan's findings target, in the same transaction; finished ones, team-owned
+// tasks and another tenant's rows are left alone. With the findings put back
+// in the queue the work becomes unowned, never stays with the person who left.
+func TestMemberLifecycle_OffboardReassignsTasksAndCampaigns(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		unassign  bool
+		wantOwner func(f *lifecycleFixture) string
+	}{
+		{"findings target", false, func(f *lifecycleFixture) string { return f.peerID.String() }},
+		{"queue", true, func(*lifecycleFixture) string { return "" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newLifecycleFixture(t)
+			ctx := context.Background()
+			tid, uid, peer := f.tenantID.String(), f.memberID.String(), f.peerID.String()
+			stamp := time.Now().UnixNano()
+
+			task := func(title, state string, user, group any, tenantID string) string {
+				id := shared.NewID().String()
+				if _, err := f.db.ExecContext(ctx, `INSERT INTO remediation_actions (id, tenant_id, action_key, kind, title, origin)
+					VALUES ($1::uuid, $2, 'manual:'||$1::text, 'manual', $3, 'manual')`, id, tenantID, title); err != nil {
+					t.Fatalf("seed action: %v", err)
+				}
+				if _, err := f.db.ExecContext(ctx, `INSERT INTO remediation_tasks (id, tenant_id, action_id, title, state, assignee_user_id, assignee_group_id)
+					VALUES ($1::uuid, $2, $1::uuid, $3, $4, $5, $6)`, id, tenantID, title, state, user, group); err != nil {
+					t.Fatalf("seed task: %v", err)
+				}
+				return id
+			}
+			campaign := func(name, status string, assigned any) string {
+				id := shared.NewID().String()
+				if _, err := f.db.ExecContext(ctx, `INSERT INTO remediation_campaigns (id, tenant_id, name, status, assigned_to)
+					VALUES ($1, $2, $3, $4, $5)`, id, tid, name, status, assigned); err != nil {
+					t.Fatalf("seed campaign: %v", err)
+				}
+				return id
+			}
+			openTask := task(fmt.Sprintf("ob-open-%d", stamp), "in_progress", uid, nil, tid)
+			heldTask := task(fmt.Sprintf("ob-hold-%d", stamp), "on_hold", uid, nil, tid)
+			doneTask := task(fmt.Sprintf("ob-done-%d", stamp), "done", uid, nil, tid)
+			teamTask := task(fmt.Sprintf("ob-team-%d", stamp), "open", nil, f.groupID.String(), tid)
+			openCampaign := campaign(fmt.Sprintf("ob-camp-%d", stamp), "active", uid)
+			doneCampaign := campaign(fmt.Sprintf("ob-camp-done-%d", stamp), "completed", uid)
+			// Another tenant's task naming the same user is not this tenant's work.
+			foreignTask := task(fmt.Sprintf("ob-foreign-%d", stamp), "open", uid, nil, f.otherTID.String())
+
+			rep, err := f.svc.GetMemberAccessReport(ctx, f.mshipID.String(), f.ownerCtx())
+			if err != nil {
+				t.Fatalf("access report: %v", err)
+			}
+			if rep.OwnedTasks != 2 || rep.OwnedCampaigns != 1 {
+				t.Fatalf("report owned tasks/campaigns = %d/%d, want 2/1", rep.OwnedTasks, rep.OwnedCampaigns)
+			}
+
+			in := tenant.OffboardMemberInput{SchedulesTo: peer, AssetsTo: peer}
+			if tc.unassign {
+				in.UnassignFindings = true
+			} else {
+				in.FindingsTo = peer
+			}
+			res, err := f.svc.OffboardMember(ctx, f.mshipID.String(), in, f.ownerCtx())
+			if err != nil {
+				t.Fatalf("offboard: %v", err)
+			}
+			if res.ReassignedTasks != 2 || res.ReassignedCampaigns != 1 {
+				t.Errorf("reassigned tasks/campaigns = %d/%d, want 2/1", res.ReassignedTasks, res.ReassignedCampaigns)
+			}
+			want := tc.wantOwner(f)
+			owner := func(table, col, id, tenantID string) string {
+				return f.str(t, fmt.Sprintf(`SELECT %s::text FROM %s WHERE id = $1 AND tenant_id = $2`, col, table), id, tenantID)
+			}
+			for _, id := range []string{openTask, heldTask} {
+				if got := owner("remediation_tasks", "assignee_user_id", id, tid); got != want {
+					t.Errorf("open task owner = %q, want %q", got, want)
+				}
+			}
+			if got := owner("remediation_campaigns", "assigned_to", openCampaign, tid); got != want {
+				t.Errorf("open campaign owner = %q, want %q", got, want)
+			}
+			// Left alone: finished work, a team's task, another tenant's row.
+			if got := owner("remediation_tasks", "assignee_user_id", doneTask, tid); got != uid {
+				t.Errorf("finished task owner = %q, want it untouched", got)
+			}
+			if got := owner("remediation_campaigns", "assigned_to", doneCampaign, tid); got != uid {
+				t.Errorf("completed campaign owner = %q, want it untouched", got)
+			}
+			if got := owner("remediation_tasks", "assignee_group_id", teamTask, tid); got != f.groupID.String() {
+				t.Errorf("team task changed owner team: %q", got)
+			}
+			if got := owner("remediation_tasks", "assignee_user_id", foreignTask, f.otherTID.String()); got != uid {
+				t.Errorf("another tenant's task was reassigned: %q", got)
+			}
+			// A reassigned task carries a timeline entry and a new version.
+			if n := f.count(t, `SELECT COUNT(*) FROM remediation_task_events WHERE tenant_id = $1 AND task_id = $2
+				AND kind = 'updated' AND data->>'reason' = 'member_offboarded' AND actor_id = $3`, tid, openTask, f.ownerID.String()); n != 1 {
+				t.Errorf("timeline entries for the reassigned task = %d, want 1", n)
+			}
+			if n := f.count(t, `SELECT COUNT(*) FROM remediation_task_events WHERE tenant_id = $1 AND task_id = $2`, tid, doneTask); n != 0 {
+				t.Errorf("an untouched task got %d timeline entries", n)
+			}
+			if v := f.count(t, `SELECT version FROM remediation_tasks WHERE id = $1`, openTask); v != 2 {
+				t.Errorf("reassigned task version = %d, want 2", v)
+			}
+		})
+	}
+}

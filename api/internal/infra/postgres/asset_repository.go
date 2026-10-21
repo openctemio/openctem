@@ -2000,6 +2000,9 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 			_ = tx.Rollback()
 		}
 	}()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return 0, 0, nil, err
+	}
 
 	if renameErr := r.renameExistingTx(ctx, tx, assets); renameErr != nil {
 		return 0, 0, nil, renameErr
@@ -2098,6 +2101,9 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 			_ = tx.Rollback()
 		}
 	}()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return 0, 0, nil, err
+	}
 
 	if renameErr := r.renameExistingTx(ctx, tx, assets); renameErr != nil {
 		return 0, 0, nil, renameErr
@@ -2256,38 +2262,6 @@ func (r *AssetRepository) countedTags(ctx context.Context, tenantID shared.ID, a
 		tags = append(tags, tag)
 	}
 	return tags, rows.Err()
-}
-
-// UpdateFindingCounts updates finding counts for multiple assets in batch.
-// This recalculates the finding_count from the findings table.
-func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {
-	if len(assetIDs) == 0 {
-		return nil
-	}
-
-	// Convert IDs to strings for the query
-	idStrings := make([]string, len(assetIDs))
-	for i, id := range assetIDs {
-		idStrings[i] = id.String()
-	}
-
-	// Update finding_count using a subquery
-	// Note: finding_count is a computed field in our SELECT, but we might want to
-	// cache it for performance. This query updates a physical column if it exists.
-	// If finding_count is always computed via subquery (current implementation),
-	// this is a no-op but we keep it for future optimization.
-	query := `
-		UPDATE assets a
-		SET updated_at = NOW()
-		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2)
-	`
-
-	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(idStrings))
-	if err != nil {
-		return fmt.Errorf("failed to update finding counts: %w", err)
-	}
-
-	return nil
 }
 
 // BatchUpdateRiskScores stores the risk_score of several assets of one tenant
@@ -2943,7 +2917,7 @@ func (r *AssetRepository) SetCrownJewel(ctx context.Context, tenantID, assetID s
 // Used by attack path scoring to build the full in-memory directed graph.
 // Only the columns needed for scoring are fetched.
 func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) ([]asset.AssetNode, error) {
-	const query = `
+	query := `
 		SELECT
 			a.id,
 			a.name,
@@ -2959,11 +2933,13 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 		-- over the tenant's findings (hash aggregate) joined by asset id. The
 		-- per-asset LATERAL count it replaces ran one index probe per asset:
 		-- 2-10 s for a 110k-asset / 525k-finding tenant against 0.75-1.2 s.
-		-- Counts all findings of the asset, matching prior behavior.
+		-- Counts the OPEN findings of the asset (the OpenStatuses set): closed
+		-- and dispositioned findings must not raise an asset's attack-path score.
 		LEFT JOIN (
 			SELECT f.asset_id, COUNT(*) AS finding_count
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.asset_id IS NOT NULL AND NOT f.branch_only
+				AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			GROUP BY f.asset_id
 		) fc ON fc.asset_id = a.id
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
