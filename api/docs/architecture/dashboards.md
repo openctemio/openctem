@@ -39,7 +39,12 @@ scope; stored snapshots are only the history behind a trend line.
   over 90 days (`overall_hours`), on the Classic card and the Executive page.
 - A failed read shows an error with Retry on the card it feeds; a figure with
   no denominator (no scannable asset, nothing to validate, no approval
-  decided, nothing fixed) shows "—" with the reason, never 0.
+  decided, nothing fixed) shows "—" with the reason, never 0, and its CTEM
+  loop stage is neutral grey, never green or amber.
+- A card that throws while rendering shows its own error with Retry (a
+  per-card error boundary); the rest of the dashboard renders.
+- A viewer with no open finding in scope sees "No open findings" and a link to
+  scans instead of a big "0 P0".
 
 ## Ownership: organization and personal dashboards
 
@@ -422,8 +427,12 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   list total equals the figure. The targets live in one table,
   `web/src/features/dashboard/lib/drill.ts`: open P0 / P1
   (`/findings?state=open&priority_class=…`), SLA breached
-  (`/findings?state=open&sla_status=overdue,exceeded`), validation coverage
-  (`/validation`). The CTEM loop, the hero P0 number, the Executive P0, P1 and
+  (`/findings?state=open&sla_status=overdue,exceeded`), open findings in KEV
+  (`/findings?state=open&is_in_kev=true`), open findings related to the
+  viewer (`/findings?state=open&related_to=me`, the predicate the "Mine"
+  widgets count with), validation coverage (`/validation`). A figure whose
+  exact list the findings page cannot open yet (EPSS of at least 0.5) is not a
+  link rather than a link to a wider list. The CTEM loop, the hero P0 number, the Executive P0, P1 and
   SLA tiles, Executive top-risk rows (the finding) and the custom dashboard
   widgets use them.
 - A 403 on organization-only figures (`/dashboard/program-metrics`,

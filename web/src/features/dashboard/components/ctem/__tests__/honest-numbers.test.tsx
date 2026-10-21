@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import { ExposureHero } from '../exposure-hero'
 import { CtemLoop } from '../ctem-loop'
 import { CoverageHygiene } from '../coverage-hygiene'
+import { ThreatIntelCard } from '../threat-intel-card'
 import type { ExecutiveSummary, ThreatIntelStats } from '../../../hooks/use-ctem-dashboard'
 
 vi.mock('@/components/charts', () => {
@@ -57,7 +58,7 @@ const intel = {
 
 describe('not-measured figures render as a dash', () => {
   it('the exposure hero shows a dash for the SLA share, not 0% or 100%', () => {
-    render(<ExposureHero summary={notMeasured} kevChainCount={0} />)
+    render(<ExposureHero summary={{ ...notMeasured, findings_total: 4 }} kevChainCount={0} />)
     const label = screen.getByText(/Within SLA/i)
     expect(within(label).getByText('—')).toBeInTheDocument()
     expect(screen.queryByText('0%')).not.toBeInTheDocument()
@@ -66,17 +67,23 @@ describe('not-measured figures render as a dash', () => {
 
   it('the exposure hero still shows a measured share', () => {
     render(
-      <ExposureHero summary={{ ...notMeasured, sla_compliance_pct: 82.4 }} kevChainCount={0} />
+      <ExposureHero
+        summary={{ ...notMeasured, findings_total: 4, sla_compliance_pct: 82.4 }}
+        kevChainCount={0}
+      />
     )
     expect(screen.getByText('82%')).toBeInTheDocument()
   })
 
   it('the CTEM loop shows a dash and no "on track" flag when no SLA is measurable', () => {
     render(<CtemLoop summary={notMeasured} threatIntel={intel} />)
-    expect(screen.getByText(/open within SLA · 0 breached/i)).toBeInTheDocument()
+    expect(screen.getByText('No open finding has an SLA')).toBeInTheDocument()
     expect(screen.queryByText(/on track/i)).not.toBeInTheDocument()
     const stage = screen.getByText('Mobilize').closest('a') as HTMLElement
     expect(within(stage).getByText('—')).toBeInTheDocument()
+    // Not measured is neutral grey, never the green "good" stripe.
+    expect(stage.querySelector('.bg-muted-foreground\\/30')).not.toBeNull()
+    expect(stage.querySelector('.bg-emerald-500')).toBeNull()
   })
 
   it('the CTEM loop shows the tenant open KEV findings, not the catalog size', () => {
@@ -103,5 +110,40 @@ describe('not-measured figures render as a dash', () => {
     expect(screen.getByText('Connector dispatch freshness')).toBeInTheDocument()
     const sla = screen.getByText('Open within SLA').parentElement as HTMLElement
     expect(within(sla).getByText('—')).toBeInTheDocument()
+  })
+})
+
+describe('a brand-new tenant and the threat intel card (research/203 H3, H10)', () => {
+  it('no open finding at all: says so with a next step, never a confident big 0 P0', () => {
+    render(<ExposureHero summary={notMeasured} kevChainCount={0} />)
+    expect(screen.getByText('No open findings')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to scans' })).toHaveAttribute('href', '/scans')
+    expect(screen.queryByText('P0')).not.toBeInTheDocument()
+  })
+
+  it('threat intel shows tenant figures only, never catalog-wide counts', () => {
+    render(
+      <ThreatIntelCard
+        stats={{
+          ...intel,
+          kev: { ...intel.kev, tenant_ransomware_open_count: 2, tenant_new_kev_matches_30d: 1 },
+        }}
+      />
+    )
+    expect(screen.getByText('12')).toBeInTheDocument() // open in KEV
+    expect(screen.getByText('3')).toBeInTheDocument() // past due
+    expect(screen.getByText('2')).toBeInTheDocument() // ransomware, tenant
+    expect(screen.queryByText('339')).not.toBeInTheDocument() // catalog ransomware
+    expect(screen.queryByText('25')).not.toBeInTheDocument() // catalog new in 30 d
+    expect(screen.queryByText('1,662')).not.toBeInTheDocument()
+    expect(screen.getByText('12').closest('a')).toHaveAttribute(
+      'href',
+      '/findings?state=open&is_in_kev=true'
+    )
+  })
+
+  it('threat intel from an older API without the tenant ransomware figure shows a dash', () => {
+    render(<ThreatIntelCard stats={intel} />)
+    expect(screen.getByText('—')).toBeInTheDocument()
   })
 })
