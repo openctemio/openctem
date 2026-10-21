@@ -1195,6 +1195,7 @@
   "findings.people.search": "Search people...",
   "findings.people.noCandidates": "Nobody to add.",
   "findings.people.onlyReaders": "Only people who can see this are listed.",
+  "findings.people.taskCandidatesHint": "Anyone in the workspace can be listed; people who cannot open this task cannot be added.",
   "findings.people.remove": "Remove {name}",
   "findings.people.noWatchers": "Nobody is watching yet.",
   "findings.people.namesHidden": "Names are shown to people who can see the member list.",

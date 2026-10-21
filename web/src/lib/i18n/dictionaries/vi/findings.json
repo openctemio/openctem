@@ -1195,6 +1195,7 @@
   "findings.people.search": "Tìm người...",
   "findings.people.noCandidates": "Không có ai để thêm.",
   "findings.people.onlyReaders": "Chỉ liệt kê những người xem được mục này.",
+  "findings.people.taskCandidatesHint": "Danh sách gồm mọi thành viên; người không mở được công việc này sẽ không thể được thêm.",
   "findings.people.remove": "Xóa {name}",
   "findings.people.noWatchers": "Chưa có ai theo dõi.",
   "findings.people.namesHidden": "Tên chỉ hiển thị cho người xem được danh sách thành viên.",

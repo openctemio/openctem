@@ -174,7 +174,15 @@ export function WatchersBlock({
                       ))}
                     </CommandGroup>
                     <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                      {t('findings.people.onlyReaders', 'Only people who can see this are listed.')}
+                      {kind === 'finding'
+                        ? t(
+                            'findings.people.onlyReaders',
+                            'Only people who can see this are listed.'
+                          )
+                        : t(
+                            'findings.people.taskCandidatesHint',
+                            'Anyone in the workspace can be listed; people who cannot open this task cannot be added.'
+                          )}
                     </p>
                   </CommandList>
                 </Command>
