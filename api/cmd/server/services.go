@@ -1896,7 +1896,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Published profiles drive issue creation and status moves for their
 		// destinations; without one the built-in behavior is unchanged.
 		s.JiraSync.SetProfileSource(s.TicketMapping)
+		// Saving an issue type whose required fields need a mapping asks
+		// whether that destination has a published profile.
+		jiraResolver.SetProfileCoverage(s.TicketMapping.HasPublishedProfile)
 	}
+	// Create refusals naming fields are shown per kind on the ticketing page.
+	s.JiraSync.SetIssueTypeHealth(infrajira.IssueTypeHealthStore{Repo: repos.Integration})
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
@@ -1930,6 +1935,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Without it a Jira integration never leaves "pending", and jiraResolver
 	// only uses connected integrations — ticket creation would stay inert.
 	s.Integration.SetTicketingConnectionTester(jiraResolver)
+	// Issue types chosen for a ticketing integration are checked against
+	// Jira before they are saved.
+	s.Integration.SetTicketingIssueTypeChecker(jiraResolver)
 
 	s.Outbox = outbox.NewService(
 		repos.Outbox,
