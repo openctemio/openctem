@@ -94,6 +94,9 @@ func (r *DashboardFactsRepository) PendingRunsForPlatform(ctx context.Context, n
 			       COALESCE(s.reconciled_at, s.rebuilt_at) AS last_run
 			FROM tenants t
 			LEFT JOIN dash_fact_status s ON s.tenant_id = t.id
+			-- The all-zero row is the platform's system tenant: it owns no
+			-- facts and fails the tenant check, so it never gets a run.
+			WHERE t.id <> '00000000-0000-0000-0000-000000000000'
 		) p
 		WHERE kind IS NOT NULL
 		ORDER BY in_progress DESC,
