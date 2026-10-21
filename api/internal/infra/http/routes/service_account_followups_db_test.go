@@ -61,6 +61,15 @@ func TestServiceAccountRole_FullDataRefusedWhileAServiceAccountHoldsIt(t *testin
 			t.Errorf("%s holder: the role got full data access", name)
 		}
 	}
+	// An inactive team still counts: re-activating it would hand the service
+	// account the full-data role.
+	h.exec(`UPDATE groups SET is_active = false WHERE id = $1`, h.team.String())
+	if err := update(viaTeam); !errors.Is(err, accesscontrol.ErrServiceAccountRoleCeiling) {
+		t.Errorf("inactive team holder: UpdateRole = %v, want the service-account ceiling", err)
+	}
+	if _, err := h.db.Exec(`UPDATE roles SET has_full_data_access = true WHERE id = $1`, viaTeam.String()); err == nil {
+		t.Error("inactive team holder: the schema let the role get full data access")
+	}
 	// Control: a role no service account holds may become full-data.
 	if err := update(free); err != nil {
 		t.Fatalf("a role without service-account holders: %v", err)
