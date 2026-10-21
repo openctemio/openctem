@@ -68,13 +68,10 @@ type KEVRepository interface {
 	// GetRansomwareRelated retrieves KEV entries with known ransomware use.
 	GetRansomwareRelated(ctx context.Context, limit int) ([]*KEVEntry, error)
 
-	// CountTenantOpenPastDue counts the tenant's OPEN findings referencing a KEV
-	// CVE whose KEV due_date has passed (tenant-scoped, no LIMIT).
-	CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
-
-	// CountTenantOpenInKEV counts the tenant's OPEN findings referencing any
-	// CISA-KEV CVE, past due or not (tenant-scoped, no LIMIT).
-	CountTenantOpenInKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
+	// CountTenantOpenKEV counts the tenant's OPEN findings that reference a
+	// CISA-KEV CVE (tenant-scoped, data-scoped, no LIMIT), with the past-due,
+	// ransomware and recently-added splits, in one read.
+	CountTenantOpenKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (TenantKEVCounts, error)
 
 	// CountRecentlyAdded returns the true count of KEV entries added in the last
 	// N days (global, de-saturated COUNT).
@@ -136,4 +133,18 @@ type ThreatIntelRepository interface {
 	// The feeds are the only writers of those columns; tenant ingest never
 	// sets them. Returns the number of catalog rows changed.
 	PropagateToVulnerabilityCatalog(ctx context.Context) (int64, error)
+}
+
+// TenantKEVCounts is one tenant's exposure to the KEV catalog: its open
+// findings (published, in the reader's data scope) whose CVE is in the
+// catalog, and three splits of that same population.
+type TenantKEVCounts struct {
+	// Open is every open finding whose CVE is in the KEV catalog.
+	Open int64
+	// PastDue is the part whose KEV remediation due date has passed.
+	PastDue int64
+	// Ransomware is the part whose KEV entry records known ransomware use.
+	Ransomware int64
+	// NewLast30Days is the part whose CVE entered the catalog in the last 30 days.
+	NewLast30Days int64
 }
