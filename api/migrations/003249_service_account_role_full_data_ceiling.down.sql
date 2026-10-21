@@ -1,0 +1,2 @@
+DROP TRIGGER IF EXISTS trigger_refuse_full_data_role_with_service_account_holder ON roles;
+DROP FUNCTION IF EXISTS refuse_full_data_role_with_service_account_holder();
