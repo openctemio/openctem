@@ -603,7 +603,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "integrations:read",
-		Jobs:       []string{"SCMSyncController", "DefectDojoSyncController", "TenableSCSyncController"},
+		Jobs:       []string{"SCMSyncController", "DefectDojoSyncController", "TenableSCSyncController", "TicketHoldReleaseController"},
 	},
 	{
 		ID: ModuleIntegrationsSCM, Slug: "scm", Name: "SCM Integrations",

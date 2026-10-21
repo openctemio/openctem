@@ -47,12 +47,14 @@ import {
   PlugZap,
   Trash2,
   Webhook,
+  Filter,
 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { RoutingRulesDialog } from '@/features/integrations/components/routing-rules-dialog'
 import { JiraWebhookDialog } from '@/features/integrations/components/jira-webhook-dialog'
+import { TicketCreatePolicyDialog } from '@/features/integrations/components/ticket-create-policy-dialog'
 import { mergeShownMapping } from '@/features/integrations/lib/ticketing-mapping'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -591,6 +593,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   const [configOpen, setConfigOpen] = useState(false)
   const [routingOpen, setRoutingOpen] = useState(false)
   const [webhookOpen, setWebhookOpen] = useState(false)
+  const [policyOpen, setPolicyOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   const { trigger: syncNow, isMutating: isSyncing } = useSyncIntegrationApi(integration.id)
@@ -748,6 +751,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             disabled: !jiraReady,
             route: 'PUT /api/v1/integrations/{id}' as const,
           },
+          {
+            label: t('ticketPolicy.action', 'When to create issues'),
+            icon: Filter,
+            onClick: () => setPolicyOpen(true),
+            disabled: !jiraReady,
+            route: 'PUT /api/v1/integrations/{id}/ticket-create-policy' as const,
+          },
           ...(integration.provider === 'jira'
             ? [
                 {
@@ -779,6 +789,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
           integration={integration}
           open={webhookOpen}
           onOpenChange={setWebhookOpen}
+        />
+      )}
+      {integration.provider === 'jira' && policyOpen && (
+        <TicketCreatePolicyDialog
+          integration={integration}
+          open={policyOpen}
+          onOpenChange={setPolicyOpen}
         />
       )}
       {integration.provider === 'jira' && routingOpen && (

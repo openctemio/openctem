@@ -407,6 +407,16 @@ func registerIntegrationRoutes(
 			r.GET("/{id}/jira/issue-types", ticketMapping.IssueTypes, middleware.Require(permission.IntegrationsRead))
 			r.GET("/{id}/jira/metadata", ticketMapping.Metadata, middleware.Require(permission.IntegrationsRead))
 		}
+		// Ticket create policy of a Jira integration: which findings the
+		// automatic path files as issues. Every route is integrations:manage
+		// (the counts are organization-wide); the integration is resolved
+		// within the caller's tenant.
+		if ticketMapping.HasCreatePolicy() {
+			manage := middleware.Require(permission.IntegrationsManage)
+			r.GET("/{id}/ticket-create-policy", ticketMapping.GetCreatePolicy, manage)
+			r.PUT("/{id}/ticket-create-policy", ticketMapping.PutCreatePolicy, manage)
+			r.POST("/{id}/ticket-create-policy/preview", ticketMapping.PreviewCreatePolicy, manage)
+		}
 	}, tenantMiddlewares...)
 }
 
