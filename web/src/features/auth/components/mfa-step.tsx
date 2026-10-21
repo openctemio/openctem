@@ -145,6 +145,11 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       <VerificationCodeInput
         key={useRecovery ? 'recovery' : 'totp'}
         id="mfa-code"
+        label={
+          useRecovery
+            ? t('auth.mfa.recoveryCodeLabel', 'Recovery code')
+            : t('auth.mfa.codeLabel', 'Authentication code')
+        }
         mode={useRecovery ? 'alphanumeric' : 'numeric'}
         length={useRecovery ? ACCOUNT_RECOVERY_CODE.length : TOTP_CODE_LENGTH}
         groups={useRecovery ? [...ACCOUNT_RECOVERY_CODE.groups] : undefined}
@@ -323,6 +328,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
 
       <VerificationCodeInput
         id="enroll-code"
+        label={t('auth.mfa.codeLabel', 'Authentication code')}
         value={code}
         onChange={setCode}
         onComplete={sendCode}

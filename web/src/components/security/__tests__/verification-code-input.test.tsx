@@ -15,6 +15,7 @@ function Harness(props: Partial<VerificationCodeInputProps> & { onCode?: (code: 
   return (
     <VerificationCodeInput
       {...props}
+      label={props.label ?? 'Code from your authenticator app'}
       value={value}
       onChange={(c) => {
         setValue(c)
@@ -146,10 +147,19 @@ describe('VerificationCodeInput', () => {
   })
 
   it('shows an error in a live region, marks the field invalid and focuses it', () => {
-    const { rerender } = render(<VerificationCodeInput value="" onChange={() => {}} error={null} />)
+    const { rerender } = render(
+      <VerificationCodeInput label="Code" value="" onChange={() => {}} error={null} />
+    )
     const input = screen.getByRole('textbox')
     expect(input).not.toHaveAttribute('aria-invalid')
-    rerender(<VerificationCodeInput value="" onChange={() => {}} error="That code is not valid." />)
+    rerender(
+      <VerificationCodeInput
+        label="Code"
+        value=""
+        onChange={() => {}}
+        error="That code is not valid."
+      />
+    )
     expect(screen.getByRole('alert')).toHaveTextContent('That code is not valid.')
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(input).toHaveAccessibleDescription(/That code is not valid\./)
@@ -159,7 +169,15 @@ describe('VerificationCodeInput', () => {
   it('recovery codes: free text, grouped as printed, no one-time-code autofill', async () => {
     const user = userEvent.setup()
     const onComplete = vi.fn()
-    render(<Harness mode="alphanumeric" length={10} groups={[5, 5]} onComplete={onComplete} />)
+    render(
+      <Harness
+        label="Recovery code"
+        mode="alphanumeric"
+        length={10}
+        groups={[5, 5]}
+        onComplete={onComplete}
+      />
+    )
     const input = screen.getByRole('textbox', { name: 'Recovery code' })
     expect(input).toHaveAttribute('autocomplete', 'off')
     expect(input).toHaveAttribute('inputmode', 'text')
@@ -167,5 +185,17 @@ describe('VerificationCodeInput', () => {
     expect(input).toHaveValue('abcde-fgh')
     await user.type(input, 'jk')
     expect(onComplete).toHaveBeenCalledWith('abcdefghjk')
+  })
+})
+
+describe('VerificationCodeInput accessible name', () => {
+  it.each(['numeric', 'alphanumeric'] as const)('names the %s input from its label', (mode) => {
+    render(<Harness label="Authentication code" mode={mode} />)
+    expect(screen.getByRole('textbox', { name: 'Authentication code' })).toBeInTheDocument()
+  })
+
+  it('keeps the name when the label is visually hidden', () => {
+    render(<Harness label="Authentication code" hideLabel />)
+    expect(screen.getByLabelText('Authentication code')).toBeInTheDocument()
   })
 })

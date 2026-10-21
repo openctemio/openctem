@@ -324,7 +324,15 @@ export function StepUpDialog({
                 {mode !== 'key' && !(factor === 'password' && mode === 'code') && (
                   <VerificationCodeInput
                     key={mode}
-                    label={mode === 'recovery' ? undefined : codeLabel}
+                    label={
+                      mode === 'recovery'
+                        ? t('components.verificationCode.recoveryLabel', 'Recovery code')
+                        : (codeLabel ??
+                          t(
+                            'components.verificationCode.label',
+                            'Code from your authenticator app'
+                          ))
+                    }
                     mode={mode === 'recovery' ? 'alphanumeric' : 'numeric'}
                     length={mode === 'recovery' && recovery ? recovery.length : TOTP_CODE_LENGTH}
                     groups={mode === 'recovery' ? recovery?.groups : undefined}

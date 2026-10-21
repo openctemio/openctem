@@ -28,6 +28,34 @@
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
 
+  /* Dashboard chart palette (validated: scripts/check-palette.mjs, source src/lib/chart-palette.json). */
+  --viz-sev-critical: #a3123a;
+  --viz-sev-high: #e8590c;
+  --viz-sev-medium: #e0a106;
+  --viz-sev-low: #3b82f6;
+  --viz-sev-info: #6b7280;
+  --viz-cat-1: #2a78d6;
+  --viz-cat-2: #eb6834;
+  --viz-cat-3: #1baf7a;
+  --viz-cat-4: #eda100;
+  --viz-cat-5: #e87ba4;
+  --viz-cat-6: #008300;
+  --viz-cat-7: #4a3aa7;
+  --viz-cat-8: #e34948;
+  --viz-cat-other: #9ca3af;
+  --viz-div-opened: #eb6834;
+  --viz-div-fixed: #2a78d6;
+  --viz-seq-1: #86b6ef;
+  --viz-seq-2: #5598e7;
+  --viz-seq-3: #256abf;
+  --viz-seq-4: #184f95;
+  --viz-seq-5: #0d366b;
+  --viz-seq-ink-1: #0b0b0b;
+  --viz-seq-ink-2: #0b0b0b;
+  --viz-seq-ink-3: #ffffff;
+  --viz-seq-ink-4: #ffffff;
+  --viz-seq-ink-5: #ffffff;
+
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
@@ -66,6 +94,34 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
+
+  /* Dashboard chart palette (validated: scripts/check-palette.mjs, source src/lib/chart-palette.json). */
+  --viz-sev-critical: #d9365e;
+  --viz-sev-high: #f07a2c;
+  --viz-sev-medium: #e8c14a;
+  --viz-sev-low: #4f8ff0;
+  --viz-sev-info: #94a3b8;
+  --viz-cat-1: #3987e5;
+  --viz-cat-2: #d95926;
+  --viz-cat-3: #199e70;
+  --viz-cat-4: #c98500;
+  --viz-cat-5: #d55181;
+  --viz-cat-6: #008300;
+  --viz-cat-7: #9085e9;
+  --viz-cat-8: #e66767;
+  --viz-cat-other: #64748b;
+  --viz-div-opened: #d95926;
+  --viz-div-fixed: #3987e5;
+  --viz-seq-1: #0d366b;
+  --viz-seq-2: #184f95;
+  --viz-seq-3: #256abf;
+  --viz-seq-4: #5598e7;
+  --viz-seq-5: #86b6ef;
+  --viz-seq-ink-1: #ffffff;
+  --viz-seq-ink-2: #ffffff;
+  --viz-seq-ink-3: #ffffff;
+  --viz-seq-ink-4: #0b0b0b;
+  --viz-seq-ink-5: #0b0b0b;
 }
 
 @theme inline {
@@ -121,6 +177,27 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-viz-sev-critical: var(--viz-sev-critical);
+  --color-viz-sev-high: var(--viz-sev-high);
+  --color-viz-sev-medium: var(--viz-sev-medium);
+  --color-viz-sev-low: var(--viz-sev-low);
+  --color-viz-sev-info: var(--viz-sev-info);
+  --color-viz-cat-1: var(--viz-cat-1);
+  --color-viz-cat-2: var(--viz-cat-2);
+  --color-viz-cat-3: var(--viz-cat-3);
+  --color-viz-cat-4: var(--viz-cat-4);
+  --color-viz-cat-5: var(--viz-cat-5);
+  --color-viz-cat-6: var(--viz-cat-6);
+  --color-viz-cat-7: var(--viz-cat-7);
+  --color-viz-cat-8: var(--viz-cat-8);
+  --color-viz-cat-other: var(--viz-cat-other);
+  --color-viz-div-opened: var(--viz-div-opened);
+  --color-viz-div-fixed: var(--viz-div-fixed);
+  --color-viz-seq-1: var(--viz-seq-1);
+  --color-viz-seq-2: var(--viz-seq-2);
+  --color-viz-seq-3: var(--viz-seq-3);
+  --color-viz-seq-4: var(--viz-seq-4);
+  --color-viz-seq-5: var(--viz-seq-5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
