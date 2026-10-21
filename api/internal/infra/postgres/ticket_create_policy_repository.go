@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -20,12 +21,13 @@ import (
 // tenant-scoped except DueHolds and PurgeDaily, the background job's
 // system-wide reads; each row they return carries its tenant.
 type TicketCreatePolicyRepository struct {
-	db *DB
+	db    *DB
+	slots *lockSlots
 }
 
 // NewTicketCreatePolicyRepository creates the repository.
 func NewTicketCreatePolicyRepository(db *DB) *TicketCreatePolicyRepository {
-	return &TicketCreatePolicyRepository{db: db}
+	return &TicketCreatePolicyRepository{db: db, slots: newLockSlots(findingLockSlots, findingLockSlotsPerTenant)}
 }
 
 var _ ticketpolicy.Repository = (*TicketCreatePolicyRepository)(nil)
@@ -317,21 +319,36 @@ const findingLockWait = 2 * time.Minute
 
 // LockFinding takes a session-level advisory lock keyed on tenant, integration
 // and finding, on a connection of its own (see ticketpolicy.Repository).
+//
+// The lock pins a pool connection for the length of a tracker call, and the
+// create needs more connections while it holds it. Unbounded, a burst of
+// workflow creates (up to 50 runs) would take every connection of the pool
+// (25) and each would then wait for another: the API stalls. Creates
+// therefore first take a slot (process-wide, and per tenant so one tenant's
+// slow tracker cannot hold every slot); waiting for a slot holds no
+// connection.
 func (r *TicketCreatePolicyRepository) LockFinding(ctx context.Context, tenantID, integrationID, findingID shared.ID) (func(), error) {
 	key := tenantID.String() + "|" + integrationID.String() + "|" + findingID.String()
-	conn, err := r.db.Conn(ctx)
+	wctx, cancel := context.WithTimeout(ctx, findingLockWait)
+	defer cancel()
+	release, err := r.slots.acquire(wctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("lock finding for ticket create: %w", err)
 	}
-	wctx, cancel := context.WithTimeout(ctx, findingLockWait)
-	defer cancel()
+	conn, err := r.db.Conn(wctx)
+	if err != nil {
+		release()
+		return nil, fmt.Errorf("lock finding for ticket create: %w", err)
+	}
 	if _, err := conn.ExecContext(wctx, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, key); err != nil {
 		// A canceled wait may leave the lock request behind: drop the connection.
 		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		_ = conn.Close()
+		release()
 		return nil, fmt.Errorf("lock finding for ticket create: %w", err)
 	}
 	return func() {
+		defer release()
 		uctx, ucancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer ucancel()
 		if _, err := conn.ExecContext(uctx, `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, key); err != nil {
@@ -339,5 +356,70 @@ func (r *TicketCreatePolicyRepository) LockFinding(ctx context.Context, tenantID
 			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		}
 		_ = conn.Close()
+	}, nil
+}
+
+// findingLockSlots bounds the connections pinned by finding locks in one
+// process (the pool default is 25); findingLockSlotsPerTenant keeps one tenant
+// from holding all of them.
+const (
+	findingLockSlots          = 8
+	findingLockSlotsPerTenant = 2
+)
+
+// lockSlots is a process-wide and per-tenant counting semaphore.
+type lockSlots struct {
+	global    chan struct{}
+	perTenant int
+	mu        sync.Mutex
+	tenants   map[shared.ID]*tenantSlots
+}
+
+type tenantSlots struct {
+	ch   chan struct{}
+	refs int
+}
+
+func newLockSlots(global, perTenant int) *lockSlots {
+	return &lockSlots{global: make(chan struct{}, global), perTenant: perTenant, tenants: map[shared.ID]*tenantSlots{}}
+}
+
+// acquire takes a tenant slot, then a global one, waiting until ctx ends.
+func (l *lockSlots) acquire(ctx context.Context, tenantID shared.ID) (func(), error) {
+	l.mu.Lock()
+	ts, ok := l.tenants[tenantID]
+	if !ok {
+		ts = &tenantSlots{ch: make(chan struct{}, l.perTenant)}
+		l.tenants[tenantID] = ts
+	}
+	ts.refs++
+	l.mu.Unlock()
+	drop := func() {
+		l.mu.Lock()
+		if ts.refs--; ts.refs == 0 {
+			delete(l.tenants, tenantID)
+		}
+		l.mu.Unlock()
+	}
+	select {
+	case ts.ch <- struct{}{}:
+	case <-ctx.Done():
+		drop()
+		return nil, ctx.Err()
+	}
+	select {
+	case l.global <- struct{}{}:
+	case <-ctx.Done():
+		<-ts.ch
+		drop()
+		return nil, ctx.Err()
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			<-l.global
+			<-ts.ch
+			drop()
+		})
 	}, nil
 }
