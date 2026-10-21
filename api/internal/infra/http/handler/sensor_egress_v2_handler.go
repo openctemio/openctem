@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -25,6 +26,10 @@ func (h *SensorControlV2Handler) SetEgress(svc *proxypoolapp.Service) { h.egress
 
 // HasEgress reports whether the proxy pool routes are served.
 func (h *SensorControlV2Handler) HasEgress() bool { return h.egress != nil && h.commands != nil }
+
+// egressReportGrace is how long after a job ends its sensor may still send
+// the job's egress report.
+const egressReportGrace = 15 * time.Minute
 
 // leasedCommand is the command the authenticated organization sensor holds
 // under the lease epoch it states, or nil after writing the problem. A
@@ -55,7 +60,10 @@ func (h *SensorControlV2Handler) leasedCommand(w http.ResponseWriter, r *http.Re
 	epoch := leaseEpochHeader(r)
 	held := cmd.SensorID != nil && *cmd.SensorID == s.ID && epoch != nil && *epoch == cmd.LeaseEpoch
 	live := cmd.Status == commanddom.CommandStatusAcknowledged || cmd.Status == commanddom.CommandStatusRunning
-	if !held || (requireLive && !live) {
+	// A report may follow the end of the job, but only shortly: an old
+	// lease never keeps moving a pool's health.
+	recent := live || (cmd.CompletedAt != nil && time.Since(*cmd.CompletedAt) <= egressReportGrace)
+	if !held || (requireLive && !live) || !recent {
 		protov2.NewProblem(protov2.ProblemCommandNotFound).Write(w)
 		return nil, nil
 	}

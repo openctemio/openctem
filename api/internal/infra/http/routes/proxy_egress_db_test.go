@@ -242,6 +242,32 @@ func TestProxyEgress_SensorPoolAppliesToAllAndReportQuarantines(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("cross-tenant report = %d", resp.StatusCode)
 	}
+	// The sensor cannot move the health of a pool of its own organization
+	// that its jobs do not use (the default pool here).
+	def, err := h.egress.ListPools(context.Background(), h.tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range def {
+		if !p.IsDefault {
+			continue
+		}
+		other := map[string]any{"pool_id": p.ID.String(), "endpoints": []map[string]any{
+			{"endpoint_id": p.Endpoints[0].ID.String(), "proxy_auth": 1},
+		}}
+		resp, raw := h.call(s.key, http.MethodPost, path, other, protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
+		h.want(resp, raw, http.StatusNotFound, "")
+		var st string
+		if err := h.db.QueryRow(`SELECT state FROM proxy_endpoints WHERE id = $1`, p.Endpoints[0].ID.String()).Scan(&st); err != nil || st == proxypool.StateQuarantined {
+			t.Fatalf("unused pool endpoint: %s %v", st, err)
+		}
+	}
+	// A report long after the job ended is refused.
+	if _, err := h.db.Exec(`UPDATE commands SET status = 'completed', completed_at = now() - interval '1 hour' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := h.call(s.key, http.MethodPost, path, report, protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
+	h.want(resp, raw, http.StatusNotFound, "")
 }
 
 func mustID(t *testing.T, s string) shared.ID {

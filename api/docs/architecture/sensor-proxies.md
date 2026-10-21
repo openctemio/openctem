@@ -110,9 +110,10 @@ Both under `/api/v2/sensor/commands/{command_id}/`, header
   Never logged, never stored with the command.
 - `POST egress-report` `{pool_id, endpoints: [{endpoint_id, ok, proxy_down, proxy_auth,
   target_unreachable, target_refused, handshake_ms_p50, handshake_ms_p95, last_error}]}` → 204.
-  From the sensor the command is assigned to (also just after it ended), at
-  most 64 endpoints; the pool must be the tenant's; unknown endpoints are
-  ignored; `last_error` is sanitized again (one line, 200 characters, URL
+  From the sensor the command is assigned to (while it runs and up to 15
+  minutes after it ended), at most 64 endpoints; the pool must be the one
+  that sensor's jobs use now (a sensor never moves the health of another
+  pool, even one of its own organization); unknown endpoints are ignored; `last_error` is sanitized again (one line, 200 characters, URL
   user information removed).
 
 ## In the sensor
@@ -163,11 +164,14 @@ not settings. Quarantining is audited (`proxy_pool.endpoint_quarantined`).
 | Malicious or intercepting proxy | TLS to an `https://` proxy is verified; target TLS is unchanged (the tool decides). Third-party trust marking is later work. |
 | Silent change | Audit on pool create/update/delete, endpoint list and credential changes, endpoint enable/disable/reset, sensor network path, quarantine. |
 | Unconfined sensor goes direct | Pool jobs only to sensors reporting `egress.upstream@1` and `net.confined@1`. |
-| Score poisoning by a hostile sensor | A pool is one organization's and only its sensors report on it; a report can only lower or raise that organization's own endpoints; a sensor never uses an endpoint the platform quarantined. |
+| Score poisoning by a hostile sensor | A report counts only from the sensor holding the job's lease, only for the pool that sensor's jobs use now, and only up to 15 minutes after the job ended; it can never touch another organization's pool or another pool of its own organization; a sensor never uses an endpoint the platform quarantined. |
 
 ## Not built yet
 
-Zone pools, tool rules (pool / direct / refuse), per-scan override,
+Credentials sealed to the claiming sensor's key (today they travel in the
+clear inside the sensor's TLS connection, so a TLS-inspecting proxy on the
+sensor's control path can read them), one report per job, zone pools,
+tool rules (pool / direct / refuse), per-scan override,
 instance pools offered to tenants, exit-IP attribution, `dns=proxy`, the
 Test button, a reason on the sensor page when a sensor lacks proxy support,
 and pools for validation and reach-probe jobs (they run without a pool).

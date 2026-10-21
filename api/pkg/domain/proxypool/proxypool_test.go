@@ -57,6 +57,7 @@ func TestParseListRefuses(t *testing.T) {
 		"keep and new":     "http://••••@u:p@10.0.0.5:3128",
 		"duplicate":        "socks5://10.0.0.5:1080\nsocks5h://10.0.0.5:1080",
 		"no user":          "http://:secret@10.0.0.5:3128",
+		"hash in password": "http://proxyuser:1234#rest@10.0.0.5:3128",
 	}
 	for name, text := range cases {
 		t.Run(name, func(t *testing.T) {

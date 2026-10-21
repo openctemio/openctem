@@ -91,6 +91,11 @@ func parseLine(line string) (ListEntry, error) {
 		if utf8.RuneCountInString(e.Label) > MaxLabelLength || hasControl(e.Label) {
 			return e, fmt.Errorf("the label must be at most %d characters", MaxLabelLength)
 		}
+		// An unencoded "#" in a password would otherwise cut the line and
+		// keep the rest of the password as a visible label.
+		if strings.ContainsAny(e.Label, "@:/") {
+			return e, fmt.Errorf("a label has no \"@\", \":\" or \"/\" (write \"#\" in a password as %%23)")
+		}
 	}
 	if strings.ContainsAny(line, " \t") {
 		return e, fmt.Errorf("an endpoint has no spaces (write it as scheme://user:password@host:port)")
