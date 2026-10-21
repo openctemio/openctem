@@ -38,6 +38,7 @@ func TestParseListRefuses(t *testing.T) {
 		"metadata":         "http://169.254.169.254:80",
 		"v6 metadata":      "http://[fd00:ec2::254]:80",
 		"alibaba metadata": "http://100.100.100.200:80",
+		"host agent":       "http://168.63.129.16:80",
 		"metadata name":    "http://metadata.google.internal:80",
 		"localhost":        "socks5://localhost:1080",
 		"sub localhost":    "socks5://a.localhost:1080",
