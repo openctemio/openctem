@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-20). Delivered in small steps; each step's behaviour is described in `docs/architecture/notification-system.md` |
+| Status | Accepted (2026-10-20). Delivered in small steps; what is built is described in `docs/architecture/participants-and-watchers.md` and `docs/architecture/notification-system.md` |
 | Scope | api (`internal/app/finding`, `internal/app/remediation`, `internal/app/participation`, notifications, member offboarding), web (finding and task sidebars) |
-| Related | RFC-111 (approval tiers and sign-off), `docs/architecture/notification-system.md`, `docs/architecture/finding-status-lifecycle.md` |
+| Related | RFC-111 (approval tiers and sign-off), `docs/architecture/participants-and-watchers.md`, `docs/architecture/notification-system.md`, `docs/architecture/finding-status-lifecycle.md` |
 
 ## 1. Problem
 

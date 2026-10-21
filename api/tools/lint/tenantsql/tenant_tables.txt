@@ -278,3 +278,4 @@ vulnerabilities
 web_endpoint_events
 web_endpoint_params
 web_endpoints
+work_item_subscriptions
