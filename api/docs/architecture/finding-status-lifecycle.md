@@ -423,9 +423,10 @@ writer, and by `Finding.UpdateSLAStatus` with the same rules
 | open, otherwise | `on_track`, or `warning` when the escalation job set it and the deadline did not change |
 
 The warning has **one definition**: the SLA escalation job's policy
-`warning_threshold_percent` of the window from the later of
-`first_detected_at` and `last_reopened_at` to the deadline (a regression's
-restarted deadline is measured from the reopen). The domain no longer warns 24
+`warning_threshold_percent` of the window from the start of the current clock
+(`sla_started_at`) to the deadline, so a restarted clock is measured from its
+restart. The job announces a warning and a breach once per clock, whoever set
+the status ([SLA clock and escalation](sla-escalation.md)). The domain no longer warns 24
 hours before a deadline on its own. Migration `002181` also recomputed stale
 values (closed findings left `overdue`, dispositions `exceeded`).
 
