@@ -800,7 +800,8 @@ Organization dashboards belong to the organization.
 |----------|---------------------|
 | `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
 | `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
-| `GET /api/v1/organization/dashboards`, `GET …/{id}` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
+| `GET /api/v1/me/dashboards/{id}/data`, `POST /api/v1/me/dashboards/widget-preview`, `GET /api/v1/me/dashboards/widget-catalog` | self (owner only); figures follow the caller's own data scope and pentest campaign membership |
+| `GET /api/v1/organization/dashboards`, `GET …/{id}`, `GET …/{id}/data` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
 | `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
 | `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
 | `GET /api/v1/organization/settings/dashboards` | `dashboard:read` |
