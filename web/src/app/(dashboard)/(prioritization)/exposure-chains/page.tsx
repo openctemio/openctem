@@ -42,7 +42,6 @@ function chainToPath(chain: ExposureChain, maxScore: number): PathGraphPath {
     scorePct: maxScore > 0 ? (chain.score / maxScore) * 100 : 0,
     kevCount: chain.kevCount,
     criticalCount: chain.criticalCount,
-    reachableFrom: chain.reachableFromEntryPoints,
   }
 }
 
