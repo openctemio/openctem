@@ -36,5 +36,9 @@
   "notificationTypes.subtitle": "Bật hoặc tắt từng loại thông báo.",
   "notificationTypes.system_alert.description": "Các thông báo quan trọng ở cấp hệ thống",
   "notificationTypes.system_alert.name": "Cảnh báo hệ thống",
-  "notificationTypes.title": "Loại thông báo"
+  "notificationTypes.title": "Loại thông báo",
+  "notificationTypes.autoWatch.title": "Theo dõi",
+  "notificationTypes.autoWatch.subtitle": "Các phát hiện và tác vụ bạn tham gia có thể được theo dõi giúp bạn.",
+  "notificationTypes.autoWatch.label": "Theo dõi những gì tôi tham gia",
+  "notificationTypes.autoWatch.description": "Khi bạn bình luận, đổi trạng thái, báo đã sửa hoặc được giao việc, bạn bắt đầu theo dõi mục đó. Việc ngừng theo dõi một mục luôn được giữ nguyên."
 }

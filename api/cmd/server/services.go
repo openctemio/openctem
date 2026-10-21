@@ -1771,6 +1771,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Participation.SetItemAccess(participationdom.ItemFinding, s.Vulnerability.ParticipationAccess())
 	s.Participation.SetItemAccess(participationdom.ItemTask, s.RemediationTask.ParticipationAccess())
 	s.Participation.SetAuditLogger(s.Audit)
+	s.Participation.SetAutoWatchPreference(repos.Notification)
+	// Comments, status changes, fix claims and assignments reach the watchers;
+	// people who take part become watchers.
+	s.Vulnerability.SetParticipants(s.Participation)
 	if deps.DB != nil {
 		s.Query = queryapp.NewService(postgres.NewQueryExecutor(&postgres.DB{DB: deps.DB}, postgres.InteractiveQueryTimeout), s.DataScope, log)
 	}

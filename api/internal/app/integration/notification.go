@@ -32,6 +32,8 @@ type UpdatePreferencesInput struct {
 	EmailDigest  *string  `json:"email_digest"` // "none", "daily", "weekly"
 	MutedTypes   []string `json:"muted_types"`
 	MinSeverity  *string  `json:"min_severity"`
+	// AutoWatch switches "watch what I take part in" (nil keeps it).
+	AutoWatch *bool `json:"auto_watch"`
 }
 
 // =============================================================================
@@ -199,6 +201,7 @@ func (s *NotificationService) UpdatePreferences(
 	if input.MinSeverity != nil {
 		params.MinSeverity = *input.MinSeverity
 	}
+	params.AutoWatch = input.AutoWatch
 
 	prefs, err := s.repo.UpsertPreferences(ctx, tenantID, userID, params)
 	if err != nil {
@@ -234,7 +237,7 @@ func (s *NotificationService) Notify(ctx context.Context, params notificationdom
 
 	n := notificationdom.NewNotification(params)
 
-	if err := s.repo.Create(ctx, n); err != nil {
+	if err := s.store(ctx, n); err != nil {
 		s.logger.Error("failed to create notification", "tenant_id", params.TenantID, "type", params.NotificationType, "error", err)
 		return fmt.Errorf("create notification: %w", err)
 	}
@@ -250,6 +253,24 @@ func (s *NotificationService) Notify(ctx context.Context, params notificationdom
 	)
 
 	return nil
+}
+
+// coalescingStore folds a notice into the unread one it repeats
+// (postgres.NotificationRepository).
+type coalescingStore interface {
+	CreateCoalesced(ctx context.Context, n *notificationdom.Notification) (bool, error)
+}
+
+// store saves the notification, folding it into the person's unread notice of
+// the same type and resource when the caller asked for it and the store can.
+func (s *NotificationService) store(ctx context.Context, n *notificationdom.Notification) error {
+	if n.Coalesce() {
+		if c, ok := s.repo.(coalescingStore); ok {
+			_, err := c.CreateCoalesced(ctx, n)
+			return err
+		}
+	}
+	return s.repo.Create(ctx, n)
 }
 
 // pushWebSocket sends the notification in real time to the users who should
