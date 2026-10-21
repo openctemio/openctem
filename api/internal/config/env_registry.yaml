@@ -1812,7 +1812,7 @@ vars:
     group: "AI triage"
     type: bool
     default: "true"
-    description: "Enforce the per-organization monthly token budget for platform AI (organizations with their own key are not counted)."
+    description: "Enforce the per-organization monthly token budget (the tokens of an organization count whichever key pays for them, so an organization on its own provider is stopped at the cap too)."
   - name: AI_TRIAGE_BUDGET_STRICT
     component: api
     group: "AI triage"
