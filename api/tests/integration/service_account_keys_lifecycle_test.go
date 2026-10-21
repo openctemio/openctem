@@ -120,3 +120,64 @@ func TestServiceAccountKeys_DemotedAdministratorLosesTheKeysTheyMinted(t *testin
 		t.Errorf("another organization's key is %q", got)
 	}
 }
+
+func TestServiceAccountKeys_SuspendRevokesTheKeysThePersonMinted(t *testing.T) {
+	f := newLifecycleFixture(t)
+	ctx := context.Background()
+	_, mine := f.seedServiceAccountKey(t, f.tenantID, nil, f.memberID)
+	_, owners := f.seedServiceAccountKey(t, f.tenantID, nil, f.ownerID)
+	_, foreign := f.seedServiceAccountKey(t, f.otherTID, nil, f.memberID)
+
+	if err := f.svc.SuspendMember(ctx, f.mshipID.String(), f.ownerCtx()); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if got := f.keyStatus(t, mine); got != "revoked" {
+		t.Errorf("a suspended person's service-account key is %q", got)
+	}
+	if got := f.keyStatus(t, owners); got != "active" {
+		t.Errorf("another person's key is %q", got)
+	}
+	if got := f.keyStatus(t, foreign); got != "active" {
+		t.Errorf("another organization's key is %q", got)
+	}
+	// Re-enabling does not bring a revoked key back.
+	if err := f.svc.ReactivateMember(ctx, f.mshipID.String(), f.ownerCtx()); err != nil {
+		t.Fatalf("reactivate: %v", err)
+	}
+	if got := f.keyStatus(t, mine); got != "revoked" {
+		t.Errorf("a reactivated person's service-account key is %q", got)
+	}
+}
+
+// The revoke is part of the role change: when it cannot be stored, the role
+// is not changed either, so the demotion never leaves the keys live.
+func TestServiceAccountKeys_DemotionRollsBackWhenTheRevokeFails(t *testing.T) {
+	f := newLifecycleFixture(t)
+	ctx := context.Background()
+	tid, uid := f.tenantID.String(), f.memberID.String()
+	if _, err := f.db.Exec(`UPDATE tenant_members SET role = 'admin' WHERE tenant_id = $1 AND user_id = $2`, tid, uid); err != nil {
+		t.Fatal(err)
+	}
+	_, mine := f.seedServiceAccountKey(t, f.tenantID, nil, f.memberID)
+	if _, err := f.db.Exec(`CREATE FUNCTION test_refuse_key_revoke() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN IF NEW.status = 'revoked' THEN RAISE EXCEPTION 'revoke refused for the test'; END IF; RETURN NEW; END; $$`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`CREATE TRIGGER test_refuse_key_revoke BEFORE UPDATE ON api_keys FOR EACH ROW EXECUTE FUNCTION test_refuse_key_revoke()`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = f.db.Exec(`DROP TRIGGER IF EXISTS test_refuse_key_revoke ON api_keys`)
+		_, _ = f.db.Exec(`DROP FUNCTION IF EXISTS test_refuse_key_revoke()`)
+	})
+
+	if _, err := f.svc.UpdateMemberRole(ctx, f.mshipID.String(), tenant.UpdateMemberRoleInput{Role: "viewer"}, f.ownerCtx()); err == nil {
+		t.Fatal("the demotion succeeded although the key revoke failed")
+	}
+	if got := f.str(t, `SELECT role FROM tenant_members WHERE tenant_id = $1 AND user_id = $2`, tid, uid); got != "admin" {
+		t.Errorf("role after a failed revoke = %q, want admin (rolled back)", got)
+	}
+	if got := f.keyStatus(t, mine); got != "active" {
+		t.Errorf("key = %q", got)
+	}
+}
