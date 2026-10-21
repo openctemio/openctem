@@ -156,7 +156,7 @@ export function CreateTicketDialog({
             {below && (
               <div
                 role="alert"
-                className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+                className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
               >
                 <p className="font-medium">
                   {t('findings.createTicket.belowTitle', 'Below the create policy')}

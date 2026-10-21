@@ -47,7 +47,7 @@ import {
   PlugZap,
   Trash2,
   Webhook,
-  Filter,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can } from '@/lib/permissions'
@@ -753,7 +753,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
           },
           {
             label: t('ticketPolicy.action', 'When to create issues'),
-            icon: Filter,
+            icon: SlidersHorizontal,
             onClick: () => setPolicyOpen(true),
             disabled: !jiraReady,
             route: 'PUT /api/v1/integrations/{id}/ticket-create-policy' as const,
