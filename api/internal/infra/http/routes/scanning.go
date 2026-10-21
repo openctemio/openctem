@@ -226,6 +226,35 @@ func registerScanZoneRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerProxyPoolRoutes registers the proxy pool API for sensor scan
+// traffic (docs/architecture/sensor-proxies.md). Reads need
+// sensors:egress:read; pools, endpoints, credentials and the network path of
+// sensors need sensors:egress:write; deleting a pool needs
+// sensors:egress:delete. Write and delete are owner/admin only.
+func registerProxyPoolRoutes(
+	router Router,
+	h *handler.ProxyPoolHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/proxy-pools", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.SensorEgressRead))
+		// Before /{id} so chi does not read "assignments" as an id.
+		r.GET("/assignments", h.ListAssignments, middleware.Require(permission.SensorEgressRead))
+		r.PUT("/assignments/{sensorId}", h.SetAssignment, middleware.Require(permission.SensorEgressWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.SensorEgressRead))
+
+		r.POST("/", h.Create, middleware.Require(permission.SensorEgressWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.SensorEgressWrite))
+		r.PUT("/{id}/endpoints", h.ReplaceEndpoints, middleware.Require(permission.SensorEgressWrite))
+		r.PATCH("/{id}/endpoints/{endpointId}", h.UpdateEndpoint, middleware.Require(permission.SensorEgressWrite))
+
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorEgressDelete))
+	}, tenantMiddlewares...)
+}
+
 // registerScanWindowRoutes registers the scan window API (RFC-067).
 // Everyone who reads scans reads the policies and evaluates targets (the
 // console explains why work waits); managing policies needs
