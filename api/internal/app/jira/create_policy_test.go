@@ -2,6 +2,8 @@ package jira
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +22,10 @@ type memPolicyRepo struct {
 	reserved int
 	puts     int
 	due      []ticketpolicy.Candidate
+
+	mu     sync.Mutex
+	locks  map[shared.ID]*sync.Mutex
+	noLock bool // set to see the double filing the lock prevents
 }
 
 func newMemPolicyRepo(p *ticketpolicy.Policy) *memPolicyRepo {
@@ -61,6 +67,23 @@ func (m *memPolicyRepo) ListFindingHolds(context.Context, shared.ID, shared.ID) 
 }
 func (m *memPolicyRepo) DueHolds(context.Context, int, time.Duration) ([]ticketpolicy.Candidate, error) {
 	return m.due, nil
+}
+func (m *memPolicyRepo) LockFinding(_ context.Context, _, _, f shared.ID) (func(), error) {
+	if m.noLock {
+		return func() {}, nil
+	}
+	m.mu.Lock()
+	if m.locks == nil {
+		m.locks = map[shared.ID]*sync.Mutex{}
+	}
+	l, ok := m.locks[f]
+	if !ok {
+		l = &sync.Mutex{}
+		m.locks[f] = l
+	}
+	m.mu.Unlock()
+	l.Lock()
+	return l.Unlock, nil
 }
 func (m *memPolicyRepo) Reserve(_ context.Context, _, _ shared.ID, dailyCap int) (bool, error) {
 	if dailyCap > 0 && m.reserved >= dailyCap {
@@ -259,5 +282,72 @@ func TestReleaseDue_ModuleDisabledRefreshesHold(t *testing.T) {
 	}
 	if h, ok := repo.holds[f.ID()]; !ok || repo.puts != 1 || h.Reason != ticketpolicy.ReasonBelowThreshold {
 		t.Fatalf("hold %+v ok %v puts %d", h, ok, repo.puts)
+	}
+}
+
+// slowSite is a tracker whose create takes a moment and which, like the real
+// one, lists the issue on the finding once it is recorded.
+type slowSite struct {
+	*siteClient
+	creates int32
+}
+
+func (c *slowSite) CreateIssue(context.Context, CreateIssueInput) (*CreateIssueResult, error) {
+	atomic.AddInt32(&c.creates, 1)
+	time.Sleep(60 * time.Millisecond)
+	return &CreateIssueResult{Key: "SEC-1", BrowseURL: "https://a.atlassian.net/browse/SEC-1"}, nil
+}
+
+// persistingFindingRepo stores the work item URIs on the finding, as the
+// real repository does.
+type persistingFindingRepo struct {
+	*stubFindingRepo
+	mu sync.Mutex
+}
+
+func (r *persistingFindingRepo) UpdateWorkItemURIs(ctx context.Context, t, id shared.ID, uris []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.finding.SetWorkItemURIs(uris)
+	return r.stubFindingRepo.UpdateWorkItemURIs(ctx, t, id, uris)
+}
+
+// The workflow path and the hold release job can reach the same finding at
+// once; the tracker must get one issue, not two. (With the per-finding lock
+// disabled (noLock), both creates reach the tracker.)
+func TestAutoCreateAndReleaseDoNotDoubleFile(t *testing.T) {
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceDAST, "nuclei", vulnerability.SeverityHigh, "finding")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &slowSite{siteClient: &siteClient{intg: shared.NewID(), site: "https://a.atlassian.net"}}
+	s := newSync(&persistingFindingRepo{stubFindingRepo: &stubFindingRepo{finding: f}}, client)
+	m := DefaultMappingConfig()
+	m.DefaultProjectKey = "SEC"
+	s.SetMappingResolver(stubMappingResolver{mapping: m})
+	repo := newMemPolicyRepo(nil)
+	g := NewPolicyGate(s, repo, nil, logger.NewNop())
+	cand := ticketpolicy.Candidate{
+		Hold:    ticketpolicy.Hold{TenantID: f.TenantID(), IntegrationID: client.intg, FindingID: f.ID(), Reason: ticketpolicy.ReasonBelowThreshold},
+		Signals: ticketpolicy.Signals{Severity: "high", Open: true}, Policy: ticketpolicy.Default(),
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if _, _, err := g.AutoCreate(context.Background(), autoInput(f)); err != nil {
+			t.Errorf("auto create: %v", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if _, err := g.releaseOne(context.Background(), cand); err != nil {
+			t.Errorf("release: %v", err)
+		}
+	}()
+	wg.Wait()
+	if got := atomic.LoadInt32(&client.creates); got != 1 {
+		t.Fatalf("tracker creates = %d, want exactly 1", got)
 	}
 }
