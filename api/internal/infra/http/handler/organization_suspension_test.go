@@ -23,23 +23,22 @@ func (g orgGate) CheckAccess(_ context.Context, id shared.ID) error { return g[i
 // signature verified (so only the secret holder learns the status) and
 // nothing is processed.
 func TestGitHubWebhook_SuspendedOrganization(t *testing.T) {
-	tenant := shared.NewID()
-	svc := &fakeGitHubService{secrets: map[shared.ID][]string{tenant: {"s3cret"}}}
+	tenant, intg := shared.NewID(), shared.NewID()
+	svc := newFakeGitHub(intg, tenant, "s3cret")
 	h := newGitHubTestHandler(svc, &memoryDeliveries{seen: map[string]bool{}})
 	h.SetOrganizationGate(orgGate{tenant: tenantdom.ErrOrganizationSuspended})
 
-	rec := httptest.NewRecorder()
-	h.IncomingGitHubWebhook(rec, signedPush(tenant, "s3cret", "72d3162e-cc78-11e3-81ab-4c9367dc0960"))
+	rec := serveGitHubRec(h, signedPush(intg, "s3cret", "72d3162e-cc78-11e3-81ab-4c9367dc0960"))
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), tenantdom.CodeOrganizationSuspended) || svc.pushes != 0 {
 		t.Fatalf("suspended: %d %s pushes=%d", rec.Code, rec.Body.String(), svc.pushes)
 	}
 	// A bad signature is still a 401 that says nothing about the status.
-	if code := serveGitHub(h, signedPush(tenant, "wrong", "72d3162e-cc78-11e3-81ab-4c9367dc0961")); code != http.StatusUnauthorized {
+	if code := serveGitHub(h, signedPush(intg, "wrong", "72d3162e-cc78-11e3-81ab-4c9367dc0961")); code != http.StatusUnauthorized {
 		t.Fatalf("bad signature: %d", code)
 	}
 	// Unreadable status: refused (fail closed).
 	h.SetOrganizationGate(orgGate{tenant: errors.New("db down")})
-	if code := serveGitHub(h, signedPush(tenant, "s3cret", "72d3162e-cc78-11e3-81ab-4c9367dc0962")); code != http.StatusServiceUnavailable || svc.pushes != 0 {
+	if code := serveGitHub(h, signedPush(intg, "s3cret", "72d3162e-cc78-11e3-81ab-4c9367dc0962")); code != http.StatusServiceUnavailable || svc.pushes != 0 {
 		t.Fatalf("unreadable status: %d pushes=%d", code, svc.pushes)
 	}
 }

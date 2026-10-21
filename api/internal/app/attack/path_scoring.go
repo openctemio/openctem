@@ -107,6 +107,9 @@ type pathBasis struct {
 	edgeNodes map[string]bool
 }
 
+// attackPathTopN is the number of ranked assets an API response returns.
+const attackPathTopN = 50
+
 // criticalityMultiplier returns an impact multiplier for a criticality level.
 func criticalityMultiplier(criticality string) float64 {
 	switch criticality {
@@ -293,9 +296,8 @@ func (s *SurfaceService) ComputeAttackPathScores(
 	})
 
 	all := scored
-	// Cap at 50
-	if len(scored) > 50 {
-		scored = scored[:50]
+	if len(scored) > attackPathTopN {
+		scored = scored[:attackPathTopN]
 	}
 
 	summary := PathSummary{
