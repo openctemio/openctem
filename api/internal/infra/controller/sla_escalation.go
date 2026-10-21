@@ -1,28 +1,32 @@
 package controller
 
+// SLA escalation: announces SLA breaches and at-risk deadlines once per SLA
+// episode (api/docs/architecture/sla-escalation.md).
+
 import (
 	"context"
 	"database/sql"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// SLABreachEvent is emitted once per finding on the transition into
-// the `overdue` SLA state (a breach of its deadline). Downstream consumers
-// (notification outbox, Jira commenter, PagerDuty router) subscribe via the
-// publisher.
+// SLABreachEvent is emitted once per SLA episode of a finding whose deadline
+// passed while it was open. Downstream consumers (notification outbox, ticket
+// commenter, paging router) subscribe via the publisher.
 //
-// B4: closes the feedback edge where SLA status was
-// previously computed but never acted on. Dedup via the SLA state
-// transition itself — a second controller run won't re-emit because
-// rows already in `overdue` state don't match the UPDATE WHERE clause.
+// Dedup is by findings.sla_breach_notified_at: the job selects only rows
+// where it is NULL and sets it in the same statement, whoever set sla_status
+// to overdue. A new SLA clock or a reopen clears it (trg_findings_sla_episode),
+// which starts a new episode.
 type SLABreachEvent struct {
 	TenantID        shared.ID
 	FindingID       shared.ID
+	FindingTitle    string
 	SLADeadline     time.Time
 	OverdueDuration time.Duration
 	At              time.Time
@@ -32,36 +36,37 @@ type SLABreachEvent struct {
 }
 
 // SLABreachPublisher delivers breach events to downstream consumers.
-// Optional — nil publisher means "log only" (legacy behavior).
+// Optional — nil publisher means "log only".
 type SLABreachPublisher interface {
 	Publish(ctx context.Context, event SLABreachEvent) error
 }
 
 // SLABreachTxPublisher is an optional extension of SLABreachPublisher that
 // enqueues a breach event inside a caller-supplied transaction. When the wired
-// publisher implements it, the controller couples the `breached` state change
-// and the notification enqueue in ONE transaction, so a crash/failure between
-// them can't leave a finding permanently breached with its notification lost
-// (the breach UPDATE's WHERE clause excludes already-breached rows, so a lost
-// notification would never be retried).
+// publisher implements it, the notified-at write, the timeline row and the
+// notification enqueue commit together, so a crash between them cannot mark a
+// breach announced while its notification is lost.
 type SLABreachTxPublisher interface {
 	PublishTx(ctx context.Context, tx *sql.Tx, event SLABreachEvent) error
 }
 
 // SLAWarningPublisher delivers "approaching deadline" events. Optional — nil
-// means log-only. Unlike breach, warnings are advisory (fire-and-forget); they
-// don't need a transactional publisher because a lost warning is re-derivable
-// (the finding is still in `warning` until it breaches, and re-notifying on the
-// next tick would only duplicate — which the transition guard already prevents,
-// since a row leaves `on_track` exactly once).
+// means log-only.
 type SLAWarningPublisher interface {
 	PublishWarning(ctx context.Context, event SLAWarningEvent) error
 }
 
-// SLAWarningEvent describes a finding that just entered the warning window.
+// SLAWarningTxPublisher is the transactional form of SLAWarningPublisher, used
+// the same way as SLABreachTxPublisher.
+type SLAWarningTxPublisher interface {
+	PublishWarningTx(ctx context.Context, tx *sql.Tx, event SLAWarningEvent) error
+}
+
+// SLAWarningEvent describes a finding that just entered the at-risk window.
 type SLAWarningEvent struct {
 	TenantID      shared.ID
 	FindingID     shared.ID
+	FindingTitle  string
 	SLADeadline   time.Time
 	TimeRemaining time.Duration
 	At            time.Time
@@ -73,42 +78,106 @@ func (c *SLAEscalationController) SetWarningPublisher(p SLAWarningPublisher) {
 	c.warningPublisher = p
 }
 
-// breachSelectUpdateQuery transitions open, past-deadline findings to the
-// `overdue` SLA status and RETURNs the fields the publisher needs. Shared by
-// the tx and legacy paths.
+const (
+	// slaEscalationBatch is how many findings one transaction announces.
+	slaEscalationBatch = 1000
+	// slaEscalationMaxBatches bounds one tick; the rest waits for the next.
+	slaEscalationMaxBatches = 20
+	// maxNotificationTitle bounds the finding title copied into a notice.
+	maxNotificationTitle = 200
+)
+
+// slaClockStartSQL is when the current SLA clock started. sla_started_at is
+// written with every deadline (trg_findings_sla_episode); the fallback covers
+// a row written before the column existed.
+const slaClockStartSQL = `COALESCE(f.sla_started_at, GREATEST(f.first_detected_at, f.last_reopened_at), f.created_at)`
+
+// breachSelectUpdateQuery announces open, past-deadline findings whose breach
+// was not announced in this SLA episode: it sets sla_status to overdue (the
+// enum value for an open finding past its deadline, counted by the dashboard)
+// and sla_breach_notified_at, writes one sla_breach timeline row per finding,
+// and RETURNs what the publisher needs. Selecting on the notified-at column
+// instead of on sla_status means a breach is announced whoever moved the
+// status (a reopen, an un-suppression, a status change after the deadline).
 //
-// Vocabulary: this writes 'overdue', NOT 'breached'. 'breached' is not a member
-// of the SLAStatus enum (pkg/domain/vulnerability: on_track/warning/overdue/
-// exceeded/not_applicable), is rejected by the findings.sla_status CHECK
-// constraint (migration 000012), and is NOT counted by the dashboard breach
-// query (sla_status IN ('exceeded','overdue')). 'overdue' is the enum value for
-// an OPEN finding past its deadline (the domain reserves 'exceeded' for a finding
-// that was closed after its deadline), it satisfies the CHECK constraint, and it
-// is what both the dashboard counter and the worst_sla_status rank agree on.
-//
-// Status exclusion mirrors the dashboard's closed-category set so an
-// accepted-risk / accepted / duplicate finding is never marked overdue.
+// FOR UPDATE SKIP LOCKED plus the repeated guard in the UPDATE keep two
+// replicas from announcing the same row; LIMIT bounds the transaction.
 //
 // The status always changes; whether anyone is told is the governing policy's
-// escalation_enabled (column `notify`). The UPDATE repeats the status guard so
-// a row another replica already moved is not returned twice.
+// escalation_enabled (column `notify`). The timeline row is written either way.
 var breachSelectUpdateQuery = `
 	WITH due AS (
 		SELECT f.id, COALESCE(pol.escalation_enabled, TRUE) AS notify
 		FROM findings f` + effectivePolicyJoin + `
-		WHERE f.sla_deadline < NOW()
+		WHERE f.sla_breach_notified_at IS NULL
 		  AND f.sla_deadline IS NOT NULL
-		  AND (f.sla_status IS NULL OR f.sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
-		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		  AND f.sla_deadline < NOW()
 		  AND NOT f.branch_only
+		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		ORDER BY f.sla_deadline
+		LIMIT $1
+		FOR UPDATE OF f SKIP LOCKED
+	), upd AS (
+		UPDATE findings SET
+			sla_status = 'overdue',
+			sla_breach_notified_at = NOW(),
+			sla_at_risk_notified_at = COALESCE(findings.sla_at_risk_notified_at, NOW()),
+			updated_at = NOW()
+		FROM due
+		WHERE findings.id = due.id
+		  AND findings.sla_breach_notified_at IS NULL
+		RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, findings.title, due.notify
+	), act AS (
+		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source)
+		SELECT upd.tenant_id, upd.id, 'sla_breach', 'system', 'system: SLA',
+			jsonb_build_object('sla_deadline', to_char(upd.sla_deadline AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+				'notified', upd.notify),
+			'auto'
+		FROM upd
 	)
-	UPDATE findings SET
-		sla_status = 'overdue',
-		updated_at = NOW()
-	FROM due
-	WHERE findings.id = due.id
-	  AND (findings.sla_status IS NULL OR findings.sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
-	RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, due.notify
+	SELECT tenant_id, id, sla_deadline, severity, title, notify FROM upd
+`
+
+// warningSelectUpdateQuery announces open findings once the governing
+// policy's warning_threshold_percent of their remediation window has passed,
+// measured from the start of the current clock (sla_started_at), so a clock
+// that starts again does not warn at once. Same once-per-episode rule as the
+// breach (sla_at_risk_notified_at); a finding already overdue is left to the
+// breach pass.
+var warningSelectUpdateQuery = `
+	WITH due AS (
+		SELECT f.id, COALESCE(pol.escalation_enabled, TRUE) AS notify
+		FROM findings f` + effectivePolicyJoin + `
+		WHERE f.sla_at_risk_notified_at IS NULL
+		  AND f.sla_breach_notified_at IS NULL
+		  AND f.sla_deadline IS NOT NULL
+		  AND f.sla_deadline > NOW()
+		  AND NOT f.branch_only
+		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		  AND NOW() >= ` + slaClockStartSQL + `
+		      + (f.sla_deadline - ` + slaClockStartSQL + `)
+		        * (COALESCE(pol.warning_threshold_percent, 80)::float8 / 100.0)
+		ORDER BY f.sla_deadline
+		LIMIT $1
+		FOR UPDATE OF f SKIP LOCKED
+	), upd AS (
+		UPDATE findings SET
+			sla_status = CASE WHEN findings.sla_status IS NULL OR findings.sla_status = 'on_track' THEN 'warning' ELSE findings.sla_status END,
+			sla_at_risk_notified_at = NOW(),
+			updated_at = NOW()
+		FROM due
+		WHERE findings.id = due.id
+		  AND findings.sla_at_risk_notified_at IS NULL
+		RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, findings.title, due.notify
+	), act AS (
+		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source)
+		SELECT upd.tenant_id, upd.id, 'sla_warning', 'system', 'system: SLA',
+			jsonb_build_object('sla_deadline', to_char(upd.sla_deadline AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+				'notified', upd.notify),
+			'auto'
+		FROM upd
+	)
+	SELECT tenant_id, id, sla_deadline, severity, title, notify FROM upd
 `
 
 // effectivePolicyJoin resolves, per finding, the SLA policy that governs it:
@@ -127,32 +196,31 @@ const effectivePolicyJoin = `
 			LIMIT 1
 		) pol ON TRUE`
 
-type breachRow struct {
+// escalationRow is one finding a pass announced.
+type escalationRow struct {
 	tenantID    string
 	findingID   string
 	slaDeadline time.Time
 	severity    string
+	title       string
 	// notify is the governing policy's escalation_enabled (true without one).
 	notify bool
 }
 
-// SLAEscalationController periodically checks for overdue findings
-// and updates their sla_status to 'overdue'. Runs every 15 minutes.
+// SLAEscalationController periodically announces SLA breaches and at-risk
+// deadlines. Runs every 15 minutes on every replica; the row locks and the
+// notified-at guard make each announcement happen once.
 //
-// Note: This operates across all tenants intentionally — it's a system-level
-// background job that marks overdue findings within their own rows.
-// Each finding's tenant_id remains unchanged.
-//
-// RFC-005 Gap 7 + B4: Automated SLA Escalation with publisher.
+// It operates across all tenants on purpose (a system job): every row it
+// writes, every timeline row and every notification carries the finding's own
+// tenant_id.
 type SLAEscalationController struct {
 	db     *sql.DB
 	logger *logger.Logger
-	// B4: optional publisher that fires one event per newly-breached
-	// finding. Nil → legacy log-only behavior.
+	// publisher fires one event per announced breach. Nil → log only.
 	publisher SLABreachPublisher
-	// Optional publisher that fires one event per finding newly transitioned
-	// into the `warning` (approaching-deadline) state. Nil → log-only, which was
-	// the only behavior before: warnings updated the row but told no one.
+	// warningPublisher fires one event per announced at-risk finding. Nil →
+	// log only.
 	warningPublisher SLAWarningPublisher
 }
 
@@ -176,239 +244,218 @@ func (c *SLAEscalationController) Name() string { return "sla-escalation" }
 // Interval returns 15 minutes.
 func (c *SLAEscalationController) Interval() time.Duration { return 15 * time.Minute }
 
-// Reconcile checks for overdue findings and marks them as breached.
-//
-// B4: For every row newly-transitioned into `breached`, a SLABreachEvent
-// is emitted via the publisher. Dedup is structural — the WHERE clause
-// excludes rows already in `breached`, so a second run won't re-emit.
+// Reconcile announces breaches, then at-risk findings. A failed warning pass
+// is logged and never blocks the breach pass.
 func (c *SLAEscalationController) Reconcile(ctx context.Context) (int, error) {
-	total, err := c.markBreached(ctx)
+	total, err := c.runPasses(ctx, breachSelectUpdateQuery, c.publishBreaches)
 	if err != nil {
-		return 0, err
+		return total, err
 	}
-	c.markWarning(ctx) // advisory + idempotent; never blocks the breach pass
+	if _, err := c.runPasses(ctx, warningSelectUpdateQuery, c.publishWarnings); err != nil {
+		c.logger.Warn("sla warning pass failed", "error", err)
+	}
 	return total, nil
 }
 
-// markBreached transitions overdue findings to `breached` and fans the events
-// out to the publisher. When the publisher is transaction-aware the state
-// change and the enqueues commit atomically; otherwise it falls back to the
-// legacy autocommit-then-publish path.
-func (c *SLAEscalationController) markBreached(ctx context.Context) (int, error) {
-	if txPub, ok := c.publisher.(SLABreachTxPublisher); ok {
-		return c.markBreachedTx(ctx, txPub)
+// publishFunc enqueues the notifications of one batch. inTx reports whether
+// they were enqueued in tx (committed with the state change); otherwise the
+// caller publishes them after the commit through publishAfter.
+type publishFunc func(ctx context.Context, tx *sql.Tx, rows []escalationRow, now time.Time) (inTx bool, err error)
+
+// runPasses runs query in batches of slaEscalationBatch, each in its own
+// transaction, until a batch comes back short or the tick's bound is reached.
+func (c *SLAEscalationController) runPasses(ctx context.Context, query string, publish publishFunc) (int, error) {
+	total := 0
+	for i := 0; i < slaEscalationMaxBatches; i++ {
+		n, err := c.runBatch(ctx, query, publish)
+		total += n
+		if err != nil {
+			return total, err
+		}
+		if n < slaEscalationBatch {
+			break
+		}
 	}
-	return c.markBreachedLegacy(ctx)
+	return total, nil
 }
 
-// markBreachedTx couples the breach UPDATE and the notification enqueues in one
-// transaction: if any enqueue fails (or the process dies before commit) the
-// whole batch rolls back and is retried on the next tick, instead of leaving
-// findings breached with their notifications silently dropped.
-func (c *SLAEscalationController) markBreachedTx(ctx context.Context, txPub SLABreachTxPublisher) (int, error) {
+func (c *SLAEscalationController) runBatch(ctx context.Context, query string, publish publishFunc) (int, error) {
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("sla escalation begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rows, err := tx.QueryContext(ctx, breachSelectUpdateQuery)
+	rows, err := tx.QueryContext(ctx, query, slaEscalationBatch)
 	if err != nil {
 		return 0, fmt.Errorf("sla escalation: %w", err)
 	}
 	// Collect + close BEFORE enqueuing: lib/pq forbids a second statement on
 	// the same tx while these rows are still open.
-	breaches, scanErr := c.scanBreaches(rows)
+	batch, scanErr := scanEscalationRows(rows)
 	_ = rows.Close()
 	if scanErr != nil {
 		return 0, scanErr
 	}
-	c.logBreachCounts(breaches)
+	if len(batch) == 0 {
+		return 0, nil
+	}
+	c.logCounts(batch)
 
 	now := time.Now().UTC()
-	for _, br := range breaches {
-		if !br.notify {
-			continue // escalation is off for this finding's policy
-		}
-		ev, ok := breachEvent(br, now)
-		if !ok {
-			continue
-		}
-		if err := txPub.PublishTx(ctx, tx, ev); err != nil {
-			// Roll back the whole batch — these findings stay non-breached
-			// and are retried next run, keeping state ⇔ notification in sync.
-			return 0, fmt.Errorf("enqueue sla breach (finding %s): %w", br.findingID, err)
-		}
+	inTx, err := publish(ctx, tx, batch, now)
+	if err != nil {
+		// Roll back the whole batch: these findings stay unannounced and are
+		// retried next tick, keeping state and notification in sync.
+		return 0, err
 	}
-
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("sla escalation commit: %w", err)
 	}
-	return len(breaches), nil
+	if !inTx {
+		c.publishAfter(ctx, query, batch, now)
+	}
+	return len(batch), nil
 }
 
-// markBreachedLegacy is the pre-existing behavior for a nil / non-transactional
-// publisher: autocommit the UPDATE, then best-effort publish (errors logged).
-func (c *SLAEscalationController) markBreachedLegacy(ctx context.Context) (int, error) {
-	rows, err := c.db.QueryContext(ctx, breachSelectUpdateQuery)
-	if err != nil {
-		return 0, fmt.Errorf("sla escalation: %w", err)
+func (c *SLAEscalationController) publishBreaches(ctx context.Context, tx *sql.Tx, batch []escalationRow, now time.Time) (bool, error) {
+	txPub, ok := c.publisher.(SLABreachTxPublisher)
+	if !ok {
+		return false, nil
 	}
-	breaches, scanErr := c.scanBreaches(rows)
-	_ = rows.Close()
-	if scanErr != nil {
-		return 0, scanErr
+	for _, r := range batch {
+		ev, ok := breachEvent(r, now)
+		if !ok || !r.notify {
+			continue
+		}
+		if err := txPub.PublishTx(ctx, tx, ev); err != nil {
+			return true, fmt.Errorf("enqueue sla breach (finding %s): %w", r.findingID, err)
+		}
 	}
-	c.logBreachCounts(breaches)
+	return true, nil
+}
 
-	if c.publisher != nil {
-		now := time.Now().UTC()
-		for _, br := range breaches {
-			if !br.notify {
-				continue // escalation is off for this finding's policy
+func (c *SLAEscalationController) publishWarnings(ctx context.Context, tx *sql.Tx, batch []escalationRow, now time.Time) (bool, error) {
+	txPub, ok := c.warningPublisher.(SLAWarningTxPublisher)
+	if !ok {
+		return false, nil
+	}
+	for _, r := range batch {
+		ev, ok := warningEvent(r, now)
+		if !ok || !r.notify {
+			continue
+		}
+		if err := txPub.PublishWarningTx(ctx, tx, ev); err != nil {
+			return true, fmt.Errorf("enqueue sla warning (finding %s): %w", r.findingID, err)
+		}
+	}
+	return true, nil
+}
+
+// publishAfter is the best-effort path for a publisher that cannot enqueue in
+// the transaction: errors are logged.
+func (c *SLAEscalationController) publishAfter(ctx context.Context, query string, batch []escalationRow, now time.Time) {
+	for _, r := range batch {
+		if !r.notify {
+			continue
+		}
+		if query == breachSelectUpdateQuery {
+			if c.publisher == nil {
+				return
 			}
-			ev, ok := breachEvent(br, now)
-			if !ok {
-				continue
+			if ev, ok := breachEvent(r, now); ok {
+				if err := c.publisher.Publish(ctx, ev); err != nil {
+					c.logger.Warn("sla breach publish failed", "finding_id", r.findingID, "error", err)
+				}
 			}
-			if err := c.publisher.Publish(ctx, ev); err != nil {
-				c.logger.Warn("sla breach publish failed",
-					"finding_id", br.findingID, "error", err)
+			continue
+		}
+		if c.warningPublisher == nil {
+			return
+		}
+		if ev, ok := warningEvent(r, now); ok {
+			if err := c.warningPublisher.PublishWarning(ctx, ev); err != nil {
+				c.logger.Warn("sla warning publish failed", "finding_id", r.findingID, "error", err)
 			}
 		}
 	}
-	return len(breaches), nil
 }
 
-func (c *SLAEscalationController) scanBreaches(rows *sql.Rows) ([]breachRow, error) {
-	var breaches []breachRow
+func scanEscalationRows(rows *sql.Rows) ([]escalationRow, error) {
+	var out []escalationRow
 	for rows.Next() {
-		var br breachRow
-		var sev sql.NullString
-		if err := rows.Scan(&br.tenantID, &br.findingID, &br.slaDeadline, &sev, &br.notify); err != nil {
-			return nil, fmt.Errorf("scan breach row: %w", err)
+		var r escalationRow
+		var sev, title sql.NullString
+		if err := rows.Scan(&r.tenantID, &r.findingID, &r.slaDeadline, &sev, &title, &r.notify); err != nil {
+			return nil, fmt.Errorf("scan sla escalation row: %w", err)
 		}
-		br.severity = sev.String
-		breaches = append(breaches, br)
+		r.severity = sev.String
+		r.title = truncateTitle(title.String)
+		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate breach rows: %w", err)
+		return nil, fmt.Errorf("iterate sla escalation rows: %w", err)
 	}
-	return breaches, nil
+	return out, nil
 }
 
-func (c *SLAEscalationController) logBreachCounts(breaches []breachRow) {
+// truncateTitle bounds a finding title (scanner-supplied text) copied into a
+// notification.
+func truncateTitle(s string) string {
+	if utf8.RuneCountInString(s) <= maxNotificationTitle {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:maxNotificationTitle]) + "…"
+}
+
+func (c *SLAEscalationController) logCounts(batch []escalationRow) {
 	byTenant := make(map[string]int)
-	for _, br := range breaches {
-		byTenant[br.tenantID]++
+	for _, r := range batch {
+		byTenant[r.tenantID]++
 	}
 	for tid, count := range byTenant {
-		c.logger.Warn("SLA breached findings detected", "tenant_id", tid, "count", count)
+		c.logger.Info("SLA escalation announced findings", "tenant_id", tid, "count", count)
 	}
 }
 
 // breachEvent builds the event for a row; ok=false when an ID can't be parsed.
-func breachEvent(br breachRow, now time.Time) (SLABreachEvent, bool) {
-	tid, err := shared.IDFromString(br.tenantID)
+func breachEvent(r escalationRow, now time.Time) (SLABreachEvent, bool) {
+	tid, err := shared.IDFromString(r.tenantID)
 	if err != nil {
 		return SLABreachEvent{}, false
 	}
-	fid, err := shared.IDFromString(br.findingID)
+	fid, err := shared.IDFromString(r.findingID)
 	if err != nil {
 		return SLABreachEvent{}, false
 	}
 	return SLABreachEvent{
 		TenantID:        tid,
 		FindingID:       fid,
-		SLADeadline:     br.slaDeadline,
-		OverdueDuration: now.Sub(br.slaDeadline),
+		FindingTitle:    r.title,
+		SLADeadline:     r.slaDeadline,
+		OverdueDuration: now.Sub(r.slaDeadline),
 		At:              now,
-		FindingSeverity: br.severity,
+		FindingSeverity: r.severity,
 	}, true
 }
 
-// warningSelectUpdateQuery flags open findings once the governing policy's
-// warning_threshold_percent of their remediation window has elapsed, RETURNING
-// the rows that actually transitioned so each is notified once. The window
-// starts at the later of first_detected_at and last_reopened_at (created_at
-// when both are unset): a regression's restarted deadline is measured from the
-// reopen, so it does not flip to warning at once. This is the one warning
-// definition; status changes keep a warning it set (finding_sla_status_for). The `sla_status IS NULL OR = 'on_track'`
-// guard makes the transition happen exactly once.
-var warningSelectUpdateQuery = `
-	WITH due AS (
-		SELECT f.id, COALESCE(pol.escalation_enabled, TRUE) AS notify
-		FROM findings f` + effectivePolicyJoin + `
-		WHERE f.sla_deadline IS NOT NULL
-		  AND f.sla_deadline > NOW()
-		  AND (f.sla_status IS NULL OR f.sla_status = 'on_track')
-		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
-		  AND NOT f.branch_only
-		  AND NOW() >= COALESCE(GREATEST(f.first_detected_at, f.last_reopened_at), f.created_at)
-		      + (f.sla_deadline - COALESCE(GREATEST(f.first_detected_at, f.last_reopened_at), f.created_at))
-		        * (COALESCE(pol.warning_threshold_percent, 80)::float8 / 100.0)
-	)
-	UPDATE findings SET
-		sla_status = 'warning',
-		updated_at = NOW()
-	FROM due
-	WHERE findings.id = due.id
-	  AND (findings.sla_status IS NULL OR findings.sla_status = 'on_track')
-	RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, due.notify
-`
-
-// markWarning flags findings that crossed their policy's warning threshold. It
-// is idempotent and advisory — errors are logged, never returned.
-func (c *SLAEscalationController) markWarning(ctx context.Context) {
-	rows, err := c.db.QueryContext(ctx, warningSelectUpdateQuery)
-	if err != nil {
-		c.logger.Warn("sla warning update failed", "error", err)
-		return
-	}
-	warned, err := c.scanBreaches(rows) // same (tenant_id, id, sla_deadline) shape
-	if err != nil {
-		c.logger.Warn("sla warning scan failed", "error", err)
-		return
-	}
-	if len(warned) == 0 {
-		return
-	}
-	c.logger.Info("SLA warning findings updated", "count", len(warned))
-
-	// Notify once per newly-warned finding (advisory — errors never block).
-	if c.warningPublisher == nil {
-		return
-	}
-	now := time.Now()
-	for _, w := range warned {
-		if !w.notify {
-			continue // escalation is off for this finding's policy
-		}
-		ev, ok := warningEvent(w, now)
-		if !ok {
-			continue
-		}
-		if err := c.warningPublisher.PublishWarning(ctx, ev); err != nil {
-			c.logger.Warn("sla warning publish failed", "finding_id", w.findingID, "error", err)
-		}
-	}
-}
-
 // warningEvent builds the event for a row; ok=false when an ID can't be parsed.
-func warningEvent(w breachRow, now time.Time) (SLAWarningEvent, bool) {
-	tid, err := shared.IDFromString(w.tenantID)
+func warningEvent(r escalationRow, now time.Time) (SLAWarningEvent, bool) {
+	tid, err := shared.IDFromString(r.tenantID)
 	if err != nil {
 		return SLAWarningEvent{}, false
 	}
-	fid, err := shared.IDFromString(w.findingID)
+	fid, err := shared.IDFromString(r.findingID)
 	if err != nil {
 		return SLAWarningEvent{}, false
 	}
 	return SLAWarningEvent{
 		TenantID:      tid,
 		FindingID:     fid,
-		SLADeadline:   w.slaDeadline,
-		TimeRemaining: w.slaDeadline.Sub(now),
+		FindingTitle:  r.title,
+		SLADeadline:   r.slaDeadline,
+		TimeRemaining: r.slaDeadline.Sub(now),
 		At:            now,
 	}, true
 }
