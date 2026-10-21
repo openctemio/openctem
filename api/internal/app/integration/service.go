@@ -85,6 +85,9 @@ type IntegrationService struct {
 	// leave "pending", and the per-tenant client resolver only uses connected
 	// integrations — so it would be stored but never used.
 	ticketingTester TicketingConnectionTester
+	// issueTypeChecker verifies the issue types chosen for a ticketing
+	// integration against the tracker before they are saved.
+	issueTypeChecker TicketingIssueTypeChecker
 
 	// tenableConnector validates Tenable.sc sensor connector configs
 	// (RFC-047). nil: Tenable integrations cannot be created.
@@ -144,6 +147,47 @@ func (s *IntegrationService) SetNotificationExtensionRepository(repo integration
 // the tester builds its client from that integration's own credentials only.
 type TicketingConnectionTester interface {
 	TestTicketingConnection(ctx context.Context, intg *integrationdom.Integration) error
+}
+
+// TicketingIssueTypeChecker checks the issue types chosen in a ticketing
+// integration's config (config.ticketing.issue_types) against the tracker,
+// with the integration's own credentials: each type exists in the default
+// project, is not a sub-task type, and has every required field filled.
+// intg is the state about to be saved, loaded tenant-scoped by the caller.
+type TicketingIssueTypeChecker interface {
+	CheckTicketingIssueTypes(ctx context.Context, intg *integrationdom.Integration) error
+}
+
+// SetTicketingIssueTypeChecker wires the issue type check.
+func (s *IntegrationService) SetTicketingIssueTypeChecker(c TicketingIssueTypeChecker) {
+	s.issueTypeChecker = c
+}
+
+// checkIssueTypes runs the issue type check when a ticketing integration's
+// default project or issue types change; a passing check clears the recorded
+// create refusals (metadata.ticketing_health), which the new choice answers.
+func (s *IntegrationService) checkIssueTypes(ctx context.Context, intg *integrationdom.Integration, before map[string]any) error {
+	if intg.Category() != integrationdom.CategoryTicketing || s.issueTypeChecker == nil {
+		return nil
+	}
+	if !jira.IssueTypesChanged(before, intg.Config()) {
+		return nil
+	}
+	if err := s.issueTypeChecker.CheckTicketingIssueTypes(ctx, intg); err != nil {
+		return err
+	}
+	if md := intg.Metadata(); md != nil {
+		if _, ok := md["ticketing_health"]; ok {
+			next := make(map[string]any, len(md))
+			for k, v := range md {
+				if k != "ticketing_health" {
+					next[k] = v
+				}
+			}
+			intg.SetMetadata(next)
+		}
+	}
+	return nil
 }
 
 // SetTicketingConnectionTester wires the ticketing connection tester.
@@ -355,6 +399,11 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 		intg.SetCredentials(encrypted)
 	}
 
+	// Issue types chosen at connect time are checked like on an update.
+	if err := s.checkIssueTypes(ctx, intg, nil); err != nil {
+		return nil, err
+	}
+
 	// Build the SCM extension (if any) up front so the integration row and its
 	// extension can be inserted in a single transaction.
 	var scmExt *integrationdom.SCMExtension
@@ -531,6 +580,7 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 	if err := requireCredentialsForHostChange(intg, input.BaseURL, input.Credentials); err != nil {
 		return nil, err
 	}
+	configBefore := intg.Config()
 
 	// Apply updates to integration
 	if input.Name != nil {
@@ -595,6 +645,12 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 	}
 	if input.BaseURL != nil {
 		intg.SetBaseURL(*input.BaseURL)
+	}
+
+	// Chosen issue types are checked against the tracker as they will be
+	// saved (new site and credentials included).
+	if err := s.checkIssueTypes(ctx, intg, configBefore); err != nil {
+		return nil, err
 	}
 
 	// Save integration
