@@ -166,6 +166,14 @@ func (g *PolicyGate) AutoCreate(ctx context.Context, in CreateTicketInput) (*Tic
 		info, err := g.sync.CreateTicketFromFinding(ctx, in)
 		return info, nil, err
 	}
+	// One create per finding at a time: the hold release job and a workflow
+	// run can reach the same finding together, and the tracker would get two
+	// issues. The second one waits, then finds the first one's issue.
+	unlock, err := g.repo.LockFinding(ctx, tenantID, integrationID, f.ID())
+	if err != nil {
+		return nil, nil, err
+	}
+	defer unlock()
 	p, err := g.repo.Get(ctx, tenantID, integrationID)
 	if err != nil {
 		return nil, nil, err
@@ -207,6 +215,11 @@ func (g *PolicyGate) ManualCreate(ctx context.Context, in CreateTicketInput, con
 		return nil, nil, err
 	}
 	if ok {
+		unlock, err := g.repo.LockFinding(ctx, tenantID, integrationID, f.ID())
+		if err != nil {
+			return nil, nil, err
+		}
+		defer unlock()
 		p, err := g.repo.Get(ctx, tenantID, integrationID)
 		if err != nil {
 			return nil, nil, err
@@ -278,6 +291,13 @@ func (g *PolicyGate) ReleaseDue(ctx context.Context, limit int) (int, error) {
 }
 
 func (g *PolicyGate) releaseOne(ctx context.Context, c ticketpolicy.Candidate) (bool, error) {
+	// Serialized with AutoCreate and ManualCreate for this finding; the create
+	// below finds an issue they filed meanwhile instead of filing another.
+	unlock, err := g.repo.LockFinding(ctx, c.TenantID, c.IntegrationID, c.FindingID)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	if !c.Signals.Open || c.Linked {
 		return false, g.repo.DeleteHold(ctx, c.TenantID, c.IntegrationID, c.FindingID)
 	}

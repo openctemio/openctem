@@ -2870,6 +2870,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// API keys, held to the external-member role ceiling.
 	s.ServiceAccount = accesscontrol.NewServiceAccountService(repos.ServiceAccount, s.Audit, log)
 	s.Role.SetServiceAccountReader(repos.ServiceAccount)
+	s.Role.SetServiceKeyRevoker(repos.MemberLifecycle)
 
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {
