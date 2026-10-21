@@ -56,6 +56,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/command"
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
+	"github.com/openctemio/openctem/api/internal/app/participation"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
@@ -143,6 +144,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
+	participationdom "github.com/openctemio/openctem/api/pkg/domain/participation"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
@@ -836,6 +838,7 @@ type Services struct {
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
 	RemediationTask     *remediation.TaskService
+	Participation       *participation.Service // watchers of findings and tasks
 	// Query runs custom queries (one instance: its concurrency caps are
 	// per process).
 	Query              *queryapp.Service
@@ -1762,6 +1765,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// One exception over a task's open findings (RFC-111 §7).
 	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
+	// Watchers of findings and tasks (RFC-120): the item services own the read
+	// rules, so a watcher can never see more than a member could open.
+	s.Participation = participation.NewService(repos.WorkItemSubscription, repos.AccessControl, log)
+	s.Participation.SetItemAccess(participationdom.ItemFinding, s.Vulnerability.ParticipationAccess())
+	s.Participation.SetItemAccess(participationdom.ItemTask, s.RemediationTask.ParticipationAccess())
+	s.Participation.SetAuditLogger(s.Audit)
 	if deps.DB != nil {
 		s.Query = queryapp.NewService(postgres.NewQueryExecutor(&postgres.DB{DB: deps.DB}, postgres.InteractiveQueryTimeout), s.DataScope, log)
 	}

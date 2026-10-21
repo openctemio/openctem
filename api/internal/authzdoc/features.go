@@ -98,7 +98,7 @@ var Features = []Feature{
 		Description: "Remediation campaigns, suppression and exception rules, assignment rules and automation workflows.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerRemediationCampaignRoutes", "registerRemediationTaskRoutes", "registerRemediationSuggestionRoutes", "registerSuppressionRoutes", "registerAssignmentRuleRoutes",
+			"registerRemediationCampaignRoutes", "registerRemediationTaskRoutes", "registerParticipationRoutes", "registerRemediationSuggestionRoutes", "registerSuppressionRoutes", "registerAssignmentRuleRoutes",
 			"registerWorkflowRoutes",
 		},
 	},
