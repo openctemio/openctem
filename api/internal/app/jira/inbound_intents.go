@@ -32,9 +32,7 @@ func (s *SyncService) handleProfileIntent(ctx context.Context, in inboundRef, pa
 	if s.profiles == nil {
 		return false, nil
 	}
-	// The profile of the delivery's own integration (profiles are per
-	// integration and project).
-	sm, err := s.profiles.InboundStatusMap(ctx, in.tenantID, in.integrationID, ticketmap.ObjectFinding, ticketlink.ProjectOf(payload.Issue.Key))
+	sm, err := s.inboundStatusMap(ctx, in, payload)
 	if err != nil {
 		// Fail closed: a profile exists or not; when it cannot be read, the
 		// built-in map must not apply in its place. Jira retries the delivery.
@@ -66,6 +64,66 @@ func (s *SyncService) handleProfileIntent(ctx context.Context, in inboundRef, pa
 	default:
 		return true, nil
 	}
+}
+
+// inboundStatusMap finds the status map for a delivery: the published
+// profile of the delivery's own integration, the issue's project and the
+// issue's own issue type (each type has its own workflow), for the kind of
+// issue it is (a task's issue, or a finding's). A task issue whose type has
+// no task profile uses the finding profile of the same type (the same
+// workflow; its intents apply to the task's findings either way). nil when
+// the issue's type has no profile.
+func (s *SyncService) inboundStatusMap(ctx context.Context, in inboundRef, payload WebhookPayload) (*ticketmap.StatusMap, error) {
+	project := ticketlink.ProjectOf(payload.Issue.Key)
+	typeID := payloadIssueTypeID(payload)
+	kinds := []ticketmap.ObjectKind{ticketmap.ObjectFinding}
+	isTask, err := s.isTaskIssue(ctx, in, payload)
+	if err != nil {
+		return nil, err
+	}
+	if isTask {
+		kinds = []ticketmap.ObjectKind{ticketmap.ObjectTask, ticketmap.ObjectFinding}
+	}
+	for _, kind := range kinds {
+		sm, err := s.profiles.InboundStatusMap(ctx, in.tenantID, in.integrationID, kind, project, typeID)
+		if err != nil || (sm != nil && len(sm.Inbound) > 0) {
+			return sm, err
+		}
+	}
+	return nil, nil
+}
+
+// isTaskIssue reports whether the issue is a remediation task's own issue on
+// the delivery's integration.
+func (s *SyncService) isTaskIssue(ctx context.Context, in inboundRef, payload WebhookPayload) (bool, error) {
+	if s.links == nil {
+		return false, nil
+	}
+	links, err := s.issueLinks(ctx, in, payload.Issue.ID, strings.ToUpper(strings.TrimSpace(payload.Issue.Key)))
+	if err != nil {
+		return false, err
+	}
+	for _, l := range links {
+		if l.TaskID != nil && l.Role == ticketlink.RoleOwn {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// payloadIssueTypeID is the issue type id in a delivery's issue fields ("" when
+// absent or malformed; the profile lookup then matches the project's only
+// profile).
+func payloadIssueTypeID(payload WebhookPayload) string {
+	it, ok := payload.Issue.Fields["issuetype"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	id, _ := it["id"].(string)
+	if !issueTypeIDRe.MatchString(id) {
+		return ""
+	}
+	return id
 }
 
 // requestFromTicket opens pending disposition requests for the findings

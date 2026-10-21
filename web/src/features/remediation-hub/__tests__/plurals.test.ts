@@ -7,7 +7,18 @@ import { describe, expect, it } from 'vitest'
 import { en, vi } from '@/lib/i18n/dictionaries'
 import { translate } from '@/lib/i18n'
 
-const VARS = ['n', 'count', 'updated', 'findings', 'assets', 'risk', 'days']
+const VARS = [
+  'n',
+  'count',
+  'updated',
+  'findings',
+  'assets',
+  'risk',
+  'days',
+  'missing',
+  'members',
+  'name',
+]
 
 describe('remediation hub plurals', () => {
   for (const [name, dict] of Object.entries({ en, vi })) {
