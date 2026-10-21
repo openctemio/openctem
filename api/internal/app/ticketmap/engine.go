@@ -20,22 +20,51 @@ import (
 var _ appjira.ProfileSource = (*Service)(nil)
 
 // published returns the published profile of a destination, or nil. The
-// issue type is matched by id or by name; an empty one takes the project's
-// first published profile of the kind (a caller that cannot know the type).
+// issue type is matched by id (preferred) or by name. A caller that cannot
+// name the type gets the project's published profile of the kind only when it
+// is the single one: with several, which one applies is unknown, so none is
+// returned and the caller falls back to its built-in safe mapping instead of
+// whichever profile the list happened to return first.
 func (s *Service) published(ctx context.Context, tenantID, integrationID shared.ID, kind ticketmapdom.ObjectKind, projectKey, issueType string) (*ticketmapdom.Profile, *ticketmapdom.Version, error) {
 	iid := integrationID
-	res, err := s.repo.ListProfiles(ctx, tenantID, ticketmapdom.ProfileFilter{IntegrationID: &iid, ObjectKind: kind, ProjectKey: strings.ToUpper(projectKey)}, pagination.New(1, 50))
+	res, err := s.repo.ListProfiles(ctx, tenantID, ticketmapdom.ProfileFilter{IntegrationID: &iid, ObjectKind: kind, ProjectKey: strings.ToUpper(projectKey)}, pagination.New(1, 100))
 	if err != nil {
 		return nil, nil, err
 	}
-	var pick *ticketmapdom.Profile
+	var live []*ticketmapdom.Profile
 	for _, p := range res.Data {
-		if p.PublishedVersion == 0 {
-			continue
+		if p.PublishedVersion > 0 {
+			live = append(live, p)
 		}
-		if issueType == "" || strings.EqualFold(p.IssueType, issueType) || p.IssueTypeID == issueType {
-			pick = p
-			break
+	}
+	// A page that does not hold every profile cannot prove the choice is unique.
+	complete := res.Total <= int64(len(res.Data))
+	var pick *ticketmapdom.Profile
+	switch {
+	case issueType == "":
+		if len(live) == 1 && complete {
+			pick = live[0]
+		}
+	default:
+		// Deterministic when two profiles match (an id match beats a name
+		// match; then the lowest profile id).
+		rank := func(p *ticketmapdom.Profile) int {
+			if p.IssueTypeID == issueType {
+				return 0
+			}
+			if strings.EqualFold(p.IssueType, issueType) {
+				return 1
+			}
+			return 2
+		}
+		for _, p := range live {
+			r := rank(p)
+			if r == 2 {
+				continue
+			}
+			if pick == nil || r < rank(pick) || (r == rank(pick) && p.ID.String() < pick.ID.String()) {
+				pick = p
+			}
 		}
 	}
 	if pick == nil {

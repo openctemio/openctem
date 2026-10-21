@@ -156,3 +156,37 @@ func TestProfilesAreFoundByKindAndIssueType(t *testing.T) {
 		t.Fatalf("drift: %v", err)
 	}
 }
+
+func TestPublishedWithoutAnIssueTypeNeedsASingleProfile(t *testing.T) {
+	ctx := context.Background()
+	tenant, intg := shared.NewID(), shared.NewID()
+	repo := &memProfiles{versions: map[shared.ID]*ticketmapdom.Version{}}
+	only := repo.add(tenant, intg, ticketmapdom.ObjectFinding, "10042", "Security Finding", "31")
+	draft := repo.add(tenant, intg, ticketmapdom.ObjectFinding, "10005", "Draft only", "35")
+	draft.PublishedVersion = 0 // never published: not a candidate
+	s := NewService(repo, nil, nil, nil, "https://console.example", logger.NewNop())
+
+	// One published profile: a caller that cannot name the type gets it.
+	p, _, err := s.published(ctx, tenant, intg, ticketmapdom.ObjectFinding, "SEC", "")
+	if err != nil || p == nil || p.ID != only.ID {
+		t.Fatalf("single published profile: %+v %v", p, err)
+	}
+
+	// Two published profiles: which one applies is unknown, so none does
+	// (the caller keeps its built-in safe mapping), whatever the list order.
+	repo.add(tenant, intg, ticketmapdom.ObjectFinding, "10004", "Bug", "41")
+	for range 2 {
+		if p, _, err := s.published(ctx, tenant, intg, ticketmapdom.ObjectFinding, "SEC", ""); p != nil || err != nil {
+			t.Fatalf("ambiguous published profiles must give none: %+v %v", p, err)
+		}
+		repo.profiles[0], repo.profiles[2] = repo.profiles[2], repo.profiles[0]
+	}
+	// An explicit type still finds its own profile.
+	if p, _, err := s.published(ctx, tenant, intg, ticketmapdom.ObjectFinding, "SEC", "Bug"); err != nil || p == nil || p.IssueTypeID != "10004" {
+		t.Fatalf("explicit type: %+v %v", p, err)
+	}
+	// And the render path falls back (nil) rather than using a guess.
+	if pc, err := s.RenderFindingCreate(ctx, tenant, intg, "SEC", "", shared.NewID()); pc != nil || err != nil {
+		t.Fatalf("render without a type among several profiles: %+v %v", pc, err)
+	}
+}
