@@ -269,3 +269,46 @@ func (r *WorkItemSubscriptionRepository) AssetOwners(ctx context.Context, tenant
 	}
 	return out, rows.Err()
 }
+
+// ListStates returns the people who watch the item and the people who stopped
+// watching it.
+func (r *WorkItemSubscriptionRepository) ListStates(ctx context.Context, tenantID shared.ID, item participation.Item) (subscribed, unsubscribed []shared.ID, err error) {
+	col, err := itemColumn(item)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Subscribed rows are capped per item; unsubscribed rows are not, and
+	// are read on their own: a LIMIT over both could drop an unsubscribe
+	// and tell someone who opted out. They are ids of workspace members.
+	if subscribed, err = r.listUsers(ctx, tenantID, col, item, participation.StateSubscribed, participation.MaxWatchersPerItem*4); err != nil {
+		return nil, nil, err
+	}
+	if unsubscribed, err = r.listUsers(ctx, tenantID, col, item, participation.StateUnsubscribed, 0); err != nil {
+		return nil, nil, err
+	}
+	return subscribed, unsubscribed, nil
+}
+
+// listUsers returns the users whose row on the item is in state (limit 0 = all).
+func (r *WorkItemSubscriptionRepository) listUsers(ctx context.Context, tenantID shared.ID, col string, item participation.Item, state participation.State, limit int) ([]shared.ID, error) {
+	q := `SELECT user_id FROM work_item_subscriptions WHERE tenant_id = $1 AND ` + col + ` = $2 AND state = $3 ORDER BY user_id`
+	args := []any{tenantID.String(), item.ID.String(), string(state)}
+	if limit > 0 {
+		q += ` LIMIT $4`
+		args = append(args, limit)
+	}
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list subscription states: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan subscription state: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

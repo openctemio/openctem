@@ -128,6 +128,9 @@ type Repository interface {
 	AutoSubscribe(ctx context.Context, tenantID shared.ID, item Item, userID shared.ID, reason Reason) (bool, error)
 	// Remove deletes the person's row; reports whether there was one.
 	Remove(ctx context.Context, tenantID shared.ID, item Item, userID shared.ID) (bool, error)
+	// ListStates returns the people with a subscribed row on the item and the
+	// people with an unsubscribed row.
+	ListStates(ctx context.Context, tenantID shared.ID, item Item) (subscribed, unsubscribed []shared.ID, err error)
 	// AssetOwners lists the named user owners of the finding's asset.
 	AssetOwners(ctx context.Context, tenantID, findingID shared.ID) ([]AssetOwner, error)
 }

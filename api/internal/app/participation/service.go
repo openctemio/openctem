@@ -31,9 +31,10 @@ type ItemAccess interface {
 	// CallerAccess checks that the request's caller can read the item
 	// (shared.ErrNotFound otherwise) and says what they see of it.
 	CallerAccess(ctx context.Context, tenantID, itemID shared.ID) (Access, error)
-	// UserMayRead reports whether the person could read the item on their own
-	// account (data scope, pentest campaign). Membership is checked apart.
-	UserMayRead(ctx context.Context, tenantID, itemID, userID shared.ID) (bool, error)
+	// UserAccess reports whether the person could read the item on their own
+	// account (data scope, pentest campaign) and, if so, what they see of it.
+	// Membership is checked apart.
+	UserAccess(ctx context.Context, tenantID, itemID, userID shared.ID) (Access, bool, error)
 }
 
 // MemberChecker says whether a user is an active member of the tenant
@@ -47,12 +48,19 @@ type AuditLogger interface {
 	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
 }
 
+// AutoWatchPreference reads a person's "watch what I take part in" switch
+// (postgres.NotificationRepository). No preferences row means on.
+type AutoWatchPreference interface {
+	AutoWatchEnabled(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+}
+
 // Service manages watchers.
 type Service struct {
 	repo    participation.Repository
 	items   map[participation.ItemKind]ItemAccess
 	members MemberChecker
 	audit   AuditLogger
+	prefs   AutoWatchPreference
 	logger  *logger.Logger
 }
 
@@ -64,6 +72,11 @@ func NewService(repo participation.Repository, members MemberChecker, log *logge
 
 // SetItemAccess wires the access rules of one item kind.
 func (s *Service) SetItemAccess(kind participation.ItemKind, a ItemAccess) { s.items[kind] = a }
+
+// SetAutoWatchPreference wires the per-person switch for automatic watching.
+// Without it automatic watching is off (fail closed: nobody is subscribed on a
+// guess).
+func (s *Service) SetAutoWatchPreference(p AutoWatchPreference) { s.prefs = p }
 
 // SetAuditLogger wires the audit log.
 func (s *Service) SetAuditLogger(a AuditLogger) { s.audit = a }
@@ -123,19 +136,25 @@ func (s *Service) access(kind participation.ItemKind) (ItemAccess, error) {
 // canHear reports whether the person is an active member who can read the
 // item now. Any lookup error counts as no (fail closed).
 func (s *Service) canHear(ctx context.Context, a ItemAccess, tenantID shared.ID, item participation.Item, userID shared.ID) bool {
+	_, ok := s.hearing(ctx, a, tenantID, item, userID)
+	return ok
+}
+
+// hearing is canHear with what the person sees of the item.
+func (s *Service) hearing(ctx context.Context, a ItemAccess, tenantID shared.ID, item participation.Item, userID shared.ID) (Access, bool) {
 	if s.members == nil {
-		return false
+		return Access{}, false
 	}
 	ok, err := s.members.IsActiveTenantMember(ctx, tenantID, userID)
 	if err != nil || !ok {
-		return false
+		return Access{}, false
 	}
-	ok, err = a.UserMayRead(ctx, tenantID, item.ID, userID)
+	acc, ok, err := a.UserAccess(ctx, tenantID, item.ID, userID)
 	if err != nil {
 		s.logger.Warn("participation: read check failed", "error", logger.SanitizeError(err))
-		return false
+		return Access{}, false
 	}
-	return ok
+	return acc, ok
 }
 
 // Participants returns the watchers the caller may see.
@@ -269,9 +288,19 @@ func (s *Service) RemoveWatcher(ctx context.Context, tenantID shared.ID, item pa
 
 // AutoWatch subscribes a person who took part in the item (they commented,
 // changed its status, were assigned, claimed a fix, took part in an approval).
-// It never changes an existing row, so an unsubscribe wins. Best effort.
+// It never changes an existing row, so an unsubscribe wins, and it does nothing
+// for a person who turned automatic watching off. Callers pass a person only:
+// never a scanner, the system, an integration or an AI. Best effort.
 func (s *Service) AutoWatch(ctx context.Context, tenantID shared.ID, item participation.Item, userID shared.ID, reason participation.Reason) {
-	if userID.IsZero() {
+	if userID.IsZero() || s.prefs == nil {
+		return
+	}
+	on, err := s.prefs.AutoWatchEnabled(ctx, tenantID, userID)
+	if err != nil {
+		s.logger.Warn("participation: auto watch preference", "error", logger.SanitizeError(err))
+		return
+	}
+	if !on {
 		return
 	}
 	if _, err := s.repo.AutoSubscribe(ctx, tenantID, item, userID, reason); err != nil {
@@ -293,4 +322,93 @@ func (s *Service) auditChange(ctx context.Context, actx auditapp.AuditContext, a
 	if err := s.audit.LogEvent(ctx, actx, ev); err != nil && !errors.Is(err, context.Canceled) {
 		s.logger.Warn("participation: audit", "error", logger.SanitizeError(err))
 	}
+}
+
+// Event is something that happened to an item and who should hear about it.
+type Event struct {
+	Item participation.Item
+	// Actor is the person who did it; nil when no person did (a scanner, the
+	// system, an integration, an AI). The actor is never told, and watchers
+	// hear only about what a person did.
+	Actor *shared.ID
+	// Direct are the people the event is for by their role (the assignee).
+	Direct []shared.ID
+	// Forced are told even if they stopped watching: the new assignee on an
+	// assignment.
+	Forced []shared.ID
+	// TeamOnly: the event shows team-only content (a team comment on a pentest
+	// finding), which pentest campaign clients never see.
+	TeamOnly bool
+}
+
+// Recipient is a person to tell and why.
+type Recipient struct {
+	UserID shared.ID
+	// Reason is "assigned" for a person told by their role, "watching" for a
+	// watcher.
+	Reason string
+}
+
+// Recipients is the one place that decides who hears about an event on an item
+// (RFC-120 §4.4): the people it is for by role, plus the watchers when a person
+// caused it; minus the actor; minus whoever stopped watching (except the forced
+// ones); and then only people who are still active members who can read the
+// item now, and, for team-only content, who are not pentest clients. Every read
+// is re-checked here, at send time, so a watcher who lost scope hears nothing.
+// The result has one entry per person.
+func (s *Service) Recipients(ctx context.Context, tenantID shared.ID, ev Event) ([]Recipient, error) {
+	a, err := s.access(ev.Item.Kind)
+	if err != nil {
+		return nil, err
+	}
+	subscribed, unsubscribed, err := s.repo.ListStates(ctx, tenantID, ev.Item)
+	if err != nil {
+		return nil, err
+	}
+	stopped := map[shared.ID]bool{}
+	for _, id := range unsubscribed {
+		stopped[id] = true
+	}
+	forced := map[shared.ID]bool{}
+	for _, id := range ev.Forced {
+		forced[id] = true
+	}
+	reasons := map[shared.ID]string{}
+	order := make([]shared.ID, 0, len(ev.Direct)+len(ev.Forced)+len(subscribed))
+	add := func(id shared.ID, reason string) {
+		if id.IsZero() {
+			return
+		}
+		if _, dup := reasons[id]; dup {
+			return
+		}
+		reasons[id] = reason
+		order = append(order, id)
+	}
+	for _, id := range ev.Forced {
+		add(id, "assigned")
+	}
+	for _, id := range ev.Direct {
+		add(id, "assigned")
+	}
+	if ev.Actor != nil {
+		for _, id := range subscribed {
+			add(id, "watching")
+		}
+	}
+	out := make([]Recipient, 0, len(order))
+	for _, id := range order {
+		if ev.Actor != nil && id == *ev.Actor {
+			continue
+		}
+		if stopped[id] && !forced[id] {
+			continue
+		}
+		acc, ok := s.hearing(ctx, a, tenantID, ev.Item, id)
+		if !ok || (ev.TeamOnly && acc.ClientOnly) {
+			continue
+		}
+		out = append(out, Recipient{UserID: id, Reason: reasons[id]})
+	}
+	return out, nil
 }

@@ -47,23 +47,34 @@ type AssignableMember struct {
 // campaign member who may see its status. Same rules as GetFindingWithScope.
 // Without a data-scope enforcer nothing narrows (the service convention).
 func (s *VulnerabilityService) userMayReadFinding(ctx context.Context, f *vulnerability.Finding, userID shared.ID) (bool, error) {
+	ok, _, err := s.userFindingAccess(ctx, f, userID)
+	return ok, err
+}
+
+// userFindingAccess is userMayReadFinding that also says whether the person
+// reads the finding as a pentest campaign client.
+func (s *VulnerabilityService) userFindingAccess(ctx context.Context, f *vulnerability.Finding, userID shared.ID) (ok, clientOnly bool, err error) {
 	if s.dataScope == nil {
-		return true, nil
+		return true, false, nil
 	}
 	tenantID := f.TenantID()
 	isAdmin, err := s.dataScope.IsAdmin(ctx, tenantID, userID)
 	if err != nil {
-		return false, fmt.Errorf("resolve admin: %w", err)
+		return false, false, fmt.Errorf("resolve admin: %w", err)
 	}
 	if isPentest(f) {
-		_, err := s.resolvePentestViewer(ctx, tenantID, f, userID.String(), isAdmin)
-		return err == nil, nil
+		v, err := s.resolvePentestViewer(ctx, tenantID, f, userID.String(), isAdmin)
+		if err != nil {
+			return false, false, nil //nolint:nilerr // not on the campaign: cannot read
+		}
+		return true, v.clientOnly(), nil
 	}
 	scope, err := s.dataScope.ForUser(ctx, tenantID, userID)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	return s.dataScope.InScope(ctx, scope, f.AssetID())
+	ok, err = s.dataScope.InScope(ctx, scope, f.AssetID())
+	return ok, false, err
 }
 
 // assertAssigneeMayRead refuses an assignee who cannot read the finding, so
