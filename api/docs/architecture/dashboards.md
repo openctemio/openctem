@@ -286,7 +286,9 @@ How each figure is computed (`internal/app/dashboard/widgets`,
   apply the viewer's campaign membership.
 - Every read leaves out findings on program-only and soft-deleted assets,
   like every dashboard read.
-- Nothing is cached: each read computes for its own caller. Reads are
+- Results are stored per dashboard (see "Snapshots and refresh"): a
+  personal snapshot only for its owner and only while their scope is
+  unchanged, an organization snapshot for every permitted viewer. Reads are
   bounded: 2 at a time per user, 6 per organization, 12 per API process
   (429 with `Retry-After`), 5 s per statement and 20 s per dashboard.
 - Known gap: F2 has no source column, so a pentest finding without a
