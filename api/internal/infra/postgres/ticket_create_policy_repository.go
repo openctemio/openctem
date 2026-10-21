@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"time"
@@ -308,4 +309,35 @@ func (r *TicketCreatePolicyRepository) PurgeDaily(ctx context.Context, olderThan
 		return 0, fmt.Errorf("purge ticket counters: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// findingLockWait bounds how long a create waits for another create of the
+// same finding (a tracker call is the longest thing held under the lock).
+const findingLockWait = 2 * time.Minute
+
+// LockFinding takes a session-level advisory lock keyed on tenant, integration
+// and finding, on a connection of its own (see ticketpolicy.Repository).
+func (r *TicketCreatePolicyRepository) LockFinding(ctx context.Context, tenantID, integrationID, findingID shared.ID) (func(), error) {
+	key := tenantID.String() + "|" + integrationID.String() + "|" + findingID.String()
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock finding for ticket create: %w", err)
+	}
+	wctx, cancel := context.WithTimeout(ctx, findingLockWait)
+	defer cancel()
+	if _, err := conn.ExecContext(wctx, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, key); err != nil {
+		// A canceled wait may leave the lock request behind: drop the connection.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		_ = conn.Close()
+		return nil, fmt.Errorf("lock finding for ticket create: %w", err)
+	}
+	return func() {
+		uctx, ucancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer ucancel()
+		if _, err := conn.ExecContext(uctx, `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, key); err != nil {
+			// Never hand a connection that may still hold the lock back to the pool.
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+		_ = conn.Close()
+	}, nil
 }

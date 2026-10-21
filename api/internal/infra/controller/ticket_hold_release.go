@@ -53,6 +53,10 @@ func (c *TicketHoldReleaseController) Name() string { return "ticket-hold-releas
 // Interval implements Controller.
 func (c *TicketHoldReleaseController) Interval() time.Duration { return c.interval }
 
+// ReconcileTimeout gives a batch of tracker calls room to finish: the default
+// budget is the 2-minute interval, which a batch of slow creates exceeds.
+func (c *TicketHoldReleaseController) ReconcileTimeout() time.Duration { return 10 * time.Minute }
+
 // Exclusive: one API replica at a time (controller lease). Two replicas
 // listing the same due holds would both file the issue: the tracker-side
 // marker lookup is a search, which does not see an issue created a moment
