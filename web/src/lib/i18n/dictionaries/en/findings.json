@@ -1318,5 +1318,13 @@
   "findings.retestPanel.startedDescCheck": "The finding's retest check is running against its target.",
   "findings.retestPanel.notYetCheck": "Not retested yet. A retest runs the custom check {name} against this finding's target.",
   "findings.retestPanel.checkedWith": "Checked with custom check {name}",
-  "findings.retestPanel.checkedWithUnnamed": "Checked with a custom check"
+  "findings.retestPanel.checkedWithUnnamed": "Checked with a custom check",
+  "findings.createTicket.belowTitle": "Below the create policy",
+  "findings.createTicket.belowDesc": "Automations only create issues for findings of {severity} or above. Create this one anyway? This is recorded in the audit log.",
+  "findings.createTicket.belowDescClass": "Automations only create issues for findings of {severity} or above, or priority {cls} or above. Create this one anyway? This is recorded in the audit log.",
+  "findings.createTicket.createAnyway": "Create anyway",
+  "findings.ticketHolds.belowThreshold": "Not sent to Jira — below the create policy",
+  "findings.ticketHolds.dailyCap": "Not sent to Jira yet — today’s limit is reached",
+  "findings.ticketHolds.createFailed": "Not sent to Jira — the last attempt failed",
+  "findings.ticketHolds.createAnyway": "Create anyway"
 }

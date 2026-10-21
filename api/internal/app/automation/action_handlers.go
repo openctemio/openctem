@@ -22,6 +22,10 @@ import (
 type TicketRef struct {
 	Key string
 	URL string
+	// Held: the integration's create policy held the finding back (below
+	// its threshold or over its daily cap); nothing was filed.
+	Held       bool
+	HeldReason string
 }
 
 // JiraTicketService is the narrow behavior the ticket action needs from the
@@ -559,6 +563,16 @@ func (h *TicketActionHandler) updateTicket(ctx context.Context, input *ActionInp
 
 // ticketResult builds the standard create_ticket action result payload.
 func ticketResult(provider, findingID string, ref TicketRef) map[string]any {
+	if ref.Held {
+		return map[string]any{
+			"finding_id":  findingID,
+			"provider":    provider,
+			"created":     false,
+			"held":        true,
+			"held_reason": ref.HeldReason,
+			"action":      "create_ticket",
+		}
+	}
 	return map[string]any{
 		"finding_id": findingID,
 		"provider":   provider,

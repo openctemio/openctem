@@ -50,6 +50,9 @@ type JiraWebhookHandler struct {
 	deliveries WebhookDeliveryGuard
 	// audit records ticket link changes (nil → none).
 	audit *auditapp.AuditService
+	// policy is the ticket create policy (nil: none, every create goes
+	// through).
+	policy *jira.PolicyGate
 }
 
 // NewJiraWebhookHandler creates a new JiraWebhookHandler.
@@ -105,6 +108,10 @@ type CreateTicketRequest struct {
 	// means the default (the first connected one).
 	IntegrationID string `json:"integration_id,omitempty" validate:"omitempty,uuid"`
 
+	// ConfirmBelowThreshold creates the issue even though the finding is
+	// below the integration's create policy (audited).
+	ConfirmBelowThreshold bool `json:"confirm_below_threshold,omitempty"`
+
 	// GitHub fields (required when provider=github).
 	Owner string `json:"owner,omitempty" validate:"omitempty,max=255"`
 	Repo  string `json:"repo,omitempty" validate:"omitempty,max=255"`
@@ -131,17 +138,32 @@ func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := h.service.CreateTicketFromFinding(r.Context(), jira.CreateTicketInput{
+	in := jira.CreateTicketInput{
 		TenantID:      tenantID,
 		FindingID:     findingID,
 		ProjectKey:    req.ProjectKey,
 		IssueType:     req.IssueType,
 		IntegrationID: req.IntegrationID,
-	})
+	}
+	var (
+		result *jira.TicketInfo
+		below  *jira.BelowThreshold
+		err    error
+	)
+	if h.policy != nil {
+		result, below, err = h.policy.ManualCreate(r.Context(), in, req.ConfirmBelowThreshold)
+	} else {
+		result, err = h.service.CreateTicketFromFinding(r.Context(), in)
+	}
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
+	if result == nil && below != nil {
+		writeBelowThreshold(w, below)
+		return
+	}
+	h.auditBelowThreshold(r, findingID, below, result.TicketKey)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

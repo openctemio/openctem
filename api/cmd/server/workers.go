@@ -1027,6 +1027,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Ticket create policy: re-check held findings and file the ones that
+	// now pass (severity/priority/KEV rose, policy loosened, new day for the
+	// daily cap). Single leader through the controller lease.
+	if svc.TicketPolicy != nil {
+		if svc.Module != nil {
+			svc.TicketPolicy.SetModuleChecker(svc.Module)
+		}
+		w.ControllerManager.Register(controller.NewTicketHoldReleaseController(
+			svc.TicketPolicy, repos.TicketCreatePolicy, 2*time.Minute, 200,
+			log.With("controller", "ticket-hold-release")))
+	}
+
 	// F-13: Priority-class audit log retention. Prevents unbounded growth of
 	// priority_class_audit_log — every classification/enrichment writes a row.
 	w.ControllerManager.Register(controller.NewPriorityAuditRetentionController(

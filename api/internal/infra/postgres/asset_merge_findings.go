@@ -80,6 +80,10 @@ var findingMergeRefs = []mergeRef{
 	// is dropped when the survivor has one and moves otherwise.
 	{table: "finding_retest_checks", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{}}},
+	// A held automatic issue follows the finding: the release job re-checks the
+	// survivor against the policy; the survivor's own hold wins.
+	{table: "ticket_create_holds", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"integration_id"}}}},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},

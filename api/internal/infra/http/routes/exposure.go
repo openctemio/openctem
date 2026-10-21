@@ -337,6 +337,8 @@ func registerVulnerabilityRoutes(
 			// fix claim, which a member without that permission could not
 			// make directly.
 			r.GET("/{id}/ticket-links", jiraHandler.ListTicketLinks, middleware.Require(permission.FindingsRead))
+			// Why the automatic path has not filed an issue yet (holds).
+			r.GET("/{id}/ticket-holds", jiraHandler.ListTicketHolds, middleware.Require(permission.FindingsRead))
 			r.POST("/{id}/ticket-links", jiraHandler.LinkTicketIssue, middleware.RequireAll(permission.FindingsWrite, permission.FindingsFixApply))
 			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.Require(permission.FindingsWrite))
 		}

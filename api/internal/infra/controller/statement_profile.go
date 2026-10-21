@@ -45,6 +45,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"AssetTechnologyBackfillController":   SQLBatched,
 	"AssetIdentityBackfillController":     SQLBatched,
 	"PriorityAuditRetentionController":    SQLBatched,
+	"TicketHoldReleaseController":         SQLBatched,
 	"ScannerOutputRetentionController":    SQLBatched,
 	"CommandLogRetentionController":       SQLBatched,
 	"HeartbeatHistoryRetentionController": SQLBatched,
