@@ -233,6 +233,9 @@ func (s *RoleService) SetServiceAccountReader(r serviceAccountReader) { s.servic
 
 type serviceAccountReader interface {
 	IsServiceAccount(ctx context.Context, userID shared.ID) (bool, error)
+	// RoleHasServiceAccountHolder reports whether a service account holds the
+	// role, directly or through a team.
+	RoleHasServiceAccountHolder(ctx context.Context, tenantID, roleID shared.ID) (bool, error)
 }
 
 // ErrExternalViewerCeiling refuses more than viewer for an external member

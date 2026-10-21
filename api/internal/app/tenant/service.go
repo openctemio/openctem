@@ -917,9 +917,28 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, err
 	}
 
-	// UpdateMembership swaps the member's system role rows (the drifted owner
-	// row included) and the label in one transaction.
-	if err := s.repo.UpdateMembership(ctx, membership); err != nil {
+	// An administrator who is demoted no longer answers for the service
+	// accounts' keys they minted: those keys are organization secrets that
+	// outlive the role. The revoke commits in the same transaction as the
+	// role change, so a failure refuses the change instead of leaving the
+	// keys live. Only a drop below administrator loses service_accounts:manage;
+	// owner to administrator keeps it, so it revokes nothing.
+	revokedSAKeys := 0
+	if tenantdom.PrivilegeRank(role) < tenantdom.PrivilegeRank(tenantdom.RoleAdmin) &&
+		tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) >= tenantdom.PrivilegeRank(tenantdom.RoleAdmin) &&
+		s.lifecycle != nil {
+		var by *shared.ID
+		if id, perr := shared.IDFromString(actx.ActorID); perr == nil {
+			by = &id
+		}
+		n, err := s.lifecycle.ChangeRoleRevokingServiceAccountKeys(ctx, membership, by)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update member role: %w", err)
+		}
+		revokedSAKeys = n
+	} else if err := s.repo.UpdateMembership(ctx, membership); err != nil {
+		// UpdateMembership swaps the member's system role rows (the drifted
+		// owner row included) and the label in one transaction.
 		return nil, fmt.Errorf("failed to update member role: %w", err)
 	}
 	if drift {
@@ -941,27 +960,6 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	if tenantdom.PrivilegeRank(role) > tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) {
 		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
 			fmt.Sprintf("membership role raised from %s to %s", oldRole, role))
-	}
-
-	// An administrator who is demoted no longer answers for the service
-	// accounts' keys they minted: those keys are organization secrets that
-	// outlive the role. Revoke them and say so in the audit event.
-	revokedSAKeys := 0
-	// Only a drop below administrator loses service_accounts:manage; owner to
-	// administrator keeps it, so it revokes nothing.
-	if tenantdom.PrivilegeRank(role) < tenantdom.PrivilegeRank(tenantdom.RoleAdmin) &&
-		tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) >= tenantdom.PrivilegeRank(tenantdom.RoleAdmin) &&
-		s.lifecycle != nil {
-		var by *shared.ID
-		if id, perr := shared.IDFromString(actx.ActorID); perr == nil {
-			by = &id
-		}
-		n, rerr := s.lifecycle.RevokeServiceAccountKeys(ctx, membership.TenantID(), membership.UserID(), by)
-		if rerr != nil {
-			s.logger.Error("failed to revoke service account keys of a demoted administrator",
-				"membership_id", logger.SanitizeValue(membershipID), "error", rerr)
-		}
-		revokedSAKeys = n
 	}
 
 	// Log audit event
@@ -1072,6 +1070,7 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	if disabled != nil {
 		event = event.
 			WithMetadata("suspended_keys", disabled.SuspendedKeys).
+			WithMetadata("revoked_service_account_keys", disabled.RevokedServiceAccountKeys).
 			WithMetadata("paused_schedules", disabled.Paused())
 	}
 	s.logAudit(ctx, actx, event)

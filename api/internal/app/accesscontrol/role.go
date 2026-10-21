@@ -44,6 +44,9 @@ type RoleService struct {
 	bindings groupdom.RoleBindingRepository
 	// serviceAccounts applies the service-account role ceiling; nil: none.
 	serviceAccounts serviceAccountReader
+	// keyRevoker revokes the service-account keys a member minted when they
+	// lose service_accounts:manage; nil: none.
+	keyRevoker serviceKeyRevoker
 	// externalCeiling is the trust ceiling for external members (RFC-058).
 	externalCeiling func(ctx context.Context, host, home shared.ID) (string, error)
 	// privilege tells the administrators about privilege increases (RFC-058).
@@ -479,6 +482,18 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 	}
 	if input.HasFullDataAccess != nil {
 		changes.Set("has_full_data_access", hasFullDataAccess, *input.HasFullDataAccess)
+		// A service account never holds full data access: not through a role
+		// it already holds, directly or through a team (also refused by a
+		// database trigger).
+		if *input.HasFullDataAccess && !hasFullDataAccess && s.serviceAccounts != nil {
+			held, err := s.serviceAccounts.RoleHasServiceAccountHolder(ctx, asSharedID(*r.TenantID()), asSharedID(r.ID()))
+			if err != nil {
+				return nil, fmt.Errorf("check service account holders: %w", err)
+			}
+			if held {
+				return nil, ErrServiceAccountRoleCeiling
+			}
+		}
 		hasFullDataAccess = *input.HasFullDataAccess
 	}
 
@@ -896,11 +911,16 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 		return err
 	}
 
+	hadManage := s.holdsServiceAccountsManage(ctx, tid, uid)
 	if err := s.roleRepo.RemoveRole(ctx, tid, uid, rid); err != nil {
 		if errors.Is(err, roledom.ErrUserRoleNotFound) {
 			return fmt.Errorf("%w: user does not have this role", shared.ErrValidation)
 		}
 		return fmt.Errorf("failed to remove role: %w", err)
+	}
+	revoked, err := s.revokeKeysIfManageLost(ctx, tid, uid, hadManage, actx.ActorID)
+	if err != nil {
+		return err
 	}
 
 	// Invalidate user's permissions to trigger real-time sync
@@ -915,6 +935,9 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 		WithMessage(fmt.Sprintf("Role '%s' removed from user", roleName)).
 		WithMetadata("user_id", userID).
 		WithSeverity(audit.SeverityHigh)
+	if revoked > 0 {
+		event = event.WithMetadata("revoked_service_account_keys", revoked)
+	}
 	s.logAudit(ctx, actx, event)
 
 	return nil
@@ -1040,8 +1063,13 @@ func (s *RoleService) setUserRoles(ctx context.Context, input SetUserRolesInput,
 		assignedByID = &id
 	}
 
+	hadManage := s.holdsServiceAccountsManage(ctx, tid, uid)
 	if err := s.roleRepo.SetUserRoles(ctx, tid, uid, roleIDs, assignedByID); err != nil {
 		return fmt.Errorf("failed to set user roles: %w", err)
+	}
+	revoked, err := s.revokeKeysIfManageLost(ctx, tid, uid, hadManage, assignedBy)
+	if err != nil {
+		return err
 	}
 
 	// Invalidate user's permissions to trigger real-time sync
@@ -1061,6 +1089,9 @@ func (s *RoleService) setUserRoles(ctx context.Context, input SetUserRolesInput,
 		WithMessage(fmt.Sprintf("User roles updated to: %v", roleNames)).
 		WithChanges(changes).
 		WithSeverity(audit.SeverityHigh)
+	if revoked > 0 {
+		event = event.WithMetadata("revoked_service_account_keys", revoked)
+	}
 	s.logAudit(ctx, actx, event)
 
 	return nil
