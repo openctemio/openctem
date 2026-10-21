@@ -32,7 +32,6 @@ interface ExposureChainResponse {
   is_crown_jewel: boolean
   hops: ChainHopResponse[]
   length: number
-  reachable_from_entry_points: number
   kev_count: number
   critical_count: number
   score: number
@@ -70,7 +69,6 @@ export interface ExposureChain {
   isCrownJewel: boolean
   hops: ChainHop[]
   length: number
-  reachableFromEntryPoints: number
   kevCount: number
   criticalCount: number
   score: number
@@ -109,7 +107,6 @@ function transformResponse(data: ExposureChainsResponse): ExposureChains {
             exposure: h.exposure,
           })) ?? [],
         length: c.length,
-        reachableFromEntryPoints: c.reachable_from_entry_points,
         kevCount: c.kev_count,
         criticalCount: c.critical_count,
         score: c.score,

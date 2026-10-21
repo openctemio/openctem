@@ -19,7 +19,9 @@ import (
 
 var _ appjira.ProfileSource = (*Service)(nil)
 
-// published returns the published profile of a destination, or nil.
+// published returns the published profile of a destination, or nil. The
+// issue type is matched by id or by name; an empty one takes the project's
+// first published profile of the kind (a caller that cannot know the type).
 func (s *Service) published(ctx context.Context, tenantID, integrationID shared.ID, kind ticketmapdom.ObjectKind, projectKey, issueType string) (*ticketmapdom.Profile, *ticketmapdom.Version, error) {
 	iid := integrationID
 	res, err := s.repo.ListProfiles(ctx, tenantID, ticketmapdom.ProfileFilter{IntegrationID: &iid, ObjectKind: kind, ProjectKey: strings.ToUpper(projectKey)}, pagination.New(1, 50))
@@ -68,11 +70,11 @@ func (s *Service) RenderFindingCreate(ctx context.Context, tenantID, integration
 	return out, nil
 }
 
-// FindingStatusTarget returns where the published profile of a project moves
-// the issue of a finding in its current state. (nil, nil) without a
-// published finding profile for the project.
-func (s *Service) FindingStatusTarget(ctx context.Context, tenantID, integrationID shared.ID, projectKey string, findingID shared.ID) (*appjira.ProfileStatus, error) {
-	p, v, err := s.published(ctx, tenantID, integrationID, ticketmapdom.ObjectFinding, projectKey, "")
+// FindingStatusTarget returns where the published finding profile of a
+// project and issue type moves the issue of a finding in its current state.
+// (nil, nil) without one.
+func (s *Service) FindingStatusTarget(ctx context.Context, tenantID, integrationID shared.ID, projectKey, issueTypeID string, findingID shared.ID) (*appjira.ProfileStatus, error) {
+	p, v, err := s.published(ctx, tenantID, integrationID, ticketmapdom.ObjectFinding, projectKey, issueTypeID)
 	if err != nil || p == nil {
 		return nil, err
 	}
@@ -80,14 +82,81 @@ func (s *Service) FindingStatusTarget(ctx context.Context, tenantID, integration
 	if err != nil {
 		return nil, err
 	}
-	out := &appjira.ProfileStatus{ProfileID: p.ID, State: findingState(f), DryRun: p.DryRun}
+	return statusTarget(p, v, findingState(f)), nil
+}
+
+// TaskStatusTarget returns where the published task profile of a project
+// and issue type moves the issue of a task in its current state. (nil, nil)
+// without one.
+func (s *Service) TaskStatusTarget(ctx context.Context, tenantID, integrationID shared.ID, projectKey, issueTypeID string, taskID shared.ID) (*appjira.ProfileStatus, error) {
+	p, v, err := s.published(ctx, tenantID, integrationID, ticketmapdom.ObjectTask, projectKey, issueTypeID)
+	if err != nil || p == nil {
+		return nil, err
+	}
+	t, err := s.objects.Task(ctx, tenantID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return statusTarget(p, v, TaskStateOf(t)), nil
+}
+
+func statusTarget(p *ticketmapdom.Profile, v *ticketmapdom.Version, state string) *appjira.ProfileStatus {
+	out := &appjira.ProfileStatus{ProfileID: p.ID, State: state, DryRun: p.DryRun}
 	if v.Snapshot != nil {
 		out.Workflow = v.Snapshot.Workflow
 	}
-	if t, ok := v.Spec.Status.Outbound[out.State]; ok {
+	if t, ok := v.Spec.Status.Outbound[state]; ok {
 		out.Target = &t
 	}
+	return out
+}
+
+// RenderTaskCreate renders the published task profile of a destination for
+// a new issue of a remediation task. (nil, nil) without one. The create path
+// already required every member of the task in the caller's scope.
+func (s *Service) RenderTaskCreate(ctx context.Context, tenantID, integrationID shared.ID, projectKey, issueType string, taskID shared.ID) (*appjira.ProfileCreate, error) {
+	p, v, err := s.published(ctx, tenantID, integrationID, ticketmapdom.ObjectTask, projectKey, issueType)
+	if err != nil || p == nil {
+		return nil, err
+	}
+	task, err := s.objects.Task(ctx, tenantID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	members, total, err := s.objects.TaskMembers(ctx, tenantID, taskID, maxTableRows)
+	if err != nil {
+		return nil, err
+	}
+	var user *UserInfo
+	if a := task.AssigneeUserID; a != nil {
+		user, _ = s.objects.User(ctx, tenantID, *a)
+	}
+	values := TaskValues(task, members, total, user, s.webBase)
+	r := ticketmapdom.RenderOutbound(p.ObjectKind, v.Spec, values, v.Snapshot, renderOptions(true))
+	if _, ok := r.Fields["summary"]; !ok {
+		return nil, fmt.Errorf("%w: the mapping renders no summary for this task", shared.ErrValidation)
+	}
+	out := &appjira.ProfileCreate{ProfileID: p.ID, Version: v.Version, IssueTypeID: p.IssueTypeID, Fields: r.Fields, DryRun: p.DryRun}
+	for _, d := range r.Dropped {
+		out.Dropped = append(out.Dropped, d.FieldID)
+	}
 	return out, nil
+}
+
+// MarkDrifted flags a profile of the tenant whose issues the tracker refused.
+func (s *Service) MarkDrifted(ctx context.Context, tenantID, profileID shared.ID) error {
+	return s.repo.SetDrifted(ctx, tenantID, profileID, true)
+}
+
+// HasPublishedProfile reports whether a destination (kind, project, issue
+// type id) has a published profile: its required fields are then covered
+// (publishing checks them against the tracker).
+func (s *Service) HasPublishedProfile(ctx context.Context, tenantID, integrationID shared.ID, kind ticketmapdom.ObjectKind, projectKey, issueTypeID string) (bool, error) {
+	if issueTypeID == "" {
+		return false, nil
+	}
+	p, _, err := s.published(ctx, tenantID, integrationID, kind, projectKey, issueTypeID)
+	return p != nil, err
 }
 
 // findingValues loads a finding's mapping values without the caller-scope
@@ -124,9 +193,9 @@ func (s *Service) ProjectKeys(ctx context.Context, tenantID, integrationID share
 }
 
 // InboundStatusMap returns the status map of the published profile of a
-// project for an object kind, or nil without one.
-func (s *Service) InboundStatusMap(ctx context.Context, tenantID, integrationID shared.ID, kind ticketmapdom.ObjectKind, projectKey string) (*ticketmapdom.StatusMap, error) {
-	p, v, err := s.published(ctx, tenantID, integrationID, kind, projectKey, "")
+// project and issue type for an object kind, or nil without one.
+func (s *Service) InboundStatusMap(ctx context.Context, tenantID, integrationID shared.ID, kind ticketmapdom.ObjectKind, projectKey, issueTypeID string) (*ticketmapdom.StatusMap, error) {
+	p, v, err := s.published(ctx, tenantID, integrationID, kind, projectKey, issueTypeID)
 	if err != nil || p == nil {
 		return nil, err
 	}

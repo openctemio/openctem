@@ -42,6 +42,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
+	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
@@ -284,38 +285,6 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 	}
 	id := u.ID()
 	return &id, nil
-}
-
-// ticketStatusApplier adapts the finding service's inbound ticket path to
-// the Jira sync service.
-type ticketStatusApplier struct{ vuln *finding.VulnerabilityService }
-
-func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref, externalActor string,
-) ([]shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
-	if err != nil {
-		return nil, nil, err
-	}
-	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
-	for _, r := range out.Refused {
-		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
-	}
-	return out.Applied, refused, nil
-}
-
-func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref, externalActor string,
-) ([]shared.ID, []shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.RequestTicketDisposition(ctx, tenantID, ids, target, integration, ref, externalActor)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
-	for _, r := range out.Refused {
-		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
-	}
-	return out.Requested, out.Pending, refused, nil
 }
 
 // taskIssueReader is the platform's read of remediation tasks for their
@@ -1764,6 +1733,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
+	// An owner who cannot see the task's findings: the picker explains it and naming one needs findings:assign.
+	s.RemediationTask.SetOwnerAccess(repos.RemediationOwnerAccess)
 	s.RemediationTask.SetAuditLogger(s.Audit)
 	// Campaign <-> task: the campaign checks every task it takes; a task's
 	// own campaign change goes through the campaign's write check.
@@ -1910,7 +1881,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Inbound status changes go through the finding service rules (transition
 	// map, gates, "mark fixed" with proof of fix) for every finding linked to
 	// the issue; refusals are commented back once per window (all replicas).
-	s.JiraSync.SetInboundApplier(ticketStatusApplier{vuln: s.Vulnerability})
+	s.JiraSync.SetInboundApplier(ticketbridge.Jira{Vuln: s.Vulnerability})
 	s.JiraSync.SetWorkItemFindingLister(repos.Finding)
 	if deps.RedisClient != nil {
 		s.JiraSync.SetRefusalCommentGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
@@ -1938,7 +1909,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Published profiles drive issue creation and status moves for their
 		// destinations; without one the built-in behavior is unchanged.
 		s.JiraSync.SetProfileSource(s.TicketMapping)
+		// Saving an issue type whose required fields need a mapping asks
+		// whether that destination has a published profile.
+		jiraResolver.SetProfileCoverage(s.TicketMapping.HasPublishedProfile)
 	}
+	// Create refusals naming fields are shown per kind on the ticketing page.
+	s.JiraSync.SetIssueTypeHealth(infrajira.IssueTypeHealthStore{Repo: repos.Integration})
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
@@ -1952,9 +1928,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
 	// request); resolves the tenant's GitHub integration credentials on demand.
 	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
-	s.GitHubTicket.SetLifecycles(s.FindingLifecycle)
+	// Inbound issue events take the same finding service path as Jira:
+	// transition map, data scope, pentest and approval gates, "mark fixed"
+	// with the integration as the actor, for every finding linked to the
+	// issue.
+	s.GitHubTicket.SetInboundApplier(ticketbridge.GitHub{Vuln: s.Vulnerability})
+	s.GitHubTicket.SetWorkItemFindingLister(repos.Finding)
 	s.GitHubTicket.SetEgressGate(ticketEgress)
-	s.GitHubTicket.SetActivityRecorder(s.FindingActivity)
 
 	// Initialize integration & notification services
 	s.Integration = integration.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
@@ -1968,6 +1948,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Without it a Jira integration never leaves "pending", and jiraResolver
 	// only uses connected integrations — ticket creation would stay inert.
 	s.Integration.SetTicketingConnectionTester(jiraResolver)
+	// Issue types chosen for a ticketing integration are checked against
+	// Jira before they are saved.
+	s.Integration.SetTicketingIssueTypeChecker(jiraResolver)
 
 	s.Outbox = outbox.NewService(
 		repos.Outbox,
@@ -2530,6 +2513,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.JiraSync != nil && s.FindingActions != nil && repos.Finding != nil {
 		rescanHook := jira.NewRescanHook(proofOfFix, repos.Finding, log)
 		s.JiraSync.SetPostFixAppliedHook(rescanHook.Hook)
+		// A GitHub issue closed as completed is the same fix claim.
+		if s.GitHubTicket != nil {
+			s.GitHubTicket.SetFixClaimHook(rescanHook.Hook)
+		}
 	}
 
 	// RFC-039 Phase 2: a regression (a retest or a scan seeing a finding closed

@@ -213,6 +213,16 @@ func (h *keyRESTHarness) mint(tenantID, userID string, rateLimit int, scopes ...
 	return res.Plaintext, res.Key.ID().String()
 }
 
+// mintLegacy returns a key that carries scopes the service no longer grants
+// (a write scope on a key minted before keys became read-only): the key is
+// minted with a read scope and its scopes are then replaced in the database.
+func (h *keyRESTHarness) mintLegacy(tenantID, userID string, rateLimit int, scopes ...string) (string, string) {
+	h.t.Helper()
+	key, id := h.mint(tenantID, userID, rateLimit, "assets:read")
+	h.exec(`UPDATE api_keys SET scopes = string_to_array($2, ',') WHERE id = $1`, id, strings.Join(scopes, ","))
+	return key, id
+}
+
 type keyReq struct {
 	method, path string
 	headers      map[string]string
@@ -257,7 +267,7 @@ func TestAPIKeyREST_DB(t *testing.T) {
 	h := newKeyRESTHarness(t)
 	tenantID := h.tenant(`{}`)
 	userID := h.member(tenantID, "member")
-	key, keyID := h.mint(tenantID, userID, 0, "assets:read", "assets:write", "findings:read")
+	key, keyID := h.mintLegacy(tenantID, userID, 0, "assets:read", "assets:write", "findings:read")
 	bearer := map[string]string{"Authorization": "Bearer " + key}
 
 	t.Run("key reads as its tenant and user, with its scopes only", func(t *testing.T) {
