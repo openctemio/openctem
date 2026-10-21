@@ -40,8 +40,11 @@ type MappingConfig struct {
 	// DefaultPriority is returned when a severity has no explicit mapping.
 	DefaultPriority string
 
-	// DefaultIssueType is the Jira issue type used when a request omits one.
-	DefaultIssueType string
+	// IssueTypes is the issue type of each kind of issue OpenCTEM creates
+	// (IssueKindFinding, IssueKindTask, IssueKindEpic), chosen from the issue
+	// types of DefaultProjectKey. Loaded from config.ticketing.issue_types; a
+	// kind without an entry uses its stock type (IssueTypeFor).
+	IssueTypes map[string]IssueTypeChoice
 
 	// DefaultProjectKey is the Jira project a finding's ticket lands in when the
 	// caller does not specify one (the per-tenant "where do tickets go" setting,
@@ -151,9 +154,9 @@ func DefaultMappingConfig() MappingConfig {
 			"fix_applied": "Done",
 			"resolved":    "Done",
 		},
-		SyncEnabled:      false,
-		DefaultPriority:  "Medium",
-		DefaultIssueType: "Bug",
+		SyncEnabled:     false,
+		DefaultPriority: "Medium",
+		IssueTypes:      map[string]IssueTypeChoice{},
 	}
 }
 
@@ -198,14 +201,18 @@ func (m MappingConfig) JiraStatusForFinding(findingStatus string) (string, bool)
 
 // ValidateTicketingConfig checks the parts of an integration's
 // config["ticketing"] a person can get wrong in a way that weakens a control.
-// Today: every status_inbound target must be a valid finding status that a
-// ticket may set (IsTicketInboundTarget). A Jira "Done" mapped to resolved,
+// The issue_types entries must be well formed, and every status_inbound
+// target must be a valid finding status that a ticket may set
+// (IsTicketInboundTarget). A Jira "Done" mapped to resolved,
 // or "Won't Do" to false_positive / accepted, would close findings with no
 // findings:verify holder and no approval, so the save is refused (ErrValidation).
 func ValidateTicketingConfig(config map[string]any) error {
 	section, ok := config["ticketing"].(map[string]any)
 	if !ok {
 		return nil
+	}
+	if err := validateIssueTypes(section); err != nil {
+		return err
 	}
 	raw, ok := section["status_inbound"]
 	if !ok || raw == nil {
@@ -238,7 +245,7 @@ func ValidateTicketingConfig(config map[string]any) error {
 // Expected shape (all optional):
 //
 //	{ "ticketing": {
-//	    "issue_type": "Task",
+//	    "issue_types": { "finding": {"id": "10042", "name": "Security Finding"} },
 //	    "default_priority": "P3",
 //	    "severity_to_priority": { "critical": "P1", "high": "P2" },
 //	    "status_inbound": { "Shipped": "fix_applied", "QA": "in_progress" }
@@ -255,9 +262,7 @@ func ParseMappingConfig(config map[string]any) MappingConfig {
 		return m
 	}
 
-	if v, ok := stringValue(section, "issue_type"); ok {
-		m.DefaultIssueType = v
-	}
+	m.IssueTypes = parseIssueTypes(section["issue_types"])
 	if v, ok := stringValue(section, "default_priority"); ok {
 		m.DefaultPriority = v
 	}

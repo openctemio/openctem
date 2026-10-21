@@ -59,8 +59,45 @@ computation, and the scope is applied before any row cap:
 
 ## Linear computation
 
-Planned in this series; see the section below once shipped.
+Exposure chains are built in one breadth-first pass that starts from every public
+entry point at once, so each asset is visited a single time: O(assets + edges).
+Every asset with an open KEV or critical finding gets the shortest path from its
+nearest entry point. Edges whose source or target is not a live asset are
+ignored, so a path never runs through a deleted asset.
+
+The response no longer carries `reachable_from_entry_points`: counting entry
+points per target is what made the earlier search quadratic, and the figure
+mostly measured the size of the external footprint. The chain shows its own
+entry point.
+
+Measured with `go test ./internal/app/attack -bench BuildExposureChains_50k`
+(50,000 assets, 100,000 edges, 10% public): about 33 ms per computation. The
+earlier per-entry-point search needed 156 s on the same shape of graph. A parity
+test compares lengths and reachability with the earlier algorithm on random
+graphs.
 
 ## Scoring cache and finding counts
 
-Planned in this series; see the section below once shipped.
+Attack-path scores (`GET /attack-surface/attack-paths`) use the same kind of
+cache as the chains: one result per tenant for 5 minutes, concurrent callers
+share one computation, which runs under a 30 second deadline. Data-scope
+narrowing works on the caller's copy.
+
+- A relationship whose source or target is not a live asset (a deleted asset) is
+  ignored: it does not bridge a path and does not mark an asset as protected.
+- `finding_count` on a scored asset counts open findings only (the open status
+  set), so resolved, closed and dispositioned findings do not raise the score.
+  Branch-only findings are still left out.
+
+## Web pages
+
+- `/attack-paths` ranks assets by the score above. Each row is the asset itself;
+  the page makes no claim about which fix breaks the most paths (no choke-point
+  analysis exists yet). `/exposure-chains` draws the real hop chains.
+- A failed read shows an error state with Retry on both pages; the
+  "No relationship data yet" state appears only when the read succeeded and the
+  tenant has no relationships.
+- A hidden step (see Data scope) renders as a dashed "Outside your access" card
+  without a link.
+- All text goes through the `prioritization.*` keys in the en and vi
+  dictionaries.

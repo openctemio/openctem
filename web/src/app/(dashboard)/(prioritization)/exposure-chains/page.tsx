@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
-import { PageHeader, StatsCard, EmptyState } from '@/features/shared'
+import { PageHeader, StatsCard, EmptyState, ErrorState } from '@/features/shared'
 import { useExposureChains, PathGraph } from '@/features/attack-surface'
 import type { ExposureChain, PathGraphPath, PathGraphNode } from '@/features/attack-surface'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -24,6 +24,7 @@ function chainToPath(chain: ExposureChain, maxScore: number): PathGraphPath {
     const isTarget = idx === lastIdx
     return {
       id: hop.assetId,
+      hidden: hop.hidden,
       name: hop.name,
       assetType: hop.assetType,
       role: idx === 0 ? 'entry' : isTarget ? 'target' : 'hop',
@@ -42,7 +43,6 @@ function chainToPath(chain: ExposureChain, maxScore: number): PathGraphPath {
     scorePct: maxScore > 0 ? (chain.score / maxScore) * 100 : 0,
     kevCount: chain.kevCount,
     criticalCount: chain.criticalCount,
-    reachableFrom: chain.reachableFromEntryPoints,
   }
 }
 
@@ -115,11 +115,12 @@ function NoRelationshipData() {
 
 export default function ExposureChainsPage() {
   const { t } = useTranslation()
-  const { chains: data, isLoading } = useExposureChains()
+  const { chains: data, error, isLoading, mutate } = useExposureChains()
 
   const summary = data?.summary
   const chains = useMemo(() => data?.chains ?? [], [data])
   const hasData = summary?.hasRelationshipData === true
+  const hasHiddenStep = useMemo(() => chains.some((c) => c.hops.some((h) => h.hidden)), [chains])
 
   const paths = useMemo(() => {
     const maxScore = chains.length > 0 ? chains[0].score : 1
@@ -141,6 +142,13 @@ export default function ExposureChainsPage() {
 
       {isLoading ? (
         <LoadingSkeleton />
+      ) : error ? (
+        // A failed read is not "no data": say we could not find out.
+        <ErrorState
+          title={t('prioritization.errorTitle.exposureChains', 'exposure chains')}
+          error={error}
+          onRetry={() => void mutate()}
+        />
       ) : !hasData ? (
         <NoRelationshipData />
       ) : (
@@ -148,29 +156,41 @@ export default function ExposureChainsPage() {
           {/* Stats row */}
           <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatsCard
-              title="Entry points"
+              title={t('prioritization.exposureChains.stat.entries', 'Entry points')}
               value={summary?.entryPoints ?? 0}
               icon={Globe}
-              description="Internet-facing assets"
+              description={t(
+                'prioritization.exposureChains.stat.entriesHint',
+                'Internet-facing assets'
+              )}
             />
             <StatsCard
-              title="Targets at risk"
+              title={t('prioritization.exposureChains.stat.targets', 'Targets at risk')}
               value={summary?.targetsAtRisk ?? 0}
               valueClassName={(summary?.targetsAtRisk ?? 0) > 0 ? 'text-destructive' : undefined}
               icon={ShieldAlert}
-              description="Reachable KEV/critical assets"
+              description={t(
+                'prioritization.exposureChains.stat.targetsHint',
+                'Reachable KEV/critical assets'
+              )}
             />
             <StatsCard
-              title="Exposure chains"
+              title={t('prioritization.exposureChains.stat.chains', 'Exposure chains')}
               value={summary?.totalChains ?? 0}
               icon={Route}
-              description="Entry-point to dangerous asset"
+              description={t(
+                'prioritization.exposureChains.stat.chainsHint',
+                'Entry-point to dangerous asset'
+              )}
             />
             <StatsCard
-              title="Shown"
+              title={t('prioritization.exposureChains.stat.shown', 'Shown')}
               value={chains.length}
               icon={Target}
-              description="Top chains by urgency"
+              description={t(
+                'prioritization.exposureChains.stat.shownHint',
+                'Top chains by urgency'
+              )}
             />
           </section>
 
@@ -209,26 +229,59 @@ export default function ExposureChainsPage() {
             <div className="flex flex-col gap-5">
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">How chains are built</CardTitle>
+                  <CardTitle className="text-sm">
+                    {t('prioritization.exposureChains.howTitle', 'How chains are built')}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="text-muted-foreground space-y-2 text-xs">
                   <p>
-                    <strong className="text-foreground">Entry point</strong> — any asset with public
-                    exposure, the foothold an attacker reaches directly.
+                    <strong className="text-foreground">
+                      {t('prioritization.exposureChains.howEntryLead', 'Entry point')}
+                    </strong>{' '}
+                    —{' '}
+                    {t(
+                      'prioritization.exposureChains.howEntry',
+                      'any asset with public exposure, the foothold an attacker reaches directly.'
+                    )}
                   </p>
                   <p>
-                    <strong className="text-foreground">Path</strong> — BFS over attack-path
-                    relationships (runs_on, depends_on, exposes, stores_data_in, …) capturing the
-                    shortest route to each dangerous asset.
+                    <strong className="text-foreground">
+                      {t('prioritization.exposureChains.howPathLead', 'Path')}
+                    </strong>{' '}
+                    —{' '}
+                    {t(
+                      'prioritization.exposureChains.howPath',
+                      'search over attack-path relationships (runs_on, depends_on, exposes, stores_data_in, ...) capturing the shortest route to each dangerous asset.'
+                    )}
                   </p>
                   <p>
-                    <strong className="text-foreground">Target</strong> — an asset carrying open KEV
-                    or critical findings. A directly-exposed target (0 hops) is the most urgent.
+                    <strong className="text-foreground">
+                      {t('prioritization.exposureChains.howTargetLead', 'Target')}
+                    </strong>{' '}
+                    —{' '}
+                    {t(
+                      'prioritization.exposureChains.howTarget',
+                      'an asset carrying open KEV or critical findings. A directly-exposed target (0 hops) is the most urgent.'
+                    )}
                   </p>
                   <p>
-                    <strong className="text-foreground">Score</strong> — KEV-weighted danger x
-                    criticality x crown-jewel, amplified the closer the target sits to the internet.
+                    <strong className="text-foreground">
+                      {t('prioritization.exposureChains.howScoreLead', 'Score')}
+                    </strong>{' '}
+                    —{' '}
+                    {t(
+                      'prioritization.exposureChains.howScore',
+                      'KEV-weighted danger x criticality x crown-jewel, amplified the closer the target sits to the internet.'
+                    )}
                   </p>
+                  {hasHiddenStep && (
+                    <p>
+                      {t(
+                        'prioritization.exposureChains.hiddenNote',
+                        'Steps shown as "Outside your access" are assets you are not allowed to see. The path to your asset is real.'
+                      )}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>
