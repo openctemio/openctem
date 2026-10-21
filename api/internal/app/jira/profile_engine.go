@@ -164,6 +164,9 @@ func (s *SyncService) createFromProfile(ctx context.Context, c Client, tenantID 
 		}
 		return nil, true, fmt.Errorf("create jira ticket from mapping profile: %w", err)
 	}
+	// A create through the mapping answers an earlier refusal of this kind
+	// (publishing the mapping is how the refused fields get filled).
+	s.noteCreate(ctx, tenantID, pc.IntegrationID(), string(kind), IssueTypeRef{}, nil)
 	return res, true, nil
 }
 
