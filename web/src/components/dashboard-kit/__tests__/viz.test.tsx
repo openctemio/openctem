@@ -1,0 +1,258 @@
+import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { StatViz, ProgressViz } from '../stat-viz'
+import { BarViz, barRows } from '../bar-viz'
+import { ColumnViz, DivergingViz, netOf, toRows } from '../series-viz'
+import { FunnelViz, HeatmapViz, ItemsViz, heatStep } from '../grid-viz'
+import type { CategoryResult, TimeSeriesResult } from '../types'
+
+describe('StatViz', () => {
+  it('shows the value, a polarity-aware change in words and the target chip', () => {
+    render(
+      <StatViz
+        result={{ shape: 'scalar', value: 31, previous: 43, target: { op: '<=', value: 0 } }}
+        polarity="down_good"
+        href="/findings?state=open&priority_class=P0,P1"
+      />
+    )
+    const link = screen.getByRole('link', { name: '31' })
+    expect(link).toHaveAttribute('href', '/findings?state=open&priority_class=P0,P1')
+    const delta = screen.getByText('−12').closest('p')!
+    expect(delta).toHaveAttribute('data-tone', 'better')
+    expect(within(delta).getByText('vs previous period')).toBeInTheDocument()
+    expect(within(delta).getByText('(better)')).toBeInTheDocument()
+    const chip = screen.getByText('target <= 0').closest('span[data-status]')!
+    expect(chip).toHaveAttribute('data-status', 'missed')
+    expect(within(chip as HTMLElement).getByText('off target')).toBeInTheDocument()
+  })
+
+  it('a rise in a down-is-good figure reads worse', () => {
+    render(<StatViz result={{ shape: 'scalar', value: 9, previous: 7 }} polarity="down_good" />)
+    expect(screen.getByText('+2').closest('p')).toHaveAttribute('data-tone', 'worse')
+  })
+
+  it('a null value is a dash, never 0, and gets no change', () => {
+    render(<StatViz result={{ shape: 'scalar', value: null, previous: 4 }} polarity="down_good" />)
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.queryByText('vs previous period')).toBeNull()
+  })
+
+  it('ignores an off-site link', () => {
+    render(<StatViz result={{ shape: 'scalar', value: 3 }} href="//evil.example.com" />)
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('durations show median, p90 and sample', () => {
+    render(
+      <StatViz
+        result={{ shape: 'duration', median: 132, p90: 408, n: 37, previous_median: 160.8 }}
+        polarity="down_good"
+      />
+    )
+    expect(screen.getByText('5.5 days')).toBeInTheDocument()
+    expect(screen.getByText('median · p90 17 days · 37 fixed')).toBeInTheDocument()
+    expect(screen.getByText('−29 hr').closest('p')).toHaveAttribute('data-tone', 'better')
+  })
+})
+
+describe('ProgressViz', () => {
+  it('is a meter against the target, with icon and words', () => {
+    render(
+      <ProgressViz
+        result={{
+          shape: 'ratio',
+          num: 86,
+          den: 100,
+          value_pct: 86,
+          previous_pct: 83,
+          target: { op: '>=', value: 95, warn: 85 },
+        }}
+      />
+    )
+    const meter = screen.getByRole('meter')
+    expect(meter).toHaveAttribute('aria-valuenow', '86')
+    expect(screen.getByText('close to target')).toBeInTheDocument()
+    expect(screen.getByText('+3').closest('p')).toHaveAttribute('data-tone', 'better')
+  })
+})
+
+const SEVERITY: CategoryResult = {
+  shape: 'category',
+  ordinal: true,
+  total: 104,
+  rows: [
+    { key: 'critical', label: 'Critical', value: 22 },
+    { key: 'high', label: 'High', value: 50 },
+    { key: 'medium', label: 'Medium', value: 24 },
+    { key: 'low', label: 'Low', value: 8 },
+  ],
+}
+
+describe('BarViz', () => {
+  it('keeps ordinal order, prints values and links each bar to its list', () => {
+    render(<BarViz result={SEVERITY} drill={({ key }) => `/findings?state=open&severity=${key}`} />)
+    const links = screen.getAllByRole('link')
+    expect(links.map((l) => l.getAttribute('aria-label'))).toEqual([
+      'Critical: 22',
+      'High: 50',
+      'Medium: 24',
+      'Low: 8',
+    ])
+    expect(links[0]).toHaveAttribute('href', '/findings?state=open&severity=critical')
+  })
+
+  it('folds keys past eight into Other unless ordinal', () => {
+    const rows = Array.from({ length: 11 }, (_, i) => ({ key: `s${i}`, value: 11 - i }))
+    const folded = barRows({ shape: 'category', rows, total: 66 }, 'Other')
+    expect(folded).toHaveLength(8)
+    expect(folded[7]).toMatchObject({ key: 'other', value: 4 + 3 + 2 + 1 })
+    expect(barRows({ shape: 'category', rows, total: 66, ordinal: true }, 'Other')).toHaveLength(11)
+  })
+
+  it('has a table view with the total', () => {
+    render(<BarViz result={SEVERITY} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Show table' }))
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('Total')).toBeInTheDocument()
+    expect(within(table).getByText('104')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show chart' })).toBeInTheDocument()
+  })
+
+  it('stacked shows shares in the legend', () => {
+    render(<BarViz result={SEVERITY} stacked />)
+    expect(screen.getByText('(48%)')).toBeInTheDocument()
+  })
+})
+
+const FLOW: TimeSeriesResult = {
+  shape: 'time_series',
+  bucket: 'week',
+  kind: 'flow',
+  series: [
+    {
+      key: 'opened',
+      label: 'Opened',
+      points: [
+        { t: '2026-10-05', v: 10 },
+        { t: '2026-10-12', v: 4 },
+      ],
+    },
+    {
+      key: 'fixed',
+      label: 'Fixed',
+      points: [
+        { t: '2026-10-05', v: 12 },
+        { t: '2026-10-12', v: 9 },
+      ],
+    },
+  ],
+}
+
+describe('series visualizations', () => {
+  it('toRows keeps missing points absent and can negate a series', () => {
+    const rows = toRows(
+      { ...FLOW, series: [FLOW.series[0], { key: 'fixed', points: [{ t: '2026-10-12', v: 9 }] }] },
+      { fixed: -1 }
+    )
+    expect(rows[0]).toEqual({ t: '2026-10-05', opened: 10 })
+    expect(rows[1]).toEqual({ t: '2026-10-12', opened: 4, fixed: -9 })
+  })
+
+  it('diverging bars state the net in words', () => {
+    expect(netOf(FLOW)).toBe(-7)
+    render(<DivergingViz result={FLOW} />)
+    expect(screen.getByText('Fixing faster than finding: 7 fewer open')).toBeInTheDocument()
+  })
+
+  it('columns have a table view with every point and drill links', () => {
+    render(<ColumnViz result={FLOW} drill={({ series, t }) => `/findings?${series}_on=${t}`} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Show table' }))
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('Oct 5')).toBeInTheDocument()
+    expect(within(table).getByRole('link', { name: '12' })).toHaveAttribute(
+      'href',
+      '/findings?fixed_on=2026-10-05'
+    )
+  })
+})
+
+describe('grid visualizations', () => {
+  it('heatmap prints every value and shades on the ramp', () => {
+    expect(heatStep(0, 10)).toBe(-1)
+    expect(heatStep(10, 10)).toBe(4)
+    render(
+      <HeatmapViz
+        result={{
+          shape: 'matrix',
+          rows: [{ key: 'critical', label: 'Critical' }],
+          cols: [
+            { key: '0-30', label: '0-30' },
+            { key: '90+', label: '90+' },
+          ],
+          cells: [[9, 0]],
+        }}
+        drill={({ series, key }) => `/findings?severity=${series}&age_band=${key}`}
+      />
+    )
+    expect(screen.getByRole('link', { name: 'Critical · 0-30: 9' })).toHaveAttribute(
+      'href',
+      '/findings?severity=critical&age_band=0-30'
+    )
+    expect(screen.getByText('0')).toBeInTheDocument()
+  })
+
+  it('stages show not measured as grey with the reason, never as good', () => {
+    render(
+      <FunnelViz
+        result={{
+          shape: 'stages',
+          stages: [
+            { key: 'scope', label: 'Scope', value: 312, state: 'good', drill: '/scoping' },
+            {
+              key: 'validate',
+              label: 'Validate',
+              value: null,
+              unit: 'percent',
+              state: 'unmeasured',
+            },
+          ],
+        }}
+      />
+    )
+    expect(screen.getByRole('link', { name: /Scope/ })).toHaveAttribute('href', '/scoping')
+    const validate = screen.getByText('Validate').closest('li')!
+    expect(validate).toHaveAttribute('data-state', 'unmeasured')
+    expect(within(validate).getByText('Not measured')).toBeInTheDocument()
+    expect(within(validate).getByText('—')).toBeInTheDocument()
+  })
+
+  it('items link rows and the full list', () => {
+    render(
+      <ItemsViz
+        result={{
+          shape: 'items',
+          total: 20,
+          rows: [
+            {
+              id: 'f1',
+              title: 'RCE in edge gateway',
+              priority: 'P0',
+              kev: true,
+              href: '/findings/f1',
+            },
+          ],
+        }}
+        viewAllHref="/findings?state=open"
+      />
+    )
+    expect(screen.getByRole('link', { name: /RCE in edge gateway/ })).toHaveAttribute(
+      'href',
+      '/findings/f1'
+    )
+    expect(screen.getByText('KEV')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View all 20' })).toHaveAttribute(
+      'href',
+      '/findings?state=open'
+    )
+  })
+})

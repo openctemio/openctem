@@ -1,0 +1,47 @@
+{
+  "$comment": "Validated chart palettes for dashboards. Source of truth for src/lib/chart-palette.ts and the --viz-* tokens in src/styles/theme.css; scripts/check-palette.mjs validates both. Order is fixed: never cycle, never reorder by rank.",
+  "surfaces": { "light": "#ffffff", "dark": "#020919" },
+  "severity": {
+    "keys": ["critical", "high", "medium", "low"],
+    "light": ["#a3123a", "#e8590c", "#e0a106", "#3b82f6"],
+    "dark": ["#d9365e", "#f07a2c", "#e8c14a", "#4f8ff0"],
+    "info": { "light": "#6b7280", "dark": "#94a3b8" },
+    "darkBandWaiver": "Dark orange and yellow sit above the dark lightness band (a red-orange-yellow ramp cannot separate inside it). Severity is ordinal and is never shown by colour alone: every severity mark carries its label or keeps its fixed order, and every chart has a table view."
+  },
+  "categorical": {
+    "light": [
+      "#2a78d6",
+      "#eb6834",
+      "#1baf7a",
+      "#eda100",
+      "#e87ba4",
+      "#008300",
+      "#4a3aa7",
+      "#e34948"
+    ],
+    "dark": [
+      "#3987e5",
+      "#d95926",
+      "#199e70",
+      "#c98500",
+      "#d55181",
+      "#008300",
+      "#9085e9",
+      "#e66767"
+    ],
+    "other": { "light": "#9ca3af", "dark": "#64748b" }
+  },
+  "diverging": {
+    "keys": ["opened", "fixed"],
+    "light": ["#eb6834", "#2a78d6"],
+    "dark": ["#d95926", "#3987e5"]
+  },
+  "sequential": {
+    "light": ["#86b6ef", "#5598e7", "#256abf", "#184f95", "#0d366b"],
+    "dark": ["#0d366b", "#184f95", "#256abf", "#5598e7", "#86b6ef"],
+    "ink": {
+      "light": ["#0b0b0b", "#0b0b0b", "#ffffff", "#ffffff", "#ffffff"],
+      "dark": ["#ffffff", "#ffffff", "#ffffff", "#0b0b0b", "#0b0b0b"]
+    }
+  }
+}
