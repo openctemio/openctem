@@ -38,7 +38,10 @@ type findingEvent struct {
 	actorID string
 	typ     string
 	title   string
-	body    string
+	// watcherTitle replaces title for a watcher when title speaks to the
+	// assignee ("You have been assigned"); empty uses title.
+	watcherTitle string
+	body         string
 	// teamOnly: shows team-only content that pentest clients never see.
 	teamOnly bool
 	// forceAssignee tells the assignee even if they stopped watching (the
@@ -96,7 +99,7 @@ func (s *VulnerabilityService) notifyFinding(ctx context.Context, f *vulnerabili
 			pe.Direct = []shared.ID{*a}
 		}
 	}
-	recipients, err := s.participants.Recipients(ctx, f.TenantID(), pe)
+	recipients, err := s.participants.Recipients(withLoadedFinding(ctx, f), f.TenantID(), pe)
 	if err != nil {
 		s.logger.Warn("finding event: recipients", "error", logger.SanitizeError(err), "type", ev.typ)
 		return
@@ -104,13 +107,17 @@ func (s *VulnerabilityService) notifyFinding(ctx context.Context, f *vulnerabili
 	findingID := f.ID()
 	for _, r := range recipients {
 		uid := r.UserID
+		title := ev.title
+		if r.Reason == notificationdom.ReasonWatching && ev.watcherTitle != "" {
+			title = ev.watcherTitle
+		}
 		if err := s.userNotificationService.Notify(ctx, notificationdom.NotificationParams{
 			TenantID:         f.TenantID(),
 			Audience:         notificationdom.AudienceUser,
 			AudienceID:       &uid,
 			NotificationType: ev.typ,
 			Severity:         f.Severity().String(),
-			Title:            ev.title,
+			Title:            title,
 			Body:             ev.body,
 			ResourceType:     "finding",
 			ResourceID:       &findingID,
