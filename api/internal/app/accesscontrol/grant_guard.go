@@ -105,6 +105,21 @@ func (a grantActor) mayRevoke(r *roledom.Role) error {
 	return nil
 }
 
+// mayEdit reports whether the actor may turn role r into (newPerms, newFull).
+// The ceiling covers both sides: the actor must be able to hand out the new
+// set, and must also hold everything the role carries today, because an
+// editor who cannot grant a permission may not strip it either (DeleteRole
+// and mayRevoke apply the same rule).
+func (a grantActor) mayEdit(r *roledom.Role, newPerms []string, newFull bool) error {
+	if err := a.mayCarry(newPerms, newFull); err != nil {
+		return err
+	}
+	if err := a.mayCarry(r.Permissions(), r.HasFullDataAccess()); err != nil {
+		return fmt.Errorf("cannot change it: %w (role %q)", err, r.Name())
+	}
+	return nil
+}
+
 // mayCarry reports whether the actor may hand out this permission set.
 func (a grantActor) mayCarry(perms []string, fullData bool) error {
 	if a.system || a.owner {
@@ -298,7 +313,7 @@ func (s *RoleService) authorizePrivilegedGrant(ctx context.Context, a grantActor
 	}
 	privileged := make([]*roledom.Role, 0, len(roles))
 	for _, r := range roles {
-		if roledom.IsSystemRoleID(r.ID()) || !permission.IsPrivilegedRole(r.Permissions(), r.HasFullDataAccess()) {
+		if roledom.IsSystemRoleID(r.ID()) || !permission.IsStepUpGradeRole(r.Permissions(), r.HasFullDataAccess()) {
 			continue
 		}
 		privileged = append(privileged, r)

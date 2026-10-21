@@ -1,5 +1,4 @@
 {
-  "findingApprovals.cancel": "Hủy",
   "findingApprovals.fpLevel.all": "Luôn luôn (khuyến nghị)",
   "findingApprovals.fpLevel.allHelp": "Mọi dương tính giả đều cần người thứ hai phê duyệt.",
   "findingApprovals.fpLevel.description": "Khi nào việc đánh dấu một phát hiện là dương tính giả cần người thứ hai. Một rủi ro được chấp nhận luôn cần người thứ hai, dù bạn chọn gì ở đây.",
@@ -22,7 +21,6 @@
   "findingApprovals.selfApprove.audited": "Việc này được ghi vào nhật ký kiểm toán và được đánh dấu là tự phê duyệt ở mọi nơi.",
   "findingApprovals.selfApprove.badge": "Tự phê duyệt",
   "findingApprovals.selfApprove.badgeTitle": "Được chính người yêu cầu, thành viên duy nhất của tổ chức, phê duyệt",
-  "findingApprovals.selfApprove.codeLabel": "Mã từ ứng dụng xác thực của bạn",
   "findingApprovals.selfApprove.description": "Không ai khác trong tổ chức có thể quyết định yêu cầu này. Là thành viên duy nhất và chủ sở hữu, bạn có thể tự phê duyệt.",
   "findingApprovals.selfApprove.done": "Đã phê duyệt",
   "findingApprovals.selfApprove.doneShortened": "Đã phê duyệt. Thời hạn chấp nhận đã được rút ngắn về giới hạn của việc tự phê duyệt.",

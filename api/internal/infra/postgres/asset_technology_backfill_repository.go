@@ -209,6 +209,12 @@ func (r *AssetTechnologyBackfillRepository) MarkBackfilled(ctx context.Context, 
 		       completed_at = EXCLUDED.completed_at`,
 		tenantID.String(), version, stats.Technologies, stats.Classified, stats.LinksRemoved, stats.LinksReported, enforced)
 	if err != nil {
+		// The tenant was deleted after the pending list was read: there is
+		// nothing left to mark, and failing here would stop the run for every
+		// tenant after it.
+		if isForeignKeyViolation(err) {
+			return nil
+		}
 		return fmt.Errorf("mark technology backfill: %w", err)
 	}
 	return nil

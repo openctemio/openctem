@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/testdb"
+	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -416,5 +418,133 @@ func TestSeverityChange_IfMatchRowVersion(t *testing.T) {
 	next := vulnerability.WithExpectedRowVersion(ctx, f.ID(), res.Finding.RowVersion())
 	if _, err := fx.svc("", "").ChangeFindingSeverity(next, in("high")); err != nil {
 		t.Fatalf("follow-up with the returned version: %v", err)
+	}
+}
+
+// sevNoticeRecorder keeps the in-app notices a service sends.
+type sevNoticeRecorder struct {
+	sent []notificationdom.NotificationParams
+}
+
+func (r *sevNoticeRecorder) Notify(_ context.Context, p notificationdom.NotificationParams) error {
+	r.sent = append(r.sent, p)
+	return nil
+}
+
+// The requester of a severity change is told how it ended (approved or
+// rejected), without the reason of the decision, and only while they can
+// still read the finding; their own withdrawal tells nobody.
+func TestSeverityOverride_RequesterToldOfDecision(t *testing.T) {
+	fx := newSevFixture(t)
+	ctx := context.Background()
+	pdb := &DB{DB: fx.db}
+	for _, u := range []shared.ID{fx.analyst, fx.other} {
+		if _, err := fx.db.ExecContext(ctx, `INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, u.String(), fx.tenant.String()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope := func(on bool) {
+		t.Helper()
+		q := `INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary') ON CONFLICT DO NOTHING`
+		if !on {
+			q = `DELETE FROM user_accessible_assets WHERE user_id = $1 AND tenant_id = $2 AND asset_id = $3`
+		}
+		if _, err := fx.db.ExecContext(ctx, q, fx.analyst.String(), fx.tenant.String(), fx.asset.String()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := &sevNoticeRecorder{}
+	svc := func() *finding.VulnerabilityService {
+		s := fx.svc(tenantdom.FPApprovalAll, "")
+		s.SetApprovalNotifier(nil, rec, nil, "")
+		s.SetAssigneeChecker(NewAccessControlRepository(pdb))
+		return s
+	}
+	request := func(f *vulnerability.Finding) *vulnerability.SeverityRequest {
+		t.Helper()
+		res, err := svc().ChangeFindingSeverity(ctx, finding.ChangeSeverityInput{
+			TenantID: fx.tenant.String(), FindingID: f.ID().String(), ActorID: fx.analyst.String(),
+			Severity: "low", Reason: "REQUEST-JUSTIFICATION", CanApprove: true,
+		})
+		if err != nil || res.Request == nil {
+			t.Fatalf("request: %v", err)
+		}
+		return res.Request
+	}
+	decide := func(f *vulnerability.Finding, r *vulnerability.SeverityRequest, actor shared.ID, reject bool) {
+		t.Helper()
+		in := finding.DecideSeverityRequestInput{TenantID: fx.tenant.String(), FindingID: f.ID().String(),
+			RequestID: r.ID.String(), ActorID: actor.String(), Note: "SECRET-REJECT-NOTE"}
+		var err error
+		switch {
+		case reject:
+			_, err = svc().RejectSeverityRequest(ctx, in)
+		default:
+			_, err = svc().ApproveSeverityRequest(ctx, in)
+		}
+		if err != nil {
+			t.Fatalf("decide: %v", err)
+		}
+	}
+	told := func() []string {
+		var out []string
+		for _, p := range rec.sent {
+			if p.AudienceID != nil && *p.AudienceID == fx.analyst {
+				out = append(out, p.Title)
+				if strings.Contains(p.Body+p.Title, "SECRET-REJECT-NOTE") || strings.Contains(p.Body+p.Title, "REQUEST-JUSTIFICATION") {
+					t.Errorf("notice carries free text: %+v", p)
+				}
+			}
+		}
+		return out
+	}
+
+	n := 0
+	create := func() *vulnerability.Finding {
+		t.Helper()
+		n++
+		f, err := fx.svc("", "").CreateFinding(ctx, finding.CreateFindingInput{
+			TenantID: fx.tenant.String(), AssetID: fx.asset.String(), Source: "manual", ToolName: "manual-entry",
+			Message: "requester notice probe " + strings.Repeat("x", n), Severity: "critical",
+		})
+		if err != nil {
+			t.Fatalf("create finding: %v", err)
+		}
+		return f
+	}
+	scope(true)
+	f1 := create()
+	decide(f1, request(f1), fx.other, false)
+	if got := told(); len(got) != 1 || got[0] != "Your severity change request was approved" {
+		t.Fatalf("approved: %v", got)
+	}
+	rec.sent = nil
+	f2 := create()
+	decide(f2, request(f2), fx.other, true)
+	if got := told(); len(got) != 1 || got[0] != "Your severity change request was rejected" {
+		t.Fatalf("rejected: %v", got)
+	}
+
+	// Out of the requester's sight: nothing.
+	rec.sent = nil
+	f3 := create()
+	r3 := request(f3)
+	scope(false)
+	decide(f3, r3, fx.other, true)
+	if got := told(); len(got) != 0 {
+		t.Fatalf("requester without scope was told: %v", got)
+	}
+
+	// Their own withdrawal: nothing.
+	scope(true)
+	rec.sent = nil
+	f4 := create()
+	r4 := request(f4)
+	if _, err := svc().CancelSeverityRequest(ctx, finding.DecideSeverityRequestInput{TenantID: fx.tenant.String(),
+		FindingID: f4.ID().String(), RequestID: r4.ID.String(), ActorID: fx.analyst.String()}); err != nil {
+		t.Fatalf("withdraw: %v", err)
+	}
+	if got := told(); len(got) != 0 {
+		t.Fatalf("withdrawal produced a notice: %v", got)
 	}
 }

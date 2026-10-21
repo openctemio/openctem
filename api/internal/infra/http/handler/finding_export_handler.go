@@ -63,6 +63,17 @@ var findingCSVHeader = []string{
 // leading apostrophe.
 func csvSafe(s string) string { return sanitizeCSVCell(s) }
 
+// dropSecretSnippets removes the code lines of a secret finding from an
+// export: file, line, preview and link are enough to find it, and an export
+// leaves the platform's access control.
+func dropSecretSnippets(r *FindingResponse) {
+	if r.FindingType == string(vulnerability.FindingTypeSecret) || r.Source == string(vulnerability.FindingSourceSecret) {
+		r.Snippet = ""
+		r.ContextSnippet = ""
+		r.ContextStartLine = 0
+	}
+}
+
 func findingCSVRow(f FindingResponse) []string {
 	str := func(p *string) string {
 		if p == nil {
@@ -314,6 +325,7 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		data := make([]FindingResponse, len(batch))
 		for i, f := range batch {
 			data[i] = toFindingResponse(f)
+			dropSecretSnippets(&data[i])
 		}
 		h.enrichFindingsWithAssetInfo(ctx, tenantID, data)
 		for _, f := range data {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -468,7 +469,7 @@ func (r *FindingApprovalRepository) FalsePositiveFacts(ctx context.Context, tena
 	err := r.db.QueryRowContext(ctx, `
 		SELECT f.severity, COALESCE(f.is_in_kev, false), COALESCE(f.priority_class, ''),
 		       COALESCE(f.validation_outcome = 'reproducible', false),
-		       COALESCE(a.is_crown_jewel, false), COALESCE(a.is_internet_accessible, false)
+		       COALESCE(a.is_crown_jewel, false), COALESCE(`+asset.InternetFacingSQL("a")+`, false)
 		FROM findings f
 		LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
 		WHERE f.tenant_id = $1 AND f.id = $2`,
@@ -583,7 +584,7 @@ func recheckSinglePersonFP(ctx context.Context, tx *sql.Tx, tenantID, findingID 
 	err := tx.QueryRowContext(ctx, `
 		SELECT f.severity, COALESCE(f.is_in_kev, false), COALESCE(f.priority_class, ''),
 		       COALESCE(f.validation_outcome = 'reproducible', false),
-		       COALESCE(a.is_crown_jewel, false), COALESCE(a.is_internet_accessible, false)
+		       COALESCE(a.is_crown_jewel, false), COALESCE(`+asset.InternetFacingSQL("a")+`, false)
 		FROM findings f
 		LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
 		WHERE f.tenant_id = $1 AND f.id = $2

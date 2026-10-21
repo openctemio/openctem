@@ -92,7 +92,7 @@ func (s *TaskService) MarkFixed(ctx context.Context, in MarkFixedInput, actx aud
 	if t.Version != in.Version {
 		return nil, remediationdom.ErrTaskVersionConflict
 	}
-	ids, err := s.repo.OpenPrimaryIDs(ctx, in.TenantID, in.TaskID)
+	ids, err := s.repo.OpenPrimaryIDs(ctx, in.TenantID, in.TaskID, in.Version)
 	if err != nil {
 		return nil, err
 	}

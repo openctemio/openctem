@@ -38,9 +38,9 @@ func (r *DashboardFactsRepository) ProcessDirty(ctx context.Context, tenantID sh
 	}
 	limit = min(max(limit, 1), maxDashboardClaim)
 	var oldest sql.NullTime
-	if err := r.db.QueryRowContext(ctx,
+	if err := queryRowWithTimeout(ctx, r.db.DB, timeoutBatch,
 		`SELECT claimed, assets, recomputed, changed, oldest_marked_at FROM dash_process_dirty($1, $2)`,
-		tenantID.String(), limit).Scan(&b.Claimed, &b.Assets, &b.Recomputed, &b.Changed, &oldest); err != nil {
+		[]any{tenantID.String(), limit}, &b.Claimed, &b.Assets, &b.Recomputed, &b.Changed, &oldest); err != nil {
 		return b, fmt.Errorf("process dashboard dirty queue: %w", err)
 	}
 	if oldest.Valid {
@@ -94,6 +94,9 @@ func (r *DashboardFactsRepository) PendingRunsForPlatform(ctx context.Context, n
 			       COALESCE(s.reconciled_at, s.rebuilt_at) AS last_run
 			FROM tenants t
 			LEFT JOIN dash_fact_status s ON s.tenant_id = t.id
+			-- The all-zero row is the platform's system tenant: it owns no
+			-- facts and fails the tenant check, so it never gets a run.
+			WHERE t.id <> '00000000-0000-0000-0000-000000000000'
 		) p
 		WHERE kind IS NOT NULL
 		ORDER BY in_progress DESC,
@@ -152,8 +155,8 @@ func (r *DashboardFactsRepository) RunStep(ctx context.Context, tenantID shared.
 	}
 	batchSize = min(batchSize, maxDashboardRebuildBatch)
 	var kind string
-	if err := r.db.QueryRowContext(ctx, `SELECT done, run_kind, step_drift FROM dash_fact_run_step($1, $2)`,
-		tenantID.String(), batchSize).Scan(&s.Done, &kind, &s.Drift); err != nil {
+	if err := queryRowWithTimeout(ctx, r.db.DB, timeoutHeavy, `SELECT done, run_kind, step_drift FROM dash_fact_run_step($1, $2)`,
+		[]any{tenantID.String(), batchSize}, &s.Done, &kind, &s.Drift); err != nil {
 		return s, fmt.Errorf("dashboard fact run step: %w", err)
 	}
 	s.Kind = dashboardfact.RunKind(kind)
@@ -193,8 +196,8 @@ func (r *DashboardFactsRepository) AgedMarkingDueForPlatform(ctx context.Context
 // MaintainPartitionsForPlatform creates the coming F2 partitions and drops
 // those past the history window (dash_asset_day_maintain).
 func (r *DashboardFactsRepository) MaintainPartitionsForPlatform(ctx context.Context) (created, dropped, moved int, err error) {
-	if err = r.db.QueryRowContext(ctx, `SELECT created, dropped, moved FROM dash_asset_day_maintain()`).
-		Scan(&created, &dropped, &moved); err != nil {
+	if err = queryRowWithTimeout(ctx, r.db.DB, timeoutHeavy, `SELECT created, dropped, moved FROM dash_asset_day_maintain()`,
+		nil, &created, &dropped, &moved); err != nil {
 		return 0, 0, 0, fmt.Errorf("maintain dashboard day partitions: %w", err)
 	}
 	return created, dropped, moved, nil

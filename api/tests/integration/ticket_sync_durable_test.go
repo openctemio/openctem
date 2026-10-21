@@ -68,7 +68,7 @@ func TestTicketStatusSync_StatusChangeLeavesADurableJob(t *testing.T) {
 	// The bulk route queues the same way.
 	bulk := newFinding(true)
 	if _, err := svc.BulkUpdateFindingsStatus(ctx, tenant.String(), finding.BulkUpdateStatusInput{
-		FindingIDs: []string{bulk.String()}, Status: "confirmed"}); err != nil {
+		FindingIDs: []string{bulk.String()}, Status: "confirmed", HasStatusPermission: true}); err != nil {
 		t.Fatal(err)
 	}
 	if n := jobs(bulk); n != 2 {

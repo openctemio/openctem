@@ -22,9 +22,23 @@ going stale lost its work state.
 | Property | Value |
 |---|---|
 | Counted as fixed | Never. The status stays open, so fix-rate and MTTR exclude it and its SLA keeps running. |
-| Who sets stale | Only the platform: feature-branch expiry (`ExpireFeatureBranchFindings`) and branch-only expiry, a stale CI source (`MarkStaleSourceFindings`), template drift in coverage auto-resolve (`MarkCoverageNotObserved`), the software matcher when a version is no longer installed. Each marks only open findings that are present. |
+| Who sets stale | Only the platform: feature-branch expiry (`ExpireFeatureBranchFindings`) and branch-only expiry, a stale CI source (`MarkStaleSourceFindings`), template drift in coverage auto-resolve (`MarkCoverageNotObserved`), a leaked secret that a covered scan or a full default-branch scan no longer reports (`MarkCoverageSecretsNotObserved`, `MarkRepoCoverageSecretsNotObserved`; see below), the software matcher when a version is no longer installed. Each marks only open findings that are present. |
 | Back to present | Any sighting: the ingest upsert and re-sighting paths, a retest that still matches, the software matcher matching again. |
 | Closing a stale finding | A covered scan still resolves it (coverage proof), a retest with auto-resolve, or a `findings:verify` holder. |
+
+### Secrets are never closed by absence
+
+A leaked secret (finding type `secret`, or source `secret`) is not fixed
+because a scan stopped reporting it: removing it from the branch does not
+revoke the credential, and history keeps it. Neither auto-resolve path closes
+one: the repository default-branch scan and the coverage scan of other assets
+leave out secrets when they pick candidates, their resolve statements refuse
+secrets again, and a retest is not offered for a secret. Instead the finding
+is marked stale (`observation_state`; the status and SLA are unchanged) and a
+`metadata_updated` timeline entry (source `secret_not_observed`) records that
+no scan reports it any more. A later sighting makes it present again. A secret
+is closed by a person with `findings:verify` once the credential is rotated or
+revoked.
 
 ## Validation
 

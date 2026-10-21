@@ -145,3 +145,24 @@ func TestCreateTicket_ProviderError_Propagates(t *testing.T) {
 		t.Fatal("expected provider error to propagate")
 	}
 }
+
+type heldJiraTicket struct{ fakeJiraTicket }
+
+func (f *heldJiraTicket) CreateTicketFromFinding(context.Context, string, string, string, string) (TicketRef, error) {
+	return TicketRef{Held: true, HeldReason: "below_threshold"}, nil
+}
+
+// A finding the create policy held back: the step succeeds, reports the hold
+// and claims no ticket.
+func TestCreateTicket_HeldByPolicy(t *testing.T) {
+	h := NewTicketActionHandler(nil, &heldJiraTicket{}, nil, logger.NewNop())
+	res, err := h.createTicket(context.Background(), &ActionInput{
+		TenantID: shared.NewID(), ActionConfig: map[string]any{"finding_id": "f-1"},
+	})
+	if err != nil {
+		t.Fatalf("createTicket: %v", err)
+	}
+	if res["created"] != false || res["held"] != true || res["held_reason"] != "below_threshold" || res["ticket_key"] != nil {
+		t.Fatalf("unexpected result: %v", res)
+	}
+}

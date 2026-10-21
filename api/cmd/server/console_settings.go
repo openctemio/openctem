@@ -37,7 +37,7 @@ func (s *Services) initConsoleSettings(cfg *config.Config, repos *Repositories, 
 // platformAITester is the console's key test: one minimal completion.
 func platformAITester(f *llm.Factory) platformai.Tester {
 	return func(ctx context.Context, p platformai.Platform) error {
-		prov, err := f.BuildPlatformProvider(p.Provider, p.Model, p.APIKey)
+		prov, err := f.BuildPlatformProvider(llm.Spec{Provider: p.Provider, Model: p.Model, APIKey: p.APIKey, BaseURL: p.BaseURL, AllowPrivate: p.AllowPrivate})
 		if err != nil {
 			return err
 		}

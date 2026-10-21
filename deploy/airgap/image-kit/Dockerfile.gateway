@@ -1,0 +1,26 @@
+# OpenCTEM gateway image, assembled from the released openctem-gateway
+# archive: Caddy with the layer4 module. Like ghcr.io/openctemio/openctem-gateway
+# it holds Caddy only; Docker Compose mounts the gateway configuration
+# (api/deploy/gateway) at /etc/caddy, as with the official image.
+# Base: alpine, because the Compose entrypoint (api/deploy/gateway/entrypoint.sh)
+# runs under /bin/sh. The official image also adds ca-certificates and mailcap;
+# alpine ships the CA bundle, and Caddy knows the MIME types it serves.
+ARG BASE_IMAGE=alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM ${BASE_IMAGE}
+ARG TARGETARCH
+COPY rootfs/gateway/etc/passwd rootfs/gateway/etc/group /etc/
+COPY dist/${TARGETARCH}/gateway/bin/caddy /usr/bin/caddy
+COPY --chown=1000:1000 rootfs/empty/ /config/caddy/
+COPY --chown=1000:1000 rootfs/empty/ /data/caddy/
+ENV XDG_CONFIG_HOME=/config \
+    XDG_DATA_HOME=/data
+EXPOSE 80 443 443/udp 2019
+WORKDIR /srv
+LABEL org.opencontainers.image.title="OpenCTEM gateway (rebuilt from release @VERSION@)" \
+      org.opencontainers.image.version="@VERSION@" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+USER 1000:1000
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

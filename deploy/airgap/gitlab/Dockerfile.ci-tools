@@ -1,0 +1,40 @@
+# The tools image of the GitLab CI templates: bash, curl, jq, git, oras,
+# cosign, trivy, crane. Build it once per tool upgrade (it needs the tool
+# release downloads, e.g. through your Nexus raw proxy of github.com) and
+# push it to your registry; set TOOLS_IMAGE to it.
+#
+#   docker build -f Dockerfile.ci-tools \
+#     --build-arg GITHUB=https://nexus.example.internal/repository/github-all \
+#     -t harbor.example.internal/ci/openctem-tools:1 .
+#
+# Inside an air gap `apk add` needs your Alpine package proxy (e.g. a Nexus
+# apk proxy): add --build-arg ALPINE_MIRROR=https://nexus.example.internal/repository/alpine
+# and the RUN line rewrites /etc/apk/repositories to it.
+# Every download is checked against the sha256 below: bump a version only
+# together with its checksum from the tool's release page.
+ARG BASE_IMAGE=alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM ${BASE_IMAGE}
+ARG GITHUB=https://github.com
+ARG ALPINE_MIRROR=
+ARG ORAS_VERSION=1.3.5
+ARG ORAS_SHA256=f48a73ea6d026a862c3919fc773da9a8c86fc259c2c737d5baed3b8b9614ad22
+ARG COSIGN_VERSION=v3.1.3
+ARG COSIGN_SHA256=4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71
+ARG CRANE_VERSION=v0.22.1
+ARG CRANE_SHA256=0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+ARG TRIVY_VERSION=0.76.0
+ARG TRIVY_SHA256=e24b1c51293c1b15e4ba8d45bbc7891ba053f90278ec2698f3562c993e145fe7
+RUN if [ -n "${ALPINE_MIRROR}" ]; then sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}|" /etc/apk/repositories; fi \
+ && apk add --no-cache bash curl jq git tar coreutils ca-certificates \
+ && cd /tmp \
+ && curl -fsSLo oras.tgz "${GITHUB}/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_amd64.tar.gz" \
+ && echo "${ORAS_SHA256}  oras.tgz" | sha256sum -c - && tar -xzf oras.tgz oras && mv oras /usr/local/bin/ \
+ && curl -fsSLo /usr/local/bin/cosign "${GITHUB}/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64" \
+ && echo "${COSIGN_SHA256}  /usr/local/bin/cosign" | sha256sum -c - && chmod 0755 /usr/local/bin/cosign \
+ && curl -fsSLo crane.tgz "${GITHUB}/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+ && echo "${CRANE_SHA256}  crane.tgz" | sha256sum -c - && tar -xzf crane.tgz crane && mv crane /usr/local/bin/ \
+ && curl -fsSLo trivy.tgz "${GITHUB}/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+ && echo "${TRIVY_SHA256}  trivy.tgz" | sha256sum -c - && tar -xzf trivy.tgz trivy && mv trivy /usr/local/bin/ \
+ && rm -f /tmp/*.tgz \
+ && adduser -D -u 10001 ci
+USER 10001

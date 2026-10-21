@@ -124,17 +124,22 @@ func (r *fakeCampaignRepo) ListForReconcile(context.Context, int) ([]*remediatio
 // fakeTasks stands in for the remediation task service.
 type fakeTasks struct {
 	notWritable map[shared.ID]bool
-	live        []shared.ID
-	recomputed  []shared.ID
-	claimed     []shared.ID
-	lastNote    string
-	refusals    map[shared.ID][]string
-	claimErr    error
+	// forbidden tasks are visible but have findings outside the caller's scope.
+	forbidden  map[shared.ID]bool
+	live       []shared.ID
+	recomputed []shared.ID
+	claimed    []shared.ID
+	lastNote   string
+	refusals   map[shared.ID][]string
+	claimErr   error
 }
 
 func (f *fakeTasks) CheckTaskWritable(_ context.Context, _, id shared.ID) error {
 	if f.notWritable[id] {
 		return shared.ErrNotFound
+	}
+	if f.forbidden[id] {
+		return shared.ErrForbidden
 	}
 	return nil
 }

@@ -20,6 +20,13 @@ const (
 	// ActionRemediationTaskIssueCreated: a person created the task's tracker
 	// issue (the task's title and counts leave the platform).
 	ActionRemediationTaskIssueCreated Action = "remediation_task.issue_created"
+	// ActionRemediationTaskOwnerAccessExtended: a person with findings:assign
+	// named a task owner who cannot see some of its findings and confirmed
+	// it, with the counts of findings and assets that owner now needs.
+	ActionRemediationTaskOwnerAccessExtended Action = "remediation_task.owner_access_extended"
+	// ActionRemediationTaskRegressed: findings of a closed task reopened and
+	// the platform moved them to a new task linked to it (actor: system).
+	ActionRemediationTaskRegressed Action = "remediation_task.regressed"
 )
 
 // ResourceTypeRemediationTask is a remediation task (table remediation_tasks).
@@ -41,6 +48,10 @@ var _ = registerActions("remediation_task", map[Action]Severity{
 	// One request to hide the risk of every open finding of the task.
 	ActionRemediationTaskExceptionRequested: SeverityMedium,
 	ActionRemediationTaskIssueCreated:       SeverityLow,
+	// Widens who may see findings: reviewed like an assignment.
+	ActionRemediationTaskOwnerAccessExtended: SeverityMedium,
+	// Work the owner believed done is open again.
+	ActionRemediationTaskRegressed: SeverityMedium,
 })
 
 // Remediation suggestion decisions (RFC-098 §5). The generator itself writes

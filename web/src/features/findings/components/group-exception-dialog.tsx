@@ -78,6 +78,8 @@ function isBulkTooLarge(err: unknown): boolean {
 
 interface GroupExceptionDialogProps {
   taskId: string
+  /** The task version the page shows; the request is based on it. */
+  taskVersion: number
   open: boolean
   onOpenChange: (open: boolean) => void
   /** The exception was requested. */
@@ -88,6 +90,7 @@ interface GroupExceptionDialogProps {
 
 export function GroupExceptionDialog({
   taskId,
+  taskVersion,
   open,
   onOpenChange,
   onCreated,
@@ -200,6 +203,7 @@ export function GroupExceptionDialog({
     setSubmitting(true)
     try {
       const batch = await approvalBatchApi.request(taskId, {
+        version: taskVersion,
         requested_status: status,
         closure_reason: reason,
         justification: note.trim(),

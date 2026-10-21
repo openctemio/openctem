@@ -11,6 +11,7 @@ import {
   type AssetPropertyKey,
   type LegacyAssetCategory,
 } from '@/features/asset-types/registry.generated'
+import type { RiskRequest } from '../lib/risk-impact'
 
 /**
  * Asset Type Categories (CTEM-aligned)
@@ -517,6 +518,8 @@ export interface Asset {
    * through PATCH /assets/{id}/crown-jewel, never through properties.
    */
   isCrownJewel?: boolean
+  /** An edit that lowers risk inputs and waits for a second person's approval. */
+  pendingRiskRequest?: RiskRequest
   /** Tags the platform derives from bug-bounty program links (read-only). */
   systemTags?: string[]
   /** Came with a bug-bounty program and no own scope covers it. */
@@ -612,6 +615,11 @@ export interface CreateAssetInput {
   ownerRef?: string
   metadata?: AssetMetadata
   tags?: string[]
+  /**
+   * Why exposure or criticality is lowered. Required by the API when the change
+   * would drop an open P0/P1 finding on the asset.
+   */
+  riskChangeReason?: string
 }
 
 /**
@@ -635,6 +643,11 @@ export interface UpdateAssetInput {
   ownerRef?: string
   metadata?: AssetMetadata
   tags?: string[]
+  /**
+   * Why exposure or criticality is lowered. Required by the API when the change
+   * would drop an open P0/P1 finding on the asset.
+   */
+  riskChangeReason?: string
 }
 
 /**

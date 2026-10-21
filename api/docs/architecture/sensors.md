@@ -21,7 +21,7 @@
 | **Collector** (role) | A sensor that pushes data from systems inside the customer network. |
 | **Integration** | An external system the *platform* calls (Jira, Slack, Splunk out, …); no software of ours runs for it. |
 | `type` | The legacy v1 classification (`worker`, `scanner`, `sensor`, `collector`, `runner`). Kept as input and storage until role + deployment replace it (RFC-023 §9.1). |
-| AI agent | The AI-triage "agent" mode (`AIModeAgent`, module `ai_triage.agent`): an LLM agent, unrelated to sensors. |
+| AI agent | The `ai_triage.agent` module (an LLM agent, unrelated to sensors); the `agent` AI mode is removed. |
 
 Until 2026-10 the code, database and API called sensors "agents". The rename
 is complete in the API: packages, types, tables, columns, permissions
@@ -550,11 +550,15 @@ post-install/post-upgrade Job). An existing organization sensor keeps its
 identity: the scope is fixed at creation, so converting means retiring it and
 enrolling a fresh one.
 
-In compose the bundled sensor runs on its own `sensor-net` bridge. The `api`
-service is the only other member, so the sensor reaches the API and the
-internet (public scans) but cannot resolve or connect to Postgres, Redis, the
-signer, the gateway or the console. It has memory, CPU and process limits
-(`SENSOR_MEMORY_LIMIT`, `SENSOR_CPUS`, `SENSOR_PIDS_LIMIT`). The enrollment
+In compose the bundled sensor runs on its own `sensor-net` bridge. The
+`gateway` service is the only other member, under the name of
+`OPENCTEM_HOSTNAME`, so the sensor reaches the platform over https at the
+same address as every other client (sensor SDK releases from v0.35.0 refuse
+plain http to a non-loopback host), trusting the gateway's internal CA from
+`./ca` (`SENSOR_CA_CERT_FILE`; set it empty for a publicly trusted
+certificate). It also reaches the internet (public scans) but cannot resolve
+or connect to Postgres, Redis, the signer or the API. It has memory, CPU and
+process limits (`SENSOR_MEMORY_LIMIT`, `SENSOR_CPUS`, `SENSOR_PIDS_LIMIT`). The enrollment
 token still reaches the sensor through its environment until the sensor
 supports reading it from a file.
 

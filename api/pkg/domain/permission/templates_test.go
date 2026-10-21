@@ -243,14 +243,14 @@ var templateVersions = map[string]struct {
 	digest  string
 }{
 	"program-lead":          {2, "32b7a341272a6334"},
-	"security-analyst":      {1, "8d919973833731a8"},
-	"vulnerability-manager": {1, "20cadb3f924a1193"},
+	"security-analyst":      {2, "9c326bfa307f0684"},
+	"vulnerability-manager": {2, "7f2aabf5554d9727"},
 	"remediation-owner":     {1, "e7a6827cedd735f8"},
-	"appsec-engineer":       {1, "c3b74d6a1883f9ea"},
+	"appsec-engineer":       {2, "32bf4071b62e05a5"},
 	"ci-integrator":         {1, "bbc336f2d9c23728"},
 	"scan-operator":         {1, "1e92419c24534f7d"},
 	"sensor-operator":       {1, "dad7da0b5236b92c"},
-	"validation-engineer":   {1, "9c76467fedf3eac0"},
+	"validation-engineer":   {2, "a98665c9403dfa5d"},
 	"external-tester":       {1, "8861f6f0f788e217"},
 	"researcher":            {2, "3db22d24b0d4ef59"},
 	"bounty-triager":        {1, "3701f9612e54d123"},

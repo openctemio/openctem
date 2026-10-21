@@ -40,7 +40,7 @@ services:
   # `up` (a no-op once the owner is right); only CHOWN, plus DAC_READ_SEARCH
   # to walk the gateway's own 0700 directories.
   gateway-init:
-    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.13.0}}
     user: "0:0"
     entrypoint: ["chown", "-R", "1000:1000", "/data", "/config", "/ca"]
     network_mode: none
@@ -61,7 +61,7 @@ services:
   # the namespaced sysctl below, so no-new-privileges stays on and it holds
   # no capability.
   gateway:
-    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.13.0}}
     user: "1000:1000"
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0
@@ -141,7 +141,7 @@ services:
   # do not hold every later release: set UI_IMAGE / API_IMAGE to them only to
   # run such an old release with this file.
   web:
-    image: ${UI_IMAGE:-ghcr.io/openctemio/openctem-web}:${UI_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
+    image: ${UI_IMAGE:-ghcr.io/openctemio/openctem-web}:${UI_VERSION:-${OPENCTEM_VERSION:-v0.13.0}}
     expose:
       - "3000"
     environment:
@@ -188,7 +188,7 @@ services:
   # page runs here and no console page in `web`.
   # ---------------------------------------------------------------------------
   console:
-    image: ${CONSOLE_IMAGE:-ghcr.io/openctemio/openctem-console}:${CONSOLE_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
+    image: ${CONSOLE_IMAGE:-ghcr.io/openctemio/openctem-console}:${CONSOLE_VERSION:-${OPENCTEM_VERSION:-v0.13.0}}
     expose:
       - "3000"
     environment:
@@ -234,7 +234,7 @@ services:
   # platform console's identity tables (administrators, console sessions) are
   # written by that role alone, and the API's DB_USER only reads admin_users.
   db-roles: &db-roles
-    image: postgres:${POSTGRES_VERSION:-17}
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -301,7 +301,7 @@ services:
   # Database migrations (one-shot, before the API), as the schema owner
   # ---------------------------------------------------------------------------
   migrate:
-    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
+    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION:-v0.13.0}}
     # No password in the URL: the command line is readable by every host user
     # (ps, /proc/<pid>/cmdline) and kept in the container's Cmd. The postgres
     # driver (lib/pq) takes the password from PGPASSWORD.
@@ -330,7 +330,7 @@ services:
   # API (Go): internal only
   # ---------------------------------------------------------------------------
   api:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.13.0}}
     expose:
       - "8080"
     environment:
@@ -488,7 +488,7 @@ services:
   # root (recommended: sensors then pin the root out of band) and the scope
   # ledger are described in docker-compose.job-signer.yml and job-signing.md.
   signer:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.13.0}}
     entrypoint: ["/app/openctem-signer"]
     command: ["serve"]
     user: "1001:1000"
@@ -546,7 +546,7 @@ services:
   # (`-h` lists every flag.) It is not started by `up`.
   bootstrap-admin:
     profiles: [tools]
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.12.0}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.13.0}}
     entrypoint: ["/app/bootstrap-admin"]
     environment:
       DB_HOST: ${DB_HOST:-postgres}
@@ -589,7 +589,7 @@ services:
   # it). Using managed Postgres/Redis instead: set DB_HOST/REDIS_HOST (and
   # REDIS_TLS_CA_FILE if their CA is not public) and drop these services.
   datastore-tls:
-    image: postgres:${POSTGRES_VERSION:-17} # only for its openssl
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17} # only for its openssl
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -626,7 +626,7 @@ services:
     logging: *default-logging
 
   postgres:
-    image: postgres:${POSTGRES_VERSION:-17}
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17}
     command:
       - postgres
       - -c
@@ -653,6 +653,10 @@ services:
       - random_page_cost=${PG_RANDOM_PAGE_COST:-1.1}
       - -c
       - max_wal_size=${PG_MAX_WAL_SIZE:-2GB}
+      # Large jsonb/text values compress with lz4: cheaper to read and write
+      # than the built-in pglz. Applies to values written from now on.
+      - -c
+      - default_toast_compression=${PG_TOAST_COMPRESSION:-lz4}
     # Parallel queries share memory through /dev/shm (64 MB by default).
     shm_size: ${PG_SHM_SIZE:-256m}
     environment:
@@ -690,7 +694,7 @@ services:
     logging: *default-logging
 
   redis:
-    image: redis:${REDIS_VERSION:-7-alpine}
+    image: ${REDIS_IMAGE:-redis}:${REDIS_VERSION:-7-alpine}
     command:
       - sh
       - -c

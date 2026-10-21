@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -50,5 +51,46 @@ func TestGateRunContext_DropsCallerRouting(t *testing.T) {
 	}
 	if _, ok := out[scanrun.RunContextKeySensorRouting]; ok || out["note"] != "x" {
 		t.Fatalf("context after gate = %v", out)
+	}
+}
+
+// A caller of a workflow run cannot name who the run acts as: neither a user
+// (the actor of chained hops) nor a platform policy (system authority).
+func TestGateRunContext_DropsCallerActor(t *testing.T) {
+	s := &Service{logger: logger.NewNop()}
+	out, err := s.gateRunContext(context.Background(), shared.NewID(), "",
+		map[string]any{scanapp.RunContextKeyActor: shared.NewID().String(), scanapp.RunContextKeySystemPolicy: "coverage", "note": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := out[scanapp.RunContextKeyActor]; ok {
+		t.Error("the caller's actor reached the run context")
+	}
+	if _, ok := out[scanapp.RunContextKeySystemPolicy]; ok {
+		t.Error("the caller's system policy reached the run context")
+	}
+	if out["note"] != "x" {
+		t.Fatalf("context after gate = %v", out)
+	}
+}
+
+// A platform policy's run acts as its policy: the gate record of its step
+// commands carries the policy and no actor, and hops have no actor to fall
+// back to, even when the run names a user.
+func TestStepDispatchGate_PolicyRunHasNoActor(t *testing.T) {
+	user := shared.NewID()
+	policy := &scanrun.Run{TriggeredBy: user.String(), Context: map[string]any{scanapp.RunContextKeySystemPolicy: "enrichment", scanapp.RunContextKeyActor: user.String()}}
+	if runActor(policy) != nil {
+		t.Error("a policy run has an actor")
+	}
+	g := stepDispatchGate(policy, scanapp.StepTool{Name: "subfinder"})
+	if g.SystemPolicy != "enrichment" || g.Actor != "" || !g.ActScope {
+		t.Errorf("policy gate = %+v", g)
+	}
+
+	person := &scanrun.Run{TriggeredBy: user.String(), Context: map[string]any{}}
+	g = stepDispatchGate(person, scanapp.StepTool{Name: "subfinder"})
+	if g.SystemPolicy != "" || g.Actor != user.String() {
+		t.Errorf("person gate = %+v", g)
 	}
 }

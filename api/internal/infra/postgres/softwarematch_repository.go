@@ -94,6 +94,9 @@ func (r *SoftwareMatchRepository) ReplaceVersionVulns(ctx context.Context, versi
 		return false, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return false, err
+	}
 	before, err := versionVulnKeys(ctx, tx, versionID)
 	if err != nil {
 		return false, err
@@ -190,7 +193,7 @@ func (r *SoftwareMatchRepository) ResetVersionsForCVEsSince(ctx context.Context,
 	if !boundary.Valid {
 		return since, 0, nil
 	}
-	res, err := r.db.ExecContext(ctx, `
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `
 		WITH c AS (SELECT cve_id FROM cve_records WHERE synced_at > $1 AND synced_at <= $2)
 		UPDATE software_versions v SET matched_at = NULL
 		WHERE v.tenant_id IS NULL AND v.normalized IS NOT NULL AND v.matched_at IS NOT NULL
@@ -561,9 +564,10 @@ func (r *SoftwareMatchRepository) EnsureDefinitions(ctx context.Context, cves []
 		SELECT c.cve_id, c.cve_id, 'CVE', 'vulnerability', LEFT(c.cve_id, 500), c.description,
 			`+corpusSeveritySQL+`,
 			c.cvss_score, c.cvss_vector, c.cvss_version, c.published_at, c.last_modified_at, 'nvd',
-			e.epss_score, e.percentile, k.date_added::timestamptz, k.due_date::timestamptz, (k.cve_id IS NOT NULL)
+			e.epss_score, ec.percentile, k.date_added::timestamptz, k.due_date::timestamptz, (k.cve_id IS NOT NULL)
 		FROM cve_records c
 		LEFT JOIN epss_scores e ON e.cve_id = c.cve_id
+		LEFT JOIN epss_percentile_curve ec ON ec.score = e.epss_score
 		LEFT JOIN kev_catalog k ON k.cve_id = c.cve_id
 		WHERE c.cve_id = ANY($1)
 		ON CONFLICT (cve_id) DO NOTHING`, pq.Array(ids)); err != nil {

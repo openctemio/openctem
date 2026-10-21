@@ -311,8 +311,23 @@ func (s *FindingActionsService) visibleTo(
 func visibleFilter(
 	ctx context.Context, e *datascope.Enforcer, tid shared.ID, filter vulnerability.FindingFilter,
 ) (vulnerability.FindingFilter, error) {
+	return visibleFilterWith(ctx, e, tid, filter, e.Resolve)
+}
+
+// visibleFilterStrict is visibleFilter for a read that must never fall back
+// to "unrestricted" when the enforcer is not wired: that is an error.
+func visibleFilterStrict(
+	ctx context.Context, e *datascope.Enforcer, tid shared.ID, filter vulnerability.FindingFilter,
+) (vulnerability.FindingFilter, error) {
+	return visibleFilterWith(ctx, e, tid, filter, e.ResolveStrict)
+}
+
+func visibleFilterWith(
+	ctx context.Context, e *datascope.Enforcer, tid shared.ID, filter vulnerability.FindingFilter,
+	resolve func(context.Context, shared.ID) (*shared.DataScope, error),
+) (vulnerability.FindingFilter, error) {
 	filter.TenantID = &tid
-	scope, err := e.Resolve(ctx, tid)
+	scope, err := resolve(ctx, tid)
 	if err != nil {
 		return filter, fmt.Errorf("failed to resolve data scope: %w", err)
 	}
@@ -1094,8 +1109,8 @@ func validateCVEID(cveID string) error {
 }
 
 // FixAppliers returns which of the findings the user may mark fix_applied:
-// the direct assignee, a member of an assigned group, or a primary or
-// secondary owner of the asset. The same rule as BulkFixApplied, for every
+// the direct assignee, a member of an assigned group, a primary or
+// secondary owner of the asset, or the owner of the live task holding it. The same rule as BulkFixApplied, for every
 // route that marks a fix applied (the status endpoint, the bulk status change,
 // remediation group and campaign resolves). A lookup failure narrows, never
 // widens.
@@ -1131,7 +1146,42 @@ func (s *FindingActionsService) FixAppliers(ctx context.Context, tenantID, userI
 	for _, f := range findings {
 		out[f.ID()] = s.canMarkFixApplied(userID, groupIDSet, findingGroupMap, owned, f)
 	}
+	s.addTaskOwners(ctx, tenantID, userID, findings, out)
 	return out
+}
+
+// addTaskOwners adds the fix-owner path of the task owner: the user owns, or
+// is an active member of the team that owns, the live task holding the
+// finding. It is computed per call (nothing stored), so it ends when the
+// owner changes, the finding leaves the task, the task closes or the
+// membership ends. A lookup failure narrows, never widens; an API key never
+// qualifies (it is no person).
+func (s *FindingActionsService) addTaskOwners(ctx context.Context, tenantID, userID shared.ID, findings []*vulnerability.Finding, out map[shared.ID]bool) {
+	if s.dataScope == nil {
+		return
+	}
+	if c := s.dataScope.CallerOf(ctx); c.APIKey || (c.UserID != "" && c.UserID != userID.String()) {
+		return
+	}
+	var rest []shared.ID
+	for _, f := range findings {
+		if !out[f.ID()] && f.Source() != vulnerability.FindingSourcePentest {
+			rest = append(rest, f.ID())
+		}
+	}
+	if len(rest) == 0 {
+		return
+	}
+	owned, err := s.dataScope.OwnedViaTask(ctx, tenantID, userID, rest)
+	if err != nil {
+		s.logger.Warn("failed to check task ownership", "error", err)
+		return
+	}
+	for _, id := range rest {
+		if owned(id) {
+			out[id] = true
+		}
+	}
 }
 
 // QueueProofOfFix queues a proof-of-fix re-check for each finding just marked

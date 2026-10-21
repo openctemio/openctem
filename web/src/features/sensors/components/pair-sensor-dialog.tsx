@@ -19,6 +19,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, ChevronDown, Link2, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { TOTP_CODE_LENGTH, VerificationCodeInput } from '@/components/security'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -62,6 +63,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   DEFAULT_GRANT_PROFILE,
   GRANT_PROFILES,
+  PAIRING_CODE_LENGTH,
   PARAMETERISED_PROFILES,
   formatCountdown,
   formatPairingCode,
@@ -217,9 +219,10 @@ function EnterCodePanel({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const find = async () => {
+  const find = async (typed: string = input) => {
+    if (busy) return
     setError(null)
-    const norm = normalizePairingCode(input)
+    const norm = normalizePairingCode(typed)
     if (!norm) {
       // Same answer as an unknown code: the shape of a code is no secret,
       // but one message for every miss keeps the UI honest about it.
@@ -271,26 +274,19 @@ function EnterCodePanel({
         {t('sensors.pair.codeHelpBefore')} <code className="font-mono">openctemio-sensor pair</code>
         {t('sensors.pair.codeHelpAfter')}
       </p>
-      <div className="space-y-1.5">
-        <Label htmlFor={inputId}>{t('sensors.pair.codeLabel')}</Label>
-        <Input
-          id={inputId}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="K7QM-4ZTD"
-          autoComplete="off"
-          spellCheck={false}
-          maxLength={16}
-          className="font-mono uppercase"
-          aria-invalid={!!error}
-          aria-describedby={error ? `${inputId}-error` : undefined}
-        />
-        {error && (
-          <p id={`${inputId}-error`} role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
+      <VerificationCodeInput
+        id={inputId}
+        label={t('sensors.pair.codeLabel')}
+        mode="alphanumeric"
+        length={PAIRING_CODE_LENGTH}
+        groups={[4, 4]}
+        placeholder="K7QM-4ZTD"
+        value={input}
+        onChange={setInput}
+        onComplete={(c) => void find(c)}
+        disabled={busy}
+        error={error}
+      />
       <div className="flex justify-end">
         <Button type="submit" disabled={busy || input.trim() === ''}>
           {busy && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -563,7 +559,8 @@ function ApprovalForm({
     matches &&
     name.trim() !== '' &&
     integrationOk &&
-    (!needsSecret || secret.trim() !== '') &&
+    (!needsSecret ||
+      (stepUp === 'totp' ? secret.length === TOTP_CODE_LENGTH : secret.trim() !== '')) &&
     busy === null
 
   const approve = async () => {
@@ -725,18 +722,24 @@ function ApprovalForm({
         </Label>
       </div>
 
-      {needsSecret ? (
+      {needsSecret && stepUp === 'totp' ? (
+        <VerificationCodeInput
+          id={ids.stepUp}
+          ref={secretRef}
+          label={t('sensors.pair.authCode')}
+          value={secret}
+          onChange={setSecret}
+          hint={t('sensors.pair.stepUpHint')}
+        />
+      ) : needsSecret ? (
         <div className="space-y-1.5">
-          <Label htmlFor={ids.stepUp}>
-            {stepUp === 'totp' ? t('sensors.pair.authCode') : t('sensors.pair.password')}
-          </Label>
+          <Label htmlFor={ids.stepUp}>{t('sensors.pair.password')}</Label>
           <Input
             id={ids.stepUp}
             ref={secretRef}
-            type={stepUp === 'totp' ? 'text' : 'password'}
-            inputMode={stepUp === 'totp' ? 'numeric' : undefined}
-            autoComplete={stepUp === 'totp' ? 'one-time-code' : 'current-password'}
-            maxLength={stepUp === 'totp' ? 8 : 256}
+            type="password"
+            autoComplete="current-password"
+            maxLength={256}
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
           />

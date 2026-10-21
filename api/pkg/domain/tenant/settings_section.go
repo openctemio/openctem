@@ -22,7 +22,6 @@ const (
 	SectionSecurity       = "security"
 	SectionBranding       = "branding"
 	SectionBranch         = "branch"
-	SectionAI             = "ai"
 	SectionRiskScoring    = "risk_scoring"
 	SectionPentest        = "pentest"
 	SectionAssetIdentity  = "asset_identity"
@@ -49,7 +48,6 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionSecurity:            &s.Security,
 		SectionBranding:            &s.Branding,
 		SectionBranch:              &s.Branch,
-		SectionAI:                  &s.AI,
 		SectionRiskScoring:         &s.RiskScoring,
 		SectionPentest:             &s.Pentest,
 		SectionAssetIdentity:       &s.AssetIdentity,

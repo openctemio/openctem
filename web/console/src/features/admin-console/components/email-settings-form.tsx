@@ -14,7 +14,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { EmailSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
-import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 export interface EmailSettingsFormProps {
   settings: EmailSettingsResponse
@@ -315,22 +315,13 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
           )
         }
       >
-        <div className="space-y-2">
-          <Label htmlFor={`${id}-code`}>
-            {t('admin.email.code', 'Code from your authenticator')}
-          </Label>
-          <Input
-            id={`${id}-code`}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={8}
-            aria-invalid={!!codeError}
-          />
-          <StepUpCodeHint optional={codeOptional} />
-          {codeError && <p className="text-sm text-destructive">{codeError}</p>}
-        </div>
+        <StepUpCodeField
+          id={`${id}-code`}
+          value={code}
+          onChange={setCode}
+          optional={codeOptional}
+          error={codeError}
+        />
       </ConfirmDialog>
     </>
   )

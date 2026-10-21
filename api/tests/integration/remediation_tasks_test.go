@@ -47,6 +47,7 @@ type rtRig struct {
 	other  shared.ID // another tenant
 	otherF shared.ID // a finding of the other tenant
 	seq    int
+	audit  *ownerAudit
 }
 
 func newRTRig(t *testing.T) *rtRig {

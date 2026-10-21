@@ -40,6 +40,11 @@ const (
 	ActionTicketMappingUpdated   Action = "ticket_mapping.updated"
 	ActionTicketMappingPublished Action = "ticket_mapping.published"
 	ActionTicketMappingDeleted   Action = "ticket_mapping.deleted"
+
+	ActionTicketCreatePolicyUpdated Action = "ticket_create_policy.updated"
+	// ActionTicketCreatedBelowThreshold: a person created an issue for a
+	// finding below the integration's create policy (confirmed override).
+	ActionTicketCreatedBelowThreshold Action = "ticket.created_below_threshold"
 )
 
 // Resource types for the configuration-change actions.
@@ -51,6 +56,7 @@ const (
 	ResourceTypeScopeRule          ResourceType = "scope_rule"
 	ResourceTypeAssignmentRule     ResourceType = "assignment_rule"
 	ResourceTypeTicketMapping      ResourceType = "ticket_mapping"
+	ResourceTypeTicketCreatePolicy ResourceType = "ticket_create_policy"
 )
 
 var configActions = map[Action]struct{}{
@@ -81,6 +87,8 @@ var configActions = map[Action]struct{}{
 	ActionTicketMappingUpdated:            {},
 	ActionTicketMappingPublished:          {},
 	ActionTicketMappingDeleted:            {},
+	ActionTicketCreatePolicyUpdated:       {},
+	ActionTicketCreatedBelowThreshold:     {},
 }
 
 var configResourceTypes = map[ResourceType]struct{}{
@@ -91,6 +99,7 @@ var configResourceTypes = map[ResourceType]struct{}{
 	ResourceTypeScopeRule:          {},
 	ResourceTypeAssignmentRule:     {},
 	ResourceTypeTicketMapping:      {},
+	ResourceTypeTicketCreatePolicy: {},
 	ResourceTypeDashboard:          {},
 }
 

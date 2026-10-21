@@ -344,9 +344,14 @@ type ScanDetailResponse struct {
 	// A scheduled scan runs only with an active owner; an administrator
 	// takes ownership with POST /scans/{id}/take-ownership. Lists report
 	// missing only (no per-row membership lookup).
-	OwnerState string `json:"owner_state" enums:"ok,missing,inactive"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	// managed: a platform policy owns the scan (managed_by names it); it has
+	// no owner and is read-only here.
+	OwnerState string `json:"owner_state" enums:"ok,missing,inactive,managed"`
+	// ManagedBy names the platform policy that owns the scan (coverage,
+	// enrichment); absent on a person's scan.
+	ManagedBy string `json:"managed_by,omitempty" enums:"coverage,enrichment"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // ScanStatsResponse represents the response for scan statistics.
@@ -552,6 +557,7 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Param        status          query     string  false  "Filter by status"
 // @Param        search          query     string  false  "Search by name"
 // @Param        include_ad_hoc  query     bool    false  "Also list unsaved quick scans (ad_hoc)"
+// @Param        origin          query     string  false  "Who owns the scan: user (people's scans) or system (scans the platform manages)" Enums(user, system)
 // @Param        sort            query     string  false  "One sort key, - for descending: name, created_at, last_run_at, next_run_at, total_runs" default(name)
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        per_page        query     int     false  "Items per page" default(20)
@@ -577,6 +583,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 		Tags:           parseQueryArray(r.URL.Query().Get("tags")),
 		Search:         r.URL.Query().Get("search"),
 		IncludeAdHoc:   r.URL.Query().Get("include_ad_hoc") == "true",
+		Origin:         r.URL.Query().Get("origin"),
 		Sort:           r.URL.Query().Get("sort"),
 		Page:           page.Page,
 		PerPage:        page.PerPage,
@@ -1475,8 +1482,12 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 	if s.CreatedBy == nil || s.CreatedBy.IsZero() {
 		ownerState = scansvc.OwnerStateMissing
 	}
+	if s.IsManaged() {
+		ownerState = scansvc.OwnerStateManaged
+	}
 	resp := &ScanDetailResponse{
 		OwnerState:            ownerState,
+		ManagedBy:             string(s.ManagedBy),
 		ID:                    s.ID.String(),
 		TenantID:              s.TenantID.String(),
 		Name:                  s.Name,

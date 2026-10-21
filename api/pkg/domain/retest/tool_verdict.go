@@ -104,7 +104,10 @@ func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string) ToolRes
 		case VerdictFixed:
 			out.Verdict = decideNotMatched(AnalyzeAttempt(normalized(out.Evidence), matchedAt), matchedAt, true, "")
 		case VerdictUnverifiable:
-			out.Verdict = inconclusive(ReasonUnreachable, "unverifiable: "+nonEmpty(detail, "the tool could not check the target"))
+			// The tool could not run the check (template not available,
+			// tool error, target not connectable): a gap of the tool, not
+			// a finding about the target, so never "unreachable".
+			out.Verdict = inconclusive(ReasonError, "the tool could not run this check: "+nonEmpty(detail, "no reason given"))
 		default:
 			out.Verdict = inconclusive(ReasonError, "the tool reported an unknown verdict")
 		}

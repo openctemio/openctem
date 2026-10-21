@@ -250,6 +250,11 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 			if _, ok := permission.ParsePermission(scope); !ok {
 				return nil, fmt.Errorf("%w: unknown scope %q", shared.ErrValidation, scope)
 			}
+			// Keys are read-only: refuse a scope that suggests otherwise,
+			// whoever asks (remove with the read-only rule on keys).
+			if !permission.IsReadScope(scope) {
+				return nil, fmt.Errorf("%w: scope %q is not a read scope: API keys are read-only", shared.ErrValidation, scope)
+			}
 			// Privilege-escalation guard: a member with api-keys:write could
 			// otherwise mint a key carrying permissions they do not have
 			// (e.g. team:admin-level scopes) and act beyond their own role.

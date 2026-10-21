@@ -3,7 +3,8 @@ name: Docs check
 # Markdown in this repository must be English, must not carry private
 # addresses or internal host names, and its relative links must resolve.
 # Links from code to docs.openctem.io and to files on GitHub must resolve too.
-# Runs on every PR with no path filter so both jobs can be required checks.
+# Runs on every PR with no path filter so the job can be a required check. One
+# job, two step groups (it was two jobs; each was a runner for ~10 s of work).
 
 on:
   push:
@@ -25,9 +26,11 @@ jobs:
   docs-check:
     name: Docs check
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Links, language and private addresses
         run: python3 scripts/docs_check.py .
       # api/docs/rfcs/README.md index table is generated from the RFC headers.
@@ -36,17 +39,9 @@ jobs:
           python3 scripts/rfc_index_test.py
           python3 scripts/rfc_index.py --check
 
-  # docs.openctem.io links (page and anchor) and github.com/openctemio file
-  # links in code, against the docs site source (openctemio/docs main) and
-  # the repositories they name.
-  docs-links:
-    name: Docs links
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      # docs.openctem.io links (page and anchor) and github.com/openctemio file
+      # links in code, against the docs site source (openctemio/docs main) and
+      # the repositories they name.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openctemio/docs

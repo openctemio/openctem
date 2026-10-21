@@ -1,0 +1,11 @@
+{
+  "project_name": "ghcr-cache",
+  "registry_id": 0,
+  "public": false,
+  "metadata": {
+    "public": "false",
+    "auto_scan": "true",
+    "prevent_vul": "true",
+    "severity": "critical"
+  }
+}

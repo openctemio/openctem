@@ -82,3 +82,16 @@ func TestPartialFingerprints_ServerKeysNeitherStoredNorReturned(t *testing.T) {
 		t.Fatal("an all-server map must return nil")
 	}
 }
+
+// The producer's keyed secret hash identifies the finding at ingest but is
+// not stored with it: a member who can read the finding must not get a value
+// to confirm a short secret against offline.
+func TestClientPartialFingerprints_DropsTheProducerSecretHash(t *testing.T) {
+	hash := "00000000000000000000000000000000000000000000000000000000000000ff"
+	got := clientPartialFingerprints(map[string]string{
+		partialSecretHMAC: hash, "SecretHMAC/v9": hash, "primaryLocationLineHash": "abc:1",
+	})
+	if len(got) != 1 || got["primaryLocationLineHash"] != "abc:1" {
+		t.Fatalf("stored partial fingerprints = %v, want only primaryLocationLineHash", got)
+	}
+}

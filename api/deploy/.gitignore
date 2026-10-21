@@ -3,3 +3,5 @@
 ca/
 certs/
 sensor/sensor-policy.yaml
+backup-secrets/
+backup-repo/

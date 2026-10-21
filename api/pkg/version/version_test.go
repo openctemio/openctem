@@ -233,3 +233,13 @@ func TestReadGit_UnbornBranch(t *testing.T) {
 		t.Fatalf("fromCheckout = %+v", fromCheckout(dir))
 	}
 }
+
+func TestInfoString(t *testing.T) {
+	got := Info{Version: "v1.2.3", Commit: "abc123", BuildTime: "2026-10-20T00:00:00Z"}.String()
+	if want := "v1.2.3 (commit abc123, built 2026-10-20T00:00:00Z)"; got != want {
+		t.Fatalf("String() = %q, want %q", got, want)
+	}
+	if got := (Info{Version: "dev", Commit: "unknown"}).String(); got != "dev (commit unknown)" {
+		t.Fatalf("String() without build time = %q", got)
+	}
+}

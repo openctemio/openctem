@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_remediation_tasks_live_owner_user;
+DROP INDEX IF EXISTS idx_remediation_tasks_live_owner_group;

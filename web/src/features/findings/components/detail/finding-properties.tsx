@@ -28,6 +28,7 @@ import { SeveritySelect } from '../severity-select'
 import { SeverityProvenance } from './severity-provenance'
 import { useCanMutate } from '@/lib/permissions'
 import { AssigneeSelect } from '../assignee-select'
+import { FindingPeople } from './finding-people'
 import { PriorityClassBadge } from '../priority-class-badge'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { userTags } from '../../lib/finding-display'
@@ -161,6 +162,36 @@ export function FindingProperties({
       ? t('findings.properties.versionMatch', 'Version match')
       : [finding.toolName, finding.toolVersion].filter(Boolean).join(' ')
 
+  const assigneeNode = hideTriage ? (
+    <span className={triage.assignee ? undefined : 'text-muted-foreground'}>
+      {triage.assignee?.name || t('findings.properties.unassigned', 'Unassigned')}
+    </span>
+  ) : (
+    <AssigneeSelect
+      findingId={finding.id}
+      disabled={locked}
+      value={
+        triage.assignee
+          ? {
+              id: triage.assignee.id,
+              name: triage.assignee.name,
+              email: triage.assignee.email,
+              role: triage.assignee.role,
+            }
+          : null
+      }
+      onChange={(u) =>
+        triage.changeAssignee(
+          u ? { id: u.id, name: u.name, email: u.email || '', role: 'analyst' } : null
+        )
+      }
+      loading={triage.assigneeBusy}
+      variant="ghost"
+      showFullName
+      placeholder={t('findings.properties.unassigned', 'Unassigned')}
+    />
+  )
+
   return (
     <dl
       className={cn('space-y-1', className)}
@@ -214,35 +245,10 @@ export function FindingProperties({
           )}
         </Row>
       )}
-      {!hideTriage && (
-        <Row label={t('findings.properties.assignee', 'Assignee')}>
-          <AssigneeSelect
-            disabled={locked}
-            value={
-              triage.assignee
-                ? {
-                    id: triage.assignee.id,
-                    name: triage.assignee.name,
-                    email: triage.assignee.email,
-                    role: triage.assignee.role,
-                  }
-                : null
-            }
-            onChange={(u) =>
-              triage.changeAssignee(
-                u ? { id: u.id, name: u.name, email: u.email || '', role: 'analyst' } : null
-              )
-            }
-            loading={triage.assigneeBusy}
-            variant="ghost"
-            showFullName
-            placeholder={t('findings.properties.unassigned', 'Unassigned')}
-          />
-        </Row>
-      )}
       <Row label={t('findings.properties.slaDue', 'SLA due')}>
         <SlaDue deadline={finding.slaDeadline} status={finding.slaStatus} closed={closed} />
       </Row>
+      <FindingPeople findingId={finding.id} assignee={assigneeNode} />
 
       {/* Below lg the rail sits above "Why it matters": keep the state rows
           visible and fold the rest. */}

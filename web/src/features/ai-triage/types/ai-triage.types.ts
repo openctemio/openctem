@@ -155,7 +155,12 @@ export type AIMode = 'platform' | 'byok' | 'agent' | 'disabled'
  * AI configuration info returned from the API
  */
 /** Why AI triage cannot run for the organization (GET /findings/ai-triage/config). */
-export type AIUnavailableReason = 'not_enabled' | 'platform_not_configured' | 'budget_exhausted'
+export type AIUnavailableReason =
+  | 'not_enabled'
+  | 'platform_not_configured'
+  | 'own_provider_not_allowed'
+  | 'own_provider_not_configured'
+  | 'budget_exhausted'
 
 export interface AIConfig {
   mode: AIMode

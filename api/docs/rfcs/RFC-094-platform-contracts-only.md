@@ -28,7 +28,7 @@ implementation or of the SDK.
 
 | # | invariant | how it is held |
 |---|---|---|
-| I1 | The platform compiles and its tests pass with no sdk-go or sensor module in reach: `go mod why -m github.com/openctemio/sdk-go` reports that the main module does not need it | CI job "Platform depends on contracts only" (`.github/scripts/check-platform-deps.sh`): no require, replace or `go.sum` line, no import, no npm dependency; it has a self-test |
+| I1 | The platform compiles and its tests pass with no sdk-go or sensor module in reach: `go mod why -m github.com/openctemio/sdk-go` reports that the main module does not need it | CI steps "Platform depends on contracts only" in the required job Workflow Lint (`.github/scripts/check-platform-deps.sh`): no require, replace or `go.sum` line, no import, no npm dependency; it has a self-test |
 | I2 | A new sensor product or a new version of one needs no platform change | product facts (image, release channel, install templates, docs) are catalog data; behaviour facts (tools, settings, checks, features) come from what the sensor reports |
 | I3 | A sensor is accepted or refused by protocol version and capabilities only | the SDK version is informational; known-vulnerable SDK versions are an optional advisory list in the catalog, never a gate |
 | I4 | Behaviour is keyed by capability, never by a tool name | RFC-092; the port-scan cap and validation/retest are the first two moved |

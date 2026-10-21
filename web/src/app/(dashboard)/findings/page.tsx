@@ -369,12 +369,9 @@ const PRIORITY_OPTIONS = [
 function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
-          <Skeleton className="h-9 w-24" />
-          <Skeleton className="h-9 w-72" />
-        </div>
-        <Skeleton className="ms-auto h-9 w-24" />
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-9 min-w-0 flex-1" />
+        <Skeleton className="h-9 w-28 shrink-0" />
       </div>
       {contextChips ? (
         <div
@@ -1823,16 +1820,28 @@ function FindingsContent() {
     />
   )
 
-  const searchBox = (
-    <div className="relative min-w-0 flex-1 sm:max-w-sm">
-      <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search title, CVE, rule or location…"
-        aria-label="Search findings"
-        className="h-9 ps-9"
-      />
+  // The filter button and the search box are one control: the button is
+  // joined to the start of the field, so they never separate when the row is
+  // tight, and the field takes all the width the row has left.
+  const filterSearch = (
+    <div
+      data-testid="findings-filter-search"
+      className="flex min-w-0 flex-1 items-center [&_[data-slot=filter-button]]:z-10 [&_[data-slot=filter-button]]:rounded-e-none"
+    >
+      {filterButtons}
+      <div className="relative -ms-px min-w-40 flex-1">
+        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={t(
+            'findings.toolbar.searchPlaceholder',
+            'Search title, CVE, rule or location…'
+          )}
+          aria-label={t('findings.toolbar.searchLabel', 'Search findings')}
+          className="h-9 rounded-s-none ps-9 focus-visible:z-20"
+        />
+      </div>
     </div>
   )
 
@@ -1844,14 +1853,17 @@ function FindingsContent() {
         setGroupParam(v === 'none' ? '' : v)
       }}
     >
-      <SelectTrigger className="h-9 w-auto gap-2 sm:min-w-36" aria-label="Group findings">
+      <SelectTrigger
+        className="h-9 w-auto gap-2 @2xl/toolbar:min-w-36"
+        aria-label={t('findings.toolbar.groupLabel', 'Group findings')}
+      >
         <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="sr-only sm:not-sr-only">
+        <span className="sr-only @2xl/toolbar:not-sr-only">
           <SelectValue />
         </span>
       </SelectTrigger>
       <SelectContent align="end">
-        <SelectItem value="none">Group</SelectItem>
+        <SelectItem value="none">{t('findings.toolbar.groupNone', 'Group')}</SelectItem>
         {GROUP_BY_DIMENSIONS.map((d) => (
           <SelectItem key={d} value={d}>
             {GROUP_BY_LABELS[d]}
@@ -1870,28 +1882,86 @@ function FindingsContent() {
           className="h-9 w-9"
           onClick={handleRefresh}
           disabled={statsLoading || findingsLoading}
-          aria-label="Refresh"
+          aria-label={t('findings.toolbar.refresh', 'Refresh')}
         >
           <RefreshCw
             className={cn('h-4 w-4', (statsLoading || findingsLoading) && 'animate-spin')}
           />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>Refresh</TooltipContent>
+      <TooltipContent>{t('findings.toolbar.refresh', 'Refresh')}</TooltipContent>
     </Tooltip>
   )
 
+  const exportItems = (
+    <>
+      <DropdownMenuItem onClick={() => handleExport('CSV')}>
+        {t('findings.toolbar.exportCsv', 'Export as CSV')}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => handleExport('JSON')}>
+        {t('findings.toolbar.exportJson', 'Export as JSON')}
+      </DropdownMenuItem>
+    </>
+  )
   const exportMenu = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="h-9">
-          <Download className="h-4 w-4 md:me-2" />
-          <span className="hidden md:inline">Export</span>
+          <Download className="me-2 h-4 w-4" aria-hidden />
+          {t('findings.toolbar.export', 'Export')}
         </Button>
       </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">{exportItems}</DropdownMenuContent>
+    </DropdownMenu>
+  )
+
+  const taskFromFiltersButton = canQueryTask ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9"
+          onClick={() => void openTaskFromFilters()}
+        >
+          <SquareCode className="me-2 h-4 w-4" aria-hidden />
+          {t('remediationQuery.findings.fromFiltersShort')}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{t('remediationQuery.findings.fromFilters')}</TooltipContent>
+    </Tooltip>
+  ) : null
+
+  // Narrow list: the page actions fold into one menu, so the state lens and
+  // refresh keep their row instead of pushing a control onto a new line.
+  const moreActionsMenu = (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9"
+              aria-label={t('findings.toolbar.moreActions', 'More actions')}
+            >
+              <MoreHorizontal className="h-4 w-4" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{t('findings.toolbar.moreActions', 'More actions')}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => handleExport('CSV')}>Export as CSV</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleExport('JSON')}>Export as JSON</DropdownMenuItem>
+        {canQueryTask && (
+          <>
+            <DropdownMenuItem onClick={() => void openTaskFromFilters()}>
+              <SquareCode className="me-2 h-4 w-4" aria-hidden />
+              {t('remediationQuery.findings.fromFiltersShort')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {exportItems}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -1907,12 +1977,7 @@ function FindingsContent() {
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   ) : undefined
 
-  const toolbarStart = (
-    <>
-      {filterButtons}
-      {searchBox}
-    </>
-  )
+  const toolbarStart = filterSearch
 
   const lensControl = (
     <SegmentedLens<FindingLens>
@@ -1929,9 +1994,11 @@ function FindingsContent() {
     />
   )
 
+  // Second row (the table toolbar): which rows and how they show. Saved views
+  // and Group sit beside the search they work with; the table's own View menu
+  // ends the row.
   const toolbarEnd = (
     <>
-      {lensControl}
       <SavedViewsMenu
         page="findings"
         activeId={savedId}
@@ -1940,28 +2007,48 @@ function FindingsContent() {
         onSelect={openSavedView}
       />
       {groupBySelect}
-      {refreshButton}
-      {canQueryTask && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9"
-              onClick={() => void openTaskFromFilters()}
-              aria-label={t('remediationQuery.findings.fromFilters')}
-            >
-              <SquareCode className="h-4 w-4 md:me-2" aria-hidden />
-              <span className="hidden md:inline">
-                {t('remediationQuery.findings.fromFiltersShort')}
-              </span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('remediationQuery.findings.fromFilters')}</TooltipContent>
-        </Tooltip>
-      )}
-      {exportMenu}
     </>
+  )
+
+  // First row: the state lens (the list's main axis) and the page actions.
+  // It never wraps: below 42rem of list width the actions fold into "More
+  // actions", and on a phone the lens scrolls sideways inside its own box.
+  // DOM order = visual order = tab order: lens, refresh, export, task.
+  const primaryRow = (
+    <div
+      data-testid="findings-toolbar-primary"
+      className="@container/actions flex items-center gap-2"
+    >
+      {/* Fades its end edge only when the row is too narrow for the whole lens. */}
+      <div className="no-scrollbar min-w-0 overflow-x-auto @max-[26rem]/actions:[mask-image:linear-gradient(to_right,black_80%,transparent)] @max-[26rem]/actions:rtl:[mask-image:linear-gradient(to_left,black_80%,transparent)]">
+        {lensControl}
+      </div>
+      <div className="ms-auto flex shrink-0 items-center gap-2">
+        {groupBy === 'owner_id' && hasUnassignedGroup && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            onClick={() => setAutoAssignOpen(true)}
+          >
+            <UserPlus className="h-4 w-4 @2xl/actions:me-2" />
+            <span className="sr-only @2xl/actions:not-sr-only">
+              {t('findings.toolbar.assignOwners', 'Assign to asset owners')}
+            </span>
+          </Button>
+        )}
+        {refreshButton}
+        {!groupBy && (
+          <>
+            <div className="hidden items-center gap-2 @2xl/actions:flex">
+              {exportMenu}
+              {taskFromFiltersButton}
+            </div>
+            <div className="@2xl/actions:hidden">{moreActionsMenu}</div>
+          </>
+        )}
+      </div>
+    </div>
   )
 
   // Phone layout of a finding row (list and grouped views alike).
@@ -2157,6 +2244,11 @@ function FindingsContent() {
 
             <div className="min-w-0 flex-1 space-y-3">
               {!urlSettled ? (
+                <Skeleton className="h-9 w-80 max-w-full" />
+              ) : !verifyView ? (
+                primaryRow
+              ) : null}
+              {!urlSettled ? (
                 // The render before the address bar holds this page's URL:
                 // nothing here is real yet, and nothing is fetched.
                 <FindingsTableSkeleton />
@@ -2193,24 +2285,7 @@ function FindingsContent() {
                   }
                   toolbarStart={toolbarStart}
                   toolbarBelow={contextChips}
-                  toolbarEnd={
-                    <>
-                      {lensControl}
-                      {groupBy === 'owner_id' && hasUnassignedGroup && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-9"
-                          onClick={() => setAutoAssignOpen(true)}
-                        >
-                          <UserPlus className="h-4 w-4 sm:me-2" />
-                          <span className="sr-only sm:not-sr-only">Assign to asset owners</span>
-                        </Button>
-                      )}
-                      {groupBySelect}
-                      {refreshButton}
-                    </>
-                  }
+                  toolbarEnd={toolbarEnd}
                   emptyDescription={
                     activeCount > 0 ? 'Try removing a filter or clearing them all.' : undefined
                   }

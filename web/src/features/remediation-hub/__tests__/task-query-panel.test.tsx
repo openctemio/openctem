@@ -58,14 +58,14 @@ describe('TaskQueryPanel', () => {
 
   it('renders nothing for a task not created from a query', () => {
     api.query = null
-    const { container } = render(<TaskQueryPanel taskId="t-1" writable />)
+    const { container } = render(<TaskQueryPanel taskId="t-1" taskVersion={4} writable />)
     expect(container).toBeEmptyDOMElement()
   })
 
   it('re-runs only after confirmation', async () => {
     api.query = base
     const onChanged = vi.fn()
-    render(<TaskQueryPanel taskId="t-1" writable onChanged={onChanged} />)
+    render(<TaskQueryPanel taskId="t-1" taskVersion={4} writable onChanged={onChanged} />)
     expect(screen.getByTestId('task-query-panel')).toHaveTextContent(
       'findings where severity = critical'
     )
@@ -78,7 +78,7 @@ describe('TaskQueryPanel', () => {
     expect(api.rerun).not.toHaveBeenCalled()
     api.rerun.mockResolvedValue({ task: {}, added: 2, skipped: 0, capped: 0 })
     fireEvent.click(screen.getByRole('button', { name: 'Add 2' }))
-    await waitFor(() => expect(api.rerun).toHaveBeenCalledWith('t-1'))
+    await waitFor(() => expect(api.rerun).toHaveBeenCalledWith('t-1', 4))
     expect(onChanged).toHaveBeenCalled()
   })
 
@@ -90,19 +90,19 @@ describe('TaskQueryPanel', () => {
       auto_reason: 'owner_removed',
       owner_user_id: null,
     }
-    render(<TaskQueryPanel taskId="t-1" writable />)
+    render(<TaskQueryPanel taskId="t-1" taskVersion={4} writable />)
     expect(screen.getByText('Suspended')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('left the organization')
     expect(screen.getByTestId('task-query-panel')).toHaveTextContent('Runs as a former member.')
     expect(screen.queryByRole('button', { name: 'Re-run query' })).toBeNull()
     api.setAuto.mockResolvedValue({ ...base })
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
-    await waitFor(() => expect(api.setAuto).toHaveBeenCalledWith('t-1', false))
+    await waitFor(() => expect(api.setAuto).toHaveBeenCalledWith('t-1', false, 4))
   })
 
   it('hides every action from a reader who cannot change the task', () => {
     api.query = { ...base, mode: 'auto', auto_state: 'active' }
-    render(<TaskQueryPanel taskId="t-1" writable={false} />)
+    render(<TaskQueryPanel taskId="t-1" taskVersion={4} writable={false} />)
     expect(screen.queryByRole('button')).toBeNull()
   })
 })

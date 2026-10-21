@@ -30,6 +30,7 @@ func TestAITriageHandler_ErrorCodes(t *testing.T) {
 	}{
 		{aitriage.ErrPlatformAINotSetUp, http.StatusServiceUnavailable, "AI_PLATFORM_NOT_CONFIGURED"},
 		{aitriage.ErrAIDisabled, http.StatusForbidden, "AI_DISABLED"},
+		{aitriage.ErrOwnProviderNotAllowed, http.StatusForbidden, "AI_OWN_PROVIDER_NOT_ALLOWED"},
 		{fmt.Errorf("%w: campaign_tlp_above_limit", aitriage.ErrPolicyRestricted), http.StatusForbidden, "AI_POLICY_RESTRICTED"},
 		{fmt.Errorf("%w: busy", aitriagedom.ErrDuplicateRequest), http.StatusConflict, "CONFLICT"},
 		{fmt.Errorf("failed to get finding: %w", shared.ErrNotFound), http.StatusNotFound, "NOT_FOUND"},

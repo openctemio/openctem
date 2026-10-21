@@ -1,5 +1,4 @@
 {
-  "findingApprovals.cancel": "Cancel",
   "findingApprovals.fpLevel.all": "Always (recommended)",
   "findingApprovals.fpLevel.allHelp": "Every false positive needs a second person to approve it.",
   "findingApprovals.fpLevel.description": "When marking a finding a false positive needs a second person. An accepted risk always needs a second person, whatever you choose here.",
@@ -22,7 +21,6 @@
   "findingApprovals.selfApprove.audited": "It is recorded in the audit log and marked self-approved everywhere.",
   "findingApprovals.selfApprove.badge": "Self-approved",
   "findingApprovals.selfApprove.badgeTitle": "Approved by its own requester, the organization's only member",
-  "findingApprovals.selfApprove.codeLabel": "Code from your authenticator app",
   "findingApprovals.selfApprove.description": "Nobody else in your organization can decide this request. As its only member and owner you may approve it yourself.",
   "findingApprovals.selfApprove.done": "Approved",
   "findingApprovals.selfApprove.doneShortened": "Approved. The acceptance was shortened to the limit for a self-approval.",

@@ -24,7 +24,9 @@ beforeEach(() => vi.clearAllMocks())
 
 describe('MfaStep verify', () => {
   function submitCode() {
-    fireEvent.change(screen.getByLabelText('Authentication code'), { target: { value: '123456' } })
+    fireEvent.change(screen.getByLabelText('Authentication code'), {
+      target: { value: '123456' },
+    })
     fireEvent.click(screen.getByRole('button', { name: /Verify/ }))
   }
 
@@ -59,7 +61,9 @@ describe('MfaStep enroll', () => {
   async function reachCodesStep() {
     actions.confirmMfaEnrollmentAction.mockResolvedValue({ success: true, recoveryCodes: ['a-b'] })
     await waitFor(() => expect(screen.getByLabelText('Authentication code')).not.toBeDisabled())
-    fireEvent.change(screen.getByLabelText('Authentication code'), { target: { value: '123456' } })
+    fireEvent.change(screen.getByLabelText('Authentication code'), {
+      target: { value: '123456' },
+    })
     fireEvent.click(screen.getByRole('button', { name: /Turn on and continue/ }))
     fireEvent.click(await screen.findByLabelText('I have saved my recovery codes'))
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))

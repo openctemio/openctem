@@ -24,6 +24,10 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   the projects the organization configured for ticketing (default project,
   routing rules, mapping profiles); the issue's current project is checked
   after the tracker resolves the key, so a moved issue cannot slip through.
+  Linking needs `findings:fix_apply` in addition to `findings:write`: moving
+  a linked issue to Done is a fix claim, which a member without
+  `findings:fix_apply` could not make directly (unlinking needs
+  `findings:write` only).
 - **Task issues** (one issue per remediation task): `POST /api/v1/remediation/tasks/{task_id}/ticket-links`
   creates the task's issue (title, fix, finding count, deadline, link back; no
   finding details) in a configured project; the task ticket controller then
@@ -45,7 +49,15 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   hour old). Per-IP and per-integration rate limits sit in front of the
   secret lookup. Secret routes: `GET /api/v1/integrations/{id}/jira-webhook`
   (URL, whether a secret is set), `POST .../jira-webhook/secret/rotate` and
-  `PUT .../jira-webhook/secret` (`integrations:manage` plus step-up).
+  `PUT .../jira-webhook/secret` (`integrations:manage` plus step-up); each
+  change is a Critical `integration.webhook_secret_rotated` audit entry
+  without the secret.
+- **GitHub inbound** (`POST /hooks/github-integrations/{integration_id}`): same
+  model per GitHub integration (its own secret, `X-Hub-Signature-256`, replay
+  keys by body hash and delivery id, mandatory store, repository bound to the
+  integration's organization). An issue closed as completed is a fix claim, as
+  not planned a pending risk-acceptance request, as duplicate nothing; reopened
+  is in progress. See `github-issue-ticketing.md`.
 - **Outbound** (RFC-006 Phase 3): a finding status change in OpenCTEM transitions
   the linked Jira issue to match. **Opt-in per integration** (`sync_enabled`,
   default off).
@@ -55,28 +67,39 @@ issue key is parsed from the `/browse/<KEY>` URL).
 
 ## Per-tenant client resolution
 
-Outbound ticketing builds a Jira client **per tenant** from that tenant's
-connected integration — there is no single global Jira client. This mirrors the
-per-tenant SMTP resolver.
+Ticketing builds a Jira client **per tenant** from that tenant's integrations
+— there is no single global Jira client. A tenant may connect several Jira
+integrations (two sites, or Cloud and Data Center), so every call names the
+integration it acts on:
+
+| Call | Integration |
+|---|---|
+| Inbound delivery (`/hooks/jira-integrations/{id}`) | the integration in the URL, whose secret signed it |
+| Push or comment on an existing link (task issue, finding status, retest comment) | the link's own `integration_id` |
+| Create (finding ticket, task issue) and link an existing issue | `integration_id` in the request body, else the tenant's default |
+
+The tenant's **default** integration is the newest connected Jira integration
+whose client builds (`IntegrationClientResolver.Resolve`). A named integration
+is loaded with `GetByTenantAndID`: another tenant's integration, a missing one
+or another provider is `ErrNoTicketingIntegration`, never a fallback to a
+different integration.
 
 ```
-SyncService.CreateTicketFromFinding(tenantID, …)
-        │
-        ▼
-SyncService.resolveClient(tenantID)
-   ├─ static client set?  (tests) ──► use it
-   └─ else ClientResolver.Resolve(tenantID)
+SyncService.clientFor(tenantID, integrationID)
+   ├─ static client set?  (tests) ──► use it (only for its own integration)
+   ├─ integrationID zero ──► ClientResolver.Resolve(tenantID)        (default)
+   └─ else ──────────────► ClientResolver.ResolveByID(tenantID, id)  (connected only)
             │
             ▼
    IntegrationClientResolver  (internal/infra/jira/resolver.go)
-     1. integrationRepo.ListByProvider(tenantID, ProviderJira)
-     2. pick first StatusConnected integration
-     3. decrypt credentials (AES-256-GCM / APP_ENCRYPTION_KEY)
-     4. build *infra/jira.Client → adapt to app/jira.Client
+     1. load the integration (by id in the tenant, or the default)
+     2. decrypt credentials (AES-256-GCM / APP_ENCRYPTION_KEY)
+     3. build *infra/jira.Client → adapt to app/jira.Client
 ```
 
-The same resolver implements `MappingResolver.ResolveMapping(tenantID)` for
-outbound sync (per-tenant status maps + `sync_enabled` from `config.ticketing`).
+The same resolver implements `MappingResolver` (`ResolveMapping` for the
+default, `ResolveMappingByID` for a named integration in any status, with its
+site URL in `MappingConfig.SiteURL`).
 
 No connected, usable integration → `ErrNoTicketingIntegration` (wraps
 `ErrValidation` → HTTP 400, not 500). Misconfigured integrations are skipped
@@ -170,16 +193,76 @@ action, so it is a durable job (`durable_jobs`, see
 with retry/backoff. A status change can no longer lose its push to a Redis outage,
 and a Jira failure never fails the originating status change.
 
+## Outbound gate
+
+Every path that sends finding or task content to a tracker asks one gate first,
+`ticketing.EgressGate` (`internal/app/ticketing/egress.go`), for Jira and GitHub
+alike:
+
+| Route | Callers | Pentest findings |
+|---|---|---|
+| finding (generic) | `POST /findings/{id}/create-ticket` (Jira and GitHub) | refused |
+| automation | workflow `create_ticket` and `update_ticket` actions | refused |
+| task | `POST /remediation/tasks/{task_id}/ticket-links` (every member of the task counts) | refused |
+| campaign | `POST /pentest/campaigns/{id}/jira/tickets` (campaign lead only) | allowed within the TLP limit |
+| status sync | finding status pushes (Jira, GitHub), comments on a linked issue, task issue moves | allowed within the TLP limit |
+
+- A finding is pentest content when its source is `pentest` or it names a
+  campaign. Its campaign must be readable in the same tenant; otherwise it is
+  refused (`pentest_without_campaign`).
+- TLP: a campaign at TLP:RED is never sent (`tlp_red`), whatever the limit. A
+  campaign above the organization's tracker limit is refused
+  (`tlp_above_tracker_limit`). The limit is the pentest setting
+  `ticket_max_tlp` (`PATCH /api/v1/tenants/{tenant}/settings/pentest`, owner
+  or admin with `settings:write`, audited): `clear`, `green`, `amber`
+  (default) or `amber_strict`; `red` is refused. A stored value the gate
+  cannot read fails closed (`clear`), and a read error refuses the request.
+- A refused create answers 403 with code `TICKET_EGRESS_REFUSED` and
+  `details.reason` (`pentest_campaign_route_only`, `pentest_without_campaign`,
+  `tlp_red`, `tlp_above_tracker_limit`). A refused background push is skipped
+  and logged (a task issue records "not sent: refused by the outbound gate" as
+  its sync error); a read error is retried.
+- Content (`ticketing.FindingContent`), applied by the Jira description, the
+  GitHub body and mapping profile values:
+  - secret findings: title (redacted) and location only. No preview (masked
+    value), snippet, fingerprint, commit context or description;
+  - findings whose data exposure risk is above `none`: severity, status and
+    location only. The title becomes "Data exposure finding"; no description
+    or fix guidance (they may quote the exposed records);
+  - every other finding: title, description and fix guidance, redacted and
+    encoded as below.
+- Data scope comes first: by-id routes are behind the data scope guard
+  (out-of-scope and other-tenant findings answer 404), and task issues need
+  every member in the caller's scope (`TaskForChange`).
+
 ## Safety properties (shipped)
 
 - **Idempotent create** (#134): a finding already ticketed in the target project
   (its `WorkItemURIs` contains `/browse/<PROJECT>-`) is not re-created.
-- **Secret redaction** (#135): secret-leak findings never copy the raw value into
-  a ticket; descriptions are run through redaction patterns as defense-in-depth.
+- **Duplicate-proof create** (research 220 P0-8): every finding or task issue
+  the platform creates carries a marker in the create request itself: the
+  issue entity property `openctem` = `{"o": <object id>, "k": "task"|"finding",
+  "i": <integration id>}` and, where the request already sends labels, the label
+  `openctem-ref-<object id>`. Before creating, the platform searches the label
+  on the integration (`labels = "openctem-ref-<id>"`, with the property returned)
+  and adopts an issue only when its **property** names exactly this object,
+  kind and integration, and the issue is in the target project (a finding) or a
+  configured project (a task). A create whose response was lost (Jira created
+  the issue, the call timed out) or whose link was not recorded is recovered by
+  the next attempt instead of opening a second issue. A copied label, or a
+  marker of another object, kind, integration or tenant, is never adopted; if
+  the lookup fails the create is refused rather than risk a duplicate. The
+  label is the search key because issue properties are only searchable in JQL
+  when an installed app indexes them. A mapping profile that sends no labels
+  gets the property only (a create screen without labels would refuse the
+  issue), so such creates are not looked up.
+- **Secret redaction** (#135): secret-leak findings never copy the raw value, the
+  masked preview, the snippet or the fingerprint into a ticket (outbound gate);
+  descriptions are run through redaction patterns as defense-in-depth.
 - **Output encoding** (RFC-040 §5.4): finding text is attacker-influenced (a
   scanned page title, a file path, a sensor report) and the description is Jira
   wiki markup (REST API v2). Every value is secret-redacted first, then encoded
-  by `pkg/safetext`. One-line values (title, location, masked value) are
+  by `pkg/safetext`. One-line values (title, location) are
   backslash-escaped (`JiraWikiInline`), and the scanner description goes into
   a `{noformat}` block it cannot close (`JiraWikiBlock`). URLs are defanged
   (`https[:]//…`), and control, bidi and zero-width characters are removed
@@ -212,7 +295,11 @@ own names via `config.ticketing`.
 ```json
 { "ticketing": {
     "project_key": "SEC",
-    "issue_type": "Task",
+    "issue_types": {
+      "finding": { "id": "10042", "name": "Security Finding" },
+      "task":    { "id": "10043", "name": "Remediation Task" },
+      "epic":    { "id": "10000", "name": "Epic" }
+    },
     "default_priority": "P3",
     "severity_to_priority": { "critical": "P1", "high": "P2" },
     "status_inbound":  { "Shipped": "fix_applied", "QA": "in_progress" },
@@ -233,12 +320,12 @@ own names via `config.ticketing`.
 | `status_outbound` | outbound | finding status → Jira status NAME. Unset finding status = no push; unreachable target = comment. Defaults cover stock Jira (To Do/In Progress/Done). |
 | `status_inbound` | inbound | Jira status name → finding status (overlays defaults; case-insensitive). |
 | `severity_to_priority` | create | finding severity → Jira priority. |
-| `issue_type` / `default_priority` | create | defaults for new issues. |
+| `issue_types` | create | The issue type of each kind of issue (`finding`, `task`, `epic`), by id and name. See "Issue types" below. |
+| `default_priority` | create | priority when a severity has no mapping. |
 
 > **Create now applies the per-tenant mapping.** `CreateTicketFromFinding`
 > resolves `config.ticketing` and uses it for the destination project
-> (`project_key`), issue type, and severity→priority — instead of the previous
-> hardcoded `Bug` + stock priority table. With no config the defaults reproduce
+> (`project_key`), issue type (`issue_types.finding`), and severity→priority. With no config the defaults reproduce
 > the original behavior exactly. **Destination resolution order:** explicit
 > request `project_key` → first matching **routing** rule → tenant default
 > `project_key` → else a validation error (we never guess where a ticket goes).
@@ -261,15 +348,82 @@ target `project_key` (+ optional `issue_type`):
   the resolver (group-membership wiring is a follow-up) — use `scope`/
   `criticality`/`severity`/`tag` today.
 
+### Issue types
+
+An organization files each kind of issue as its own Jira issue type, custom
+types included: findings as "Security Finding", remediation tasks as
+"Remediation Task", campaigns as "Initiative".
+
+- **Choice.** Settings → Integrations → Ticketing → Configure → Issue types:
+  one row per kind, a select over the issue types of the default project
+  (`GET /api/v1/integrations/{id}/jira/issue-types`, sub-task types hidden),
+  a suggestion by name, the mapping state of the chosen type and the last
+  create refusal. Stored as `config.ticketing.issue_types.<kind> = {id, name}`.
+- **Id and name.** The id is sent for an issue in the default project (a
+  rename in Jira changes nothing). Any other project (a routing rule, or an
+  explicit project) gets the **name**: a team-managed project has its own ids.
+  A routing rule's `issue_type` still overrides the finding type for its route.
+  Nothing chosen: `Bug` (finding), `Task` (task), `Epic` (epic).
+- **Fields and statuses.** The required and custom fields of a type and its
+  workflow are mapped by a published ticket field mapping (RFC-097) of that
+  kind, project and type. Creates pick the profile by **(kind, project, issue
+  type)**: findings with the finding profile, remediation tasks with the task
+  profile (its fields on create, its workflow path for every task state move;
+  a state without a target posts the progress comment). Campaign epics use the
+  built-in fields.
+- **Check on save.** When the default project or the issue types change, the
+  update (and a create that sets them) asks Jira with the integration's own
+  credentials (`IntegrationClientResolver.CheckTicketingIssueTypes`): the type
+  exists in the default project, is not a sub-task type, and every required
+  field without a default is filled by the built-in create (`summary`,
+  `description`, `issuetype`, `project`, `reporter`, `priority`, `labels`) or
+  by a published profile of that kind and type (epics: built-in only). Jira not
+  answering refuses the save (the choice cannot be verified). The refusal
+  names the type and the fields and says what to do.
+- **Inbound.** A status change picks the profile of the issue's **own issue
+  type** (`issue.fields.issuetype.id` of the delivery) and kind: a remediation
+  task's own issue uses the task profile, else the finding profile of the same
+  type (same workflow), else the built-in name map. A profile of another type
+  is never applied, so one type's "Won't Do" can never be read with another
+  type's workflow.
+- **Outbound status.** The profile is picked by the issue's current type, read
+  from Jira (`GET /rest/api/2/issue/{key}?fields=issuetype`), so a type changed
+  in Jira follows the new type's mapping.
+- **Health.** A create Jira refuses with field errors (`400` with
+  `errors{field: message}`) keeps the field **ids** only (well-formed, at most
+  20; Jira's messages are dropped). With a profile, the profile is marked
+  drifted (the mapping list shows "Jira changed"); without one,
+  `integrations.metadata.ticketing_health.<kind> = {issue_type, fields, at}` is
+  written with a single-key `jsonb_set` (no race with config saves) and shown
+  under that kind on the Configure dialog. The next successful create of the
+  kind, or a passing save check, clears it. The caller gets a validation error
+  naming the fields.
+- **Migration** `ticketing_issue_types` moved the single `issue_type` name of
+  before into `issue_types.finding` and `.task` and removed the key.
+
 ### How an inbound status change is applied
 
 An inbound change goes through the finding service, never a direct row write
 (`VulnerabilityService.ApplyTicketStatus`, wired as the sync service's
 `InboundStatusApplier`):
 
-- **Every linked finding.** All findings of the tenant whose `work_item_uris`
-  contain the issue's browse URL (partial GIN index `idx_findings_work_item_uris`,
-  at most 500), not one arbitrary finding.
+- **Only the delivering integration.** The delivery names its integration;
+  the mapping, the allowed projects, the published profile, the campaign epic
+  and the refusal comment all come from that integration. A tenant with two
+  Jira sites that both have an issue `SEC-1` moves only the links of the site
+  that sent the change.
+- **Every linked finding.** The findings linked to the issue in `ticket_links`
+  of that integration, matched by the issue's id (`issue.id`, stable when the
+  issue moves to another project and its key changes) and then by its key for
+  links that recorded no id or the same id (a key now worn by another issue
+  matches nothing); the findings whose `work_item_uris` contain the issue's
+  browse URL built from the integration's own site (never from the payload's
+  `self`; partial GIN index `idx_findings_work_item_uris`); and the open
+  members of the tasks whose issue it is. At most 500, not one arbitrary
+  finding.
+- **Same path for GitHub.** `GitHubTicketService.HandleIssueEvent` calls the
+  same applier with integration `github` (fix claim, risk-acceptance request,
+  in progress) and the same proof-of-fix hook.
 - **Same rules as a person's bulk change**, with the Jira integration as the
   recorded actor (`StatusTransition{Source: "jira", ActorType: "integration"}`,
   so each step's timeline entry commits with it): the transition map, the
@@ -285,13 +439,42 @@ An inbound change goes through the finding service, never a direct row write
   the rules kept where it is (a closed finding, a pentest finding, ...) with the
   reason, not repeated for the same issue, status and reasons within an hour.
 - **A campaign's epic**: Done marks the campaign's findings fixed through the
-  campaign resolve; it never completes the campaign.
+  campaign resolve; it never completes the campaign. The epic is matched by
+  its key at its browse URL on the delivering integration's site.
 
 > Inbound never auto-applies `false_positive`/`accepted` (they require approval),
 > and every Jira "done"-like status maps to `fix_applied` (not `resolved`, which
 > needs verification) — the rescan hook promotes to `resolved`. See
 > [RFC-006 Phase 3 §3.6.1](../rfcs/RFC-006-phase-3-bidirectional-sync.md) for the
 > full status-model rationale.
+
+### External assignee (tracker side of a link)
+
+Every inbound delivery of a Jira integration, with or without a status
+change, records on the issue's active links of **that integration** (matched
+by the issue's id, or by key for links that recorded no id):
+
+- `external_assignee_id` / `external_assignee_name`: the Jira account the
+  issue is assigned to (from the changelog's `assignee` item: `to` and the
+  display name; an unassign clears both), and
+- `external_status_category` (`todo`, `in_progress`, `done`, from
+  `fields.status.statusCategory.key`) and `external_updated_at` (the payload
+  timestamp; an older delivery never overwrites a newer one).
+
+The display name is untrusted text: HTML tags and angle brackets, control,
+bidi and zero-width characters are removed, whitespace folded, length capped
+at 255 (`ticketlink.SanitizeExternalName`), and it is still escaped wherever it
+is rendered. The account is a **label only**: it is never written as a
+platform assignee, never counted as a member and grants no data access; the
+task or finding owner stays accountable. The API returns it on every ticket
+link (`GET /findings/{id}/ticket-links`, `GET /remediation/tasks/{task_id}/ticket-links`)
+as `external_assignee {account_id, display_name}`, `external_status_category`
+and `external_updated_at`.
+
+Personal data: only the account id and display name are stored. Unlinking a
+link (or the issue being deleted) clears them; deleting the organization
+deletes its links. A tracker account is not a member, so member erasure has
+nothing to remove; erasure on a tracker-side signal comes with OAuth.
 
 ## Roadmap (RFC-006)
 

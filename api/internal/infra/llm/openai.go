@@ -18,6 +18,8 @@ const (
 
 // OpenAIProvider implements the Provider interface for OpenAI.
 type OpenAIProvider struct {
+	name       string
+	endpoint   string
 	apiKey     string
 	model      string
 	httpClient *http.Client
@@ -54,6 +56,8 @@ func NewOpenAIProvider(cfg OpenAIConfig) (*OpenAIProvider, error) {
 	}
 
 	return &OpenAIProvider{
+		name:       "openai",
+		endpoint:   openAIAPIURL,
 		apiKey:     cfg.APIKey,
 		model:      model,
 		httpClient: httpsec.SafeHTTPClient(timeout),
@@ -63,7 +67,10 @@ func NewOpenAIProvider(cfg OpenAIConfig) (*OpenAIProvider, error) {
 
 // Name returns the provider name.
 func (p *OpenAIProvider) Name() string {
-	return "openai"
+	if p.name == "" {
+		return "openai"
+	}
+	return p.name
 }
 
 // Model returns the model being used.
@@ -73,10 +80,18 @@ func (p *OpenAIProvider) Model() string {
 
 // Validate checks if the configuration is valid.
 func (p *OpenAIProvider) Validate() error {
-	if p.apiKey == "" {
+	if p.apiKey == "" && p.name != ProviderOpenAICompatible {
 		return fmt.Errorf("%w: API key is required", ErrProviderNotConfigured)
 	}
 	return nil
+}
+
+// authorize sets the bearer key. A self-hosted OpenAI-compatible server may
+// run without one.
+func (p *OpenAIProvider) authorize(r *http.Request) {
+	if p.apiKey != "" {
+		r.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
 }
 
 // Complete sends a prompt to OpenAI and returns the completion.
@@ -127,13 +142,13 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req CompletionRequest) (*
 	}
 
 	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", openAIAPIURL, bytes.NewReader(jsonBody))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	p.authorize(httpReq)
 
 	// Execute with retries
 	var resp *http.Response
@@ -149,9 +164,9 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req CompletionRequest) (*
 			}
 
 			// Need to recreate body reader for retry
-			httpReq, _ = http.NewRequestWithContext(ctx, "POST", openAIAPIURL, bytes.NewReader(jsonBody))
+			httpReq, _ = http.NewRequestWithContext(ctx, "POST", p.endpoint, bytes.NewReader(jsonBody))
 			httpReq.Header.Set("Content-Type", "application/json")
-			httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+			p.authorize(httpReq)
 		}
 
 		resp, lastErr = p.httpClient.Do(httpReq)
@@ -191,10 +206,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req CompletionRequest) (*
 	// Check for errors
 	if resp.StatusCode != http.StatusOK {
 		var errResp openAIErrorResponse
-		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Error.Message != "" {
-			return nil, fmt.Errorf("openai API error: %s - %s", errResp.Error.Type, errResp.Error.Message)
+		// A self-hosted endpoint's error text is not ours to relay: it can
+		// carry anything the server chooses, so only the status is reported.
+		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Error.Message != "" && p.name != ProviderOpenAICompatible {
+			return nil, fmt.Errorf("%s API error: %s - %s", p.Name(), errResp.Error.Type, errResp.Error.Message)
 		}
-		return nil, fmt.Errorf("openai API error: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s API error: status %d", p.Name(), resp.StatusCode)
 	}
 
 	// Parse response

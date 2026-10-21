@@ -1,0 +1,16 @@
+# OpenCTEM migrations image, assembled from the released openctem-server
+# archive: golang-migrate, the migration wrapper and the migration files.
+# Same entrypoint and user as ghcr.io/openctemio/migrations.
+ARG BASE_IMAGE=alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM ${BASE_IMAGE}
+ARG TARGETARCH
+COPY dist/${TARGETARCH}/server/bin/migrate /usr/local/bin/migrate
+COPY dist/${TARGETARCH}/server/bin/openctem-migrate /usr/local/bin/openctem-migrate
+COPY dist/${TARGETARCH}/server/migrations /migrations
+LABEL org.opencontainers.image.title="OpenCTEM migrations (rebuilt from release @VERSION@)" \
+      org.opencontainers.image.version="@VERSION@" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/openctem-migrate"]
+CMD ["-help"]

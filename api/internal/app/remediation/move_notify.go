@@ -23,7 +23,11 @@ type TaskMoveNotifier interface {
 func (s *TaskService) SetMoveNotifier(n TaskMoveNotifier) { s.moves = n }
 
 func (s *TaskService) notifyMove(ctx context.Context, ev remediationdom.TaskMoveEvent) {
-	if s.moves == nil || ev.Findings <= 0 {
+	if ev.Findings <= 0 {
+		return
+	}
+	s.notifyMoveOwners(ctx, ev)
+	if s.moves == nil {
 		return
 	}
 	s.moves.TaskMembersMoved(ctx, ev)

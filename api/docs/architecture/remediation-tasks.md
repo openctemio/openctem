@@ -27,6 +27,12 @@ manual states (on hold, canceled).
 - Recompute runs in the transaction of every change (create, add members, update) and in the
   `remediation-tasks` controller every two minutes for tasks whose findings changed since `recomputed_at`
   (`StaleTasksForPlatform`, oldest first, 500 per pass). A state change is written to the timeline.
+- Changes no person made are also in the audit log, with `system` as the actor (`ActorEmail: system`, the tenant
+  set): a state change found by the background reconcile (`remediation_task.state_changed`, `trigger: reconcile`),
+  the new task opened when a closed task's finding reopens (`remediation_task.regressed`, with `regression_of` and
+  the finding count) and findings joining under an action's auto-join rule (`remediation_task.members_added`,
+  `trigger: auto_join`, with the action and the count). A person's own change is audited where it is made, not again
+  for the recompute it triggers.
 
 ## Membership rules
 
@@ -59,19 +65,77 @@ manual states (on hold, canceled).
 | `GET /api/v1/remediation/tasks/{task_id}/members` | `findings:remediation:read` + `findings:read` |
 | `POST /api/v1/remediation/tasks/{task_id}/members` | `findings:remediation:write` |
 | `GET /api/v1/remediation/tasks/{task_id}/timeline` | `findings:remediation:read` |
+| `GET /api/v1/remediation/tasks/{task_id}/owner-candidates`, `GET /api/v1/remediation/tasks/owner-candidates?finding_ids=` | `findings:remediation:write` (the second also `findings:read`), query rate limit |
 | `POST /api/v1/remediation/tasks/query/preview`, `POST /api/v1/remediation/tasks/query` | `findings:remediation:write` + `findings:read`, query rate limit |
 | `GET /api/v1/remediation/tasks/{task_id}/query` | `findings:remediation:read` |
 | `POST /api/v1/remediation/tasks/{task_id}/query/{run,preview}` | `findings:remediation:write` + `findings:read`, query rate limit |
 | `POST /api/v1/remediation/tasks/{task_id}/query/auto` | `findings:remediation:write` |
 
 All routes are in the `remediation` module. `assignee=me` lists tasks assigned to the caller or to one of their
-groups. Every change carries the task's `version`; a stale one answers `409`.
+groups. Every change carries the task's `version`; a missing one answers `400`, a stale one `409`. The check runs
+inside the transaction that reads or changes the task, under a lock on the task row: edit, add members, move, merge,
+split, mark fixed (the open findings it claims are the ones at that version), exception requests (a preview may omit
+it), query re-run and pause/resume of auto include (`POST .../query/run` and `.../query/auto` take a JSON body with
+`version`). Only the platform's own background work (reconcile, auto include, auto-join) runs without one.
 
 ## Data scope
 
 A restricted member sees a task through its findings in their scope: counters, deadline and risk are over those
 findings and `hidden_members` counts the others. A task with none of their findings is `404`. They may change a
-task only when `hidden_members` is 0, and every finding they name must be in their scope.
+task only when it has no member outside their scope, primary or related (`hidden_members` shows the primary ones
+only), and every finding they name must be in their scope. The `finding_id` list filter applies the same scope: for a
+finding outside it the list is empty.
+
+The timeline is scoped the same way: an entry that names another task (a move, split or regression) loses that task's
+id, title and the move reason when the reader has no finding of it in their scope, and carries
+`other_task_hidden: true`; counts stay.
+
+The pentest member rule of the findings list applies on top of the asset scope, also to a full-data caller who has
+no asset scope: a pentest finding is a visible member only for the members of its campaign, and a draft or in-review
+one never for the campaign's client role. Members, counters, `hidden_members` and the task list read through it
+(an administrator sees every pentest finding). A pentest finding is fixed through its pentest campaign, so it cannot
+be the primary member of a task (`400`).
+
+### Task owner access
+
+The owner of a live task (the user, or an active, unexpired member of the owner team) is accountable for its
+findings, so they can open exactly those findings whatever their scope: the finding and a minimal asset card, its
+comments and activity, never the asset's other findings, and never a finding on a private program asset hidden from
+them or a pentest finding outside their campaigns. The relation is computed on each request and stores nothing: it
+ends when the owner changes, a finding leaves the task, the task closes (done, closed unverified, canceled,
+archived), or the team membership ends, expires or is suspended.
+
+What they may do on such a finding is the fix workflow: comment, start work, go back to confirmed, claim the fix,
+add a manual evidence note and request a proof-of-fix or retest (each still needs its own permission). The
+task's "Mark fixed" therefore claims every open finding for the owner without the finding being assigned to them
+or the asset being theirs, which used to refuse each one as `not_fix_owner`. A false positive, an accepted risk,
+a resolve, severity or classification edits, assigning, approvals, tickets and delete need the finding in the
+owner's own scope: the status menu shows those moves blocked with the reason `not_in_scope`. Each status move
+made only through the relation is audited as `remediation_task.owner_moved_finding`. Two partial indexes on live
+tasks (`idx_remediation_tasks_live_owner_user`, `..._group`) make the lookup an index probe.
+
+## Owner access
+
+A task owner has to be able to open the findings they are asked to fix. The owner picker calls the
+owner-candidates endpoint (for an existing task, or with `finding_ids` for a task not created yet) and shows,
+per person or team, how many of the task's open findings (on how many assets) the candidate cannot see: counts
+only, never titles; for a team, how many members lack access. People and teams with full access come first. The
+count is computed against each candidate's own data scope (their scope rows and the finding-assignee
+exception), so it stays right whatever extra ways to see a finding exist. The answer is limited to 20 entries,
+the task must be one the caller may change (a task with findings hidden from the caller is `403`), finding ids
+of the new-task form must be in the caller's scope (one `404` otherwise), and the call has the per-user query
+rate limit.
+
+Naming an owner who cannot see some of the open findings, when creating a task, changing its owner, adding
+primary findings to it, or splitting findings off to a new owner, is refused with `422` unless the caller holds
+`findings:assign` and sends `confirm_owner_access: true`. The refusal carries the counts
+(`OWNER_NEEDS_ACCESS` without the permission, `OWNER_ACCESS_CONFIRMATION_REQUIRED` without the confirmation).
+An accepted case writes `remediation_task.owner_access_extended` with the counts and the owner. An owner who is
+not changed is not judged again on an unrelated edit. In the console, a candidate with missing access shows "Needs
+access to N findings on M assets"; a viewer without `findings:assign` cannot pick them and gets "Request access",
+which leaves an internal comment on a finding of the task and grants nothing; a viewer with it sees the consent
+line and must tick it before saving. Today the task-owner picker is in the split dialog; the suggestion dialogs
+keep their own owner check.
 
 ## Suggestions
 
@@ -158,7 +222,7 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 
 - `POST /api/v1/remediation/tasks/{task_id}/resolve` (`findings:remediation:write` + `findings:fix_apply`),
   body `version`, `note`: every open finding of the task goes to `fix_applied` through the finding bulk path
-  (`WalkToFixApplied`: new/confirmed walk through in_progress; the asset owner's claim only; the bulk abuse
+  (`WalkToFixApplied`: new/confirmed walk through in_progress; a claim by the finding's assignee, an assigned team member, an asset owner or the task owner only; the bulk abuse
   guard; a proof-of-fix re-check queued per finding). The response lists each finding not updated with the
   reason; the task records a `fix_claimed` timeline entry. Nothing closes: each finding closes on its own
   evidence.
@@ -214,6 +278,18 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 | `/remediation/tasks/{id}` | header (state, deadline and its source, owner, risk left), fix steps with the command to copy, progress, findings grouped by asset in a windowed list that loads as it scrolls, select and Move to… (palette with the server's compatibility warnings) or drag onto a task of the same fix, Split, Mark fixed, Request exception (or the pending exception), hold/resume/cancel, timeline; every move offers Undo |
 | `/remediation/campaigns` | the campaigns: programs of tasks (remediation-campaigns.md) |
 
+Status work inside a task (web only; no API change). Each primary finding row has the finding's own status menu
+(`StatusSelect`: the moves come from `GET /findings/{id}/transitions` for the caller, blocked ones disabled with the
+reason) driven by the same triage rules as the finding drawer: a claim or resolve opens its note/evidence dialog,
+false positive and accepted risk become approval requests, and a write carries the finding's `row_version` as
+`If-Match` (read from `GET /findings/{id}` when the row is first pointed at or focused; a stale version reloads the
+finding). Clicking a row opens the finding in the shared finding drawer with `?finding={id}` on the task URL (opening
+pushes history, moving inside replaces it, so Back closes the drawer), "n of N" with previous/next, and `j`/`k` through
+the list (also with the drawer closed, `Enter` opens the highlighted row). After Start or a fix claim the drawer moves
+to the next finding in `new`, `confirmed` or `in_progress` unless the person turned that off (kept in the browser
+only). The drawer's "Open full details" and the finding page carry `?from=task:{id}`, which shows
+"Remediation tasks > {task}" above the finding page.
+
 Strings are in the `remediationHub` dictionary (en, vi). Write actions show only with
 `findings:remediation:write` (Mark fixed also `findings:fix_apply`); the API stays the authority. A member with only
 `findings:remediation:read` sees "Accept as owner" (and the `a` key) on `join` and `task_route` suggestions, and
@@ -266,7 +342,9 @@ are in the `myWork` dictionary (en, vi).
 - `api/pkg/domain/remediation/task.go`, `task_repository.go`
 - `api/internal/infra/postgres/remediation_task_repository.go`, `remediation_claim.go` (claim conflicts)
 - `api/pkg/domain/remediation/claim.go`, `api/internal/app/remediation/claims.go`
-- `api/internal/app/remediation/tasks.go`
+- `api/internal/app/remediation/tasks.go`, `owner_access.go` (owner candidates and the owner access rule),
+  `api/internal/infra/postgres/remediation_owner_access_repository.go`,
+  `api/internal/infra/http/handler/remediation_task_owner_handler.go`
 - `api/internal/infra/http/handler/remediation_task_handler.go`, `routes/remediation.go`
 - `api/internal/infra/controller/remediation_tasks.go`
 - `api/migrations/*_remediation_suggestions.up.sql`

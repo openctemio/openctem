@@ -64,7 +64,7 @@ func TestParseMappingConfig_NoSection_ReturnsDefaults(t *testing.T) {
 func TestParseMappingConfig_OverlaysOverrides(t *testing.T) {
 	cfg := map[string]any{
 		"ticketing": map[string]any{
-			"issue_type":       "Task",
+			"issue_types":      map[string]any{"finding": map[string]any{"id": "10042", "name": "Security Finding"}},
 			"default_priority": "P3",
 			"severity_to_priority": map[string]any{
 				"critical": "P1",
@@ -78,8 +78,8 @@ func TestParseMappingConfig_OverlaysOverrides(t *testing.T) {
 	}
 	m := ParseMappingConfig(cfg)
 
-	if m.DefaultIssueType != "Task" {
-		t.Errorf("issue_type override not applied: %q", m.DefaultIssueType)
+	if got := m.IssueTypes[IssueKindFinding]; got != (IssueTypeChoice{ID: "10042", Name: "Security Finding"}) {
+		t.Errorf("issue_types override not applied: %+v", got)
 	}
 	if got := m.PriorityForSeverity("critical"); got != "P1" {
 		t.Errorf("severity override not applied: %q", got)

@@ -465,7 +465,7 @@ func (r *IngestJobRepository) RequeueDeadV2(ctx context.Context, reportRef share
 // one that finalized) is not re-run, because the processor skips segments of
 // a completed report.
 func (r *IngestJobRepository) ClearV2Payloads(ctx context.Context, reportRef shared.ID) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `
 		UPDATE ingest_jobs SET payload = ''::bytea, updated_at = NOW()
 		WHERE ingest_report_id = $1 AND segment_seq IS NOT NULL AND octet_length(payload) > 0`, reportRef.String())
 	if err != nil {

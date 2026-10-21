@@ -13,6 +13,7 @@ import { useState } from 'react'
 import Link from '@/components/link'
 import { CheckCheck, ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
+import { StepUpDialog } from '@/components/security'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,7 +25,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
@@ -161,7 +161,6 @@ export function ScanApprovalsInbox() {
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [action, setAction] = useState<{ kind: Action; req: ScanApprovalRequest } | null>(null)
   const [note, setNote] = useState('')
-  const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
@@ -171,7 +170,6 @@ export function ScanApprovalsInbox() {
       toast.success(ok)
       setAction(null)
       setNote('')
-      setCode('')
       await mutate()
     } catch (e) {
       toast.error(getErrorMessage(e, t('scans.approval.actionFailed', 'The action failed')))
@@ -193,12 +191,16 @@ export function ScanApprovalsInbox() {
         () => rejectScanRequest(req.id, note),
         t('scans.approval.rejectedToast', 'Request rejected')
       )
-    } else {
-      void run(
-        () => selfApproveScanRequest(req.id, note, code),
-        t('scans.approval.selfApprovedToast', 'Approved with your authenticator code')
-      )
     }
+  }
+
+  const selfApprove = async (code: string) => {
+    if (action?.kind !== 'self') return
+    await selfApproveScanRequest(action.req.id, note.trim(), code)
+    toast.success(t('scans.approval.selfApprovedToast', 'Approved with your authenticator code'))
+    setAction(null)
+    setNote('')
+    await mutate()
   }
 
   const items = data?.data ?? []
@@ -359,31 +361,53 @@ export function ScanApprovalsInbox() {
         </ul>
       )}
 
-      <Dialog open={!!action} onOpenChange={(o) => !busy && !o && setAction(null)}>
+      <StepUpDialog
+        open={action?.kind === 'self'}
+        onOpenChange={(o) => !o && setAction(null)}
+        title={t('scans.approval.selfTitle', 'Approve your own scan?')}
+        description={t(
+          'scans.approval.selfDesc',
+          'No other approver can approve it. Confirm with a code from your authenticator and say why; every administrator is told.'
+        )}
+        ready={!!note.trim()}
+        submitLabel={t('scans.approval.approve', 'Approve')}
+        onSubmit={async (proof) => {
+          if (proof.kind === 'totp') await selfApprove(proof.code)
+        }}
+        errorMessage={(e) =>
+          getErrorMessage(e, t('scans.approval.actionFailed', 'The action failed'))
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="approval-reason">{t('scans.approval.reason', 'Reason')}</Label>
+          <Textarea
+            id="approval-reason"
+            rows={2}
+            maxLength={1000}
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </div>
+      </StepUpDialog>
+
+      <Dialog
+        open={!!action && action.kind !== 'self'}
+        onOpenChange={(o) => !busy && !o && setAction(null)}
+      >
         <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               {action?.kind === 'reject'
                 ? t('scans.approval.rejectTitle', 'Reject this scan?')
-                : action?.kind === 'self'
-                  ? t('scans.approval.selfTitle', 'Approve your own scan?')
-                  : t('scans.approval.approveTitle', 'Approve this scan?')}
+                : t('scans.approval.approveTitle', 'Approve this scan?')}
             </DialogTitle>
-            <DialogDescription>
-              {action?.kind === 'self'
-                ? t(
-                    'scans.approval.selfDesc',
-                    'No other approver can approve it. Confirm with a code from your authenticator and say why; every administrator is told.'
-                  )
-                : (action?.req.scan_name ?? '')}
-            </DialogDescription>
+            <DialogDescription>{action?.req.scan_name ?? ''}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-3">
             <div className="space-y-1">
               <Label htmlFor="approval-note">
-                {action?.kind === 'self'
-                  ? t('scans.approval.reason', 'Reason')
-                  : t('scans.approval.noteOptional', 'Note (optional)')}
+                {t('scans.approval.noteOptional', 'Note (optional)')}
               </Label>
               <Textarea
                 id="approval-note"
@@ -393,21 +417,6 @@ export function ScanApprovalsInbox() {
                 onChange={(e) => setNote(e.target.value)}
               />
             </div>
-            {action?.kind === 'self' && (
-              <div className="space-y-1">
-                <Label htmlFor="approval-code">
-                  {t('scans.approval.code', 'Code from your authenticator')}
-                </Label>
-                <Input
-                  id="approval-code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={8}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-              </div>
-            )}
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAction(null)} disabled={busy}>
@@ -415,9 +424,7 @@ export function ScanApprovalsInbox() {
             </Button>
             <Button
               onClick={confirm}
-              disabled={
-                busy || (action?.kind === 'self' && (!note.trim() || code.trim().length < 6))
-              }
+              disabled={busy}
               variant={action?.kind === 'reject' ? 'destructive' : 'default'}
             >
               {action?.kind === 'reject'

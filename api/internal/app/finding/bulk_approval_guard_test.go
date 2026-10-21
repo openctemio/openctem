@@ -39,6 +39,14 @@ func (r *bulkStubRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, ids []s
 	return nil
 }
 
+// UpdateStatusBatchFrom is the status-guarded write (the stub does not move
+// rows on its own, so every id counts as written).
+func (r *bulkStubRepo) UpdateStatusBatchFrom(ctx context.Context, tenantID shared.ID, ids []shared.ID, _ []vulnerability.FindingStatus,
+	status vulnerability.FindingStatus, resolution string, by *shared.ID, c vulnerability.Closure,
+) error {
+	return r.UpdateStatusBatch(ctx, tenantID, ids, status, resolution, by, c)
+}
+
 func newBulkTestService(repo vulnerability.FindingRepository) *VulnerabilityService {
 	return &VulnerabilityService{findingRepo: repo, logger: logger.NewNop()}
 }
@@ -105,9 +113,10 @@ func TestBulkUpdateStatus_NonApproval_StillUpdates(t *testing.T) {
 	svc := newBulkTestService(repo)
 
 	res, err := svc.BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
-		FindingIDs: []string{f.ID().String()},
-		Status:     vulnerability.FindingStatusConfirmed.String(),
-		ActorID:    shared.NewID().String(),
+		FindingIDs:          []string{f.ID().String()},
+		Status:              vulnerability.FindingStatusConfirmed.String(),
+		HasStatusPermission: true,
+		ActorID:             shared.NewID().String(),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -131,9 +140,10 @@ func TestBulkUpdateStatus_PerFindingTolerant(t *testing.T) {
 	svc := newBulkTestService(repo)
 
 	res, err := svc.BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
-		FindingIDs: []string{ok.ID().String(), shared.NewID().String()}, // 2nd id: not found
-		Status:     vulnerability.FindingStatusConfirmed.String(),
-		ActorID:    shared.NewID().String(),
+		FindingIDs:          []string{ok.ID().String(), shared.NewID().String()}, // 2nd id: not found
+		Status:              vulnerability.FindingStatusConfirmed.String(),
+		HasStatusPermission: true,
+		ActorID:             shared.NewID().String(),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

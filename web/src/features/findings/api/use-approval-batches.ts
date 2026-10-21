@@ -42,6 +42,11 @@ export interface GroupExceptionPreview {
 
 /** Body of the preview and of the request. */
 export interface GroupExceptionInput {
+  /**
+   * The task version the caller read: required on the request (409 when the
+   * task changed since), optional on the preview.
+   */
+  version?: number
   requested_status: GroupExceptionStatus
   closure_reason: string
   justification: string

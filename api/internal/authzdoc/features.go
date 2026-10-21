@@ -34,7 +34,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StagePrioritization, StageMobilization},
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
-			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes",
+			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
 			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
@@ -98,7 +98,7 @@ var Features = []Feature{
 		Description: "Remediation campaigns, suppression and exception rules, assignment rules and automation workflows.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerRemediationCampaignRoutes", "registerRemediationTaskRoutes", "registerRemediationSuggestionRoutes", "registerSuppressionRoutes", "registerAssignmentRuleRoutes",
+			"registerRemediationCampaignRoutes", "registerRemediationTaskRoutes", "registerParticipationRoutes", "registerRemediationSuggestionRoutes", "registerSuppressionRoutes", "registerAssignmentRuleRoutes",
 			"registerWorkflowRoutes",
 		},
 	},

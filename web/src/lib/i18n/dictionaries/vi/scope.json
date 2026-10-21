@@ -320,5 +320,11 @@
   "scope.strip.waiting": "Chờ phê duyệt",
   "scope.strip.waitingHint": "chưa cho phép gì cho đến khi được duyệt",
   "scope.tabs.entries": "Mục",
-  "scope.tabs.exclusions": "Loại trừ"
+  "scope.tabs.exclusions": "Loại trừ",
+  "scope.selfApprove.title": "Tự phê duyệt mục của bạn",
+  "scope.selfApprove.description": "Không ai khác trong tổ chức có thể phê duyệt {pattern}. Là chủ sở hữu, bạn có thể tự phê duyệt. Việc này được ghi vào nhật ký kiểm toán và mọi quản trị viên đều được thông báo.",
+  "scope.selfApprove.reason": "Vì sao mục này được áp dụng mà không cần người thứ hai?",
+  "scope.selfApprove.submit": "Phê duyệt",
+  "scope.selfApprove.done": "{pattern} đã có hiệu lực",
+  "scope.selfApprove.failed": "Không thể phê duyệt mục này."
 }

@@ -1,0 +1,126 @@
+# GitLab CI: mirror each new OpenCTEM release into your registry, verified.
+# Guide: api/docs/deployment/air-gapped.md ("CI mirror job").
+#
+# discover -> mirror (to staging, signatures checked at the source and again in
+# staging) -> scan (Trivy) -> promote (staging -> trusted, checked again) ->
+# bump (optional merge request pinning the digests in your deployment repo).
+#
+# Run it on a schedule (CI/CD > Schedules, e.g. daily) and by hand with
+# OPENCTEM_VERSION=vX.Y.Z for an urgent release. It is idempotent: a release
+# already in the trusted project is skipped.
+#
+# Runner: any unprivileged runner (Kubernetes or Docker executor, no
+# privileged mode, no Docker socket). Egress it needs: the image source
+# (your Nexus Docker proxy of ghcr.io, or ghcr.io + pkg-containers.githubusercontent.com),
+# the release assets (your Nexus raw proxy of github.com, or github.com +
+# release-assets.githubusercontent.com), your registry. Nothing else.
+#
+# CI/CD variables (Settings > CI/CD > Variables; protected; masked where secret):
+#   TOOLS_IMAGE           image with bash, curl, jq, tar, oras >= 1.2, cosign >= 2.4,
+#                         trivy (see Dockerfile.ci-tools), from your registry
+#   OPENCTEM_SOURCE_PREFIX  where the release images are read, e.g.
+#                         nexus.example.internal:8443/openctemio (Nexus proxy of ghcr.io)
+#                         or ghcr.io/openctemio
+#   RELEASES_BASE_URL     release assets, e.g.
+#                         https://nexus.example.internal/repository/github-openctemio/openctem/releases/download
+#   RELEASE_API_URL       latest release (JSON with tag_name), e.g.
+#                         https://nexus.example.internal/repository/github-api/repos/openctemio/openctem/releases/latest
+#   DEST_STAGING          e.g. harbor.example.internal/openctem-staging
+#   DEST_TRUSTED          e.g. harbor.example.internal/openctem-trusted
+#   REGISTRY_HOST         e.g. harbor.example.internal
+#   REGISTRY_USER, REGISTRY_PASSWORD (masked)
+#                         robot account: push to staging and trusted, pull from
+#                         them; nothing else (harbor/harbor-robot-account.md)
+#   SOURCE_REGISTRY_HOST, SOURCE_REGISTRY_USER, SOURCE_REGISTRY_PASSWORD (masked, optional)
+#                         read-only account of the image source, when it needs one
+#   COSIGN_TRUSTED_ROOT   optional: a file variable holding the Sigstore
+#                         trusted_root.json, to verify without reaching Sigstore
+#   TRIVY_DB_REPOSITORY, TRIVY_JAVA_DB_REPOSITORY  your copies of the Trivy databases
+#   TRIVY_SEVERITY        default CRITICAL
+#   DEPLOY_PROJECT_ID, DEPLOY_REPO_URL, DEPLOY_TOKEN (masked), BUMP_DIR,
+#   DEPLOY_TARGET_BRANCH  optional: the bump job (scripts/bump-deployment.sh)
+#
+# The scripts come from the release's own image kit (verified with the
+# release's signed checksums) except this pipeline's helpers in scripts/,
+# which you keep in this project next to this file.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "api"
+
+stages: [discover, mirror, scan, promote, bump]
+
+default:
+  image: $TOOLS_IMAGE
+  interruptible: false
+  before_script:
+    - set -euo pipefail
+    - mkdir -p "$HOME/.docker"
+    - printf '%s' "$REGISTRY_PASSWORD" | oras login -u "$REGISTRY_USER" --password-stdin "$REGISTRY_HOST"
+    - |
+      if [ -n "${SOURCE_REGISTRY_HOST:-}" ]; then
+        printf '%s' "$SOURCE_REGISTRY_PASSWORD" | oras login -u "$SOURCE_REGISTRY_USER" --password-stdin "$SOURCE_REGISTRY_HOST"
+      fi
+
+discover:
+  stage: discover
+  script:
+    - version="$(bash scripts/discover-release.sh)"
+    - echo "OPENCTEM_RELEASE=${version}" > release.env
+    - |
+      if [ -n "$version" ]; then
+        bash scripts/fetch-release.sh "$version" assets "openctem-image-kit-${version}.tar.gz"
+        tar -C assets -xzf "assets/openctem-image-kit-${version}.tar.gz"
+        cp "assets/openctem-image-kit-${version}/mirror-images.sh" mirror-images.sh
+      else
+        echo "nothing new" > mirror-images.sh
+      fi
+  artifacts:
+    reports:
+      dotenv: release.env
+    paths: [mirror-images.sh]
+    expire_in: 1 week
+
+mirror:
+  stage: mirror
+  needs: [discover]
+  script:
+    - if [ -z "${OPENCTEM_RELEASE:-}" ]; then echo "nothing to mirror"; exit 0; fi
+    - trusted=(); if [ -n "${COSIGN_TRUSTED_ROOT:-}" ]; then trusted=(--trusted-root "$COSIGN_TRUSTED_ROOT"); fi
+    - bash mirror-images.sh online "$OPENCTEM_RELEASE" "$DEST_STAGING" --source-prefix "$OPENCTEM_SOURCE_PREFIX" ${trusted[@]+"${trusted[@]}"} --manifest-out staging.txt
+  artifacts:
+    paths: [staging.txt]
+    expire_in: 1 year
+
+scan:
+  stage: scan
+  needs: [discover, mirror]
+  script:
+    - if [ -z "${OPENCTEM_RELEASE:-}" ]; then echo "nothing to scan"; exit 0; fi
+    - bash scripts/scan-images.sh staging.txt
+  artifacts:
+    when: always
+    paths: ["trivy-*.json"]
+    expire_in: 1 year
+
+promote:
+  stage: promote
+  needs: [discover, mirror, scan]
+  script:
+    - if [ -z "${OPENCTEM_RELEASE:-}" ]; then echo "nothing to promote"; exit 0; fi
+    - trusted=(); if [ -n "${COSIGN_TRUSTED_ROOT:-}" ]; then trusted=(--trusted-root "$COSIGN_TRUSTED_ROOT"); fi
+    - bash mirror-images.sh online "$OPENCTEM_RELEASE" "$DEST_TRUSTED" --source-prefix "$DEST_STAGING" ${trusted[@]+"${trusted[@]}"} --manifest-out trusted.txt --env-out openctem-images.env
+  artifacts:
+    paths: [trusted.txt, openctem-images.env]
+    expire_in: 1 year
+
+bump:
+  stage: bump
+  needs: [discover, promote]
+  rules:
+    - if: $DEPLOY_PROJECT_ID
+  script:
+    - if [ -z "${OPENCTEM_RELEASE:-}" ]; then echo "nothing to bump"; exit 0; fi
+    - bash scripts/bump-deployment.sh "$OPENCTEM_RELEASE" trusted.txt

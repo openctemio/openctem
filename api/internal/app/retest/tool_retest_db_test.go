@@ -29,6 +29,12 @@ func (s toolSensors) HasRetestSensor(_ context.Context, _ shared.ID, tool string
 	return s[tool], nil
 }
 
+// HasRetestTemplatesSensor: the key "templates:<tool>" says a sensor also
+// runs delivered templates for tool.
+func (s toolSensors) HasRetestTemplatesSensor(_ context.Context, _ shared.ID, tool string) (bool, error) {
+	return s["templates:"+tool], nil
+}
+
 func (s toolSensors) RetestTools(context.Context, shared.ID) ([]string, error) {
 	caps := []string{validation.SensorCapabilityValidateNuclei}
 	for tool, on := range s {

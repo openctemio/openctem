@@ -244,8 +244,16 @@ export interface StepRun {
 /** Who or what started a run (API RunTrigger). */
 export interface RunTrigger {
   type:
-    'user' | 'schedule' | 'automation' | 'api' | 'webhook' | 'asset_discovery' | 'system' | string
-  /** The user, the automation or the scan (schedule). */
+    | 'user'
+    | 'schedule'
+    | 'automation'
+    | 'policy'
+    | 'api'
+    | 'webhook'
+    | 'asset_discovery'
+    | 'system'
+    | string
+  /** The user, the automation, the scan (schedule) or the policy (coverage, enrichment). */
   id?: string
   /** The automation run that started it. */
   run_id?: string
@@ -300,6 +308,10 @@ export interface ScanRun {
   failed_steps: number
   skipped_steps: number
   total_findings: number
+  /** Targets no sensor could reach; the run still completes (a fact about the targets). */
+  unreachable_target_count?: number
+  /** Targets the sensor's local policy skipped; the run still completes. */
+  skipped_target_count?: number
   /** The run's step runs (GET /scan-runs/{id} only). */
   scan_run_steps?: StepRun[]
   error_message?: string

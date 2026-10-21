@@ -9,22 +9,23 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 
 | Workflow (file) | Triggers | What it does | Gate check |
 |-----------------|----------|--------------|------------|
-| API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, lint), tests, protocol-v1 compat + release binaries, Docker build; see [Tiers](#tiers) | **API CI OK** |
+| API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis, least-privilege suite, PostgreSQL 18 migrations, release binaries, Docker build; see [Tiers](#tiers) | **API CI OK** |
 | Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
 | All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
-| Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. actionlint over the workflows | **Secret Scanning**, **Workflow Lint** |
-| Docs check (`docs-check.yml`) | PR / push to `main`, `develop`; merge queue | **Docs check**: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve). **Docs links**: `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check**, **Docs links** |
+| Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
+| Docs check (`docs-check.yml`) | PR / push to `main`, `develop`; merge queue | One job, **Docs check**: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve), the RFC index check, then `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check** |
 | API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | One job for govulncheck + Trivy (fs) + license check; Semgrep; Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
 | Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | One job for npm audit + Trivy (fs) + ESLint security rules; Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
 | API Fuzz (`api-fuzz.yml`) | Nightly (03:17 UTC), manual | 10 minutes of `FuzzStrictCTIS` (the protocol-v2 results decoder); uploads a crasher artifact on failure | — |
-| Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)) | — |
-| Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
+| Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)); on a production release also the offline image bundle | — |
+| Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with the release archives (via Release archives), their SBOMs, the signed `checksums-sha256.txt`, build provenance, and the image pull lines | — |
+| Release archives (`release-dist.yml`) | Called by Release; PRs touching its inputs (`paths:`) | Builds the archives with `.github/scripts/release/build-dist.sh`; on a PR builds linux/amd64 only and runs `smoke-dist.sh` (versions, `-check-config` of the example settings, `systemd-analyze verify`/`security`, gateway Caddyfile, web/console health, the image kit's Dockerfiles), publishing nothing | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z` (with one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`), opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
-| Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). **Security gate self-test**: the gate's unit tests and the CODEOWNERS mirror | **security-gate** |
+| Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). The gate's unit tests and the CODEOWNERS mirror run in **Workflow Lint** (they run PR code; the gate job never does) | **security-gate** |
 | CLA (`cla.yml`) | PR to any branch (opened, pushed, reopened); a PR comment that signs or says `recheck`; merge queue (passes) | Checks that every commit author has accepted the [Contributor License Agreement](../../../CONTRIBUTING.md#contributor-license-agreement); records new signatures in the private `openctemio/cla-signatures`. Runs in the base context and never checks out pull request code. In the merge queue it passes at once, so it can be required on pull requests. **CLA scope test** (`cla-test.yml`, when the workflow changes) tests who must sign against recorded commit lists | **cla** |
 | Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`; on `release/vX.Y.Z` and on `main` right after it merges, `--release vX.Y.Z`: `platform.release` must be that version) | — |
 | CI image mirror (`ci-image-mirror.yml`) | Push to `develop` changing the list or the scripts; daily (04:23 UTC); manual | Copies the third-party images CI pulls, and the digest-pinned base images of the sensor's Dockerfiles, to `ghcr.io/openctemio/mirror` (see [CI image mirror](#ci-image-mirror)) | — |
@@ -171,6 +172,16 @@ decides the outputs `api` and `web` for every workflow (`docs` is informational)
 | Shared: root `Makefile`, `go.work*`, `.github/**`, `deploy/**` | ✓ | ✓ |
 | Anything else (`.githooks/`) | | |
 
+Two more outputs choose the tier (see [Tiers](#tiers)):
+
+| Output | True when |
+|--------|-----------|
+| `migrations` | the change touches `api/migrations/` or `api/deploy/postgres/` |
+| `full` | every event except `pull_request`; on a PR, when it has the `ci:full` label or changes a CI definition (`.github/workflows/`, `.github/scripts/`, `.github/actions/`) |
+
+The label is read live through the API, so adding `ci:full` and re-running the
+jobs is enough; a re-run otherwise sees the labels of the original event.
+
 Documentation is matched first, so an RFC, a changelog fragment or a README
 never starts the Go or web suites, also in the merge queue. A docs-only PR runs
 Docs check, Secret Scanning, Workflow Lint, the security gate and API CI's
@@ -195,7 +206,7 @@ How each workflow uses the outputs:
 | API CI | always starts; real jobs run when `api` (which ones: [Tiers](#tiers)) |
 | Web CI | always starts; `API contract` runs when `api` or `web`; `Web checks` when `web`, or when an API change changed the generated contract |
 | CodeQL | Go when `api`, JS/TS when `web` (PR); nothing in the merge queue; both on push and weekly |
-| All-in-one CI | always starts; builds when `api` or `web` (both images are built from the whole component directory), in the merge queue and on pushes only |
+| All-in-one CI | always starts; builds when `api` or `web` (both images are built from the whole component directory) and `full` |
 | Repository Security | always runs (secret scan diff-scoped on PR and merge queue) |
 | API Security | `on.paths`: `api/**` + shared files, minus `**/*.md` and `api/docs/**`. Does not start at all for a web-only or docs-only change |
 | Web Security | `on.paths`: `web/**` + shared files, minus `**/*.md`. Does not start at all for an API-only or docs-only change |
@@ -206,8 +217,9 @@ and a job skipped by `if:` reports success to its aggregator. API Security and
 Web Security carry no required check, so they can use `on.paths`. If you change
 the shared list, change it in `changed.sh` and in both of those `paths:` lists.
 
-Each workflow cancels an older run for the same PR or branch; tag and scheduled
-runs are never cancelled.
+A newer push to a PR cancels that PR's older run in every workflow
+(`cancel-in-progress` only for `pull_request`); merge-queue runs, branch pushes,
+tags and scheduled runs are never cancelled.
 
 ### Merge queue
 
@@ -229,20 +241,40 @@ runs are never cancelled.
 
 ### Tiers
 
-Every PR is tested twice (on the PR, then in the queue) on the free plan's ~20
-concurrent hosted runners, so the work is split. Self-hosted runners are not
-used: this is a public repository, and a fork PR would run code on the host.
+Every PR is tested twice (on the PR, then in the queue) on a shared pool of
+hosted runners (about 60 concurrent jobs for the organization), and many PRs are
+open at once, so a PR runs only what catches most breakage early and the queue
+runs everything. Self-hosted runners are not used: this is a public repository,
+and a fork PR would run code on the host.
 
-| Tier | Events | API CI | Web CI | All-in-one CI | CodeQL |
-|------|--------|--------|--------|---------------|--------|
-| Fast | `pull_request` | `API static checks` + `Tests (Postgres + Redis)` (the whole suite with `-race` against Postgres and Redis, so isolation tests fail on the PR; decision D-30) + `Tests (least-privilege DB role)` | `Web checks` | build skipped | changed language(s) |
-| Full | `merge_group`, push to `develop`/`main` | the fast tier + `Release Binaries`; Docker build on `main` | `Web checks`; `next build` on push | images built and smoke-tested | queue: none (the PR head was analysed); push: both |
+| Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
+|------|--------|--------|--------|---------------|---------|--------|
+| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the whole suite against Postgres and Redis in 2 + 2 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). `Tests (least-privilege DB role)` and `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | only with `run-e2e`, or when `web/e2e/` changed | changed language(s) |
+| Full | `merge_group`, push to `develop`/`main`, a PR with `ci:full` or a changed CI definition | the suite in 4 + 4 shards **with** `-race`, the least-privilege suite, PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright in 4 shards (`web/` or `api/` changed) | queue: none (the PR head was analysed); push: both |
+
+**Forcing the full tier on a PR:** add the `ci:full` label, then re-run all jobs
+of the workflow run (or push). Use it for a risky change to concurrency, SQL
+grants or the images before it reaches the queue. A PR that changes a workflow
+or a CI script always runs the full tier.
+
+What runs per pull request (jobs started, including the ~10 s `changes` and
+`… OK` jobs; the merge queue still runs the full set):
+
+| PR changes | Fast tier | Full tier (`ci:full`) |
+|------------|-----------|-----------------------|
+| docs only | 16 | 16 |
+| `web/` only | 23 | 30 |
+| `api/` only, no migration | 26 (30 when the generated contract changed) | 44 (48) |
+| `api/` with a migration | 33 (37) | 44 (48) |
+| `api/` + `web/` | 32 | 50 |
 
 The `… OK` aggregators pass when a job was skipped because its area did not
 change, but when the area did change they also require that **this event's
-tier ran and passed**. In the queue, `API CI OK` fails unless the integration
-tests and the compat run succeeded, and `All-in-one OK` fails unless the image
-build succeeded. Nothing reaches `develop`/`main` on the fast tier alone.
+tier ran and passed**. `API CI OK` and `All-in-one OK` fail any `merge_group`
+or push run that did not compute the full tier; in the queue `API CI OK` fails
+unless the race-enabled suite, the least-privilege suite, PostgreSQL 18 and the
+release binaries succeeded, and `All-in-one OK` fails unless the image build
+succeeded. Nothing reaches `develop`/`main` on the fast tier alone.
 
 Concurrency: a newer push to a PR cancels that PR's older run
 (`cancel-in-progress` only for `pull_request`). Merge-queue runs are never
@@ -256,7 +288,7 @@ the queue (no required check; the PR and the push scan the change).
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
-  reads the `toolchain` directive (currently `go1.26.9`). setup-go sets
+  reads the `toolchain` directive (currently `go1.26.10`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
   and the release binaries use. `api/Dockerfile` and `api/Dockerfile.admin-cli`
   pin their `golang:` base image separately: bump them with `go.mod`.
@@ -404,10 +436,10 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 | OpenAPI Contract | See above. |
 | Gateway Routing | `api/deploy/gateway/smoke-test.sh` (every plane's routing against stub upstreams) + renders the production compose files. That `planes.caddy` matches the plane table is a unit test (`routes/plane` `TestGatewayPlanesFile`). |
 | Test shards | `.github/scripts/go-shard.sh check` proves the test shards below cover every package and every top-level test of `tests/unit` exactly once. |
-| Lint (job `API lint`, parallel to the static checks; the golangci-lint cache and the staticcheck binary are cached) | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
-| Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -race -timeout 20m` against Postgres 17 + Redis 7 service containers, split into eight parallel shards (four of `tests/unit`, which is most of the run time, and four groups of the other packages; `.github/scripts/go-shard.sh`), each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
-| Tests (least-privilege DB role) | Sharded the same way (3 + 3 shards). Every event (when `api/` or shared files change). Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
-| Migrations (PostgreSQL 18) | Every event (when `api/` or shared files change). Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`). PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
+| Lint (steps of `API static checks`; the golangci-lint cache and the staticcheck binary are cached) | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
+| Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -timeout 20m` against Postgres 17 + Redis 7 service containers. Full tier: `-race`, eight parallel shards (four of `tests/unit`, which is most of the run time, and four groups of the other packages; `.github/scripts/go-shard.sh`). Fast tier (PR): no `-race`, 2 + 2 shards. Both splits run the same tests, each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
+| Tests (least-privilege DB role) | Sharded the same way (3 + 3 shards). Full tier, and on a PR that changes `api/migrations/` or `api/deploy/postgres/` (when `api/` or shared files change). Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
+| Migrations (PostgreSQL 18) | Same tiers as the least-privilege suite. Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`). PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
 | Release Binaries | Merge queue and pushes. Builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 | Docker Build | Pushes to `main` only; builds the image, does not push it. |
 
@@ -504,12 +536,33 @@ cosign verify ghcr.io/openctemio/openctem:vX.Y.Z \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-### Release binaries
+### Release archives
 
-`release.yml` builds `bootstrap-admin` for linux/amd64, linux/arm64,
-darwin/amd64, darwin/arm64 and windows/amd64, published as
-`bootstrap-admin-<version>-<os>-<arch>.tar.gz` (`.zip` on Windows) with
-`checksums-sha256.txt`. The release notes are generated, plus the image pull lines.
+`release.yml` calls `release-dist.yml`, which runs
+`.github/scripts/release/build-dist.sh` (the same script a pull request
+dry-runs) for:
+
+- `openctem-server`, `openctem-gateway`, `openctem-web`, `openctem-console`
+  archives for linux/amd64 and linux/arm64 (web and console on a native runner
+  per arch: their bundles hold native modules);
+- `bootstrap-admin` for linux, darwin (amd64, arm64) and windows/amd64;
+- `openctem-image-kit` (`deploy/airgap`).
+
+Go builds are static (CGO off), `-trimpath`, with the commit time as build
+time and as every archive entry's time: the same tag gives byte-identical
+archives. golang-migrate, Caddy (with layer4) and swag are built at the
+versions their Dockerfiles pin. Release then writes an SPDX SBOM per archive
+(syft), `checksums-sha256.txt` over archives and SBOMs, signs it keyless
+(`checksums-sha256.txt.sigstore.json`, identity
+`.github/workflows/release.yml@refs/tags/vX.Y.Z`) and attests SLSA build
+provenance for every archive (`gh attestation verify <archive> --owner openctemio`).
+Install guide: [binary-install.md](../deployment/binary-install.md).
+
+Docker Publish adds, on a production release, the offline image bundle: one
+`openctem-image-<name>-<version>.oci.tar` per image (an OCI layout with the
+multi-arch index and its signature and attestations, under the 2 GiB release
+asset limit) and `openctem-images-<version>.txt` with its Sigstore bundle
+([air-gapped.md](../deployment/air-gapped.md)).
 
 ## Local equivalents
 

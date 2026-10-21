@@ -209,30 +209,75 @@ func (r *PriorityAuditRepository) CountOlderThan(ctx context.Context, before tim
 	return count, nil
 }
 
+// priorityAuditBatch is the number of rows one DELETE removes. Each batch is
+// its own transaction, so a long cleanup never holds back vacuum or blocks the
+// writers of the table.
+const priorityAuditBatch = 5000
+
+// priorityAuditMaxBatches bounds one call (5000 x 400 = 2M rows); the next
+// scheduled run continues.
+const priorityAuditMaxBatches = 400
+
+// deleteInBatches runs a DELETE ... LIMIT-style statement until a batch comes
+// back short, the context ends or the per-call bound is reached.
+func (r *PriorityAuditRepository) deleteInBatches(ctx context.Context, what, query string, args ...any) (int64, error) {
+	var total int64
+	for i := 0; i < priorityAuditMaxBatches; i++ {
+		res, err := r.db.ExecContext(ctx, query, append(args, priorityAuditBatch)...)
+		if err != nil {
+			return total, fmt.Errorf("delete %s: %w", what, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return total, fmt.Errorf("rows affected: %w", err)
+		}
+		total += n
+		if n < priorityAuditBatch {
+			break
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return total, cerr
+		}
+	}
+	return total, nil
+}
+
 // DeleteOlderThan removes priority audit rows older than before, across all
-// tenants. Intended for the platform retention controller (F-13). Per-tenant
-// retention can be layered later via DeleteOlderThanForTenant when tenant
-// policy configuration exists.
+// tenants, in batches. Intended for the platform retention controller (F-13).
+// Per-tenant retention can be layered later via DeleteOlderThanForTenant when
+// tenant policy configuration exists.
 func (r *PriorityAuditRepository) DeleteOlderThan(ctx context.Context, before time.Time) (int64, error) {
-	res, err := r.db.ExecContext(ctx,
-		`DELETE FROM priority_class_audit_log WHERE created_at < $1`,
-		before,
-	)
+	return r.deleteInBatches(ctx, "old priority audit rows",
+		`DELETE FROM priority_class_audit_log WHERE ctid IN (
+			SELECT ctid FROM priority_class_audit_log WHERE created_at < $1 LIMIT $2)`,
+		before)
+}
+
+// PurgeNoOpAndOrphaned removes, in batches, the rows that carry no information:
+// entries whose class did not move (previous_class = new_class; the writers no
+// longer produce them) and entries of organizations that no longer exist (the
+// table has no foreign key to tenants, so deleting an organization used to
+// leave its rows behind). It is idempotent and cheap once the table is clean.
+func (r *PriorityAuditRepository) PurgeNoOpAndOrphaned(ctx context.Context) (noOp, orphaned int64, err error) {
+	noOp, err = r.deleteInBatches(ctx, "no-op priority audit rows",
+		`DELETE FROM priority_class_audit_log WHERE ctid IN (
+			SELECT ctid FROM priority_class_audit_log WHERE previous_class = new_class LIMIT $1)`)
 	if err != nil {
-		return 0, fmt.Errorf("delete old priority audit rows: %w", err)
+		return noOp, 0, err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("rows affected: %w", err)
-	}
-	return n, nil
+	orphaned, err = r.deleteInBatches(ctx, "priority audit rows of deleted organizations",
+		`DELETE FROM priority_class_audit_log WHERE ctid IN (
+			SELECT a.ctid FROM priority_class_audit_log a
+			WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = a.tenant_id) LIMIT $1)`)
+	return noOp, orphaned, err
 }
 
 func (r *PriorityAuditRepository) LogChange(ctx context.Context, entry finding.PriorityAuditEntry) error {
 	query := `
 		INSERT INTO priority_class_audit_log (tenant_id, finding_id, previous_class, new_class,
 			reason, source, rule_id, actor_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+		SELECT $1::uuid, $2::uuid, $3::text, $4::text, $5::text, $6::text, $7::uuid, $8::uuid, NOW()
+		WHERE $3::text IS DISTINCT FROM $4::text
 	`
 	var prevClass sql.NullString
 	if entry.PreviousClass != nil {
@@ -281,7 +326,8 @@ func (r *PriorityAuditRepository) LogChanges(ctx context.Context, entries []find
 		SELECT u.tenant_id, u.finding_id, u.previous_class, u.new_class,
 			u.reason, u.source, u.rule_id, u.actor_id, NOW()
 		FROM unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::uuid[], $8::uuid[])
-			AS u(tenant_id, finding_id, previous_class, new_class, reason, source, rule_id, actor_id)`,
+			AS u(tenant_id, finding_id, previous_class, new_class, reason, source, rule_id, actor_id)
+		WHERE u.previous_class IS DISTINCT FROM u.new_class`,
 		pq.Array(tenants), pq.Array(findings), pq.Array(prev), pq.Array(next),
 		pq.Array(reasons), pq.Array(sources), pq.Array(rules), pq.Array(actors),
 	)

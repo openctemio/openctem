@@ -42,22 +42,24 @@ type TaskAssigneeChecker interface {
 
 // TaskService manages remediation tasks.
 type TaskService struct {
-	repo       remediationdom.TaskRepository
-	dataScope  *datascope.Enforcer
-	assignees  TaskAssigneeChecker
-	audit      TaskAuditLogger
-	claimer    TaskFixClaimer
-	guard      TaskBulkGuard
-	moves      TaskMoveNotifier
-	exceptions TaskExceptionRequester
-	campaigns  TaskCampaignGate
-	logger     *logger.Logger
+	repo        remediationdom.TaskRepository
+	dataScope   *datascope.Enforcer
+	assignees   TaskAssigneeChecker
+	ownerAccess remediationdom.OwnerAccessRepository
+	audit       TaskAuditLogger
+	claimer     TaskFixClaimer
+	guard       TaskBulkGuard
+	moves       TaskMoveNotifier
+	exceptions  TaskExceptionRequester
+	campaigns   TaskCampaignGate
+	logger      *logger.Logger
 
 	// Tasks from a query (query_tasks.go).
 	queries       QueryTaskRepository
 	matcher       QueryMatcher
 	owners        QueryOwnerDirectory
 	queryNotifier QueryTaskNotifier
+	notifier      QueryTaskNotifier // owner notices (SetNotifier)
 	modules       ModuleGuard
 }
 
@@ -98,6 +100,9 @@ var (
 	// ErrTaskFindingNotFound is the one answer for a finding of another
 	// organization, of none, or outside the caller's data scope.
 	ErrTaskFindingNotFound = fmt.Errorf("%w: one or more findings were not found", shared.ErrNotFound)
+	// ErrTaskFindingPentest: a pentest finding is fixed through its pentest
+	// campaign, so it never becomes the primary member of a task.
+	ErrTaskFindingPentest = fmt.Errorf("%w: pentest findings are fixed through their pentest campaign and cannot join a remediation task", shared.ErrValidation)
 	// ErrTaskFindingClosed: a closed finding never joins a task.
 	ErrTaskFindingClosed = fmt.Errorf("%w: closed findings cannot join a remediation task", shared.ErrValidation)
 	// ErrTaskNoFindings: a task needs at least one finding.
@@ -125,6 +130,10 @@ type CreateTaskInput struct {
 	Deadline        *time.Time
 	// Conflicts resolves findings of another active task.
 	Conflicts remediationdom.ConflictResolution
+	// CanExtendOwnerAccess: the caller holds findings:assign. ConfirmOwnerAccess:
+	// the caller accepted that an owner without access sees the task's findings.
+	CanExtendOwnerAccess bool
+	ConfirmOwnerAccess   bool
 }
 
 // CreateTask creates a task with its findings as primary members.
@@ -149,6 +158,15 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 		return nil, err
 	}
 	if err := s.checkOwner(ctx, in.TenantID, in.AssigneeUserID, in.AssigneeGroupID); err != nil {
+		return nil, err
+	}
+	ownerGap, err := s.checkOwnerAccess(ctx, in.TenantID, ownerAccessCheck{
+		user: in.AssigneeUserID, group: in.AssigneeGroupID, canExtend: in.CanExtendOwnerAccess, confirmed: in.ConfirmOwnerAccess,
+		refs: func() ([]remediationdom.OwnerFindingRef, error) {
+			return s.ownerAccess.OpenFindingRefs(ctx, in.TenantID, members)
+		},
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := s.checkCampaignChange(ctx, in.TenantID, nil, in.CampaignID); err != nil {
@@ -195,6 +213,8 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput, actx a
 		WithMetadata("findings", len(members)).WithMetadata("related", len(related)).
 		WithMetadata("action_id", task.ActionID.String()).
 		WithMetadata("skipped", len(rec.Claimed.Skipped)))
+	s.auditOwnerAccess(ctx, actx, taskID, title, ownerGap, in.AssigneeUserID, in.AssigneeGroupID)
+	s.notifyNewOwner(ctx, task, in.AssigneeUserID, in.AssigneeGroupID, in.ActorID)
 	return task, nil
 }
 
@@ -227,6 +247,15 @@ func (s *TaskService) checkFindings(ctx context.Context, tenantID shared.ID, all
 	for _, id := range primary {
 		if vulnerability.FindingStatus(statuses[id]).IsClosed() {
 			return ErrTaskFindingClosed
+		}
+	}
+	if len(primary) > 0 {
+		pentest, err := s.repo.PentestFindingIDs(ctx, tenantID, primary)
+		if err != nil {
+			return err
+		}
+		if len(pentest) > 0 {
+			return ErrTaskFindingPentest
 		}
 	}
 	return nil
@@ -314,7 +343,8 @@ func (s *TaskService) GetTask(ctx context.Context, tenantID, taskID shared.ID) (
 	if err != nil {
 		return nil, err
 	}
-	if scope == nil {
+	ctx, narrowed := s.viewerCtx(ctx)
+	if scope == nil && !narrowed {
 		return t, nil
 	}
 	if err := s.applyScope(ctx, tenantID, []*remediationdom.Task{t}, scope); err != nil {
@@ -326,8 +356,28 @@ func (s *TaskService) GetTask(ctx context.Context, tenantID, taskID shared.ID) (
 	return t, nil
 }
 
+// viewerCtx records the person reading, so the repository applies the
+// findings list's pentest member rule on top of the asset scope (a pentest
+// finding only for the members of its campaign, no draft one for the client
+// role). narrowed reports whether that can hide anything: it cannot for an
+// administrator, and it does not apply to a call that is not on behalf of a
+// user (the background reconcile). Use the returned context for reads only:
+// the stored counters are always over every member.
+func (s *TaskService) viewerCtx(ctx context.Context) (context.Context, bool) {
+	if s.dataScope == nil {
+		return ctx, false
+	}
+	if c := s.dataScope.CallerOf(ctx); c.UserID == "" && !c.APIKey {
+		return ctx, false
+	}
+	vctx := s.dataScope.WithFindingViewer(ctx)
+	v, _ := shared.FindingViewerOf(vctx)
+	return vctx, !v.Admin
+}
+
 // applyScope replaces the counters of each task, in memory, with the ones
-// over the members in scope, and sets HiddenMembers.
+// over the members the caller may see (asset scope and pentest rule), and
+// sets HiddenMembers.
 func (s *TaskService) applyScope(ctx context.Context, tenantID shared.ID, tasks []*remediationdom.Task, scope *shared.DataScope) error {
 	if len(tasks) == 0 {
 		return nil
@@ -347,6 +397,7 @@ func (s *TaskService) applyScope(ctx context.Context, tenantID shared.ID, tasks 
 			hidden = 0
 		}
 		t.HiddenMembers = hidden
+		t.HiddenRelated = max(t.Counts.Related-visible.Related, 0)
 		t.Counts = visible
 		if hidden > 0 {
 			// The deadline and risk of hidden members are not the caller's
@@ -385,11 +436,12 @@ func (s *TaskService) ListTasks(ctx context.Context, in ListTasksInput, page pag
 		return pagination.Result[*remediationdom.Task]{}, err
 	}
 	f.Scope = scope
+	ctx, narrowed := s.viewerCtx(ctx)
 	res, err := s.repo.ListTasks(ctx, in.TenantID, f, page)
 	if err != nil {
 		return res, err
 	}
-	if scope != nil {
+	if scope != nil || narrowed {
 		if err := s.applyScope(ctx, in.TenantID, res.Data, scope); err != nil {
 			return res, err
 		}
@@ -404,7 +456,7 @@ func (s *TaskService) writableTask(ctx context.Context, tenantID, taskID shared.
 	if err != nil {
 		return nil, err
 	}
-	if t.HiddenMembers > 0 {
+	if t.HasHidden() {
 		return nil, remediationdom.ErrTaskHiddenMembers
 	}
 	return t, nil
@@ -427,6 +479,9 @@ type AddMembersInput struct {
 	Role       remediationdom.MemberRole
 	// Conflicts resolves primary findings of another active task.
 	Conflicts remediationdom.ConflictResolution
+	// CanExtendOwnerAccess and ConfirmOwnerAccess: see CreateTaskInput.
+	CanExtendOwnerAccess bool
+	ConfirmOwnerAccess   bool
 }
 
 // AddMembers adds findings to a task, as primary or related members.
@@ -448,7 +503,8 @@ func (s *TaskService) AddMembers(ctx context.Context, in AddMembersInput, actx a
 	if len(ids) > remediationdom.MaxMembersPerRequest {
 		return nil, ErrTaskTooManyFindings
 	}
-	if _, err := s.writableTask(ctx, in.TenantID, in.TaskID); err != nil {
+	cur, err := s.writableTask(ctx, in.TenantID, in.TaskID)
+	if err != nil {
 		return nil, err
 	}
 	var primary []shared.ID
@@ -457,6 +513,17 @@ func (s *TaskService) AddMembers(ctx context.Context, in AddMembersInput, actx a
 	}
 	if err := s.checkFindings(ctx, in.TenantID, ids, primary); err != nil {
 		return nil, err
+	}
+	var ownerGap OwnerGap
+	if role == remediationdom.MemberRolePrimary {
+		if ownerGap, err = s.checkOwnerAccess(ctx, in.TenantID, ownerAccessCheck{
+			user: cur.AssigneeUserID, group: cur.AssigneeGroupID, canExtend: in.CanExtendOwnerAccess, confirmed: in.ConfirmOwnerAccess,
+			refs: func() ([]remediationdom.OwnerFindingRef, error) {
+				return s.ownerAccess.OpenFindingRefs(ctx, in.TenantID, ids)
+			},
+		}); err != nil {
+			return nil, err
+		}
 	}
 	req := remediationdom.AddMembersRequest{TenantID: in.TenantID, TaskID: in.TaskID, ExpectedVersion: in.Version, FindingIDs: ids,
 		Role: role, Source: remediationdom.JoinSourceManual, ActorID: in.ActorID}
@@ -475,6 +542,7 @@ func (s *TaskService) AddMembers(ctx context.Context, in AddMembersInput, actx a
 		WithResourceName(t.Title).
 		WithMessage(fmt.Sprintf("%d finding(s) added to remediation task %q as %s", len(ids), t.Title, role)).
 		WithMetadata("findings", len(ids)).WithMetadata("role", string(role)))
+	s.auditOwnerAccess(ctx, actx, t.ID, t.Title, ownerGap, t.AssigneeUserID, t.AssigneeGroupID)
 	return t, nil
 }
 
@@ -497,6 +565,9 @@ type UpdateTaskInput struct {
 	Hold      *bool
 	Cancel    bool
 	StateNote string
+	// CanExtendOwnerAccess and ConfirmOwnerAccess: see CreateTaskInput.
+	CanExtendOwnerAccess bool
+	ConfirmOwnerAccess   bool
 }
 
 // UpdateTask changes a task's title, description, owner, deadline, campaign
@@ -512,6 +583,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 	ch := remediationdom.TaskChanges{}
 	changes := auditdom.NewChanges()
 	data := map[string]any{}
+	var ownerGap OwnerGap
 	if in.Title != nil {
 		title, terr := remediationdom.NormalizeTaskTitle(*in.Title)
 		if terr != nil {
@@ -534,6 +606,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 			data["description"] = true
 		}
 	}
+	var ownerUser, ownerGroup *shared.ID // set when the owner changed to a user / team
 	if in.AssigneeUserID != nil || in.AssigneeGroupID != nil {
 		var u, g *shared.ID
 		if in.AssigneeUserID != nil {
@@ -545,15 +618,33 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 		if err := s.checkOwner(ctx, in.TenantID, u, g); err != nil {
 			return nil, err
 		}
+		// Only a changed owner is checked: an unchanged one is not re-judged.
+		cu, cg := u, g
+		if in.AssigneeUserID == nil || idStr(u) == idStr(before.AssigneeUserID) {
+			cu = nil
+		}
+		if in.AssigneeGroupID == nil || idStr(g) == idStr(before.AssigneeGroupID) {
+			cg = nil
+		}
+		if ownerGap, err = s.checkOwnerAccess(ctx, in.TenantID, ownerAccessCheck{
+			user: cu, group: cg, canExtend: in.CanExtendOwnerAccess, confirmed: in.ConfirmOwnerAccess,
+			refs: func() ([]remediationdom.OwnerFindingRef, error) {
+				return s.ownerAccess.TaskOpenPrimaryRefs(ctx, in.TenantID, in.TaskID)
+			},
+		}); err != nil {
+			return nil, err
+		}
 		if in.AssigneeUserID != nil && idStr(u) != idStr(before.AssigneeUserID) {
 			ch.AssigneeUserID = in.AssigneeUserID
 			changes.Set("assignee_user_id", idStr(before.AssigneeUserID), idStr(u))
 			data["assignee_user_id"] = idStr(u)
+			ownerUser = u
 		}
 		if in.AssigneeGroupID != nil && idStr(g) != idStr(before.AssigneeGroupID) {
 			ch.AssigneeGroupID = in.AssigneeGroupID
 			changes.Set("assignee_group_id", idStr(before.AssigneeGroupID), idStr(g))
 			data["assignee_group_id"] = idStr(g)
+			ownerGroup = g
 		}
 	}
 	if in.Deadline != nil {
@@ -607,6 +698,8 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput, actx a
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(action, auditdom.ResourceTypeRemediationTask, t.ID.String()).
 		WithResourceName(t.Title).WithChanges(changes).
 		WithMessage(fmt.Sprintf("Remediation task %q updated", t.Title)))
+	s.auditOwnerAccess(ctx, actx, t.ID, t.Title, ownerGap, t.AssigneeUserID, t.AssigneeGroupID)
+	s.notifyNewOwner(ctx, t, ownerUser, ownerGroup, in.ActorID)
 	return t, nil
 }
 
@@ -620,15 +713,17 @@ func (s *TaskService) ListMembers(ctx context.Context, tenantID, taskID shared.I
 		return pagination.Result[remediationdom.TaskMember]{}, err
 	}
 	f.Scope = scope
+	ctx, _ = s.viewerCtx(ctx)
 	return s.repo.ListMembers(ctx, tenantID, taskID, f, page)
 }
 
-// ListEvents lists a task's timeline (the caller must see the task).
+// ListEvents lists a task's timeline (the caller must see the task). What an
+// entry says about another task the caller cannot open is redacted.
 func (s *TaskService) ListEvents(ctx context.Context, tenantID, taskID shared.ID, page pagination.Pagination) (pagination.Result[remediationdom.TaskEvent], error) {
 	if _, err := s.GetTask(ctx, tenantID, taskID); err != nil {
 		return pagination.Result[remediationdom.TaskEvent]{}, err
 	}
-	return s.repo.ListEvents(ctx, tenantID, taskID, page)
+	return s.listEventsScoped(ctx, tenantID, taskID, page)
 }
 
 // ReconcileBatch is how many stale tasks one reconcile pass recomputes.
@@ -648,10 +743,12 @@ func (s *TaskService) Reconcile(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for tenantID, ids := range byTenant {
-		if err := s.repo.Recompute(ctx, tenantID, ids, nil); err != nil {
+		rep, err := s.repo.ReconcileTasks(ctx, tenantID, ids)
+		if err != nil {
 			s.logger.Warn("remediation task reconcile failed", "tenant", tenantID.String(), "error", logger.SanitizeError(err))
 			continue
 		}
+		s.auditReconcile(ctx, tenantID, rep)
 		n += len(ids)
 	}
 	return n, nil

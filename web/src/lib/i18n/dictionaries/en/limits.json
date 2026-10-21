@@ -8,7 +8,6 @@
   "limits.col.limit": "Allowed",
   "limits.col.used": "Used",
   "limits.console.cancel": "Cancel",
-  "limits.console.code": "Code from your authenticator",
   "limits.console.confirm": "Confirm",
   "limits.console.defaults.confirmDesc": "Applies to organizations people create from now on. Nothing changes for existing organizations. The change is recorded in the admin audit log.",
   "limits.console.defaults.confirmTitle": "Change the default limits?",

@@ -1,0 +1,14 @@
+# OpenCTEM seed image: the seed SQL files of the released openctem-server
+# archive on an image that has psql. Same paths and user as
+# ghcr.io/openctemio/seed.
+ARG BASE_IMAGE=postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+FROM ${BASE_IMAGE}
+ARG TARGETARCH
+COPY dist/${TARGETARCH}/server/migrations/seed /seed
+LABEL org.opencontainers.image.title="OpenCTEM seed (rebuilt from release @VERSION@)" \
+      org.opencontainers.image.version="@VERSION@" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+USER 65532:65532
+ENTRYPOINT []
+CMD ["sh", "-c", "echo 'Available seed files:' && ls -la /seed/*.sql"]

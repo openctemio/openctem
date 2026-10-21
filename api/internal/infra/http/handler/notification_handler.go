@@ -50,6 +50,12 @@ type NotificationResponse struct {
 	ActorID          string `json:"actor_id,omitempty"`
 	IsRead           bool   `json:"is_read"`
 	CreatedAt        string `json:"created_at"`
+	// Reason is why the person got it (assigned, watching, approval); empty
+	// when the notice is not about a role they hold.
+	Reason string `json:"reason,omitempty"`
+	// CoalescedCount is how many events the notice stands for (1 unless
+	// events of one item were folded into it).
+	CoalescedCount int `json:"coalesced_count"`
 }
 
 // UnreadCountResponse represents the unread notification count.
@@ -63,7 +69,10 @@ type PreferencesResponse struct {
 	EmailDigest  string   `json:"email_digest"`
 	MutedTypes   []string `json:"muted_types"`
 	MinSeverity  string   `json:"min_severity"`
-	UpdatedAt    string   `json:"updated_at"`
+	// AutoWatch: the person is watching the findings and tasks they take part
+	// in (default on). An explicit stop on one item always wins.
+	AutoWatch bool   `json:"auto_watch"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // NotificationPreferencesRequest represents the request body for updating preferences.
@@ -72,6 +81,7 @@ type NotificationPreferencesRequest struct {
 	EmailDigest  *string  `json:"email_digest"`
 	MutedTypes   []string `json:"muted_types"`
 	MinSeverity  *string  `json:"min_severity"`
+	AutoWatch    *bool    `json:"auto_watch"`
 }
 
 // =============================================================================
@@ -309,6 +319,7 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 		EmailDigest:  req.EmailDigest,
 		MutedTypes:   req.MutedTypes,
 		MinSeverity:  req.MinSeverity,
+		AutoWatch:    req.AutoWatch,
 	}
 
 	prefs, err := h.service.UpdatePreferences(ctx, tenantID, userID, input)
@@ -384,6 +395,8 @@ func toNotificationResponse(n *notification.Notification) NotificationResponse {
 		URL:              n.URL(),
 		IsRead:           n.IsRead(),
 		CreatedAt:        n.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
+		Reason:           n.Reason(),
+		CoalescedCount:   n.Count(),
 	}
 
 	if n.AudienceID() != nil {
@@ -411,6 +424,7 @@ func toPreferencesResponse(p *notification.Preferences) PreferencesResponse {
 		EmailDigest:  p.EmailDigest(),
 		MutedTypes:   mutedTypes,
 		MinSeverity:  p.MinSeverity(),
+		AutoWatch:    p.AutoWatch(),
 		UpdatedAt:    p.UpdatedAt().Format("2006-01-02T15:04:05Z07:00"),
 	}
 }

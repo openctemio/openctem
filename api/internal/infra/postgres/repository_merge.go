@@ -347,6 +347,9 @@ func (r *RepositoryMergeRepository) mergeGroup(ctx context.Context, tenantID sha
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return err
+	}
 	tid := tenantID.String()
 	// Lock every asset of the group first. A CI run, finding or branch
 	// written meanwhile holds a key-share lock on the asset it references,

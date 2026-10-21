@@ -58,7 +58,9 @@ refuses any other status (`chk_remediation_campaigns_status`).
   caller's scope). A task already in another campaign answers **409 `TASKS_IN_OTHER_CAMPAIGN`** with
   `details.tasks[] {task_id, campaign_id, campaign_name (null when the caller cannot see it), can_move}` unless
   `move` is set; moving needs the caller to be able to change that campaign too. At most 200 tasks per request.
-- `DELETE /api/v1/remediation/campaigns/{id}/tasks/{task_id}`: the task leaves the campaign.
+- `DELETE /api/v1/remediation/campaigns/{id}/tasks/{task_id}`: the task leaves the campaign. The campaign must be
+  writable by the caller and so must the task (same write check as adding: `404` when they cannot see it, `403` when
+  it has a finding outside their scope).
 - `POST /api/v1/remediation/campaigns` takes optional `task_ids` and `move` with the same checks, made before the
   campaign is stored.
 - A task's own `PATCH /api/v1/remediation/tasks/{id} {campaign_id}` goes through the same campaign check

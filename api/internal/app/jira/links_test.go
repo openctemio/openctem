@@ -40,6 +40,10 @@ func (m fixedMapping) ResolveMapping(context.Context, shared.ID) (MappingConfig,
 	return MappingConfig(m), nil
 }
 
+func (m fixedMapping) ResolveMappingByID(context.Context, shared.ID, shared.ID) (MappingConfig, error) {
+	return MappingConfig(m), nil
+}
+
 // configured wires the projects the integration is set up for: SEC as the
 // default, NEW through a routing rule and MAP through a mapping profile.
 func configured(s *SyncService) {
@@ -70,18 +74,60 @@ func (m *memLinks) Get(_ context.Context, tenantID, id shared.ID) (*ticketlink.L
 	}
 	return nil, ticketlink.ErrNotFound
 }
-func (m *memLinks) ListForFinding(context.Context, shared.ID, shared.ID) ([]*ticketlink.Link, error) {
-	return m.rows, nil
+func (m *memLinks) ListForFinding(_ context.Context, tenantID, findingID shared.ID) ([]*ticketlink.Link, error) {
+	var out []*ticketlink.Link
+	for _, r := range m.rows {
+		if r.TenantID == tenantID && r.FindingID != nil && *r.FindingID == findingID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 func (m *memLinks) ListForCampaign(context.Context, shared.ID, shared.ID) ([]*ticketlink.Link, error) {
 	return nil, nil
 }
-func (m *memLinks) FindByIssue(_ context.Context, _, _ shared.ID, key string) ([]*ticketlink.Link, error) {
+func (m *memLinks) FindByIssue(_ context.Context, tenantID, integrationID shared.ID, key string) ([]*ticketlink.Link, error) {
 	var out []*ticketlink.Link
 	for _, r := range m.rows {
-		if r.State == ticketlink.StateActive && r.ExternalKey == key {
+		if r.State == ticketlink.StateActive && r.TenantID == tenantID && r.IntegrationID == integrationID && r.ExternalKey == key {
 			out = append(out, r)
 		}
+	}
+	return out, nil
+}
+func (m *memLinks) FindByIssueID(_ context.Context, tenantID, integrationID shared.ID, id string) ([]*ticketlink.Link, error) {
+	var out []*ticketlink.Link
+	for _, r := range m.rows {
+		if id != "" && r.State == ticketlink.StateActive && r.TenantID == tenantID && r.IntegrationID == integrationID && r.ExternalID == id {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (m *memLinks) RecordExternal(_ context.Context, tenantID, integrationID shared.ID, externalID, key string, ch ticketlink.ExternalChange) ([]*ticketlink.Link, error) {
+	var out []*ticketlink.Link
+	for _, r := range m.rows {
+		if r.State != ticketlink.StateActive || r.TenantID != tenantID || r.IntegrationID != integrationID {
+			continue
+		}
+		byID := externalID != "" && r.ExternalID == externalID
+		byKey := key != "" && r.ExternalKey == key && (r.ExternalID == "" || externalID == "")
+		if !byID && !byKey {
+			continue
+		}
+		if r.External.UpdatedAt != nil && r.External.UpdatedAt.After(ch.At) {
+			continue
+		}
+		if ch.AssigneeSet {
+			r.External.AssigneeID, r.External.AssigneeName = ch.AssigneeID, ch.AssigneeName
+		}
+		if ch.StatusCategory != "" {
+			r.External.StatusCategory = ch.StatusCategory
+		}
+		at := ch.At
+		r.External.UpdatedAt = &at
+		out = append(out, r)
 	}
 	return out, nil
 }
@@ -135,7 +181,7 @@ func TestLinkExistingIssue(t *testing.T) {
 	tid, fid := shared.NewID(), shared.NewID()
 	by := shared.NewID()
 
-	l, err := s.LinkExistingIssue(context.Background(), tid, fid, "sec-12", &by)
+	l, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, "sec-12", &by)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,11 +192,11 @@ func TestLinkExistingIssue(t *testing.T) {
 		t.Fatalf("display list: %v", repo.updatedURIs)
 	}
 	// The same issue again: conflict.
-	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "https://acme.atlassian.net/browse/SEC-12", &by); !errors.Is(err, shared.ErrConflict) {
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, "https://acme.atlassian.net/browse/SEC-12", &by); !errors.Is(err, shared.ErrConflict) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	// A moved issue is linked under its current key.
-	if l, err := s.LinkExistingIssue(context.Background(), tid, fid, "OLD-3", &by); err != nil || l.ExternalKey != "NEW-9" {
+	if l, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, "OLD-3", &by); err != nil || l.ExternalKey != "NEW-9" {
 		t.Fatalf("moved: %+v %v", l, err)
 	}
 	// Refusals, before any tracker call for URLs on another site.
@@ -160,14 +206,14 @@ func TestLinkExistingIssue(t *testing.T) {
 		"https://acme.atlassian.net.evil.test/browse/SEC-1",
 		"not a key",
 	} {
-		if _, err := s.LinkExistingIssue(context.Background(), tid, fid, bad, &by); !errors.Is(err, shared.ErrValidation) {
+		if _, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, bad, &by); !errors.Is(err, shared.ErrValidation) {
 			t.Errorf("%q: %v", bad, err)
 		}
 	}
 	if len(c.queried) != before {
 		t.Fatal("the tracker was asked about an issue of another site")
 	}
-	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "SEC-999", &by); !errors.Is(err, ErrIssueNotVisible) {
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, "SEC-999", &by); !errors.Is(err, ErrIssueNotVisible) {
 		t.Fatalf("invisible issue: %v", err)
 	}
 }
@@ -225,11 +271,11 @@ func TestLinkExistingIssue_OnlyConfiguredProjects(t *testing.T) {
 	tid, fid := shared.NewID(), shared.NewID()
 
 	// A project the organization never configured: refused, nothing recorded.
-	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "HR-7", nil); !errors.Is(err, ErrProjectNotConfigured) || !errors.Is(err, shared.ErrValidation) {
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, "HR-7", nil); !errors.Is(err, ErrProjectNotConfigured) || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("HR-7: %v", err)
 	}
 	// An issue moved out of a configured project is judged by where it is now.
-	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "SEC-3", nil); !errors.Is(err, ErrProjectNotConfigured) {
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, "SEC-3", nil); !errors.Is(err, ErrProjectNotConfigured) {
 		t.Fatalf("moved to HR: %v", err)
 	}
 	if len(links.rows) != 0 {
@@ -237,7 +283,7 @@ func TestLinkExistingIssue_OnlyConfiguredProjects(t *testing.T) {
 	}
 	// Mapping-profile and routing projects are allowed.
 	for _, k := range []string{"MAP-1", "NEW-2"} {
-		if _, err := s.LinkExistingIssue(context.Background(), tid, fid, k, nil); err != nil {
+		if _, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, k, nil); err != nil {
 			t.Fatalf("%s: %v", k, err)
 		}
 	}
@@ -253,7 +299,7 @@ func TestLinkExistingIssue_ListAndLinkStayTogether(t *testing.T) {
 	s := newSync(repo, c)
 	s.SetLinkStore(links)
 	configured(s)
-	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "SEC-1", nil); err == nil || len(links.rows) != 0 {
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, "SEC-1", nil); err == nil || len(links.rows) != 0 {
 		t.Fatalf("err %v, links %d", err, len(links.rows))
 	}
 
@@ -262,7 +308,7 @@ func TestLinkExistingIssue_ListAndLinkStayTogether(t *testing.T) {
 	s = newSync(repo, c)
 	s.SetLinkStore(&memLinks{createErr: errors.New("db down")})
 	configured(s)
-	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "SEC-1", nil); err == nil {
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, shared.ID{}, "SEC-1", nil); err == nil {
 		t.Fatal("expected the link error")
 	}
 	if len(repo.updatedURIs) != 1 || repo.updatedURIs[0] != "https://other.example/x" {

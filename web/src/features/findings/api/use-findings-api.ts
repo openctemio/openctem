@@ -436,6 +436,8 @@ export interface CreateFindingTicketInput {
   provider?: string
   project_key?: string
   issue_type?: string
+  /** Create even though the finding is below the integration's create policy (audited). */
+  confirm_below_threshold?: boolean
 }
 
 /** Response from creating a ticket from a finding. */

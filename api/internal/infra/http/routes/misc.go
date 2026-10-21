@@ -306,13 +306,6 @@ func registerIntegrationRoutes(
 		r.POST("/test-credentials", h.TestCredentials, middleware.Require(permission.IntegrationsManage),
 			newTestCredentialsLimiter().TenantMiddleware())
 
-		// Per-tenant GitHub inbound-webhook secret (static paths; must be
-		// before /{id} routes). Gated by IntegrationsManage because the
-		// response contains a secret, and by step-up: whoever holds the secret
-		// can forge inbound webhook events for the organization.
-		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
-		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
-
 		// List Jira projects for the destination-project picker (static path;
 		// must be before /{id} routes). nil handler = no DB → skip.
 		if jiraHandler != nil {
@@ -388,6 +381,13 @@ func registerIntegrationRoutes(
 		r.POST("/{id}/jira-webhook/secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 		r.PUT("/{id}/jira-webhook/secret", h.SetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
+		// Inbound GitHub webhook of one integration: its URL and whether a
+		// secret is set, and the secret's rotation (shown once). Rotation is
+		// IntegrationsManage plus step-up (and integrations:scm:write in the
+		// handler): whoever holds the secret can sign inbound events.
+		r.GET("/{id}/github-webhook", h.GetGitHubWebhook, middleware.Require(permission.IntegrationsManage))
+		r.POST("/{id}/github-webhook/secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+
 		// Notification actions
 		r.PUT("/{id}/notification", h.UpdateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp())
 		r.POST("/{id}/test-notification", h.TestNotification, middleware.Require(permission.IntegrationsManage))
@@ -406,6 +406,16 @@ func registerIntegrationRoutes(
 		if ticketMapping != nil {
 			r.GET("/{id}/jira/issue-types", ticketMapping.IssueTypes, middleware.Require(permission.IntegrationsRead))
 			r.GET("/{id}/jira/metadata", ticketMapping.Metadata, middleware.Require(permission.IntegrationsRead))
+		}
+		// Ticket create policy of a Jira integration: which findings the
+		// automatic path files as issues. Every route is integrations:manage
+		// (the counts are organization-wide); the integration is resolved
+		// within the caller's tenant.
+		if ticketMapping.HasCreatePolicy() {
+			manage := middleware.Require(permission.IntegrationsManage)
+			r.GET("/{id}/ticket-create-policy", ticketMapping.GetCreatePolicy, manage)
+			r.PUT("/{id}/ticket-create-policy", ticketMapping.PutCreatePolicy, manage)
+			r.POST("/{id}/ticket-create-policy/preview", ticketMapping.PreviewCreatePolicy, manage)
 		}
 	}, tenantMiddlewares...)
 }
@@ -588,22 +598,27 @@ func registerIncomingWebhookRoutes(router Router, jiraHandler *handler.JiraWebho
 	router.POST("/hooks/jira-integrations/{integration_id}", jiraHandler.IncomingJiraWebhook, perIP, perIntegration)
 }
 
-// GitHub webhook budget per client IP. Generous: deliveries for every
-// organization arrive from GitHub's shared address pool. It bounds the
-// per-request secret lookup an unauthenticated caller can trigger.
+// Inbound GitHub webhook budgets: per client IP in front of the secret
+// lookup (deliveries for every organization arrive from GitHub's shared
+// address pool, so it is generous), and per integration URL.
 const (
-	githubWebhookPerIPPerSecond = 50
-	githubWebhookPerIPBurst     = 500
+	githubWebhookPerIPPerSecond          = 50
+	githubWebhookPerIPBurst              = 500
+	githubWebhookPerIntegrationPerSecond = 20
+	githubWebhookPerIntegrationBurst     = 200
 )
 
-// registerGitHubWebhookRoute registers the public GitHub webhook. The handler
-// verifies GitHub's X-Hub-Signature-256 against the organization's own
-// secrets and refuses replays of a delivery id; the route adds a per-IP
-// budget in front of the secret lookup.
+// registerGitHubWebhookRoute registers the public inbound GitHub webhook.
+// The URL names one GitHub integration (and so one tenant); the handler
+// verifies GitHub's X-Hub-Signature-256 with that integration's own secret,
+// refuses replays and events for repositories outside the integration.
+// There is no tenant chosen by the sender.
 func registerGitHubWebhookRoute(router Router, h *handler.GitHubWebhookHandler, log *logger.Logger) {
 	perIP := middleware.NewTelemetryRateLimiter(githubWebhookPerIPPerSecond, githubWebhookPerIPBurst, time.Hour, log).
 		MiddlewareKeyed(middleware.ClientIPKey, "Too many webhook deliveries")
-	router.POST("/api/v1/webhooks/incoming/github", h.IncomingGitHubWebhook, perIP)
+	perIntegration := middleware.NewTelemetryRateLimiter(githubWebhookPerIntegrationPerSecond, githubWebhookPerIntegrationBurst, time.Hour, log).
+		MiddlewareKeyed(func(r *http.Request) string { return "github:" + r.URL.Path }, "Too many webhook deliveries")
+	router.POST("/hooks/github-integrations/{integration_id}", h.IncomingGitHubWebhook, perIP, perIntegration)
 }
 
 // includeDiscoveredAssets puts include_discovered=true into the request

@@ -31,7 +31,7 @@ beforeEach(() => {
 
 async function saveWithCode() {
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-  await userEvent.type(screen.getByLabelText('Code from your authenticator'), '123456')
+  await userEvent.type(screen.getByLabelText('Code from your authenticator app'), '123456')
   await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
 }
 

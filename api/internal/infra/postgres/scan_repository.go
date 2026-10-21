@@ -98,10 +98,10 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
 			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule, schedule_run_at, target_options, intensity, skipped_targets,
-			rule_sources
+			rule_sources, managed_by, managed_key
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''), $39, $40, $41, $42,
-			NULLIF($43, ''))
+			NULLIF($43, ''), NULLIF($44, ''), NULLIF($45, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -148,6 +148,8 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		string(s.EffectiveIntensity()),
 		skipped,
 		string(s.RuleSources),
+		string(s.ManagedBy),
+		s.ManagedKey,
 	)
 
 	if err != nil {
@@ -171,6 +173,13 @@ func (r *ScanRepository) GetByTenantAndID(ctx context.Context, tenantID, id shar
 func (r *ScanRepository) GetByName(ctx context.Context, tenantID shared.ID, name string) (*scan.Scan, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND name = $2"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), name)
+	return r.scanFromRow(row)
+}
+
+// GetManaged retrieves the tenant's managed scan identified by (by, key).
+func (r *ScanRepository) GetManaged(ctx context.Context, tenantID shared.ID, by scan.ManagedBy, key string) (*scan.Scan, error) {
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND managed_by = $2 AND managed_key = $3"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), string(by), key)
 	return r.scanFromRow(row)
 }
 
@@ -685,7 +694,7 @@ func (r *ScanRepository) selectQuery() string {
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
 		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options, intensity, skipped_targets,
-		       COALESCE(rule_sources, '')
+		       COALESCE(rule_sources, ''), COALESCE(managed_by, ''), COALESCE(managed_key, '')
 		FROM scans
 	`
 }
@@ -726,6 +735,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		scanZoneID          sql.NullString
 		targetOptions       []byte
 		skippedTargets      []byte
+		managedBy           string
 	)
 
 	err := reader.Scan(
@@ -774,10 +784,13 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.Intensity,
 		&skippedTargets,
 		&s.RuleSources,
+		&managedBy,
+		&s.ManagedKey,
 	)
 	if err != nil {
 		return nil, err
 	}
+	s.ManagedBy = scan.ManagedBy(managedBy)
 	if scanZoneID.Valid {
 		if zid, err := shared.IDFromString(scanZoneID.String); err == nil {
 			s.ScanZoneID = &zid
@@ -914,7 +927,13 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 		argIndex++
 	}
 
-	if filter.ExcludeAdHoc {
+	switch filter.Origin {
+	case scan.OriginSystem:
+		conditions = append(conditions, "managed_by IS NOT NULL")
+	case scan.OriginUser:
+		conditions = append(conditions, "managed_by IS NULL")
+	}
+	if filter.ExcludeAdHoc && filter.Origin != scan.OriginSystem {
 		conditions = append(conditions, "ad_hoc = false")
 	}
 	// Archived one-off scans are never listed.

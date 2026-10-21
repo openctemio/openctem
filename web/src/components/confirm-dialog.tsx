@@ -36,9 +36,16 @@ type ConfirmDialogProps = {
   children?: React.ReactNode
   /**
    * For actions that cannot be undone: the confirm button stays disabled until
-   * the user types this exact text (e.g. the organization's name).
+   * the user types this exact text (e.g. the organization's name). Matching is
+   * case-sensitive; surrounding spaces and Unicode composition (an input method
+   * may type "ế" as e + two combining marks) are ignored. Pasting is allowed.
    */
   typeToConfirm?: string
+}
+
+/** True when what the user typed confirms `expected` (see typeToConfirm). */
+export function typedTextMatches(typed: string, expected: string): boolean {
+  return typed.trim().normalize('NFC') === expected.trim().normalize('NFC')
 }
 
 /** Bulk deletes of this many items or more ask the user to type the count. */
@@ -47,6 +54,46 @@ export const BULK_TYPE_TO_CONFIRM_MIN = 10
 /** The typeToConfirm value for a bulk action: the count once it is large. */
 export function bulkTypeToConfirm(count: number): string | undefined {
   return count >= BULK_TYPE_TO_CONFIRM_MIN ? String(count) : undefined
+}
+
+/**
+ * The typeToConfirm value for an action that cannot be undone on a selection:
+ * the item's name when one is selected, otherwise the count. Each item alone
+ * would ask for its name, so a selection always asks for something.
+ */
+export function irreversibleTypeToConfirm(names: readonly string[]): string {
+  return names.length === 1 && names[0] ? names[0] : String(names.length)
+}
+
+/** How many names ConfirmSample lists before "and N more". */
+export const CONFIRM_SAMPLE_SIZE = 5
+
+/**
+ * The first few names of the items an action touches, so the user sees what a
+ * count stands for before confirming it.
+ */
+export function ConfirmSample({ names, total }: { names: readonly string[]; total?: number }) {
+  const { t } = useTranslation()
+  const all = total ?? names.length
+  const shown = names.slice(0, CONFIRM_SAMPLE_SIZE)
+  if (shown.length === 0) return null
+  const more = all - shown.length
+  return (
+    <div className="rounded-md border bg-muted/40 p-3 text-sm">
+      <ul className="space-y-1">
+        {shown.map((name, i) => (
+          <li key={`${i}-${name}`} className="truncate font-medium" title={name}>
+            {name}
+          </li>
+        ))}
+      </ul>
+      {more > 0 && (
+        <p className="mt-2 text-muted-foreground">
+          {t('confirm.sampleMore', 'and {count} more', { count: more })}
+        </p>
+      )}
+    </div>
+  )
 }
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
@@ -68,7 +115,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const inputId = useId()
   const [typed, setTyped] = useState('')
   const [running, setRunning] = useState(false)
-  const typedOk = !typeToConfirm || typed === typeToConfirm
+  const typedOk = !typeToConfirm || typedTextMatches(typed, typeToConfirm)
   const busy = !!isLoading || running
   const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
     '{text}'

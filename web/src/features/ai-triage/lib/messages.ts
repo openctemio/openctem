@@ -45,6 +45,8 @@ const REQUEST_ERRORS: Record<string, string> = {
     'AI triage is turned off for this organization. An organization administrator turns it on in Settings > AI.',
   AI_PLATFORM_NOT_CONFIGURED:
     'AI is not set up on this installation. A platform administrator sets up the AI provider in the console.',
+  AI_OWN_PROVIDER_NOT_ALLOWED:
+    'The platform does not allow organizations to use their own AI provider. An organization administrator switches the AI source to the platform in Settings > AI.',
   AI_POLICY_RESTRICTED: FAILURES.ai_policy_restricted,
   CONFLICT: 'An analysis is already running for this finding.',
   RATE_LIMIT_EXCEEDED: 'Too many AI triage requests. Wait a minute and try again.',
@@ -81,6 +83,16 @@ export function aiUnavailableMessage(
       return t(
         'findings.aiTriage.unavailable.platformNotConfigured',
         'AI is not set up on this installation. A platform administrator sets up the AI provider in the console (System > AI provider).'
+      )
+    case 'own_provider_not_allowed':
+      return t(
+        'findings.aiTriage.unavailable.ownProviderNotAllowed',
+        'The platform no longer allows organizations to use their own AI provider. An organization administrator switches the AI source in Settings > AI.'
+      )
+    case 'own_provider_not_configured':
+      return t(
+        'findings.aiTriage.unavailable.ownProviderNotConfigured',
+        'The own AI provider is not set up yet. An organization administrator finishes it in Settings > AI.'
       )
     case 'budget_exhausted':
       return t(

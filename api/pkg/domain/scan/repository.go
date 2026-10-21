@@ -24,9 +24,25 @@ type Filter struct {
 	// ExcludeAdHoc leaves out quick scans that were never saved (Scan.AdHoc):
 	// the Configurations list shows saved configurations only.
 	ExcludeAdHoc bool
+	// Origin narrows the list to people's scans (OriginUser) or to scans the
+	// platform manages (OriginSystem). Managed scans are ad hoc, so
+	// OriginSystem lists them regardless of ExcludeAdHoc.
+	Origin Origin
 	// Sort orders the list; the zero value is by name.
 	Sort ListSort
 }
+
+// Origin is who owns a scan: a person or a platform policy.
+type Origin string
+
+// Scan origins; the zero value applies no origin filter.
+const (
+	OriginUser   Origin = "user"
+	OriginSystem Origin = "system"
+)
+
+// Valid reports whether o is a known origin or empty.
+func (o Origin) Valid() bool { return o == "" || o == OriginUser || o == OriginSystem }
 
 // Stats represents aggregated statistics for scans.
 type Stats struct {
@@ -65,6 +81,10 @@ type Repository interface {
 
 	// GetByName retrieves a scan by tenant and name.
 	GetByName(ctx context.Context, tenantID shared.ID, name string) (*Scan, error)
+
+	// GetManaged retrieves the tenant's managed scan identified by (by, key);
+	// shared.ErrNotFound when there is none.
+	GetManaged(ctx context.Context, tenantID shared.ID, by ManagedBy, key string) (*Scan, error)
 
 	// List lists scans with filters and pagination.
 	List(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*Scan], error)

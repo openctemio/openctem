@@ -3,6 +3,10 @@ import { AlertTriangle, Bug, CheckCircle, Info, Scan, User, XCircle } from 'luci
 /**
  * All known notification types.
  * Single source of truth shared by the inbox page and settings page.
+ *
+ * `finding_mention` is not listed: nothing sends it until comment mentions
+ * ship, and a preference that changes nothing misleads. Add it back with the
+ * feature.
  */
 export const NOTIFICATION_TYPES = [
   {
@@ -24,11 +28,6 @@ export const NOTIFICATION_TYPES = [
     id: 'finding_comment',
     name: 'Finding Comments',
     description: 'When someone comments on a finding',
-  },
-  {
-    id: 'finding_mention',
-    name: 'Mentions',
-    description: 'When someone mentions you in a comment',
   },
   {
     id: 'scan_started',

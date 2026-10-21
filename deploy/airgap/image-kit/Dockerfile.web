@@ -1,0 +1,30 @@
+# OpenCTEM web console image, assembled from the released openctem-web archive
+# (Next.js standalone). Same port, user id and command as
+# ghcr.io/openctemio/openctem-web.
+#
+# Base: distroless Node.js on Debian (glibc), because the archive's native
+# modules (sharp) are built for glibc. Its Node.js major must match the
+# archive's NODE_VERSION file. Point BASE_IMAGE at your registry's copy,
+# pinned by digest.
+ARG BASE_IMAGE=gcr.io/distroless/nodejs26-debian13:nonroot@sha256:bf14c9d80c1cc1430416fc164f7eb4b7b7a754259010530feac065dccd98035c
+FROM ${BASE_IMAGE}
+ARG TARGETARCH
+WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+COPY rootfs/web/etc/passwd rootfs/web/etc/group /etc/
+COPY dist/${TARGETARCH}/web/app/ /app/
+# The Next.js cache is the only writable path.
+COPY --chown=1001:1001 rootfs/empty/ /app/.next/cache/
+LABEL org.opencontainers.image.title="OpenCTEM web console (rebuilt from release @VERSION@)" \
+      org.opencontainers.image.version="@VERSION@" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+USER 1001:1001
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+ENTRYPOINT ["/nodejs/bin/node"]
+CMD ["server-with-ws.mjs"]

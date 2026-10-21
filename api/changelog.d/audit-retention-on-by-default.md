@@ -1,0 +1,5 @@
+### Behaviour change: audit retention is on by default and archives through the storage provider
+
+- Organization audit entries older than `AUDIT_RETENTION_DAYS` (365, the minimum) are now archived and pruned from the oldest end of each hash chain without any setting. Before, nothing was pruned unless `AUDIT_ARCHIVE_DIR` was set, so `audit_logs` and the chain tables grew without bound.
+- The archives (gzip JSONL, SHA-256 recorded in the chain anchor) are written through the server storage provider (`STORAGE_PROVIDER`: local filesystem or an S3-compatible bucket), namespace `audit-archive`, not a separate directory. **Upgrade note:** `AUDIT_ARCHIVE_DIR` is removed. Back up the storage provider like the database: the archive is the only copy of pruned entries. Nothing is deleted when the archive cannot be written.
+- `AUDIT_RETENTION_ENABLED=false` holds all audit history. The chain of a suspended organization (how a legal hold is applied) or one pending deletion is skipped until it is active again.

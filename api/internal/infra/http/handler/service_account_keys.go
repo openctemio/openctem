@@ -46,6 +46,14 @@ func (h *ServiceAccountHandler) keysAvailable(w http.ResponseWriter) bool {
 // @Security BearerAuth
 // @Router /service-accounts/{id}/api-keys [get]
 func (h *ServiceAccountHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
+	// Key lists are for owners and administrators only (owner decision
+	// 2026-10-02): they show every key prefix, scope and creator of an
+	// integration identity. The route enforces it too; this keeps the handler
+	// safe when mounted elsewhere.
+	if !middleware.IsAdmin(r.Context()) {
+		apierror.Forbidden("Admin access required").WriteJSON(w)
+		return
+	}
 	if !h.keysAvailable(w) {
 		return
 	}
@@ -69,7 +77,7 @@ func (h *ServiceAccountHandler) ListKeys(w http.ResponseWriter, r *http.Request)
 	}
 	data := make([]APIKeyResponse, len(result.Data))
 	for i, k := range result.Data {
-		data[i] = toAPIKeyResponse(k)
+		data[i] = toAPIKeyResponse(r.Context(), k)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ListResponse[APIKeyResponse]{
@@ -131,7 +139,7 @@ func (h *ServiceAccountHandler) CreateKey(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(CreateAPIKeyResponse{APIKeyResponse: toAPIKeyResponse(result.Key), Key: result.Plaintext})
+	_ = json.NewEncoder(w).Encode(CreateAPIKeyResponse{APIKeyResponse: toAPIKeyResponse(r.Context(), result.Key), Key: result.Plaintext})
 }
 
 // DeleteKey handles DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}

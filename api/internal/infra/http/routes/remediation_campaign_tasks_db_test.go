@@ -368,3 +368,34 @@ func TestRemediationCampaignTasks_OtherTenantIsNotFound_DB(t *testing.T) {
 		t.Errorf("unknown task: %d", code)
 	}
 }
+
+// Taking a task out of a campaign is a change of the task: a campaign editor
+// cannot detach a task that has a finding outside their data scope (the
+// campaign deadline cap would silently disappear), while the organization
+// can. A restricted editor is also stopped by the campaign-level check; the
+// task-side check (unit-tested in the exposure package) covers callers the
+// campaign check does not restrict, such as a full-data caller who cannot see
+// a private program's assets or a pentest finding.
+func TestRemediationCampaignTasks_RemoveNeedsTaskAccess_DB(t *testing.T) {
+	h := newCampaignTasksHarness(t)
+	member, owner := h.memberA, h.owner
+	partial := h.task("ct-partial", h.finding(h.assetA))
+	h.exec(`INSERT INTO remediation_task_members (tenant_id, task_id, finding_id, role, join_source)
+		VALUES ($1, $2, $3, 'primary', 'manual')`, h.tenant.String(), partial.String(), h.finding(h.assetB).String())
+	h.exec(`UPDATE remediation_tasks SET member_count = 2, open_count = 2 WHERE id = $1`, partial.String())
+	camp := h.campaign("ct-remove-partial", &member, nil, partial)
+	path := "/api/v1/remediation/campaigns/" + camp.String() + "/tasks/" + partial.String()
+
+	if code, body := h.call(member, false, http.MethodDelete, path, nil); code != http.StatusForbidden {
+		t.Fatalf("restricted editor removes a task with a hidden finding: %d %v, want 403", code, body)
+	}
+	if h.campaignOf(partial) != camp.String() {
+		t.Fatal("a refused removal still detached the task")
+	}
+	if code, body := h.call(owner, true, http.MethodDelete, path, nil); code != http.StatusOK {
+		t.Fatalf("organization removes the task: %d %v", code, body)
+	}
+	if h.campaignOf(partial) != "" {
+		t.Fatal("the task is still in the campaign")
+	}
+}

@@ -65,5 +65,6 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.GET("/", on(ai, ps.GetPlatformAI))
 		r.PUT("/", on(ai, ps.UpdatePlatformAI), requireSuper, freshStepUp("settings.ai"))
 		r.POST("/test", on(ai, ps.TestPlatformAI), requireSuper)
+		r.PUT("/org-policy", on(ai, ps.UpdateOrgAIPolicy), requireSuper, freshStepUp("settings.ai_org_policy"))
 	}, adminMiddlewares...)
 }

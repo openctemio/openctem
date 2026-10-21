@@ -144,9 +144,7 @@ func TestFindingActions_StatusSideEffects_DB(t *testing.T) {
 
 	t.Run("verify", func(t *testing.T) {
 		h.exec(`UPDATE findings SET status = 'fix_applied' WHERE id = $1`, fa.String())
-		h.exec(`INSERT INTO finding_verification_checklists (id, tenant_id, finding_id, exposure_cleared, evidence_attached,
-			register_updated, monitoring_added, regression_scheduled, completed_by, completed_at)
-			VALUES (gen_random_uuid(), $1, $2, true, true, true, true, true, $3, NOW())`, h.tenant.String(), fa.String(), h.memberA.String())
+		h.completeChecklistViaAPI(h.memberA, fa)
 		before := h.statusActivities(fa, h.memberA)
 		rec.reset()
 		h.clearTicketPushes()
@@ -207,7 +205,7 @@ func TestBulkStatus_SideEffectsOnlyForMovedRows_DB(t *testing.T) {
 	rec.wire(svc)
 
 	res, err := svc.BulkUpdateFindingsStatus(context.Background(), h.tenant.String(), finding.BulkUpdateStatusInput{
-		FindingIDs: []string{a.String(), b.String()}, Status: "in_progress", ActorID: h.memberA.String(),
+		FindingIDs: []string{a.String(), b.String()}, Status: "in_progress", ActorID: h.memberA.String(), HasStatusPermission: true,
 	})
 	if err != nil {
 		t.Fatalf("bulk: %v", err)
@@ -232,6 +230,9 @@ func TestBulkStatus_SideEffectsOnlyForMovedRows_DB(t *testing.T) {
 func TestBulkAssign_RecordsAndNotifies_DB(t *testing.T) {
 	h, _ := newEffectsHarness(t)
 	ids := []string{h.findingA.String(), h.findingB.String()}
+	// The assignee must be able to read both findings.
+	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')
+		ON CONFLICT DO NOTHING`, h.memberA.String(), h.tenant.String(), h.assetB.String())
 	if _, err := h.vuln.BulkAssignFindings(context.Background(), h.tenant.String(), finding.BulkAssignInput{
 		FindingIDs: ids, UserID: h.memberA.String(), AssignerID: h.owner.String(),
 	}); err != nil {

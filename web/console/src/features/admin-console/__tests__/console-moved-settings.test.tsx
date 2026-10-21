@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import {
   saveAlertWebhook,
   saveCaptcha,
+  saveOrgAIPolicy,
   savePlatformAI,
   setRegion,
   useRegionSettings,
@@ -22,6 +23,7 @@ vi.mock('../api/use-platform-settings', async (orig) => ({
   saveAlertWebhook: vi.fn(),
   sendTestAlert: vi.fn(),
   savePlatformAI: vi.fn(),
+  saveOrgAIPolicy: vi.fn(),
   testPlatformAI: vi.fn(),
   setRegion: vi.fn(),
   useRegionSettings: vi.fn(),
@@ -137,9 +139,14 @@ describe('Platform AI provider', () => {
     enabled: false,
     provider: '',
     model: '',
+    base_url: '',
+    allow_private: false,
+    allowed_models: [],
+    allow_org_provider: true,
+    org_policy_version: 0,
     key_set: false,
     locked_by_environment: false,
-    providers: ['claude', 'openai', 'gemini'],
+    providers: ['claude', 'openai', 'gemini', 'openai_compatible'],
     version: 0,
   }
   it('is off by default and cannot be turned on without a model and key', async () => {
@@ -150,6 +157,43 @@ describe('Platform AI provider', () => {
     await userEvent.type(screen.getByLabelText('Model'), 'claude-sonnet-4')
     await userEvent.type(screen.getByLabelText('API key'), 'sk-test-key-123456')
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it('an OpenAI-compatible server needs a base URL and no key; the private toggle is shown only for it', async () => {
+    const compat = { ...ai, provider: 'openai_compatible' }
+    render(<PlatformAIForm settings={compat} canEdit onSaved={() => {}} />)
+    expect(screen.getByRole('switch', { name: /Allow private addresses/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('switch', { name: /Offer platform AI/ }))
+    await userEvent.type(screen.getByLabelText('Model'), 'llama3')
+    expect(screen.getByText(/Choose a model and a base URL/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Base URL'), 'http://10.0.0.5:11434/v1')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it("saves the policy on organizations' own providers with a reason", async () => {
+    vi.mocked(saveOrgAIPolicy).mockResolvedValue({ allow_org_provider: false, version: 1 })
+    render(<PlatformAIForm settings={ai} canEdit onSaved={() => {}} />)
+    await userEvent.click(
+      screen.getByRole('switch', { name: /Allow organizations to use their own provider/ })
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+    await userEvent.type(screen.getByLabelText('Reason'), 'security review')
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() =>
+      expect(saveOrgAIPolicy).toHaveBeenCalledWith({
+        allow_org_provider: false,
+        reason: 'security review',
+        version: 0,
+      })
+    )
+  })
+
+  it('has no private toggle for a hosted provider', () => {
+    render(<PlatformAIForm settings={{ ...ai, provider: 'claude' }} canEdit onSaved={() => {}} />)
+    expect(
+      screen.queryByRole('switch', { name: /Allow private addresses/ })
+    ).not.toBeInTheDocument()
   })
 })
 

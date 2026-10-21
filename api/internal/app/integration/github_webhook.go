@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -77,43 +78,44 @@ func ParseGitHubPush(body []byte) (*GitHubPushEvent, error) {
 	}, nil
 }
 
-// --- per-tenant GitHub webhook secret (mirrors the Jira flow, provider=GitHub) ---
+// --- per-integration GitHub webhook secret (same model as the Jira one) ---
 
-func (s *IntegrationService) primaryGitHubIntegration(ctx context.Context, tenantID shared.ID) (*integrationdom.Integration, error) {
-	intgs, err := s.repo.ListByProvider(ctx, tenantID, integrationdom.ProviderGitHub)
+// ErrGitHubWebhookUnauthorized refuses an inbound delivery. One error for
+// every cause (unknown integration, another provider, disabled, no secret, a
+// bad or missing signature), so a caller cannot probe which integrations
+// exist.
+var ErrGitHubWebhookUnauthorized = fmt.Errorf("%w: invalid webhook signature", shared.ErrUnauthorized)
+
+// githubIntegrationOf returns the tenant's GitHub integration with this id,
+// or not found (another tenant's integration, or a non-GitHub one, is not
+// found).
+func (s *IntegrationService) githubIntegrationOf(ctx context.Context, tenantID, integrationID shared.ID) (*integrationdom.Integration, error) {
+	intg, err := s.repo.GetByTenantAndID(ctx, tenantID, integrationID)
 	if err != nil {
-		return nil, fmt.Errorf("list github integrations: %w", err)
+		return nil, err
 	}
-	if len(intgs) == 0 {
+	if intg.Provider() != integrationdom.ProviderGitHub {
 		return nil, ErrNoGitHubIntegration
 	}
-	return intgs[0], nil
+	return intg, nil
 }
 
-// EnsureGitHubWebhookSecret returns the tenant's GitHub webhook secret, lazily
-// generating one on the tenant's primary GitHub integration if none exists.
-func (s *IntegrationService) EnsureGitHubWebhookSecret(ctx context.Context, tenantID shared.ID) (string, error) {
-	intg, err := s.primaryGitHubIntegration(ctx, tenantID)
+// GitHubWebhookHasSecret reports whether the tenant's GitHub integration has
+// an inbound webhook secret. The secret itself is never returned after it
+// is generated: it is shown once, on rotation.
+func (s *IntegrationService) GitHubWebhookHasSecret(ctx context.Context, tenantID, integrationID shared.ID) (bool, error) {
+	intg, err := s.githubIntegrationOf(ctx, tenantID, integrationID)
 	if err != nil {
-		return "", err
+		return false, err
 	}
-	if existing := s.secretFromIntegration(intg); existing != "" {
-		return existing, nil
-	}
-	secret, err := generateWebhookSecret()
-	if err != nil {
-		return "", err
-	}
-	if err := s.storeSecretOnIntegration(ctx, intg, secret); err != nil {
-		return "", err
-	}
-	s.logger.Info("generated GitHub webhook secret", "tenant_id", tenantID.String(), "integration_id", intg.ID().String())
-	return secret, nil
+	return s.secretFromIntegration(intg) != "", nil
 }
 
-// RotateGitHubWebhookSecret generates a fresh secret and returns it.
-func (s *IntegrationService) RotateGitHubWebhookSecret(ctx context.Context, tenantID shared.ID) (string, error) {
-	intg, err := s.primaryGitHubIntegration(ctx, tenantID)
+// RotateGitHubWebhookSecret generates a new inbound webhook secret for one of
+// the tenant's GitHub integrations and returns it, the only time it is
+// shown. The previous secret stops verifying immediately.
+func (s *IntegrationService) RotateGitHubWebhookSecret(ctx context.Context, tenantID, integrationID shared.ID) (string, error) {
+	intg, err := s.githubIntegrationOf(ctx, tenantID, integrationID)
 	if err != nil {
 		return "", err
 	}
@@ -128,24 +130,57 @@ func (s *IntegrationService) RotateGitHubWebhookSecret(ctx context.Context, tena
 	return secret, nil
 }
 
-// ListGitHubWebhookSecrets returns the decrypted webhook secrets configured on
-// the tenant's (non-disabled) GitHub integrations — the candidates used to
-// verify an inbound GitHub webhook. Tenant-scoped.
-func (s *IntegrationService) ListGitHubWebhookSecrets(ctx context.Context, tenantID shared.ID) ([]string, error) {
-	intgs, err := s.repo.ListByProvider(ctx, tenantID, integrationdom.ProviderGitHub)
-	if err != nil {
-		return nil, fmt.Errorf("list github integrations: %w", err)
+// GitHubDelivery is the verified origin of an inbound GitHub delivery.
+type GitHubDelivery struct {
+	TenantID      shared.ID
+	IntegrationID shared.ID
+	// Organization is the GitHub organization (or user) the integration is
+	// bound to; "" when the integration names none.
+	Organization string
+}
+
+// RepositoryAllowed reports whether an event for the repository
+// "owner/name" may be applied through this integration: when the
+// integration is bound to an organization, the repository must belong to
+// it.
+func (d GitHubDelivery) RepositoryAllowed(fullName string) bool {
+	if d.Organization == "" {
+		return true
 	}
-	secrets := make([]string, 0, len(intgs))
-	for _, intg := range intgs {
-		if intg.Status() == integrationdom.StatusDisabled {
-			continue
-		}
-		if secret := s.secretFromIntegration(intg); secret != "" {
-			secrets = append(secrets, secret)
+	owner, _, ok := strings.Cut(fullName, "/")
+	return ok && strings.EqualFold(owner, d.Organization)
+}
+
+// VerifyGitHubDelivery authenticates an inbound GitHub webhook delivered to
+// the per-integration URL. The integration id in the URL names exactly one
+// integration and so one tenant; the delivery must carry
+// X-Hub-Signature-256: sha256=<hex HMAC-SHA256 of the raw body> under that
+// integration's own secret. Every failure is ErrGitHubWebhookUnauthorized.
+func (s *IntegrationService) VerifyGitHubDelivery(ctx context.Context, integrationID shared.ID, body []byte, signature string) (GitHubDelivery, error) {
+	// Unscoped by design: the URL is the only identity an unauthenticated
+	// sender has, and the secret of that one integration is the proof.
+	intg, err := s.repo.GetByID(ctx, integrationID)
+	if err != nil || intg == nil ||
+		intg.Provider() != integrationdom.ProviderGitHub ||
+		intg.Status() == integrationdom.StatusDisabled {
+		return GitHubDelivery{}, ErrGitHubWebhookUnauthorized
+	}
+	secret := s.secretFromIntegration(intg)
+	if secret == "" || !VerifyGitHubSignature(body, signature, secret) {
+		return GitHubDelivery{}, ErrGitHubWebhookUnauthorized
+	}
+	d := GitHubDelivery{TenantID: intg.TenantID(), IntegrationID: intg.ID()}
+	if s.scmExtRepo != nil {
+		ext, err := s.scmExtRepo.GetByIntegrationID(ctx, intg.ID())
+		switch {
+		case err == nil && ext != nil:
+			d.Organization = strings.TrimSpace(ext.SCMOrganization())
+		case err != nil && !errors.Is(err, shared.ErrNotFound):
+			// Fail closed: the repository binding cannot be checked.
+			return GitHubDelivery{}, fmt.Errorf("load the integration's organization: %w", err)
 		}
 	}
-	return secrets, nil
+	return d, nil
 }
 
 // HandleGitHubPush applies a verified GitHub push event for a tenant: it refreshes

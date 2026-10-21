@@ -244,4 +244,32 @@ func TestFactory_CreateProvider_WithModelOverride(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, defaultOpenAIModel, provider.Model())
 	})
+
+	t.Run("BYOK openai_compatible without a key", func(t *testing.T) {
+		provider, err := factory.CreateProvider(tenant.AISettings{
+			Mode:          tenant.AIModeBYOK,
+			Provider:      tenant.LLMProviderOpenAICompatible,
+			BaseURL:       "https://1.1.1.1/v1",
+			ModelOverride: "llama-3",
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, "llama-3", provider.Model())
+	})
+
+	t.Run("BYOK openai_compatible without a key keeps the public-only rule", func(t *testing.T) {
+		_, err := factory.CreateProvider(tenant.AISettings{
+			Mode:          tenant.AIModeBYOK,
+			Provider:      tenant.LLMProviderOpenAICompatible,
+			BaseURL:       "https://169.254.169.254/v1",
+			ModelOverride: "llama-3",
+		})
+
+		assert.Error(t, err)
+	})
+
+	t.Run("BYOK claude without a key is refused", func(t *testing.T) {
+		_, err := factory.CreateProvider(tenant.AISettings{Mode: tenant.AIModeBYOK, Provider: tenant.LLMProviderClaude})
+		assert.ErrorIs(t, err, ErrProviderNotConfigured)
+	})
 }

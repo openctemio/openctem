@@ -88,10 +88,17 @@ type TaskRepository interface {
 	ActivePrimaryTasks(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (map[shared.ID]shared.ID, error)
 	UpdateTask(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int, ch TaskChanges, actor *shared.ID, eventKind string, eventData map[string]any) (*Task, error)
 	Recompute(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID, actor *shared.ID) error
+	// ReconcileTasks is Recompute as the platform (no actor) and reports the
+	// state changes and regression tasks it made, so they can be audited.
+	ReconcileTasks(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID) (*RecomputeReport, error)
 	ScopedCounts(ctx context.Context, tenantID shared.ID, taskIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]TaskCounts, error)
 	ListMembers(ctx context.Context, tenantID, taskID shared.ID, f MemberFilter, page pagination.Pagination) (pagination.Result[TaskMember], error)
 	ListEvents(ctx context.Context, tenantID, taskID shared.ID, page pagination.Pagination) (pagination.Result[TaskEvent], error)
 	FindingStatuses(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]string, error)
+	// PentestFindingIDs returns the ids among ids (of the tenant) that are
+	// pentest findings. They are fixed through their pentest campaign and
+	// never become the primary member of a task.
+	PentestFindingIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
 	CampaignInTenant(ctx context.Context, tenantID, campaignID shared.ID) (bool, error)
 	// LiveTaskIDsByCampaign lists the campaign's tasks that still take work.
 	LiveTaskIDsByCampaign(ctx context.Context, tenantID, campaignID shared.ID) ([]shared.ID, error)
@@ -100,6 +107,10 @@ type TaskRepository interface {
 	SplitTask(ctx context.Context, sp SplitRequest) (shared.ID, *MoveResult, error)
 	MergeTasks(ctx context.Context, mg MergeRequest) (map[shared.ID]int, error)
 	CountActivePrimary(ctx context.Context, tenantID, taskID shared.ID, ids []shared.ID) (int, error)
-	OpenPrimaryIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error)
+	// OpenPrimaryIDs lists the active, not closed primary members.
+	// expectedVersion > 0 reads the members under a lock on the task row and
+	// answers ErrTaskVersionConflict when the task moved on: the set the
+	// caller acts on is the one at the version they saw.
+	OpenPrimaryIDs(ctx context.Context, tenantID, taskID shared.ID, expectedVersion int) ([]shared.ID, error)
 	RecordFixClaim(ctx context.Context, tenantID, taskID shared.ID, actor *shared.ID, data map[string]any) error
 }

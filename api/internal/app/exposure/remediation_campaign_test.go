@@ -188,6 +188,41 @@ func TestCampaign_RemoveTaskOnlyFromItsCampaign(t *testing.T) {
 	}
 }
 
+// Taking a task out of a campaign needs the same task-side access as putting
+// it in: a campaign editor without access to every finding of the task
+// cannot detach it (its campaign deadline cap would disappear), and a task
+// they cannot see is not found.
+func TestCampaign_RemoveTaskNeedsTaskAccess(t *testing.T) {
+	f := newCampaignFixture(t)
+	ctx := context.Background()
+	cid := f.c.ID()
+	hidden, invisible, ok := shared.NewID(), shared.NewID(), shared.NewID()
+	for _, id := range []shared.ID{hidden, invisible, ok} {
+		f.repo.refs[id] = &cid
+	}
+	f.tasks.forbidden = map[shared.ID]bool{hidden: true}
+	f.tasks.notWritable[invisible] = true
+
+	if _, err := f.svc.RemoveCampaignTask(ctx, f.tid, cid.String(), hidden.String(), "", auditapp.AuditContext{}); !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("task with hidden findings: err = %v, want forbidden", err)
+	}
+	if f.repo.refs[hidden] == nil {
+		t.Fatal("a refused removal still detached the task")
+	}
+	if _, err := f.svc.RemoveCampaignTask(ctx, f.tid, cid.String(), invisible.String(), "", auditapp.AuditContext{}); !errors.Is(err, ErrCampaignTaskNotFound) {
+		t.Fatalf("invisible task: err = %v, want not found", err)
+	}
+	if f.repo.refs[invisible] == nil {
+		t.Fatal("a refused removal still detached the task")
+	}
+	if _, err := f.svc.RemoveCampaignTask(ctx, f.tid, cid.String(), ok.String(), "", auditapp.AuditContext{}); err != nil {
+		t.Fatalf("writable task: %v", err)
+	}
+	if f.repo.refs[ok] != nil {
+		t.Fatal("task still in the campaign")
+	}
+}
+
 func TestCampaign_CompleteOnlyWhenDone(t *testing.T) {
 	f := newCampaignFixture(t)
 	ctx := context.Background()

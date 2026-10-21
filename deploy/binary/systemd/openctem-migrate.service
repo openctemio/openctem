@@ -1,0 +1,38 @@
+# One-shot database migration, from the openctem-server release archive
+# (api/docs/deployment/binary-install.md, "Upgrade"). Run it with
+#   systemctl start openctem-migrate
+# while openctem-server is stopped. It connects as the schema owner
+# (DATABASE_MIGRATE_URL without a password; the password in PGPASSWORD), so
+# the password never appears in a process list.
+[Unit]
+Description=OpenCTEM database migrations
+Documentation=https://docs.openctem.io
+After=network-online.target postgresql.service
+Wants=network-online.target
+Conflicts=openctem-server.service
+
+[Service]
+Type=oneshot
+User=openctem
+Group=openctem
+EnvironmentFile=/etc/openctem/migrate.env
+Environment=PATH=/opt/openctem/server/bin:/usr/bin:/bin
+ExecStart=/opt/openctem/server/bin/openctem-migrate -path /opt/openctem/server/migrations -database ${DATABASE_MIGRATE_URL} up
+UMask=0077
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service

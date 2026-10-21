@@ -64,9 +64,6 @@ func TestBuildExposureChains_MultiHop(t *testing.T) {
 	if !c.IsCrownJewel {
 		t.Error("target db should be flagged crown jewel")
 	}
-	if c.ReachableFromEntryPoints != 1 {
-		t.Errorf("expected reachable from 1 entry point, got %d", c.ReachableFromEntryPoints)
-	}
 	if res.Summary.EntryPoints != 1 || res.Summary.TargetsAtRisk != 1 {
 		t.Errorf("summary: entryPoints=%d targetsAtRisk=%d", res.Summary.EntryPoints, res.Summary.TargetsAtRisk)
 	}
@@ -103,9 +100,8 @@ func TestBuildExposureChains_DirectlyExposedRanksHighest(t *testing.T) {
 	}
 }
 
-// Two entry points reach the same target: only the shortest chain is kept, and
-// ReachableFromEntryPoints reflects the blast-radius width.
-func TestBuildExposureChains_ShortestPathAndBlastRadius(t *testing.T) {
+// Two entry points reach the same target: only the shortest chain is kept.
+func TestBuildExposureChains_ShortestPath(t *testing.T) {
 	nodes := []asset.AssetNode{
 		node("near", "public", "low", false),
 		node("far", "public", "low", false),
@@ -128,9 +124,6 @@ func TestBuildExposureChains_ShortestPathAndBlastRadius(t *testing.T) {
 	c := res.Chains[0]
 	if c.Length != 1 || c.EntryPointID != "near" {
 		t.Errorf("expected shortest chain near→target (len 1), got %s (len %d)", c.EntryPointID, c.Length)
-	}
-	if c.ReachableFromEntryPoints != 2 {
-		t.Errorf("expected target reachable from 2 entry points, got %d", c.ReachableFromEntryPoints)
 	}
 }
 

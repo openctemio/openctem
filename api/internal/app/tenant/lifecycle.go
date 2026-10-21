@@ -159,12 +159,16 @@ func (s *TenantService) offboardMember(ctx context.Context, membershipID string,
 		WithMessage("Member offboarded").
 		WithMetadata("user_id", userID).
 		WithMetadata("revoked_keys", result.RevokedKeys).
+		WithMetadata("revoked_service_account_keys", result.RevokedServiceAccountKeys).
 		WithMetadata("removed_groups", result.RemovedGroups).
 		WithMetadata("removed_grants", result.RemovedGrants).
 		WithMetadata("removed_campaigns", result.RemovedCampaigns).
+		WithMetadata("removed_watches", result.RemovedWatches).
 		WithMetadata("reassigned_schedules", result.ReassignedSchedules).
 		WithMetadata("reassigned_findings", result.ReassignedFindings).
-		WithMetadata("reassigned_assets", result.ReassignedAssets)
+		WithMetadata("reassigned_assets", result.ReassignedAssets).
+		WithMetadata("reassigned_tasks", result.ReassignedTasks).
+		WithMetadata("reassigned_campaigns", result.ReassignedCampaigns)
 	if plan.SchedulesTo != nil {
 		event = event.WithMetadata("schedules_to", plan.SchedulesTo.String())
 	}
@@ -466,7 +470,8 @@ func (s *TenantService) LeaveOrganization(ctx context.Context, tenantID, userID 
 		WithSeverity(audit.SeverityMedium).
 		WithMessage("Member left the organization").
 		WithMetadata("user_id", userID.String()).
-		WithMetadata("revoked_keys", result.RevokedKeys))
+		WithMetadata("revoked_keys", result.RevokedKeys).
+		WithMetadata("revoked_service_account_keys", result.RevokedServiceAccountKeys))
 	s.notifyAdmins(ctx, tenantID, "A member left the organization",
 		fmt.Sprintf("%s left the organization.", actx.ActorEmail), notificationdom.SeverityInfo)
 	return nil

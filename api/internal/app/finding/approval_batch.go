@@ -463,6 +463,11 @@ func (s *VulnerabilityService) ApproveGroupException(ctx context.Context, tenant
 		}
 		s.afterApplied(ctx, tenantID, approver.String(), moved, b.RequestedStatus)
 	}
+	if out.Status == vulnerability.ApprovalStatusApproved {
+		if members, err := store.BatchMembers(ctx, tenantID, batchID); err == nil {
+			s.notifyBatchRequesterDecided(ctx, tenantID, out, members, approver, decisionApproved)
+		}
+	}
 	return &GroupExceptionDecision{Batch: out, Applied: applied, Canceled: canceled, Shortened: shortened}, nil
 }
 
@@ -496,7 +501,16 @@ func (s *VulnerabilityService) closeGroupException(ctx context.Context, tenantID
 	if status == vulnerability.ApprovalStatusCanceled && (b.RequestedBy.IsZero() || b.RequestedBy != by) {
 		return nil, fmt.Errorf("%w: only the requester can cancel a group exception", shared.ErrForbidden)
 	}
-	return store.CloseBatch(ctx, tenantID, batchID, by, status, reason)
+	closed, err := store.CloseBatch(ctx, tenantID, batchID, by, status, reason)
+	if err != nil {
+		return nil, err
+	}
+	if status == vulnerability.ApprovalStatusRejected {
+		if members, merr := store.BatchMembers(ctx, tenantID, batchID); merr == nil {
+			s.notifyBatchRequesterDecided(ctx, tenantID, closed, members, by, decisionRejected)
+		}
+	}
+	return closed, nil
 }
 
 // GetGroupException reads a group exception and its members; the caller

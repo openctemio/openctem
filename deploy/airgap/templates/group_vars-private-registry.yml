@@ -1,0 +1,22 @@
+# Ansible (openctemio/openctem-ansible, with registry mirror support): run
+# OpenCTEM from a private registry. Put these in group_vars/all.yml (or the
+# group of your OpenCTEM hosts). Guide: api/docs/deployment/air-gapped.md.
+#
+# The role keeps the image digests of versions.yml and only swaps the
+# registry prefix; it cosign-verifies every image AT THE MIRROR with the
+# release identity before pulling, so the mirror must hold our signatures
+# (mirror-images.sh copies them). A mirror without them stops the run.
+
+# ghcr.io/openctemio/<name>@sha256:... -> <this>/<name>@sha256:...
+openctem_registry_mirror: registry.example.internal/openctem-trusted
+
+# docker.io/library/postgres -> <this>/library/postgres; also redis, rclone,
+# cloudflared and the cosign image the check runs in.
+openctem_third_party_registry_mirror: registry.example.internal/dockerhub-proxy
+
+# Registry login for the cosign check (a `docker login` done beforehand on
+# the host with a pull-only robot account), mounted read-only.
+openctem_registry_docker_config_dir: /root/.docker
+
+# CA of the registry's TLS certificate, when it is not in the system store.
+#openctem_registry_ca_file: /etc/pki/ca-trust/source/anchors/registry-ca.pem

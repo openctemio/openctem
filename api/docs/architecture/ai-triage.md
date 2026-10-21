@@ -11,7 +11,9 @@ Status: shipped. Planned work is listed at the end. Design and decisions:
 ## Who turns it on
 
 - **Platform administrator**: sets up the platform AI provider in the
-  console (System > AI provider: provider, model, write-only key), or with
+  console (System > AI provider: provider, model, write-only key; for a
+  self-hosted or gateway model, the `openai_compatible` provider with a base
+  URL and an optional key), or with
   an environment key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `GEMINI_API_KEY`), which pins the provider. A key makes platform AI
   available; nothing is sent until an organization turns AI triage on.
@@ -20,8 +22,8 @@ Status: shipped. Planned work is listed at the end. Design and decisions:
   (`GET/PUT /api/v1/organization/settings/ai`, `settings:write`, a recent
   sign-in, audited as critical `ai_settings.updated`). Turning it on is the
   organization's consent to send finding content, within its AI data policy,
-  to the provider. It is stored as `settings.ai.enabled_at` / `enabled_by`;
-  until then the effective mode is `disabled`. The worker checks consent
+  to the provider. It is stored in `tenant_ai_settings` (`enabled_at`,
+  `enabled_by`); until then the effective mode is `disabled`. The worker checks consent
   again, so turning it off stops jobs already queued (`ai_disabled`).
 - **Upgrade**: migration 003140 keeps AI triage on for organizations that
   already had a triage result (`enabled_by = upgrade`, one audit row
@@ -39,7 +41,8 @@ platform administrator sets up a provider in the console) or
 
 - **Settings > AI** (`web/src/app/(dashboard)/settings/ai`, Security group,
   module `ai_triage`): the on/off switch with a consent dialog, what is sent,
-  the pentest data policy, the provider and the month's token use. Read-only
+  the pentest data policy, the source (Platform AI, Own provider, Off) with the
+  own provider's form (write-only key, Test connection) and the month's token use. Read-only
   for anyone who may not change it; a notice when no provider is set up.
 - **AI triage button** (finding header): hidden when the module is off. When
   AI cannot run, it stays visible but disabled-looking and opens a short
@@ -58,8 +61,11 @@ platform administrator sets up a provider in the console) or
 - Monthly budget per organization for platform AI (`ai_triage_budgets`), on
   by default: 2,000,000 tokens per month (`AI_TRIAGE_BUDGET_ENABLED`,
   `AI_TRIAGE_BUDGET_DEFAULT_TOKENS`, set on the month's row when it is
-  created). A triage that would pass it fails with `budget_exhausted`. An
-  organization with its own key is not counted.
+  created). A triage that would pass it fails with `budget_exhausted`. The
+  cap counts every organization's tokens, with the platform key or its own.
+  This is deliberate: an organization on its own provider is also stopped at
+  the cap, so an administrator can use it as a spend limit on the organization's
+  own account. The cap is set by the platform administrator.
 - Provider rate limit: `AI_RATE_LIMIT_RPM` per provider key, and each
   organization's own bucket in front of the platform key's
   (`AI_RATE_LIMIT_TENANT_RPM`, default 20), so one organization cannot starve
@@ -120,6 +126,7 @@ permission" when the reason is that AI is not available:
 |---|---|---|---|
 | `AI_PLATFORM_NOT_CONFIGURED` | 503 | the organization uses platform AI and no provider is set up | platform administrator (console, System > AI provider) |
 | `AI_DISABLED` | 403 | AI triage is off for the organization (not turned on yet, or turned off) | organization administrator (Settings > AI) |
+| `AI_OWN_PROVIDER_NOT_ALLOWED` | 403 | the organization uses (or tries to use) its own provider and the platform policy forbids it | platform administrator (console) or organization administrator (switch to Platform AI) |
 | `AI_POLICY_RESTRICTED` | 403 | the AI data policy keeps this finding on the platform | campaign lead or organization administrator |
 
 A failed triage stores a fixed failure code in `error_message`; the API
@@ -160,10 +167,88 @@ verdict never changes the priority class. A result with validation warnings
 severity change) is flagged `needs_review`, audited, and side-effect
 workflows skip it.
 
+## Providers
+
+`claude`, `openai`, `gemini` and `openai_compatible`. The last one speaks
+the OpenAI chat-completions API at a base URL (`<base>/chat/completions`)
+and a model name the administrator sets, so one adapter covers Azure
+OpenAI's v1 endpoint, vLLM, Ollama, LM Studio, LiteLLM, OpenRouter and cloud
+gateways. The API key is optional for it (a server inside the network may
+not need one). The former `azure_openai` and `agent` modes are removed.
+
+Every provider call uses the SSRF-safe HTTP client (`pkg/httpsec`): the host
+is resolved once, every answer is vetted and the connection goes to the
+vetted address, so DNS rebinding cannot redirect it. Redirects are not
+followed, and a self-hosted server's error text is never relayed (only the
+status).
+
+- **Platform provider** (console, super admin, fresh step-up, reason, critical
+  audit): the toggle "allow private addresses" lets the base URL be on a
+  private network (RFC1918 and ULA ranges, plain http). Loopback, link-local
+  and cloud-metadata addresses, carrier-grade NAT and `localhost` stay
+  blocked, toggle or not. Changing the toggle is part of the audited change
+  (`previous_allow_private`, `allow_private`). With the toggle off, a private
+  address is refused when the setting is saved and again at every connection.
+- **Organization's own provider** (`openai_compatible` base URL): public
+  addresses and https only, never the toggle, so an organization cannot reach
+  the platform's network. The URL is vetted when the provider is built and at
+  every connection.
+- **Model allow-list** (console): when set, the platform model must be one
+  of the listed models.
+
+## Own provider (bring your own)
+
+Settings > AI has a **Source**: Platform AI, Own provider or Off. Off and
+Platform need no more; Own provider takes a kind (`claude`, `openai`,
+`gemini`, `openai_compatible`), a base URL and model (`openai_compatible`
+only needs the URL; the model is required there), and an API key. The
+whole thing is one table, `tenant_ai_settings` (one row per organization:
+consent, source, provider, base URL, model, encrypted key, key last four
+characters, who and when, the auto-triage policy as JSON). It replaces the
+old `tenants.settings.ai` JSON (the `tenant_ai_settings` migration moved the data and removed
+it).
+
+`GET/PUT /api/v1/organization/settings/ai` and `POST .../test`:
+
+- GET returns the settings and the key as `{set, last4, updated_at,
+  updated_by}`; the key is never returned. Needs owner or administrator and
+  `settings:read`.
+- PUT is a partial change (consent, source, provider, base URL, model, key:
+  omit to keep, `""` to remove). Needs owner or administrator,
+  `settings:write` and a recent sign-in; audited as critical
+  `ai_settings.updated` with before and after of everything except the key.
+- POST `/test` calls the provider from the server with one tiny prompt ("Reply
+  with OK."; no finding data), with the form's values over the stored ones, and
+  answers `{ok, code}` with a fixed code (`ok`, `invalid_url`,
+  `blocked_address`, `key_required`, `not_configured`, `auth_failed`,
+  `rate_limited`, `timeout`, `unreachable`, `provider_error`), never the
+  provider's text. Three tests in a burst, then one every five seconds per
+  organization; audited as `ai_settings.tested` (low).
+
+Rules that keep it safe:
+
+- The key is encrypted with `APP_ENCRYPTION_KEY` (`tenant_ai_settings.key_enc`,
+  in the rekey registry), write-only, and never in the audit log.
+- A stored key is sent only to the endpoint it was entered for: changing the
+  provider or the base URL drops it, and a test with another provider or URL
+  needs the key entered again.
+- The base URL is public https only (see Providers); the platform's private-address
+  toggle never applies to an organization.
+- The platform policy "allow organizations to use their own provider"
+  (console, System > AI provider; super admin, fresh confirmation, reason,
+  critical audit; on by default, stored as `ai.org_policy`) can forbid it.
+  Selecting or testing an own provider then answers `403
+  AI_OWN_PROVIDER_NOT_ALLOWED`; a job of an organization already on its own
+  provider fails with `provider_not_configured` and never falls back to the
+  platform key.
+- Consent, the AI data-egress policy (TLP, campaign opt-out), the monthly cap
+  and the per-organization rate bucket apply the same way whichever source
+  pays; each result records the provider and the model.
+
 ## Keys
 
 The console's platform provider key (`platform_settings` key `ai.platform`,
-`key_encrypted`) and an organization's own key (`tenants.settings.ai.api_key`)
+`key_encrypted`) and an organization's own key (`tenant_ai_settings.key_enc`)
 are in the rekey registry, so rotating `APP_ENCRYPTION_KEY` with `rekey`
 carries them over.
 
@@ -178,14 +263,14 @@ carries them over.
   of a verdict; the AI data-egress policy at request time and in the worker;
   monthly budgets and per-organization fair share;
   data scope and pentest membership on the routes; tenant-scoped queries
-  everywhere; fixed provider URLs through the SSRF-safe client; encrypted,
+  everywhere; every provider call through the SSRF-safe client, an
+  organization's base URL public-only; encrypted,
   write-only keys in the rekey registry; failure codes instead of raw
   errors.
 
 ## Planned
 
-Own-key (BYOK) and self-hosted (OpenAI-compatible base URL) providers in
-Settings > AI, context enrichment and redaction with a "what was sent"
+Context enrichment and redaction with a "what was sent"
 record, a structured result schema, the result card with apply actions and
 history, "Triage selected" bulk on a fair-share queue with a result cache,
 an atomic de-duplication index, and an evaluation set (RFC-119).

@@ -35,8 +35,12 @@ var ErrExceptionUnavailable = fmt.Errorf("%w: exceptions on tasks are not availa
 
 // TaskExceptionInput asks for an exception on a task's open findings.
 type TaskExceptionInput struct {
-	TenantID        shared.ID
-	TaskID          shared.ID
+	TenantID shared.ID
+	TaskID   shared.ID
+	// Version is the task version the caller read: required to request the
+	// exception (the open findings it covers are the ones at that version),
+	// optional on a preview.
+	Version         int
 	RequestedStatus string
 	ClosureReason   string
 	Justification   string
@@ -57,7 +61,10 @@ func (s *TaskService) exceptionInput(ctx context.Context, in TaskExceptionInput)
 	if t.State.IsTerminal() {
 		return finding.GroupExceptionInput{}, nil, remediationdom.ErrTaskTerminal
 	}
-	ids, err := s.repo.OpenPrimaryIDs(ctx, in.TenantID, in.TaskID)
+	if in.Version > 0 && t.Version != in.Version {
+		return finding.GroupExceptionInput{}, nil, remediationdom.ErrTaskVersionConflict
+	}
+	ids, err := s.repo.OpenPrimaryIDs(ctx, in.TenantID, in.TaskID, in.Version)
 	if err != nil {
 		return finding.GroupExceptionInput{}, nil, err
 	}
@@ -80,6 +87,9 @@ func (s *TaskService) PreviewException(ctx context.Context, in TaskExceptionInpu
 // RequestException creates the exception request on the task's open
 // findings (one decision; each finding then carries its own end).
 func (s *TaskService) RequestException(ctx context.Context, in TaskExceptionInput, actx auditapp.AuditContext) (*finding.GroupExceptionResult, error) {
+	if in.Version <= 0 {
+		return nil, ErrTaskVersionRequired
+	}
 	gi, t, err := s.exceptionInput(ctx, in)
 	if err != nil {
 		return nil, err

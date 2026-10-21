@@ -10,27 +10,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
+	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
-// isSecretFinding reports whether a finding is a leaked-secret/credential
-// finding, whose raw description must never be copied verbatim into an external
-// ticket (it can contain the secret itself).
-func isSecretFinding(f *vulnerability.Finding) bool {
-	return f.Source() == vulnerability.FindingSourceSecret ||
-		f.FindingType() == vulnerability.FindingTypeSecret
-}
-
-// ticketDescription builds the Jira description for a finding. For secret
-// findings it deliberately omits the raw finding description (which may embed
-// the leaked secret), surfacing only the masked value + location and pointing
-// the reader back to the platform. For all other findings it runs the
-// description through redactSecrets as defense-in-depth.
+// ticketDescription builds the Jira description for a finding. What text
+// may leave is the outbound gate's decision (ticketing.FindingContent): a
+// secret finding sends its location only (no description, preview, snippet,
+// fingerprint or commit context), a finding that exposes data sends no free
+// text at all. Every other description is secret-redacted as defense in depth.
 //
 // The description is Jira wiki markup (REST API v2), and every value that
 // comes from the finding is attacker-influenced (a scanned page title, a file
@@ -44,17 +38,19 @@ func ticketDescription(f *vulnerability.Finding) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "*Finding:* %s\n*Severity:* %s\n*Status:* %s\n",
-		inline(f.Title()), inline(string(f.Severity())), inline(string(f.Status())))
+		inline(ticketing.OutboundTitle(f)), inline(string(f.Severity())), inline(string(f.Status())))
 	if f.FilePath() != "" {
 		fmt.Fprintf(&b, "*Location:* %s:%d\n", inline(vulnerability.DisplayPath(f.FilePath())), f.StartLine())
 	}
 
-	if isSecretFinding(f) {
-		b.WriteString("\nA secret was detected. The value is redacted here for safety. Open the finding in the platform for full details.")
-		if mv := f.SecretMaskedValue(); mv != "" {
-			fmt.Fprintf(&b, "\n*Masked value:* %s", inline(mv))
-		}
+	switch ticketing.FindingContent(f) {
+	case ticketing.ContentSecret:
+		b.WriteString("\nA secret was detected. Its value is not sent to trackers. Open the finding in the platform for full details.")
 		return withMobilizationBrief(b.String(), f)
+	case ticketing.ContentPersonalData:
+		b.WriteString("\nThis finding exposes data. Its details are not sent to trackers. Open the finding in the platform for full details.")
+		return b.String()
+	case ticketing.ContentFull:
 	}
 
 	if desc := strings.TrimSpace(f.Description()); desc != "" {
@@ -68,7 +64,7 @@ func ticketDescription(f *vulnerability.Finding) string {
 // characters in Jira): secret-redacted, cleaned of control and bidi
 // characters, folded to one line and capped.
 func ticketSummary(f *vulnerability.Finding) string {
-	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), f.Title())), safetext.MaxTitleRunes)
+	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), ticketing.OutboundTitle(f))), safetext.MaxTitleRunes)
 }
 
 // withMobilizationBrief appends the CTEM Mobilization brief (definition of done
@@ -123,7 +119,14 @@ var ErrNoMatchingTransition = errors.New("no jira transition to target status")
 // HTTP clients). Returning ErrNoTicketingIntegration means the tenant has no
 // usable Jira integration — callers surface that as a 4xx, not a 5xx.
 type ClientResolver interface {
+	// Resolve returns the client of the tenant's default Jira integration
+	// (for a create that names no integration).
 	Resolve(ctx context.Context, tenantID shared.ID) (Client, error)
+	// ResolveByID returns the client of one named Jira integration of the
+	// tenant, which must be connected. Every call that acts on an existing
+	// link or an inbound delivery uses it: the link or the delivery names
+	// its integration, and a tenant may connect several Jira sites.
+	ResolveByID(ctx context.Context, tenantID, integrationID shared.ID) (Client, error)
 }
 
 // MappingResolver loads a tenant's ticketing MappingConfig (status maps +
@@ -132,6 +135,10 @@ type ClientResolver interface {
 // ErrNoTicketingIntegration means the tenant has no Jira integration.
 type MappingResolver interface {
 	ResolveMapping(ctx context.Context, tenantID shared.ID) (MappingConfig, error)
+	// ResolveMappingByID loads the mapping of one named Jira integration of
+	// the tenant, in any status (an inbound delivery of an integration whose
+	// token expired still moves its own links), with SiteURL set.
+	ResolveMappingByID(ctx context.Context, tenantID, integrationID shared.ID) (MappingConfig, error)
 }
 
 // ErrNoTicketingIntegration is returned by a ClientResolver when the tenant has
@@ -144,11 +151,16 @@ type CreateIssueInput struct {
 	ProjectKey  string
 	Summary     string
 	Description string
+	// IssueType is the issue type's name; IssueTypeID, when set, wins (the
+	// type is then sent by id).
 	IssueType   string
+	IssueTypeID string
 	Priority    string
 	Labels      []string
 	// ParentKey makes the issue a child of this issue (an epic).
 	ParentKey string
+	// Marker is written into the create request (see IssueMarker).
+	Marker *IssueMarker
 }
 
 // CreateIssueResult contains the response from creating a Jira issue.
@@ -168,6 +180,8 @@ type SyncService struct {
 	findingRepo vulnerability.FindingRepository
 	jiraClient  Client
 	logger      *logger.Logger
+	// egress is the outbound gate (egress.go); nil refuses pentest content.
+	egress *ticketing.EgressGate
 
 	// clientResolver builds a per-tenant Jira client on demand. When set, it
 	// takes precedence over the static jiraClient (which exists mainly so tests
@@ -208,6 +222,8 @@ type SyncService struct {
 	// profiles renders published ticket mapping profiles (nil → built-in
 	// fields and status sync only).
 	profiles ProfileSource
+	// typeHealth records create refusals of a kind on the integration.
+	typeHealth IssueTypeHealth
 
 	// campaignSink receives inbound epic status changes so a linked remediation
 	// campaign can be completed (epic Done → campaign completed). nil → inbound
@@ -223,8 +239,9 @@ type CampaignEpicSink interface {
 	// HandleEpicStatusChange reacts to the linked epic of a campaign moving
 	// in Jira. It returns the refusals to comment back on the epic (one line
 	// per finding the rules kept where it is), and handled=false when the
-	// issue is not a campaign epic.
-	HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, jiraAccount string) (refusals []string, handled bool, err error)
+	// issue is not a campaign epic. site is the base URL of the integration
+	// the delivery came from: only an epic on that site matches.
+	HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, site, issueKey, jiraStatus, jiraAccount string) (refusals []string, handled bool, err error)
 }
 
 // InboundRefusal is one finding an inbound ticket change did not move, with
@@ -367,7 +384,12 @@ func (s *SyncService) SyncFindingStatus(ctx context.Context, tenantID, findingID
 	if s.mappingResolver == nil {
 		return nil
 	}
-	mapping, err := s.mappingResolver.ResolveMapping(ctx, tenantID)
+	// The mapping of the integration that owns the finding's issue.
+	integrationID, _, err := s.findingIssueByID(ctx, tenantID, findingID)
+	if err != nil {
+		return err
+	}
+	mapping, err := s.mappingFor(ctx, tenantID, integrationID)
 	if err != nil {
 		if errors.Is(err, ErrNoTicketingIntegration) {
 			return nil // tenant has no Jira integration — nothing to sync
@@ -389,7 +411,18 @@ func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID 
 	if s.mappingResolver == nil {
 		return nil
 	}
-	mapping, err := s.mappingResolver.ResolveMapping(ctx, tenantID)
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return fmt.Errorf("get finding: %w", err)
+	}
+	integrationID, issueKey, err := s.findingIssue(ctx, tenantID, finding)
+	if err != nil {
+		return err
+	}
+	if issueKey == "" {
+		return nil
+	}
+	mapping, err := s.mappingFor(ctx, tenantID, integrationID)
 	if err != nil {
 		if errors.Is(err, ErrNoTicketingIntegration) {
 			return nil
@@ -399,15 +432,12 @@ func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID 
 	if !mapping.SyncEnabled {
 		return nil
 	}
-	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
-	if err != nil {
-		return fmt.Errorf("get finding: %w", err)
+	// Gate the finding already read: a second read that failed would let
+	// the comment out ungated.
+	if ok, err := s.egressAllowed(ctx, tenantID, ticketing.RouteStatusSync, finding); !ok {
+		return err
 	}
-	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
-	if issueKey == "" {
-		return nil
-	}
-	client, err := s.resolveClient(ctx, tenantID)
+	client, err := s.clientFor(ctx, tenantID, integrationID)
 	if err != nil {
 		return err
 	}
@@ -430,20 +460,88 @@ func (s *SyncService) resolveClient(ctx context.Context, tenantID shared.ID) (Cl
 	return nil, ErrNoTicketingIntegration
 }
 
-// resolveMapping loads the tenant's ticketing MappingConfig (severity→priority,
-// default project/issue type, status maps). Unlike SyncFindingStatus this never
-// fails the caller for a missing mapping: with no resolver wired (tests) or no
-// ticketing integration, it returns DefaultMappingConfig() so create keeps its
-// original behavior.
-func (s *SyncService) resolveMapping(ctx context.Context, tenantID shared.ID) MappingConfig {
-	if s.mappingResolver == nil {
-		return DefaultMappingConfig()
-	}
-	m, err := s.mappingResolver.ResolveMapping(ctx, tenantID)
+// findingIssueByID loads a finding and returns its issue (see findingIssue).
+func (s *SyncService) findingIssueByID(ctx context.Context, tenantID, findingID shared.ID) (shared.ID, string, error) {
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
 	if err != nil {
-		return DefaultMappingConfig()
+		return shared.ID{}, "", fmt.Errorf("get finding: %w", err)
 	}
-	return m
+	return s.findingIssue(ctx, tenantID, finding)
+}
+
+// findingIssue returns a finding's issue and the integration that owns it:
+// its active link (the integration is on the link), else a browse URL from
+// its ticket list on the default integration's site (the zero id names the
+// default integration). A URL on another site names no issue of the default
+// integration, so it is never pushed through it. "" when the finding has no
+// issue.
+func (s *SyncService) findingIssue(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding) (shared.ID, string, error) {
+	if s.links != nil {
+		links, err := s.links.ListForFinding(ctx, tenantID, finding.ID())
+		if err != nil {
+			return shared.ID{}, "", fmt.Errorf("list the finding's ticket links: %w", err)
+		}
+		for _, l := range links {
+			if l.State == ticketlink.StateActive && l.Provider == "jira" {
+				return l.IntegrationID, l.ExternalKey, nil
+			}
+		}
+	}
+	site := ""
+	if s.mappingResolver != nil {
+		if m, err := s.mappingResolver.ResolveMapping(ctx, tenantID); err == nil {
+			site = strings.ToLower(strings.TrimRight(m.SiteURL, "/"))
+		}
+	}
+	for _, u := range finding.WorkItemURIs() {
+		m := jiraBrowseKeyRe.FindStringSubmatch(u)
+		if m == nil {
+			continue
+		}
+		if site != "" && !strings.HasPrefix(strings.ToLower(u), site+"/browse/") {
+			continue
+		}
+		return shared.ID{}, m[1], nil
+	}
+	return shared.ID{}, "", nil
+}
+
+// clientFor returns the client of one integration of the tenant; a zero id
+// means the tenant's default integration (a create that names none). It
+// never falls back to another integration: a link or a delivery of
+// integration B is never served by integration A's client.
+func (s *SyncService) clientFor(ctx context.Context, tenantID, integrationID shared.ID) (Client, error) {
+	if integrationID.IsZero() {
+		return s.resolveClient(ctx, tenantID)
+	}
+	if s.jiraClient != nil {
+		// A statically injected client (tests) serves one integration only.
+		if ii, ok := s.jiraClient.(IssueIdentifier); ok && ii.IntegrationID() != integrationID {
+			return nil, ErrNoTicketingIntegration
+		}
+		return s.jiraClient, nil
+	}
+	if s.clientResolver != nil {
+		return s.clientResolver.ResolveByID(ctx, tenantID, integrationID)
+	}
+	return nil, ErrNoTicketingIntegration
+}
+
+// mappingFor loads the mapping of one integration of the tenant (a zero id:
+// the default integration). With no resolver wired (tests) it is the
+// default mapping on the static client's site.
+func (s *SyncService) mappingFor(ctx context.Context, tenantID, integrationID shared.ID) (MappingConfig, error) {
+	if s.mappingResolver == nil {
+		m := DefaultMappingConfig()
+		if sc, ok := s.jiraClient.(interface{ SiteURL() string }); ok {
+			m.SiteURL = sc.SiteURL()
+		}
+		return m, nil
+	}
+	if integrationID.IsZero() {
+		return s.mappingResolver.ResolveMapping(ctx, tenantID)
+	}
+	return s.mappingResolver.ResolveMappingByID(ctx, tenantID, integrationID)
 }
 
 // ListProjects returns the Jira projects visible to the tenant's connected
@@ -465,6 +563,13 @@ type CreateTicketInput struct {
 	IssueType  string `json:"issue_type"`  // e.g. "Bug"
 	// ParentKey creates the ticket as a child of this issue (an epic).
 	ParentKey string `json:"parent_key,omitempty"`
+	// IntegrationID names the Jira integration to create the issue on; ""
+	// means the tenant's default integration.
+	IntegrationID string `json:"integration_id,omitempty"`
+	// Route is the path the request came by, set by the server's callers
+	// only (never decoded from a request); the zero value is the generic
+	// finding route.
+	Route ticketing.Route `json:"-"`
 }
 
 // jiraBrowseKeyRe extracts a Jira issue key from a browse URL,
@@ -492,6 +597,9 @@ func firstJiraIssueKey(uris []string) string {
 // On a workflow with no transition to the target, it falls back to a comment so
 // the change is visible to a human rather than failing.
 func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, findingID shared.ID, mapping MappingConfig) error {
+	if ok, err := s.statusPushAllowed(ctx, tenantID, findingID); !ok {
+		return err
+	}
 	// A published mapping profile for the issue's project decides the move
 	// itself (its status map is the explicit opt-in for that destination).
 	if s.profiles != nil {
@@ -513,12 +621,15 @@ func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, f
 		return nil // this finding status intentionally does not move the ticket
 	}
 
-	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
+	integrationID, issueKey, err := s.findingIssue(ctx, tenantID, finding)
+	if err != nil {
+		return err
+	}
 	if issueKey == "" {
 		return nil // finding isn't linked to a Jira issue
 	}
 
-	client, err := s.resolveClient(ctx, tenantID)
+	client, err := s.clientFor(ctx, tenantID, integrationID)
 	if err != nil {
 		return err
 	}
@@ -562,18 +673,33 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		return nil, fmt.Errorf("%w: invalid finding ID", shared.ErrValidation)
 	}
 
-	// Per-tenant ticketing config drives the destination project, issue type,
-	// and severity→priority mapping. Defaults reproduce the original behavior.
-	mapping := s.resolveMapping(ctx, tenantID)
+	var integrationID shared.ID
+	if v := strings.TrimSpace(input.IntegrationID); v != "" {
+		if integrationID, err = shared.IDFromString(v); err != nil {
+			return nil, fmt.Errorf("%w: invalid integration ID", shared.ErrValidation)
+		}
+	}
 
-	jiraClient, err := s.resolveClient(ctx, tenantID)
+	// The chosen integration's client; its ticketing config drives the
+	// destination project, issue type and severity→priority mapping.
+	jiraClient, err := s.clientFor(ctx, tenantID, integrationID)
 	if err != nil {
 		return nil, err
+	}
+	if ii, ok := jiraClient.(IssueIdentifier); ok {
+		integrationID = ii.IntegrationID()
+	}
+	mapping, err := s.mappingFor(ctx, tenantID, integrationID)
+	if err != nil {
+		mapping = DefaultMappingConfig()
 	}
 
 	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
 	if err != nil {
 		return nil, fmt.Errorf("get finding: %w", err)
+	}
+	if err := s.egress.Check(ctx, tenantID, input.Route, finding); err != nil {
+		return nil, err
 	}
 
 	// Destination project resolution, in priority order:
@@ -630,33 +756,45 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	// reproduce the original critical→Highest … low→Low table).
 	priority := mapping.PriorityForSeverity(string(finding.Severity()))
 
-	// Issue type: explicit request wins, else the matched route's override, else
-	// the tenant default, else "Bug".
-	issueType := strings.TrimSpace(input.IssueType)
-	if issueType == "" {
-		issueType = routeIssueType
+	// Issue type: explicit request wins, else the matched route's override,
+	// else the integration's finding type (by id in its default project).
+	issueType := IssueTypeRef{Name: strings.TrimSpace(input.IssueType)}
+	if issueType.Name == "" {
+		issueType.Name = routeIssueType
 	}
-	if issueType == "" {
-		issueType = mapping.DefaultIssueType
-	}
-	if issueType == "" {
-		issueType = "Bug"
+	if issueType.Name == "" {
+		issueType = mapping.IssueTypeFor(IssueKindFinding, projectKey)
 	}
 
-	result, handled, err := s.createFromProfile(ctx, jiraClient, tenantID, findingID, projectKey, issueType, strings.TrimSpace(input.ParentKey))
+	// A previous attempt may have created the issue and lost the response
+	// or failed to record it: adopt that issue instead of creating another.
+	marker := markerFor(jiraClient, MarkerKindFinding, findingID)
+	result, err := s.findMarked(ctx, jiraClient, marker, func(key string) bool {
+		return strings.EqualFold(ticketlink.ProjectOf(key), projectKey)
+	})
 	if err != nil {
 		return nil, err
+	}
+	handled := result != nil
+	if !handled {
+		result, handled, err = s.createFromProfile(ctx, jiraClient, tenantID, ticketmap.ObjectFinding, findingID, projectKey, issueType.Lookup(), strings.TrimSpace(input.ParentKey), marker)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if !handled {
 		result, err = jiraClient.CreateIssue(ctx, CreateIssueInput{
 			ProjectKey:  projectKey,
 			Summary:     ticketSummary(finding),
 			Description: ticketDescription(finding),
-			IssueType:   issueType,
+			IssueType:   issueType.Name,
+			IssueTypeID: issueType.ID,
 			Priority:    priority,
 			Labels:      []string{"openctem", "security", string(finding.Severity())},
 			ParentKey:   strings.TrimSpace(input.ParentKey),
+			Marker:      marker,
 		})
+		s.noteCreate(ctx, tenantID, integrationID, IssueKindFinding, issueType, err)
 		if err != nil {
 			return nil, fmt.Errorf("create jira ticket: %w", err)
 		}
@@ -691,11 +829,11 @@ func (s *SyncService) syncWithProfile(ctx context.Context, tenantID, findingID s
 	if err != nil {
 		return false, nil //nolint:nilerr // the built-in path reports the lookup error
 	}
-	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
-	if issueKey == "" {
-		return false, nil
+	integrationID, issueKey, err := s.findingIssue(ctx, tenantID, finding)
+	if err != nil || issueKey == "" {
+		return false, nil //nolint:nilerr // the built-in path reports the lookup error
 	}
-	client, err := s.resolveClient(ctx, tenantID)
+	client, err := s.clientFor(ctx, tenantID, integrationID)
 	if err != nil {
 		return false, nil //nolint:nilerr // the built-in path reports a missing integration
 	}
@@ -717,13 +855,24 @@ func (s *SyncService) CreateEpic(ctx context.Context, tenantID shared.ID, projec
 	if err != nil {
 		return "", "", err
 	}
+	// The integration's epic type (a custom one included), else Epic.
+	issueType := IssueTypeRef{Name: stockIssueTypes[IssueKindEpic]}
+	var integrationID shared.ID
+	if ii, ok := client.(IssueIdentifier); ok {
+		integrationID = ii.IntegrationID()
+		if mapping, merr := s.mappingFor(ctx, tenantID, integrationID); merr == nil {
+			issueType = mapping.IssueTypeFor(IssueKindEpic, projectKey)
+		}
+	}
 	result, err := client.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  projectKey,
 		Summary:     safetext.SingleLine(safetext.RedactSecrets(summary), safetext.MaxTitleRunes),
 		Description: safetext.JiraWikiBlock(safetext.RedactSecrets(description), safetext.MaxDescriptionRunes),
-		IssueType:   "Epic",
+		IssueType:   issueType.Name,
+		IssueTypeID: issueType.ID,
 		Labels:      labels,
 	})
+	s.noteCreate(ctx, tenantID, integrationID, IssueKindEpic, issueType, err)
 	if err != nil {
 		return "", "", fmt.Errorf("create jira epic: %w", err)
 	}
@@ -801,6 +950,9 @@ func (u WebhookUser) ID() string {
 
 // WebhookIssue represents the issue block inside a Jira webhook payload.
 type WebhookIssue struct {
+	// ID is the issue's id ("10001"), stable when the issue moves to another
+	// project and its key changes.
+	ID     string                 `json:"id"`
 	Key    string                 `json:"key"`  // e.g. "PROJ-123"
 	Self   string                 `json:"self"` // e.g. "https://myorg.atlassian.net/rest/api/2/issue/10001"
 	Fields map[string]interface{} `json:"fields"`
@@ -820,7 +972,26 @@ type ChangeItem struct {
 	ToString   string `json:"toString"`
 }
 
-// HandleJiraWebhook processes an inbound Jira webhook and syncs finding status.
+// inboundRef names where an inbound delivery came from: the tenant, the
+// integration whose own secret signed it, and that integration's mapping
+// (with its site). Every lookup and every comment of the delivery stays on
+// that integration.
+type inboundRef struct {
+	tenantID      shared.ID
+	integrationID shared.ID
+	mapping       MappingConfig
+}
+
+// ErrInboundNoIntegration: an inbound delivery must name the integration
+// that signed it.
+var ErrInboundNoIntegration = fmt.Errorf("%w: an inbound delivery names its integration", shared.ErrValidation)
+
+// HandleJiraWebhook processes an inbound Jira webhook of one integration and
+// syncs finding status. integrationID is the integration the delivery was
+// verified for (its URL and its secret): issues and links are matched within
+// that integration only, by the issue's id first and its key second, so a
+// tenant with two Jira sites never moves site A's links from a delivery of
+// site B even when both have an issue SEC-1.
 //
 // Status mapping:
 //
@@ -829,7 +1000,10 @@ type ChangeItem struct {
 //	Jira "Done"         → finding "fix_applied"  (triggers verification flow)
 //	Jira "Resolved"     → finding "fix_applied"
 //	Jira "Closed"       → finding "fix_applied"
-func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID, payload WebhookPayload) error {
+func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID, integrationID shared.ID, payload WebhookPayload) error {
+	if integrationID.IsZero() {
+		return ErrInboundNoIntegration
+	}
 	if payload.Changelog == nil {
 		// No changes — nothing to sync.
 		return nil
@@ -848,22 +1022,33 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		return nil
 	}
 
+	mapping, err := s.mappingFor(ctx, tenantID, integrationID)
+	if err != nil {
+		if errors.Is(err, ErrNoTicketingIntegration) {
+			s.logger.Warn("jira webhook: the integration is gone; ignored", "integration_id", integrationID.String())
+			return nil
+		}
+		return fmt.Errorf("load the integration's mapping: %w", err)
+	}
+	in := inboundRef{tenantID: tenantID, integrationID: integrationID, mapping: mapping}
+
 	// A campaign's epic: the campaign service decides (Done claims the fix
-	// of the campaign's findings; it never completes the campaign).
+	// of the campaign's findings; it never completes the campaign). Only an
+	// epic on this integration's site matches.
 	if s.campaignSink != nil {
-		refusals, handled, cerr := s.campaignSink.HandleEpicStatusChange(ctx, tenantID, payload.Issue.Key, newJiraStatus, payload.User.ID())
+		refusals, handled, cerr := s.campaignSink.HandleEpicStatusChange(ctx, tenantID, mapping.SiteURL, payload.Issue.Key, newJiraStatus, payload.User.ID())
 		if cerr != nil {
 			s.logger.Warn("jira webhook: inbound campaign epic sync failed",
 				"issue_key", logger.SanitizeValue(payload.Issue.Key), "error", cerr)
 		}
 		if handled {
-			s.commentRefusals(ctx, tenantID, payload.Issue.Key, newJiraStatus, refusals)
+			s.commentRefusals(ctx, in, payload.Issue.Key, newJiraStatus, refusals)
 			return nil
 		}
 	}
 
 	// Only issues in projects configured for ticketing move findings.
-	if ok, err := s.inboundProjectAllowed(ctx, tenantID, payload.Issue.Key); err != nil {
+	if ok, err := s.inboundProjectAllowed(ctx, in, payload.Issue.Key); err != nil {
 		return fmt.Errorf("check the issue's project: %w", err)
 	} else if !ok {
 		s.logger.Warn("jira webhook: issue outside the projects configured for ticketing; ignored",
@@ -873,11 +1058,11 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 
 	// A published mapping profile for the issue's project decides what the
 	// status means (an intent); without one the built-in map applies.
-	if handled, err := s.handleProfileIntent(ctx, tenantID, payload, newJiraStatus); handled {
+	if handled, err := s.handleProfileIntent(ctx, in, payload, newJiraStatus); handled {
 		return err
 	}
 
-	newFindingStatus, ok := s.inboundMapping(ctx, tenantID).FindingStatusForJira(newJiraStatus)
+	newFindingStatus, ok := in.inboundMapping().FindingStatusForJira(newJiraStatus)
 	if !ok {
 		s.logger.Debug("jira status has no finding mapping — ignored",
 			"jira_status", logger.SanitizeValue(newJiraStatus),
@@ -885,13 +1070,14 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		)
 		return nil
 	}
-	return s.applyToLinked(ctx, tenantID, payload, newJiraStatus, newFindingStatus)
+	return s.applyToLinked(ctx, in, payload, newJiraStatus, newFindingStatus)
 }
 
 // applyToLinked applies a work-state status to every finding linked to the
 // issue through the finding service, queues the verification of a fix claim
 // and comments the refusals back.
-func (s *SyncService) applyToLinked(ctx context.Context, tenantID shared.ID, payload WebhookPayload, newJiraStatus string, newFindingStatus vulnerability.FindingStatus) error {
+func (s *SyncService) applyToLinked(ctx context.Context, in inboundRef, payload WebhookPayload, newJiraStatus string, newFindingStatus vulnerability.FindingStatus) error {
+	tenantID := in.tenantID
 	// Whatever the mapping says, a ticket never closes a finding (no verify
 	// gate, no approval, no person). FindingStatusForJira already refuses
 	// these; this keeps the rule if the mapping code changes.
@@ -901,7 +1087,7 @@ func (s *SyncService) applyToLinked(ctx context.Context, tenantID shared.ID, pay
 		return nil
 	}
 
-	ids, err := s.linkedFindingsOf(ctx, tenantID, payload, newJiraStatus)
+	ids, err := s.linkedFindingsOf(ctx, in, payload, newJiraStatus)
 	if err != nil {
 		return err
 	}
@@ -938,7 +1124,7 @@ func (s *SyncService) applyToLinked(ctx context.Context, tenantID shared.ID, pay
 	for _, r := range refused {
 		lines = append(lines, r.FindingID+": "+r.Reason)
 	}
-	s.commentRefusals(ctx, tenantID, payload.Issue.Key, newJiraStatus, lines)
+	s.commentRefusals(ctx, in, payload.Issue.Key, newJiraStatus, lines)
 	return nil
 }
 
@@ -964,7 +1150,7 @@ func (s *SyncService) linkedFindings(ctx context.Context, tenantID shared.ID, ti
 // commentRefusals tells the people working the ticket which findings the
 // change did not move and why: one comment, not repeated for the same issue,
 // status and reasons within refusalCommentWindow. Best effort.
-func (s *SyncService) commentRefusals(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus string, refusals []string) {
+func (s *SyncService) commentRefusals(ctx context.Context, in inboundRef, issueKey, jiraStatus string, refusals []string) {
 	if len(refusals) == 0 {
 		return
 	}
@@ -977,24 +1163,26 @@ func (s *SyncService) commentRefusals(ctx context.Context, tenantID shared.ID, i
 	if len(refusals) > len(shown) {
 		body += fmt.Sprintf("\n\n(and %d more)", len(refusals)-len(shown))
 	}
-	s.commentOnce(ctx, tenantID, issueKey, jiraStatus, body)
+	s.commentOnce(ctx, in, issueKey, jiraStatus, body)
 }
 
 // commentOnce posts a comment on the issue once per issue, status and body
 // within refusalCommentWindow (all replicas), so a retried or repeated
-// delivery comments once. Best effort.
-func (s *SyncService) commentOnce(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, body string) {
+// delivery comments once. The comment goes to the delivery's own
+// integration. Best effort.
+func (s *SyncService) commentOnce(ctx context.Context, in inboundRef, issueKey, jiraStatus, body string) {
+	tenantID := in.tenantID
 	sum := sha256.Sum256([]byte(body))
-	key := "jira-refusal:" + tenantID.String() + ":" + issueKey + ":" + jiraStatus + ":" + hex.EncodeToString(sum[:8])
+	key := "jira-refusal:" + tenantID.String() + ":" + in.integrationID.String() + ":" + issueKey + ":" + jiraStatus + ":" + hex.EncodeToString(sum[:8])
 	if s.refusalGuard != nil {
 		first, err := s.refusalGuard.FirstDelivery(ctx, key, refusalCommentWindow)
 		if err != nil || !first {
 			return
 		}
 	}
-	client, err := s.resolveClient(ctx, tenantID)
+	client, err := s.clientFor(ctx, tenantID, in.integrationID)
 	if err != nil {
-		s.logger.Warn("jira comment: no client", "tenant_id", tenantID.String(), "error", err)
+		s.logger.Warn("jira comment: no client", "tenant_id", tenantID.String(), "integration_id", in.integrationID.String(), "error", err)
 		return
 	}
 	if err := client.AddComment(ctx, issueKey, jiraCommentBody(body)); err != nil {
@@ -1002,14 +1190,12 @@ func (s *SyncService) commentOnce(ctx context.Context, tenantID shared.ID, issue
 	}
 }
 
-// inboundMapping is the tenant's inbound status map: its integration overlay
-// when one resolves, the defaults otherwise. Either way FindingStatusForJira
-// only ever yields IsTicketInboundTarget statuses.
-func (s *SyncService) inboundMapping(ctx context.Context, tenantID shared.ID) MappingConfig {
-	if s.mappingResolver != nil {
-		if m, err := s.mappingResolver.ResolveMapping(ctx, tenantID); err == nil && m.StatusInbound != nil {
-			return m
-		}
+// inboundMapping is the delivery's inbound status map: its integration's
+// overlay when it has one, the defaults otherwise. Either way
+// FindingStatusForJira only ever yields IsTicketInboundTarget statuses.
+func (in inboundRef) inboundMapping() MappingConfig {
+	if in.mapping.StatusInbound != nil {
+		return in.mapping
 	}
 	return DefaultMappingConfig()
 }
@@ -1022,24 +1208,6 @@ type StatusActivityRecorder interface {
 
 // SetActivityRecorder wires the finding-activity recorder for inbound changes.
 func (s *SyncService) SetActivityRecorder(r StatusActivityRecorder) { s.activity = r }
-
-// deriveJiraTicketURL builds the canonical browse URL for a Jira issue.
-// It prefers payload.Issue.Self (REST API URL) but converts it to the browse URL
-// so it matches what users paste when linking tickets.
-func deriveJiraTicketURL(issue WebhookIssue) string {
-	if issue.Self != "" {
-		// Convert REST API URL to browse URL:
-		// https://myorg.atlassian.net/rest/api/2/issue/10001 →
-		// https://myorg.atlassian.net/browse/PROJ-123
-		//
-		// Split on "/rest/" and reconstruct.
-		if idx := strings.Index(issue.Self, "/rest/"); idx > 0 && issue.Key != "" {
-			base := issue.Self[:idx]
-			return base + "/browse/" + issue.Key
-		}
-	}
-	return issue.Key
-}
 
 // TicketInfo is returned by LinkTicket to the HTTP handler for the response body.
 type TicketInfo struct {

@@ -135,7 +135,15 @@ type QueryRerunResponse struct {
 
 // QueryAutoStateRequest pauses (true) or resumes (false) auto mode.
 type QueryAutoStateRequest struct {
-	Paused bool `json:"paused"`
+	// Version is the task version the caller read (required; 409 when stale).
+	Version int  `json:"version"`
+	Paused  bool `json:"paused"`
+}
+
+// QueryRerunRequest confirms a re-run of a task's query.
+type QueryRerunRequest struct {
+	// Version is the task version the caller read (required; 409 when stale).
+	Version int `json:"version"`
 }
 
 func toStatsResp(st *remediation.QueryPreviewStats) *QueryStatsResp {
@@ -354,12 +362,15 @@ func (h *RemediationTaskHandler) PreviewQueryRerun(w http.ResponseWriter, r *htt
 // @Summary      Re-run the query of a remediation task
 // @Description  Runs the task's stored query as the caller and adds the new matches no active task holds, up to the task's cap. Findings other tasks hold are skipped, never taken.
 // @Tags         Remediation
+// @Accept       json
 // @Produce      json
-// @Param        task_id  path  string  true  "Task ID"
+// @Param        task_id  path  string             true  "Task ID"
+// @Param        request  body  QueryRerunRequest  true  "Version"
 // @Success      200  {object}  QueryRerunResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /remediation/tasks/{task_id}/query/run [post]
 func (h *RemediationTaskHandler) RerunQuery(w http.ResponseWriter, r *http.Request) {
@@ -371,8 +382,13 @@ func (h *RemediationTaskHandler) RerunQuery(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	var req QueryRerunRequest
+	if err := decodeTaskBody(w, r, &req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
 	res, t, err := h.service.RerunQuery(r.Context(), remediationapp.RerunQueryInput{TenantID: tid, TaskID: taskID,
-		Caller: queryCaller(r), ActorID: callerID(r)}, h.auditContext(r))
+		Version: req.Version, Caller: queryCaller(r), ActorID: callerID(r)}, h.auditContext(r))
 	if err != nil {
 		h.handleQueryError(w, err)
 		return
@@ -410,7 +426,7 @@ func (h *RemediationTaskHandler) SetQueryAutoState(w http.ResponseWriter, r *htt
 		return
 	}
 	q, err := h.service.SetQueryAutoState(r.Context(), remediationapp.SetQueryAutoStateInput{TenantID: tid, TaskID: taskID,
-		ActorID: callerID(r), Paused: req.Paused}, h.auditContext(r))
+		Version: req.Version, ActorID: callerID(r), Paused: req.Paused}, h.auditContext(r))
 	if err != nil {
 		h.handleQueryError(w, err)
 		return

@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { bulkTypeToConfirm, ConfirmDialog } from '../confirm-dialog'
+import {
+  bulkTypeToConfirm,
+  ConfirmDialog,
+  ConfirmSample,
+  irreversibleTypeToConfirm,
+  typedTextMatches,
+} from '../confirm-dialog'
 
 function renderDialog(props: Partial<React.ComponentProps<typeof ConfirmDialog>> = {}) {
   const handleConfirm = props.handleConfirm ?? vi.fn()
@@ -95,5 +101,59 @@ describe('bulkTypeToConfirm', () => {
     expect(bulkTypeToConfirm(9)).toBeUndefined()
     expect(bulkTypeToConfirm(10)).toBe('10')
     expect(bulkTypeToConfirm(250)).toBe('250')
+  })
+})
+
+describe('typedTextMatches', () => {
+  it('is case-sensitive and ignores surrounding spaces from a paste', () => {
+    expect(typedTextMatches('prod-db', 'prod-db')).toBe(true)
+    expect(typedTextMatches('  prod-db \n', 'prod-db')).toBe(true)
+    expect(typedTextMatches('Prod-db', 'prod-db')).toBe(false)
+    expect(typedTextMatches('prod-d', 'prod-db')).toBe(false)
+  })
+
+  it('treats composed and decomposed Unicode as the same text', () => {
+    const composed = 'm\u00e1y-ch\u1ee7' // "máy-chủ" as an IME may compose it
+    const decomposed = composed.normalize('NFD')
+    expect(decomposed).not.toBe(composed)
+    expect(typedTextMatches(decomposed, composed)).toBe(true)
+  })
+
+  it('accepts a decomposed name typed into the dialog', async () => {
+    const { handleConfirm } = renderDialog({ typeToConfirm: 'm\u00e1y' })
+    const input = screen.getByRole('textbox')
+    await userEvent.type(input, 'm\u00e1y'.normalize('NFD'))
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(handleConfirm).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('irreversibleTypeToConfirm', () => {
+  it('asks for the name of a single item and the count of several', () => {
+    expect(irreversibleTypeToConfirm(['web-01'])).toBe('web-01')
+    expect(irreversibleTypeToConfirm(['a', 'b'])).toBe('2')
+    expect(irreversibleTypeToConfirm(['a', 'b', 'c'])).toBe('3')
+  })
+
+  it('falls back to the count when the only item has no name', () => {
+    expect(irreversibleTypeToConfirm([''])).toBe('1')
+  })
+})
+
+describe('ConfirmSample', () => {
+  it('lists the first five names and how many more there are', () => {
+    render(<ConfirmSample names={['a', 'b', 'c', 'd', 'e', 'f', 'g']} />)
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+    expect(screen.getByText('and 2 more')).toBeInTheDocument()
+  })
+
+  it('counts against the total when only a page of names is known', () => {
+    render(<ConfirmSample names={['a', 'b']} total={40} />)
+    expect(screen.getByText('and 38 more')).toBeInTheDocument()
+  })
+
+  it('says nothing more when every name is shown', () => {
+    render(<ConfirmSample names={['a', 'b']} />)
+    expect(screen.queryByText(/more/)).toBeNull()
   })
 })

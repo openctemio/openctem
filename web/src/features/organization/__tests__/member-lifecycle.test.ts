@@ -28,6 +28,8 @@ function report(over: Partial<MemberAccessReport> = {}): MemberAccessReport {
     owned_workflows: [],
     assigned_findings: 0,
     owned_assets: 0,
+    owned_tasks: 0,
+    owned_campaigns: 0,
     ...over,
   }
 }
@@ -37,6 +39,8 @@ const owns = report({
   owned_workflows: [{ id: 'w1', name: 'Flow' }],
   assigned_findings: 3,
   owned_assets: 2,
+  owned_tasks: 1,
+  owned_campaigns: 0,
 })
 
 describe('requiredReassignments', () => {

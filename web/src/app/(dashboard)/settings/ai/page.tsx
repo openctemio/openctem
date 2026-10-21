@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
+import { AISourceCard } from '@/features/ai-triage/components/ai-source-card'
 import { useAIConfig } from '@/features/ai-triage/api/use-ai-triage-api'
 import { updateAISettings, useAISettings } from '@/features/ai-triage/api/use-ai-settings'
 import { PageHeader, ReadOnlyNotice } from '@/features/shared'
@@ -21,8 +22,8 @@ import { formatDateSafe } from '@/lib/format-date'
 import { useCanMutate } from '@/lib/permissions'
 
 /**
- * Settings > AI: the organization's consent to AI triage (API docs:
- * architecture/ai-triage.md). Until an owner or administrator turns it on, no
+ * Settings > AI: the organization's consent to AI triage and where the AI
+ * comes from (API docs: architecture/ai-triage.md). Until an owner or administrator turns it on, no
  * finding content is sent to an AI provider. Turning it on needs a recent
  * sign-in (the shared client asks for it) and is audited.
  */
@@ -44,7 +45,7 @@ export default function AISettingsPage() {
     if (!currentTenant) return
     setSaving(true)
     try {
-      const next = await updateAISettings(on)
+      const next = await updateAISettings({ enabled: on })
       await settings.mutate(next, { revalidate: false })
       await config.mutate()
       toast.success(
@@ -186,16 +187,34 @@ export default function AISettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {settings.data && (
+          <AISourceCard
+            settings={settings.data}
+            canEdit={canEdit}
+            onSaved={async (next) => {
+              await settings.mutate(next, { revalidate: false })
+              await config.mutate()
+            }}
+          />
+        )}
       </div>
 
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={t('settings.ai.confirmTitle', 'Turn on AI triage?')}
-        desc={t(
-          'settings.ai.confirmDesc',
-          'Finding content (see "What is sent") will be sent to the AI provider your platform administrator set up, each time a member asks for an analysis. You can turn it off at any time.'
-        )}
+        desc={
+          settings.data?.source === 'own'
+            ? t(
+                'settings.ai.confirmDescOwn',
+                'Finding content (see "What is sent") will be sent to the AI provider your organization set up, each time a member asks for an analysis. You can turn it off at any time.'
+              )
+            : t(
+                'settings.ai.confirmDesc',
+                'Finding content (see "What is sent") will be sent to the AI provider your platform administrator set up, each time a member asks for an analysis. You can turn it off at any time.'
+              )
+        }
         confirmText={t('settings.ai.confirm', 'Turn on')}
         handleConfirm={async () => {
           await save(true)

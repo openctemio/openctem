@@ -279,6 +279,25 @@ func TestEnforcer_CanActOnAssets(t *testing.T) {
 	}
 }
 
+// HasActor: a member or an administrator in the context is an actor; an
+// empty context or an API key without a user is not.
+func TestEnforcer_HasActor(t *testing.T) {
+	e := New(&fakeRepo{}, ctxCaller, nil)
+	for name, tc := range map[string]struct {
+		ctx  context.Context
+		want bool
+	}{
+		"member":           {withCaller(Caller{UserID: shared.NewID().String()}), true},
+		"admin":            {withCaller(Caller{IsAdmin: true}), true},
+		"no caller":        {context.Background(), false},
+		"api key, no user": {withCaller(Caller{APIKey: true}), false},
+	} {
+		if got := e.HasActor(tc.ctx); got != tc.want {
+			t.Errorf("%s: HasActor = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
 func TestEnforcer_AssertAssetRef(t *testing.T) {
 	tenant, other := shared.NewID(), shared.NewID()
 	scoped := shared.NewID()

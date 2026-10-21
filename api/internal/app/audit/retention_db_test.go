@@ -10,12 +10,14 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/infra/storage"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -59,12 +61,12 @@ func TestPruneChain_ArchivesAnchorsAndChainStillVerifies(t *testing.T) {
 	dir := t.TempDir()
 	cfg := auditapp.RetentionConfig{
 		RetentionDays: 30, // raised to the 365-day minimum
-		ArchiveDir:    dir,
+		Store:         storage.NewLocalStorage(dir),
 		Now:           func() time.Time { return cut.AddDate(0, 0, auditdom.MinAuditRetentionDays) },
 	}
 
 	// No archive location: nothing is deleted.
-	if _, _, err := svc.PruneChain(ctx, tenantA, auditapp.RetentionConfig{Now: cfg.Now}); !errors.Is(err, auditapp.ErrNoAuditArchiveDir) {
+	if _, _, err := svc.PruneChain(ctx, tenantA, auditapp.RetentionConfig{Now: cfg.Now}); !errors.Is(err, auditapp.ErrNoAuditArchiveStore) {
 		t.Fatalf("prune without archive dir: err = %v", err)
 	}
 	if n := len(readChain(ctx, t, db, tenantA)); n != 5 {
@@ -80,7 +82,7 @@ func TestPruneChain_ArchivesAnchorsAndChainStillVerifies(t *testing.T) {
 	}
 
 	// Archive: 3 lines, the pruned chain entries and rows; SHA matches the anchor.
-	lines := readArchive(t, archives[0])
+	lines := readArchive(t, filepath.Join(dir, archives[0]))
 	if len(lines) != 3 {
 		t.Fatalf("archive has %d lines, want 3", len(lines))
 	}
@@ -95,7 +97,7 @@ func TestPruneChain_ArchivesAnchorsAndChainStillVerifies(t *testing.T) {
 		tenantA.String()).Scan(&anchorHash, &archiveSHA, &pruned); err != nil {
 		t.Fatalf("anchor: %v", err)
 	}
-	if anchorHash != before[2].Hash || pruned != 3 || archiveSHA != fileSHA(t, archives[0]) {
+	if anchorHash != before[2].Hash || pruned != 3 || archiveSHA != fileSHA(t, filepath.Join(dir, archives[0])) {
 		t.Fatalf("anchor = %s/%s/%d, want %s/<file sha>/3", anchorHash, archiveSHA, pruned, before[2].Hash)
 	}
 
@@ -218,4 +220,46 @@ func fileSHA(t *testing.T, path string) string {
 	h := sha256.New()
 	_, _ = io.Copy(h, f)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// A suspended organization (how a legal hold is applied) keeps its audit
+// history: its chain is not listed for pruning until it is active again.
+func TestChainTenantsWithEntriesBefore_SkipsSuspendedOrganizations(t *testing.T) {
+	ctx := context.Background()
+	db := openAuditDB(t)
+	repo := postgres.NewAuditRepository(db)
+	svc := auditapp.NewAuditService(repo, logger.NewNop())
+
+	held, _ := seedRebaselineTenant(ctx, t, db)
+	free, _ := seedRebaselineTenant(ctx, t, db)
+	logTenantEvents(ctx, t, svc, held, 2)
+	logTenantEvents(ctx, t, svc, free, 2)
+	time.Sleep(20 * time.Millisecond)
+	cut := time.Now()
+
+	if _, err := db.ExecContext(ctx, `UPDATE tenants SET status = 'suspended' WHERE id = $1`, held.String()); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := repo.ChainTenantsWithEntriesBefore(ctx, cut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawHeld, sawFree bool
+	for _, id := range ids {
+		sawHeld = sawHeld || id == held
+		sawFree = sawFree || id == free
+	}
+	if sawHeld || !sawFree {
+		t.Fatalf("suspended chain listed=%v, active chain listed=%v; want false, true", sawHeld, sawFree)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE tenants SET status = 'active' WHERE id = $1`, held.String()); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ = repo.ChainTenantsWithEntriesBefore(ctx, cut)
+	for _, id := range ids {
+		sawHeld = sawHeld || id == held
+	}
+	if !sawHeld {
+		t.Fatal("a chain is still held after the suspension was lifted")
+	}
 }

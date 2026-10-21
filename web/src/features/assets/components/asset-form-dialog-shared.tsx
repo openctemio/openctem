@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { AssetGroupSelect } from '@/features/asset-groups'
+import { AssetRiskImpactNotice, type RiskNoticeState } from './asset-risk-impact-notice'
 import type { FormFieldConfig } from '../types/form-field.types'
 import type { Asset } from '../types'
 import { IMPACT_RATING_OPTIONS } from '../types'
@@ -133,9 +134,15 @@ export function AssetFormDialogShared({
   )
   const [groupId, setGroupId] = useState(asset?.groupId || '')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [riskReason, setRiskReason] = useState('')
+  const [riskState, setRiskState] = useState<RiskNoticeState>({
+    needsReason: false,
+    blocked: false,
+  })
 
   useEffect(() => {
     if (open) {
+      setRiskReason('')
       setFormData(getInitialValues(fields, asset))
       setGroupId(asset?.groupId || '')
       setErrors({})
@@ -206,6 +213,9 @@ export function AssetFormDialogShared({
     data.criticality = formData.criticality
     data.scope = formData.scope
     data.exposure = formData.exposure
+    if (asset && riskState.needsReason && riskReason.trim()) {
+      data.riskChangeReason = riskReason.trim()
+    }
 
     // Forward CIA impact ratings. '' means "not rated" — for update the
     // backend treats '' as clear, and for create it's simply omitted.
@@ -224,6 +234,8 @@ export function AssetFormDialogShared({
   }
 
   // Check if form is valid (for disabling submit button)
+  const riskBlocksSubmit =
+    !!asset && (riskState.blocked || (riskState.needsReason && !riskReason.trim()))
   const hasRequiredEmpty = useMemo(() => {
     return fields.some((f) => {
       if (!f.required || f.type === 'boolean') return false
@@ -427,6 +439,19 @@ export function AssetFormDialogShared({
               ))}
             </div>
 
+            {/* Lowering exposure or criticality: the impact on the open findings,
+              the approval it needs and its reason (edit only). */}
+            {asset && (
+              <AssetRiskImpactNotice
+                asset={asset}
+                criticality={String(formData.criticality ?? '')}
+                exposure={String(formData.exposure ?? '')}
+                reason={riskReason}
+                onReasonChange={setRiskReason}
+                onStateChange={setRiskState}
+              />
+            )}
+
             {/* CTEM Scoping — CIA business-impact ratings (api #467). Each
               dimension is optional; "Not rated" leaves it unset. Distinct
               from Criticality above (one overall level) — these capture the
@@ -519,7 +544,10 @@ export function AssetFormDialogShared({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             {t('common.cancel', 'Cancel')}
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting || hasRequiredEmpty}>
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting || hasRequiredEmpty || riskBlocksSubmit}
+          >
             {isSubmitting
               ? t('assets.form.saving', 'Saving...')
               : asset

@@ -93,3 +93,69 @@ func TestGuardDirectRolePrivilege(t *testing.T) {
 		t.Errorf("system editor: want nil, got %v", err)
 	}
 }
+
+// A delegated role manager may not change a role that carries a permission
+// they do not hold: not strip it, not rename around it.
+func TestMayEditChecksOldAndNewPermissions(t *testing.T) {
+	tid := roledom.NewID()
+	approver := customRole(tid, []string{"findings:approve", "assets:read"}, false)
+	manager := grantActor{id: "m", perms: map[string]bool{"assets:read": true, "team:roles:write": true}}
+	owner := grantActor{id: "o", owner: true}
+
+	// Strip the approve permission the manager does not hold.
+	if err := manager.mayEdit(approver, []string{"assets:read"}, false); !errors.Is(err, ErrGrantForbidden) {
+		t.Errorf("stripping a permission the editor lacks: want ErrGrantForbidden, got %v", err)
+	}
+	// Add a permission the manager does not hold.
+	plain := customRole(tid, []string{"assets:read"}, false)
+	if err := manager.mayEdit(plain, []string{"assets:read", "findings:approve"}, false); !errors.Is(err, ErrGrantForbidden) {
+		t.Errorf("adding a permission the editor lacks: want ErrGrantForbidden, got %v", err)
+	}
+	// Dropping full data access the editor lacks.
+	full := customRole(tid, []string{"assets:read"}, true)
+	if err := manager.mayEdit(full, []string{"assets:read"}, false); !errors.Is(err, ErrGrantForbidden) {
+		t.Errorf("dropping full data the editor lacks: want ErrGrantForbidden, got %v", err)
+	}
+	// Within the ceiling, and the owner.
+	if err := manager.mayEdit(plain, []string{"assets:read"}, false); err != nil {
+		t.Errorf("within ceiling: %v", err)
+	}
+	if err := owner.mayEdit(approver, []string{"assets:read"}, false); err != nil {
+		t.Errorf("owner: %v", err)
+	}
+}
+
+// An edit that gives a directly held role an approval permission needs a
+// recent sign-in, even when the role was already privileged.
+func TestGuardDirectRoleApprovalGain(t *testing.T) {
+	tid := roledom.NewID()
+	editor := grantActor{id: "actor"}
+	ctx := context.Background()
+	held := []*roledom.UserRole{{UserID: roledom.NewID()}}
+	svc := &RoleService{roleRepo: fakeHolderRepo{holders: held}, stepUp: stepUpGate{requester: "actor"}}
+
+	plain := customRole(tid, []string{"assets:read"}, false)
+	if err := svc.guardDirectRolePrivilege(ctx, plain, []string{"assets:read", "findings:approve"}, false, editor); !errors.Is(err, errStepUp) {
+		t.Errorf("gaining approve: want step-up, got %v", err)
+	}
+	priv := customRole(tid, []string{"team:members:invite"}, false)
+	if err := svc.guardDirectRolePrivilege(ctx, priv, []string{"team:members:invite", "scans:approve"}, false, editor); !errors.Is(err, errStepUp) {
+		t.Errorf("privileged role gaining approve: want step-up, got %v", err)
+	}
+	if err := svc.guardDirectRolePrivilege(ctx, priv, []string{"team:members:invite", "team:roles:write"}, false, editor); !errors.Is(err, errStepUp) {
+		t.Errorf("privileged role gaining another privileged permission: want step-up, got %v", err)
+	}
+	if err := svc.guardDirectRolePrivilege(ctx, priv, []string{"team:members:invite"}, false, editor); err != nil {
+		t.Errorf("no gain: want nil, got %v", err)
+	}
+}
+
+// Granting a role that carries an approval permission needs a recent sign-in.
+func TestAuthorizePrivilegedGrantApprove(t *testing.T) {
+	tid, uid := roledom.NewID(), roledom.NewID()
+	approver := customRole(tid, []string{"findings:approve"}, false)
+	svc := &RoleService{roleRepo: fakeHolderRepo{}, stepUp: stepUpGate{requester: "actor"}}
+	if err := svc.authorizePrivilegedGrant(context.Background(), grantActor{id: "actor"}, tid, uid, []*roledom.Role{approver}); !errors.Is(err, errStepUp) {
+		t.Errorf("approve role: want step-up, got %v", err)
+	}
+}

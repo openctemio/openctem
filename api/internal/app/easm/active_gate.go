@@ -243,7 +243,7 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 	if isInternalName(a.Name()) {
 		return ScopeStatusInternal, nil, nil
 	}
-	if !internetFacing(a.Type(), a.SubType()) {
+	if !governed(a) {
 		return ScopeStatusNotApplicable, nil, nil
 	}
 	cover, err := g.CoverOf(ctx, tenantID, []string{a.Name()})
@@ -888,7 +888,7 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			}
 			continue
 		}
-		if !internetFacing(a.Type(), a.SubType()) || isInternalName(a.Name()) {
+		if !governed(a) || isInternalName(a.Name()) {
 			continue
 		}
 		if auth == nil {

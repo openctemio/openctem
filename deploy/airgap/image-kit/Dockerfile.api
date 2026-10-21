@@ -1,0 +1,35 @@
+# OpenCTEM API image, assembled from the released openctem-server archive
+# (no source code, no compiler, no RUN step: it builds unprivileged on any
+# runner and for any arch). Same layout, users and entrypoint as
+# ghcr.io/openctemio/openctem-api. Guide: api/docs/deployment/air-gapped.md.
+#
+# Context: this kit directory after unpack.sh, which puts the verified
+# archives under dist/<arch>/.
+# Base: distroless static (CA certificates, time zones, no shell). Point
+# BASE_IMAGE at your registry's copy, pinned by digest.
+ARG BASE_IMAGE=gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+FROM ${BASE_IMAGE}
+ARG TARGETARCH
+WORKDIR /app
+COPY rootfs/api/etc/passwd rootfs/api/etc/group /etc/
+# Owned by root, read-only to the runtime users.
+COPY dist/${TARGETARCH}/server/bin/ /app/
+COPY links/ /app/
+COPY dist/${TARGETARCH}/server/api/openapi/swagger.yaml /app/api/openapi/swagger.yaml
+COPY dist/${TARGETARCH}/server/migrations /app/migrations
+COPY dist/${TARGETARCH}/server/configs /app/configs
+# The writable paths and their owners (see the official image).
+COPY --chown=1000:1000 rootfs/empty/ /app/data/attachments/
+COPY --chown=1001:1000 --chmod=0700 rootfs/empty/ /var/lib/openctem-signer/keys/
+COPY --chown=1001:1000 --chmod=0700 rootfs/empty/ /var/lib/openctem-signer/state/
+COPY --chown=1001:1000 --chmod=0770 rootfs/empty/ /run/openctem-signer/
+COPY --chown=1001:1000 --chmod=0755 rootfs/empty/ /var/lib/openctem-signer-pub/
+LABEL org.opencontainers.image.title="OpenCTEM API (rebuilt from release @VERSION@)" \
+      org.opencontainers.image.version="@VERSION@" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+USER 1000:1000
+EXPOSE 8080 9443
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/app/server", "-healthcheck"]
+ENTRYPOINT ["/app/server"]

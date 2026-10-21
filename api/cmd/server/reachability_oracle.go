@@ -16,8 +16,9 @@ import (
 // internal asset on such a path count as "reachable", so the exposure-chain
 // engine actually drives prioritization instead of being display-only.
 //
-// The whole-graph computation is cached per tenant with a short TTL, since the
-// attack surface changes slowly and classification runs per-finding.
+// The chains behind the set are the full, uncapped result, cached per tenant by
+// the surface service (shared with the API and threat models); the derived set
+// is cached here with a short TTL since classification runs per finding.
 type reachabilityOracle struct {
 	surface *attack.SurfaceService
 	ttl     time.Duration

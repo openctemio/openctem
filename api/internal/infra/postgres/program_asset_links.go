@@ -160,6 +160,9 @@ func (r *BountyProgramRepository) ReplaceTargetAssets(ctx context.Context, tenan
 		return fmt.Errorf("begin program targets: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return err
+	}
 	var ok bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM bounty_programs WHERE tenant_id = $1 AND id = $2)`,
 		tenantID.String(), programID.String()).Scan(&ok); err != nil {

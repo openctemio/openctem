@@ -17,6 +17,7 @@ import {
 } from '@/components/flow/connection-rules'
 import type { ScanWorkflowStep } from '@/lib/api'
 import { generateTempStepId } from '@/lib/utils'
+import type { TranslateVars } from '@/lib/i18n'
 import { stepKeyBase, uniqueStepKey } from './step-keys'
 
 type S = components['schemas']
@@ -194,6 +195,126 @@ export function checkStepConnection(
     }
   }
   return { ok: false, reason: base }
+}
+
+/**
+ * What one connection between two steps carries, by the same rule the API
+ * applies on save (stage.ValidateGraph): the port types the source gives
+ * that the target takes. "order" when either step has no typed ports (the
+ * connection only orders the two); "invalid" when no type meets or the
+ * target is intrusive (T2) and never fed by another step. Null while the
+ * catalog is not loaded or a step is unknown.
+ */
+export type EdgeFlow =
+  | { state: 'data'; types: string[] }
+  | { state: 'order'; types: [] }
+  | { state: 'invalid'; types: []; reason: 'no_match' | 'intrusive' }
+
+export function edgeFlow(
+  table: CapabilityTable,
+  source: Pick<ScanWorkflowStep, 'tool' | 'capabilities'> | undefined,
+  target: Pick<ScanWorkflowStep, 'tool' | 'capabilities'> | undefined
+): EdgeFlow | null {
+  if (!source || !target || table.capabilities.length === 0) return null
+  const from = capabilityForStep(table, source)
+  const to = capabilityForStep(table, target)
+  if (!from || !to) return { state: 'order', types: [] }
+  if (to.tier === 'T2') return { state: 'invalid', types: [], reason: 'intrusive' }
+  const types = from.outPorts.filter((p) => to.inPorts.includes(p))
+  if (types.length === 0) return { state: 'invalid', types: [], reason: 'no_match' }
+  return { state: 'data', types }
+}
+
+/** How many type names an edge label writes out before "+n". */
+export const EDGE_LABEL_MAX_TYPES = 2
+
+/**
+ * The short label of a connection that carries data: the first type ids
+ * (as the node chips write them) and how many more ("url · ip +1").
+ */
+export function compactEdgeTypes(
+  types: string[],
+  max = EDGE_LABEL_MAX_TYPES
+): { shown: string[]; more: number } {
+  return { shown: types.slice(0, max), more: Math.max(0, types.length - max) }
+}
+
+type Translate = (key: string, fallback?: string, vars?: TranslateVars) => string
+
+/** A port type's display name: the catalog entry, else the served label. */
+export function portTypeLabel(table: CapabilityTable, type: string, t: Translate): string {
+  return t(`workflowStages.portType.${type}`, table.portLabels[type] ?? type)
+}
+
+/** A connection as the canvas draws it: its flow, short label and full text. */
+export interface EdgeDescription {
+  flow: EdgeFlow
+  /** Short label on the line (type ids, "+n", or the state). */
+  label: string
+  /** The full sentence: accessible name and tooltip. */
+  text: string
+}
+
+/**
+ * Describes source → target for the canvas, or null when there is nothing
+ * to say yet (catalog loading, unknown step).
+ */
+export function describeEdge(
+  table: CapabilityTable,
+  source: Pick<ScanWorkflowStep, 'tool' | 'capabilities' | 'name'> | undefined,
+  target: Pick<ScanWorkflowStep, 'tool' | 'capabilities' | 'name'> | undefined,
+  t: Translate
+): EdgeDescription | null {
+  const flow = edgeFlow(table, source, target)
+  if (!flow || !source || !target) return null
+  const names = { from: source.name, to: target.name }
+  switch (flow.state) {
+    case 'data': {
+      const { shown, more } = compactEdgeTypes(flow.types)
+      const label =
+        shown.join(' · ') +
+        (more > 0 ? ` ${t('workflowStages.edge.more', '+{n}', { n: more })}` : '')
+      const types = flow.types.map((p) => portTypeLabel(table, p, t)).join(', ')
+      return {
+        flow,
+        label,
+        text: t('workflowStages.edge.passes', '{from} passes {types} to {to}', {
+          ...names,
+          types,
+        }),
+      }
+    }
+    case 'order':
+      return {
+        flow,
+        label: t('workflowStages.edge.orderOnly', 'order only'),
+        text: t(
+          'workflowStages.edge.orderOnlyText',
+          '{to} runs after {from}; no data passes between them',
+          names
+        ),
+      }
+    case 'invalid':
+      return flow.reason === 'intrusive'
+        ? {
+            flow,
+            label: t('workflowStages.edge.intrusive', 'not fed: intrusive'),
+            text: t(
+              'workflowStages.edge.intrusiveText',
+              '{to} is intrusive: it runs only on the scan targets and is never fed by {from}',
+              names
+            ),
+          }
+        : {
+            flow,
+            label: t('workflowStages.edge.noMatch', 'no matching type'),
+            text: t(
+              'workflowStages.edge.noMatchText',
+              '{to} takes none of the types {from} gives',
+              names
+            ),
+          }
+  }
 }
 
 /** Edges between steps (dependencies), as source/target step ids. */

@@ -295,7 +295,7 @@ function AccountRowActions({
 
   return (
     <div className="flex justify-end gap-1">
-      <Can permission={[Permission.MembersRead, Permission.ApiKeysRead]} requireAll>
+      <Can permission={[Permission.MembersRead, Permission.ApiKeysRead]} requireAll minRole="admin">
         <Button
           variant="ghost"
           size="sm"

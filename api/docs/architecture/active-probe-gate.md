@@ -257,6 +257,20 @@ For each target, in order:
      are left to scan zones; repositories and cloud resources keep the
      record-only rule when they are inventory assets.
 
+     The check follows **what the name is**, not the stored type, which the
+     person creating the asset chooses: any asset (a `host` included) whose name
+     is exactly a public DNS name or public IP address is governed like a
+     domain or an address (`governed` in `internal/app/easm/surface.go`). A name
+     with a port, path, scheme or `@`, a short name with no dot, a private,
+     loopback or link-local address and internal-only names (`.local`,
+     `.internal`, `.lan`, `.corp`, …) are not public names. Under each mode
+     the outcome is the one a domain of the same name gets. Unclassified
+     scans **off** (the Strict scan approval mode): refused as `unattributed`
+     (`out_of_scope` when a person confirmed it). **Low impact** and
+     **full**: it passes the guardrails (foreign registrable domain, shared
+     network or hosting, deny list) and is probed otherwise, as the tenant chose.
+     A scope entry that covers the name allows it in every mode.
+
    Typed text that names no asset gets the same authority decision as an
    inventory asset; the act-scope check below asks the same `scopeauth`
    package, so a typed name and the same name in the inventory never

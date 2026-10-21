@@ -172,10 +172,6 @@ func (m *mockAttackSurfaceRepo) UpsertBatch(_ context.Context, _ []*asset.Asset)
 	return 0, 0, nil, nil
 }
 
-func (m *mockAttackSurfaceRepo) UpdateFindingCounts(_ context.Context, _ shared.ID, _ []shared.ID) error {
-	return nil
-}
-
 func (m *mockAttackSurfaceRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, _ asset.TagListQuery) (asset.TagList, error) {
 	return asset.TagList{Tags: []string{}}, nil
 }

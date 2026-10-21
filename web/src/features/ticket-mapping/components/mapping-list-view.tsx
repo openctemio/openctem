@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { ArrowLeftRight, Plus, TriangleAlert, FlaskConical } from 'lucide-react'
 import { Main } from '@/components/layout'
 import Link from '@/components/link'
@@ -9,16 +10,43 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, ErrorState, PageHeader, RelativeTime } from '@/features/shared'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { useMappingProfiles } from '../api/use-ticket-mapping-api'
-import { CreateMappingDialog } from './create-mapping-dialog'
+import { CreateMappingDialog, type MappingPreset } from './create-mapping-dialog'
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const PROJECT_KEY = /^[A-Z][A-Z0-9_]{0,31}$/i
+const ISSUE_TYPE_ID = /^\d{1,20}$/
+
+/** A destination named in the URL (?new=1&integration=&kind=&project=&type=),
+ *  from the integration's issue types; every value is checked. */
+export function presetFromParams(p: URLSearchParams | null): MappingPreset | undefined {
+  if (!p || p.get('new') !== '1') return undefined
+  const integrationId = p.get('integration') ?? ''
+  const kind = p.get('kind')
+  const projectKey = p.get('project') ?? ''
+  const issueTypeId = p.get('type') ?? ''
+  if (
+    !UUID.test(integrationId) ||
+    (kind !== 'finding' && kind !== 'task') ||
+    !PROJECT_KEY.test(projectKey) ||
+    !ISSUE_TYPE_ID.test(issueTypeId)
+  ) {
+    return undefined
+  }
+  return { integrationId, kind, projectKey: projectKey.toUpperCase(), issueTypeId }
+}
 
 /** Settings → Integrations → Ticket field mapping: every destination's
  *  mapping profile, its published version, draft, dry run and drift. */
 export function MappingListView() {
   const { t } = useTranslation()
-  const [createOpen, setCreateOpen] = useState(false)
+  const { can } = usePermissions()
+  const params = useSearchParams()
+  // Only a person who may create mappings gets the dialog from a link.
+  const preset = can(Permission.IntegrationsManage) ? presetFromParams(params) : undefined
+  const [createOpen, setCreateOpen] = useState(Boolean(preset))
   const { data, error, isLoading, mutate } = useMappingProfiles()
   const profiles = data?.data ?? []
 
@@ -131,7 +159,7 @@ export function MappingListView() {
           </div>
         )}
       </div>
-      <CreateMappingDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateMappingDialog open={createOpen} onOpenChange={setCreateOpen} initial={preset} />
     </Main>
   )
 }

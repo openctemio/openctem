@@ -401,7 +401,7 @@ func (h *MCPHandler) toolListFindingTransitions(ctx context.Context, tenantID st
 	has := func(p permission.Permission) bool { return middleware.HasPermission(ctx, string(p)) }
 	transitions, status, err := h.findings.ListFindingTransitions(ctx, tenantID, id, actingUser(ctx), finding.TransitionPermissions{
 		Status: has(permission.FindingsStatus), Verify: has(permission.FindingsVerify), FixApply: has(permission.FindingsFixApply),
-		Triage: has(permission.FindingsTriage), Write: has(permission.FindingsWrite),
+		Triage: has(permission.FindingsTriage), Write: has(permission.FindingsWrite), Approve: has(permission.FindingsApprove),
 	})
 	if err != nil {
 		return nil, err
@@ -410,9 +410,9 @@ func (h *MCPHandler) toolListFindingTransitions(ctx context.Context, tenantID st
 }
 
 // toolExposureChains returns exposure chains narrowed to the key owner's data
-// scope: the chains are computed over the whole tenant graph, but a chain is
-// returned only when every hop is an asset the key owner may see (the summary
-// counts stay tenant-wide). Gated by the assets:read scope.
+// scope: a chain is returned when its target is an asset the key owner may
+// see, and steps they may not see come back as hidden steps without id, name
+// or type. Gated by the assets:read scope.
 func (h *MCPHandler) toolExposureChains(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {

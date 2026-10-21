@@ -52,3 +52,37 @@ func TestGetFinding_NeverReturnsTheRawSecret(t *testing.T) {
 		t.Fatalf("preview or fingerprint missing: %s", body)
 	}
 }
+
+// GET /findings/{id} never returns a producer's keyed secret hash, also for a
+// finding stored before it was dropped at ingest.
+func TestGetFinding_NeverReturnsTheProducerSecretHash(t *testing.T) {
+	const hash = "00000000000000000000000000000000000000000000000000000000deadbeef"
+	tenant, asset := shared.NewID(), shared.NewID()
+	f, err := vulnerability.NewFinding(tenant, asset, vulnerability.FindingSourceSecret, "betterleaks",
+		vulnerability.SeverityCritical, "Key committed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetFindingType(vulnerability.FindingTypeSecret)
+	f.SetPartialFingerprints(map[string]string{"secretHMAC/v1": hash, "primaryLocationLineHash": "abc:1"})
+
+	svc := finding.NewVulnerabilityService(&detailVulnRepo{}, &detailFindingRepo{f: f}, logger.NewNop())
+	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/findings/"+f.ID().String(), nil)
+	req.SetPathValue("id", f.ID().String())
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String())
+	ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
+	rr := httptest.NewRecorder()
+	h.GetFinding(rr, req.WithContext(ctx))
+
+	body := rr.Body.String()
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rr.Code, body)
+	}
+	if strings.Contains(body, hash) || strings.Contains(strings.ToLower(body), "secrethmac") {
+		t.Fatalf("response carries the producer secret hash: %s", body)
+	}
+	if !strings.Contains(body, "primaryLocationLineHash") {
+		t.Fatalf("other partial fingerprints must stay: %s", body)
+	}
+}

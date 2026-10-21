@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	scopesvc "github.com/openctemio/openctem/api/internal/app/scope"
@@ -187,7 +188,7 @@ func TestWebScope_WorkflowStep(t *testing.T) {
 		postgres.NewSensorRepository(pg), cmds, nil, logger.New(logger.Config{Level: "error"}),
 		scanrun.WithTargetGate(newTriggerServiceWith(db, scansvc.WithActScope(actScopeChecker(db)))),
 	)
-	if _, err := svc.TriggerPipeline(ctx, scanrun.TriggerRunInput{TenantID: tenant.String(), TemplateID: templateID.String(),
+	if _, err := svc.TriggerPipeline(asCaller(ctx, datascope.Caller{UserID: shared.NewID().String(), IsAdmin: true}), scanrun.TriggerRunInput{TenantID: tenant.String(), TemplateID: templateID.String(),
 		TriggerType: "api", Context: map[string]any{"targets": []any{"https://" + webHost}}}); err != nil {
 		t.Fatalf("trigger: %v", err)
 	}

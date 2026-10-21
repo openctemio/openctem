@@ -417,7 +417,7 @@ func TestTicketMapping_EngineUsesOnlyThePublishedProfileOfTheTenant(t *testing.T
 		t.Fatalf("other integration: %+v %v", pc, err)
 	}
 	// Status: a new finding is not mapped by the preset (no move); dry run is carried.
-	st, err := f.svc.FindingStatusTarget(ctx, f.tenantA, f.intgA, "SEC", fd.ID())
+	st, err := f.svc.FindingStatusTarget(ctx, f.tenantA, f.intgA, "SEC", "", fd.ID())
 	if err != nil || st == nil || st.State != "new" || st.Target != nil || len(st.Workflow.Statuses) == 0 {
 		t.Fatalf("status: %+v %v", st, err)
 	}

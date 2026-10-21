@@ -83,7 +83,7 @@ export function SegmentedLens<V extends string>({
       aria-label={label}
       data-testid="segmented-lens"
       onKeyDown={onKeyDown}
-      className={cn('inline-flex h-8 items-center rounded-md border bg-muted/40 p-0.5', className)}
+      className={cn('inline-flex h-9 items-center rounded-md border bg-muted/40 p-0.5', className)}
     >
       {options.map((o, i) => {
         const selected = o.value === value
@@ -101,7 +101,7 @@ export function SegmentedLens<V extends string>({
             data-testid={`lens-${o.value}`}
             onClick={() => onChange(o.value)}
             className={cn(
-              'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               selected
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'

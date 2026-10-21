@@ -20,11 +20,27 @@ import type { FindingRetestListResponse, FindingRetestResponse } from '@/lib/api
 
 export type FindingRetest = FindingRetestResponse
 
+/**
+ * A retest that ran the finding's retest check carries the check's id and the
+ * digest of the template that ran (see use-finding-retest-check.ts). Declared
+ * here until the generated contract includes them.
+ */
+export type FindingRetestWithCheck = FindingRetest & {
+  retest_check_id?: string
+  check_digest?: string
+}
+
 /** Poll every 5 s while a retest is running. */
 export const RETEST_POLL_MS = 5000
 
 /** Statuses a retest may run on (the API refuses the others). */
-const RETESTABLE_STATUSES = new Set(['new', 'confirmed', 'in_progress', 'fix_applied', 'resolved'])
+export const RETESTABLE_STATUSES = new Set([
+  'new',
+  'confirmed',
+  'in_progress',
+  'fix_applied',
+  'resolved',
+])
 
 /**
  * Whether a finding may have a deterministic re-check: a rule of a tool, in an

@@ -176,6 +176,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: actionlint
         # Release tarball pinned by SHA-256 (no curl | bash of a mutable script).
         env:
@@ -199,6 +201,21 @@ jobs:
       - name: CodeQL new-alert gate self-test
         run: bash .github/scripts/codeql-new-alerts.test.sh
 
+      # Moved here from their own jobs (one runner each for a few seconds).
+      # The security gate's tests run pull request code, which the gate job
+      # itself never does (security-gate.yml).
+      - name: Security gate unit tests
+        run: python3 .github/scripts/security_gate_test.py
+
+      - name: Security gate CODEOWNERS mirrors the path list
+        run: python3 .github/scripts/security_gate.py codeowners --check
+
+      - name: Platform depends on contracts only (self-test)
+        run: bash .github/scripts/check-platform-deps.test.sh
+
+      - name: Platform depends on contracts only (no sensor module or SDK in api/ or web/)
+        run: bash .github/scripts/check-platform-deps.sh
+
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
   # known high or critical vulnerability in what the pull request adds; existing
@@ -217,20 +234,3 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: never
-
-  # The platform depends on contracts only (ctis, the sensor protocol, signed
-  # manifests): api/ and web/ must never require, import or vendor the sensor
-  # SDK or a sensor (api/docs/rfcs/RFC-094-platform-contracts-only.md).
-  platform-deps:
-    name: Platform depends on contracts only
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Self-test
-        run: bash .github/scripts/check-platform-deps.test.sh
-      - name: No sensor module or SDK in api/ or web/
-        run: bash .github/scripts/check-platform-deps.sh

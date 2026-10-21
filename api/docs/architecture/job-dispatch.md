@@ -156,6 +156,7 @@ Columns that drive dispatch:
 | `scan_zone_id` | Only sensors assigned to this zone may take it |
 | `lease_epoch`, `lease_expires_at` | The current claim's number and its lease |
 | `dispatch_attempts` | Lease losses and recoveries; 3 makes it poison |
+| `requeue_count` | Every return to `pending` (unclaim while the signer is down, voluntary release, refusal re-route, lease expiry, stall, sensor withdrawn, scan window deferral); each return after the first delays the next offer (`scheduled_at`, 5 s doubling to 5 min, none for a refusal re-route); `command.MaxRequeues` (50) fails the command with "max re-queues exceeded" |
 | `refused_by`, `refusals` | Sensors whose local policy refused it (never offered to them again) |
 | `host_keys`, `settled_host_keys` | Politeness keys held while acknowledged or running; keys released as targets settle |
 | `scheduled_at`, `window_hold` | Not due before its scan window opens |
@@ -439,6 +440,7 @@ leave room for it.
 | Commands fail with `SIGNER_REFUSED` | `openctem_signer_refusals_total{reason}`; signing log | Target or tier outside the scope ledger |
 | Jobs bounce between sensors | `command_events` (`requeued` with `lease expired`); `command_leases_expired_total`; log `re-queued command: its lease ran out` | Sensor heartbeats failing or late, network, relay delay |
 | Running task stuck | `commands_stalled_total`; log `stalled command: asked its sensor to stop it`; `last_progress_at` | Tool hung; target unreachable |
+| `failed: the command returned to the queue too many times` | `requeue_count` | A command handed back, unclaimed or re-queued 50 times (a loop no sensor can finish) |
 | `Max dispatch attempts exceeded` | `command_events` attempts; `dispatch_attempts` | Three lease losses or stalls |
 | Sensor refuses jobs with a signature reason | Sensor log `Refusing command`; `refusals` | Key set not trusted, wrong root pinned, expired statement |
 | Slow claims | `command_claim_duration_seconds`, `command_claim_pages_total` | Deep pending queue for the organization (cost grows with pending rows) |

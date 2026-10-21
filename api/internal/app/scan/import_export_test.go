@@ -63,6 +63,15 @@ func (m *mockScanRepository) GetByName(_ context.Context, tenantID shared.ID, na
 	return nil, shared.ErrNotFound
 }
 
+func (m *mockScanRepository) GetManaged(_ context.Context, tenantID shared.ID, by scan.ManagedBy, key string) (*scan.Scan, error) {
+	for _, s := range m.scans {
+		if s.TenantID == tenantID && s.ManagedBy == by && s.ManagedKey == key {
+			return s, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
 func (m *mockScanRepository) List(_ context.Context, _ scan.Filter, _ pagination.Pagination) (pagination.Result[*scan.Scan], error) {
 	return pagination.Result[*scan.Scan]{}, nil
 }

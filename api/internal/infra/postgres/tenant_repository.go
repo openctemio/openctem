@@ -216,9 +216,19 @@ func (r *TenantRepository) UpdateSettingsSection(
 
 // Delete removes a tenant.
 func (r *TenantRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM tenants WHERE id = $1`
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete tenant: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	// Tables without a foreign key to tenants do not cascade: erase them here,
+	// in the same transaction, so a deleted organization leaves nothing behind.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM priority_class_audit_log WHERE tenant_id = $1`, id.String()); err != nil {
+		return fmt.Errorf("failed to delete tenant priority audit: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete tenant: %w", err)
 	}
@@ -231,6 +241,9 @@ func (r *TenantRepository) Delete(ctx context.Context, id shared.ID) error {
 		return shared.ErrNotFound
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to delete tenant: %w", err)
+	}
 	return nil
 }
 

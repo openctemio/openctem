@@ -35,6 +35,9 @@ func (s *taskStore) GetTask(_ context.Context, _, id shared.ID) (*remediation.Ta
 func (s *taskStore) OpenMemberIDs(_ context.Context, _, id shared.ID, _ int) ([]shared.ID, error) {
 	return s.members[id], nil
 }
+func (s *taskStore) EgressMemberIDs(_ context.Context, _, id shared.ID) ([]shared.ID, error) {
+	return s.members[id], nil
+}
 
 type onceGuard struct{ seen map[string]bool }
 
@@ -227,7 +230,7 @@ func TestTaskIssueDone_ClaimsTheMembersFix(t *testing.T) {
 		Issue:     WebhookIssue{Key: links.rows[0].ExternalKey, Self: "https://acme.atlassian.net/rest/api/2/issue/1"},
 		Changelog: &Changelog{Items: []ChangeItem{{Field: "status", ToString: "Done"}}},
 	}
-	if err := s.HandleJiraWebhook(context.Background(), tid, payload); err != nil {
+	if err := s.HandleJiraWebhook(context.Background(), tid, links.rows[0].IntegrationID, payload); err != nil {
 		t.Fatal(err)
 	}
 	if app.target != vulnerability.FindingStatusFixApplied || len(app.ids) != 2 {
@@ -238,7 +241,7 @@ func TestTaskIssueDone_ClaimsTheMembersFix(t *testing.T) {
 	now := time.Now()
 	links.rows[0].LastStatus, links.rows[0].LastSyncedAt = "Done", &now
 	app.ids, app.target = nil, ""
-	if err := s.HandleJiraWebhook(context.Background(), tid, payload); err != nil {
+	if err := s.HandleJiraWebhook(context.Background(), tid, links.rows[0].IntegrationID, payload); err != nil {
 		t.Fatal(err)
 	}
 	if len(app.ids) != 0 {

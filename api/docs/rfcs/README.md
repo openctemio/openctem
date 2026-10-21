@@ -128,6 +128,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-117](RFC-117-emerging-threat-alerts.md) | Emerging-threat alerts | In progress (2026-10-19) |
 | [RFC-118](RFC-118-rule-sources.md) | Rule sources for scans | Accepted (2026-10-19). |
 | [RFC-119](RFC-119-ai-triage-governance.md) | AI triage governance | Accepted (2026-10-19). |
+| [RFC-120](RFC-120-participants-and-watchers.md) | Participants and watchers on findings and remediation tasks | Accepted (2026-10-20). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

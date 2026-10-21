@@ -392,3 +392,49 @@ func TestActiveGate_UncoveredTargetsUnclassified(t *testing.T) {
 		t.Fatalf("uncovered: %v", got)
 	}
 }
+
+// A host named by a public DNS name or address follows the same modes as a
+// domain of the same name: refused as unattributed while unclassified scans
+// are off, and past the guardrails otherwise (the deny list and a third
+// party's name still hold it).
+func TestActiveGate_PublicHostFollowsTheModes(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		mode string
+		name string
+		want attribution.State
+	}{
+		{unclassifiedOff, "mail.exact.org", attribution.StateUnattributed},
+		{unclassifiedLowImpact, "mail.exact.org", ""},
+		{unclassifiedFull, "mail.exact.org", ""},
+		{unclassifiedLowImpact, "cdn.thirdparty.net", attribution.StateGuardrailed},
+	} {
+		state := func(typ asset.AssetType) attribution.State {
+			f, g, _ := unclassifiedFixture(t, tc.mode)
+			a := f.add(t, tc.name, typ)
+			got, err := g.ActiveCheckBlocked(ctx, f.tenant, []string{a.ID().String()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return got[a.ID().String()]
+		}
+		host, dom := state(asset.AssetTypeHost), state(asset.AssetTypeSubdomain)
+		if host != tc.want || dom != tc.want {
+			t.Errorf("mode %s, %s: host %q, domain %q, want %q for both", tc.mode, tc.name, host, dom, tc.want)
+		}
+	}
+}
+
+func TestPublicBareName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"victim.example.org": true, "Victim.Example.ORG.": true, "203.0.113.9": true, "2001:4860::1": true,
+		"10.0.0.1": false, "127.0.0.1": false, "localhost": false, "web01": false, "db.corp": false,
+		"host.local": false, "a.b.internal": false, "user@example.org": false, "example.org/path": false,
+		"example.org:443": false, "https://example.org": false, "arn:aws:s3:::x": false, "": false,
+		"-bad.example.org": false, "a..example.org": false, "x.123": false, "wild*.example.org": false,
+	} {
+		if got := publicBareName(name); got != want {
+			t.Errorf("publicBareName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}

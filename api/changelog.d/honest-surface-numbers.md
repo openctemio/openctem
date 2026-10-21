@@ -1,9 +1,0 @@
-### Fixed: one definition of internet-facing, and attack surface, scope and group numbers that agree
-
-- "Internet-facing" is one rule everywhere: exposure public or reported reachable. Assets carry `internet_facing`; the asset list filter is `internet_facing` (was `is_internet_accessible`) and the stats facet `by_internet_facing` (was `by_internet_accessible`). Crown jewels no longer says "Internet-exposed 0" for public crown jewels, and the inventory's always-"No" Internet column is gone.
-- Attack surface overview: `exposed_services` / `critical_exposures` are now `internet_facing_assets` / `critical_internet_facing_assets` (labelled as populations, not risks), `newly_exposed` is counted from the state history exactly like Assets › What changed (the `*_change` fields and `critical_exposures_change` are removed), and every card opens the rows it counts.
-- `GET /api/v1/findings?asset_group_id=` now filters to the group's members (it was ignored), inside the caller's data scope and tenant.
-- Scoping summary: `boundary.targets` / `boundary.exclusions` count what is in effect (status active), plus `boundary.targets_waiting`; the Scope page's strip opens exactly those rows and its tabs are "Entries" / "Exclusions".
-- Asset groups: "Assets in groups" counts each asset once; the group page shows real asset types and its severity breakdown counts the same open findings as the group's count, each row linking to the findings list; the group dialogs offer the organization's own business units instead of a built-in list.
-- The assets inventory shows a skeleton until the first answer (never "No assets yet" while loading) and "—" instead of zeros when its counts fail.
-- **Upgrade note:** API clients reading the renamed fields or the `is_internet_accessible` asset filter must switch to the new names.

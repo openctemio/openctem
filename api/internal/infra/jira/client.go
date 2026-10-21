@@ -65,10 +65,104 @@ type CreateIssueInput struct {
 	Summary     string
 	Description string
 	IssueType   string // "Bug", "Task", "Story"
+	// IssueTypeID, when set, sends the type by id instead of by name.
+	IssueTypeID string
 	Priority    string // "Highest", "High", "Medium", "Low", "Lowest"
 	Labels      []string
 	// ParentKey makes the issue a child of this issue (an epic).
 	ParentKey string
+	// Marker, when set, is written into the create request itself (the
+	// issue property MarkerProperty and the label MarkerLabel), so a retry
+	// after a lost response finds the issue instead of creating another.
+	Marker *IssueMarker
+}
+
+// MarkerProperty is the issue entity property that carries the marker.
+const MarkerProperty = "openctem"
+
+// IssueMarker names the OpenCTEM object an issue was created for: the
+// object's id, its kind (task or finding) and the integration that created
+// it. Stored as the issue property {"o":..,"k":..,"i":..}.
+type IssueMarker struct {
+	Object      string `json:"o"`
+	Kind        string `json:"k"`
+	Integration string `json:"i"`
+}
+
+// markerObjectRe is the shape of an object id in a marker (a UUID).
+var markerObjectRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// MarkerLabel is the label that makes a marked issue searchable: issue
+// properties are only searchable in JQL when an installed app indexes them,
+// a label always is. The property, not the label, is what a lookup trusts.
+func MarkerLabel(objectID string) string { return "openctem-ref-" + objectID }
+
+// applyMarker adds the marker's property to the create body and its label to
+// the fields that already carry labels.
+func applyMarker(body, fields map[string]any, m *IssueMarker) {
+	if m == nil || !markerObjectRe.MatchString(m.Object) {
+		return
+	}
+	body["properties"] = []map[string]any{{"key": MarkerProperty, "value": m}}
+	// The label goes only where labels are already sent: a project whose
+	// create screen has no labels field refuses an issue that sets one.
+	if _, ok := fields["labels"]; !ok {
+		return
+	}
+	labels := []string{}
+	switch v := fields["labels"].(type) {
+	case []string:
+		labels = append(labels, v...)
+	case []any:
+		for _, x := range v {
+			if s, ok := x.(string); ok {
+				labels = append(labels, s)
+			}
+		}
+	}
+	fields["labels"] = append(labels, MarkerLabel(m.Object))
+}
+
+// MarkedIssue is an issue found by its marker, with the marker it carries.
+type MarkedIssue struct {
+	ID        string
+	Key       string
+	BrowseURL string
+	Marker    IssueMarker
+}
+
+// FindIssuesByMarker lists the issues labeled for the marker's object
+// (at most 10) with the marker property each one carries. The caller
+// compares the property with the marker it expects: the label alone is
+// never trusted.
+func (c *Client) FindIssuesByMarker(ctx context.Context, objectID string) ([]MarkedIssue, error) {
+	if !markerObjectRe.MatchString(objectID) {
+		return nil, fmt.Errorf("invalid marker object id")
+	}
+	q := url.Values{}
+	q.Set("jql", `labels = "`+MarkerLabel(objectID)+`" ORDER BY created ASC`)
+	q.Set("fields", "summary")
+	q.Set("properties", MarkerProperty)
+	q.Set("maxResults", "10")
+	var out struct {
+		Issues []struct {
+			ID         string                     `json:"id"`
+			Key        string                     `json:"key"`
+			Properties map[string]json.RawMessage `json:"properties"`
+		} `json:"issues"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/rest/api/2/search?"+q.Encode(), nil, &out); err != nil {
+		return nil, err
+	}
+	issues := make([]MarkedIssue, 0, len(out.Issues))
+	for _, i := range out.Issues {
+		mi := MarkedIssue{ID: i.ID, Key: i.Key, BrowseURL: c.baseURL + "/browse/" + i.Key}
+		if raw, ok := i.Properties[MarkerProperty]; ok {
+			_ = json.Unmarshal(raw, &mi.Marker)
+		}
+		issues = append(issues, mi)
+	}
+	return issues, nil
 }
 
 // CreateIssueResult contains the response from creating a Jira issue.
@@ -90,6 +184,9 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 		"summary":   input.Summary,
 		"issuetype": map[string]string{"name": input.IssueType},
 	}
+	if input.IssueTypeID != "" {
+		fields["issuetype"] = map[string]string{"id": input.IssueTypeID}
+	}
 
 	if input.Description != "" {
 		fields["description"] = input.Description
@@ -105,6 +202,7 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 	}
 
 	body := map[string]any{"fields": fields}
+	applyMarker(body, fields, input.Marker)
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -130,7 +228,7 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return nil, httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody)
+		return nil, upstreamError(ctx, resp.StatusCode, respBody)
 	}
 
 	var result CreateIssueResult

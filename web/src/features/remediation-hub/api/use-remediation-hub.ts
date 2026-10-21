@@ -203,6 +203,7 @@ export const hubApi = {
       title?: string
       assignee_user_id?: string
       assignee_group_id?: string
+      confirm_owner_access?: boolean
     }
   ) => post<MoveResult>(`${TASKS}/${id}/splits`, body),
   mergeTasks: (

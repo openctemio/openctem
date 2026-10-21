@@ -25,7 +25,28 @@ import (
 // sighting was a report of the same tool under the same scan profile, plus
 // how many open default-branch findings of that tool those assets have (for
 // the blinding guard).
+//
+// A leaked secret is never a candidate: removing it from the branch does not
+// revoke it, so its absence closes nothing (MarkRepoCoverageSecretsNotObserved
+// marks it instead).
 func (r *FindingRepository) RepoCoverageStaleFindings(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery) ([]shared.ID, int, error) {
+	return r.repoCoverageStale(ctx, tenantID, q, false)
+}
+
+// MarkRepoCoverageSecretsNotObserved marks the open secret findings of the
+// query that a full default-branch scan no longer reported as stale
+// (observation_state; the status stays) and writes a timeline entry. Same
+// candidate rules as RepoCoverageStaleFindings, for secrets only. It never
+// resolves: the credential is still valid until it is rotated.
+func (r *FindingRepository) MarkRepoCoverageSecretsNotObserved(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery) ([]shared.ID, error) {
+	ids, _, err := r.repoCoverageStale(ctx, tenantID, q, true)
+	if err != nil || len(ids) == 0 {
+		return nil, err
+	}
+	return r.markSecretsNotObserved(ctx, tenantID, ids, "A full scan of the default branch no longer reported it; a secret stays exposed until it is rotated", "system: default-branch scan", true)
+}
+
+func (r *FindingRepository) repoCoverageStale(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery, secrets bool) ([]shared.ID, int, error) {
 	if len(q.AssetIDs) == 0 || q.ToolName == "" || len(q.SeenScanIDs) == 0 {
 		return nil, 0, nil
 	}
@@ -45,6 +66,7 @@ func (r *FindingRepository) RepoCoverageStaleFindings(ctx context.Context, tenan
 				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.status IN `+autoResolveFromSQL+`
 				AND f.source NOT IN `+coverageProtectedSources+`
+				AND `+secretFindingSQL("f")+` = $6
 		)
 		SELECT o.id::text, COUNT(*) OVER () AS open_total,
 			(
@@ -61,7 +83,7 @@ func (r *FindingRepository) RepoCoverageStaleFindings(ctx context.Context, tenan
 				)
 			) AS stale
 		FROM open_findings o`,
-		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(q.SeenScanIDs), q.ProfileID)
+		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(q.SeenScanIDs), q.ProfileID, secrets)
 	if err != nil {
 		return nil, 0, fmt.Errorf("repository coverage stale findings: %w", err)
 	}
@@ -121,6 +143,7 @@ func (r *FindingRepository) ResolveRepoCoverageStale(ctx context.Context, tenant
 			AND rb.is_default = true
 			AND f.status IN `+autoResolveFromSQL+`
 			AND f.source NOT IN `+coverageProtectedSources+`
+			AND NOT `+secretFindingSQL("f")+`
 		RETURNING f.id::text`, tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("resolve repository coverage-stale findings: %w", err)

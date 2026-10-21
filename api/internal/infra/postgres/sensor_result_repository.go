@@ -282,7 +282,7 @@ func (r *SensorResultRepository) SetResult(ctx context.Context, tenantID, id sha
 
 // PurgeReviewed deletes reviewed items older than the cutoff.
 func (r *SensorResultRepository) PurgeReviewed(ctx context.Context, before time.Time) (int, error) {
-	res, err := r.db.ExecContext(ctx, `
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `
 		DELETE FROM sensor_result_quarantine WHERE status <> 'pending' AND reviewed_at < $1`, before)
 	if err != nil {
 		return 0, fmt.Errorf("failed to purge reviewed quarantined results: %w", err)

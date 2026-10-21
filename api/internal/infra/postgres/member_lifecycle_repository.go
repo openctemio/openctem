@@ -82,6 +82,12 @@ func accessReport(ctx context.Context, q lifecycleQueryer, m *tenant.Membership)
 			FROM api_keys
 			WHERE tenant_id = $1 AND user_id = $2 AND status IN ('active', 'suspended')
 			ORDER BY name`},
+		{&rep.ServiceAccountKeys, `
+			SELECT k.id::text, k.name, k.status, u.name
+			FROM api_keys k
+			JOIN users u ON u.id = k.user_id AND u.kind = 'service' AND u.service_tenant_id = k.tenant_id
+			WHERE k.tenant_id = $1 AND k.created_by = $2 AND k.status IN ('active', 'suspended')
+			ORDER BY u.name, k.name`},
 		{&rep.Campaigns, `
 			SELECT c.id::text, c.name, c.status, pcm.role
 			FROM pentest_campaign_members pcm JOIN pentest_campaigns c ON c.id = pcm.campaign_id
@@ -117,9 +123,14 @@ func accessReport(ctx context.Context, q lifecycleQueryer, m *tenant.Membership)
 			(SELECT COUNT(*) FROM user_accessible_assets WHERE tenant_id = $1 AND user_id = $2),
 			(SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND assigned_to = $2 AND NOT (status = ANY($3))),
 			(SELECT COUNT(*) FROM asset_owners ao JOIN assets a ON a.id = ao.asset_id
-			  WHERE a.tenant_id = $1 AND ao.user_id = $2)`,
-		tid, uid, pq.Array(closedFindingStatuses()),
-	).Scan(&rep.DirectGrants, &rep.VisibleAssets, &rep.AssignedFindings, &rep.OwnedAssets); err != nil {
+			  WHERE a.tenant_id = $1 AND ao.user_id = $2),
+			(SELECT COUNT(*) FROM remediation_tasks WHERE tenant_id = $1 AND assignee_user_id = $2
+			  AND state <> ALL($4)),
+			(SELECT COUNT(*) FROM remediation_campaigns WHERE tenant_id = $1 AND assigned_to = $2
+			  AND status = ANY($5))`,
+		tid, uid, pq.Array(closedFindingStatuses()), pq.Array(closedTaskStates), pq.Array(openCampaignStatuses),
+	).Scan(&rep.DirectGrants, &rep.VisibleAssets, &rep.AssignedFindings, &rep.OwnedAssets,
+		&rep.OwnedTasks, &rep.OwnedCampaigns); err != nil {
 		return nil, fmt.Errorf("access report counts: %w", err)
 	}
 	return rep, nil
@@ -291,13 +302,13 @@ func (r *MemberLifecycleRepository) Offboard(ctx context.Context, m *tenant.Memb
 		return nil, &tenant.ReassignmentError{Missing: missing}
 	}
 
-	out := &tenant.OffboardResult{Report: report}
-	if stepErr := reassignOwnedWork(ctx, tx, tid, uid, plan, report, out); stepErr != nil {
-		return nil, stepErr
-	}
 	var actorArg any
 	if actor != nil && !actor.IsZero() {
 		actorArg = actor.String()
+	}
+	out := &tenant.OffboardResult{Report: report}
+	if stepErr := reassignOwnedWork(ctx, tx, tid, uid, actorArg, plan, report, out); stepErr != nil {
+		return nil, stepErr
 	}
 	if stepErr := stripAccess(ctx, tx, tid, uid, actorArg, out); stepErr != nil {
 		return nil, stepErr
@@ -358,9 +369,9 @@ func checkReassignTargets(ctx context.Context, tx *sql.Tx, m *tenant.Membership,
 	return nil
 }
 
-// reassignOwnedWork hands the member's schedules, open findings and owned
-// assets to the plan's targets.
-func reassignOwnedWork(ctx context.Context, tx *sql.Tx, tid, uid string, plan tenant.OffboardPlan, report *tenant.AccessReport, out *tenant.OffboardResult) error {
+// reassignOwnedWork hands the member's schedules, open findings, owned assets,
+// open remediation tasks and campaigns to the plan's targets.
+func reassignOwnedWork(ctx context.Context, tx *sql.Tx, tid, uid string, actorArg any, plan tenant.OffboardPlan, report *tenant.AccessReport, out *tenant.OffboardResult) error {
 	if plan.SchedulesTo != nil {
 		to := plan.SchedulesTo.String()
 		for _, q := range []string{
@@ -391,6 +402,16 @@ func reassignOwnedWork(ctx context.Context, tx *sql.Tx, tid, uid string, plan te
 		out.ReassignedFindings = n
 	}
 
+	if report.OwnedTasks > 0 || report.OwnedCampaigns > 0 {
+		var to any // the findings target; NULL leaves the work unowned, never with a person who left
+		if plan.FindingsTo != nil {
+			to = plan.FindingsTo.String()
+		}
+		if err := reassignOwnedRemediation(ctx, tx, tid, uid, to, actorArg, out); err != nil {
+			return err
+		}
+	}
+
 	if plan.AssetsTo != nil && report.OwnedAssets > 0 {
 		to := plan.AssetsTo.String()
 		// Where the new owner already owns the asset, the member's row goes;
@@ -416,6 +437,71 @@ func reassignOwnedWork(ctx context.Context, tx *sql.Tx, tid, uid string, plan te
 	return nil
 }
 
+// revokeServiceAccountKeysSQL revokes the active keys a person minted for the
+// service accounts of one organization. A service account's key outlives its
+// creator otherwise: it is an organization secret nobody is accountable for.
+const revokeServiceAccountKeysSQL = `
+	UPDATE api_keys k SET status = 'revoked', revoked_at = NOW(), revoked_by = $3, updated_at = NOW()
+	FROM users u
+	WHERE u.id = k.user_id AND u.kind = 'service' AND u.service_tenant_id = k.tenant_id
+	  AND k.tenant_id = $1 AND k.created_by = $2 AND k.status IN ('active', 'suspended')`
+
+// RevokeServiceAccountKeys revokes the service-account keys userID minted in
+// tenantID (an administrator who was demoted or removed).
+func (r *MemberLifecycleRepository) RevokeServiceAccountKeys(ctx context.Context, tenantID, userID shared.ID, revokedBy *shared.ID) (int, error) {
+	var by any
+	if revokedBy != nil && !revokedBy.IsZero() {
+		by = revokedBy.String()
+	}
+	res, err := r.db.ExecContext(ctx, revokeServiceAccountKeysSQL, tenantID.String(), userID.String(), by)
+	if err != nil {
+		return 0, fmt.Errorf("revoke service account keys: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
+// closedTaskStates are the remediation task states that need no owner.
+var closedTaskStates = []string{"done", "closed_unverified", "canceled", "archived"} //nolint:gochecknoglobals // constant list
+
+// openCampaignStatuses are the remediation campaign statuses that still need
+// an owner.
+var openCampaignStatuses = []string{"draft", "active", "paused", "validating"} //nolint:gochecknoglobals // constant list
+
+// reassignOwnedRemediation moves the member's open remediation tasks and
+// campaigns to `to` (NULL = unowned). Each task gets a version bump, so an
+// editor holding the old version is refused, and a timeline entry naming the
+// offboarding; the caller records the counts in the audit log.
+func reassignOwnedRemediation(ctx context.Context, tx *sql.Tx, tid, uid string, to, actorArg any, out *tenant.OffboardResult) error {
+	var tasks int
+	if err := tx.QueryRowContext(ctx, `
+		WITH moved AS (
+			UPDATE remediation_tasks SET assignee_user_id = $3, version = version + 1, updated_at = NOW()
+			WHERE tenant_id = $1 AND assignee_user_id = $2 AND state <> ALL($5)
+			RETURNING id
+		), ev AS (
+			INSERT INTO remediation_task_events (tenant_id, task_id, kind, actor_id, actor_type, data)
+			SELECT $1, id, 'updated', $4::uuid,
+			       CASE WHEN $4::uuid IS NULL THEN 'system' ELSE 'user' END,
+			       jsonb_build_object('assignee_user_id', COALESCE($3::text, ''), 'reason', 'member_offboarded')
+			FROM moved
+		)
+		SELECT COUNT(*) FROM moved`,
+		tid, uid, to, actorArg, pq.Array(closedTaskStates)).Scan(&tasks); err != nil {
+		return fmt.Errorf("reassign remediation tasks: %w", err)
+	}
+	out.ReassignedTasks = tasks
+	n, err := execCount(ctx, tx, `
+		UPDATE remediation_campaigns SET assigned_to = $3, updated_at = NOW()
+		WHERE tenant_id = $1 AND assigned_to = $2 AND status = ANY($4)`,
+		tid, uid, to, pq.Array(openCampaignStatuses))
+	if err != nil {
+		return fmt.Errorf("reassign remediation campaigns: %w", err)
+	}
+	out.ReassignedCampaigns = n
+	return nil
+}
+
 // stripAccess revokes the member's keys and removes every access source:
 // group memberships, grants, engagement memberships, roles and invitations.
 func stripAccess(ctx context.Context, tx *sql.Tx, tid, uid string, actorArg any, out *tenant.OffboardResult) error {
@@ -428,6 +514,7 @@ func stripAccess(ctx context.Context, tx *sql.Tx, tid, uid string, actorArg any,
 		{&out.RevokedKeys, "revoke api keys", `
 			UPDATE api_keys SET status = 'revoked', revoked_at = NOW(), revoked_by = $3, updated_at = NOW()
 			WHERE tenant_id = $1 AND user_id = $2 AND status IN ('active', 'suspended')`, []any{tid, uid, actorArg}},
+		{&out.RevokedServiceAccountKeys, "revoke service account keys", revokeServiceAccountKeysSQL, []any{tid, uid, actorArg}},
 		{&out.RemovedGroups, "remove group memberships", `
 			DELETE FROM group_members gm USING groups g
 			WHERE g.id = gm.group_id AND g.tenant_id = $1 AND gm.user_id = $2`, []any{tid, uid}},
@@ -435,6 +522,9 @@ func stripAccess(ctx context.Context, tx *sql.Tx, tid, uid string, actorArg any,
 			DELETE FROM asset_access_grants WHERE tenant_id = $1 AND user_id = $2`, []any{tid, uid}},
 		{&out.RemovedCampaigns, "remove campaign memberships", `
 			DELETE FROM pentest_campaign_members WHERE tenant_id = $1 AND user_id = $2`, []any{tid, uid}},
+		// A watcher who left must not keep hearing about items (RFC-120).
+		{&out.RemovedWatches, "remove watched items", `
+			DELETE FROM work_item_subscriptions WHERE tenant_id = $1 AND user_id = $2`, []any{tid, uid}},
 	}
 	for _, c := range counted {
 		n, err := execCount(ctx, tx, c.query, c.args...)
@@ -565,6 +655,11 @@ func (r *MemberLifecycleRepository) ErasePersonalData(ctx context.Context, tenan
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM user_mfa WHERE user_id = $1`, userID.String()); err != nil {
 		return fmt.Errorf("remove second factor: %w", err)
+	}
+	// What the person watched is personal data too (the rows are already gone
+	// for the tenant they were offboarded from; this covers any left over).
+	if _, err = tx.ExecContext(ctx, `DELETE FROM work_item_subscriptions WHERE user_id = $1`, userID.String()); err != nil {
+		return fmt.Errorf("remove watched items: %w", err)
 	}
 	// The IdP's ids for the person: personal data, and a later sign-in must
 	// not find the anonymised account.

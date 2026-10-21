@@ -2,10 +2,8 @@
 
 import { useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { TOTP_CODE_LENGTH, VerificationCodeInput } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminVerifyMFA } from '../api/use-admin-session'
 import { AdminApiError, WEBAUTHN_REQUIRED } from '@console/lib/admin-api/client'
@@ -56,12 +54,12 @@ export function TotpStepForm({
   const [busy, setBusy] = useState(false)
   const enrolling = step.status === 'mfa_enrollment_required'
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
+  const send = async (value: string) => {
+    if (value.length !== TOTP_CODE_LENGTH || busy || disabled) return
     setBusy(true)
     setError(null)
     try {
-      onVerified(await adminVerifyMFA(code.trim()))
+      onVerified(await adminVerifyMFA(value))
     } catch (err) {
       if (err instanceof AdminApiError && err.code === WEBAUTHN_REQUIRED && onWebAuthnRequired) {
         setBusy(false)
@@ -81,13 +79,13 @@ export function TotpStepForm({
     }
   }
 
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    void send(code)
+  }
+
   return (
     <form method="post" onSubmit={submit} className="space-y-4">
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
       {enrolling && step.otpauth_uri && (
         <div className="space-y-3">
           <ol className="list-decimal space-y-1 ps-5 text-sm text-muted-foreground">
@@ -117,22 +115,22 @@ export function TotpStepForm({
           )}
         </div>
       )}
-      <div className="space-y-2">
-        <Label htmlFor="admin-code">{t('admin.login.verificationCode', 'Verification code')}</Label>
-        <Input
-          id="admin-code"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          pattern="[0-9]{6}"
-          maxLength={6}
-          required
-          autoFocus
-          value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-          className="text-center text-lg tracking-[0.5em] tabular-nums"
-        />
-      </div>
-      <Button type="submit" className="w-full" disabled={busy || disabled || code.length !== 6}>
+      <VerificationCodeInput
+        id="admin-code"
+        label={t('components.verificationCode.label', 'Code from your authenticator app')}
+        value={code}
+        onChange={setCode}
+        onComplete={(c) => void send(c)}
+        disabled={busy || disabled}
+        error={error}
+        required
+        autoFocus
+      />
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={busy || disabled || code.length !== TOTP_CODE_LENGTH}
+      >
         {busy && <Loader2 className="me-2 size-4 animate-spin" />}
         {enrolling
           ? t('admin.login.finishSetup', 'Verify and finish setup')

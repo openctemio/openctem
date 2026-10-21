@@ -238,8 +238,10 @@ func registerVulnerabilityRoutes(
 		}
 
 		// Bulk operations (must be before /{id})
-		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsBulkUpdate))
-		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsBulkUpdate))
+		// Each needs the single-item permission too: bulk_update widens the
+		// reach of a move, it does not replace the right to make it.
+		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus))
+		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsAssign))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
 		if remediationGroupHandler != nil {
@@ -270,6 +272,7 @@ func registerVulnerabilityRoutes(
 		r.POST("/transitions/preview", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
 
 		// Assignment operations
+		r.GET("/{id}/assignable", h.ListAssignableMembers, middleware.Require(permission.FindingsAssign))
 		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsAssign), handler.FindingIfMatch)
 		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsAssign), handler.FindingIfMatch)
 
@@ -329,9 +332,14 @@ func registerVulnerabilityRoutes(
 		if jiraHandler != nil {
 			r.POST("/{id}/create-ticket", jiraHandler.CreateTicket, middleware.Require(permission.FindingsWrite))
 			// Ticket links: the finding's linked issues; link an existing
-			// issue of the organization's Jira site; unlink.
+			// issue of the organization's Jira site; unlink. Linking also
+			// needs findings:fix_apply: moving a linked issue to Done is a
+			// fix claim, which a member without that permission could not
+			// make directly.
 			r.GET("/{id}/ticket-links", jiraHandler.ListTicketLinks, middleware.Require(permission.FindingsRead))
-			r.POST("/{id}/ticket-links", jiraHandler.LinkTicketIssue, middleware.Require(permission.FindingsWrite))
+			// Why the automatic path has not filed an issue yet (holds).
+			r.GET("/{id}/ticket-holds", jiraHandler.ListTicketHolds, middleware.Require(permission.FindingsRead))
+			r.POST("/{id}/ticket-links", jiraHandler.LinkTicketIssue, middleware.RequireAll(permission.FindingsWrite, permission.FindingsFixApply))
 			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.Require(permission.FindingsWrite))
 		}
 

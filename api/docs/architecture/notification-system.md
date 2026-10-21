@@ -530,9 +530,37 @@ predicate (`preferenceFilter`) is the twin of `notification.Preferences.Allows`;
 `tests/integration/notification_ws_isolation_test.go` checks every combination
 against it.
 
+A notification about a **finding** or an **asset** is shown only to owners,
+administrators, roles with full data access and members whose data scope
+covers the asset. A notification about a **remediation task**
+(`resource_type = remediation_task`) follows the rule that decides who can open
+the task: the reader must be able to read at least one of its active member
+findings. The same predicate runs in all three paths, so a task title never
+reaches a member outside the task's scope.
+
+### Task owner notices
+
+`TaskService` (`internal/app/remediation/task_notify.go`) tells people about a
+task they own, with type `remediation_task`, one row addressed to the user or to
+the owner team:
+
+- a task is created with an owner, or its owner changes: the new owner user
+  and/or team is told (a person who assigns themself is not);
+- findings are moved, split off, merged or claimed from another task: the owners
+  of both tasks are told, with counts and task titles only (never finding
+  titles).
+
 `email_digest` (`none` / `daily` / `weekly`) is stored but no digest sender
 exists yet, and no in-app notification is emailed individually, so the in-app
 filters above have no email path to apply to.
+
+### Why you got it, and folded events
+
+`notifications.reason` says why a person got a notice about a work item (`assigned`: they are the
+assignee; `watching`: they watch it); the API returns it as `reason`. Events on one finding within
+10 minutes are folded into the person's unread notice of the same type (`coalesced_count`). The
+recipients of finding events come from `participation.Service.Recipients`; see
+[participants-and-watchers.md](./participants-and-watchers.md).
 
 ### Real-time push
 

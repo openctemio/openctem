@@ -38,7 +38,7 @@ describe('SharedSensorEnrollCard', () => {
     const confirm = screen.getAllByRole('button', { name: 'Issue token' }).at(-1)!
     expect(confirm).toBeDisabled()
     await user.type(screen.getByLabelText('Reason'), 'central scanner')
-    await user.type(screen.getByLabelText('Code from your authenticator'), '123456')
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(confirm)
     await waitFor(() =>
       expect(onIssue).toHaveBeenCalledWith({

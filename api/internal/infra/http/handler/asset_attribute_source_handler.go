@@ -34,7 +34,10 @@ type AttributeSourceResponse struct {
 
 // AttributeSourcesResponse is one tracked attribute of an asset.
 type AttributeSourcesResponse struct {
-	Attribute string `json:"attribute" example:"criticality"`
+	// PendingRiskRequest: the lock lowers exposure or criticality and waits for
+	// approval; Value is still the asset's current value (202).
+	PendingRiskRequest *RiskRequestResponse `json:"pending_risk_request,omitempty"`
+	Attribute          string               `json:"attribute" example:"criticality"`
 	// Value is the asset's value.
 	Value string `json:"value" example:"high"`
 	// Locked: a person set the value and no source changes it until released.
@@ -56,6 +59,10 @@ type AttributeSourcesListResponse struct {
 // LockAttributeRequest sets and locks an attribute.
 type LockAttributeRequest struct {
 	Value string `json:"value" validate:"max=500"`
+	// Reason is required when locking exposure or criticality to a lower value
+	// would drop an open P0/P1 finding on the asset (the lock may then wait for
+	// approval).
+	Reason string `json:"reason,omitempty" validate:"max=1000"`
 }
 
 func toAttributeSourcesResponse(v assetapp.AttributeSourcesView) AttributeSourcesResponse {
@@ -133,9 +140,18 @@ func (h *AssetHandler) LockAttribute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, attr := r.PathValue("id"), r.PathValue("attribute")
-	v, err := h.service.LockAttribute(r.Context(), tenantID, id, attr, req.Value, middleware.GetUserID(r.Context()))
+	v, held, err := h.service.LockAttributeGoverned(r.Context(), tenantID, id, attr, req.Value, middleware.GetUserID(r.Context()),
+		h.riskContext(r, req.Reason))
 	if err != nil {
-		h.handleServiceError(w, err)
+		h.writeRiskError(w, err)
+		return
+	}
+	if held != nil {
+		out := toAttributeSourcesResponse(*v)
+		out.PendingRiskRequest = toRiskRequestResponse(held)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(out)
 		return
 	}
 	h.auditAsset(r, auditdom.ActionAssetUpdated, id, "", "Asset attribute locked",

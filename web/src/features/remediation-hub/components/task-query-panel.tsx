@@ -29,10 +29,13 @@ import { apiMessage } from './suggestions-inbox'
 
 export function TaskQueryPanel({
   taskId,
+  taskVersion,
   writable,
   onChanged,
 }: {
   taskId: string
+  /** The version of the task the page shows; changes are based on it. */
+  taskVersion: number
   writable: boolean
   onChanged?: () => void
 }) {
@@ -62,7 +65,7 @@ export function TaskQueryPanel({
     setBusy('add')
     setError(null)
     try {
-      const res = await taskQueryApi.rerun(taskId)
+      const res = await taskQueryApi.rerun(taskId, taskVersion)
       toast.success(t('remediationQuery.task.added', undefined, { count: res.added }))
       setRerunOpen(false)
       void mutate()
@@ -72,13 +75,13 @@ export function TaskQueryPanel({
     } finally {
       setBusy(null)
     }
-  }, [mutate, onChanged, t, taskId])
+  }, [mutate, onChanged, t, taskId, taskVersion])
 
   const setPaused = useCallback(
     async (paused: boolean) => {
       setBusy('auto')
       try {
-        await mutate(await taskQueryApi.setAuto(taskId, paused), { revalidate: false })
+        await mutate(await taskQueryApi.setAuto(taskId, paused, taskVersion), { revalidate: false })
         toast.success(
           paused ? t('remediationQuery.task.paused') : t('remediationQuery.task.resumed')
         )
@@ -88,7 +91,7 @@ export function TaskQueryPanel({
         setBusy(null)
       }
     },
-    [mutate, t, taskId]
+    [mutate, t, taskId, taskVersion]
   )
 
   if (!q) return null

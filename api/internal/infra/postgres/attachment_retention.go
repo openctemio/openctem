@@ -41,14 +41,14 @@ var _ attachment.RetentionRepository = (*AttachmentRepository)(nil)
 // MarkOrphans stamps orphaned_at on evidence whose parent is gone and clears
 // it where the parent exists (again).
 func (r *AttachmentRepository) MarkOrphans(ctx context.Context, now time.Time) (int64, int64, error) {
-	res, err := r.db.ExecContext(ctx, `UPDATE attachments a SET orphaned_at = $1
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, `UPDATE attachments a SET orphaned_at = $1
 		WHERE a.orphaned_at IS NULL AND a.context_type = ANY($2) AND `+attachmentParentMissing,
 		now, pq.Array(attachment.RetentionContexts))
 	if err != nil {
 		return 0, 0, fmt.Errorf("mark orphaned attachments: %w", err)
 	}
 	marked, _ := res.RowsAffected()
-	res, err = r.db.ExecContext(ctx, `UPDATE attachments a SET orphaned_at = NULL
+	res, err = execWithTimeout(ctx, r.db.DB, timeoutBatch, `UPDATE attachments a SET orphaned_at = NULL
 		WHERE a.orphaned_at IS NOT NULL AND NOT `+attachmentParentMissing)
 	if err != nil {
 		return marked, 0, fmt.Errorf("clear orphaned attachments: %w", err)

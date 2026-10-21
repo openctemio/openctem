@@ -217,6 +217,7 @@ var assetMergeSpecialRefs = map[string]string{
 
 // assetMergeLeftAlone are references a merge deliberately does not move.
 var assetMergeLeftAlone = map[string]string{
+	"asset_risk_requests.asset_id":               "a request names the merged asset's own previous values and cannot apply to the kept asset; it is removed with the merged asset (ON DELETE CASCADE)",
 	"asset_state_history.asset_id":               "immutable audit log (UPDATE is blocked by a trigger); removed with the merged asset",
 	"asset_merge_log.kept_asset_id":              "the merge record itself",
 	"asset_merge_log.merged_asset_id":            "the merge record itself",
@@ -230,6 +231,10 @@ var assetMergeLeftAlone = map[string]string{
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.
 // It runs inside the merge transaction, before the merged assets are deleted.
 func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, keepID string, mergeIDs []string) error {
+	// A merge re-keys every child row of the merged assets; a large asset can outlast the role limit.
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return err
+	}
 	if err := checkMergeTenant(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}

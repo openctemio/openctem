@@ -6,6 +6,7 @@ import { get, post, put, del } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
+import type { RiskRequest } from '../lib/risk-impact'
 import type {
   Asset,
   AssetType,
@@ -147,6 +148,7 @@ interface BackendAsset {
   impact_availability?: string
   is_control_plane?: boolean // CTEM Scoping: asset governs other assets (api #467)
   is_crown_jewel?: boolean // the assets.is_crown_jewel column
+  pending_risk_request?: RiskRequest // a lowering of risk inputs waiting for approval
   system_tags?: string[] // derived from bug-bounty program links; never editable
   program_only?: boolean // came with a program; no own scope covers it
   triage?: {
@@ -272,6 +274,7 @@ function transformAsset(backend: BackendAsset): Asset {
     lifecyclePausedUntil: backend.lifecycle_paused_until ?? null,
     manualStatusOverride: backend.manual_status_override ?? false,
     repository: backend.repository ? transformRepositoryExtension(backend.repository) : undefined,
+    pendingRiskRequest: backend.pending_risk_request,
   }
 }
 
@@ -738,6 +741,7 @@ export async function updateAsset(assetId: string, input: UpdateAssetInput): Pro
     impact_availability: input.impactAvailability,
     owner_ref: input.ownerRef,
     tags: input.tags,
+    risk_change_reason: input.riskChangeReason,
     // Per-type form fields live in `metadata`; backend merges them into
     // `properties` (preserving the keys it does not send). API-owned keys are
     // left out: a stale copy of them would be refused.

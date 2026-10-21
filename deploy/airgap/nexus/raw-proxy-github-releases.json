@@ -1,0 +1,9 @@
+{
+  "name": "github-openctemio",
+  "online": true,
+  "storage": { "blobStoreName": "default", "strictContentTypeValidation": false },
+  "cleanup": null,
+  "proxy": { "remoteUrl": "https://github.com/openctemio/", "contentMaxAge": 1440, "metadataMaxAge": 1440 },
+  "negativeCache": { "enabled": true, "timeToLive": 1 },
+  "httpClient": { "blocked": false, "autoBlock": true }
+}
