@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketpolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -17,6 +18,7 @@ type memPolicyRepo struct {
 	policy   *ticketpolicy.Policy
 	holds    map[shared.ID]ticketpolicy.Hold
 	reserved int
+	puts     int
 	due      []ticketpolicy.Candidate
 }
 
@@ -42,6 +44,7 @@ func (m *memPolicyRepo) Preview(context.Context, shared.ID, shared.ID, ticketpol
 	return ticketpolicy.Preview{}, nil
 }
 func (m *memPolicyRepo) PutHold(_ context.Context, h ticketpolicy.Hold) error {
+	m.puts++
 	m.holds[h.FindingID] = h
 	return nil
 }
@@ -228,5 +231,33 @@ func TestReleaseDue_EgressRefusalKeepsHold(t *testing.T) {
 	h := repo.holds[f.ID()]
 	if h.Reason != ticketpolicy.ReasonCreateFailed || h.Detail == "" || repo.reserved != 0 || client.calls != 0 {
 		t.Fatalf("hold %+v reserved %d calls %d", h, repo.reserved, client.calls)
+	}
+}
+
+type disabledModules map[string]bool
+
+func (d disabledModules) TenantDisabledModules(_ context.Context, tenantID string) map[string]bool {
+	if d[tenantID] {
+		return map[string]bool{moduledom.ModuleIntegrations: true}
+	}
+	return nil
+}
+
+// A tenant with the integrations module off creates nothing, and its holds
+// are refreshed (checked_at) so they do not stay at the head of every run and
+// starve other tenants' holds.
+func TestReleaseDue_ModuleDisabledRefreshesHold(t *testing.T) {
+	g, client, repo, f := policyFixture(t, vulnerability.SeverityHigh, nil)
+	g.SetModuleChecker(disabledModules{f.TenantID().String(): true})
+	repo.due = []ticketpolicy.Candidate{{
+		Hold:    ticketpolicy.Hold{TenantID: f.TenantID(), IntegrationID: client.intg, FindingID: f.ID(), Reason: ticketpolicy.ReasonBelowThreshold},
+		Signals: ticketpolicy.Signals{Severity: "high", Open: true}, Policy: ticketpolicy.Default(),
+	}}
+	n, err := g.ReleaseDue(context.Background(), 10)
+	if err != nil || n != 0 || client.calls != 0 || repo.reserved != 0 {
+		t.Fatalf("created %d err %v calls %d reserved %d", n, err, client.calls, repo.reserved)
+	}
+	if h, ok := repo.holds[f.ID()]; !ok || repo.puts != 1 || h.Reason != ticketpolicy.ReasonBelowThreshold {
+		t.Fatalf("hold %+v ok %v puts %d", h, ok, repo.puts)
 	}
 }

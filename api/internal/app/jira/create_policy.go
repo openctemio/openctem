@@ -255,6 +255,12 @@ func (g *PolicyGate) ReleaseDue(ctx context.Context, limit int) (int, error) {
 				disabled[c.TenantID] = off
 			}
 			if off {
+				// Refresh checked_at so a tenant that turned the module
+				// off does not keep its holds at the head of every run
+				// and starve other tenants' holds.
+				if err := g.repo.PutHold(ctx, c.Hold); err != nil {
+					g.logger.Warn("refresh ticket hold", "tenant_id", c.TenantID.String(), "error", err)
+				}
 				continue
 			}
 		}

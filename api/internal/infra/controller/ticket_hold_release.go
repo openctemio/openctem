@@ -53,6 +53,12 @@ func (c *TicketHoldReleaseController) Name() string { return "ticket-hold-releas
 // Interval implements Controller.
 func (c *TicketHoldReleaseController) Interval() time.Duration { return c.interval }
 
+// Exclusive: one API replica at a time (controller lease). Two replicas
+// listing the same due holds would both file the issue: the tracker-side
+// marker lookup is a search, which does not see an issue created a moment
+// earlier.
+func (c *TicketHoldReleaseController) Exclusive() bool { return true }
+
 // Reconcile implements Controller.
 func (c *TicketHoldReleaseController) Reconcile(ctx context.Context) (int, error) {
 	if c.purger != nil {
