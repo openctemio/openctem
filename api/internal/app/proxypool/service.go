@@ -428,9 +428,9 @@ func (s *Service) ListAssignments(ctx context.Context, tenantID string) ([]poold
 	return s.repo.ListAssignments(ctx, tid)
 }
 
-// SetAssignment sets a sensor's network path: inherit (the organization
+// AssignSensor sets a sensor's network path: inherit (the organization
 // default), direct, or a pool of the tenant.
-func (s *Service) SetAssignment(ctx context.Context, tenantID, sensorID, mode, poolID string, actx auditapp.AuditContext) error {
+func (s *Service) AssignSensor(ctx context.Context, tenantID, sensorID, mode, poolID string, actx auditapp.AuditContext) error {
 	tid, err := parseTenant(tenantID)
 	if err != nil {
 		return err

@@ -176,7 +176,7 @@ func TestProxyEgress_UnsupportedSensorGetsNoScanJobs(t *testing.T) {
 
 	// Direct for that sensor: it scans again, without an egress member, and
 	// one a command's creator put in the payload is removed.
-	if err := h.egress.SetAssignment(context.Background(), h.tenantID, old.id, proxypool.ModeDirect, "", auditapp.AuditContext{}); err != nil {
+	if err := h.egress.AssignSensor(context.Background(), h.tenantID, old.id, proxypool.ModeDirect, "", auditapp.AuditContext{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.db.Exec(`UPDATE commands SET payload = payload || '{"egress":{"mode":"pool","pool_id":"x","endpoints":[{"host":"203.0.113.9"}]}}'::jsonb WHERE id = $1`, id); err != nil {
@@ -194,7 +194,7 @@ func TestProxyEgress_SensorPoolAppliesToAllAndReportQuarantines(t *testing.T) {
 	h.reportCaps(s, "net.confined@1", "egress.upstream@1")
 	h.newPool(h.tenantID, "default", "http://10.0.0.6:3128", true)
 	seg := h.newPool(h.tenantID, "segment", "socks5://10.9.0.1:1080\nsocks5://10.9.0.2:1080", false)
-	if err := h.egress.SetAssignment(context.Background(), h.tenantID, s.id, proxypool.ModePool, seg.ID.String(), auditapp.AuditContext{}); err != nil {
+	if err := h.egress.AssignSensor(context.Background(), h.tenantID, s.id, proxypool.ModePool, seg.ID.String(), auditapp.AuditContext{}); err != nil {
 		t.Fatal(err)
 	}
 	id := h.newCommand(h.tenantID, s.id)
