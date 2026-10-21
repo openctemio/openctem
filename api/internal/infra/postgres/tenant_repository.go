@@ -560,8 +560,20 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if err := updateMembershipTx(ctx, tx, m); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit membership update: %w", err)
+	}
+	return nil
+}
+
+// updateMembershipTx is UpdateMembership's body inside the caller's
+// transaction, so a role change and what must go with it commit together.
+func updateMembershipTx(ctx context.Context, tx *sql.Tx, m *tenant.Membership) error {
 	var userID, tenantID string
-	err = tx.QueryRowContext(ctx,
+	err := tx.QueryRowContext(ctx,
 		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
 		m.ID().String(), m.TenantID().String(),
 	).Scan(&userID, &tenantID)
@@ -619,10 +631,6 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 		// The DELETE above removed every system role, so the insert must
 		// have added one; nothing added means no such system role exists.
 		return fmt.Errorf("%w: no system role %q", shared.ErrValidation, m.Role().String())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit membership update: %w", err)
 	}
 	return nil
 }
