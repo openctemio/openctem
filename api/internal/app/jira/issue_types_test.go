@@ -195,6 +195,18 @@ func TestCreateTicket_ProfileIsLookedUpByTheChosenTypeID(t *testing.T) {
 	if len(prof.drifted) != 1 || prof.drifted[0] != prof.create.ProfileID {
 		t.Fatalf("drifted %v", prof.drifted)
 	}
+
+	// A create through the published mapping clears the kind's recorded
+	// refusal (the mapping is what fills the refused fields).
+	c.createErr = nil
+	h := &healthStub{}
+	s.SetIssueTypeHealth(h)
+	if _, err := s.CreateTicketFromFinding(context.Background(), CreateTicketInput{TenantID: shared.NewID().String(), FindingID: shared.NewID().String()}); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.problems) != 1 || h.kinds[0] != IssueKindFinding || h.problems[0] != nil {
+		t.Fatalf("not cleared by the mapping create: %v %+v", h.kinds, h.problems)
+	}
 }
 
 func TestCreateTicket_FieldRefusalIsRecordedAndClearedOnSuccess(t *testing.T) {
