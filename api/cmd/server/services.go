@@ -2874,7 +2874,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A service-account key answers to the person who minted it. The holder
 		// reads the role tables directly (no cache): a team membership ends by
 		// the clock, which no cache invalidation can signal.
-		gateMembers := apikey.NewMembershipChecker(repos.Tenant, repos.User, s.OrganizationGate)
+		// No organization gate here: Authenticate already checks the key's
+		// organization, and the sweep must not revoke keys over an organization
+		// suspension that may be lifted.
+		gateMembers := apikey.NewMembershipChecker(repos.Tenant, repos.User, nil)
 		gateHolder := apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role})
 		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)

@@ -49,8 +49,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM users u WHERE u.id = NEW.user_id AND u.kind = 'service') THEN
         RETURN NEW;
     END IF;
-    -- Lock every role bound to the team before reading its flag.
-    PERFORM 1 FROM roles r WHERE r.id IN (SELECT b.role_id FROM group_role_bindings b WHERE b.group_id = NEW.group_id) FOR SHARE OF r;
+    -- Lock every role bound to the team (in id order, so two writers never
+    -- wait on each other's locks in opposite orders) before reading its flag.
+    PERFORM 1 FROM roles r WHERE r.id IN (SELECT b.role_id FROM group_role_bindings b WHERE b.group_id = NEW.group_id) ORDER BY r.id FOR SHARE OF r;
     IF EXISTS (SELECT 1 FROM group_role_bindings b JOIN roles r ON r.id = b.role_id
                WHERE b.group_id = NEW.group_id AND r.has_full_data_access) THEN
         RAISE EXCEPTION 'a service account cannot join a team that has a full data role'
