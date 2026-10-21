@@ -30,12 +30,19 @@ func (a clientAdapter) CreateIssue(ctx context.Context, in appjira.CreateIssueIn
 		Summary:     in.Summary,
 		Description: in.Description,
 		IssueType:   in.IssueType,
+		IssueTypeID: in.IssueTypeID,
 		Priority:    in.Priority,
 		Labels:      in.Labels,
 		ParentKey:   in.ParentKey,
 		Marker:      infraMarker(in.Marker),
 	})
 	if err != nil {
+		var fr *FieldRejectedError
+		if errors.As(err, &fr) {
+			if out := appjira.NewFieldRejectedError(fr.Fields); out != nil {
+				return nil, out
+			}
+		}
 		return nil, err
 	}
 	return &appjira.CreateIssueResult{
@@ -102,6 +109,12 @@ type IntegrationClientResolver struct {
 	integrationRepo integration.Repository
 	decrypt         func(string) (string, error)
 	logger          *logger.Logger
+	// coverage tells the issue type check which destinations have a
+	// published mapping profile.
+	coverage ProfileCoverage
+	// newClient builds a client (NewClient; replaced in tests to reach a
+	// local server).
+	newClient func(baseURL, email, token string) (*Client, error)
 }
 
 // NewIntegrationClientResolver creates a resolver. The encryptor is used to
@@ -252,17 +265,7 @@ func (r *IntegrationClientResolver) TestTicketingConnection(ctx context.Context,
 // buildClient assembles a Jira client from an integration's base URL and
 // decrypted credentials.
 func (r *IntegrationClientResolver) buildClient(intg *integration.Integration) (appjira.Client, error) {
-	baseURL := siteOf(intg)
-	if baseURL == "" {
-		return nil, fmt.Errorf("integration %s has no base URL", intg.ID())
-	}
-
-	email, token, err := r.resolveCredentials(intg)
-	if err != nil {
-		return nil, err
-	}
-
-	c, err := NewClient(baseURL, email, token)
+	c, err := r.buildRawClient(intg)
 	if err != nil {
 		return nil, err
 	}
