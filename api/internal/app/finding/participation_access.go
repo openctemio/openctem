@@ -1,0 +1,48 @@
+package finding
+
+import (
+	"context"
+
+	"github.com/openctemio/openctem/api/internal/app/participation"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+)
+
+// ParticipationAccess answers the access questions of watchers on findings
+// (RFC-120): what the request's caller may read, and whether another person
+// could read a finding. It reuses the read rules of the finding surface, so a
+// watcher can never see more than a member could open.
+type ParticipationAccess struct{ s *VulnerabilityService }
+
+var _ participation.ItemAccess = ParticipationAccess{}
+
+// ParticipationAccess returns the finding side of the watchers feature.
+func (s *VulnerabilityService) ParticipationAccess() ParticipationAccess {
+	return ParticipationAccess{s: s}
+}
+
+// CallerAccess checks that the caller can read the finding (ErrNotFound
+// otherwise) and whether they are a pentest campaign client.
+func (a ParticipationAccess) CallerAccess(ctx context.Context, tenantID, findingID shared.ID) (participation.Access, error) {
+	s := a.s
+	var userID string
+	var isAdmin bool
+	if s.dataScope != nil {
+		c := s.dataScope.CallerOf(ctx)
+		userID, isAdmin = c.UserID, c.IsAdmin
+	}
+	_, acc, err := s.AuthorizeFindingRead(ctx, tenantID.String(), findingID.String(), userID, isAdmin)
+	if err != nil {
+		return participation.Access{}, err
+	}
+	return participation.Access{ClientOnly: acc.ClientOnly}, nil
+}
+
+// UserMayRead reports whether the person could read the finding on their own
+// account (data scope, or the pentest campaign).
+func (a ParticipationAccess) UserMayRead(ctx context.Context, tenantID, findingID, userID shared.ID) (bool, error) {
+	f, err := a.s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return false, err
+	}
+	return a.s.userMayReadFinding(ctx, f, userID)
+}

@@ -227,6 +227,7 @@ type Handlers struct {
 	// Remediation Campaigns
 	RemediationCampaign *handler.RemediationCampaignHandler   // nil if not initialized
 	RemediationTask     *handler.RemediationTaskHandler       // nil if not initialized
+	Participation       *handler.ParticipationHandler         // watchers of findings and tasks; nil if not initialized
 	RemediationSuggest  *handler.RemediationSuggestionHandler // nil if not initialized
 	ReportSchedule      *handler.ReportScheduleHandler        // nil if not initialized
 
@@ -831,6 +832,9 @@ func Register(
 	}
 	if h.RemediationTask != nil {
 		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation), log)
+	}
+	if h.Participation != nil {
+		registerParticipationRoutes(router, h.Participation, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation), log)
 	}
 	if h.RemediationSuggest != nil {
 		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
