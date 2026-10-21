@@ -29,13 +29,13 @@ const defaultConfig: SWRConfiguration = {
   errorRetryCount: 2,
 }
 
-/** The organization's pools. Health changes with every job, so refresh each minute. */
+/** The organization's pools, with their health as of the last load. */
 export function useProxyPools(enabled = true) {
   const { currentTenant } = useTenant()
   return useSWR<ProxyPoolList>(
     currentTenant && enabled ? proxyPoolEndpoints.list() : null,
     (url: string) => get<ProxyPoolList>(url),
-    { ...defaultConfig, refreshInterval: 60_000 }
+    defaultConfig
   )
 }
 
