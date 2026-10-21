@@ -127,34 +127,51 @@ export function ExposureHero({
         desc={t('dashboardMetrics.hero.exploitableNow')}
       />
       <CardContent className="flex flex-1 flex-col">
-        {/* Hero number + tiny label: opens the open P0 list it counts. */}
-        <Link
-          href={DRILL.p0Open}
-          aria-label={t('dashboardMetrics.hero.p0Link', 'Open P0 findings: {n}', { n: p0 })}
-          className="flex w-fit items-center gap-4 rounded hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span
-            className={cn(
-              'text-5xl font-semibold leading-none tracking-tight tabular-nums',
-              p0 > 0 ? STATE_TEXT.crit : 'text-foreground'
-            )}
+        {/* No open finding at all in the viewer's scope: say so and point at
+            the next step, instead of a confident big "0 P0". */}
+        {summary && summary.findings_total === 0 ? (
+          <div className="flex flex-col gap-1">
+            <p className="text-base font-semibold">{t('dashboardMetrics.hero.noOpenTitle')}</p>
+            <p className="text-sm text-muted-foreground">
+              {t('dashboardMetrics.hero.noOpenDesc')}{' '}
+              <Link
+                href="/scans"
+                className="font-medium text-foreground underline-offset-4 hover:underline"
+              >
+                {t('dashboardMetrics.hero.noOpenCta')}
+              </Link>
+            </p>
+          </div>
+        ) : (
+          /* Hero number + tiny label: opens the open P0 list it counts. */
+          <Link
+            href={DRILL.p0Open}
+            aria-label={t('dashboardMetrics.hero.p0Link', 'Open P0 findings: {n}', { n: p0 })}
+            className="flex w-fit items-center gap-4 rounded hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {p0}
-          </span>
-          <div className="flex flex-col leading-tight">
             <span
               className={cn(
-                'text-sm font-bold',
-                p0 > 0 ? STATE_TEXT.crit : 'text-muted-foreground'
+                'text-5xl font-semibold leading-none tracking-tight tabular-nums',
+                p0 > 0 ? STATE_TEXT.crit : 'text-foreground'
               )}
             >
-              P0
+              {p0}
             </span>
-            <span className="text-xs text-muted-foreground">
-              {t('dashboardMetrics.hero.exploitableNow')}
-            </span>
-          </div>
-        </Link>
+            <div className="flex flex-col leading-tight">
+              <span
+                className={cn(
+                  'text-sm font-bold',
+                  p0 > 0 ? STATE_TEXT.crit : 'text-muted-foreground'
+                )}
+              >
+                P0
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {t('dashboardMetrics.hero.exploitableNow')}
+              </span>
+            </div>
+          </Link>
+        )}
 
         {/* Compact sub-stats */}
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">

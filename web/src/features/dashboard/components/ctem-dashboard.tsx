@@ -29,6 +29,7 @@ import {
 import { useScopingSummary } from '@/features/scoping/api'
 import { readinessRows, readinessScore, visibleReadiness } from '@/features/scoping/readiness'
 import { useNavItemAccess } from '@/lib/permissions'
+import { WidgetBoundary as B } from './widget-boundary'
 
 // The analyst charts sit below the fold and are recharts-heavy: load them after
 // the action-first cards instead of in the dashboard's first-load JS.
@@ -113,99 +114,117 @@ export function CtemDashboard() {
     <>
       {/* Row 1 — Active exposure hero + Priority over time (matched-height charts) */}
       <section className="mb-6 grid gap-4 lg:grid-cols-2">
-        <ExposureHero
-          summary={summary}
-          trend={trend}
-          kevChainCount={kevChainCount}
-          isLoading={summaryLoading || trendLoading}
-          error={summaryError}
-          onRetry={() => void retrySummary()}
-        />
-        <PriorityOverTime
-          summary={summary}
-          summaryError={summaryError}
-          onRetrySummary={() => void retrySummary()}
-          trend={trend}
-          trendError={trendError}
-          onRetryTrend={() => void retryTrend()}
-          isLoading={trendLoading || summaryLoading}
-        />
+        <B>
+          <ExposureHero
+            summary={summary}
+            trend={trend}
+            kevChainCount={kevChainCount}
+            isLoading={summaryLoading || trendLoading}
+            error={summaryError}
+            onRetry={() => void retrySummary()}
+          />
+        </B>
+        <B>
+          <PriorityOverTime
+            summary={summary}
+            summaryError={summaryError}
+            onRetrySummary={() => void retrySummary()}
+            trend={trend}
+            trendError={trendError}
+            onRetryTrend={() => void retryTrend()}
+            isLoading={trendLoading || summaryLoading}
+          />
+        </B>
       </section>
 
       {/* Row 2 — CTEM loop */}
       <section className="mb-6">
-        <CtemLoop
-          summary={summary}
-          scanCoverage={scanCoverage}
-          validationCoverage={validationCoverage}
-          threatIntel={threatIntel}
-          scoping={scoping}
-          isLoading={summaryLoading || scanLoading || validationLoading || threatLoading}
-          errors={{
-            summary: summaryError,
-            scan: scanError,
-            validation: validationError,
-            threat: threatError,
-          }}
-        />
+        <B>
+          <CtemLoop
+            summary={summary}
+            scanCoverage={scanCoverage}
+            validationCoverage={validationCoverage}
+            threatIntel={threatIntel}
+            scoping={scoping}
+            isLoading={summaryLoading || scanLoading || validationLoading || threatLoading}
+            errors={{
+              summary: summaryError,
+              scan: scanError,
+              validation: validationError,
+              threat: threatError,
+            }}
+          />
+        </B>
       </section>
 
       {/* Row 3 — Fix next + Attack paths */}
       <section
         className={cn('mb-6 grid gap-4', attackSurfaceEnabled && 'lg:grid-cols-[1.3fr_1fr]')}
       >
-        <FixNextQueue
-          chains={chains}
-          topRisks={summary?.top_risks}
-          isLoading={exposureLoading || summaryLoading}
-          error={summaryError}
-          onRetry={() => void retrySummary()}
-        />
-        {attackSurfaceEnabled && (
-          <AttackPathsCard
-            attackPaths={attackPaths}
+        <B>
+          <FixNextQueue
             chains={chains}
-            crownJewelsTotal={scopingSummary?.crown_jewels.total}
-            isLoading={pathsLoading || exposureLoading}
+            topRisks={summary?.top_risks}
+            isLoading={exposureLoading || summaryLoading}
+            error={summaryError}
+            onRetry={() => void retrySummary()}
           />
+        </B>
+        {attackSurfaceEnabled && (
+          <B>
+            <AttackPathsCard
+              attackPaths={attackPaths}
+              chains={chains}
+              crownJewelsTotal={scopingSummary?.crown_jewels.total}
+              isLoading={pathsLoading || exposureLoading}
+            />
+          </B>
         )}
       </section>
 
       {/* Row 4 — Threat intel + coverage/hygiene (+ optional maturity) */}
       <section className="mb-6 grid gap-4 lg:grid-cols-2">
-        <ThreatIntelCard
-          stats={threatIntel}
-          isLoading={threatLoading}
-          error={threatError}
-          onRetry={() => void retryThreat()}
-        />
-        <CoverageHygiene
-          scan={scanCoverage}
-          validation={validationCoverage}
-          slaPct={summary?.sla_compliance_pct}
-          isLoading={scanLoading || validationLoading || summaryLoading}
-          error={scanError && validationError && summaryError}
-          onRetry={() => {
-            void retryScan()
-            void retryValidation()
-            void retrySummary()
-          }}
-        />
+        <B>
+          <ThreatIntelCard
+            stats={threatIntel}
+            isLoading={threatLoading}
+            error={threatError}
+            onRetry={() => void retryThreat()}
+          />
+        </B>
+        <B>
+          <CoverageHygiene
+            scan={scanCoverage}
+            validation={validationCoverage}
+            slaPct={summary?.sla_compliance_pct}
+            isLoading={scanLoading || validationLoading || summaryLoading}
+            error={scanError && validationError && summaryError}
+            onRetry={() => {
+              void retryScan()
+              void retryValidation()
+              void retrySummary()
+            }}
+          />
+        </B>
       </section>
 
       {ctemCyclesEnabled && (
         <section className="mb-6">
-          <CtemMaturityCard
-            data={maturity}
-            isLoading={maturityLoading}
-            error={maturityError}
-            onRetry={() => void retryMaturity()}
-          />
+          <B>
+            <CtemMaturityCard
+              data={maturity}
+              isLoading={maturityLoading}
+              error={maturityError}
+              onRetry={() => void retryMaturity()}
+            />
+          </B>
         </section>
       )}
 
       {/* Analyst detail — the retained charts */}
-      <AnalystDetail stats={stats} isLoading={statsLoading} />
+      <B>
+        <AnalystDetail stats={stats} isLoading={statsLoading} />
+      </B>
     </>
   )
 }

@@ -140,7 +140,9 @@ describe('CtemLoop', () => {
             epss: { critical_risk_count: 7018 },
             kev: {
               total_entries: 1662,
+              tenant_open_count: 1204,
               past_due_count: 1000,
+              tenant_ransomware_open_count: 41,
               ransomware_related_count: 339,
               recently_added_last_30_days: 25,
             },
@@ -182,7 +184,9 @@ describe('ThreatIntelCard', () => {
             epss: { critical_risk_count: 7018 },
             kev: {
               total_entries: 1662,
+              tenant_open_count: 1204,
               past_due_count: 1000,
+              tenant_ransomware_open_count: 41,
               ransomware_related_count: 339,
               recently_added_last_30_days: 25,
             },
@@ -192,6 +196,8 @@ describe('ThreatIntelCard', () => {
     )
     expect(screen.getByText('1,000')).toBeInTheDocument()
     expect(screen.getByText('7,018')).toBeInTheDocument()
-    expect(screen.getByText(/KEV past-due/i)).toBeInTheDocument()
+    expect(screen.getByText('1,204')).toBeInTheDocument()
+    expect(screen.getByText('KEV past due date')).toBeInTheDocument()
+    expect(screen.queryByText('1,662')).not.toBeInTheDocument()
   })
 })

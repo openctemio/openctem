@@ -16,7 +16,7 @@
 import type { CtemState } from './ctem-colors'
 
 /** A metric whose data source hasn't produced a value yet. */
-export type MetricStatus = CtemState | 'pending'
+export type MetricStatus = Exclude<CtemState, 'none'> | 'pending'
 
 function isMissing(v: number | null | undefined): v is null | undefined {
   return v === null || v === undefined || Number.isNaN(v)

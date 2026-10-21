@@ -171,14 +171,14 @@ describe('CTEM Dashboard page', () => {
     expect(screen.getByText(/The CTEM loop/i)).toBeInTheDocument()
     expect(screen.getByText('Priority classes over time')).toBeInTheDocument()
     expect(screen.getByText(/Attack paths/i)).toBeInTheDocument()
-    expect(screen.getByText('Threat intel context')).toBeInTheDocument()
+    expect(screen.getByText('Known exploited exposure')).toBeInTheDocument()
     expect(screen.getByText('Coverage & hygiene')).toBeInTheDocument()
 
     // Retained analyst charts: loaded on demand (next/dynamic), after the cards
     expect(await screen.findByText(/Analyst detail/i)).toBeInTheDocument()
-    expect(screen.getByText('Findings trend')).toBeInTheDocument()
-    expect(screen.getByText('Severity distribution')).toBeInTheDocument()
-    expect(screen.getByText('Asset distribution')).toBeInTheDocument()
+    expect(screen.getByText('New findings per month')).toBeInTheDocument()
+    expect(screen.getByText('Open findings by severity')).toBeInTheDocument()
+    expect(screen.getByText('Assets by type')).toBeInTheDocument()
     expect(screen.getByText('Recent activity')).toBeInTheDocument()
   })
 })

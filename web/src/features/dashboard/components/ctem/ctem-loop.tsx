@@ -38,12 +38,12 @@ function StageCard({ stage }: { stage: Stage }) {
         <span className={cn('absolute inset-y-0 left-0 w-[3px]', STATE_STRIPE[stage.state])} />
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold">{stage.name}</span>
-          <span className="text-[10px] text-muted-foreground">{stage.index}</span>
+          <span className="text-xs text-muted-foreground">{stage.index}</span>
         </div>
         <div className="text-2xl font-semibold leading-none tabular-nums">{stage.value}</div>
-        <p className="text-[11px] text-muted-foreground">{stage.sub}</p>
+        <p className="text-xs text-muted-foreground">{stage.sub}</p>
         {stage.flag && (
-          <span className={cn('mt-0.5 text-[10px] font-medium', STATE_TEXT[stage.state])}>
+          <span className={cn('mt-0.5 text-xs font-medium', STATE_TEXT[stage.state])}>
             {stage.flag}
           </span>
         )}
@@ -112,12 +112,12 @@ export function CtemLoop({
     scoping
       ? {
           index: '01',
-          name: 'Scoping',
+          name: t('dashboardMetrics.loop.stage.scoping'),
           href: '/scoping',
           value: (
             <>
               {scoping.ready}
-              <Unit>/{scoping.total} ready</Unit>
+              <Unit>{t('dashboardMetrics.loop.readyOf', undefined, { total: scoping.total })}</Unit>
             </>
           ),
           sub:
@@ -127,12 +127,13 @@ export function CtemLoop({
                   n: scoping.crownJewels,
                   open: atRisk,
                 }),
-          flag: scoping.crownJewels === 0 ? 'designate crown jewels' : undefined,
+          flag:
+            scoping.crownJewels === 0 ? t('dashboardMetrics.loop.designateCrownJewels') : undefined,
           state: scoping.ready >= scoping.total ? 'good' : 'warn',
         }
       : {
           index: '01',
-          name: 'Scoping',
+          name: t('dashboardMetrics.loop.stage.scoping'),
           href: '/scoping',
           value: (
             <>
@@ -144,7 +145,7 @@ export function CtemLoop({
         },
     {
       index: '02',
-      name: 'Discovery',
+      name: t('dashboardMetrics.loop.stage.discovery'),
       href: '/scans',
       value: (
         <>
@@ -152,16 +153,18 @@ export function CtemLoop({
           <Unit>%</Unit>
         </>
       ),
-      sub: `scan coverage · ${scanCoverage?.never_scanned ?? 0} unscanned`,
+      sub: t('dashboardMetrics.loop.scanSub', undefined, { n: scanCoverage?.never_scanned ?? 0 }),
       flag:
         (scanCoverage?.critical_uncovered ?? 0) > 0
-          ? `${scanCoverage?.critical_uncovered} critical uncovered`
+          ? t('dashboardMetrics.loop.criticalUncovered', undefined, {
+              n: scanCoverage?.critical_uncovered ?? 0,
+            })
           : undefined,
       state: coverageState(scanPct),
     },
     {
       index: '03',
-      name: 'Prioritize',
+      name: t('dashboardMetrics.loop.stage.prioritize'),
       // The tile counts open P0 findings: open exactly that list.
       href: DRILL.p0Open,
       value: (
@@ -172,12 +175,12 @@ export function CtemLoop({
       sub: t('dashboardMetrics.loop.openKev', undefined, {
         n: threatIntel ? kevOpen.toLocaleString() : '—',
       }),
-      flag: p0 > 0 ? 'exploitable now' : undefined,
+      flag: p0 > 0 ? t('dashboardMetrics.hero.exploitableNow') : undefined,
       state: openCountState(p0),
     },
     {
       index: '04',
-      name: 'Validate',
+      name: t('dashboardMetrics.loop.stage.validate'),
       // Validation coverage, the same API the Validation overview headlines
       // (it used to open Compensating controls, another feature).
       href: DRILL.validation,
@@ -187,13 +190,16 @@ export function CtemLoop({
           <Unit>%</Unit>
         </>
       ),
-      sub: `${validationCoverage?.validated ?? 0} of ${validationCoverage?.total ?? 0} validated`,
-      flag: valPct === 0 ? 'none run yet' : undefined,
+      sub: t('dashboardMetrics.loop.validatedOf', undefined, {
+        n: validationCoverage?.validated ?? 0,
+        total: validationCoverage?.total ?? 0,
+      }),
+      flag: valPct === 0 ? t('dashboardMetrics.loop.noneRunYet') : undefined,
       state: coverageState(valPct),
     },
     {
       index: '05',
-      name: 'Mobilize',
+      name: t('dashboardMetrics.loop.stage.mobilize'),
       // The tile counts open findings past their SLA (overdue or exceeded).
       href: DRILL.slaBreached,
       value: (
@@ -208,21 +214,26 @@ export function CtemLoop({
           )}
         </>
       ),
-      sub: t('dashboardMetrics.loop.sla', undefined, { n: summary?.sla_breached ?? 0 }),
-      flag: slaPct !== null && slaPct >= 90 ? 'on track' : undefined,
-      state: slaPct === null ? 'good' : slaPct >= 90 ? 'good' : slaPct >= 70 ? 'warn' : 'crit',
+      sub:
+        slaPct === null
+          ? t('dashboardMetrics.loop.slaNotMeasured', 'No open finding has an SLA')
+          : t('dashboardMetrics.loop.sla', undefined, { n: summary?.sla_breached ?? 0 }),
+      flag: slaPct !== null && slaPct >= 90 ? t('dashboardMetrics.loop.onTrack') : undefined,
+      // Not measured (no open finding has an SLA) is neutral, never green.
+      state: slaPct === null ? 'none' : slaPct >= 90 ? 'good' : slaPct >= 70 ? 'warn' : 'crit',
     },
   ]
 
   // A stage whose source failed, or whose figure has no denominator, shows
-  // "—" with the reason instead of 0 %.
+  // "—" with the reason instead of 0 %, in neutral grey: an unmeasured stage is
+  // neither good nor a warning.
   const failed = t('dashboardMetrics.state.loadFailed', "Couldn't load these figures")
   const blank = (stage: Stage, sub: string): Stage => ({
     ...stage,
     value: '—',
     sub,
     flag: undefined,
-    state: 'warn',
+    state: 'none',
   })
   const shown = stages.map((s) => {
     switch (s.index) {
@@ -255,7 +266,9 @@ export function CtemLoop({
 
   return (
     <div>
-      <h2 className="mb-2 text-sm font-semibold tracking-tight">The CTEM loop</h2>
+      <h2 className="mb-2 text-sm font-semibold tracking-tight">
+        {t('dashboardMetrics.loop.title')}
+      </h2>
       <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
         {shown.map((s) => (
           <StageCard key={s.index} stage={s} />

@@ -18,7 +18,7 @@
 import type { CtemState } from './ctem-colors'
 
 /** A metric with no wired data source yet (e.g. validation downgrade %). */
-export type MetricStatus = CtemState | 'pending'
+export type MetricStatus = Exclude<CtemState, 'none'> | 'pending'
 
 /** Percent of the most-urgent class that has been remediated in the period.
  * Guide metric: "P1 remediated / total", target > 90%. Proxy uses the P0
