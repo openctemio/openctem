@@ -85,6 +85,12 @@ func mapUpstream(err error) error {
 	if err == nil {
 		return nil
 	}
+	var fr *FieldRejectedError
+	if errors.As(err, &fr) {
+		if out := appjira.NewFieldRejectedError(fr.Fields); out != nil {
+			return out
+		}
+	}
 	var rl *RateLimitedError
 	if errors.As(err, &rl) {
 		return &appjira.RetryAfterError{After: rl.RetryAfter}
@@ -103,4 +109,10 @@ func (a clientAdapter) IssueIdentity(ctx context.Context, issueKey string) (stri
 		return "", "", appjira.ErrIssueNotVisible
 	}
 	return id, key, mapUpstream(err)
+}
+
+// IssueTypeOf reads the issue's current issue type id.
+func (a clientAdapter) IssueTypeOf(ctx context.Context, issueKey string) (string, error) {
+	id, err := a.c.GetIssueTypeID(ctx, issueKey)
+	return id, mapUpstream(err)
 }

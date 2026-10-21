@@ -54,6 +54,13 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { RoutingRulesDialog } from '@/features/integrations/components/routing-rules-dialog'
 import { JiraWebhookDialog } from '@/features/integrations/components/jira-webhook-dialog'
 import { mergeShownMapping } from '@/features/integrations/lib/ticketing-mapping'
+import { IssueTypeMapping } from '@/features/integrations/components/issue-type-mapping'
+import {
+  issueTypesForSave,
+  readIssueTypes,
+  readTicketingHealth,
+  type IssueTypeChoices,
+} from '@/features/integrations/lib/issue-types'
 import { Switch } from '@/components/ui/switch'
 import {
   useIntegrationsApi,
@@ -197,7 +204,7 @@ function ConfigureTicketingDialog({
   const cfg = getTicketingConfig(integration)
   const sev0 = (cfg.severity_to_priority as Record<string, string> | undefined) ?? {}
   const out0 = (cfg.status_outbound as Record<string, string> | undefined) ?? {}
-  const [issueType, setIssueType] = useState<string>((cfg.issue_type as string) ?? '')
+  const [issueTypes, setIssueTypes] = useState<IssueTypeChoices>(() => readIssueTypes(cfg))
   const [defaultPriority, setDefaultPriority] = useState<string>(
     (cfg.default_priority as string) ?? ''
   )
@@ -240,14 +247,17 @@ function ConfigureTicketingDialog({
           .map((r) => [r.jira.trim(), r.finding.trim()] as const)
           .filter(([j, f]) => j !== '' && f !== '')
       )
+      // The single issue type of before is replaced by one per kind.
+      const ticketingRest: Record<string, unknown> = { ...existingTicketing }
+      delete ticketingRest.issue_type
       await update({
         config: {
           ...existingConfig,
           ticketing: {
-            ...existingTicketing,
+            ...ticketingRest,
             sync_enabled: syncEnabled,
             project_key: projectKey.trim(),
-            issue_type: issueType.trim(),
+            issue_types: issueTypesForSave(issueTypes),
             default_priority: defaultPriority.trim(),
             // Unshown keys (e.g. extra outbound statuses set elsewhere) are
             // kept; a shown field left blank removes its key, so clearing a
@@ -376,18 +386,17 @@ function ConfigureTicketingDialog({
                   'Override how {product} fills new tickets. Leave blank to use the defaults.'
                 )}
               </p>
+              <Label className="text-xs">
+                {t('ticketingIntegration.issueTypes.title', 'Issue types')}
+              </Label>
+              <IssueTypeMapping
+                integrationId={integration.id}
+                projectKey={projectKey}
+                value={issueTypes}
+                onChange={setIssueTypes}
+                health={readTicketingHealth(integration.metadata)}
+              />
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="issue-type" className="text-xs">
-                    {t('ticketingIntegration.configure.issueType', 'Issue type')}
-                  </Label>
-                  <Input
-                    id="issue-type"
-                    value={issueType}
-                    onChange={(e) => setIssueType(e.target.value)}
-                    placeholder="Bug"
-                  />
-                </div>
                 <div className="space-y-1">
                   <Label htmlFor="default-priority" className="text-xs">
                     {t('ticketingIntegration.configure.defaultPriority', 'Default priority')}

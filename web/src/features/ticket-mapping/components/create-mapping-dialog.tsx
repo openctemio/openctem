@@ -36,20 +36,29 @@ import {
 } from '../api/use-ticket-mapping-api'
 import type { ObjectKind } from '../types/ticket-mapping.types'
 
+/** A destination to start from (from the integration's issue types). */
+export interface MappingPreset {
+  integrationId: string
+  kind: ObjectKind
+  projectKey: string
+  issueTypeId: string
+}
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  initial?: MappingPreset
 }
 
 /** Creates a mapping profile for one destination: site, project, issue type,
  *  object kind, and an optional preset to start from. */
-export function CreateMappingDialog({ open, onOpenChange }: Props) {
+export function CreateMappingDialog({ open, onOpenChange, initial }: Props) {
   const { t } = useTranslation()
   const router = useRouter()
-  const [integrationId, setIntegrationId] = useState('')
-  const [kind, setKind] = useState<ObjectKind>('finding')
-  const [projectKey, setProjectKey] = useState('')
-  const [issueTypeId, setIssueTypeId] = useState('')
+  const [integrationId, setIntegrationId] = useState(initial?.integrationId ?? '')
+  const [kind, setKind] = useState<ObjectKind>(initial?.kind ?? 'finding')
+  const [projectKey, setProjectKey] = useState(initial?.projectKey ?? '')
+  const [issueTypeId, setIssueTypeId] = useState(initial?.issueTypeId ?? '')
   const [preset, setPreset] = useState('')
   const [saving, setSaving] = useState(false)
 
