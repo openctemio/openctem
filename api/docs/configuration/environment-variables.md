@@ -459,7 +459,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AI_TEMPERATURE` | float | `0.1` |  |  | Sampling temperature (0.0 to 1.0). |
 | `AI_TIMEOUT_SECONDS` | int | `30` |  |  | Timeout of one provider call. |
 | `AI_TRIAGE_BUDGET_DEFAULT_TOKENS` | int | `2000000` |  |  | Monthly platform AI token budget of an organization, set on its month's budget row when the row is created. `0` means unlimited. |
-| `AI_TRIAGE_BUDGET_ENABLED` | bool | `true` |  |  | Enforce the per-organization monthly token budget for platform AI (organizations with their own key are not counted). |
+| `AI_TRIAGE_BUDGET_ENABLED` | bool | `true` |  |  | Enforce the per-organization monthly token budget (the tokens of an organization count whichever key pays for them, so an organization on its own provider is stopped at the cap too). |
 | `AI_TRIAGE_BUDGET_STRICT` | bool | `false` |  |  | With the budget on: refuse triage when the budget store cannot be read (otherwise log and continue). |
 | `AI_TRIAGE_RECOVERY_BATCH_SIZE` | int | `50` |  |  | Jobs recovered per run. |
 | `AI_TRIAGE_RECOVERY_ENABLED` | bool | `true` |  |  | Mark triage jobs stuck in pending or processing as failed (stuck_timeout). Transient provider errors are retried by the job queue before that. |
