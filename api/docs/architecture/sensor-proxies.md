@@ -66,7 +66,7 @@ credentials reset the endpoint's health. An invalid line answers
 **Endpoint validation.** Schemes `http`, `https`, `socks5`, `socks5h`; a host
 name or an IP address; port 1–65535. Refused: loopback, link-local
 (169.254.0.0/16, fe80::/10, including cloud metadata), `fd00:ec2::254`,
-`100.100.100.200`, multicast, unspecified, broadcast, 0.0.0.0/8, 240.0.0.0/4,
+`100.100.100.200`, `168.63.129.16`, multicast, unspecified, broadcast, 0.0.0.0/8, 240.0.0.0/4,
 `localhost`, `*.localhost`, `metadata`, `metadata.google.internal`. Private
 addresses are allowed: a proxy into a segment usually is one. The sensor
 checks every address a host name resolves to again before it dials.

@@ -207,12 +207,14 @@ type Assignment struct {
 	PoolID   *shared.ID
 }
 
-// extraDenied are cloud metadata addresses outside the ranges scanzone
-// already denies (an IPv6 IMDS address in ULA space, a metadata service in
-// CGNAT space).
+// extraDenied are cloud metadata and host-agent addresses outside the ranges
+// scanzone already denies (an IPv6 IMDS address in ULA space, a metadata
+// service in CGNAT space, a cloud host agent on a public address). The
+// sensor refuses the same addresses at dial.
 var extraDenied = []netip.Addr{
 	netip.MustParseAddr("fd00:ec2::254"),
 	netip.MustParseAddr("100.100.100.200"),
+	netip.MustParseAddr("168.63.129.16"),
 }
 
 // deniedNames can never be a proxy endpoint: they name the sensor host
