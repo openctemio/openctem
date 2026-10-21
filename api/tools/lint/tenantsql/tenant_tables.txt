@@ -261,6 +261,9 @@ threat_alert_tenant_state
 threat_alerts
 threat_model_threats
 threat_models
+ticket_create_daily
+ticket_create_holds
+ticket_create_policies
 ticket_links
 ticket_mapping_profiles
 ticket_mapping_versions
