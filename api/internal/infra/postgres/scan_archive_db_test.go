@@ -53,6 +53,12 @@ func TestArchiveNeverRunOneOffs(t *testing.T) {
 	seedCounterRun(ctx, t, runs, tenantID, ran)
 	recent := seedOneOff(ctx, t, db, tenantID, "recent one-off", true, time.Hour)
 	saved := seedOneOff(ctx, t, db, tenantID, "saved configuration", false, old)
+	// A managed scan stays: archiving it would disable the scan its policy
+	// reuses for every batch.
+	managed := seedOneOff(ctx, t, db, tenantID, "managed coverage scan", true, old)
+	if _, err := db.ExecContext(ctx, `UPDATE scans SET managed_by = 'coverage', managed_key = 'probe.http' WHERE id = $1`, managed.String()); err != nil {
+		t.Fatal(err)
+	}
 
 	got, err := repo.ArchiveNeverRunOneOffs(ctx, 30*24*time.Hour, 1000)
 	if err != nil {
@@ -70,7 +76,7 @@ func TestArchiveNeverRunOneOffs(t *testing.T) {
 	if ok, status := archivedAt(ctx, t, db, stale); !ok || status != "disabled" {
 		t.Fatalf("stale: archived=%v status=%s, want archived and disabled", ok, status)
 	}
-	for name, id := range map[string]shared.ID{"ran": ran, "recent": recent, "saved": saved} {
+	for name, id := range map[string]shared.ID{"ran": ran, "recent": recent, "saved": saved, "managed": managed} {
 		if ok, _ := archivedAt(ctx, t, db, id); ok {
 			t.Errorf("%s scan was archived", name)
 		}
@@ -89,8 +95,8 @@ func TestArchiveNeverRunOneOffs(t *testing.T) {
 			t.Fatal("an archived scan is listed")
 		}
 	}
-	if list.Total != 3 {
-		t.Errorf("listed %d scans (with one-offs), want 3", list.Total)
+	if list.Total != 4 {
+		t.Errorf("listed %d scans (with one-offs), want 4", list.Total)
 	}
 
 	// A second pass archives nothing more.

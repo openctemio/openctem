@@ -362,13 +362,13 @@ func TestRemediationTaskQuery_AutoIncludeInvariantCapAndAudit(t *testing.T) {
 	assert.Len(t, memberIDs(t, r, res.Task.ID), 3)
 
 	// Paused: nothing runs; resumed: runs again.
-	_, err = r.svc.SetQueryAutoState(ctx, remediationapp.SetQueryAutoStateInput{TenantID: r.tenant, TaskID: res.Task.ID, ActorID: &r.admin, Paused: true}, auditapp.AuditContext{})
+	_, err = r.svc.SetQueryAutoState(ctx, remediationapp.SetQueryAutoStateInput{TenantID: r.tenant, TaskID: res.Task.ID, Version: r.taskVersion(res.Task.ID), ActorID: &r.admin, Paused: true}, auditapp.AuditContext{})
 	require.NoError(t, err)
 	r.makeDue(res.Task.ID)
 	n, err = r.svc.AutoInclude(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
-	q, err := r.svc.SetQueryAutoState(ctx, remediationapp.SetQueryAutoStateInput{TenantID: r.tenant, TaskID: res.Task.ID, ActorID: &r.admin}, auditapp.AuditContext{})
+	q, err := r.svc.SetQueryAutoState(ctx, remediationapp.SetQueryAutoStateInput{TenantID: r.tenant, TaskID: res.Task.ID, Version: r.taskVersion(res.Task.ID), ActorID: &r.admin}, auditapp.AuditContext{})
 	require.NoError(t, err)
 	assert.Equal(t, remediation.AutoStateActive, *q.AutoState)
 	assert.Equal(t, 2, r.audit.count(auditdom.ActionRemediationTaskQueryAutoStateChanged))
@@ -433,7 +433,7 @@ func TestRemediationTaskQuery_AutoSuspendsWhenOwnerLosesAccess(t *testing.T) {
 			assert.Equal(t, string(tc.reason), ev.Metadata["reason"])
 
 			// Resuming while the cause remains is refused.
-			_, err = r.svc.SetQueryAutoState(r.adminCtx(), remediationapp.SetQueryAutoStateInput{TenantID: r.tenant, TaskID: res.Task.ID, ActorID: &r.admin}, auditapp.AuditContext{})
+			_, err = r.svc.SetQueryAutoState(r.adminCtx(), remediationapp.SetQueryAutoStateInput{TenantID: r.tenant, TaskID: res.Task.ID, Version: r.taskVersion(res.Task.ID), ActorID: &r.admin}, auditapp.AuditContext{})
 			assert.ErrorIs(t, err, remediation.ErrAutoSuspended)
 		})
 	}
@@ -458,7 +458,7 @@ func TestRemediationTaskQuery_RerunAddsOnConfirmation(t *testing.T) {
 	assert.Equal(t, 1, p.New)
 	assert.NotContains(t, memberIDs(t, r, res.Task.ID), newF, "a preview claims nothing")
 
-	out, task, err := r.svc.RerunQuery(ctx, remediationapp.RerunQueryInput{TenantID: r.tenant, TaskID: res.Task.ID,
+	out, task, err := r.svc.RerunQuery(ctx, remediationapp.RerunQueryInput{TenantID: r.tenant, TaskID: res.Task.ID, Version: r.taskVersion(res.Task.ID),
 		Caller: r.adminCaller(), ActorID: &r.admin}, auditapp.AuditContext{})
 	require.NoError(t, err)
 	assert.Equal(t, []shared.ID{newF}, out.Added)
@@ -528,4 +528,13 @@ func TestRemediationTaskQuery_MoveConflictIsAudited(t *testing.T) {
 	assert.ElementsMatch(t, []shared.ID{free, held}, memberIDs(t, r, res.Task.ID))
 	assert.Equal(t, []shared.ID{keep}, memberIDs(t, r, other.ID))
 	assert.Equal(t, 1, r.audit.count(auditdom.ActionRemediationTaskFindingsMoved))
+}
+
+// taskVersion is the task's current version, as a client that just read it
+// would send it.
+func (r *rtRig) taskVersion(id shared.ID) int {
+	r.t.Helper()
+	t, err := r.repo.GetTask(context.Background(), r.tenant, id)
+	require.NoError(r.t, err)
+	return t.Version
 }

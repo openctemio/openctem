@@ -2000,6 +2000,9 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 			_ = tx.Rollback()
 		}
 	}()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return 0, 0, nil, err
+	}
 
 	if renameErr := r.renameExistingTx(ctx, tx, assets); renameErr != nil {
 		return 0, 0, nil, renameErr
@@ -2098,6 +2101,9 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 			_ = tx.Rollback()
 		}
 	}()
+	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
+		return 0, 0, nil, err
+	}
 
 	if renameErr := r.renameExistingTx(ctx, tx, assets); renameErr != nil {
 		return 0, 0, nil, renameErr

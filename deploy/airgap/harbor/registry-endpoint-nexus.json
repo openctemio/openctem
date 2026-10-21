@@ -1,0 +1,12 @@
+{
+  "name": "nexus-ghcr-proxy",
+  "description": "Nexus Docker proxy of ghcr.io (OpenCTEM release images)",
+  "type": "docker-registry",
+  "url": "https://nexus.example.internal:8443",
+  "insecure": false,
+  "credential": {
+    "type": "basic",
+    "access_key": "harbor-replication",
+    "access_secret": "REPLACE_WITH_THE_NEXUS_READ_ONLY_PASSWORD"
+  }
+}

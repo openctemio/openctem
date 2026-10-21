@@ -92,6 +92,15 @@ func inProgressFinding(t *testing.T) *vulnerability.Finding {
 	return f
 }
 
+// inboundTestMapping is the mapping of the delivery's integration: its site
+// and SEC as its configured project.
+func inboundTestMapping() MappingConfig {
+	m := DefaultMappingConfig()
+	m.SiteURL = "https://x.atlassian.net"
+	m.DefaultProjectKey = "SEC"
+	return m
+}
+
 func doneWebhook() WebhookPayload {
 	return WebhookPayload{
 		Issue:     WebhookIssue{Key: "SEC-1", Self: "https://x.atlassian.net/rest/api/2/issue/10001"},
@@ -112,12 +121,12 @@ func TestHandleJiraWebhook_ClosingMappingNeverApplied(t *testing.T) {
 		repo := &inboundRepo{finding: f}
 		act := &activityStub{}
 		s := NewSyncService(repo, nil, logger.NewNop())
-		m := DefaultMappingConfig()
+		m := inboundTestMapping()
 		m.StatusInbound["done"] = vulnerability.FindingStatus(target)
 		s.SetMappingResolver(stubMappingResolver{mapping: m})
 		s.SetActivityRecorder(act)
 
-		if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), doneWebhook()); err != nil {
+		if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), shared.NewID(), doneWebhook()); err != nil {
 			t.Fatalf("%s: %v", target, err)
 		}
 		if st := repo.finding.Status(); st != vulnerability.FindingStatusConfirmed || repo.updates != 0 || len(act.got) != 0 {
@@ -141,7 +150,7 @@ func (a *applierStub) RequestTicketDisposition(_ context.Context, _ shared.ID, i
 
 func (a *applierStub) ApplyTicketStatus(_ context.Context, _ shared.ID, ids []shared.ID, target vulnerability.FindingStatus, _, ref, _ string) ([]shared.ID, []InboundRefusal, error) {
 	a.ids, a.target, a.ref = ids, target, ref
-	return ids, nil, nil
+	return ids, a.refuse, nil
 }
 
 // The safe path goes through the finding service (the applier), with the
@@ -149,13 +158,13 @@ func (a *applierStub) ApplyTicketStatus(_ context.Context, _ shared.ID, ids []sh
 func TestHandleJiraWebhook_GoesThroughTheServicePath(t *testing.T) {
 	repo := &inboundRepo{finding: inProgressFinding(t)}
 	s := NewSyncService(repo, nil, logger.NewNop())
-	m := DefaultMappingConfig()
+	m := inboundTestMapping()
 	m.StatusInbound["done"] = vulnerability.FindingStatusFixApplied
 	s.SetMappingResolver(stubMappingResolver{mapping: m})
 	app := &applierStub{}
 	s.SetInboundApplier(app)
 
-	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), doneWebhook()); err != nil {
+	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), shared.NewID(), doneWebhook()); err != nil {
 		t.Fatal(err)
 	}
 	if app.target != vulnerability.FindingStatusFixApplied || len(app.ids) != 1 || app.ids[0] != repo.finding.ID() || app.ref != "SEC-1" {
@@ -170,7 +179,7 @@ func TestHandleJiraWebhook_GoesThroughTheServicePath(t *testing.T) {
 func TestHandleJiraWebhook_NoApplierAppliesNothing(t *testing.T) {
 	repo := &inboundRepo{finding: inProgressFinding(t)}
 	s := NewSyncService(repo, nil, logger.NewNop())
-	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), doneWebhook()); err != nil {
+	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), shared.NewID(), doneWebhook()); err != nil {
 		t.Fatal(err)
 	}
 	if repo.finding.Status() != vulnerability.FindingStatusInProgress || repo.updates != 0 {

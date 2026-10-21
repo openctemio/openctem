@@ -39,10 +39,17 @@ import { useTranslation } from '@/context/i18n-provider'
 import {
   hasRetestHistory,
   isRetestable,
+  RETESTABLE_STATUSES,
   useFindingRetests,
   useRequestRetest,
   type FindingRetest,
+  type FindingRetestWithCheck,
 } from '../../api/use-finding-retests'
+import {
+  shortDigest,
+  useFindingRetestCheck,
+  type RetestCheck,
+} from '../../api/use-finding-retest-check'
 import { useFindingEvidenceItems } from '../../api/use-finding-evidence-items'
 import { FindingEvidenceItems } from './finding-evidence-items'
 
@@ -175,13 +182,19 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   const { hasPermission } = usePermissions()
   const { t } = useTranslation()
   const { mutate } = useSWRConfig()
-  const mayRetest = isRetestable(finding)
+  // A retest check someone attached makes any finding re-checkable, also one
+  // with no tool rule (manual, pentest, bug bounty).
+  const { data: checkData } = useFindingRetestCheck(finding.id)
+  const check = checkData?.check ?? null
+  const mayRetest =
+    isRetestable(finding) || (!!check && RETESTABLE_STATUSES.has(finding.status ?? ''))
   // History is shown for any finding of a tool rule, also one no longer
-  // retestable (e.g. false positive), and for pentest findings, whose testers
-  // retest by hand. Whether "Retest now" is offered comes from the API
-  // (can_retest), which knows what the organization's sensors can re-check.
+  // retestable (e.g. false positive), for pentest findings, whose testers
+  // retest by hand, and for findings with a retest check. Whether "Retest
+  // now" is offered comes from the API (can_retest), which knows what the
+  // organization's sensors can re-check.
   const { data } = useFindingRetests(
-    hasRetestHistory(finding) || finding.source === 'pentest' ? finding.id : null
+    hasRetestHistory(finding) || finding.source === 'pentest' || !!check ? finding.id : null
   )
   const retestable = mayRetest && data?.can_retest === true
   const { trigger, isMutating } = useRequestRetest(finding.id)
@@ -215,10 +228,15 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
     try {
       await trigger()
       toast.success(t('findings.retestPanel.started', 'Retest started'), {
-        description: t(
-          'findings.retestPanel.startedDesc',
-          'The template that found this issue is running again against its target.'
-        ),
+        description: check
+          ? t(
+              'findings.retestPanel.startedDescCheck',
+              "The finding's retest check is running against its target."
+            )
+          : t(
+              'findings.retestPanel.startedDesc',
+              'The template that found this issue is running again against its target.'
+            ),
       })
     } catch (error) {
       toast.error(
@@ -256,7 +274,15 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
       }
     >
       {latest ? (
-        <RetestLine retest={latest} findingId={finding.id} />
+        <RetestLine retest={latest} findingId={finding.id} check={check} />
+      ) : check ? (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'findings.retestPanel.notYetCheck',
+            "Not retested yet. A retest runs the custom check {name} against this finding's target.",
+            { name: toDisplayText(check.template_name, 200) }
+          )}
+        </p>
       ) : (
         <p className="text-sm text-muted-foreground">
           {t(
@@ -275,6 +301,12 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
             <span key={rt.id}>
               {i > 0 && ', '}
               {metaFor(rt, t).label} <RelativeTime date={rt.created_at} className="text-xs" />
+              {(rt as FindingRetestWithCheck).check_digest && (
+                <span className="font-mono" title={(rt as FindingRetestWithCheck).check_digest}>
+                  {' '}
+                  ({shortDigest((rt as FindingRetestWithCheck).check_digest)})
+                </span>
+              )}
             </span>
           ))}
         </p>
@@ -283,7 +315,47 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   )
 }
 
-function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: string }) {
+/**
+ * "Checked with custom check <name> (sha256:abcdef123456)" for a retest that
+ * ran the finding's retest check. The name is the current check's when the
+ * ids match; an older, replaced check shows its digest only.
+ */
+export function RetestCheckProvenance({
+  retest,
+  check,
+}: {
+  retest: FindingRetestWithCheck
+  check: RetestCheck | null
+}) {
+  const { t } = useTranslation()
+  if (!retest.retest_check_id) return null
+  const name =
+    check && check.id === retest.retest_check_id ? toDisplayText(check.template_name, 200) : ''
+  const digest = shortDigest(retest.check_digest)
+  return (
+    <p className="text-xs text-muted-foreground" data-slot="retest-check-provenance">
+      {name
+        ? t('findings.retestPanel.checkedWith', 'Checked with custom check {name}', { name })
+        : t('findings.retestPanel.checkedWithUnnamed', 'Checked with a custom check')}
+      {digest && (
+        <span className="font-mono" title={retest.check_digest}>
+          {' '}
+          ({digest})
+        </span>
+      )}
+    </p>
+  )
+}
+
+function RetestLine({
+  retest,
+  findingId,
+  check,
+}: {
+  retest: FindingRetest
+  findingId: string
+  check: RetestCheck | null
+}) {
   const { t } = useTranslation()
   const meta = metaFor(retest, t)
   const manual = retest.kind === 'manual'
@@ -329,6 +401,7 @@ function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: s
       {retest.reason && (
         <p className="text-xs text-muted-foreground">{toDisplayText(retest.reason, 600)}</p>
       )}
+      <RetestCheckProvenance retest={retest} check={check} />
       {manual && retest.notes && (
         <p className="text-xs text-muted-foreground whitespace-pre-line">
           {toDisplayText(retest.notes, 600)}

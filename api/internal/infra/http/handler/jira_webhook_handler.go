@@ -101,6 +101,9 @@ type CreateTicketRequest struct {
 	// Jira fields.
 	ProjectKey string `json:"project_key,omitempty" validate:"omitempty,max=255"`
 	IssueType  string `json:"issue_type,omitempty" validate:"omitempty,max=255"`
+	// IntegrationID names one of the organization's Jira integrations; empty
+	// means the default (the first connected one).
+	IntegrationID string `json:"integration_id,omitempty" validate:"omitempty,uuid"`
 
 	// GitHub fields (required when provider=github).
 	Owner string `json:"owner,omitempty" validate:"omitempty,max=255"`
@@ -129,10 +132,11 @@ func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request
 	}
 
 	result, err := h.service.CreateTicketFromFinding(r.Context(), jira.CreateTicketInput{
-		TenantID:   tenantID,
-		FindingID:  findingID,
-		ProjectKey: req.ProjectKey,
-		IssueType:  req.IssueType,
+		TenantID:      tenantID,
+		FindingID:     findingID,
+		ProjectKey:    req.ProjectKey,
+		IssueType:     req.IssueType,
+		IntegrationID: req.IntegrationID,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -165,6 +169,19 @@ func (h *JiraWebhookHandler) createGitHubTicket(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// writeEgressRefusal answers a refusal of the outbound ticket gate: 403 with
+// code TICKET_EGRESS_REFUSED and the refusal's stable reason. The message is
+// the platform's own text.
+func writeEgressRefusal(w http.ResponseWriter, err error) bool {
+	var refused *ticketing.EgressRefusedError
+	if !errors.As(err, &refused) {
+		return false
+	}
+	apierror.New(http.StatusForbidden, apierror.Code("TICKET_EGRESS_REFUSED"), refused.Error()).
+		WithDetails(map[string]string{"reason": string(refused.Reason)}).WriteJSON(w)
+	return true
 }
 
 // ListJiraProjects handles GET /api/v1/integrations/jira/projects.
@@ -324,7 +341,17 @@ func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.
 		claimed = append(claimed, k)
 	}
 
-	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, payload); err != nil {
+	// The tracker side of the issue (assignee, status category) is recorded
+	// on the integration's links for every delivery, status change or not.
+	if err := h.service.RecordExternalChange(r.Context(), tenantID, integrationID, payload); err != nil {
+		release()
+		h.logger.Error("jira webhook: recording the tracker state failed",
+			"tenant_id", tenantID.String(), "integration_id", integrationID.String(), "error", err)
+		apierror.InternalServerError("webhook processing failed").WriteJSON(w)
+		return
+	}
+
+	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, integrationID, payload); err != nil {
 		// Released, so Jira's retry of this delivery is processed.
 		release()
 		h.logger.Error("jira webhook processing failed",
@@ -351,6 +378,9 @@ func jiraDeliveryFresh(tsMillis int64, now time.Time) bool {
 
 // handleError maps domain errors to HTTP responses.
 func (h *JiraWebhookHandler) handleError(w http.ResponseWriter, err error) {
+	if writeEgressRefusal(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("finding not found").WriteJSON(w)

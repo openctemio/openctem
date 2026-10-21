@@ -56,6 +56,11 @@ type MappingConfig struct {
 	// the first match wins. Falls through to DefaultProjectKey when nothing
 	// matches. Loaded from config.ticketing.routing.
 	Routing []RoutingRule
+
+	// SiteURL is the integration's base URL, set by the resolver (not read
+	// from the ticketing config). Inbound deliveries build the browse URL of
+	// an issue from it, never from the payload.
+	SiteURL string
 }
 
 // RoutingRule maps findings matching ALL of its (non-empty) conditions to a

@@ -214,7 +214,7 @@ comments, `.semgrepignore` patterns and `.openctem.yml` exceptions become
 pending suppression requests from a default-branch run of a verified commit,
 and count until approved. A secret is sent as `HMAC-SHA256` of its raw value
 under a key the exchange hands the job (CTIS fingerprint `secretHMAC/v1`); the
-raw value never leaves the job.
+raw value never leaves the job. The platform keys the finding on it and does not store or return the hash.
 
 A repository with an expected-scan list (**Coverage**, **Expect**) fails a
 run that reports no tool for one of its expected capabilities
