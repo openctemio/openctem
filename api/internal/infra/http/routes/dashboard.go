@@ -26,6 +26,8 @@ func registerUserDashboardRoutes(
 	router.Group("/api/v1/me/dashboards", func(r Router) {
 		r.GET("/", h.List)
 		r.POST("/", h.Create)
+		// Static catalog of typed widget metrics; no organization data.
+		r.GET("/widget-catalog", h.WidgetCatalog)
 		r.GET("/{id}", h.Get)
 		r.PUT("/{id}", h.Update)
 		r.DELETE("/{id}", h.Delete)

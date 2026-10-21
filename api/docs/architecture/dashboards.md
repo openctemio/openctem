@@ -10,7 +10,8 @@ here as they ship.
 | Ownership: organization and personal dashboards, `dashboards:org:view` / `dashboards:org:manage`, audiences, schedule fields | **Shipped** (migration `002930_dashboard_ownership`) |
 | Fact layer: per-asset fact tables, dirty queue, change triggers, recompute and rebuild functions | **Shipped** (migration `002916_dashboard_fact_tables`) |
 | Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002963_dashboard_facts_maintainer`) |
-| Widget registry reading the facts; viewer-scope and organization-wide reads | Planned |
+| Typed widget spec and metric catalog, server-side validation, `GET /me/dashboards/widget-catalog` | **Shipped** |
+| Widget data endpoint reading the facts; viewer-scope and organization-wide reads | Planned |
 | Snapshots, the refresher, Refresh now | Planned |
 
 The facts are built and kept current, but no endpoint reads them yet: the
@@ -134,18 +135,91 @@ a manager leaves.
 - The grouped switcher (Organization / Mine), scope badge, freshness line and
   schedule picker on `/`, and the organization management section on
   `/dashboards` (work packages 11 and 12).
-- Typed per-widget config schemas and the widget id migration, with the widget
-  registry over the fact tables.
+- The widget data endpoint over the fact tables, and rendering typed widgets
+  on `/` (legacy tiles keep their live rendering until then).
 
 ### Key files
 
-- `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps
+- `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps;
+  `widget_spec.go` and `metric_catalog.go` (typed widgets)
+- `web/src/features/dashboards/api/widget-spec.ts` — spec types, catalog hook, helpers
 - `internal/app/dashboard/service.go` — authorization, audit, copies, floor
 - `internal/infra/postgres/user_dashboard_repository.go` — tenant- and owner-bound queries, audience SQL
 - `internal/infra/http/handler/user_dashboard_handler.go`, `internal/infra/http/routes/dashboard.go`
 - `migrations/*_dashboard_ownership.up.sql`
 - Tests: `internal/infra/http/routes/dashboard_ownership_db_test.go`,
   `tests/integration/migration_dashboard_ownership_test.go`
+
+## Widget spec
+
+A widget is a query over the metric catalog plus how to draw it. A typed
+widget has `widget_type` `metric` or `note` and a `config` of this form
+(stored in the layout, at most 4 KB):
+
+```json
+{
+  "v": 2,
+  "id": "w_7f3a",
+  "title": "",
+  "data": {
+    "kind": "metric",
+    "metric": "findings.open",
+    "filter": {"severity": ["critical", "high"], "kev": true, "asset_group_id": ["<id>"]},
+    "group_by": ["severity"],
+    "time": {"range": "inherit", "bucket": "auto", "compare": "previous_period"},
+    "limit": 10
+  },
+  "viz": {"type": "bar", "options": {"orientation": "horizontal", "show_table": false}},
+  "target": {"op": "<=", "value": 0},
+  "drill": "auto"
+}
+```
+
+- **Catalog.** `pkg/domain/dashboard/metric_catalog.go` lists every metric,
+  the fact dimensions it may be filtered and grouped by, its polarity (which
+  direction of a change is good), whether it reads a time window, and the
+  result shape per group-by count. The web reads it from
+  `GET /api/v1/me/dashboards/widget-catalog` (static, the same for every
+  caller, no organization data; any signed-in member).
+
+  | Metric | Shape (no group-by) | Group-by | Facts |
+  |---|---|---|---|
+  | `findings.open` | scalar (1: category, 2: matrix) | severity, priority, source, SLA state, age band, KEV, reachable | F1 |
+  | `exposure.priority_open` | scalar, preset P0+P1 | as above | F1 |
+  | `intel.kev_open` | scalar, preset KEV | as above | F1 |
+  | `findings.age_bands` | matrix severity × age band | as above | F1 |
+  | `sla.within` | ratio | none | F1 |
+  | `exposure.open_by_priority` | time series by priority (P0-P2) | priority or severity | F1 + F2 |
+  | `flow.new_vs_fixed` | time series of flows | none | F2 |
+  | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
+  | `fix.next`, `sla.at_risk` | items (ranked findings) | none | F3 |
+
+- **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
+  stat; duration: stat; category: bar, column, table, donut, stat; time
+  series: area, line, column, table (a flow: diverging, column, table, never
+  an area); matrix: heatmap, table, column; items: list, table. The first is
+  the default; a widget without `viz.type` gets it.
+- **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
+  personal or organization dashboard): the config is decoded with unknown
+  fields refused; the metric must be in the catalog; filter and group-by
+  dimensions must be ones the metric allows, with values from their enums
+  (severity, priority, source, SLA state, age band); asset group filters are
+  ids (at most 10) resolved inside the reader's tenant at read time, so an id
+  of another organization matches nothing; the visualization must fit the
+  result shape; a target applies only to a single figure; `drill` is `auto`
+  or `none` (no URLs); a note takes only text (at most 2,000 characters,
+  rendered as sanitized markdown). Widget ids are unique within a dashboard.
+  The stored config is the normalized spec, so nothing unvalidated is kept.
+- **Legacy tiles.** Any other `widget_type` is a legacy tile drawn by its id;
+  its config is never read. `LegacySpec` maps the legacy ids the facts can
+  answer (open findings, by severity, past SLA, within SLA, time to fix
+  critical, P0 open, KEV) to the equivalent spec for the data endpoint.
+- **Threat model.** A widget config is user input stored in a shared layout
+  (organization dashboards, shared copies). It can name only catalog metrics,
+  fact dimensions and enum values; it carries no SQL, field names outside the
+  catalog, URLs or HTML. Tenant and scope are never part of a spec: the data
+  endpoint takes them from the caller (personal) or the organization
+  (organization dashboards) at read time.
 
 ## Fact layer
 

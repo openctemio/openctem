@@ -79,7 +79,8 @@ func NewDashboard(tenantID, userID shared.ID, name, description string, columns 
 	if columns == 0 {
 		columns = defaultColumns
 	}
-	if err := validate(name, description, columns, widgets); err != nil {
+	widgets, err := validate(name, description, columns, widgets)
+	if err != nil {
 		return nil, err
 	}
 	if widgets == nil {
@@ -182,7 +183,8 @@ func (d *Dashboard) Update(name, description string, columns int, widgets []Widg
 	if columns == 0 {
 		columns = defaultColumns
 	}
-	if err := validate(name, description, columns, widgets); err != nil {
+	widgets, err := validate(name, description, columns, widgets)
+	if err != nil {
 		return err
 	}
 	if widgets == nil {
@@ -197,41 +199,67 @@ func (d *Dashboard) Update(name, description string, columns int, widgets []Widg
 }
 
 // validate enforces the invariants shared by NewDashboard and Update.
-func validate(name, description string, columns int, widgets []Widget) error {
+// validate checks a dashboard and returns its widgets normalized: a typed
+// widget's config is replaced by its validated spec.
+func validate(name, description string, columns int, widgets []Widget) ([]Widget, error) {
 	if len(name) < 1 {
-		return fmt.Errorf("%w: name is required", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
 	if len(name) > maxNameLen {
-		return fmt.Errorf("%w: name must be at most %d characters", shared.ErrValidation, maxNameLen)
+		return nil, fmt.Errorf("%w: name must be at most %d characters", shared.ErrValidation, maxNameLen)
 	}
 	if len(description) > maxDescriptionLen {
-		return fmt.Errorf("%w: description must be at most %d characters", shared.ErrValidation, maxDescriptionLen)
+		return nil, fmt.Errorf("%w: description must be at most %d characters", shared.ErrValidation, maxDescriptionLen)
 	}
 	if columns < minColumns || columns > maxColumns {
-		return fmt.Errorf("%w: columns must be within %d..%d", shared.ErrValidation, minColumns, maxColumns)
+		return nil, fmt.Errorf("%w: columns must be within %d..%d", shared.ErrValidation, minColumns, maxColumns)
 	}
 	if len(widgets) > maxWidgets {
-		return fmt.Errorf("%w: at most %d widgets allowed", shared.ErrValidation, maxWidgets)
+		return nil, fmt.Errorf("%w: at most %d widgets allowed", shared.ErrValidation, maxWidgets)
 	}
+	if widgets == nil {
+		return nil, nil
+	}
+	out := make([]Widget, len(widgets))
+	ids := make(map[string]bool, len(widgets))
 	for i, wdg := range widgets {
 		wt := strings.TrimSpace(wdg.WidgetType)
 		if wt == "" {
-			return fmt.Errorf("%w: widget[%d] widget_type is required", shared.ErrValidation, i)
+			return nil, fmt.Errorf("%w: widget[%d] widget_type is required", shared.ErrValidation, i)
 		}
 		if len(wt) > maxWidgetTypeLen {
-			return fmt.Errorf("%w: widget[%d] widget_type must be at most %d characters", shared.ErrValidation, i, maxWidgetTypeLen)
+			return nil, fmt.Errorf("%w: widget[%d] widget_type must be at most %d characters", shared.ErrValidation, i, maxWidgetTypeLen)
 		}
 		if !inBounds(wdg.X) || !inBounds(wdg.Y) || !inBounds(wdg.W) || !inBounds(wdg.H) {
-			return fmt.Errorf("%w: widget[%d] x/y/w/h must be within 0..%d", shared.ErrValidation, i, maxCoord)
+			return nil, fmt.Errorf("%w: widget[%d] x/y/w/h must be within 0..%d", shared.ErrValidation, i, maxCoord)
 		}
 		if len(wdg.Config) > 0 {
 			raw, err := json.Marshal(wdg.Config)
 			if err != nil || len(raw) > maxWidgetConfigBytes {
-				return fmt.Errorf("%w: widget[%d] config must be at most %d bytes", shared.ErrValidation, i, maxWidgetConfigBytes)
+				return nil, fmt.Errorf("%w: widget[%d] config must be at most %d bytes", shared.ErrValidation, i, maxWidgetConfigBytes)
 			}
 		}
+		wdg.WidgetType = wt
+		if IsTypedWidget(wt) {
+			spec, err := ParseWidgetSpec(wt, wdg.Config)
+			if err != nil {
+				return nil, fmt.Errorf("widget[%d]: %w", i, err)
+			}
+			if ids[spec.ID] {
+				return nil, fmt.Errorf("%w: widget[%d] config.id %q is used twice", shared.ErrValidation, i, spec.ID)
+			}
+			ids[spec.ID] = true
+			cfg, err := spec.ToConfig()
+			if err != nil {
+				return nil, fmt.Errorf("%w: widget[%d] config", shared.ErrValidation, i)
+			}
+			wdg.Config = cfg
+		}
+		// A legacy tile is drawn by its id alone; its config (size-capped
+		// above) is never read, so it cannot widen what a widget computes.
+		out[i] = wdg
 	}
-	return nil
+	return out, nil
 }
 
 func inBounds(v int) bool { return v >= 0 && v <= maxCoord }
