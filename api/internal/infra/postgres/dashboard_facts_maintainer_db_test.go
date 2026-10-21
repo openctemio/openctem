@@ -269,6 +269,17 @@ func TestDashboardFactsMaintainer_RunsAndDrift_DB(t *testing.T) {
 		return ""
 	}
 
+	t.Run("the all-zero system tenant never gets a run", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug)
+			VALUES ('00000000-0000-0000-0000-000000000000', 'system', 'system-facts-test')
+			ON CONFLICT (id) DO NOTHING`); err != nil {
+			t.Fatalf("seed system tenant: %v", err)
+		}
+		if k := pendingKind(t, shared.ID{}); k != "" {
+			t.Fatalf("system tenant pending %q, want none", k)
+		}
+	})
+
 	t.Run("a tenant never built is pending its first build", func(t *testing.T) {
 		if k := pendingKind(t, tenant); k != dashboardfact.RunInitial {
 			t.Fatalf("pending kind %q, want initial", k)
