@@ -481,6 +481,49 @@ func TestMemberLifecycle_EraseAnonymisesAndKeepsReferences(t *testing.T) {
 	}
 }
 
+// A person who leaves stops watching in the offboarding transaction, others'
+// rows stay, and erasure removes any row that is left (RFC-120).
+func TestMemberLifecycle_OffboardAndEraseRemoveWatches(t *testing.T) {
+	f := newLifecycleFixture(t)
+	ctx := context.Background()
+	tid, uid, peer := f.tenantID.String(), f.memberID.String(), f.peerID.String()
+	watch := func(user string) {
+		t.Helper()
+		if _, err := f.db.ExecContext(ctx, `INSERT INTO work_item_subscriptions (tenant_id, finding_id, user_id, reason) VALUES ($1, $2, $3, 'manual')`,
+			tid, f.findingID.String(), user); err != nil {
+			t.Fatalf("watch: %v", err)
+		}
+	}
+	watch(uid)
+	watch(peer)
+	res, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenant.OffboardMemberInput{
+		SchedulesTo: peer, FindingsTo: peer, AssetsTo: peer,
+	}, f.ownerCtx())
+	if err != nil {
+		t.Fatalf("offboard: %v", err)
+	}
+	if res.RemovedWatches != 1 {
+		t.Errorf("removed watches = %d, want 1", res.RemovedWatches)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM work_item_subscriptions WHERE tenant_id = $1 AND user_id = $2`, tid, uid); n != 0 {
+		t.Errorf("the offboarded member still watches %d items", n)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM work_item_subscriptions WHERE tenant_id = $1 AND user_id = $2`, tid, peer); n != 1 {
+		t.Errorf("another member's watch changed: %d rows", n)
+	}
+	// A row that appeared after the offboarding goes with the erasure.
+	watch(uid)
+	if err := f.svc.EraseMemberPersonalData(ctx, f.mshipID.String(), f.ownerCtx()); err != nil {
+		t.Fatalf("erase: %v", err)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM work_item_subscriptions WHERE user_id = $1`, uid); n != 0 {
+		t.Errorf("erasure left %d watched items", n)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM work_item_subscriptions WHERE user_id = $1`, peer); n != 1 {
+		t.Errorf("erasure touched another member's watch")
+	}
+}
+
 // Offboarding hands the member's open remediation tasks and campaigns to the
 // plan's findings target, in the same transaction; finished ones, team-owned
 // tasks and another tenant's rows are left alone. With the findings put back

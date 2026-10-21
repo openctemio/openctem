@@ -70,3 +70,59 @@ func TestMarkDuplicateOf_RepositoryRechecksUnderLock(t *testing.T) {
 		t.Fatalf("folding into a tombstone: %v", err)
 	}
 }
+
+// Watchers follow a merged finding to the survivor; a person who already has a
+// row on the survivor keeps that one, so a stop on the survivor is not undone.
+func TestMarkDuplicateOf_WatchersFollowTheSurvivor(t *testing.T) {
+	f := newMergeFixture(t, "markdup-watchers")
+	ctx := context.Background()
+	repo := postgres.NewFindingRepository(&postgres.DB{DB: f.db})
+	now := time.Now()
+	survivor := f.composite(f.keep, "base-a", "new", now.Add(-time.Hour))
+	loser := f.composite(f.keep, "base-b", "new", now)
+	mk := func(label string) shared.ID {
+		u := shared.NewID()
+		if _, err := f.db.Exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, $3)`, u.String(), "wd-"+u.String()+"@example.test", label); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = f.db.Exec(`DELETE FROM users WHERE id = $1`, u.String()) })
+		return u
+	}
+	only, both, stopped := mk("only on the loser"), mk("on both"), mk("stopped on the loser")
+	watch := func(finding, user shared.ID, state, reason string) {
+		t.Helper()
+		if _, err := f.db.Exec(`INSERT INTO work_item_subscriptions (tenant_id, finding_id, user_id, state, reason) VALUES ($1, $2, $3, $4, $5)`,
+			f.tenant.String(), finding.String(), user.String(), state, reason); err != nil {
+			t.Fatal(err)
+		}
+	}
+	watch(loser, only, "subscribed", "manual")
+	watch(loser, both, "subscribed", "commented")
+	watch(survivor, both, "unsubscribed", "manual")
+	watch(loser, stopped, "unsubscribed", "manual")
+
+	if err := repo.MarkDuplicateOf(ctx, f.tenant, loser, survivor, f.user.String()); err != nil {
+		t.Fatal(err)
+	}
+	row := func(finding, user shared.ID) string {
+		var s string
+		_ = f.db.QueryRow(`SELECT state||':'||reason FROM work_item_subscriptions WHERE tenant_id = $1 AND finding_id = $2 AND user_id = $3`,
+			f.tenant.String(), finding.String(), user.String()).Scan(&s)
+		return s
+	}
+	for name, c := range map[string]struct {
+		user shared.ID
+		want string
+	}{
+		"moved":              {only, "subscribed:manual"},
+		"the survivor's own": {both, "unsubscribed:manual"},
+		"a stop moves too":   {stopped, "unsubscribed:manual"},
+	} {
+		if got := row(survivor, c.user); got != c.want {
+			t.Errorf("%s: survivor row = %q, want %q", name, got, c.want)
+		}
+		if got := row(loser, c.user); got != "" {
+			t.Errorf("%s: the tombstone still has a row %q", name, got)
+		}
+	}
+}
