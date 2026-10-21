@@ -243,13 +243,13 @@ func registerProxyPoolRoutes(
 		r.GET("/", h.List, middleware.Require(permission.SensorEgressRead))
 		// Before /{id} so chi does not read "assignments" as an id.
 		r.GET("/assignments", h.ListAssignments, middleware.Require(permission.SensorEgressRead))
-		r.PUT("/assignments/{sensorId}", h.SetAssignment, middleware.Require(permission.SensorEgressWrite))
+		r.PUT("/assignments/{sensor_id}", h.SetAssignment, middleware.Require(permission.SensorEgressWrite))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorEgressRead))
 
 		r.POST("/", h.Create, middleware.Require(permission.SensorEgressWrite))
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.SensorEgressWrite))
 		r.PUT("/{id}/endpoints", h.ReplaceEndpoints, middleware.Require(permission.SensorEgressWrite))
-		r.PATCH("/{id}/endpoints/{endpointId}", h.UpdateEndpoint, middleware.Require(permission.SensorEgressWrite))
+		r.PATCH("/{id}/endpoints/{endpoint_id}", h.UpdateEndpoint, middleware.Require(permission.SensorEgressWrite))
 
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorEgressDelete))
 	}, tenantMiddlewares...)

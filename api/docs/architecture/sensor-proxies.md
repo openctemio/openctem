@@ -17,7 +17,7 @@ and its content downloads stay sensor-local (`SENSOR_CONTROL_PROXY`,
 | Order | Source | Applies to |
 |---|---|---|
 | 1 | Sensor-local veto: `SENSOR_SCAN_EGRESS=direct-only` (refuses jobs carrying a pool) and `SENSOR_SCAN_EGRESS_ALLOW` (the only upstreams it accepts) | the host operator decides; the platform cannot override |
-| 2 | The sensor's assignment (`PUT /api/v1/proxy-pools/assignments/{sensorId}`): Direct or a pool | a pool here carries **all** target addresses (a segment proxy) |
+| 2 | The sensor's assignment (`PUT /api/v1/proxy-pools/assignments/{sensor_id}`): Direct or a pool | a pool here carries **all** target addresses (a segment proxy) |
 | 3 | The organization default pool (`is_default`, at most one) | **public** target addresses only; private, ULA and CGNAT targets are dialed directly, so internal targets never reach an external proxy |
 | 4 | none | today's behaviour |
 
@@ -46,8 +46,8 @@ Code: `pkg/domain/proxypool` (validation, paste list, health, job egress),
 | `POST /api/v1/proxy-pools` `{name, description, strategy, enabled, is_default, endpoints_text}` | `sensors:egress:write` |
 | `PATCH /api/v1/proxy-pools/{id}` `{name, description, strategy, enabled, is_default}` | `sensors:egress:write` |
 | `PUT /api/v1/proxy-pools/{id}/endpoints` `{text}` | `sensors:egress:write` |
-| `PATCH /api/v1/proxy-pools/{id}/endpoints/{endpointId}` `{enabled, reset_health}` | `sensors:egress:write` |
-| `PUT /api/v1/proxy-pools/assignments/{sensorId}` `{mode: inherit|direct|pool, pool_id}` | `sensors:egress:write` |
+| `PATCH /api/v1/proxy-pools/{id}/endpoints/{endpoint_id}` `{enabled, reset_health}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/assignments/{sensor_id}` `{mode: inherit|direct|pool, pool_id}` | `sensors:egress:write` |
 | `DELETE /api/v1/proxy-pools/{id}` | `sensors:egress:delete` |
 
 Owner and admin hold all three; write and delete are admin-only (no custom
