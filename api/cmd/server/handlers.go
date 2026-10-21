@@ -393,9 +393,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	jiraWebhookHandler.SetOrganizationGate(svc.OrganizationGate)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
 	jiraWebhookHandler.SetAuditService(svc.Audit)
+	jiraWebhookHandler.SetCreatePolicy(svc.TicketPolicy)
 	var ticketMappingHandler *handler.TicketMappingHandler
 	if svc.TicketMapping != nil {
 		ticketMappingHandler = handler.NewTicketMappingHandler(svc.TicketMapping, svc.Audit, log)
+		ticketMappingHandler.SetCreatePolicy(svc.TicketPolicy)
 	}
 	// Inbound Jira deliveries: the integration in the URL and its own secret
 	// authenticate them; replays are ignored for 24 hours (all replicas).

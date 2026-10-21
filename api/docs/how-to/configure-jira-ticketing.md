@@ -50,6 +50,14 @@ Optionally set **Routing** rules (severity / scope / criticality / tag → proje
 to fan tickets across projects. Ticket creation is idempotent — a finding already
 ticketed in the target project is not re-created.
 
+**When to create issues** (row action) limits what workflows file automatically:
+severity at least (default Medium) **or** priority class at least (default P2),
+always for KEV findings, and a daily limit (default 200). Findings held back show
+"Not sent to Jira" on the finding, are created later if they rise above the
+policy, and can always be created by hand after a confirmation (audited). Use
+**Preview** to see how many findings a change would let through. See
+[ticket create policy](../architecture/ticket-create-policy.md).
+
 ## 4. (Optional) Inbound webhook for status sync
 
 Each Jira integration has its own inbound webhook. In **Settings > Integrations >
@@ -86,7 +94,7 @@ Outbound (OpenCTEM to Jira) needs no webhook and works once **status sync** is o
 |---------|-------------|
 | Integration "connected" but nothing pushes | **Bidirectional status sync** is off (default) — turn it on in Configure. |
 | Project picker is empty / shows a text box | Credentials can't list projects (non-Cloud or wrong token) — enter the key manually, or fix the token. |
-| Findings never get a ticket automatically | Ticket creation is on-demand (Create Jira Epic/Ticket) or via routing rules — there's no blanket auto-create. |
+| Findings never get a ticket automatically | Ticket creation is on demand (Create ticket) or by a workflow's create ticket action. A workflow's finding can be held by **When to create issues** (shown as "Not sent to Jira" on the finding). |
 | Inbound transitions don't reflect | The Jira webhook has no secret, another integration's secret, or the old secret after a rotation: deliveries are refused (fails closed). Set the secret again in **Inbound webhook** and in Jira. |
 | Nothing happens and no error | A misconfigured integration (e.g. missing email) is skipped and logged, not surfaced — check the connection fields. |
 
