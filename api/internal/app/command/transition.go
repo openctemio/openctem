@@ -147,7 +147,7 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	if t == TransitionClaim {
 		// Hand out what a poll would have: the stored command plus the
 		// policy, rules, settings and template signatures, signed.
-		stored, err := s.Get(ctx, in.TenantID, in.CommandID)
+		stored, err := s.Get(ctx, out.TenantID.String(), out.ID.String())
 		if err == nil {
 			out, err = s.deliverStored(ctx, in.SensorID, stored)
 		}
