@@ -39,6 +39,7 @@ import { getTriageCacheKey } from '@/features/ai-triage/api'
 import { useFindingApi } from '@/features/findings/api/use-findings-api'
 import { useFindingActivityFeed } from '@/features/findings/hooks/use-finding-activity-feed'
 import { useFindingTriage } from '@/features/findings/hooks/use-finding-triage'
+import { useFindingEvidenceCount } from '@/features/findings/hooks/use-finding-evidence-count'
 import type { FindingDetail } from '@/features/findings/types'
 import { toFindingDetail, findingShortName } from '@/features/findings/lib/finding-detail'
 import { FindingActivityView } from '@/features/findings/components/finding-activity'
@@ -78,15 +79,6 @@ const TAB_LABEL: Record<string, string> = {
   'attack-path': 'Data flow',
   pentest: 'Pentest details',
   related: 'Related',
-}
-
-function evidenceCount(f: FindingDetail) {
-  return (
-    (f.contextSnippet || f.snippet ? 1 : 0) +
-    (f.stacks?.length || 0) +
-    (f.relatedLocations?.length || 0) +
-    (f.attachments?.length || 0)
-  )
 }
 
 function dataFlowCount(f: FindingDetail) {
@@ -154,6 +146,9 @@ export default function FindingDetailPage() {
     finding ?? { id, status: 'new', severity: 'medium', assignee: undefined },
     { onStatusChange: () => void mutateFinding(), onAssigneeChange: () => void mutateFinding() }
   )
+
+  // The Evidence tab's number counts every source the tab shows.
+  const evidenceTabCount = useFindingEvidenceCount(finding)
 
   // Tabs: the source layout decides order and which apply; Related is last.
   // Activity is not a tab (it opens the ActivityPanel); `?tab=activity` links
@@ -283,8 +278,8 @@ export default function FindingDetailPage() {
                 {tabs.map((key) => (
                   <TabsTrigger key={key} value={key}>
                     {TAB_LABEL[key] ? t(`findings.detail.tab.${key}`, TAB_LABEL[key]) : key}
-                    {key === 'evidence' && evidenceCount(finding) > 0 && (
-                      <TabsCount value={evidenceCount(finding)} />
+                    {key === 'evidence' && evidenceTabCount > 0 && (
+                      <TabsCount value={evidenceTabCount} />
                     )}
                     {key === 'attack-path' && <TabsCount value={dataFlowCount(finding)} />}
                   </TabsTrigger>
