@@ -9,8 +9,14 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
+
+// apierror.Error is the error body named in this handler's swagger @Failure
+// lines; the import lets the swagger generator resolve it (errors are written by
+// handleServiceError).
+var _ apierror.Error
 
 // DuplicateCandidatesResponse lists the duplicate candidates of a finding.
 type DuplicateCandidatesResponse struct {
