@@ -42,6 +42,9 @@ type Service struct {
 	legacy     []string          // earlier peppers that still verify (key rotation)
 	membership MembershipChecker // nil → no member-lifecycle gate (tests only)
 	holder     HolderPermissions // nil → scopes are not narrowed to the holder (tests only)
+	// serviceGate ties a service-account key to the person who minted it.
+	// nil → no creator rule (tests only).
+	serviceGate ServiceKeyGate
 	// external decides whether an external member may create a key and how
 	// long it may live (RFC-058). nil → no external-member rule (tests only).
 	external ExternalKeyPolicy
@@ -126,6 +129,11 @@ type HolderPermissions interface {
 // production; without it a key keeps the scopes it was minted with even after
 // its user is demoted.
 func (s *Service) SetHolderPermissions(h HolderPermissions) { s.holder = h }
+
+// SetServiceKeyGate wires the creator rule for service-account keys: such a
+// key stops working when the person who minted it is no longer an active member
+// holding service_accounts:manage. Always wire it in production.
+func (s *Service) SetServiceKeyGate(g ServiceKeyGate) { s.serviceGate = g }
 
 // ExternalKeyPolicy decides API keys for external members (RFC-058): an
 // external member may create a key only when the trust with their home
@@ -369,6 +377,19 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 		if mErr != nil || !active {
 			s.logger.Debug("api key rejected: member not active",
 				"key_id", key.ID().String(), "error", errString(mErr))
+			return nil, apikeydom.ErrAPIKeyNotFound
+		}
+	}
+
+	// Service-account keys answer to the person who minted them: refused when
+	// that person left, was demoted or lost service_accounts:manage by any path.
+	// A lookup error refuses the key (fail closed).
+	if s.serviceGate != nil {
+		reason, gErr := s.serviceGate.Refusal(ctx, key.TenantID(), *key.UserID(), key.CreatedBy())
+		if gErr != nil || reason != "" {
+			s.logger.Warn("api key rejected: service-account key creator check failed",
+				"key_id", key.ID().String(), "tenant_id", key.TenantID().String(),
+				"reason", reason, "error", errString(gErr))
 			return nil, apikeydom.ErrAPIKeyNotFound
 		}
 	}

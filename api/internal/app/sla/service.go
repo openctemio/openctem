@@ -96,8 +96,17 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 		policy.UpdateDescription(input.Description)
 	}
 
-	if input.IsDefault {
-		policy.SetDefault(true)
+	// A create never replaces the tenant default: a new default tightens
+	// every open deadline and cannot be undone. Only the tenant's first
+	// tenant-wide policy may become the default on create; replacing an
+	// existing default is the explicit make-default update.
+	if input.IsDefault && input.AssetID == "" {
+		if _, derr := s.repo.GetTenantDefault(ctx, tenantID); derr != nil {
+			if !errors.Is(derr, sladom.ErrNotFound) && !errors.Is(derr, shared.ErrNotFound) {
+				return nil, derr
+			}
+			policy.SetDefault(true)
+		}
 	}
 
 	if err := policy.UpdateSLADays(input.CriticalDays, input.HighDays, input.MediumDays, input.LowDays, input.InfoDays); err != nil {
@@ -120,15 +129,6 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 
 	if err := s.repo.Create(ctx, policy); err != nil {
 		return nil, fmt.Errorf("failed to create SLA policy: %w", err)
-	}
-
-	// Enforce a single tenant default: if this policy is the default, clear it
-	// on every other tenant-wide policy. Otherwise GetTenantDefault would be
-	// non-deterministic with multiple defaults.
-	if policy.IsDefault() && policy.AssetID() == nil {
-		if err := s.repo.UnsetTenantDefaults(ctx, tenantID, policy.ID()); err != nil {
-			return nil, err
-		}
 	}
 
 	s.logger.Info("SLA policy created", "id", policy.ID().String(), "name", policy.Name())
@@ -330,7 +330,20 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 		policy.UpdateDescription(*input.Description)
 	}
 
-	if input.IsDefault != nil && *input.IsDefault {
+	// Default rules: the default can only change by making another policy the
+	// default; it cannot be unset or deactivated. A default is tenant-wide and
+	// active.
+	makeDefault := input.IsDefault != nil && *input.IsDefault && !policy.IsDefault()
+	if policy.IsDefault() && ((input.IsDefault != nil && !*input.IsDefault) || (input.IsActive != nil && !*input.IsActive)) {
+		return nil, sladom.ErrDefaultProtected
+	}
+	if makeDefault {
+		if policy.AssetID() != nil {
+			return nil, fmt.Errorf("%w: only a tenant-wide policy can be the default", shared.ErrValidation)
+		}
+		if !policy.IsActive() && (input.IsActive == nil || !*input.IsActive) {
+			return nil, fmt.Errorf("%w: an inactive policy cannot be the default", shared.ErrValidation)
+		}
 		policy.SetDefault(true)
 	}
 
@@ -364,15 +377,14 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 		}
 	}
 
-	if err := s.repo.Update(ctx, policy); err != nil {
-		return nil, fmt.Errorf("failed to update SLA policy: %w", err)
-	}
-
-	// Enforce a single tenant default (see CreateSLAPolicy).
-	if policy.IsDefault() && policy.AssetID() == nil {
-		if err := s.repo.UnsetTenantDefaults(ctx, policy.TenantID(), policy.ID()); err != nil {
-			return nil, err
+	if makeDefault {
+		// One transaction: unset the old default and write this one.
+		if err := s.repo.UpdateMakingDefault(ctx, policy); err != nil {
+			return nil, fmt.Errorf("failed to make SLA policy the default: %w", err)
 		}
+		s.logger.Info("SLA default policy changed", "id", policy.ID().String(), "tenant_id", tenantID)
+	} else if err := s.repo.Update(ctx, policy); err != nil {
+		return nil, fmt.Errorf("failed to update SLA policy: %w", err)
 	}
 
 	s.logger.Info("SLA policy updated", "id", policy.ID().String())
@@ -401,7 +413,7 @@ func (s *Service) DeleteSLAPolicy(ctx context.Context, policyID, tenantID string
 	}
 	// Prevent deletion of default policy
 	if policy.IsDefault() {
-		return fmt.Errorf("%w: cannot delete default SLA policy", shared.ErrValidation)
+		return sladom.ErrDefaultProtected
 	}
 
 	if err := s.repo.Delete(ctx, parsedTenantID, parsedID); err != nil {
@@ -424,10 +436,6 @@ func (s *Service) ListTenantPolicies(ctx context.Context, tenantID string) ([]*s
 
 // CalculateSLADeadlineForPriority computes the SLA deadline honouring CTEM
 // priority class first (P0..P3) with a fallback to severity-based days.
-//
-// This is the canonical entry point. Prefer it over CalculateSLADeadline,
-// which retains the severity-only path for legacy callers that have no
-// priority class.
 func (s *Service) CalculateSLADeadlineForPriority(
 	ctx context.Context,
 	tenantID, assetID string,
@@ -476,8 +484,8 @@ type DeadlineFunc func(assetID, priorityClass string, severity vulnerability.Sev
 // SLADeadlineFunc loads the tenant's SLA policies with one query and returns
 // a function that resolves each finding's effective policy in memory, with
 // the same choice as CalculateSLADeadlineForPriority: for an asset, its own
-// active policy, else the active tenant default; without an asset, the tenant
-// default. It lets a batch of N findings cost one query instead of N.
+// active policy, else the active tenant default; without an asset, the active
+// tenant default. It lets a batch of N findings cost one query instead of N.
 func (s *Service) SLADeadlineFunc(ctx context.Context, tenantID string) (DeadlineFunc, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -491,7 +499,7 @@ func (s *Service) SLADeadlineFunc(ctx context.Context, tenantID string) (Deadlin
 	// GetTenantDefault does.
 	sort.SliceStable(policies, func(i, j int) bool { return policies[i].CreatedAt().Before(policies[j].CreatedAt()) })
 	byAsset := make(map[string]*sladom.Policy)
-	var activeDefault, anyDefault *sladom.Policy
+	var activeDefault *sladom.Policy
 	for _, p := range policies {
 		if p.TenantID() != parsedID {
 			continue // defensive: never apply another tenant's policy
@@ -505,167 +513,20 @@ func (s *Service) SLADeadlineFunc(ctx context.Context, tenantID string) (Deadlin
 		if !p.IsDefault() {
 			continue
 		}
-		if anyDefault == nil {
-			anyDefault = p
-		}
 		if activeDefault == nil && p.IsActive() {
 			activeDefault = p
 		}
 	}
 	return func(assetID, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
-		policy := anyDefault
+		// An inactive default never governs, with or without an asset.
+		policy := activeDefault
 		if assetID != "" {
-			policy = activeDefault
 			if p, ok := byAsset[assetID]; ok {
 				policy = p
 			}
 		}
 		return deadlineForPriority(policy, priorityClass, severity, detectedAt)
 	}, nil
-}
-
-// CalculateSLADeadline calculates the SLA deadline for a finding based on its severity.
-func (s *Service) CalculateSLADeadline(ctx context.Context, tenantID, assetID string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
-	var policy *sladom.Policy
-	var err error
-
-	if assetID != "" {
-		policy, err = s.GetAssetSLAPolicy(ctx, tenantID, assetID)
-	} else {
-		policy, err = s.GetTenantDefaultPolicy(ctx, tenantID)
-	}
-
-	if err != nil {
-		// Fall back to default values if no policy found
-		s.logger.Warn("no SLA policy found, using defaults", "tenant_id", tenantID, "asset_id", assetID, "error", err)
-		if severity.IsInformational() {
-			return time.Time{}, nil
-		}
-		defaultDays, ok := sladom.DefaultSLADays[severity.String()]
-		if !ok {
-			return time.Time{}, fmt.Errorf("%w: invalid severity", shared.ErrValidation)
-		}
-		return detectedAt.Add(time.Duration(defaultDays) * 24 * time.Hour), nil
-	}
-
-	return policy.CalculateDeadline(severity.String(), detectedAt), nil
-}
-
-// CheckSLACompliance checks if a finding is within SLA compliance.
-type ComplianceResult struct {
-	IsCompliant      bool
-	Status           string // on_track, warning, overdue, exceeded
-	DeadlineAt       time.Time
-	DaysRemaining    int
-	PercentElapsed   float64
-	EscalationNeeded bool
-}
-
-// CheckSLACompliance checks the SLA status of a finding.
-func (s *Service) CheckSLACompliance(
-	ctx context.Context,
-	tenantID, assetID string,
-	severity vulnerability.Severity,
-	detectedAt time.Time,
-	resolvedAt *time.Time,
-) (*ComplianceResult, error) {
-	var policy *sladom.Policy
-	var err error
-
-	if assetID != "" {
-		policy, err = s.GetAssetSLAPolicy(ctx, tenantID, assetID)
-	} else {
-		policy, err = s.GetTenantDefaultPolicy(ctx, tenantID)
-	}
-
-	// Use default days if no policy found
-	var deadline time.Time
-	var warningThreshold int
-	var escalationEnabled bool
-
-	if err != nil || policy == nil {
-		if days := sladom.DefaultSLADays[severity.String()]; days > 0 {
-			deadline = detectedAt.Add(time.Duration(days) * 24 * time.Hour)
-		}
-		warningThreshold = 80
-		escalationEnabled = false
-	} else {
-		deadline = policy.CalculateDeadline(severity.String(), detectedAt)
-		warningThreshold = policy.WarningThresholdPct()
-		escalationEnabled = policy.EscalationEnabled()
-	}
-
-	// No deadline (an informational finding without an info SLA): there is
-	// nothing to comply with, so it is never overdue and never escalates.
-	if deadline.IsZero() {
-		return &ComplianceResult{IsCompliant: true, Status: "not_applicable"}, nil
-	}
-
-	now := time.Now()
-
-	// If already resolved
-	if resolvedAt != nil {
-		if resolvedAt.Before(deadline) {
-			return &ComplianceResult{
-				IsCompliant:    true,
-				Status:         "on_track",
-				DeadlineAt:     deadline,
-				DaysRemaining:  0,
-				PercentElapsed: 100,
-			}, nil
-		}
-		return &ComplianceResult{
-			IsCompliant:    false,
-			Status:         "exceeded",
-			DeadlineAt:     deadline,
-			DaysRemaining:  0,
-			PercentElapsed: 100,
-		}, nil
-	}
-
-	// Calculate time elapsed. Guard a zero/negative window: an unknown
-	// severity (e.g. "none", absent from DefaultSLADays → days=0) makes
-	// deadline == detectedAt, so the division would yield NaN/+Inf and NaN
-	// silently breaks json.Marshal of the result. Treat a non-positive
-	// window as fully elapsed.
-	totalDuration := deadline.Sub(detectedAt)
-	elapsed := now.Sub(detectedAt)
-	var percentElapsed float64
-	if totalDuration <= 0 {
-		percentElapsed = 100
-	} else {
-		percentElapsed = float64(elapsed) / float64(totalDuration) * 100
-		if percentElapsed > 100 {
-			percentElapsed = 100
-		}
-	}
-
-	daysRemaining := int(deadline.Sub(now).Hours() / 24)
-	if daysRemaining < 0 {
-		daysRemaining = 0
-	}
-
-	result := &ComplianceResult{
-		DeadlineAt:     deadline,
-		DaysRemaining:  daysRemaining,
-		PercentElapsed: percentElapsed,
-	}
-
-	// Determine status
-	switch {
-	case now.After(deadline):
-		result.IsCompliant = false
-		result.Status = "overdue"
-		result.EscalationNeeded = escalationEnabled
-	case percentElapsed >= float64(warningThreshold):
-		result.IsCompliant = true
-		result.Status = "warning"
-	default:
-		result.IsCompliant = true
-		result.Status = "on_track"
-	}
-
-	return result, nil
 }
 
 // slaDaysOrdered reports whether the windows are non-decreasing from critical

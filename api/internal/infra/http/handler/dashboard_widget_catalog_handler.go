@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -113,10 +114,24 @@ func (h *UserDashboardHandler) widgetsReady(w http.ResponseWriter) bool {
 }
 
 func (h *UserDashboardHandler) widgetError(w http.ResponseWriter, err error) {
-	if errors.Is(err, widgets.ErrBusy) {
-		w.Header().Set("Retry-After", "2")
-		apierror.TooManyRequests(widgets.ErrBusy.Error()).WriteJSON(w)
+	var budget *widgets.ErrRefreshBudget
+	if errors.As(err, &budget) {
+		w.Header().Set("Retry-After", strconv.Itoa(max(int(budget.RetryAfter.Seconds()+0.999), 1)))
+		apierror.TooManyRequests(budget.Error()).WriteJSON(w)
 		return
+	}
+	var preview *widgets.ErrPreviewRate
+	if errors.As(err, &preview) {
+		w.Header().Set("Retry-After", strconv.Itoa(max(int(preview.RetryAfter.Seconds()+0.999), 1)))
+		apierror.TooManyRequests(preview.Error()).WriteJSON(w)
+		return
+	}
+	for _, busy := range []error{widgets.ErrBusy, widgets.ErrRefreshRunning} {
+		if errors.Is(err, busy) {
+			w.Header().Set("Retry-After", "2")
+			apierror.TooManyRequests(busy.Error()).WriteJSON(w)
+			return
+		}
 	}
 	h.handleError(w, err)
 }
@@ -178,7 +193,7 @@ type WidgetPreviewRequest struct {
 
 // PreviewWidget handles POST /api/v1/me/dashboards/widget-preview
 // @Summary      Preview a typed widget
-// @Description  Computes one typed widget spec for the caller's own data scope (the widget gallery and the config panel). The spec is validated like a saved widget (400 when refused). 429 when too many dashboard reads run.
+// @Description  Computes one typed widget spec for the caller's own data scope (the widget gallery and the config panel). The spec is validated like a saved widget (400 when refused). 429 with Retry-After when too many dashboard reads run or the caller previews faster than the per-person limit (a burst of 24, then one every 2 s).
 // @Tags         Dashboards
 // @Accept       json
 // @Produce      json
@@ -198,6 +213,55 @@ func (h *UserDashboardHandler) PreviewWidget(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	out, err := h.widgets.Preview(r.Context(), c, req.WidgetType, req.Config)
+	if err != nil {
+		h.widgetError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// RefreshPersonal handles POST /api/v1/me/dashboards/{id}/refresh
+// @Summary      Refresh my dashboard now
+// @Description  Recomputes the caller's personal dashboard from the fact tables and stores the snapshot ("Refresh now"). Budget: once a minute per person and dashboard, 30 an hour per organization (429 with Retry-After); 429 also while another refresh of the dashboard runs (the budget is not used). A refresh that finds no read slot free gives its budget back.
+// @Tags         Dashboards
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Dashboard ID"
+// @Success      200  {object}  widgets.DashboardData
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /me/dashboards/{id}/refresh [post]
+func (h *UserDashboardHandler) RefreshPersonal(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok || !h.widgetsReady(w) {
+		return
+	}
+	out, err := h.widgets.RefreshPersonal(r.Context(), c, r.PathValue("id"))
+	if err != nil {
+		h.widgetError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// RefreshOrg handles POST /api/v1/organization/dashboards/{id}/refresh
+// @Summary      Refresh an organization dashboard now
+// @Description  Recomputes an organization dashboard the caller may read (dashboards:org:view and the audience) and stores the snapshot. Budget: once a minute per person and dashboard, 30 an hour per organization (429 with Retry-After); 429 also while another refresh of the dashboard runs (the budget is not used). A refresh that finds no read slot free gives its budget back.
+// @Tags         Dashboards
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Dashboard ID"
+// @Success      200  {object}  widgets.DashboardData
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /organization/dashboards/{id}/refresh [post]
+func (h *UserDashboardHandler) RefreshOrg(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok || !h.widgetsReady(w) {
+		return
+	}
+	out, err := h.widgets.RefreshOrg(r.Context(), c, r.PathValue("id"))
 	if err != nil {
 		h.widgetError(w, err)
 		return

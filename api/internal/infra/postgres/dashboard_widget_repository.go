@@ -340,10 +340,12 @@ func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.Re
 	lim := b.arg(limit)
 	//nolint:gosec // G202: fixed SQL, values bound
 	q := `WITH ranked AS (
-			SELECT r.finding_id, r.priority_class, r.severity, r.sort_at, row_number() OVER (ORDER BY ` + order + `) AS pos
+			SELECT r.finding_id, r.priority_class, r.severity, r.sort_at, r.is_pentest, r.pentest_campaign_id,
+			       row_number() OVER (ORDER BY ` + order + `) AS pos
 			FROM dash_asset_rank r WHERE ` + b.sql() + `
 		)
-		SELECT f.id, f.title, k.severity, k.priority_class, f.asset_id, COALESCE(a.name, ''), k.sort_at, f.sla_deadline, COALESCE(f.is_in_kev, false)
+		SELECT f.id, f.title, k.severity, k.priority_class, f.asset_id, COALESCE(a.name, ''), k.sort_at, f.sla_deadline,
+		       COALESCE(f.is_in_kev, false), k.is_pentest, k.pentest_campaign_id
 		FROM ranked k
 		JOIN findings f ON f.tenant_id = $1 AND f.id = k.finding_id AND ` + openFindingStatusClause + `
 		LEFT JOIN assets a ON a.tenant_id = $1 AND a.id = f.asset_id
@@ -359,7 +361,7 @@ func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.Re
 		var it dashboard.RankItem
 		var asset sql.NullString
 		var sortAt, due sql.NullTime
-		if err := rows.Scan(&it.FindingID, &it.Title, &it.Severity, &it.PriorityClass, &asset, &it.AssetName, &sortAt, &due, &it.KEV); err != nil {
+		if err := rows.Scan(&it.FindingID, &it.Title, &it.Severity, &it.PriorityClass, &asset, &it.AssetName, &sortAt, &due, &it.KEV, &it.Pentest, &it.CampaignID); err != nil {
 			return nil, fmt.Errorf("scan rank item: %w", err)
 		}
 		if asset.Valid {
@@ -374,6 +376,25 @@ func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.Re
 			it.SLADeadline = &due.Time
 		}
 		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// CampaignsOf implements dashboard.FactReader.
+func (r *DashboardWidgetRepository) CampaignsOf(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT campaign_id FROM pentest_campaign_members WHERE tenant_id = $1 AND user_id = $2`,
+		tenantID.String(), userID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list campaign memberships: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan campaign membership: %w", err)
+		}
+		out = append(out, id)
 	}
 	return out, rows.Err()
 }

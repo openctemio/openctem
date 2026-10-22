@@ -75,13 +75,14 @@ export interface WidgetDef {
 
 /** A widget whose module is switched off for the organization. */
 function ModuleOffShell({ title }: { title: string }) {
+  const { t } = useTranslation()
   return (
     <Card className="h-full">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
-        Turned off for your organization.
+        {t('dashboardMetrics.state.moduleOff')}
       </CardContent>
     </Card>
   )
@@ -142,7 +143,9 @@ function SeverityBreakdownWidget() {
   const { stats, isLoading } = useStats()
   // Every severity, Informational included (none folds into it).
   const by = severityCounts(stats.findings.bySeverity)
-  const rows: Array<[string, number]> = SEVERITY_LEVELS.map((s) => [
+  // Each row opens the open findings of that severity: the list it counts.
+  const rows: Array<[string, string, number]> = SEVERITY_LEVELS.map((s) => [
+    s,
     s === 'info' ? INFORMATIONAL_LABEL : SEVERITY_LABELS[s],
     by[s],
   ])
@@ -156,10 +159,15 @@ function SeverityBreakdownWidget() {
           <Skeleton className="h-24 w-full" />
         ) : (
           <ul className="space-y-1.5">
-            {rows.map(([label, n]) => (
-              <li key={label} className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="font-medium tabular-nums">{n}</span>
+            {rows.map(([sev, label, n]) => (
+              <li key={sev}>
+                <Link
+                  href={`/findings?state=open&severity=${sev}`}
+                  className="flex items-center justify-between rounded-sm text-sm hover:underline focus-visible:underline"
+                >
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="font-medium tabular-nums">{n.toLocaleString()}</span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -178,31 +186,34 @@ function OpenFindingsWidget() {
       value={stats.findings.total}
       loading={isLoading}
       error={error}
-      href="/findings"
+      // The count is the open lens: open the same list.
+      href="/findings?state=open"
     />
   )
 }
 
 function OverdueSlaWidget() {
+  const { t } = useTranslation()
   const { stats, isLoading, error } = useStats()
   return (
     <StatShell
-      title="Overdue (SLA)"
+      title={t('dashboardMetrics.widget.overdue.title')}
       value={stats.findings.overdue}
       loading={isLoading}
       error={error}
       tone="danger"
       // The count is open findings overdue or exceeded: open the same list.
-      href="/findings?state=open&sla_status=overdue,exceeded"
+      href={DRILL.slaBreached}
     />
   )
 }
 
 function AssetsWidget() {
+  const { t } = useTranslation()
   const { stats, isLoading, error } = useStats()
   return (
     <StatShell
-      title="Assets"
+      title={t('dashboardMetrics.widget.assets.title')}
       value={stats.assets.total}
       loading={isLoading}
       error={error}
@@ -214,6 +225,7 @@ function AssetsWidget() {
 // ── personal widgets (assigned to me) ────────────────────────────────────────
 
 function AssignedToMeWidget() {
+  const { t } = useTranslation()
   const { data, isLoading, error } = useFindingsApi({
     assigned_to_me: true,
     exclude_statuses: OPEN_EXCLUDE,
@@ -221,16 +233,19 @@ function AssignedToMeWidget() {
   })
   return (
     <StatShell
-      title="Assigned to me · open"
+      title={t('dashboardMetrics.widget.assigned.title')}
       value={data?.total ?? 0}
       loading={isLoading}
       error={error}
-      href="/findings?related_to=me"
+      // The count is open findings related to me: open the same list (it
+      // used to open every state).
+      href={DRILL.mineOpen}
     />
   )
 }
 
 function MyCriticalHighWidget() {
+  const { t } = useTranslation()
   const { data, isLoading, error } = useFindingsApi({
     assigned_to_me: true,
     exclude_statuses: OPEN_EXCLUDE,
@@ -239,17 +254,18 @@ function MyCriticalHighWidget() {
   })
   return (
     <StatShell
-      title="My critical / high"
+      title={t('dashboardMetrics.widget.myCriticalHigh.title')}
       value={data?.total ?? 0}
       loading={isLoading}
       error={error}
       tone="danger"
-      href="/findings?related_to=me&state=open&severity=critical,high"
+      href={`${DRILL.mineOpen}&severity=critical,high`}
     />
   )
 }
 
 function MyOverdueSlaWidget() {
+  const { t } = useTranslation()
   const { data, isLoading, error } = useFindingsApi({
     assigned_to_me: true,
     exclude_statuses: OPEN_EXCLUDE,
@@ -258,12 +274,12 @@ function MyOverdueSlaWidget() {
   })
   return (
     <StatShell
-      title="My overdue (SLA)"
+      title={t('dashboardMetrics.widget.myOverdue.title')}
       value={data?.total ?? 0}
       loading={isLoading}
       error={error}
       tone="danger"
-      href="/findings?related_to=me&state=open&sla_status=overdue,exceeded"
+      href={`${DRILL.mineOpen}&sla_status=overdue,exceeded`}
     />
   )
 }
@@ -271,11 +287,15 @@ function MyOverdueSlaWidget() {
 // ── program widgets (executive summary / threat intel / coverage) ────────────
 
 function RiskScoreWidget() {
+  const { t } = useTranslation()
   const { data, isLoading, error } = useSummary()
+  // Average asset risk on a 0-100 scale; no summary means no figure, not 0.
+  const risk = data?.risk_score_current
   return (
     <StatShell
-      title="Risk score"
-      value={Math.round(data?.risk_score_current ?? 0)}
+      title={t('dashboardMetrics.widget.risk.title')}
+      value={risk == null ? '—' : `${Math.round(risk)}/100`}
+      sub={t('dashboardMetrics.widget.risk.sub')}
       loading={isLoading}
       error={error}
     />
@@ -322,10 +342,11 @@ function MttrWidget() {
 }
 
 function P0OpenWidget() {
+  const { t } = useTranslation()
   const { data, isLoading, error } = useSummary()
   return (
     <StatShell
-      title="P0 open"
+      title={t('dashboardMetrics.widget.p0.title')}
       value={data?.p0_open ?? 0}
       loading={isLoading}
       error={error}
@@ -336,10 +357,11 @@ function P0OpenWidget() {
 }
 
 function ScanCoverageWidget() {
+  const { t } = useTranslation()
   const { data, isLoading, error } = useCoverage()
   return (
     <StatShell
-      title="Scan coverage"
+      title={t('dashboardMetrics.widget.scanCoverage.title')}
       value={!data || data.total_scannable === 0 ? '—' : `${Math.round(data.coverage_percent)}%`}
       loading={isLoading}
       error={error}
@@ -349,12 +371,14 @@ function ScanCoverageWidget() {
 }
 
 function ReachableAssetsWidget() {
+  const { t } = useTranslation()
   const on = useModuleEnabled('attack_surface')
   const { data, isLoading, error } = useAttack()
-  if (!on) return <ModuleOffShell title="Assets reachable" />
+  const title = t('dashboardMetrics.widget.reachable.title')
+  if (!on) return <ModuleOffShell title={title} />
   return (
     <StatShell
-      title="Assets reachable"
+      title={title}
       value={data?.summary?.reachable_assets ?? 0}
       loading={isLoading}
       error={error}
@@ -364,27 +388,56 @@ function ReachableAssetsWidget() {
   )
 }
 
+/**
+ * The tenant's exposure to known-exploited vulnerabilities: open findings in
+ * the KEV catalog (and how many are past the KEV due date), and open findings
+ * with EPSS of at least 50 %. It used to show the size of the global KEV
+ * catalog, which is the same for every organization.
+ */
 function ThreatIntelWidget() {
-  const { data, isLoading } = useThreatIntel()
-  const kev = data?.kev?.total_entries ?? 0
-  const epss = data?.epss?.critical_risk_count ?? 0
+  const { t } = useTranslation()
+  const { data, isLoading, error } = useThreatIntel()
+  const kevOpen = data?.kev?.tenant_open_count
+  const pastDue = data?.kev?.past_due_count
+  const epss = data?.epss?.critical_risk_count
+  const failed = !!error && !data
   return (
     <Card className="h-full">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Threat intel</CardTitle>
+        <CardTitle className="text-sm">{t('dashboardMetrics.widget.threatIntel.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <Skeleton className="h-16 w-full" />
+        ) : failed ? (
+          <p className="text-xs text-muted-foreground">
+            {t('dashboardMetrics.state.loadFailed', "Couldn't load these figures")}
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-3">
+            <Link
+              href={DRILL.kevOpen}
+              className="rounded-sm hover:underline focus-visible:underline"
+            >
+              <p className="text-2xl font-semibold tabular-nums">
+                {kevOpen == null ? '—' : kevOpen.toLocaleString()}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('dashboardMetrics.threatIntel.kevOpen')}
+              </p>
+              {pastDue != null && pastDue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {t('dashboardMetrics.threatIntel.pastDueSub', undefined, { n: pastDue })}
+                </p>
+              )}
+            </Link>
             <div>
-              <p className="text-2xl font-semibold tabular-nums">{kev}</p>
-              <p className="text-xs text-muted-foreground">KEV entries</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold tabular-nums">{epss}</p>
-              <p className="text-xs text-muted-foreground">High EPSS</p>
+              <p className="text-2xl font-semibold tabular-nums">
+                {epss == null ? '—' : epss.toLocaleString()}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('dashboardMetrics.threatIntel.epssHot')}
+              </p>
             </div>
           </div>
         )}
@@ -417,6 +470,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   overdue_sla: {
     title: 'Overdue (SLA)',
     description: 'Findings past their SLA remediation deadline',
+    titleKey: 'dashboardMetrics.widget.overdue.title',
+    descriptionKey: 'dashboardMetrics.widget.overdue.description',
     component: OverdueSlaWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,
@@ -424,13 +479,17 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   assets_total: {
     title: 'Assets',
     description: 'Total assets in inventory',
+    titleKey: 'dashboardMetrics.widget.assets.title',
+    descriptionKey: 'dashboardMetrics.widget.assets.description',
     component: AssetsWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.AssetsRead,
   },
   assigned_to_me: {
-    title: 'Assigned to me · open',
-    description: 'Open findings assigned to you',
+    title: 'Mine · open',
+    description: 'Open findings assigned to you, your team or on assets you own',
+    titleKey: 'dashboardMetrics.widget.assigned.title',
+    descriptionKey: 'dashboardMetrics.widget.assigned.description',
     component: AssignedToMeWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.FindingsRead,
@@ -438,6 +497,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   my_critical_high: {
     title: 'My critical / high',
     description: 'Your critical and high findings',
+    titleKey: 'dashboardMetrics.widget.myCriticalHigh.title',
+    descriptionKey: 'dashboardMetrics.widget.myCriticalHigh.description',
     component: MyCriticalHighWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.FindingsRead,
@@ -445,6 +506,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   my_overdue_sla: {
     title: 'My overdue (SLA)',
     description: 'Your findings past their SLA',
+    titleKey: 'dashboardMetrics.widget.myOverdue.title',
+    descriptionKey: 'dashboardMetrics.widget.myOverdue.description',
     component: MyOverdueSlaWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.FindingsRead,
@@ -452,6 +515,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   risk_score: {
     title: 'Risk score',
     description: 'Current program risk score',
+    titleKey: 'dashboardMetrics.widget.risk.title',
+    descriptionKey: 'dashboardMetrics.widget.risk.description',
     component: RiskScoreWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,
@@ -477,6 +542,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   p0_open: {
     title: 'P0 open',
     description: 'Open P0 — highest-priority findings',
+    titleKey: 'dashboardMetrics.widget.p0.title',
+    descriptionKey: 'dashboardMetrics.widget.p0.description',
     component: P0OpenWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.FindingsRead,
@@ -484,6 +551,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   scan_coverage: {
     title: 'Scan coverage',
     description: 'Share of assets covered by scans',
+    titleKey: 'dashboardMetrics.widget.scanCoverage.title',
+    descriptionKey: 'dashboardMetrics.widget.scanCoverage.description',
     component: ScanCoverageWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,
@@ -491,14 +560,18 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   reachable_assets: {
     title: 'Assets reachable',
     description: 'Assets reachable from an exposed entry point',
+    titleKey: 'dashboardMetrics.widget.reachable.title',
+    descriptionKey: 'dashboardMetrics.widget.reachable.description',
     component: ReachableAssetsWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,
     requiredModule: 'attack_surface',
   },
   threat_intel: {
-    title: 'Threat intel',
-    description: 'KEV and high-EPSS exposure context',
+    title: 'Known exploited',
+    description: 'Your open findings in the KEV catalog and with EPSS of at least 50 %',
+    titleKey: 'dashboardMetrics.widget.threatIntel.title',
+    descriptionKey: 'dashboardMetrics.widget.threatIntel.description',
     component: ThreatIntelWidget,
     defaultSize: { w: 4, h: 2 },
     requiredPermission: Permission.DashboardRead,
