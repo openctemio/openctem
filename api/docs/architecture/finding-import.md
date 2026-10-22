@@ -1,6 +1,6 @@
 # Finding import: results exported by other tools
 
-`POST /api/v1/findings/import` takes a file another security tool exported,
+`POST /api/v1/findings/imports` takes a file another security tool exported,
 converts it to a CTIS 1.4 report with the ctis `importer` package, and ingests
 it with the uploader's rights. VEX documents are applied to the tenant's
 matching findings. The web console's **Findings → Import results** dialog
@@ -34,6 +34,7 @@ Multipart form:
 | `?dry_run=true` | Preview: parse and count; nothing is written |
 | `?format=` | Force the format of a single file |
 | `?min_severity=` | Drop findings below `info`, `low`, `medium`, `high` or `critical` |
+| `Idempotency-Key` header | 1 to 128 printable ASCII characters: a retry of the same upload returns the first answer (below) |
 
 The format is read from the content (`importer.IsZip`, `importer.Detect` on
 the first 64 KiB). The client's `Content-Type` and file name are never used
@@ -47,13 +48,37 @@ with the archive's Qualys detection files.
 
 ## Response
 
-One entry per file: the detected format, the counts (records, assets,
+A committed upload answers **201** with `Location: /api/v1/findings/imports/{id}`
+and `receipt`: the upload's receipt ([ingest-receipts.md](ingest-receipts.md):
+created, updated (still detected), reactivated, closed, untouched, skipped,
+failed). A preview answers 200 and has no receipt. `files` has one entry per file: the detected format, the counts (records, assets,
 findings by severity, components, VEX statements, skipped), the problems with
 their line and column, the source fields the format's spec does not list
 (up to 100), the VEX summary and, outside a preview, what ingest changed. A
 single file that cannot be read is the request's error (400, or 413 over a
 limit) with the same details; inside an archive each file reports its own
 error.
+
+## Idempotency-Key
+
+A client that may retry (a CI job whose answer was lost) sends
+`Idempotency-Key`. The key is kept in Postgres (`idempotency_keys`, migration
+003277), hashed, per organization, principal (the user or API key) and
+route, for 24 hours:
+
+- the same key with the same request (the query and each part's form name
+  and content hash; the multipart boundary and file names do not count)
+  replays the first answer with `Idempotent-Replayed: true` and the same
+  receipt; nothing is imported again;
+- the same key with another request: 422 `IDEMPOTENCY_KEY_REUSED`;
+- the same key while the first request runs: 409
+  `IDEMPOTENCY_KEY_IN_FLIGHT` with `Retry-After`;
+- a failed request releases the key, so a retry runs again;
+- when the key store cannot be reached the request is refused with 503
+  `IDEMPOTENCY_STORE_UNAVAILABLE` before any file is imported (fail
+  closed). A request without a key does not use the store.
+
+A preview ignores the key.
 
 ## Rights and isolation
 

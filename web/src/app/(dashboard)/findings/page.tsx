@@ -662,7 +662,7 @@ function FindingsContent() {
   // Findings selected to spin up (or join) a remediation task. Non-null = dialog open.
   const [remedFindings, setRemedFindings] = useState<{ id: string; title: string }[] | null>(null)
   const { hasPermission } = usePermissions()
-  // The gate of POST /findings/import (the API stays authoritative).
+  // The gate of POST /findings/imports (the API stays authoritative).
   const canImport =
     hasPermission('findings:write') &&
     hasPermission('assets:write') &&
