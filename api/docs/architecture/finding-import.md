@@ -64,7 +64,7 @@ error.
 
 A client that may retry (a CI job whose answer was lost) sends
 `Idempotency-Key`. The key is kept in Postgres (`idempotency_keys`, migration
-003301), hashed, per organization, principal (the user or API key) and
+003320), hashed, per organization, principal (the user or API key) and
 route, for 24 hours:
 
 - the same key with the same request (the query and each part's form name
@@ -134,7 +134,7 @@ statement touches at most 5,000 findings.
 ## Producer record: the upload receipt
 
 Every committed upload (one request, all its files) gets one receipt in
-`ingest_receipts` (migration 003293, formerly `finding_imports`; see
+`ingest_receipts` (migration 003308, formerly `finding_imports`; see
 [ingest-receipts.md](ingest-receipts.md)) before anything is written: tenant,
 uploader (`actor_user_id`), the SHA-256 of the first file name (the names
 themselves are only in the audit log), status `processing`. Each file's

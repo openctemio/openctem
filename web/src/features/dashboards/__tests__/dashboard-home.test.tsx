@@ -29,6 +29,7 @@ const api = vi.hoisted(() => ({
   orgEnabled: [] as boolean[],
   orgError: undefined as Error | undefined,
   create: vi.fn(),
+  update: vi.fn(),
 }))
 vi.mock('../api/use-dashboards-api', () => ({
   useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
@@ -40,6 +41,7 @@ vi.mock('../api/use-dashboards-api', () => ({
   useRevalidateAllDashboards: () => async () => {},
   DASHBOARDS_KEY: '/api/v1/me/dashboards',
   createDashboard: api.create,
+  updateDashboard: api.update,
   setDefaultDashboard: vi.fn(),
   setOrgDefaultDashboard: vi.fn(),
   setDashboardSchedule: vi.fn(() => Promise.resolve()),
@@ -136,7 +138,7 @@ describe('DashboardHome', () => {
     vi.clearAllMocks()
   })
 
-  it('a person with no dashboard at all gets a personal copy of the Overview template, once', async () => {
+  it('a person with no dashboard at all gets a personal copy of the CTEM template, once', async () => {
     api.create.mockResolvedValue({ id: 'new1' })
     const { rerender } = renderHome()
     await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
@@ -145,10 +147,17 @@ describe('DashboardHome', () => {
       columns: number
       layout: Array<{ widget_type: string }>
     }
-    expect(input.name).toBe('Overview')
+    expect(input.name).toBe('CTEM')
     expect(input.columns).toBe(4)
     expect(input.layout.length).toBeGreaterThan(4)
     expect(input.layout.every((w) => w.widget_type === 'metric')).toBe(true)
+    const metrics = input.layout.map(
+      (w) => (w as unknown as { config: { data: { metric: string } } }).config.data.metric
+    )
+    // The CTEM story leads: active exposure, then the loop, fix next and attack paths.
+    expect(metrics.indexOf('ctem.loop')).toBe(4)
+    expect(metrics).toContain('fix.next')
+    expect(metrics).toContain('attack_paths.to_crown_jewels')
     rerender(
       <I18nProvider locale="en">
         <DashboardHome />
@@ -261,5 +270,101 @@ describe('DashboardHome', () => {
     expect(screen.getByText('Phạm vi của bạn')).toBeInTheDocument()
     expect(screen.getByText('Finding đang mở')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Làm mới ngay' })).toBeInTheDocument()
+  })
+})
+
+describe('DashboardHome CTEM hint', () => {
+  const overviewCopy = (id: string): Dashboard =>
+    dash(id, 'Overview', {
+      kind: 'personal',
+      columns: 4,
+      layout: [
+        stat('w_ov1', 'exposure.priority_open'),
+        stat('w_ov2', 'intel.kev_open'),
+        stat('w_ov3', 'sla.within'),
+        { ...stat('w_ov5', 'exposure.open_by_priority'), h: 2 },
+      ],
+    })
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    perms.list = []
+    api.mine = []
+    api.org = []
+    api.orgError = undefined
+    data.byKey = {}
+    vi.clearAllMocks()
+  })
+
+  it('offers the CTEM loop on an earlier Overview copy and never changes it on its own', async () => {
+    api.mine = [overviewCopy('d1')]
+    renderHome()
+    const hint = await screen.findByTestId('ctem-hint')
+    expect(within(hint).getByRole('button', { name: 'Add the CTEM loop' })).toBeInTheDocument()
+    expect(
+      within(hint).getByRole('button', { name: 'Switch to the CTEM template' })
+    ).toBeInTheDocument()
+    expect(api.update).not.toHaveBeenCalled()
+    expect(api.create).not.toHaveBeenCalled()
+  })
+
+  it('"Add the CTEM loop" puts the loop after the leading row and keeps every widget', async () => {
+    api.mine = [overviewCopy('d1')]
+    api.update.mockResolvedValue({})
+    renderHome()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add the CTEM loop' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledTimes(1))
+    const [id, input] = api.update.mock.calls[0] as [
+      string,
+      { name: string; layout: Array<{ config: { id: string; data: { metric: string } } }> },
+    ]
+    expect(id).toBe('d1')
+    expect(input.name).toBe('Overview')
+    expect(input.layout.map((w) => w.config.data.metric)).toEqual([
+      'exposure.priority_open',
+      'intel.kev_open',
+      'sla.within',
+      'ctem.loop',
+      'exposure.open_by_priority',
+    ])
+    expect(new Set(input.layout.map((w) => w.config.id)).size).toBe(5)
+    expect(screen.queryByTestId('ctem-hint')).toBeNull()
+  })
+
+  it('"Switch to the CTEM template" adds a CTEM dashboard and keeps the Overview', async () => {
+    api.mine = [overviewCopy('d1')]
+    api.create.mockResolvedValue({ id: 'c1' })
+    renderHome()
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Switch to the CTEM template' })
+    )
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
+    expect((api.create.mock.calls[0][0] as { name: string }).name).toBe('CTEM')
+    expect(api.update).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(DASHBOARD_CHOICE_KEY)).toBe('personal:c1')
+  })
+
+  it('a dismissed hint stays dismissed', async () => {
+    api.mine = [overviewCopy('d1')]
+    const { unmount } = renderHome()
+    await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByTestId('ctem-hint')).toBeNull()
+    unmount()
+    renderHome()
+    expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
+    expect(screen.queryByTestId('ctem-hint')).toBeNull()
+    expect(api.update).not.toHaveBeenCalled()
+  })
+
+  it('no hint on a dashboard that is not an Overview copy or already has the loop', async () => {
+    const withLoop = overviewCopy('d3')
+    withLoop.layout = [...withLoop.layout, stat('w_x', 'ctem.loop')]
+    for (const d of [dash('d2', 'Mine', { kind: 'personal' }), withLoop]) {
+      api.mine = [d]
+      const { unmount } = renderHome()
+      expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
+      expect(screen.queryByTestId('ctem-hint')).toBeNull()
+      unmount()
+    }
   })
 })
