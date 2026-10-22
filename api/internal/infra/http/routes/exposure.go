@@ -299,6 +299,9 @@ func registerVulnerabilityRoutes(
 		// Mark duplicate (RFC-043 §9): a triage decision that folds the finding
 		// in the body into this one; merging with an approval disposition
 		// also needs findings:approve (checked in the service).
+		// Duplicate candidates (RFC-121): suggestions for that decision,
+		// computed inside the caller's data scope; nothing is merged.
+		r.GET("/{id}/duplicate-candidates", h.GetFindingDuplicateCandidates, middleware.Require(permission.FindingsTriage))
 		r.POST("/{id}/duplicates", h.AddFindingDuplicate, middleware.Require(permission.FindingsTriage))
 		// Bug-bounty report fields (RFC-121): an edit of the finding; a
 		// reward or disclosure change also needs findings:triage (checked in
