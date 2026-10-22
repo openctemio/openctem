@@ -113,8 +113,11 @@ CREATE TABLE IF NOT EXISTS finding_ingest_actions (
 COMMENT ON TABLE finding_ingest_actions IS
     'What one receipt did to one finding (created, still_detected, reopened, closed). At most 50,000 rows per receipt (ingest_receipts.actions_truncated beyond); rows older than 90 days are purged.';
 
+-- Leads with finding_id: the ON DELETE CASCADE from findings (and the merge
+-- of a finding) look rows up by finding_id alone; a finding's history reads
+-- add tenant_id as a filter.
 CREATE INDEX IF NOT EXISTS idx_finding_ingest_actions_finding
-    ON finding_ingest_actions (tenant_id, finding_id, created_at DESC);
+    ON finding_ingest_actions (finding_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_finding_ingest_actions_created ON finding_ingest_actions (created_at);
 
 -- One row per command whose run proved coverage of the assets it scanned
