@@ -32,6 +32,11 @@ A user or group is an owner of an asset at most once (unique indexes on
 `tenant_id`: every query reaches the tenant through `assets`, and a user owner
 counts only while the user is a member of the tenant.
 
+`POST /assets/{id}/owners` checks that the named user is an active member, or
+the named group exists, in the caller's tenant. Every failure (another
+tenant's user or group, an unknown id, an inactive member) answers the same
+`404 NOT_FOUND`, so the response never says whether an id exists elsewhere.
+
 ### Derived definitions
 
 | Term | Definition | Used by |
