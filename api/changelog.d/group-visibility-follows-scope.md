@@ -1,0 +1,6 @@
+### Security: asset groups, business units and business services follow the reader's data scope
+
+- A member restricted to some assets used to list every asset group, business unit and business service of the organization, with its name, description and owner (including the owner email), and the business service total counted the whole organization. Now a restricted member sees a group only when one of its assets is in their scope or a scope rule of their team names it, a unit only when it or a unit below it holds such an asset, and a service only when it links one. Lists, search, stats and totals count only those; any other id answers 404, as do a group's members and findings and a service's assets.
+- Writes follow the same rule (404), except on a container with no asset yet, so a member can still fill a group, unit or service they just created. A business unit cannot be placed under a parent the caller cannot see.
+- The owner email of a group, unit or service is shown only to owners, administrators and full-data readers; a restricted member's edit keeps the stored value.
+- Owners, administrators and full-data roles see every group, unit and service as before. A member with no scope sees none.
