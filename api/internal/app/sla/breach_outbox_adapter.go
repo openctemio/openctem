@@ -109,6 +109,22 @@ func (a *WarningOutboxAdapter) PublishWarning(ctx context.Context, event control
 	return nil
 }
 
+// PublishWarningTx enqueues the warning inside the escalation job's
+// transaction, so the at-risk mark and its notification commit together.
+func (a *WarningOutboxAdapter) PublishWarningTx(ctx context.Context, tx *sql.Tx, event controller.SLAWarningEvent) error {
+	if a == nil || a.outbox == nil {
+		return nil
+	}
+	params, err := buildWarningParams(event)
+	if err != nil {
+		return err
+	}
+	if err := a.outbox.EnqueueInTx(ctx, tx, params); err != nil {
+		return fmt.Errorf("enqueue sla warning notification in tx: %w", err)
+	}
+	return nil
+}
+
 // buildWarningParams translates a warning event into outbox enqueue params.
 func buildWarningParams(event controller.SLAWarningEvent) (outbox.EnqueueParams, error) {
 	fidUUID, err := uuid.Parse(event.FindingID.String())
@@ -125,10 +141,10 @@ func buildWarningParams(event controller.SLAWarningEvent) (outbox.EnqueueParams,
 		EventType:     "sla_warning",
 		AggregateType: "finding",
 		AggregateID:   &fidUUID,
-		Title:         fmt.Sprintf("SLA approaching: finding %s (%s left)", event.FindingID.String(), remaining),
+		Title:         fmt.Sprintf("SLA approaching: %s (%s left)", findingLabel(event.FindingTitle, event.FindingID.String()), remaining),
 		Body: fmt.Sprintf(
 			"Finding %s is approaching its SLA deadline (%s) — about %s remaining. Resolve or request an exception before it breaches.",
-			event.FindingID.String(),
+			findingLabel(event.FindingTitle, event.FindingID.String()),
 			event.SLADeadline.UTC().Format(time.RFC3339),
 			remaining,
 		),
@@ -157,10 +173,10 @@ func buildBreachParams(event controller.SLABreachEvent) (outbox.EnqueueParams, e
 		EventType:     "sla_breach",
 		AggregateType: "finding",
 		AggregateID:   &fidUUID,
-		Title:         fmt.Sprintf("SLA breached: finding %s (overdue %s)", event.FindingID.String(), overdue),
+		Title:         fmt.Sprintf("SLA breached: %s (overdue %s)", findingLabel(event.FindingTitle, event.FindingID.String()), overdue),
 		Body: fmt.Sprintf(
 			"Finding %s missed its SLA deadline (%s) by %s. The escalation controller marked it breached at %s.",
-			event.FindingID.String(),
+			findingLabel(event.FindingTitle, event.FindingID.String()),
 			event.SLADeadline.UTC().Format(time.RFC3339),
 			overdue,
 			event.At.UTC().Format(time.RFC3339),
@@ -184,4 +200,13 @@ func breachSeverity(findingSeverity string) string {
 		return "critical"
 	}
 	return "high"
+}
+
+// findingLabel names a finding in a notification by its title, falling back
+// to its id when the title is empty. The id stays in the metadata either way.
+func findingLabel(title, id string) string {
+	if t := strings.TrimSpace(title); t != "" {
+		return fmt.Sprintf("%q", t)
+	}
+	return "finding " + id
 }
