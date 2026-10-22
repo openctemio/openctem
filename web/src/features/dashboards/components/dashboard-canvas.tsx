@@ -2,8 +2,10 @@
 
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type { Dashboard, DashboardWidget } from '../api/dashboards.types'
 import { WIDGET_REGISTRY } from '../widgets/registry'
+import { WidgetBoundary } from '@/features/dashboard/components/widget-boundary'
 import {
   ROW_HEIGHT,
   colSpanFor,
@@ -31,12 +33,12 @@ export function DashboardCanvas({
   layout: DashboardWidget[]
   columns?: Dashboard['columns']
 }) {
+  const { t } = useTranslation()
   const cols = normalizeColumns(columns)
   if (layout.length === 0) {
     return (
       <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
-        This dashboard has no widgets yet. Open it and choose{' '}
-        <span className="font-medium text-foreground">Customize widgets</span> to add some.
+        {t('dashboardMetrics.canvas.empty')}
       </div>
     )
   }
@@ -58,11 +60,14 @@ export function DashboardCanvas({
             className="min-w-0"
           >
             {def ? (
-              <def.component />
+              // One widget that throws shows its own error; the others render.
+              <WidgetBoundary>
+                <def.component />
+              </WidgetBoundary>
             ) : (
               <Card className="h-full">
                 <CardContent className="p-5 text-sm text-muted-foreground">
-                  Unknown widget: {wg.widget_type}
+                  {t('dashboardMetrics.widget.unknown', undefined, { type: wg.widget_type })}
                 </CardContent>
               </Card>
             )}

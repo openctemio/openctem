@@ -198,6 +198,14 @@ type Repository interface {
 	// create older than retryAfter. Highest severity first.
 	DueHolds(ctx context.Context, limit int, retryAfter time.Duration) ([]Candidate, error)
 
+	// LockFinding serializes everything that files an issue for one finding on
+	// one integration: the workflow path, a person's create and the hold
+	// release job. It blocks until the finding is free (or ctx ends) and
+	// returns the function that frees it; call that when the create and its
+	// bookkeeping are done. The lock is tenant-keyed, so it never couples two
+	// tenants.
+	LockFinding(ctx context.Context, tenantID, integrationID, findingID shared.ID) (unlock func(), err error)
+
 	// Reserve takes one slot of today's cap; false when the cap is reached.
 	// A cap of 0 always succeeds and counts nothing.
 	Reserve(ctx context.Context, tenantID, integrationID shared.ID, dailyCap int) (bool, error)
