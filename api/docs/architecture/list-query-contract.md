@@ -82,18 +82,34 @@ characters per value (`q` 255), 32 KB POST body.
 
 ## Export
 
-`GET|POST /findings/export` streams CSV or NDJSON in keyset batches of 1,000
-(60 s statement timeout per batch), at most 100,000 rows, needs
-`findings:export`, and is audit-logged as `data.exported` with the filter's
-field:operator shape (never its values). CSV cells a spreadsheet would run as
-formulas are neutralized.
+`GET|POST /findings/export` streams CSV or NDJSON (`format=ndjson`):
 
-**Known limit (follow-up):** "one export per user at a time" is an in-process
-slot, so it holds per API instance. The platform runs one API replica today
-(RFC-046); before running several, move the slot to a shared limiter (Redis
-key with a TTL, or a row lock). The per-user rate limit already applies across
-instances.
-
+- **Scope and filter**: the list's filter, parsed strictly (an unknown param is
+  `400 INVALID_FILTER`) and compiled as the caller, so the export holds exactly
+  the rows the caller's list shows.
+- **Order**: the list's `sort` (default priority, severity, newest), with the
+  id tie-breaker. All rows come from one read-only `REPEATABLE READ` snapshot,
+  in batches of 1,000 with a 60 s statement timeout each.
+- **Size**: at most 10,000 rows (`X-Export-Max-Rows`). The `X-Export-Truncated`
+  and `X-Export-Rows` trailers say whether rows were left out. Larger exports are
+  not offered yet: they need the background operations resource (research 230
+  D10), and until then the caller narrows the filter.
+- **Fields**: the `FindingExportRow` allowlist (40 columns, the same for CSV and
+  NDJSON): identity, classification, scores, exploitation, SLA, asset id/name/type,
+  location (file, lines, port, service), assignee, observation, validation and
+  dates. Evidence (snippets, scanner output, stack traces, attachments, data
+  flow), fix code, descriptions, free-form metadata and every secret detail are
+  never exported. A unit test fails when the finding response gains a field
+  without an export decision.
+- **Permission**: `findings:export`. Without it the request is `403` with
+  `details.missing_permissions: ["findings:export"]`; there is no partial
+  export.
+- **Concurrency**: one export per tenant and user across every API replica, a
+  transaction advisory lock (`429` while one runs).
+- **Audit**: every export is logged as `data.exported` with the row count, the
+  cap, whether it was truncated, the format, the filter's field:operator shape
+  and the sort (never filter values).
+- CSV cells a spreadsheet would run as formulas are neutralized.
 ## Saved views
 
 Saved views (UI contract D15) live in `saved_views` (migration 000777) and
