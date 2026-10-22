@@ -126,7 +126,7 @@ var breachSelectUpdateQuery = `
 		FROM due
 		WHERE findings.id = due.id
 		  AND findings.sla_breach_notified_at IS NULL
-		RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, findings.title, due.notify
+		RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, ` + noticeTitleSQL + `, due.notify
 	), act AS (
 		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source)
 		SELECT upd.tenant_id, upd.id, 'sla_breach', 'system', 'system: SLA',
@@ -168,7 +168,7 @@ var warningSelectUpdateQuery = `
 		FROM due
 		WHERE findings.id = due.id
 		  AND findings.sla_at_risk_notified_at IS NULL
-		RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, findings.title, due.notify
+		RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, ` + noticeTitleSQL + `, due.notify
 	), act AS (
 		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source)
 		SELECT upd.tenant_id, upd.id, 'sla_warning', 'system', 'system: SLA',
@@ -179,6 +179,12 @@ var warningSelectUpdateQuery = `
 	)
 	SELECT tenant_id, id, sla_deadline, severity, title, notify FROM upd
 `
+
+// noticeTitleSQL is the finding title a notice may carry. Notices go to the
+// tenant's notification channels, which every member of the channel reads,
+// while a pentest finding is visible only to its campaign members: its title
+// stays out of the notice (the notice names it by id).
+const noticeTitleSQL = `CASE WHEN findings.source = 'pentest' THEN NULL ELSE findings.title END AS title`
 
 // effectivePolicyJoin resolves, per finding, the SLA policy that governs it:
 // the asset's own active policy, else the tenant's active default — the same
