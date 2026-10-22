@@ -103,6 +103,9 @@ func (h *FindingImportHandler) SetActorResolver(fn func(ctx context.Context, ten
 // FindingImportResponse is the result of an import or a preview.
 type FindingImportResponse struct {
 	SessionID string `json:"session_id"`
+	// ReceiptID is the upload's receipt (empty in a preview): what the
+	// upload did to the organization's findings.
+	ReceiptID string `json:"receipt_id,omitempty"`
 	DryRun    bool   `json:"dry_run"`
 	// How VEX documents act: off (stored only), dry_run (counted), enforce
 	// (not_affected closes findings).
@@ -266,6 +269,13 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	var kb []byte
 	var results []findingimport.FileResult
 	files := 0
+	// The receipt is finished on every way out once it exists: a request
+	// refused halfway still says what its earlier files wrote.
+	defer func() {
+		if !req.ReceiptID.IsZero() {
+			h.svc.FinishUpload(context.WithoutCancel(ctx), req, results)
+		}
+	}()
 	for {
 		part, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -291,6 +301,15 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 			if files > maxImportFiles {
 				apierror.BadRequest(fmt.Sprintf("at most %d files per request", maxImportFiles)).WriteJSON(w)
 				return
+			}
+			if !req.DryRun && req.ReceiptID.IsZero() {
+				id, err := h.svc.BeginUpload(ctx, req, findingimport.SafeName(part.FileName()))
+				if err != nil {
+					apierror.InternalServerError("import failed").WriteJSON(w)
+					return
+				}
+				req.ReceiptID = id
+				resp.ReceiptID = id.String()
 			}
 			out, status, apiErr := h.importPart(ctx, req, part, kb, len(results))
 			if apiErr != nil {
