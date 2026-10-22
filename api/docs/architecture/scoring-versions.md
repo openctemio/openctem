@@ -143,6 +143,28 @@ automatic recomputes only tighten:
 | finding closed | kept as it was when closed |
 | analyst severity downgrade the approval policy allowed | `first_detected_at + SLA(new class)` when that is later: the one explicit extension, never counted from now ([severity override](finding-severity-override.md)) |
 
+### The default SLA policy
+
+Making a policy the tenant default re-scores every open finding and, because
+deadlines only tighten, cannot be undone. The rules that keep that from
+happening by accident:
+
+- A create never replaces the default. A tenant's first tenant-wide policy may
+  become the default on create; after that, a new policy is not the default.
+- Replacing the default is an explicit update with `is_default: true` (the
+  console's "Make default" action, behind a confirmation). The old default is
+  unset and the new one written in one transaction; a per-tenant advisory lock
+  and `SELECT ... FOR UPDATE` on the old default serialise concurrent calls, and
+  the partial unique index `uq_sla_policies_tenant_default` (one
+  `is_default AND asset_id IS NULL` row per tenant) is the backstop. The change
+  is audited with before/after and High severity.
+- The default cannot be deactivated, un-defaulted or deleted (409
+  `SLA_DEFAULT_POLICY_PROTECTED`), and only an active tenant-wide policy can be
+  the default (CHECK `chk_sla_policies_default_active`). An inactive default
+  never governs, with or without an asset.
+- Create validates the same window order and 1..365 range as update, and the
+  database checks the severity windows (`chk_sla_policies_severity_days`).
+
 A deadline that moves later by itself would hide overdue work, so an
 extension is an explicit decision (a regression or an expired acceptance
 starts a new clock with its own `sla_restarted` entry), never a side effect.
