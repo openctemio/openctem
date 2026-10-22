@@ -1678,6 +1678,8 @@
   "admin.samlConfigForm.pasteTheDetailsFromYour": "Paste the details from your IdP's SAML application. Login stays disabled until you enable it below.",
   "admin.samlConfigForm.idpEntityIdIssuer": "IdP entity ID (issuer)",
   "admin.samlConfigForm.idpSsoUrl": "IdP SSO URL",
+  "admin.samlConfigForm.certificateExpired": "The stored certificate expired on {date}.",
+  "admin.samlConfigForm.certificateExpires": "The stored certificate expires on {date} ({days} days).",
   "admin.samlConfigForm.idpSigningCertificatePem": "IdP signing certificate (PEM)",
   "admin.samlConfigForm.provisioning": "Provisioning",
   "admin.samlConfigForm.howUsersAreMappedWhen": "How users are mapped when they log in via SAML.",
