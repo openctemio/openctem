@@ -38,6 +38,11 @@ in the activity panel.
   labelled as global, and attack paths and combined exposures are shown as the
   reason an issue matters.
 - **A dismissal needs a reason**, and the reason goes into the timeline.
+- **The Evidence tab shows every source.** Tool evidence, re-verify and validation
+  results, the compliance controls card, code, attachments and uploaded files are
+  always rendered when they exist; "No evidence" appears only when all of them are
+  empty. The number on the tab counts all of them. Uploaded files are loaded through
+  the API client; a failure shows a row with Retry instead of an empty section.
 
 ## Principles
 

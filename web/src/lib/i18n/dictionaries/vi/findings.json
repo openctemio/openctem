@@ -135,6 +135,7 @@
   "findings.evidenceTab.typeReference": "Tham chiếu",
   "findings.evidenceTab.typeCode": "Mã",
   "findings.evidenceTab.typeAttachment": "Tệp đính kèm",
+  "findings.evidenceTab.attachmentsError": "Không tải được các tệp đã tải lên.",
   "findings.evidenceTab.uploaded": "Bằng chứng đã tải lên ({count})",
   "findings.relatedTab.colFinding": "Phát hiện",
   "findings.relatedTab.colSeverity": "Mức độ nghiêm trọng",

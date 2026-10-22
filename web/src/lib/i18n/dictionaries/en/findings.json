@@ -135,6 +135,7 @@
   "findings.evidenceTab.typeReference": "Reference",
   "findings.evidenceTab.typeCode": "Code",
   "findings.evidenceTab.typeAttachment": "Attachment",
+  "findings.evidenceTab.attachmentsError": "The uploaded files could not be loaded.",
   "findings.evidenceTab.uploaded": "Uploaded Evidence ({count})",
   "findings.relatedTab.colFinding": "Finding",
   "findings.relatedTab.colSeverity": "Severity",
