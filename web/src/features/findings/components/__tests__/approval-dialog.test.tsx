@@ -150,6 +150,10 @@ describe('ApprovalDialog', () => {
       expect(screen.getByRole('status')).toHaveTextContent(
         /doesn't require approval for this finding/
       )
+      // The title and description say it is a decision, not a request.
+      expect(screen.getByRole('heading', { name: 'Mark as false positive' })).toBeInTheDocument()
+      expect(screen.queryByText('Request Status Approval')).not.toBeInTheDocument()
+      expect(screen.queryByText(/needs approval/)).not.toBeInTheDocument()
       await chooseReason(user, 'Test or example code')
       await user.type(screen.getByLabelText('Justification'), 'fixture')
       await user.click(screen.getByText('Review'))
@@ -207,7 +211,9 @@ describe('ApprovalDialog', () => {
     it('shows the target status label in the description', () => {
       render(<ApprovalDialog {...defaultProps} targetStatus="false_positive" />)
 
-      expect(screen.getByText('False Positive')).toBeInTheDocument()
+      expect(
+        screen.getByText(/Changing the status to False Positive needs approval/)
+      ).toBeInTheDocument()
     })
 
     it('shows justification textarea', () => {
@@ -356,13 +362,13 @@ describe('ApprovalDialog', () => {
     it('shows Resolved label for resolved status', () => {
       render(<ApprovalDialog {...defaultProps} targetStatus="resolved" />)
 
-      expect(screen.getByText('Resolved')).toBeInTheDocument()
+      expect(screen.getByText(/status to Resolved needs approval/)).toBeInTheDocument()
     })
 
     it('shows Accepted label for accepted status', () => {
       render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
 
-      expect(screen.getByText('Accepted')).toBeInTheDocument()
+      expect(screen.getByText(/status to Accepted needs approval/)).toBeInTheDocument()
     })
   })
 })

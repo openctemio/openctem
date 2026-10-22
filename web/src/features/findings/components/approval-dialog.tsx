@@ -205,16 +205,24 @@ export function ApprovalDialog({
         {step === 'input' ? (
           <>
             <DialogHeader>
+              {/* The organization's false-positive level decides whether this
+                  is a request or a decision; the copy says which. */}
               <DialogTitle>
-                {t('findings.approvalDialog.title', 'Request Status Approval')}
+                {decideAlone
+                  ? t('findings.approvalDialog.titleDecide', 'Mark as false positive')
+                  : t('findings.approvalDialog.title', 'Request Status Approval')}
               </DialogTitle>
               <DialogDescription>
-                {t('findings.approvalDialog.descriptionBefore', 'Changing status to')}{' '}
-                <strong>{statusLabel}</strong>{' '}
-                {t(
-                  'findings.approvalDialog.descriptionAfter',
-                  'requires approval. Please provide a justification.'
-                )}
+                {decideAlone
+                  ? t(
+                      'findings.approvalDialog.descriptionDecide',
+                      'Your organization lets you decide this alone. Choose a reason and explain it.'
+                    )
+                  : t(
+                      'findings.approvalDialog.descriptionRequest',
+                      'Changing the status to {status} needs approval. Give a justification.',
+                      { status: statusLabel }
+                    )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -334,7 +342,9 @@ export function ApprovalDialog({
           <>
             <DialogHeader>
               <DialogTitle>
-                {t('findings.approvalDialog.confirmTitle', 'Confirm Approval Request')}
+                {decideAlone
+                  ? t('findings.approvalDialog.confirmTitleDecide', 'Confirm false positive')
+                  : t('findings.approvalDialog.confirmTitle', 'Confirm Approval Request')}
               </DialogTitle>
               <DialogDescription>
                 {t(

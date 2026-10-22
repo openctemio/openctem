@@ -813,8 +813,6 @@
   "findings.activity.loadFailedBody": "The history of this finding is not shown because the request failed. Try again later.",
   "findings.activity.startDiscussion": "Start the discussion below.",
   "findings.approvalDialog.title": "Request Status Approval",
-  "findings.approvalDialog.descriptionBefore": "Changing status to",
-  "findings.approvalDialog.descriptionAfter": "requires approval. Please provide a justification.",
   "findings.approvalDialog.justification": "Justification",
   "findings.approvalDialog.justificationPlaceholder": "Explain why this status change is needed...",
   "findings.approvalDialog.justificationRequired": "Justification is required",
@@ -1397,6 +1395,10 @@
   "findings.verification.itemSecret.evidence_attached": "Evidence is attached (provider audit entry, vault version, ticket)",
   "findings.verification.itemSecret.register_updated": "Use of the credential since exposure was checked and recorded",
   "findings.validationEvidence.checkReachability": "Check reachability",
+  "findings.approvalDialog.titleDecide": "Mark as false positive",
+  "findings.approvalDialog.descriptionDecide": "Your organization lets you decide this alone. Choose a reason and explain it.",
+  "findings.approvalDialog.descriptionRequest": "Changing the status to {status} needs approval. Give a justification.",
+  "findings.approvalDialog.confirmTitleDecide": "Confirm false positive",
   "findings.bulk.status": "Status",
   "findings.bulk.assignTo": "Assign to…"
 }
