@@ -54,3 +54,32 @@ func TestWarningAdapter_PublishWarning_NilEnqueuer_NoOp(t *testing.T) {
 		t.Fatalf("nil enqueuer should no-op, got %v", err)
 	}
 }
+
+// The job enqueues warnings inside its transaction, and both notices name the
+// finding by its title (the id stays in the metadata).
+func TestWarningAdapter_PublishWarningTx_NamesFindingByTitle(t *testing.T) {
+	enq := &fakeEnqueuer{}
+	ev := newWarningEvent()
+	ev.FindingTitle = "Outdated OpenSSL"
+	if err := NewWarningOutboxAdapter(enq).PublishWarningTx(context.Background(), nil, ev); err != nil {
+		t.Fatalf("publish warning tx: %v", err)
+	}
+	if enq.txCalls != 1 {
+		t.Fatalf("in-tx enqueue calls = %d, want 1", enq.txCalls)
+	}
+	if !containsString(enq.last.Title, `"Outdated OpenSSL"`) || containsString(enq.last.Title, ev.FindingID.String()) {
+		t.Fatalf("title = %q, want the finding title instead of its id", enq.last.Title)
+	}
+	if enq.last.Metadata["finding_id"] != ev.FindingID.String() {
+		t.Fatalf("metadata finding_id = %v", enq.last.Metadata["finding_id"])
+	}
+
+	bev := controller.SLABreachEvent{TenantID: ev.TenantID, FindingID: ev.FindingID, FindingTitle: "Outdated OpenSSL",
+		SLADeadline: ev.SLADeadline, OverdueDuration: time.Hour, At: ev.At}
+	if err := NewBreachOutboxAdapter(enq).PublishTx(context.Background(), nil, bev); err != nil {
+		t.Fatalf("publish breach tx: %v", err)
+	}
+	if !containsString(enq.last.Title, `"Outdated OpenSSL"`) {
+		t.Fatalf("breach title = %q, want the finding title", enq.last.Title)
+	}
+}

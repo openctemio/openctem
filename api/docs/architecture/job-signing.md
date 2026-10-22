@@ -392,6 +392,12 @@ byte changes.
   `GET /api/v2/sensor/commands` (with the `capacity` feature) and
   `POST /api/v2/sensor/commands/{id}/claim`, including its replay. A listing
   poll and the other transitions never carry it.
+  The claim by id and its replay hand out and sign the same payload the
+  claim-N answer did: the organization's HTTP policy, the program rules and
+  scan window rate cap, the sensor's `settings_layers` and the template
+  signatures are rebuilt on the stored command, never the stored payload
+  alone, so the statement's `payload_sha256` covers what the sensor runs. A
+  replay reserves nothing: a closed scan window or an unreadable rule refuses it.
 - **v3**: `ClaimCommands` and `TransitionCommand` carry the v2 JSON
   (`commands_json`, `command_json`) byte for byte, so the field is the same
   and no proto change is needed.

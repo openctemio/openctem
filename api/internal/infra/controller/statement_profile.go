@@ -28,11 +28,12 @@ const (
 // sqlProfiles is keyed by the controller's Go type name.
 var sqlProfiles = map[string]SQLProfile{
 	// long: explicit, bounded SET LOCAL in the repository methods they call.
-	"ThreatIntelRefreshController":        SQLLong, // EPSS/KEV upserts, catalog propagation, finding EPSS refresh, intel enqueue
-	"FindingPriorityController":           SQLLong, // priority queue enqueue and batch writes
-	"FindingPriorityReconcileController":  SQLLong, // per-tenant reconcile enqueue over all open findings
-	"DashboardFactsController":            SQLLong, // dirty-queue processing
-	"DashboardFactReconcileController":    SQLLong, // full run steps, partition upkeep
+	"ThreatIntelRefreshController":       SQLLong, // EPSS/KEV upserts, catalog propagation, finding EPSS refresh, intel enqueue
+	"FindingPriorityController":          SQLLong, // priority queue enqueue and batch writes
+	"FindingPriorityReconcileController": SQLLong, // per-tenant reconcile enqueue over all open findings
+	"DashboardFactsController":           SQLLong, // dirty-queue processing
+	"DashboardFactReconcileController":   SQLLong, // full run steps, partition upkeep
+
 	"VulnFeedImportController":            SQLLong, // CVE corpus chunks and bundle finish
 	"VulnMatchController":                 SQLLong, // software match invalidation and version matching
 	"AuditRetentionController":            SQLLong, // chain prefix prune
@@ -43,6 +44,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"IngestWorkerController":              SQLLong, // asset and finding batch upserts, payload clearing
 	"EventRetentionController":            SQLLong, // vuln event and sensor result prunes
 	"AssetTechnologyBackfillController":   SQLBatched,
+	"DashboardSnapshotsController":        SQLBatched, // per-tenant widget reads over the fact tables, 5 s context timeout each
 	"AssetIdentityBackfillController":     SQLBatched,
 	"PriorityAuditRetentionController":    SQLBatched,
 	"TicketHoldReleaseController":         SQLBatched,
@@ -119,6 +121,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"StalledRunRepairController":       SQLLight,
 	"TaskTicketController":             SQLLight,
 	"TeamMembershipExpiryController":   SQLLight,
+	"ServiceKeyCreatorController":      SQLLight,
 	"VersionCheckController":           SQLLight,
 	"VEXRequestNoticeController":       SQLLight,
 	"VEXStatementExpiryController":     SQLLight,
