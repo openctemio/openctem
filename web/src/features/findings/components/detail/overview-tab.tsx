@@ -20,6 +20,7 @@
  * them.
  */
 
+import { FindingLastSeenIn } from '../receipt-summary'
 import { useCallback, useMemo, useState } from 'react'
 import Link from '@/components/link'
 import {
@@ -271,6 +272,9 @@ export function OverviewTab({ finding }: OverviewTabProps) {
               </DetailField>
               <DetailField label={t('findings.overviewTab.scan', 'Scan')}>
                 {finding.scanId ? <Mono>{finding.scanId}</Mono> : null}
+              </DetailField>
+              <DetailField label={t('findings.receipts.lastSeenIn', 'Last seen in')}>
+                <FindingLastSeenIn findingId={finding.id} />
               </DetailField>
               <DetailField label={t('findings.overviewTab.recorded', 'Recorded')}>
                 {new Date(finding.createdAt).toLocaleString('en-US', {

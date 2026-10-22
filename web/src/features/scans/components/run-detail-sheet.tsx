@@ -1,5 +1,6 @@
 'use client'
 
+import { RunReceiptSection } from '@/features/findings/components/receipt-summary'
 import { IntensityBadge } from './intensity-badge'
 import dynamic from 'next/dynamic'
 import { useTranslation } from '@/context/i18n-provider'
@@ -263,6 +264,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             </DetailStatGrid>
 
             <DetailSections>
+              <RunReceiptSection runId={run.id} />
               {(run.scan_run_steps?.length ?? 0) > 0 && (
                 <DetailSection title={t('scans.runDetail.runMap')}>
                   <RunMap
