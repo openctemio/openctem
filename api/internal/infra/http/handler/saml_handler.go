@@ -386,6 +386,9 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SAMLHandler) writeSetError(w http.ResponseWriter, err error) {
+	if WriteFeatureDenied(w, err) {
+		return
+	}
 	if errors.Is(err, shared.ErrValidation) {
 		apierror.BadRequest("invalid SAML configuration").WriteJSON(w)
 		return

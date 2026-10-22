@@ -17,6 +17,7 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/entitlement"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
@@ -92,6 +93,8 @@ type SSOService struct {
 	logger           *logger.Logger
 	platformAdmins   PlatformAdminGate
 	httpClient       *http.Client
+	// features gates configuring connections by the organization's limits.
+	features entitlement.FeatureChecker
 	// oidcVerifier verifies id_tokens and logout tokens (pkg/oidc).
 	oidcVerifier *oidc.Client
 
@@ -2168,8 +2171,31 @@ func validateAllowedDomains(domains []string) error {
 	return nil
 }
 
+// SetFeatureGate wires the feature check of the sign-in features: configuring a
+// connection needs sso.connections. Unset (self-managed default wiring
+// aside, tests): everything is allowed.
+func (s *SSOService) SetFeatureGate(g entitlement.FeatureChecker) { s.features = g }
+
+// requireConnections refuses configuring a SAML or OIDC connection when the
+// organization may not use sso.connections (fail-closed on a read
+// error). Sign-in through a connection already configured is never gated, so a
+// downgrade cannot lock members out.
+func (s *SSOService) requireConnections(ctx context.Context, tenantID shared.ID) error {
+	if s == nil {
+		return nil
+	}
+	return entitlement.RequireFeature(ctx, s.features, tenantID, limits.FeatureSSOConnections)
+}
+
 // CreateProvider creates a new identity provider configuration for a tenant.
 func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInput) (*identityproviderdom.IdentityProvider, error) {
+	tid, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid organization id", shared.ErrValidation)
+	}
+	if err := s.requireConnections(ctx, tid); err != nil {
+		return nil, err
+	}
 	ip, err := s.BuildProvider(input)
 	if err != nil {
 		return nil, err
@@ -2276,6 +2302,13 @@ func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInp
 // BuildProviderUpdate validates input and returns the tenant's identity
 // provider with the update applied, without storing it.
 func (s *SSOService) BuildProviderUpdate(ctx context.Context, input UpdateProviderInput) (*identityproviderdom.IdentityProvider, error) {
+	tid, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid organization id", shared.ErrValidation)
+	}
+	if err := s.requireConnections(ctx, tid); err != nil {
+		return nil, err
+	}
 	ip, err := s.ipRepo.GetByID(ctx, input.TenantID, input.ID)
 	if err != nil {
 		return nil, err

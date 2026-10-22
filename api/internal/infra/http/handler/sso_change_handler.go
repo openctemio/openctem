@@ -238,6 +238,9 @@ func (h *SSOChangeHandler) decide(w http.ResponseWriter, r *http.Request, approv
 }
 
 func (h *SSOChangeHandler) writeDecideError(w http.ResponseWriter, err error) {
+	if WriteFeatureDenied(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, ssochange.ErrNotOwner):
 		apierror.Forbidden("Only an owner of the organization can approve or reject an SSO change").WriteJSON(w)

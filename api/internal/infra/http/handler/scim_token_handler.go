@@ -81,6 +81,9 @@ func (h *SCIMTokenHandler) SetGroupMappings(w http.ResponseWriter, r *http.Reque
 		RequestID:  r.Header.Get("X-Request-ID"),
 	}
 	if err := h.groups.SetRoleMappings(r.Context(), tenantID, body.Mappings, actx); err != nil {
+		if WriteFeatureDenied(w, err) {
+			return
+		}
 		if errors.Is(err, shared.ErrForbidden) {
 			apierror.Forbidden("Only the organization owner can map a group to the admin role or change such a mapping").WriteJSON(w)
 			return

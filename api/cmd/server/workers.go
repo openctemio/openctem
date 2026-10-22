@@ -582,6 +582,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// SSO enforcement after a limits change: turned off once the organization
+	// lost sso.enforcement and the grace ended (never a lock-out).
+	if svc.Tenant != nil {
+		w.ControllerManager.Register(controller.NewSSOEnforcementEntitlementController(
+			svc.Tenant, time.Hour, log.With("controller", "sso-enforcement-entitlement")))
+	}
+
 	// External members' access end dates (RFC-058): an expired membership is
 	// suspended within a minute.
 	if svc.Tenant != nil {

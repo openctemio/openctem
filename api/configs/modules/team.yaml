@@ -15,5 +15,6 @@
     - ServiceKeyCreatorController
     - AccessRequestRetentionController
     - SignupEventRetentionController
+    - SSOEnforcementEntitlementController
     - RoleSyncController
     - IdleWorkspaceController

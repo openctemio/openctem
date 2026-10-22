@@ -1,0 +1,5 @@
+### Added: deniable features for SSO connections, SSO enforcement, SCIM and group links
+
+- New named features `sso.connections`, `sso.enforcement`, `scim`, `sso.group_links` and `ldap` (reserved). Like every feature, they are allowed unless the instance operator or the hosted control plane denies them, so self-managed installations keep everything they have. Security controls (two-factor, session policy, audit, break-glass) are never features.
+- When a feature is denied: creating or changing a SAML/OIDC connection, turning SSO enforcement on and changing SCIM group mappings answer `403 FEATURE_NOT_INCLUDED` (`503` when the organization's limits cannot be read). The SCIM API keeps working during the 30-day read-only grace, then answers 403.
+- A downgrade never locks members out. Sign-in through configured connections keeps working. SSO enforcement stays during the grace, then the hourly `sso-enforcement-entitlement` job turns it off and tells the owners and administrators, so members sign in with a password (and two-factor where required).
