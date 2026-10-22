@@ -163,19 +163,18 @@ func (s *VulnerabilityService) BulkByFilter(ctx context.Context, in BulkByFilter
 	if len(ids) != in.ExpectedCount {
 		return nil, &SelectionChangedError{Count: len(ids)}
 	}
-	used, err := s.operations.RowsSince(ctx, tenantID,
-		[]operation.Kind{operation.KindFindingsBulkStatus, operation.KindFindingsBulkAssign}, time.Now().Add(-time.Hour))
-	if err != nil {
-		return nil, err
-	}
-	if used+len(ids) > BulkByFilterHourlyBudget {
-		return nil, ErrBulkByFilterBudget
-	}
-
+	// The hourly budget is checked by the insert itself, under a per-tenant
+	// lock, so concurrent requests cannot overrun it together.
 	op, replay, err := s.operations.Create(ctx, &operation.Operation{
 		TenantID: tenantID, CreatedBy: userID, Kind: kind,
 		IdempotencyKey: in.IdempotencyKey, RequestHash: in.RequestHash, Total: len(ids),
+	}, operation.Budget{
+		Kinds: []operation.Kind{operation.KindFindingsBulkStatus, operation.KindFindingsBulkAssign},
+		Since: time.Now().Add(-time.Hour), Max: BulkByFilterHourlyBudget,
 	})
+	if errors.Is(err, operation.ErrBudget) {
+		return nil, ErrBulkByFilterBudget
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +184,8 @@ func (s *VulnerabilityService) BulkByFilter(ctx context.Context, in BulkByFilter
 	s.auditBulkByFilter(ctx, in, op, spec, "started", operation.Progress{})
 
 	run := func(ctx context.Context) {
-		p, runErr := s.runBulkByFilter(ctx, in, op, spec, actor, ids)
+		var p operation.Progress
+		runErr := s.runBulkByFilterSafe(ctx, in, op, spec, actor, ids, &p)
 		status, msg := operation.StatusSucceeded, ""
 		if runErr != nil {
 			status, msg = operation.StatusFailed, runErr.Error()
@@ -248,22 +248,41 @@ func (s *VulnerabilityService) checkBulkByFilterVerb(ctx context.Context, tenant
 	return "", fmt.Errorf("%w: unknown bulk verb", shared.ErrValidation)
 }
 
-// runBulkByFilter applies the change chunk by chunk and records progress.
+// errBulkByFilterInternal is what an operation records when its run
+// panicked (the panic itself goes to the log only).
+var errBulkByFilterInternal = errors.New("internal error while applying the change")
+
+// runBulkByFilterSafe runs runBulkByFilter and turns a panic into a failed
+// run: a background run has no request recoverer above it, so a panic would
+// otherwise stop the whole API process and leave the operation running.
+func (s *VulnerabilityService) runBulkByFilterSafe(ctx context.Context, in BulkByFilterInput, op *operation.Operation,
+	spec *filterspec.Spec, actor filterspec.Actor, ids []shared.ID, p *operation.Progress,
+) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("bulk by filter: run panicked", "operation_id", op.ID.String(), "panic", fmt.Sprint(r))
+			err = errBulkByFilterInternal
+		}
+	}()
+	return s.runBulkByFilter(ctx, in, op, spec, actor, ids, p)
+}
+
+// runBulkByFilter applies the change chunk by chunk and records progress in
+// p (kept up to the last finished chunk when the run stops early).
 func (s *VulnerabilityService) runBulkByFilter(ctx context.Context, in BulkByFilterInput, op *operation.Operation,
-	spec *filterspec.Spec, actor filterspec.Actor, ids []shared.ID,
-) (operation.Progress, error) {
-	var p operation.Progress
+	spec *filterspec.Spec, actor filterspec.Actor, ids []shared.ID, p *operation.Progress,
+) error {
 	repo, _ := s.findingRepo.(findingIDsRepo)
 	tenantID := op.TenantID.String()
 	for start := 0; start < len(ids); start += bulkByFilterChunk {
 		if err := ctx.Err(); err != nil {
-			return p, err
+			return err
 		}
 		chunk := ids[start:min(start+bulkByFilterChunk, len(ids))]
 		// Re-apply the filter and the caller's scope to this chunk now.
 		still, err := s.chunkStillSelected(ctx, repo, spec, actor, chunk)
 		if err != nil {
-			return p, err
+			return err
 		}
 		keep := make(map[shared.ID]bool, len(still))
 		apply := make([]string, 0, len(still))
@@ -291,7 +310,7 @@ func (s *VulnerabilityService) runBulkByFilter(ctx context.Context, in BulkByFil
 				})
 			}
 			if err != nil {
-				return p, err
+				return err
 			}
 			p.Succeeded += res.Updated
 			p.Skipped += res.Skipped
@@ -307,11 +326,11 @@ func (s *VulnerabilityService) runBulkByFilter(ctx context.Context, in BulkByFil
 			}
 		}
 		p.Processed += len(chunk)
-		if err := s.operations.Advance(ctx, op.TenantID, op.ID, p); err != nil {
+		if err := s.operations.Advance(ctx, op.TenantID, op.ID, *p); err != nil {
 			s.logger.Warn("bulk by filter: record progress", "operation_id", op.ID.String(), "error", err)
 		}
 	}
-	return p, nil
+	return nil
 }
 
 func appendItem(items []operation.ItemResult, it operation.ItemResult) []operation.ItemResult {

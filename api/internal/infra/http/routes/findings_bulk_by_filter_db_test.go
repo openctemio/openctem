@@ -108,6 +108,32 @@ func TestFindingsBulkByFilter_ScopeCountAndRules(t *testing.T) {
 	if status != http.StatusUnprocessableEntity || e.Code != "IDEMPOTENCY_KEY_REUSED" {
 		t.Fatalf("key reuse with another request = %d %s", status, raw)
 	}
+	// A key is the creator's own: another person's request with the same key
+	// is a new operation (no replay of memberA's, no 422), and so is the
+	// owner's own key from another organization.
+	other := shared.NewID()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, other.String(), "bf-other-"+other.String())
+	t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM tenants WHERE id = $1`, other.String()) })
+	var foreignOp string
+	if err := h.db.QueryRow(`INSERT INTO operations (tenant_id, created_by, kind, status, idempotency_key, request_hash, total)
+		VALUES ($1, $2, 'findings_bulk_status', 'succeeded', 'k-other', 'x', 1) RETURNING id`,
+		other.String(), h.owner.String()).Scan(&foreignOp); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"k-1", "k-other"} {
+		status, own, _, raw := h.bulkByFilter(t, h.owner, true, "status", map[string]any{
+			"filter": map[string]any{"severity": "critical"}, "expected_count": 1, "status": "confirmed",
+			"idempotency_key": key})
+		if status != http.StatusOK || own.ID == "" || own.ID == op.ID || own.ID == foreignOp {
+			t.Fatalf("owner with key %q = %d %s, want a new operation of its own", key, status, raw)
+		}
+	}
+	// An operation of another organization reads as unknown, even for its
+	// creator.
+	if status, raw := h.do(h.owner, true, http.MethodGet, "/api/v1/operations/"+foreignOp, nil); status != http.StatusNotFound {
+		t.Errorf("another organization's operation = %d %s, want 404", status, raw)
+	}
+	h.exec(`UPDATE findings SET status = 'new' WHERE id = $1`, h.findingB.String())
 
 	// Strict filters; selection only (no view, paging or sort).
 	for _, f := range []map[string]any{{"severty": "high"}, {"view": shared.NewID().String()}, {"sort": "-created_at"}} {

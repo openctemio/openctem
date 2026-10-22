@@ -42,9 +42,14 @@ being findings work):
 - **Idempotency.** A request with `idempotency_key` that is retried returns the
   first request's operation. The same key with a different request is
   `422 IDEMPOTENCY_KEY_REUSED`.
+- **Budget.** A kind may have a per-tenant budget (bulk changes by filter:
+  20,000 findings per hour). The total is read and the row inserted under one
+  per-tenant advisory lock, so people creating at the same moment, on any
+  replica, cannot overrun it together.
 - **Runner.** The run happens in the API process that took the request, with
   the request's identity (tenant, user, data scope, permissions) and a
-  30-minute deadline. It is not queued across replicas; a durable runner is
+  30-minute deadline. A panic in the run ends the operation as `failed` with a
+  generic `error` (details go to the log only); it never stops the process. It is not queued across replicas; a durable runner is
   planned with the other kinds.
 - **Erasure.** Rows are deleted with their tenant or their creator's account.
 

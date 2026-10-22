@@ -53,7 +53,9 @@ POST /api/v1/findings/bulk/by-filter/assignee   findings:bulk_update + findings:
 2. Up to 10,001 ids are selected, in id order. Over 10,000 is refused; a count
    other than `expected_count` is `409`.
 3. The tenant's budget is the sum of by-filter operations in the last hour,
-   read from the database, so every replica shares it.
+   read from the database, so every replica shares it. It is checked by the
+   insert of the operation under a per-tenant advisory lock, so concurrent
+   requests by different people cannot overrun it together.
 4. An operation row records the run. A summary audit row (`finding.bulk_updated`
    with `by_filter`, the operation id, the verb, the target, the count, the
    filter's field:operator shape and a hash of the request, never filter
@@ -72,12 +74,17 @@ POST /api/v1/findings/bulk/by-filter/assignee   findings:bulk_update + findings:
 |---|---|---|
 | Out-of-scope or cross-tenant findings changed | Filter compiled as the caller; re-applied per chunk; ids checked again by the bulk service | memberA's filter on an out-of-scope asset selects 0; the whole-list change touches only FA |
 | A typo or a stale page widens a destructive change | Strict filter; `expected_count`, 409 | unknown param 400; count mismatch 409 |
-| Mass closure by mistake or with a stolen session | Step-up and a note on closing statuses; cap 10,000; tenant budget in the database; one running operation per person | step-up route list; budget 429; running 409 |
-| Four-eyes bypass | False positive, acceptance and duplicate are never by filter | 400 BULK_NOT_ALLOWED |
+| Mass closure by mistake or with a stolen session | Step-up and a note on closing statuses; cap 10,000; tenant budget checked under a per-tenant lock; one running operation per person | step-up route list; budget 429; concurrent and in-flight creates refused over the budget; running 409 |
+| Four-eyes bypass | False positive, acceptance and duplicate are never by filter; the status is parsed like the bulk service and the step-up gate (case, whitespace) | 400 BULK_NOT_ALLOWED for every spelling |
+| A finding leaves the filter or the scope after the count | Each chunk re-applies the filter as the caller to its ids | the finding that left is skipped and not written |
+| A crash in a background run takes the API down | The run recovers a panic and ends the operation as failed | panic in the request and in the background ends failed |
 | Double submit | Idempotency key replays the operation | replay returns the same operation |
-| Reading another person's progress | Operation reads bound to tenant and creator | other member 404 |
+| Replaying someone else's key | Keys are bound to tenant and creator | another person's or another organization's key is a new operation |
+| Reading another person's progress | Operation reads bound to tenant and creator | other member 404; another organization's operation 404 for its own creator |
 
-Tests: `api/internal/infra/http/routes/findings_bulk_by_filter_db_test.go`.
+Tests: `api/internal/infra/http/routes/findings_bulk_by_filter_db_test.go`,
+`api/internal/app/finding/bulk_by_filter_test.go`,
+`api/internal/infra/postgres/operation_repository_test.go`.
 
 ## Key files
 
