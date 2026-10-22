@@ -16,8 +16,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { DASHBOARD_TEMPLATES, templateLayout } from '@/features/dashboards/templates'
-import { widthForColumns, DASHBOARD_VIEW_STORAGE_KEY } from '@/features/dashboards/layout'
+import {
+  DASHBOARD_TEMPLATES,
+  templateDescriptionKey,
+  templateLayout,
+  templateNameKey,
+} from '@/features/dashboards/templates'
+import { DASHBOARD_CHOICE_KEY, refKey } from '@/features/dashboards/landing'
 import {
   useMyDashboards,
   useMyDashboard,
@@ -47,12 +52,15 @@ export default function DashboardsPage() {
 
 // ── Column-layout picker options ─────────────────────────────────────────────
 
-const LAYOUT_OPTIONS: Array<{ cols: number; label: string }> = [
-  { cols: 1, label: '1 column' },
-  { cols: 2, label: '2 columns' },
-  { cols: 3, label: '3 columns' },
-  { cols: 4, label: '4 columns' },
-]
+const LAYOUT_OPTIONS = [1, 2, 3, 4]
+
+function rememberChoice(id: string) {
+  try {
+    window.localStorage.setItem(DASHBOARD_CHOICE_KEY, refKey({ kind: 'personal', id }))
+  } catch {
+    // A per-viewer convenience only.
+  }
+}
 
 function LayoutPreview({ cols, active }: { cols: number; active: boolean }) {
   return (
@@ -88,7 +96,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
     try {
       const d = await createDashboard({ name, layout, columns })
       await revalidate()
-      toast.success(`Created "${name}"`)
+      toast.success(t('dashboards.manage.created', 'Created "{name}"', { name }))
       onEdit(d.id)
     } catch (e) {
       toast.error(getErrorMessage(e))
@@ -98,11 +106,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
   }
 
   const openView = (id: string) => {
-    try {
-      window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, id)
-    } catch {
-      // best-effort — the view falls back to its own resolution
-    }
+    rememberChoice(id)
     router.push('/')
   }
 
@@ -121,7 +125,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
     try {
       await setDefaultDashboard(id)
       await revalidate()
-      toast.success('Default dashboard set')
+      toast.success(t('dashboards.actions.defaultSet', 'Default dashboard set'))
     } catch (e) {
       toast.error(getErrorMessage(e))
     }
@@ -130,37 +134,53 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
   return (
     <Main>
       <PageHeader
-        title="Dashboards"
-        description="Start from a template or build your own — a personal view of what matters to you."
+        title={t('dashboards.manage.title', 'Dashboards')}
+        description={t(
+          'dashboards.manage.description',
+          'Start from a template or build your own. Your dashboards are computed for your own access.'
+        )}
       >
-        <Button variant="outline" disabled={busy} onClick={() => createFrom('My dashboard', [])}>
-          <Plus className="me-2 h-4 w-4" /> New blank
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => createFrom(t('dashboards.manage.blankName', 'My dashboard'), [])}
+        >
+          <Plus className="me-2 h-4 w-4" aria-hidden />{' '}
+          {t('dashboards.manage.newBlank', 'New blank')}
         </Button>
       </PageHeader>
 
       {/* Templates */}
       <section className="mt-2">
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Start from a template</h2>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+          {t('dashboards.manage.templates', 'Start from a template')}
+        </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {DASHBOARD_TEMPLATES.map((tpl) => (
             <Card key={tpl.key} className="flex flex-col">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <LayoutGrid className="h-4 w-4 text-muted-foreground" />
-                  {tpl.name}
+                  <LayoutGrid className="h-4 w-4 text-muted-foreground" aria-hidden />
+                  {t(templateNameKey(tpl.key), tpl.key)}
                 </CardTitle>
-                <CardDescription>{tpl.description}</CardDescription>
+                <CardDescription>{t(templateDescriptionKey(tpl.key), '')}</CardDescription>
               </CardHeader>
               <CardContent className="mt-auto flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
-                  {tpl.widgetTypes.length} widgets
+                  {t('dashboards.manage.widgetCount', '{n} widgets', { n: tpl.widgets.length })}
                 </span>
                 <Button
                   size="sm"
                   disabled={busy}
-                  onClick={() => createFrom(tpl.name, templateLayout(tpl))}
+                  onClick={() =>
+                    createFrom(
+                      t(templateNameKey(tpl.key), tpl.key),
+                      templateLayout(tpl),
+                      tpl.columns
+                    )
+                  }
                 >
-                  Use template
+                  {t('dashboards.manage.useTemplate', 'Use template')}
                 </Button>
               </CardContent>
             </Card>
@@ -170,7 +190,9 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
 
       {/* Saved */}
       <section className="mt-8">
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Your dashboards</h2>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+          {t('dashboards.manage.yours', 'Your dashboards')}
+        </h2>
         {isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -179,7 +201,10 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
           </div>
         ) : saved.length === 0 ? (
           <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-            No saved dashboards yet. Copy a template above to get started.
+            {t(
+              'dashboards.manage.none',
+              'No dashboards yet. Copy a template above to get started.'
+            )}
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -195,7 +220,8 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                     </button>
                     {d.is_default && (
                       <Badge variant="secondary" className="shrink-0 gap-1 text-[10px]">
-                        <Star className="h-3 w-3" /> Default
+                        <Star className="h-3 w-3" aria-hidden />{' '}
+                        {t('dashboards.switcher.default', 'Default')}
                       </Badge>
                     )}
                   </CardTitle>
@@ -205,20 +231,26 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                 </CardHeader>
                 <CardContent className="mt-auto flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
-                    {d.layout.length} widgets · {d.columns ?? 2} cols
+                    {t('dashboards.manage.summary', '{n} widgets · {cols} columns', {
+                      n: d.layout.length,
+                      cols: d.columns ?? 2,
+                    })}
                   </span>
                   <div className="flex gap-1">
                     <Button size="sm" onClick={() => openView(d.id)}>
-                      <ExternalLink className="me-2 h-4 w-4" /> Open
+                      <ExternalLink className="me-2 h-4 w-4" aria-hidden />{' '}
+                      {t('dashboards.manage.open', 'Open')}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => onEdit(d.id)}>
-                      <Pencil className="me-2 h-4 w-4" /> Edit
+                      <Pencil className="me-2 h-4 w-4" aria-hidden />{' '}
+                      {t('dashboards.manage.edit', 'Edit')}
                     </Button>
                     {!d.is_default && (
                       <Button
                         size="icon"
                         variant="ghost"
-                        title="Set as default"
+                        title={t('dashboards.actions.setDefault', 'Set as my default')}
+                        aria-label={t('dashboards.actions.setDefault', 'Set as my default')}
                         onClick={() => makeDefault(d.id)}
                       >
                         <Star className="h-4 w-4" />
@@ -268,6 +300,7 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
   const router = useRouter()
   const { data, isLoading } = useMyDashboard(id)
   const revalidate = useRevalidateDashboards()
+  const { t } = useTranslation()
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -283,34 +316,23 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
     setReady(true)
   }, [ready, isLoading, data])
 
-  const currentColumns = data?.columns ?? 2
-  const widgetCount = data?.layout.length ?? 0
-
   const submit = async (thenOpen: boolean) => {
     if (!data) return
     const trimmed = name.trim()
     if (!trimmed) {
-      toast.error('Name is required')
+      toast.error(t('dashboards.manage.nameRequired', 'Name is required'))
       return
     }
     setSaving(true)
     try {
-      // Re-pick a layout only restructures widget widths; leave the widgets
-      // untouched when the column count is unchanged so any view-side sizing
-      // survives an edit of just the name or description.
-      const layout: DashboardWidget[] =
-        columns !== currentColumns
-          ? data.layout.map((wg) => ({ ...wg, w: widthForColumns(columns) }))
-          : data.layout
+      // Widths are stored on a 12-unit grid and map to any column count, so
+      // a new column count keeps every widget's share of the row.
+      const layout: DashboardWidget[] = data.layout
       await updateDashboard(id, { name: trimmed, description: description.trim(), columns, layout })
       await revalidate()
-      toast.success('Dashboard saved')
+      toast.success(t('dashboards.editor.saved', 'Dashboard saved'))
       if (thenOpen) {
-        try {
-          window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, id)
-        } catch {
-          // best-effort
-        }
+        rememberChoice(id)
         router.push('/')
       } else {
         onBack()
@@ -338,10 +360,10 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
     return (
       <Main>
         <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft className="me-2 h-4 w-4" /> Back
+          <ArrowLeft className="me-2 h-4 w-4" aria-hidden /> {t('dashboards.manage.back', 'Back')}
         </Button>
         <div className="mt-6 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-          Dashboard not found.
+          {t('dashboards.manage.notFound', 'Dashboard not found.')}
         </div>
       </Main>
     )
@@ -350,18 +372,22 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
   return (
     <Main>
       <PageHeader
-        title="Edit dashboard"
-        description="Set the name, description and column layout. Add and arrange widgets on the dashboard itself."
+        title={t('dashboards.manage.editTitle', 'Edit dashboard')}
+        description={t(
+          'dashboards.manage.editDescription',
+          'Set the name, description and number of columns. Add and arrange widgets on the dashboard itself.'
+        )}
       >
         <div className="flex gap-2">
           <Button variant="ghost" onClick={onBack}>
-            <ArrowLeft className="me-2 h-4 w-4" /> Back
+            <ArrowLeft className="me-2 h-4 w-4" aria-hidden /> {t('dashboards.manage.back', 'Back')}
           </Button>
           <Button variant="outline" disabled={saving} onClick={() => submit(true)}>
-            <ExternalLink className="me-2 h-4 w-4" /> Save &amp; open
+            <ExternalLink className="me-2 h-4 w-4" aria-hidden />{' '}
+            {t('dashboards.manage.saveOpen', 'Save and open')}
           </Button>
           <Button disabled={saving} onClick={() => submit(false)}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? t('dashboards.manage.saving', 'Saving') : t('dashboards.editor.save', 'Save')}
           </Button>
         </div>
       </PageHeader>
@@ -370,24 +396,27 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
         {/* General */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">General</CardTitle>
+            <CardTitle className="text-base">{t('dashboards.manage.general', 'General')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
               <label htmlFor="dash-name" className="text-sm font-medium">
-                Name <span className="text-destructive">*</span>
+                {t('dashboards.manage.name', 'Name')} <span className="text-destructive">*</span>
               </label>
               <Input
                 id="dash-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={100}
-                placeholder="e.g. Executive overview"
+                placeholder={t(
+                  'dashboards.manage.namePlaceholder',
+                  'For example: Executive overview'
+                )}
               />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="dash-desc" className="text-sm font-medium">
-                Description
+                {t('dashboards.manage.descriptionLabel', 'Description')}
               </label>
               <Textarea
                 id="dash-desc"
@@ -395,7 +424,10 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
                 onChange={(e) => setDescription(e.target.value)}
                 maxLength={500}
                 rows={3}
-                placeholder="What is this dashboard for? (optional)"
+                placeholder={t(
+                  'dashboards.manage.descriptionPlaceholder',
+                  'What is this dashboard for? (optional)'
+                )}
               />
               <p className="text-xs text-muted-foreground">{description.length}/500</p>
             </div>
@@ -405,41 +437,37 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
         {/* Layout */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Layout</CardTitle>
+            <CardTitle className="text-base">{t('dashboards.manage.layout', 'Layout')}</CardTitle>
             <CardDescription>
-              How many columns the dashboard is arranged in. Changing this re-flows the existing
-              widgets.
+              {t(
+                'dashboards.manage.layoutHint',
+                'How many columns the dashboard is arranged in. Each widget keeps its share of the row.'
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              {LAYOUT_OPTIONS.map((opt) => (
+              {LAYOUT_OPTIONS.map((cols) => (
                 <button
-                  key={opt.cols}
+                  key={cols}
                   type="button"
-                  onClick={() => setColumns(opt.cols)}
+                  onClick={() => setColumns(cols)}
                   className="flex flex-col items-center gap-1.5"
-                  aria-pressed={columns === opt.cols}
-                  title={opt.label}
+                  aria-pressed={columns === cols}
+                  aria-label={t('dashboards.manage.columns', '{n} columns', { n: cols })}
                 >
-                  <LayoutPreview cols={opt.cols} active={columns === opt.cols} />
+                  <LayoutPreview cols={cols} active={columns === cols} />
                   <span
                     className={cn(
                       'text-xs',
-                      columns === opt.cols ? 'font-medium text-foreground' : 'text-muted-foreground'
+                      columns === cols ? 'font-medium text-foreground' : 'text-muted-foreground'
                     )}
                   >
-                    {opt.cols}
+                    {cols}
                   </span>
                 </button>
               ))}
             </div>
-            {columns !== currentColumns && widgetCount > 0 && (
-              <p className="mt-3 text-xs text-muted-foreground">
-                {widgetCount} widget{widgetCount === 1 ? '' : 's'} will be resized to fit {columns}{' '}
-                column{columns === 1 ? '' : 's'}.
-              </p>
-            )}
           </CardContent>
         </Card>
       </div>

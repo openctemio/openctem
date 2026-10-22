@@ -1,80 +1,48 @@
 /**
- * Built-in dashboard templates (RFC-021 Phase-1b).
- *
- * Read-only starter layouts a user copies into a personal dashboard. Each widget
- * references a `widget_type` from WIDGET_REGISTRY; a widget the viewer lacks
- * permission for is dropped when the template is copied/rendered.
+ * Dashboard templates as typed widget configs (templates.json). A template is
+ * copied into a stored dashboard (personal, or organization for managers);
+ * the copy is computed like any dashboard, in the scope of its kind. The API
+ * test dashboard_templates_test.go validates every widget of templates.json
+ * against the server's spec rules and catalog, so a template can never be
+ * refused on save.
  */
 
 import type { DashboardWidget } from './api/dashboards.types'
-import { WIDGET_REGISTRY } from './widgets/registry'
+import raw from './templates.json'
+
+export type TemplateKey = 'overview' | 'executive' | 'program' | 'triage'
 
 export interface DashboardTemplate {
-  key: string
-  name: string
-  description: string
-  widgetTypes: string[]
+  key: TemplateKey
+  columns: number
+  widgets: Array<Pick<DashboardWidget, 'widget_type' | 'w' | 'h' | 'config'>>
 }
 
-/** Lay a template's widget types out in reading order using each widget's default size. */
+export const DASHBOARD_TEMPLATES = raw as DashboardTemplate[]
+
+/** The template a person without any dashboard starts from. */
+export const DEFAULT_TEMPLATE: TemplateKey = 'overview'
+
+export function templateByKey(key: TemplateKey): DashboardTemplate {
+  return DASHBOARD_TEMPLATES.find((t) => t.key === key) ?? DASHBOARD_TEMPLATES[0]
+}
+
+/** Message keys of a template's name and description. */
+export function templateNameKey(key: TemplateKey): string {
+  return `dashboards.template.${key}.name`
+}
+export function templateDescriptionKey(key: TemplateKey): string {
+  return `dashboards.template.${key}.description`
+}
+
+/** The layout to store for a copy of the template (reading order). */
 export function templateLayout(tpl: DashboardTemplate): DashboardWidget[] {
-  return tpl.widgetTypes
-    .filter((wt) => WIDGET_REGISTRY[wt])
-    .map((wt, i) => {
-      const def = WIDGET_REGISTRY[wt].defaultSize
-      return { widget_type: wt, x: 0, y: i, w: def.w, h: def.h }
-    })
+  return tpl.widgets.map((w, i) => ({
+    widget_type: w.widget_type,
+    x: 0,
+    y: i,
+    w: w.w,
+    h: w.h,
+    config: structuredClone(w.config),
+  }))
 }
-
-export const DASHBOARD_TEMPLATES: DashboardTemplate[] = [
-  {
-    key: 'executive',
-    name: 'Executive',
-    description: 'Risk posture at a glance for leadership.',
-    widgetTypes: [
-      'risk_score',
-      'open_findings',
-      'sla_compliance',
-      'mttr_critical',
-      'findings_by_severity',
-      'overdue_sla',
-    ],
-  },
-  {
-    key: 'soc',
-    name: 'SOC / Triage',
-    description: 'Work the incoming queue.',
-    widgetTypes: [
-      'open_findings',
-      'findings_by_severity',
-      'p0_open',
-      'threat_intel',
-      'assigned_to_me',
-      'overdue_sla',
-    ],
-  },
-  {
-    key: 'vm',
-    name: 'Vulnerability Management',
-    description: 'Run the VM program.',
-    widgetTypes: [
-      'findings_by_severity',
-      'open_findings',
-      'scan_coverage',
-      'overdue_sla',
-      'assets_total',
-    ],
-  },
-  {
-    key: 'my-work',
-    name: 'My Work',
-    description: 'Just what you are responsible for.',
-    widgetTypes: ['assigned_to_me', 'my_critical_high', 'my_overdue_sla'],
-  },
-  {
-    key: 'appsec',
-    name: 'AppSec / Developer',
-    description: 'Your findings and the code-side exposure.',
-    widgetTypes: ['assigned_to_me', 'my_critical_high', 'findings_by_severity', 'threat_intel'],
-  },
-]
