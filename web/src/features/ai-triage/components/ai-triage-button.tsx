@@ -1,29 +1,21 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Sparkles, Loader2, AlertCircle, RotateCcw, Settings2 } from 'lucide-react'
+import { Sparkles, Loader2, AlertCircle, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
-import { useTenant } from '@/context/tenant-provider'
+import { usePermissionsSafe } from '@/context/permission-provider'
+import { Permission } from '@/lib/permissions/constants'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
 import { devLog } from '@/lib/logger'
 import { useHasModule } from '@/features/integrations/api/use-tenant-modules'
 import { useTriageChannel } from '@/hooks/use-websocket'
 import { useRequestTriage, useTriageResult, useAIConfig } from '../api'
-import {
-  aiUnavailableMessage,
-  triageFailureMessage,
-  triageRequestErrorMessage,
-} from '../lib/messages'
+import { triageFailureMessage, triageRequestErrorMessage } from '../lib/messages'
 import type { TriageStatus } from '../types'
-
-/** Where an organization administrator turns AI triage on. */
-export const AI_SETTINGS_URL = '/settings/ai'
 
 /** WebSocket triage event structure from backend */
 interface WSTriageEvent {
@@ -94,9 +86,8 @@ export function AITriageButton({
   forceShow = false,
 }: AITriageButtonProps) {
   const { t } = useTranslation()
-  const { currentTenant } = useTenant()
-  // Owners and administrators turn AI triage on; members are told to ask.
-  const canManageAI = currentTenant?.role === 'owner' || currentTenant?.role === 'admin'
+  const { hasPermission } = usePermissionsSafe()
+  const canTrigger = hasPermission(Permission.AITriageTrigger)
   const [isRequesting, setIsRequesting] = useState(false)
   const [shouldPoll, setShouldPoll] = useState(false)
   const [pollInterval, setPollInterval] = useState(2000)
@@ -413,6 +404,11 @@ export function AITriageButton({
     return className
   }
 
+  // Without the permission to run it there is nothing to offer.
+  if (!forceShow && !canTrigger) {
+    return null
+  }
+
   // Module off: no button at all.
   if (!forceShow && !isCheckingModule && !hasAITriageModule) {
     return null
@@ -423,40 +419,10 @@ export function AITriageButton({
     return null
   }
 
-  // AI not available for this organization: a disabled-looking button that
-  // explains why and links to where it is turned on (never a permission error).
+  // Not opted in (or no usable provider): no button. Where AI triage is
+  // turned on is explained in Settings > AI, not on every finding.
   if (!forceShow && !isAIAvailable) {
-    const reason = aiConfig?.reason
-    const showSettingsLink = canManageAI && reason === 'not_enabled'
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            size={size}
-            aria-disabled="true"
-            className={cn('cursor-help opacity-60', className)}
-          >
-            <Sparkles className="h-4 w-4 me-2" />
-            {t('findings.aiTriage.button.label', 'AI triage')}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="space-y-3 text-sm">
-          <p className="font-medium">
-            {t('findings.aiTriage.unavailable.title', 'AI triage is not available')}
-          </p>
-          <p className="text-muted-foreground">{aiUnavailableMessage(t, reason, canManageAI)}</p>
-          {showSettingsLink && (
-            <Button asChild size="sm" variant="outline">
-              <Link href={AI_SETTINGS_URL}>
-                <Settings2 className="h-4 w-4 me-2" aria-hidden />
-                {t('findings.aiTriage.unavailable.openSettings', 'Open Settings > AI')}
-              </Link>
-            </Button>
-          )}
-        </PopoverContent>
-      </Popover>
-    )
+    return null
   }
 
   return (
