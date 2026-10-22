@@ -1326,5 +1326,7 @@
   "findings.ticketHolds.belowThreshold": "Chưa gửi sang Jira — dưới ngưỡng tạo issue",
   "findings.ticketHolds.dailyCap": "Chưa gửi sang Jira — đã đạt giới hạn hôm nay",
   "findings.ticketHolds.createFailed": "Chưa gửi sang Jira — lần thử gần nhất thất bại",
-  "findings.ticketHolds.createAnyway": "Vẫn tạo"
+  "findings.ticketHolds.createAnyway": "Vẫn tạo",
+  "findings.bulk.status": "Trạng thái",
+  "findings.bulk.assignTo": "Giao cho…"
 }

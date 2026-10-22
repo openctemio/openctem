@@ -1326,5 +1326,7 @@
   "findings.ticketHolds.belowThreshold": "Not sent to Jira — below the create policy",
   "findings.ticketHolds.dailyCap": "Not sent to Jira yet — today’s limit is reached",
   "findings.ticketHolds.createFailed": "Not sent to Jira — the last attempt failed",
-  "findings.ticketHolds.createAnyway": "Create anyway"
+  "findings.ticketHolds.createAnyway": "Create anyway",
+  "findings.bulk.status": "Status",
+  "findings.bulk.assignTo": "Assign to…"
 }
