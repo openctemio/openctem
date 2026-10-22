@@ -131,6 +131,7 @@ type Handlers struct {
 	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
+	ProxyPool     *handler.ProxyPoolHandler     // nil if not initialized (no database)
 	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
 	// FindingLifecycle serves sub-statuses and lifecycle schemes (RFC-110); nil without a database.
 	FindingLifecycle *handler.FindingLifecycleHandler
@@ -996,6 +997,9 @@ func Register(
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
+	}
+	if h.ProxyPool != nil {
+		registerProxyPoolRoutes(router, h.ProxyPool, authMiddleware, userSync)
 	}
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)

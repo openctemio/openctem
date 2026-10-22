@@ -10,12 +10,14 @@ here as they ship.
 | Ownership: organization and personal dashboards, `dashboards:org:view` / `dashboards:org:manage`, audiences, schedule fields | **Shipped** (migration `002930_dashboard_ownership`) |
 | Fact layer: per-asset fact tables, dirty queue, change triggers, recompute and rebuild functions | **Shipped** (migration `002916_dashboard_fact_tables`) |
 | Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002963_dashboard_facts_maintainer`) |
-| Widget registry reading the facts; viewer-scope and organization-wide reads | Planned |
+| Typed widget spec and metric catalog, server-side validation, `GET /me/dashboards/widget-catalog` | **Shipped** |
+| Widget data endpoint reading the facts (personal: viewer scope; organization: whole organization), preview | **Shipped** |
 | Snapshots, the refresher, Refresh now | Planned |
+| Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** (not yet used by a page) |
 
-The facts are built and kept current, but no endpoint reads them yet: the
-dashboard endpoints still aggregate `findings` directly until the widget
-registry ships.
+The typed widget endpoints read the facts; the older dashboard endpoints
+(`/dashboard/*`, used by the built-in views) still aggregate `findings`
+directly until the web renders typed widgets everywhere.
 
 ## Current figures and history
 
@@ -39,7 +41,12 @@ scope; stored snapshots are only the history behind a trend line.
   over 90 days (`overall_hours`), on the Classic card and the Executive page.
 - A failed read shows an error with Retry on the card it feeds; a figure with
   no denominator (no scannable asset, nothing to validate, no approval
-  decided, nothing fixed) shows "—" with the reason, never 0.
+  decided, nothing fixed) shows "—" with the reason, never 0, and its CTEM
+  loop stage is neutral grey, never green or amber.
+- A card that throws while rendering shows its own error with Retry (a
+  per-card error boundary); the rest of the dashboard renders.
+- A viewer with no open finding in scope sees "No open findings" and a link to
+  scans instead of a big "0 P0".
 
 ## Ownership: organization and personal dashboards
 
@@ -134,18 +141,165 @@ a manager leaves.
 - The grouped switcher (Organization / Mine), scope badge, freshness line and
   schedule picker on `/`, and the organization management section on
   `/dashboards` (work packages 11 and 12).
-- Typed per-widget config schemas and the widget id migration, with the widget
-  registry over the fact tables.
+- Rendering typed widgets on `/` (legacy tiles keep their live rendering
+  until then), and serving widget data from stored snapshots.
 
 ### Key files
 
-- `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps
+- `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps;
+  `widget_spec.go` and `metric_catalog.go` (typed widgets)
+- `web/src/features/dashboards/api/widget-spec.ts` — spec types, catalog hook, helpers
+- `internal/app/dashboard/widgets/` — widget results, scopes, limits;
+  `internal/infra/postgres/dashboard_widget_repository.go` — fact reads;
+  `web/src/features/dashboards/api/widget-data.ts` — result types and hooks
 - `internal/app/dashboard/service.go` — authorization, audit, copies, floor
 - `internal/infra/postgres/user_dashboard_repository.go` — tenant- and owner-bound queries, audience SQL
 - `internal/infra/http/handler/user_dashboard_handler.go`, `internal/infra/http/routes/dashboard.go`
 - `migrations/*_dashboard_ownership.up.sql`
 - Tests: `internal/infra/http/routes/dashboard_ownership_db_test.go`,
   `tests/integration/migration_dashboard_ownership_test.go`
+
+## Widget spec
+
+A widget is a query over the metric catalog plus how to draw it. A typed
+widget has `widget_type` `metric` or `note` and a `config` of this form
+(stored in the layout, at most 4 KB):
+
+```json
+{
+  "v": 2,
+  "id": "w_7f3a",
+  "title": "",
+  "data": {
+    "kind": "metric",
+    "metric": "findings.open",
+    "filter": {"severity": ["critical", "high"], "kev": true, "asset_group_id": ["<id>"]},
+    "group_by": ["severity"],
+    "time": {"range": "inherit", "bucket": "auto", "compare": "previous_period"},
+    "limit": 10
+  },
+  "viz": {"type": "bar", "options": {"orientation": "horizontal", "show_table": false}},
+  "target": {"op": "<=", "value": 0},
+  "drill": "auto"
+}
+```
+
+- **Catalog.** `pkg/domain/dashboard/metric_catalog.go` lists every metric,
+  the fact dimensions it may be filtered and grouped by, its polarity (which
+  direction of a change is good), whether it reads a time window, and the
+  result shape per group-by count. The web reads it from
+  `GET /api/v1/me/dashboards/widget-catalog` (static, the same for every
+  caller, no organization data; any signed-in member).
+
+  | Metric | Shape (no group-by) | Group-by | Facts |
+  |---|---|---|---|
+  | `findings.open` | scalar (1: category, 2: matrix) | severity, priority, source, SLA state, age band, KEV, reachable | F1 |
+  | `exposure.priority_open` | scalar, preset P0+P1 | as above | F1 |
+  | `intel.kev_open` | scalar, preset KEV | as above | F1 |
+  | `findings.age_bands` | matrix severity × age band | as above | F1 |
+  | `sla.within` | ratio | none | F1 |
+  | `exposure.open_by_priority` | time series by priority (P0-P2) | priority or severity | F1 + F2 |
+  | `flow.new_vs_fixed` | time series of flows | none | F2 |
+  | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
+  | `fix.next`, `sla.at_risk` | items (ranked findings) | none | F3 |
+
+- **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
+  stat; duration: stat; category: bar, column, table, donut, stat; time
+  series: area, line, column, table (a flow: diverging, column, table, never
+  an area); matrix: heatmap, table, column; items: list, table. The first is
+  the default; a widget without `viz.type` gets it.
+- **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
+  personal or organization dashboard): the config is decoded with unknown
+  fields refused; the metric must be in the catalog; filter and group-by
+  dimensions must be ones the metric allows, with values from their enums
+  (severity, priority, source, SLA state, age band); asset group filters are
+  ids (at most 10) resolved inside the reader's tenant at read time, so an id
+  of another organization matches nothing; the visualization must fit the
+  result shape; a target applies only to a single figure; `drill` is `auto`
+  or `none` (no URLs); a note takes only text (at most 2,000 characters,
+  rendered as sanitized markdown). Widget ids are unique within a dashboard.
+  The stored config is the normalized spec, so nothing unvalidated is kept.
+- **Legacy tiles.** Any other `widget_type` is a legacy tile drawn by its id;
+  its config is never read. `LegacySpec` maps the legacy ids the facts can
+  answer (open findings, by severity, past SLA, within SLA, time to fix
+  critical, P0 open, KEV) to the equivalent spec for the data endpoint.
+- **Threat model.** A widget config is user input stored in a shared layout
+  (organization dashboards, shared copies). It can name only catalog metrics,
+  fact dimensions and enum values; it carries no SQL, field names outside the
+  catalog, URLs or HTML. Tenant and scope are never part of a spec: the data
+  endpoint takes them from the caller (personal) or the organization
+  (organization dashboards) at read time.
+
+## Widget data
+
+| Route | Who | Numbers |
+|---|---|---|
+| `GET /api/v1/me/dashboards/{id}/data` | the dashboard's owner (another person's dashboard is 404) | the caller's own data scope |
+| `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
+| `POST /api/v1/me/dashboards/widget-preview` | any member | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+Every widget of the layout gets a result: typed widgets, and the legacy
+tiles the facts can answer (`LegacySpec`); other legacy tiles answer
+`unsupported` and keep their live rendering. Each result names its state
+(`ready`, `not_measured` with a reason such as `no_denominator` or
+`too_few_fixed`, `building` while the organization's first fact build runs,
+`unsupported`, `error`), its shape payload, the metric's polarity, the
+widget target and whether it is met, and `drill`: the findings list counted
+with the same filter (absent when the list cannot express the filter
+exactly: age band, "no SLA", KEV or reachable false, several asset groups).
+One failing widget never fails the others.
+
+How each figure is computed (`internal/app/dashboard/widgets`,
+`internal/infra/postgres/dashboard_widget_repository.go`):
+
+- **Counts** (F1, open lens): the sum of `finding_count`, grouped by up to
+  two dimensions. When the filter and group-by use only dimensions the
+  history carries (severity, priority, asset group), the previous period is
+  the open count at the end of the previous window (open now minus the net
+  changes since, from F2) and a scalar gets a sparkline of the open count at
+  each bucket end; otherwise `previous_reason` is `previous_not_in_history`.
+- **Within SLA** (F1): open findings with an SLA not breached over open
+  findings with an SLA; no SLA in scope is `not_measured`, never 0 % or 100 %.
+- **Time to fix** (F2): the fix-hours histograms of the days in the window,
+  summed; the median and p90 are estimated inside the doubling hour buckets
+  (`bucketed: true`); fewer than 5 fixes is `not_measured`.
+- **Open by priority over time** (F1 + F2): the open count per key at each
+  bucket end (day up to 31 days, week up to 90, month beyond), ending at the
+  live count. **New vs fixed** (F2): opened and fixed per bucket, with totals
+  for the window and the previous one.
+- **Fix next, SLA at risk** (F3): the in-scope partitions' top 10 merged
+  (exact for up to 10 rows; only the asset group filter, which does not cut
+  into the rank order); list fields are read from `findings` by id inside
+  the tenant, and a finding no longer open is left out.
+
+### Scope and isolation
+
+- The tenant comes from the authenticated caller; every statement starts
+  with `tenant_id = $1`. Asset group filters resolve inside the tenant.
+- **Personal** reads (and previews) use the caller's data scope
+  (`datascope.ResolveStrict`: scope rows for a member, hidden private
+  program assets for an unrestricted one, nothing for a member without
+  scope rows) and the pentest campaign rule for the caller unless they are
+  an administrator (an API key never is). A personal dashboard of a holder
+  of `dashboards:org:view` still follows their own scope, so its figures
+  equal their findings list.
+- **Organization** reads compute the whole organization (findings without
+  an asset included), pentest findings counted; list rows (finding titles)
+  apply the viewer's campaign membership.
+- Every read leaves out findings on program-only and soft-deleted assets,
+  like every dashboard read.
+- Nothing is cached: each read computes for its own caller. Reads are
+  bounded: 2 at a time per user, 6 per organization, 12 per API process
+  (429 with `Retry-After`), 5 s per statement and 20 s per dashboard.
+- Known gap: F2 has no source column, so a pentest finding without a
+  campaign (all-zero campaign id) counts in flows and time to fix for every
+  viewer; it is never listed and never counted in current figures.
+- Tests: `dashboard_widget_data_db_test.go` (figures equal the findings list
+  for a scoped member, a campaign tester, a full-data member, a member
+  without scope rows and an administrator; another tenant's and unpublished
+  findings never show; organization reads, 403 without the permission, 404
+  outside the audience and for another person's dashboard; preview refusals;
+  measured SLA and time to fix), `internal/app/dashboard/widgets` unit tests.
 
 ## Fact layer
 
@@ -422,8 +576,12 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   list total equals the figure. The targets live in one table,
   `web/src/features/dashboard/lib/drill.ts`: open P0 / P1
   (`/findings?state=open&priority_class=…`), SLA breached
-  (`/findings?state=open&sla_status=overdue,exceeded`), validation coverage
-  (`/validation`). The CTEM loop, the hero P0 number, the Executive P0, P1 and
+  (`/findings?state=open&sla_status=overdue,exceeded`), open findings in KEV
+  (`/findings?state=open&is_in_kev=true`), open findings related to the
+  viewer (`/findings?state=open&related_to=me`, the predicate the "Mine"
+  widgets count with), validation coverage (`/validation`). A figure whose
+  exact list the findings page cannot open yet (EPSS of at least 0.5) is not a
+  link rather than a link to a wider list. The CTEM loop, the hero P0 number, the Executive P0, P1 and
   SLA tiles, Executive top-risk rows (the finding) and the custom dashboard
   widgets use them.
 - A 403 on organization-only figures (`/dashboard/program-metrics`,
@@ -434,3 +592,105 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   switched-off module (`MODULE_NOT_ENABLED`) and a failure (message and
   Retry). The shared `ErrorState` does this for every page; the dashboard's
   CTEM maturity card is left out for a viewer without the grant.
+
+## Widget kit (web)
+
+`web/src/components/dashboard-kit/` is what every dashboard widget renders
+with. No page uses it yet: the dashboard pages move to it together with the
+widget data endpoint.
+
+### Frame and states
+
+`WidgetFrame` is a `<section>` labelled by the widget title, with an optional
+definition popover ("How this is counted") and a freshness footer ("Updated 5
+minutes ago", the absolute time on hover). Each frame is its own React error
+boundary: a render error in one widget shows "Couldn't load these figures"
+with Retry in that widget, and the rest of the dashboard keeps working.
+
+| State | Shows |
+|---|---|
+| `loading` | a skeleton shaped like the visualization (stat, chart, list, grid, stages), fixed height |
+| `ready` | the figures and the freshness footer |
+| `stale` | the figures, "Stale · 2 hr" and Refresh; `isStale()` is true past twice the refresh interval or after a failed refresh |
+| `no_data_yet` | what will appear and a next-step link (same-origin paths only) |
+| `no_results` | "Nothing matches these filters" and Clear filters |
+| `not_measured` | "—" and the reason, grey; never a number and never a good colour |
+| `no_access` | the missing permission named from the 403's `details.any_of`, no Retry |
+| `module_off` | the module's name and, for administrators, a settings link |
+| `error` | "Couldn't load these figures" and Retry for this widget only |
+| `partial` | the figures that loaded and a notice naming what is missing |
+| `scope_changed` | "Your access changed. Updating these figures." while it recomputes |
+
+`stateFromError()` maps an API error to `no_access`, `module_off` or `error`
+with the same rules as the shared error state.
+
+### Result shapes and visualizations
+
+The kit draws the widget result shapes (`types.ts`): `scalar`, `ratio`,
+`duration`, `category`, `time_series`, `matrix`, `items`, `stages`. A null
+figure means not measured and is never drawn as 0.
+
+| Visualization | Shapes | Notes |
+|---|---|---|
+| `StatViz` | scalar, ratio, duration | value, change against the previous period, sparkline, target chip |
+| `ProgressViz` | ratio | a meter against the target, with the target tick |
+| `BarViz` | category | one bar per key or one stacked bar with shares; values printed |
+| `ColumnViz` | time_series (flows) | stacked columns per bucket |
+| `AreaLineViz` | time_series (stocks) | stacked area or lines, markers for scoring changes |
+| `DivergingViz` | time_series with `opened` / `fixed` | opened up, fixed down, the net in words |
+| `HeatmapViz` | matrix | every value printed, shaded on the sequential ramp |
+| `FunnelViz` | stages | the stage strip; unmeasured stages are grey with their reason |
+| `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
+
+Rules every visualization follows:
+
+- **Change and target are never colour alone.** The change is signed text
+  with an arrow and "vs previous period"; its colour comes from the figure's
+  polarity (`down_good` for open counts, `up_good` for shares within SLA) and
+  a screen reader hears "better" or "worse". The target chip carries an icon
+  and words (on target, close to target, off target, not measured).
+- **Table view.** Every chart has a "Show table" toggle with the exact figures.
+- **Drill-down.** A mark, row or stage opens its list through a drill builder.
+  The path is reduced to a same-origin path (`safeInternalHref`); anything else
+  renders as plain text, so a server-supplied path cannot leave the app.
+- **One axis, fixed order.** Ordinal keys (severity, priority, age band) keep
+  their order; other categories take the categorical slots in their order and
+  fold past eight into "Other". Colour follows the entity, never its rank.
+- **Motion.** Charts do not animate when the system asks for reduced motion.
+
+`web/src/lib/format-metric.ts` formats the figures in the viewer's locale:
+grouped counts, compact from 10 000, percentages with one decimal below 10 %,
+durations in the largest sensible unit, relative times.
+
+### Chart palettes
+
+`web/src/lib/chart-palette.json` is the source; `src/styles/theme.css`
+carries the same values as `--viz-*` tokens for light and dark (each mode has
+its own validated steps), and components colour marks with those variables.
+
+| Palette | Use |
+|---|---|
+| severity (`--viz-sev-*`) | severities and priority classes (P0 = critical colour) |
+| categorical (`--viz-cat-1` .. `8`, `--viz-cat-other`) | any other series, in fixed order |
+| diverging (`--viz-div-opened`, `--viz-div-fixed`) | flow pairs |
+| sequential (`--viz-seq-1` .. `5`, with `--viz-seq-ink-*`) | heatmap shading and the text printed on it |
+
+Status colours (good, warning, critical, unmeasured) stay the semantic
+`success` / `warning` / `destructive` / muted tokens and always come with an
+icon and a label.
+
+`npm run check:palette` (`web/scripts/check-palette.mjs`) validates every
+palette against its mode's card surface: adjacent-pair separation under
+protanopia and deuteranopia (OKLab ΔE ≥ 8, 6-8 only with secondary encoding),
+normal-vision separation (≥ 15), chroma, lightness band, contrast, monotone
+sequential steps with readable ink, and that the theme tokens equal the JSON.
+A unit test (`dashboard-kit/__tests__/palette.test.ts`) runs the same check in
+CI. Two documented relaxations, both covered by the table view and labels:
+some light-mode marks are below 3:1 against white, and the dark severity
+orange and yellow sit above the dark lightness band (a red-orange-yellow
+ramp cannot separate inside it), so severity is always labelled and kept in
+order.
+
+Key files: `web/src/components/dashboard-kit/`, `web/src/lib/chart-palette.{json,ts}`,
+`web/src/lib/format-metric.ts`, `web/scripts/check-palette.mjs`, translations in
+`web/src/lib/i18n/dictionaries/{en,vi}/dashboardKit.json`.

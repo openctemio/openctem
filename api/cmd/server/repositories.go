@@ -39,6 +39,7 @@ type Repositories struct {
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
 	DashboardFacts          *postgres.DashboardFactsRepository          // Dashboard fact layer upkeep
+	DashboardWidget         *postgres.DashboardWidgetRepository         // Typed widget reads over the facts
 	APISpec                 *postgres.APISpecRepository                 // API descriptions of web origins (RFC-056)
 	AssetStateHistory       *postgres.AssetStateHistoryRepository       // CTEM: State change audit log
 	AssetRelationship       *postgres.AssetRelationshipRepository       // CTEM: Asset topology graph
@@ -165,6 +166,8 @@ type Repositories struct {
 
 	// Scan zones (RFC-023)
 	ScanZone *postgres.ScanZoneRepository
+	// ProxyPool holds proxy pools, endpoints and sensor assignments.
+	ProxyPool *postgres.ProxyPoolRepository
 	// Scan window policies, overrides and the assets behind targets (RFC-067)
 	ScanWindowPolicy *postgres.ScanWindowPolicyRepository
 	// Finding lifecycles (RFC-110): the sub-status catalog and the schemes.
@@ -400,6 +403,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
 		DashboardFacts:          postgres.NewDashboardFactsRepository(db),
+		DashboardWidget:         postgres.NewDashboardWidgetRepository(db),
 		APISpec:                 postgres.NewAPISpecRepository(db),
 		AssetStateHistory:       postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:       postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
@@ -510,6 +514,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Scan zones (RFC-023)
 		ScanZone:            postgres.NewScanZoneRepository(db),
+		ProxyPool:           postgres.NewProxyPoolRepository(db),
 		ScanWindowPolicy:    postgres.NewScanWindowPolicyRepository(db),
 		LifecycleSubStatus:  postgres.NewLifecycleSubStatusRepository(db),
 		LifecycleScheme:     postgres.NewLifecycleSchemeRepository(db),

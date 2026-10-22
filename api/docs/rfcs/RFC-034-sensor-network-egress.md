@@ -1,11 +1,15 @@
 # RFC-034 — Sensor network egress: proxies per scan zone
 
-> Status: **Proposed** (2026-10-02). Phase 0 shipped on the sensor side
-> (checked 2026-10-04): `SENSOR_CONTROL_PROXY`, `SENSOR_CONTENT_PROXY`,
-> `SENSOR_SCAN_PROXY` and a proxy-aware `SafeHTTPClient` that checks the
-> target before the proxy (sdk-go#111, released in sdk-go v0.15.0; content
-> tools follow the content proxy in sensor#102). Not built: the manifest
-> `egress.control` field and Phases 1–4 (no api code yet).
+> Status: **Partly implemented** (proposed 2026-10-02; amended 2026-10-21 by
+> §0, proxy pools). Phase 0 shipped on the sensor side (checked 2026-10-04):
+> `SENSOR_CONTROL_PROXY`, `SENSOR_CONTENT_PROXY`, `SENSOR_SCAN_PROXY` and a
+> proxy-aware `SafeHTTPClient` that checks the target before the proxy
+> (sdk-go#111, released in sdk-go v0.15.0; content tools follow the content
+> proxy in sensor#102). Proxy pools (§0) are built: organization pools,
+> per-sensor assignment, encrypted write-only credentials, health score and
+> quarantine (architecture: [sensor-proxies.md](../architecture/sensor-proxies.md)).
+> Not built: zone pools, tool rules, scan override, instance pools, the
+> manifest `egress.control` field, `dns=proxy`.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-023](RFC-023-scan-zones-and-scanners.md) (scan zones, the three
 > enforcement layers D7, the operator allow-list D8, credential tiers D12),
@@ -23,6 +27,56 @@
 > Problem (2026-10-02): when sensors are used for internal systems, some
 > network zones can only be reached through a proxy. What is the best proxy
 > solution?
+
+## 0. Amendment 2026-10-21: proxy pools
+
+This amendment replaces "egress profiles per zone" with **proxy pools** and
+drops the "no pools, no rotation" non-goal, while keeping the rule that a
+target's answer never moves traffic to another path. What ships first:
+
+- **Pools at organization level.** An administrator pastes a list of proxies
+  (`scheme://[user:pass@]host:port[#label]`, one per line; schemes `http`,
+  `https`, `socks5`, `socks5h`) in Settings → Scanning → Proxies. Line order
+  is priority. Credentials are split out, stored AES-GCM-encrypted (bound to
+  the tenant and endpoint) and never returned: the list comes back with
+  `••••` in their place, and keeping `••••` keeps them.
+- **Which pool a job uses.** Sensor-local veto (`SENSOR_SCAN_EGRESS`) >
+  the sensor's own assignment (Direct or a pool, all target addresses) > the
+  organization default pool (public target addresses only, so internal
+  targets never pick up an external proxy) > direct. A disabled pool is not
+  used. Shared sensors never use an organization pool.
+- **Delivery.** The platform stamps an `egress` member (pool id, revision,
+  strategy, `applies_to`, eligible endpoints with weights; no credentials)
+  on every scan and retest job the claiming sensor receives, including the
+  claim repeat a signing sensor runs, so the job signature
+  (`payload_sha256`) covers it. The leasing sensor fetches the credentials
+  per job (`POST /api/v2/sensor/commands/{id}/egress-credentials`, v2 HTTPS
+  only, answered only to the lease holder for the pool its jobs use now).
+- **Fail closed.** A sensor whose jobs use a pool gets scan and retest jobs
+  only when it reports `egress.upstream@1` and `net.confined@1`. A pool with
+  every endpoint quarantined still goes out with an empty list: the sensor
+  fails the job (`egress_unavailable`) rather than going direct.
+- **Health.** The sensor reports per endpoint and job (connections, proxy
+  down, proxy authentication failures, target errors, handshake latency,
+  last error) to `POST /api/v2/sensor/commands/{id}/egress-report`. The
+  platform keeps a score (success EWMA, latency, consecutive failures),
+  moves endpoints between healthy, probation (5 % weight) and quarantined,
+  and re-admits a quarantined endpoint in probation after a back-off of
+  5 minutes doubling to 2 hours: the re-probe is the next job's real traffic.
+  Target errors never count against a proxy. Thresholds are internal
+  defaults, not settings.
+- **In the sensor.** sdk-go's per-task forwarder dials the target through the
+  pool after its scope check (sticky weighted selection per target host, or
+  priority order; failover only when the proxy itself is down; a local
+  breaker per endpoint), so a proxy never widens what a job may reach.
+
+Permissions: `sensors:egress:read|write|delete`, owner and admin only (write
+and delete admin-only). Every pool, endpoint, credential and assignment
+change is audited, and so is the platform quarantining an endpoint.
+
+Later: zone pools, tool rules (pool / direct / refuse), scan override,
+instance pools offered to tenants, exit-IP attribution, `dns=proxy`, a Test
+button.
 
 ## 1. Answer in short
 

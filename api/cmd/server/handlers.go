@@ -15,6 +15,7 @@ import (
 	"time"
 
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
+	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/app/supportaccess"
@@ -571,8 +572,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
-		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
-		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
+		UserDashboard: handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(
+			dashwidgets.NewService(svc.UserDashboard, svc.DataScope, repos.DashboardWidget, log)),
+		SavedView: handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,
@@ -623,6 +625,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ProxyPool:        handler.NewProxyPoolHandler(svc.ProxyPool, log),
 		ScanWindow:       newScanWindowHandler(svc, log),
 		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
 		Ingest:           ingestHandler,

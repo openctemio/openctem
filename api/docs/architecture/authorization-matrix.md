@@ -29,7 +29,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
-| Sensors | 14 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
+| Sensors | 17 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:egress:read/write/delete` (proxy pools), `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
@@ -493,6 +493,29 @@ create's target validator, exclusions, zone routing) in one call.
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
 
+#### Proxy pools (`/api/v1/proxy-pools`, RFC-034)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/proxy-pools` · `/{id}` · `/assignments` | `sensors:egress:read` |
+| `POST /api/v1/proxy-pools` | `sensors:egress:write` |
+| `PATCH /api/v1/proxy-pools/{id}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/{id}/endpoints` · `PATCH /{id}/endpoints/{endpoint_id}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/assignments/{sensor_id}` | `sensors:egress:write` |
+| `DELETE /api/v1/proxy-pools/{id}` | `sensors:egress:delete` |
+
+> Seeded by migration `sensor_proxy_pools`: owner and admin only (a pool
+> decides where every scan's traffic exits and holds credentials);
+> `sensors:egress:write` and `:delete` are admin-only, so no custom role may
+> carry them (trigger extended in the same migration). Object level: every
+> query carries `tenant_id`; endpoints and assignments have composite foreign
+> keys `(tenant_id, pool_id)` and `(tenant_id, sensor_id)`, so a pool or
+> sensor of another tenant, or a shared sensor, cannot be linked. No response
+> carries a credential. The sensor side
+> (`POST /api/v2/sensor/commands/{id}/egress-credentials` and `/egress-report`)
+> answers only the sensor holding the command's lease. See
+> [sensor-proxies.md](sensor-proxies.md).
+
 #### Content catalog (`/api/v1/content`, RFC-099)
 
 | Endpoint | Permission Required |
@@ -547,7 +570,8 @@ authenticator code, and is audited.
 >
 > **No custom role may carry them** (settings decision B1, 2026-10-04):
 > `sensors:write`, `sensors:delete`,
-> `sensors:zones:write` and `sensors:zones:delete` are admin-only
+> `sensors:zones:write`, `sensors:zones:delete`, `sensors:egress:write` and
+> `sensors:egress:delete` are admin-only
 > (`pkg/domain/permission/admin_only.go`). The role service refuses them on
 > create and update, whoever edits the role (400), and a trigger on
 > `role_permissions` refuses a row that would put one on a custom role
@@ -800,7 +824,8 @@ Organization dashboards belong to the organization.
 |----------|---------------------|
 | `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
 | `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
-| `GET /api/v1/organization/dashboards`, `GET …/{id}` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
+| `GET /api/v1/me/dashboards/{id}/data`, `POST /api/v1/me/dashboards/widget-preview`, `GET /api/v1/me/dashboards/widget-catalog` | self (owner only); figures follow the caller's own data scope and pentest campaign membership |
+| `GET /api/v1/organization/dashboards`, `GET …/{id}`, `GET …/{id}/data` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
 | `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
 | `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
 | `GET /api/v1/organization/settings/dashboards` | `dashboard:read` |
@@ -2655,10 +2680,10 @@ accountable for it (`service_owner_id`, the creator), and never signs in.
 |---|---|
 | Never signs in | no password and no federated identity (CHECK on `users`); its address is on the unroutable `service-accounts.invalid` domain; no set-password link is issued for it |
 | One organization | trigger on `tenant_members`: a service account is a member of its own organization only |
-| Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member |
+| Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member; turning on `has_full_data_access` for a role a service account holds, directly or through a team, is refused (`UpdateRole` and a `BEFORE UPDATE OF has_full_data_access` trigger on `roles`) |
 | Starts with nothing | created with no role: roles come from the role APIs (grant ceiling) and teams; data scope from teams |
 | Acts through keys | keys are minted for it with `POST /api/v1/service-accounts/{id}/api-keys` (`user_id` = the account); each scope must be held by the person minting it, and at request time a key carries only the scopes the account still holds, within its data scope; keys are read-only on the REST API, and no key reaches `/api/v1/service-accounts` |
-| Keys outlive their minter? No | the active keys a person minted for service accounts are revoked (audited, `revoked_by` = the acting administrator) when that person is offboarded or leaves, or is demoted from administrator or owner to member or viewer; the access report lists them first (`service_account_keys`) and the offboarding result and the audit event count them (`revoked_service_account_keys`) |
+| Keys outlive their minter? No | the active keys a person minted for service accounts are revoked (audited, `revoked_by` = the acting administrator) when that person is offboarded or leaves, is suspended, is demoted from administrator or owner to member or viewer, or loses `service_accounts:manage` because a custom role was removed from them (and no other role or team gives it back); the demotion revoke commits in the same transaction as the role change, so a failed revoke refuses the change; the access report lists the keys first (`service_account_keys`) and the offboarding result and the audit event count them (`revoked_service_account_keys`) |
 | Removal | `DELETE /api/v1/service-accounts/{id}` removes the account with its roles, team memberships and keys at once |
 
 A team binding is held to the same ceiling in both orders: binding a full-data

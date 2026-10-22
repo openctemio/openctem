@@ -189,6 +189,20 @@ func (r *MemberLifecycleRepository) Disable(ctx context.Context, m *tenant.Membe
 		out.SuspendedKeys = int(n)
 	}
 
+	// A suspended person no longer answers for the service-account keys they
+	// minted: revoked in the same transaction, like an offboarding.
+	var by any
+	if sb := m.SuspendedBy(); sb != nil && !sb.IsZero() {
+		by = sb.String()
+	}
+	saKeys, err := tx.ExecContext(ctx, revokeServiceAccountKeysSQL, tid, uid, by)
+	if err != nil {
+		return nil, fmt.Errorf("revoke service account keys: %w", err)
+	}
+	if n, _ := saKeys.RowsAffected(); n > 0 {
+		out.RevokedServiceAccountKeys = int(n)
+	}
+
 	if out.PausedScans, err = execReturningRefs(ctx, tx, `
 		UPDATE scans SET status = 'paused', updated_at = NOW()
 		WHERE tenant_id = $1 AND created_by = $2 AND status = 'active' AND schedule_type <> 'manual'
@@ -447,7 +461,7 @@ const revokeServiceAccountKeysSQL = `
 	  AND k.tenant_id = $1 AND k.created_by = $2 AND k.status IN ('active', 'suspended')`
 
 // RevokeServiceAccountKeys revokes the service-account keys userID minted in
-// tenantID (an administrator who was demoted or removed).
+// tenantID and returns how many (a member who lost service_accounts:manage).
 func (r *MemberLifecycleRepository) RevokeServiceAccountKeys(ctx context.Context, tenantID, userID shared.ID, revokedBy *shared.ID) (int, error) {
 	var by any
 	if revokedBy != nil && !revokedBy.IsZero() {
@@ -459,6 +473,41 @@ func (r *MemberLifecycleRepository) RevokeServiceAccountKeys(ctx context.Context
 	}
 	n, err := res.RowsAffected()
 	return int(n), err
+}
+
+// ChangeRoleRevokingServiceAccountKeys persists the membership's new role and
+// revokes the service-account keys the member minted in ONE transaction: a
+// failed revoke rolls the role change back, so a demoted administrator never
+// keeps the organization secrets they created.
+func (r *MemberLifecycleRepository) ChangeRoleRevokingServiceAccountKeys(ctx context.Context, m *tenant.Membership, revokedBy *shared.ID) (_ int, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin role change: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if uerr := updateMembershipTx(ctx, tx, m); uerr != nil {
+		return 0, uerr
+	}
+	var by any
+	if revokedBy != nil && !revokedBy.IsZero() {
+		by = revokedBy.String()
+	}
+	res, err := tx.ExecContext(ctx, revokeServiceAccountKeysSQL, m.TenantID().String(), m.UserID().String(), by)
+	if err != nil {
+		return 0, fmt.Errorf("revoke service account keys: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit role change: %w", err)
+	}
+	return int(n), nil
 }
 
 // closedTaskStates are the remediation task states that need no owner.
