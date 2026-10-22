@@ -92,15 +92,23 @@ has partial coverage and closes nothing.
 
 `?coverage=full&asset_id=<id>` (1 to 100 `asset_id` values) declares the
 upload a complete scan of those assets by the tool of each of its files.
-`findingimport.Service.CheckCoverage` refuses it before anything is read
-unless the caller holds `findings:status` (403) and every asset is an asset
-of the organization in the uploader's data scope (400, one answer for a
-missing and a hidden asset). When the request has read every part,
+It is a bulk close, so it is gated like `POST /findings/bulk/status` closing
+findings: the route asks for step-up when `coverage=full`
+(`requireStepUpWhenFullCoverage`), and the handler for `findings:status` and
+`findings:bulk_update` (403). `min_severity` is refused with it (400): a
+finding dropped below the threshold would read as fixed.
+`findingimport.Service.CheckCoverage` then refuses it before anything is read
+unless every asset is an asset of the organization visible to the uploader
+(400, one answer for a missing and a hidden asset): inside their data scope,
+and not a private program asset hidden from them, which an unrestricted
+member may write to but not see. When the request has read every part,
 `FinishUpload` (`closeUncovered`, `internal/app/findingimport/coverage.go`):
 
 - refuses to close anything (`coverage_note = incomplete`, coverage stays
-  `partial`) when a file failed, a finding could not be stored, a file named
-  no tool, or the request was cut short;
+  `partial`) when a file failed, a finding could not be stored, the parser
+  skipped a record, a file named no tool, or the request was cut short;
+- checks the declaration again (`scope_changed`, nothing closed, when an
+  asset left the uploader's scope or the organization while the upload ran);
 - per tool: candidates are the open findings on the declared assets last
   seen by that tool, not a branch occurrence, not from a human source (pentest,
   manual, bug bounty, red team), not a leaked secret, and not reported by
@@ -175,10 +183,15 @@ receipts are kept.
   pending, done, takeover of an expired key, a lost claim cannot finish or
   release, purge.
 - `internal/infra/http/routes/finding_import_coverage_db_test.go`: refusals
-  (no `findings:status`, unknown asset, no scope, scope without full,
-  asset outside the uploader's scope) close nothing; a full-coverage subset
-  upload closes the finding it left out, with `closed 1`, `untouched 0`.
+  (no `findings:status`, no `findings:bulk_update`, `min_severity`, more than
+  100 `asset_id` values, unknown asset, no scope, scope without full, asset
+  outside the uploader's scope, a private program asset hidden from an
+  administrator) close nothing; a full-coverage subset upload (one asset
+  named twice) closes the finding it left out, with `closed 1`, `untouched 0`.
+- `internal/infra/http/routes/finding_import_stepup_test.go`: step-up only
+  for `coverage=full`.
 - `internal/app/findingimport/coverage_test.go`: a failed file, a finding not
-  stored, the blinding guard and a request cut short close nothing.
+  stored, a skipped record, a file naming no tool, the blinding guard, a
+  request cut short and a scope that changed close nothing.
 - `internal/app/ingest/receipt_test.go`: source mapping, delta contents,
   coverage decisions (enforce, dry run, ineligible).

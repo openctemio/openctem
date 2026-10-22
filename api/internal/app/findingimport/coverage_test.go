@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/openctemio/ctis/importer"
+
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -62,6 +64,10 @@ func TestCloseUncovered(t *testing.T) {
 		{"a finding not stored", []FileResult{{Tool: "nessus", Ingest: &ingest.Output{FailedFindings: []ingest.FailedFinding{{}}}}}, 1, 2, true, 0, "incomplete", ingestreceipt.CoveragePartial},
 		{"blinding guard", []FileResult{ok}, 150, 160, true, 0, "held", ingestreceipt.CoverageFull},
 		{"request cut short", []FileResult{ok}, 1, 2, false, 0, "incomplete", ingestreceipt.CoveragePartial},
+		// A record the parser skipped (below min_severity, or unusable) may be
+		// a finding that is still there.
+		{"a skipped record", []FileResult{{Tool: "nessus", Ingest: &ingest.Output{}, Stats: importer.Stats{Skipped: 1}}}, 1, 2, true, 0, "incomplete", ingestreceipt.CoveragePartial},
+		{"a file naming no tool", []FileResult{{Ingest: &ingest.Output{}}}, 1, 2, true, 0, "incomplete", ingestreceipt.CoveragePartial},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -82,6 +88,30 @@ func TestCloseUncovered(t *testing.T) {
 				t.Fatalf("closed findings not recorded on the receipt: %+v", repo.recorded)
 			}
 		})
+	}
+}
+
+// The declaration is checked again when the close is due: an asset that
+// left the uploader's scope while the upload ran closes nothing, and the
+// receipt says why.
+func TestCloseUncoveredScopeChanged(t *testing.T) {
+	repo := &coverageFake{assets: 1, open: 2, stale: []shared.ID{shared.NewID()}}
+	svc := NewService(&fakeIngester{}, repo, repo, ingest.SourceResolveDryRun, logger.NewNop())
+	req := coverageReq()
+	req.CoverageScope = onlyAssets{}
+	svc.FinishUpload(context.Background(), req, []FileResult{{Tool: "nessus", Ingest: &ingest.Output{}}}, true)
+	if len(repo.resolved) != 0 || len(repo.finished) != 1 {
+		t.Fatalf("closed %d after the scope changed", len(repo.resolved))
+	}
+	if f := repo.finished[0]; f.CoverageNote != "scope_changed" || f.Coverage != ingestreceipt.CoveragePartial {
+		t.Fatalf("receipt coverage %q note %q", f.Coverage, f.CoverageNote)
+	}
+	// The visibility check wins over the write scope.
+	a := shared.NewID()
+	err := svc.CheckCoverage(context.Background(), Request{Coverage: Coverage{Full: true, AssetIDs: []shared.ID{a}},
+		Actor: onlyAssets{a: true}, CoverageScope: onlyAssets{}})
+	if !errors.Is(err, ErrCoverageScope) {
+		t.Fatalf("an asset hidden from the uploader: %v", err)
 	}
 }
 

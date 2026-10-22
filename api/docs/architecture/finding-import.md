@@ -34,7 +34,7 @@ Multipart form:
 | `?dry_run=true` | Preview: parse and count; nothing is written |
 | `?format=` | Force the format of a single file |
 | `?min_severity=` | Drop findings below `info`, `low`, `medium`, `high` or `critical` |
-| `?coverage=full&asset_id=…` | Declares the upload a complete scan of the named assets (1 to 100) by each file's tool: the open findings of that tool on them that the upload does not report are closed. Needs `findings:status`; every asset must be in the uploader's data scope ([ingest-receipts.md](ingest-receipts.md#full-coverage-uploads)) |
+| `?coverage=full&asset_id=…` | Declares the upload a complete scan of the named assets (1 to 100) by each file's tool: the open findings of that tool on them that the upload does not report are closed. Needs `findings:status`, `findings:bulk_update` and step-up; not with `min_severity`; every asset must be visible to the uploader ([ingest-receipts.md](ingest-receipts.md#full-coverage-uploads)) |
 | `Idempotency-Key` header | 1 to 128 printable ASCII characters: a retry of the same upload returns the first answer (below) |
 
 The format is read from the content (`importer.IsZip`, `importer.Detect` on
