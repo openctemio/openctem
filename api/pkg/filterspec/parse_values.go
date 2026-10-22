@@ -19,10 +19,13 @@ const (
 type UnknownMode int
 
 const (
-	// UnknownWarn ignores the param and records it in Spec.UnknownParams,
-	// for the one-release log-count-deprecate window (RFC-048 §3.8).
+	// UnknownWarn ignores the param and records it in Spec.UnknownParams.
+	// Only the filter-to-query converter still uses it: every list endpoint
+	// is strict.
 	UnknownWarn UnknownMode = iota
-	// UnknownStrict rejects the request with INVALID_FILTER.
+	// UnknownStrict rejects the request with 400 INVALID_FILTER, naming the
+	// param (never its value): a typo must not silently widen a read, an
+	// export or a bulk change.
 	UnknownStrict
 )
 
@@ -113,7 +116,7 @@ func ParseValues(q url.Values, reg *Registry, opts Options) (*Spec, error) {
 		f, op, err := reg.resolveParam(target)
 		if err != nil {
 			if opts.Unknown == UnknownStrict {
-				e.param(name, "unknown parameter", "", true)
+				e.param(name, ReasonUnknownFilter, "", true)
 			} else {
 				spec.UnknownParams = append(spec.UnknownParams, name)
 			}
