@@ -155,7 +155,7 @@ func (s *FindingCommentService) UpdateComment(ctx context.Context, tenantID, com
 	}
 
 	// Only the author can update their comment
-	if authorID != "" && comment.AuthorID().String() != authorID {
+	if authorID == "" || comment.AuthorID().String() != authorID {
 		return nil, fmt.Errorf("%w: only the author can update this comment", shared.ErrForbidden)
 	}
 
@@ -194,7 +194,7 @@ func (s *FindingCommentService) DeleteComment(ctx context.Context, tenantID, com
 	}
 
 	// Only the author can delete their comment (unless admin)
-	if authorID != "" && comment.AuthorID().String() != authorID {
+	if authorID == "" || comment.AuthorID().String() != authorID {
 		return fmt.Errorf("%w: only the author can delete this comment", shared.ErrForbidden)
 	}
 

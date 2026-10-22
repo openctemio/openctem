@@ -77,12 +77,8 @@ func (m *findingActActivityRepo) ListByTenant(ctx context.Context, tenantID shar
 	return pagination.Result[*vulnerability.FindingActivity]{}, nil
 }
 
-func (m *findingActActivityRepo) DeleteByCommentID(_ context.Context, _ shared.ID, _ string) error {
-	return nil
-}
-
-func (m *findingActActivityRepo) UpdateContentByCommentID(_ context.Context, _ shared.ID, _ string, _ string) error {
-	return nil
+func (m *findingActActivityRepo) DeletedCommentIDs(_ context.Context, _, _ shared.ID, _ []string) (map[string]bool, error) {
+	return map[string]bool{}, nil
 }
 
 // findingActUserRepo implements user.Repository for testing broadcasts.
