@@ -16,9 +16,11 @@ here as they ship.
 | Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** |
 | Dashboard home on `/`: one renderer for stored dashboards, Organization / Mine switcher, scope badge, freshness line, Refresh now, schedule picker | **Shipped** |
 
-The typed widget endpoints read the facts; the older dashboard endpoints
-(`/dashboard/*`, used by the built-in views) still aggregate `findings`
-directly until the web renders typed widgets everywhere.
+The typed widget endpoints read the facts, and `/` renders only stored
+dashboards of typed widgets; the built-in CTEM and Classic views are removed.
+The older dashboard endpoints (`/dashboard/*`) still aggregate `findings`
+directly for the Insights pages; `GET /dashboard/overview` no longer has a web
+caller.
 
 ## Current figures and history
 
@@ -28,9 +30,7 @@ scope; stored snapshots are only the history behind a trend line.
 - `GET /dashboard/executive-summary` returns the open counts by priority class
   (`p0_open` .. `p3_open`, the open lens, their sum is `findings_total`) and
   `scoped`: true when the figures are counted over the viewer's data scope.
-  The CTEM view's "Open now" bars read these (each bar opens
-  `/findings?state=open&priority_class=Px`); the P0 line and the open-findings
-  trend end at the live count.
+  The Insights pages read these.
 - `GET /dashboard/risk-trend` reads the daily `risk_snapshots`, which are
   organization-wide. A scoped viewer gets no trend and the web says "Trend not
   available for your scope" instead of zeros. The chart caption names the date
@@ -39,15 +39,16 @@ scope; stored snapshots are only the history behind a trend line.
   `state=open`): `GET /findings/stats` returns `open_count` equal to
   `by_state.open`, and the scheduled report uses it.
 - Time to remediate is read from one place, `GET /dashboard/mttr-analytics`
-  over 90 days (`overall_hours`), on the Classic card and the Executive page.
+  over 90 days (`overall_hours`), on the Executive page.
 - A failed read shows an error with Retry on the card it feeds; a figure with
   no denominator (no scannable asset, nothing to validate, no approval
-  decided, nothing fixed) shows "—" with the reason, never 0, and its CTEM
-  loop stage is neutral grey, never green or amber.
-- A card that throws while rendering shows its own error with Retry (a
-  per-card error boundary); the rest of the dashboard renders.
-- A viewer with no open finding in scope sees "No open findings" and a link to
-  scans instead of a big "0 P0".
+  decided, nothing fixed) shows "—" with the reason (the widget's
+  `not_measured` state), never 0, in neutral colours.
+- A widget that throws while rendering shows its own error with Retry (a
+  per-widget error boundary, `WidgetErrorBoundary`); the rest of the
+  dashboard renders.
+- A widget with nothing to count in the viewer's scope shows its empty state,
+  not a big 0.
 
 ## Ownership: organization and personal dashboards
 
@@ -662,14 +663,13 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   list total equals the figure. The targets live in one table,
   `web/src/features/dashboard/lib/drill.ts`: open P0 / P1
   (`/findings?state=open&priority_class=…`), SLA breached
-  (`/findings?state=open&sla_status=overdue,exceeded`), open findings in KEV
-  (`/findings?state=open&is_in_kev=true`), open findings related to the
-  viewer (`/findings?state=open&related_to=me`, the predicate the "Mine"
-  widgets count with), validation coverage (`/validation`). A figure whose
-  exact list the findings page cannot open yet (EPSS of at least 0.5) is not a
-  link rather than a link to a wider list. The CTEM loop, the hero P0 number, the Executive P0, P1 and
-  SLA tiles, Executive top-risk rows (the finding) and the custom dashboard
-  widgets use them.
+  (`/findings?state=open&sla_status=overdue,exceeded`), validation coverage
+  (`/validation`). The Executive P0, P1 and SLA tiles and the Executive
+  top-risk rows (the finding) use them. A stored dashboard's widget gets its
+  link from the server (`drillHref` in
+  `internal/app/dashboard/widgets/compute.go`), built from the widget's own
+  filter; a filter the findings list cannot express exactly gives no link
+  rather than a link to a wider list.
 - A 403 on organization-only figures (`/dashboard/program-metrics`,
   `/ctem-cycles/metrics/trend`) carries
   `details.any_of = ["dashboards:org:view", "dashboards:org:manage"]`. The web
@@ -688,8 +688,17 @@ widget kit's frame, with its own error boundary.
 - **Landing**: the dashboard the viewer last chose (kept in their browser
   while it still exists and they can still read it), else their own default,
   else the organization default, else the first organization dashboard, else
-  their first own dashboard. A viewer with no stored dashboard sees the
-  built-in overview.
+  their first own dashboard. A person with no dashboard at all (none of their
+  own, none from the organization) gets a personal copy of the Overview
+  template, created once and computed for their own access, with a hint to
+  customize it or choose another template.
+- **Templates** are typed widget configs in
+  `web/src/features/dashboards/templates.json`: Overview, Executive,
+  Vulnerability program, Triage. `/dashboards` copies one into a personal
+  dashboard ("Use template"); the copy is a stored dashboard like any other.
+  `api/pkg/domain/dashboard/templates_test.go` parses every template widget
+  with the server's spec validation, so a template is never refused on save.
+  Names and descriptions are in the `dashboards` i18n namespace.
 - **Switcher**: one menu with "Organization" (shown only with
   `dashboards:org:view` or `dashboards:org:manage`; without them the list is
   never requested) and "Mine", search above eight entries, New and Manage.
