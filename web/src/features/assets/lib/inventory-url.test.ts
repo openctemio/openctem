@@ -128,3 +128,18 @@ describe('typed inventory filters', () => {
     expect(togglePropertyFilter(on, 'is_virtual', 'true').propertiesFilter).toBeUndefined()
   })
 })
+
+describe('coverage filter', () => {
+  it('reads and writes coverage=uncovered (the dashboard Discovery link) and drops other values', () => {
+    const f = parseInventoryFilters(
+      new URLSearchParams('coverage=uncovered&program_assets=exclude')
+    )
+    expect(f.coverage).toBe('uncovered')
+    expect(f.programAssets).toBe('exclude')
+    expect(serializeInventoryFilters(f).get('coverage')).toBe('uncovered')
+    expect(countActiveFilters(f)).toBeGreaterThanOrEqual(1)
+    expect(
+      parseInventoryFilters(new URLSearchParams('coverage=everything')).coverage
+    ).toBeUndefined()
+  })
+})

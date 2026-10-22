@@ -19,7 +19,15 @@ export const WIDGET_SPEC_VERSION = 2
 
 export type WidgetKind = 'metric' | 'note'
 export type ResultShape =
-  'scalar' | 'ratio' | 'duration' | 'category' | 'time_series' | 'matrix' | 'items'
+  | 'scalar'
+  | 'ratio'
+  | 'duration'
+  | 'category'
+  | 'time_series'
+  | 'matrix'
+  | 'items'
+  | 'stages'
+  | 'paths'
 export type VizType =
   | 'stat'
   | 'progress'
@@ -33,6 +41,8 @@ export type VizType =
   | 'list'
   | 'donut'
   | 'note'
+  | 'loop'
+  | 'paths'
 export type Dimension =
   | 'severity'
   | 'priority_class'
