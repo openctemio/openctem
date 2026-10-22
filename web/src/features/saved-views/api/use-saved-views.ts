@@ -45,11 +45,6 @@ export interface SaveViewInput {
   columns?: string[]
   /** The row density the list showed (saved with the view). */
   density?: string
-  /**
-   * Share with the whole organization. Needs `findings:views:share`, which the
-   * Share option is gated on; the API accepts the field once it ships org views.
-   */
-  org?: boolean
 }
 
 export const savedViewsKey = (page: SavedViewPage) => `/api/v1/views?page=${page}`

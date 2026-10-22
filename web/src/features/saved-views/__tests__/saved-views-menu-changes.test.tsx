@@ -196,31 +196,35 @@ describe('the menu of a view with unsaved changes', () => {
   })
 })
 
-describe('sharing with the organization', () => {
-  async function openSave(props: Partial<React.ComponentProps<typeof SavedViewsMenu>>) {
-    menu({ activeId: undefined, changes: undefined, ...props })
+describe('sharing', () => {
+  async function openSave() {
+    menu({ activeId: undefined, changes: undefined })
     await userEvent.click(screen.getByRole('button', { name: 'Views' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /save current filters/i }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Visible to' }))
   }
 
-  it('is offered only with the sharing permission', async () => {
-    await openSave({ canShareOrg: false })
+  // Organization-wide views wait for the API that stores them; until then the
+  // menu offers only the viewer and their groups, and sends no org field.
+  it('offers only me and my groups, never the whole organization', async () => {
+    await openSave()
     expect(await screen.findByRole('option', { name: 'Only me' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Platform team' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Everyone in the organization' })).toBeNull()
+    expect(screen.queryByRole('option', { name: /organization/i })).toBeNull()
   })
 
-  it('is offered with it, and the request says so', async () => {
-    await openSave({ canShareOrg: true })
-    await userEvent.click(
-      await screen.findByRole('option', { name: 'Everyone in the organization' })
-    )
-    await userEvent.type(screen.getByLabelText('Name'), 'Org-wide')
+  it('a saved view carries a query, never rows or an org flag', async () => {
+    await openSave()
+    await userEvent.click(await screen.findByRole('option', { name: 'Platform team' }))
+    await userEvent.type(screen.getByLabelText('Name'), 'Team view')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(createSavedView).toHaveBeenCalled())
-    const body = vi.mocked(createSavedView).mock.calls[0][0]
-    expect(body.org).toBe(true)
-    expect(body.group_id).toBeUndefined()
+    const body = vi.mocked(createSavedView).mock.calls[0][0] as unknown as Record<string, unknown>
+    expect(body.group_id).toBe('g1')
+    expect(typeof body.query).toBe('string')
+    expect(Object.keys(body).sort()).toEqual(expect.arrayContaining(['name', 'page', 'query']))
+    for (const k of Object.keys(body)) {
+      expect(['page', 'name', 'query', 'group_id', 'group_by', 'columns', 'density']).toContain(k)
+    }
   })
 })

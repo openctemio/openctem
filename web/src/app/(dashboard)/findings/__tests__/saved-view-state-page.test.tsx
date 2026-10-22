@@ -102,8 +102,9 @@ vi.mock('@/features/config/api/finding-source-api', () => ({
   groupFindingSourcesByCategory: () => [],
 }))
 
+const denied = new Set<string>()
 vi.mock('@/context/permission-provider', () => ({
-  usePermissions: () => ({ hasPermission: () => true }),
+  usePermissions: () => ({ hasPermission: (p: string) => !denied.has(p) }),
 }))
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: () => true,
@@ -147,6 +148,7 @@ function openAt(search: string) {
 const params = () => new URLSearchParams(window.location.search)
 
 beforeEach(() => {
+  denied.clear()
   listCalls.length = 0
   statsCalls.length = 0
   sourcesCalls.length = 0
@@ -283,6 +285,14 @@ describe('Findings unsaved-changes dot', () => {
 })
 
 describe('Findings Triage', () => {
+  it('is not offered to someone who may not change a status', () => {
+    denied.add('findings:status')
+    quickViewsState.views = [{ key: 'needs_triage', count: 86, params: 'status=new' }]
+    openAt('')
+    render(<FindingsPage />)
+    expect(screen.queryByRole('button', { name: /^Triage/ })).toBeNull()
+  })
+
   it('is the primary button, with the Needs triage count', () => {
     quickViewsState.views = [{ key: 'needs_triage', count: 86, params: 'status=new' }]
     openAt('')
