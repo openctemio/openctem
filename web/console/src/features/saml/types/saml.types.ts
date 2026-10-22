@@ -7,6 +7,8 @@ export interface SamlConfig {
   default_role: string
   auto_provision: boolean
   enabled: boolean
+  /** When the stored IdP certificate expires (RFC 3339); read-only. */
+  certificate_not_after?: string
 }
 
 /** A blank config for the "not configured yet" form state. */

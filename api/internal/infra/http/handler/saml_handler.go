@@ -277,10 +277,13 @@ type samlConfigView struct {
 	DefaultRole    string   `json:"default_role"`
 	AutoProvision  bool     `json:"auto_provision"`
 	Enabled        bool     `json:"enabled"`
+	// CertificateNotAfter is when the IdP certificate expires (RFC 3339);
+	// empty when it does not parse.
+	CertificateNotAfter string `json:"certificate_not_after,omitempty"`
 }
 
 func toSAMLConfigView(p *samldom.SAMLProvider) samlConfigView {
-	return samlConfigView{
+	v := samlConfigView{
 		IDPEntityID:    p.IDPEntityID(),
 		IDPSSOURL:      p.IDPSSOURL(),
 		IDPCertificate: p.IDPCertificate(),
@@ -289,6 +292,10 @@ func toSAMLConfigView(p *samldom.SAMLProvider) samlConfigView {
 		AutoProvision:  p.AutoProvision(),
 		Enabled:        p.Enabled(),
 	}
+	if na := auth.CertificateNotAfter(p.IDPCertificate()); !na.IsZero() {
+		v.CertificateNotAfter = na.UTC().Format(time.RFC3339)
+	}
+	return v
 }
 
 // GetConfig handles GET /api/v1/settings/saml (JWT admin).
