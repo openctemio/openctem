@@ -708,3 +708,41 @@ func TestRetestDB_CanRetest(t *testing.T) {
 		t.Fatalf("CanRetest recorded %d retests", n)
 	}
 }
+
+// Availability names why a retest would be refused, so the verification plan
+// can say it instead of hiding the button.
+func TestRetestDB_AvailabilityReasons(t *testing.T) {
+	fx := newFixture(t)
+	ctx := context.Background()
+	nuclei := fx.newFinding(fx.asset, "confirmed", "tpl-avail")
+	fp := fx.newFinding(fx.asset, "false_positive", "tpl-avail-fp")
+	secret := fx.newFinding(fx.asset, "confirmed", "tpl-avail-secret")
+	fx.exec(`UPDATE findings SET finding_type = 'secret' WHERE id = $1`, secret.String())
+	noRule := fx.newFinding(fx.asset, "confirmed", "tpl-avail-norule")
+	fx.exec(`UPDATE findings SET rule_id = '' WHERE id = $1`, noRule.String())
+	destructive := fx.newFinding(fx.asset, "confirmed", "apache-dos-check")
+
+	cases := []struct {
+		name   string
+		svc    *retestapp.Service
+		id     shared.ID
+		ok     bool
+		reason string
+	}{
+		{"retestable", fx.service(), nuclei, true, ""},
+		{"no sensor online", fx.serviceWith(sensorsOnline(false)), nuclei, false, retestapp.ReasonNoSensor},
+		{"false positive", fx.service(), fp, false, retestapp.ReasonStatusNotEligible},
+		{"secret", fx.service(), secret, false, retestapp.ReasonSecretNeedsRotation},
+		{"no rule", fx.service(), noRule, false, retestapp.ReasonNoToolRule},
+		{"destructive template", fx.service(), destructive, false, retestapp.ReasonTemplateNotRerun},
+	}
+	for _, c := range cases {
+		ok, reason, err := c.svc.Availability(ctx, fx.tenant, c.id)
+		if err != nil || ok != c.ok || reason != c.reason {
+			t.Errorf("%s: Availability = %v %q %v, want %v %q", c.name, ok, reason, err, c.ok, c.reason)
+		}
+	}
+	if _, _, err := fx.service().Availability(ctx, shared.NewID(), nuclei); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant: err = %v, want not found", err)
+	}
+}

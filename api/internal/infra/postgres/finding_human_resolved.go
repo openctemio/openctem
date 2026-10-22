@@ -13,7 +13,9 @@ import (
 // whose finding is closed as fixed (resolved or verified) by a person: any
 // resolution method except scan_verified, which only auto-resolve sets. These
 // are the findings AutoReopenByFingerprintsBatch would reopen that a sensor
-// report without a command covering their asset must leave closed
+// report without a command covering their asset must leave closed. A closure
+// recorded as mitigated is left out: detection never reopens it, so it needs
+// no guard.
 // (docs/rfcs/RFC-040-platform-sensor-mutual-distrust.md §5.3).
 func (r *FindingRepository) HumanResolvedFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error) {
 	out := make(map[string]bool)
@@ -26,7 +28,7 @@ func (r *FindingRepository) HumanResolvedFingerprints(ctx context.Context, tenan
 		WHERE tenant_id = $1
 			AND fingerprint = ANY($2)
 			AND status = 'resolved'
-			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
+			AND closure_reason IS DISTINCT FROM 'mitigated'
 			AND verification IS DISTINCT FROM 'covered_scan'`,
 		tenantID.String(), pq.Array(fingerprints))
 	if err != nil {

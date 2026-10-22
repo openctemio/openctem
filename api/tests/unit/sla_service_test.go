@@ -18,16 +18,15 @@ import (
 // =============================================================================
 
 type mockSLARepo struct {
-	policies   map[string]*sladom.Policy
-	createErr  error
-	getByIDErr error
-	getByAsset error
-	getDefault error
-	updateErr  error
-	deleteErr  error
-	listErr    error
-	existsErr  error
-	existsVal  bool
+	policies         map[string]*sladom.Policy
+	createErr        error
+	getByIDErr       error
+	getByAsset       error
+	getDefault       error
+	updateErr        error
+	deleteErr        error
+	listErr          error
+	makeDefaultCalls int
 }
 
 func newMockSLARepo() *mockSLARepo {
@@ -81,7 +80,7 @@ func (m *mockSLARepo) GetTenantDefault(_ context.Context, tenantID shared.ID) (*
 		return nil, m.getDefault
 	}
 	for _, p := range m.policies {
-		if p.TenantID() == tenantID && p.IsDefault() {
+		if p.TenantID() == tenantID && p.IsDefault() && p.IsActive() {
 			return p, nil
 		}
 	}
@@ -120,19 +119,17 @@ func (m *mockSLARepo) ListByTenant(_ context.Context, tenantID shared.ID) ([]*sl
 	return result, nil
 }
 
-func (m *mockSLARepo) ExistsByAsset(_ context.Context, _ shared.ID) (bool, error) {
-	if m.existsErr != nil {
-		return false, m.existsErr
+func (m *mockSLARepo) UpdateMakingDefault(_ context.Context, policy *sladom.Policy) error {
+	if m.updateErr != nil {
+		return m.updateErr
 	}
-	return m.existsVal, nil
-}
-
-func (m *mockSLARepo) UnsetTenantDefaults(_ context.Context, tenantID, exceptID shared.ID) error {
+	m.makeDefaultCalls++
 	for _, p := range m.policies {
-		if p.TenantID() == tenantID && p.AssetID() == nil && p.IsDefault() && p.ID() != exceptID {
+		if p.TenantID() == policy.TenantID() && p.AssetID() == nil && p.IsDefault() && p.ID() != policy.ID() {
 			p.SetDefault(false)
 		}
 	}
+	m.policies[policy.ID().String()] = policy
 	return nil
 }
 
@@ -218,13 +215,13 @@ func TestCreateSLAPolicy_Success(t *testing.T) {
 	}
 }
 
-func TestCreateSLAPolicy_SingleDefaultEnforced(t *testing.T) {
+// A create never replaces the tenant default: only the first tenant-wide
+// policy may become the default.
+func TestCreateSLAPolicy_DoesNotReplaceDefault(t *testing.T) {
 	repo := newMockSLARepo()
 	svc := newTestSLAService(repo)
-
 	tenantID := shared.NewID()
 
-	// First default policy.
 	in1 := validSLACreateInput(tenantID.String())
 	in1.Name = "Default A"
 	in1.IsDefault = true
@@ -232,8 +229,10 @@ func TestCreateSLAPolicy_SingleDefaultEnforced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create p1: %v", err)
 	}
+	if !p1.IsDefault() {
+		t.Fatal("the tenant's first policy asking for default should become it")
+	}
 
-	// Second default policy for the same tenant must demote the first.
 	in2 := validSLACreateInput(tenantID.String())
 	in2.Name = "Default B"
 	in2.IsDefault = true
@@ -241,21 +240,113 @@ func TestCreateSLAPolicy_SingleDefaultEnforced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create p2: %v", err)
 	}
+	if p2.IsDefault() {
+		t.Error("a create must not take the default from an existing one")
+	}
+	if !repo.policies[p1.ID().String()].IsDefault() {
+		t.Error("existing default was demoted by a create")
+	}
+	if repo.makeDefaultCalls != 0 {
+		t.Error("create must not swap defaults")
+	}
 
-	defaults := 0
-	for _, p := range repo.policies {
-		if p.IsDefault() {
-			defaults++
+	// Without asking, no default either; an asset policy is never the default.
+	in3 := validSLACreateInput(shared.NewID().String())
+	if p3, _ := svc.CreateSLAPolicy(context.Background(), in3); p3 == nil || p3.IsDefault() {
+		t.Error("create without is_default must not be default")
+	}
+	in4 := validSLACreateInput(shared.NewID().String())
+	in4.IsDefault = true
+	in4.AssetID = shared.NewID().String()
+	if p4, err := svc.CreateSLAPolicy(context.Background(), in4); err != nil || p4.IsDefault() {
+		t.Errorf("asset policy must not be default: %v", err)
+	}
+}
+
+func TestCreateSLAPolicy_DefaultIsPerTenant(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+	a, b := shared.NewID(), shared.NewID()
+	for _, tn := range []shared.ID{a, b} {
+		in := validSLACreateInput(tn.String())
+		in.IsDefault = true
+		p, err := svc.CreateSLAPolicy(context.Background(), in)
+		if err != nil || !p.IsDefault() {
+			t.Fatalf("tenant %s first policy should be default (err=%v)", tn, err)
 		}
 	}
-	if defaults != 1 {
-		t.Fatalf("expected exactly 1 default policy, got %d", defaults)
+}
+
+func TestUpdateSLAPolicy_MakeDefaultSwapsInOneCall(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+	tenantID, other := shared.NewID(), shared.NewID()
+	old := makeTestPolicy(tenantID, "Old", true)
+	next := makeTestPolicy(tenantID, "Next", false)
+	foreign := makeTestPolicy(other, "Foreign default", true)
+	for _, p := range []*sladom.Policy{old, next, foreign} {
+		repo.policies[p.ID().String()] = p
 	}
-	if repo.policies[p1.ID().String()].IsDefault() {
-		t.Error("expected first policy to be demoted from default")
+
+	got, err := svc.UpdateSLAPolicy(context.Background(), next.ID().String(), tenantID.String(), sla.UpdatePolicyInput{IsDefault: slaBoolPtr(true)})
+	if err != nil {
+		t.Fatalf("make default: %v", err)
 	}
-	if !repo.policies[p2.ID().String()].IsDefault() {
-		t.Error("expected newest policy to remain default")
+	if !got.IsDefault() || old.IsDefault() {
+		t.Fatalf("default not swapped: next=%v old=%v", got.IsDefault(), old.IsDefault())
+	}
+	if repo.makeDefaultCalls != 1 {
+		t.Errorf("swap must go through the transactional repo call once, got %d", repo.makeDefaultCalls)
+	}
+	if !foreign.IsDefault() {
+		t.Error("another tenant's default was touched")
+	}
+}
+
+func TestUpdateSLAPolicy_MakeDefaultRules(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+	tenantID := shared.NewID()
+	inactive := sladom.Reconstitute(shared.NewID(), tenantID, nil, "Inactive", "", false,
+		2, 15, 30, 60, 90, 80, false, nil, false, time.Now().UTC(), time.Now().UTC())
+	assetID := shared.NewID()
+	assetPol := makeTestPolicyWithAsset(tenantID, assetID, "Asset")
+	repo.policies[inactive.ID().String()] = inactive
+	repo.policies[assetPol.ID().String()] = assetPol
+
+	_, err := svc.UpdateSLAPolicy(context.Background(), inactive.ID().String(), tenantID.String(), sla.UpdatePolicyInput{IsDefault: slaBoolPtr(true)})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("inactive policy as default: want validation error, got %v", err)
+	}
+	_, err = svc.UpdateSLAPolicy(context.Background(), assetPol.ID().String(), tenantID.String(), sla.UpdatePolicyInput{IsDefault: slaBoolPtr(true)})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("asset policy as default: want validation error, got %v", err)
+	}
+	// Activating and defaulting in one request is allowed.
+	if _, err := svc.UpdateSLAPolicy(context.Background(), inactive.ID().String(), tenantID.String(),
+		sla.UpdatePolicyInput{IsDefault: slaBoolPtr(true), IsActive: slaBoolPtr(true)}); err != nil {
+		t.Errorf("activate+default: %v", err)
+	}
+}
+
+func TestUpdateSLAPolicy_DefaultCannotBeDeactivatedOrUnset(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+	tenantID := shared.NewID()
+	def := makeTestPolicy(tenantID, "Default", true)
+	repo.policies[def.ID().String()] = def
+
+	for name, in := range map[string]sla.UpdatePolicyInput{
+		"deactivate": {IsActive: slaBoolPtr(false)},
+		"unset":      {IsDefault: slaBoolPtr(false)},
+	} {
+		_, err := svc.UpdateSLAPolicy(context.Background(), def.ID().String(), tenantID.String(), in)
+		if !errors.Is(err, sladom.ErrDefaultProtected) {
+			t.Errorf("%s: want ErrDefaultProtected, got %v", name, err)
+		}
+	}
+	if !def.IsDefault() || !def.IsActive() {
+		t.Error("default policy was modified")
 	}
 }
 
@@ -922,8 +1013,8 @@ func TestDeleteSLAPolicy_CannotDeleteDefaultPolicy(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when deleting default policy")
 	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+	if !errors.Is(err, sladom.ErrDefaultProtected) {
+		t.Errorf("expected ErrDefaultProtected, got %v", err)
 	}
 	// Policy should not be deleted
 	if len(repo.policies) != 1 {
@@ -980,265 +1071,6 @@ func TestListTenantPolicies_RepoError(t *testing.T) {
 	_, err := svc.ListTenantPolicies(context.Background(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
-	}
-}
-
-// =============================================================================
-// CalculateSLADeadline Tests
-// =============================================================================
-
-func TestCalculateSLADeadline_WithAssetPolicy(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	assetID := shared.NewID()
-	policy := makeTestPolicyWithAsset(tenantID, assetID, "Asset Policy")
-	repo.policies[policy.ID().String()] = policy
-
-	detectedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	deadline, err := svc.CalculateSLADeadline(context.Background(), tenantID.String(), assetID.String(), vulnerability.SeverityCritical, detectedAt)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// Asset policy has criticalDays=1
-	expected := detectedAt.Add(1 * 24 * time.Hour)
-	if !deadline.Equal(expected) {
-		t.Errorf("expected deadline %v, got %v", expected, deadline)
-	}
-}
-
-func TestCalculateSLADeadline_WithTenantDefault(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	defaultPolicy := makeTestPolicy(tenantID, "Default", true)
-	repo.policies[defaultPolicy.ID().String()] = defaultPolicy
-
-	detectedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	deadline, err := svc.CalculateSLADeadline(context.Background(), tenantID.String(), "", vulnerability.SeverityHigh, detectedAt)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// Default policy has highDays=15
-	expected := detectedAt.Add(15 * 24 * time.Hour)
-	if !deadline.Equal(expected) {
-		t.Errorf("expected deadline %v, got %v", expected, deadline)
-	}
-}
-
-func TestCalculateSLADeadline_FallbackToDefaults(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	detectedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	// No policy in repo, should fall back to sladom.DefaultSLADays
-	deadline, err := svc.CalculateSLADeadline(context.Background(), tenantID.String(), "", vulnerability.SeverityMedium, detectedAt)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	expected := detectedAt.Add(30 * 24 * time.Hour) // DefaultSLADays["medium"] = 30
-	if !deadline.Equal(expected) {
-		t.Errorf("expected deadline %v, got %v", expected, deadline)
-	}
-}
-
-func TestCalculateSLADeadline_DifferentSeverities(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	detectedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	tests := []struct {
-		severity vulnerability.Severity
-		days     int
-	}{
-		{vulnerability.SeverityCritical, 2},
-		{vulnerability.SeverityHigh, 15},
-		{vulnerability.SeverityMedium, 30},
-		{vulnerability.SeverityLow, 60},
-		{vulnerability.SeverityInfo, 0}, // informational: no SLA by default
-		{vulnerability.SeverityNone, 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.severity.String(), func(t *testing.T) {
-			deadline, err := svc.CalculateSLADeadline(context.Background(), tenantID.String(), "", tt.severity, detectedAt)
-			if err != nil {
-				t.Fatalf("expected no error, got %v", err)
-			}
-			if tt.days == 0 {
-				if !deadline.IsZero() {
-					t.Errorf("expected no deadline, got %v", deadline)
-				}
-				return
-			}
-			expected := detectedAt.Add(time.Duration(tt.days) * 24 * time.Hour)
-			if !deadline.Equal(expected) {
-				t.Errorf("expected deadline %v, got %v", expected, deadline)
-			}
-		})
-	}
-}
-
-// =============================================================================
-// CheckSLACompliance Tests
-// =============================================================================
-
-func TestCheckSLACompliance_OnTrack(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	defaultPolicy := makeTestPolicy(tenantID, "Default", true)
-	repo.policies[defaultPolicy.ID().String()] = defaultPolicy
-
-	// Detected very recently, should be on track
-	detectedAt := time.Now().Add(-1 * time.Hour)
-
-	result, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityCritical, detectedAt, nil)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != "on_track" {
-		t.Errorf("expected status 'on_track', got '%s'", result.Status)
-	}
-	if !result.IsCompliant {
-		t.Error("expected IsCompliant to be true")
-	}
-}
-
-func TestCheckSLACompliance_Warning(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	defaultPolicy := makeTestPolicy(tenantID, "Default", true) // warningThresholdPct=80, criticalDays=2
-	repo.policies[defaultPolicy.ID().String()] = defaultPolicy
-
-	// For critical (2 days), 80% warning = 1.6 days elapsed
-	// Detect ~1.8 days ago to be in warning territory
-	detectedAt := time.Now().Add(-43 * time.Hour) // ~1.79 days
-
-	result, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityCritical, detectedAt, nil)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != "warning" {
-		t.Errorf("expected status 'warning', got '%s'", result.Status)
-	}
-	if !result.IsCompliant {
-		t.Error("expected IsCompliant to be true during warning")
-	}
-}
-
-func TestCheckSLACompliance_Overdue(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	now := time.Now().UTC()
-	// Create policy with escalation enabled
-	existing := sladom.Reconstitute(
-		shared.NewID(), tenantID, nil, "Default", "", true,
-		2, 15, 30, 60, 90,
-		80, true, map[string]any{"notify": true}, true,
-		now, now,
-	)
-	repo.policies[existing.ID().String()] = existing
-
-	// Detected 5 days ago, critical SLA is 2 days -> overdue
-	detectedAt := time.Now().Add(-5 * 24 * time.Hour)
-
-	result, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityCritical, detectedAt, nil)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != "overdue" {
-		t.Errorf("expected status 'overdue', got '%s'", result.Status)
-	}
-	if result.IsCompliant {
-		t.Error("expected IsCompliant to be false when overdue")
-	}
-	if !result.EscalationNeeded {
-		t.Error("expected EscalationNeeded to be true when overdue with escalation enabled")
-	}
-}
-
-func TestCheckSLACompliance_Exceeded(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	defaultPolicy := makeTestPolicy(tenantID, "Default", true) // criticalDays=2
-	repo.policies[defaultPolicy.ID().String()] = defaultPolicy
-
-	// Detected 5 days ago, resolved 3 days ago (after 2-day SLA)
-	detectedAt := time.Now().Add(-5 * 24 * time.Hour)
-	resolvedAt := time.Now().Add(-2 * 24 * time.Hour) // resolved 3 days after detection
-
-	result, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityCritical, detectedAt, &resolvedAt)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != "exceeded" {
-		t.Errorf("expected status 'exceeded', got '%s'", result.Status)
-	}
-	if result.IsCompliant {
-		t.Error("expected IsCompliant to be false when exceeded")
-	}
-}
-
-func TestCheckSLACompliance_ResolvedBeforeDeadline(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-	defaultPolicy := makeTestPolicy(tenantID, "Default", true) // criticalDays=2
-	repo.policies[defaultPolicy.ID().String()] = defaultPolicy
-
-	// Detected 3 days ago, resolved 2.5 days ago (within 2-day SLA window)
-	detectedAt := time.Now().Add(-3 * 24 * time.Hour)
-	resolvedAt := detectedAt.Add(1 * 24 * time.Hour) // resolved 1 day after detection
-
-	result, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityCritical, detectedAt, &resolvedAt)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != "on_track" {
-		t.Errorf("expected status 'on_track', got '%s'", result.Status)
-	}
-	if !result.IsCompliant {
-		t.Error("expected IsCompliant to be true when resolved before deadline")
-	}
-}
-
-func TestCheckSLACompliance_NoPolicyUsesDefaults(t *testing.T) {
-	repo := newMockSLARepo()
-	svc := newTestSLAService(repo)
-
-	tenantID := shared.NewID()
-
-	// No policies in repo
-	detectedAt := time.Now().Add(-1 * time.Hour)
-
-	result, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityLow, detectedAt, nil)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	// DefaultSLADays["low"] = 60 days, detected 1 hour ago -> on_track
-	if result.Status != "on_track" {
-		t.Errorf("expected status 'on_track', got '%s'", result.Status)
-	}
-	if result.DaysRemaining < 59 {
-		t.Errorf("expected ~60 days remaining, got %d", result.DaysRemaining)
 	}
 }
 
@@ -1317,12 +1149,6 @@ func TestCalculateSLADeadlineForPriority_InformationalNoSLA(t *testing.T) {
 	if d, _ := svc.CalculateSLADeadlineForPriority(context.Background(), tenantID.String(), "", "P3", vulnerability.SeverityLow, detectedAt); d.IsZero() {
 		t.Error("low finding got no deadline")
 	}
-
-	// Compliance of a no-SLA finding is not_applicable, never overdue.
-	res, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityInfo, detectedAt.AddDate(-1, 0, 0), nil)
-	if err != nil || res.Status != "not_applicable" || !res.IsCompliant || res.EscalationNeeded {
-		t.Errorf("info compliance = %+v err=%v, want not_applicable", res, err)
-	}
 }
 
 func TestCreateSLAPolicy_InfoNoSLAAccepted(t *testing.T) {
@@ -1340,5 +1166,15 @@ func TestCreateSLAPolicy_InfoNoSLAAccepted(t *testing.T) {
 	input.InfoDays = 30
 	if _, err := svc.CreateSLAPolicy(context.Background(), input); err == nil {
 		t.Error("info days 30 < low days 60 accepted")
+	}
+}
+
+func TestCreateSLAPolicy_RejectsOutOfRangeWindows(t *testing.T) {
+	svc := newTestSLAService(newMockSLARepo())
+	in := validSLACreateInput(shared.NewID().String())
+	in.LowDays = 400 // beyond the 365-day maximum
+	in.InfoDays = 0
+	if _, err := svc.CreateSLAPolicy(context.Background(), in); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("400-day window accepted: %v", err)
 	}
 }

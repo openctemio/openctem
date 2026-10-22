@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
@@ -172,6 +173,49 @@ func (r *DashboardSnapshotRepository) TakeRefreshBudget(ctx context.Context, ten
 		return false, 0, fmt.Errorf("record refresh: %w", err)
 	}
 	return true, 0, tx.Commit()
+}
+
+// RefundRefreshBudget implements dashboard.SnapshotStore. The per-person
+// budget allows one request per dashboard within RefreshPerUserEvery, so
+// the newest row in that window is the one to give back.
+func (r *DashboardSnapshotRepository) RefundRefreshBudget(ctx context.Context, tenantID, dashboardID, userID shared.ID) error {
+	if _, err := r.db.ExecContext(ctx, `
+		DELETE FROM dash_refresh_requests
+		WHERE ctid = (SELECT ctid FROM dash_refresh_requests
+		              WHERE tenant_id = $1 AND dashboard_id = $2 AND user_id = $3
+		                AND requested_at > now() - $4::interval
+		              ORDER BY requested_at DESC LIMIT 1)`,
+		tenantID.String(), dashboardID.String(), userID.String(),
+		fmt.Sprintf("%d seconds", int(dashboard.RefreshPerUserEvery.Seconds()))); err != nil {
+		return fmt.Errorf("refund refresh budget: %w", err)
+	}
+	return nil
+}
+
+// TryRefreshLock implements dashboard.SnapshotStore with a
+// transaction-level advisory lock (pg_try_advisory_xact_lock) held by an
+// open transaction until release: a crashed request or a broken connection
+// ends the transaction and so frees the lock, and a lock can never stay
+// behind on a pooled connection.
+func (r *DashboardSnapshotRepository) TryRefreshLock(ctx context.Context, tenantID, dashboardID shared.ID) (func(), bool, error) {
+	// The lock outlives the request context only until release; a canceled
+	// request must still be able to roll back.
+	tx, err := r.db.BeginTx(context.WithoutCancel(ctx), nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("begin refresh lock: %w", err)
+	}
+	var ok bool
+	if err := tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended('dash_refresh_run:' || $1 || ':' || $2, 0))`,
+		tenantID.String(), dashboardID.String()).Scan(&ok); err != nil {
+		_ = tx.Rollback()
+		return nil, false, fmt.Errorf("take refresh lock: %w", err)
+	}
+	if !ok {
+		_ = tx.Rollback()
+		return nil, false, nil
+	}
+	var once sync.Once
+	return func() { once.Do(func() { _ = tx.Rollback() }) }, true, nil
 }
 
 // ScopeFingerprint implements dashboard.SnapshotStore. The key holds hashes

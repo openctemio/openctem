@@ -22,7 +22,7 @@ already-wired evidence pipeline, with the lowest-risk first cut.
 ## Design
 
 - **Producer endpoint** `POST /api/v1/findings/{id}/validate` (JWT,
-  `findings:write`) → `RunService.ValidateFinding`: resolve finding → asset →
+  `findings:verify`) → `RunService.ValidateFinding`: resolve finding → asset →
   `Target`, pick an executor kind via `DefaultSelector` against the fleet's
   advertised kinds, build a `ValidationJob`, dispatch. Returns `202 {command_id}`.
 - **Transport = tenant command.** `CommandDispatcher` marshals the job into a

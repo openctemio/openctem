@@ -11,7 +11,7 @@
  * Ctrl/Cmd+Shift+Z undo and redo. Every change is announced.
  */
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -116,8 +116,9 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
   const { t } = useTranslation()
   const cols = normalizeColumns(dashboard.columns)
 
-  // Each stored widget keeps its stored figures through moves.
-  const initial = useMemo(() => {
+  // Each stored widget keeps its stored figures through moves. Computed once
+  // per editing session: a lazy state initializer runs only on first render.
+  const [initial] = useState(() => {
     const values = new Map<string, WidgetValue>()
     const layout = (dashboard.layout ?? []).map((w, i) => {
       const uid = nextUid()
@@ -126,9 +127,7 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
       return { ...w, uid }
     })
     return { layout, values }
-    // Computed once per editing session.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  })
 
   const [history, dispatch] = useReducer(reducer, initial.layout, initHistory)
   const layout = history.present
