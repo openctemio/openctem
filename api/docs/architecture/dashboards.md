@@ -145,7 +145,9 @@ a manager leaves.
   freshness, actions); `dashboard-view.tsx` and `widget-view.tsx` — the one renderer
   (a frame and error boundary per widget); `api/widget-adapter.ts` — widget results to
   kit shapes and states; `landing.ts` — which dashboard `/` opens; `metrics.ts` — names,
-  definitions and units of the catalog metrics (i18n namespace `dashboards`)
+  definitions and units of the catalog metrics (i18n namespace `dashboards`);
+  `editor/` — `dashboard-editor.tsx` (grid, keyboard, undo), `widget-gallery.tsx`,
+  `widget-config-panel.tsx`, `history.ts`, `layout-ops.ts`, `spec-ops.ts`
 - `internal/app/dashboard/widgets/` — widget results, scopes, limits;
   `snapshot.go` (snapshots, Refresh now, refresher);
   `internal/infra/postgres/dashboard_snapshot_repository.go`,
@@ -670,6 +672,28 @@ widget kit's frame, with its own error boundary.
   a manager of an organization dashboard (the server checks both).
 - **Actions**: Customize (personal), Duplicate to mine (organization), Set as
   default (personal; organization for managers), Delete (personal).
+- **Customize** (owner of a personal dashboard; `dashboards:org:manage` for
+  an organization dashboard, saved through `PUT /organization/dashboards/{id}`):
+  - *Add widget* opens the gallery: the catalog by goal (Exposure,
+    Remediation and SLA, Threat intel) plus Advanced (Note), searchable by
+    name and definition. Each card shows a live preview from
+    `POST /me/dashboards/widget-preview`, in the editor's own scope; at most
+    12 previews load per opening, lazily as cards scroll into view, and the
+    server limits previews per person (burst 24, then one every 2 s).
+  - The config panel edits metric, filters (chips per dimension value; KEV
+    and reachable as any / yes / no), group-by, time range and comparison
+    (not for lists), the visualization (only those valid for the shape, the
+    default marked; a change of group-by keeps a visualization that still
+    fits), a target for single figures, and the title (empty: the
+    translated name). A live preview (debounced) sits on top.
+  - The grid: drag by the handle, or focus a widget and use the arrow keys to
+    move it, Shift and the arrow keys to resize it (whole columns, 1 to 6
+    rows), Enter to configure, D to duplicate and Delete to remove (with
+    Undo). Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo within the session;
+    every change is announced to screen readers. Save stores the layout;
+    Cancel drops the session.
+  - Moved widgets keep their stored figures; new or changed widgets show
+    their preview, or "Figures appear after you save".
 - Widget states map from the server: `building` → no data yet, `not_measured`
   and `unsupported` → not measured with the reason, an empty list or series →
   nothing to show, a result without its payload → error; a null figure is
