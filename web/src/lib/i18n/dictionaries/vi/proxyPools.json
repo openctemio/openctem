@@ -37,7 +37,7 @@
   "proxyPools.noDelete": "Bạn cần quyền sensors:egress:delete để xóa pool",
   "proxyPools.noWrite": "Bạn cần quyền sensors:egress:write để thay đổi pool",
   "proxyPools.page.description": "Gửi lưu lượng quét từ sensor của bạn qua các proxy do bạn quản lý. Endpoint được kiểm tra sức khỏe từ lưu lượng quét thật; proxy lỗi sẽ bị tạm gạt ra và thử lại sau. Lượt quét không bao giờ quay về kết nối trực tiếp khi có pool áp dụng.",
-  "proxyPools.paste.help": "Giao thức: http, https, socks5. Thứ tự là mức ưu tiên. Thông tin đăng nhập được mã hóa và chỉ ghi: sau khi lưu chúng hiển thị là ••••. Giữ •••• để giữ mật khẩu đã lưu, nhập mới để thay, bỏ đi nếu không có.",
+  "proxyPools.paste.help": "Giao thức: http, https, socks5, socks5h (socks5h phân giải tên miền tại proxy). Thứ tự là mức ưu tiên. Thông tin đăng nhập được mã hóa và chỉ ghi: sau khi lưu chúng hiển thị là ••••. Giữ •••• để giữ mật khẩu đã lưu, nhập mới để thay, bỏ đi nếu không có.",
   "proxyPools.paste.label": "Dán proxy, mỗi dòng một proxy",
   "proxyPools.quarantinedUntil": "đến {time}",
   "proxyPools.readOnly": "Bạn xem được proxy nhưng không thay đổi được: cần quyền sensors:egress:write.",

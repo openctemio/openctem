@@ -60,7 +60,7 @@ export function PasteListField({
       <p id={`${id}-help`} className="text-xs text-muted-foreground">
         {t(
           'proxyPools.paste.help',
-          'Schemes: http, https, socks5. Order is priority. Credentials are encrypted and write-only: they show as •••• after saving. Keep •••• to keep the stored password, type new ones to replace them, and leave them out for none.'
+          'Schemes: http, https, socks5, socks5h (socks5h resolves host names at the proxy). Order is priority. Credentials are encrypted and write-only: they show as •••• after saving. Keep •••• to keep the stored password, type new ones to replace them, and leave them out for none.'
         )}
       </p>
     </div>
