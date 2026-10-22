@@ -103,6 +103,19 @@ import {
   quickViewLabelKey,
   type QuickViewKey,
 } from '@/features/findings/lib/quick-views'
+import {
+  FilterBar,
+  InvalidFilterNotice,
+  invalidFilterParams,
+} from '@/features/findings/filters/filter-bar'
+import {
+  CONTEXT_FILTER_PARAMS,
+  OWNED_FILTER_PARAMS,
+  useFindingFilterContract,
+  withOwnedFields,
+} from '@/features/findings/filters/contract'
+import { NON_FILTER_PARAMS, readFilters } from '@/features/findings/filters/model'
+import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
 import { findingsEmptyKind } from '@/features/findings/lib/empty-kind'
 import { FindingsEmptyState } from '@/features/findings/components/findings-empty-state'
 import {
@@ -517,7 +530,8 @@ function FindingsContent() {
     'acceptance_expires_at_lte',
     ''
   )
-  const pendingApprovalActive = pendingApprovalParam === 'true'
+  const pendingApprovalFilter =
+    pendingApprovalParam === 'true' ? true : pendingApprovalParam === 'false' ? false : undefined
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
   // The state lens (Open, the default · Fixed · Dispositioned · All). A saved
   // view carries its own status scope, so the default lens is not laid on top
@@ -753,6 +767,44 @@ function FindingsContent() {
   // "All" who picks a filter with only 2 pages would sit on an empty page.
   // Keyed on the filter *values*, so the first render (reading a shared link
   // with ?page=3) is not reset — only a later filter change is.
+  // Filters in the URL that the page does not draw itself (an EPSS floor, a
+  // port, a tag...). They go to the API as they are; the filter contract names
+  // them, so it is loaded when the URL holds one, or when the picker opens.
+  const unownedParams = useMemo(
+    () =>
+      Array.from(new Set(searchParams.keys())).filter(
+        (k) =>
+          !NON_FILTER_PARAMS.has(k) && !OWNED_FILTER_PARAMS.has(k) && !CONTEXT_FILTER_PARAMS.has(k)
+      ),
+    [searchParams]
+  )
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const {
+    contract: loadedContract,
+    isLoading: contractLoading,
+    error: contractError,
+  } = useFindingFilterContract(pickerOpen || unownedParams.length > 0)
+  const filterContract = useMemo(() => withOwnedFields(loadedContract), [loadedContract])
+  const unknownParams = useMemo(
+    () =>
+      loadedContract
+        ? readFilters(searchParams, filterContract, CONTEXT_FILTER_PARAMS).unknown
+        : [],
+    [loadedContract, filterContract, searchParams]
+  )
+  const extraParams = useMemo(() => {
+    const extra: Record<string, string> = {}
+    for (const k of unownedParams) {
+      // Once the contract is known, a param it does not know is shown as an
+      // unknown filter and kept out of the request, so the list still loads.
+      if (unknownParams.includes(k)) continue
+      const v = searchParams.get(k)
+      if (v) extra[k] = v
+    }
+    return extra
+  }, [unownedParams, unknownParams, searchParams])
+  const extraKey = JSON.stringify(extraParams)
+
   const filterKey = [
     assetIdFilter,
     scanIdFilter,
@@ -776,8 +828,9 @@ function FindingsContent() {
     branchOnlyActive,
     mineActive,
     slaFilter.join(),
-    pendingApprovalActive,
+    pendingApprovalParam,
     acceptanceExpiresParam,
+    extraKey,
     debouncedSearch,
     sortParam,
   ].join('|')
@@ -848,7 +901,8 @@ function FindingsContent() {
     if (branchOnlyActive) filters.branch_only = true
     if (mineActive) filters.assigned_to_me = true
     if (slaFilter.length > 0) filters.sla_statuses = slaFilter
-    if (pendingApprovalActive) filters.pending_approval = true
+    if (pendingApprovalFilter !== undefined) filters.pending_approval = pendingApprovalFilter
+    if (Object.keys(extraParams).length > 0) filters.extra = extraParams
     if (acceptanceExpiresParam) filters.acceptance_expires_at_lte = acceptanceExpiresParam
     return filters
   }, [
@@ -871,8 +925,9 @@ function FindingsContent() {
     branchOnlyActive,
     mineActive,
     slaFilter,
-    pendingApprovalActive,
+    pendingApprovalFilter,
     acceptanceExpiresParam,
+    extraParams,
     debouncedSearch,
     HIDDEN_STATUSES,
     pagination,
@@ -1565,6 +1620,12 @@ function FindingsContent() {
     setBranchOnlyFilter('false')
     setSlaFilter([])
     setSourceFilter([])
+    // Filters the page does not draw itself: every one of them goes.
+    if (unownedParams.length > 0) {
+      const next = new URLSearchParams(window.location.search)
+      for (const k of unownedParams) next.delete(k)
+      replaceUrlSearch(next)
+    }
     setMineFilter('false')
     setPendingApprovalParam('')
     setAcceptanceExpiresParam('')
@@ -1585,8 +1646,9 @@ function FindingsContent() {
     Number(kevActive) +
     Number(reachableActive) +
     Number(branchOnlyActive) +
-    Number(pendingApprovalActive) +
+    Number(pendingApprovalParam !== '') +
     Number(acceptanceExpiresParam !== '') +
+    unownedParams.length +
     slaFilter.length +
     sourceFilter.length
 
@@ -1936,6 +1998,24 @@ function FindingsContent() {
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   ) : undefined
 
+  const { views: savedViewList } = useSavedViews('findings', !!savedId)
+  const openView = savedViewList.find((v) => v.id === savedId)
+  const filterBar = (
+    <FilterBar
+      search={searchParams}
+      contract={filterContract}
+      pickerContract={loadedContract}
+      contractLoading={contractLoading}
+      contractFailed={!!contractError}
+      skip={CONTEXT_FILTER_PARAMS}
+      viewFilter={openView?.filter}
+      canReadAssets={hasPermission(Permission.AssetsRead)}
+      leading={contextChips}
+      onPickerOpenChange={setPickerOpen}
+      onSearchChange={replaceUrlSearch}
+    />
+  )
+
   const toolbarStart = filterSearch
 
   // Second row (the table toolbar): which rows and how they show. Saved views
@@ -2246,7 +2326,7 @@ function FindingsContent() {
                     setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
                   }
                   toolbarStart={toolbarStart}
-                  toolbarBelow={contextChips}
+                  toolbarBelow={filterBar}
                   toolbarEnd={toolbarEnd}
                   emptyDescription={
                     activeCount > 0
@@ -2258,7 +2338,7 @@ function FindingsContent() {
                   }
                 />
               ) : !findingsResponse && findingsLoading ? (
-                <FindingsTableSkeleton contextChips={contextChips} />
+                <FindingsTableSkeleton contextChips={filterBar} />
               ) : (
                 <>
                   <div
@@ -2277,7 +2357,7 @@ function FindingsContent() {
                     showSearch={false}
                     toolbarStart={toolbarStart}
                     toolbarEnd={toolbarEnd}
-                    toolbarBelow={contextChips}
+                    toolbarBelow={filterBar}
                     getRowId={(f) => f.id}
                     manualPagination
                     rowCount={total}
@@ -2309,7 +2389,17 @@ function FindingsContent() {
                       />
                     }
                     errorState={
-                      error && accessStateOf(error) !== 'no_access' ? (
+                      error && invalidFilterParams(error) ? (
+                        <InvalidFilterNotice
+                          params={invalidFilterParams(error) ?? []}
+                          onRemove={(names) => {
+                            const next = new URLSearchParams(window.location.search)
+                            for (const n of names) next.delete(n)
+                            next.delete('page')
+                            replaceUrlSearch(next)
+                          }}
+                        />
+                      ) : error && accessStateOf(error) !== 'no_access' ? (
                         <ErrorState
                           title={t('findings.list.errorTitle', 'findings')}
                           error={error}

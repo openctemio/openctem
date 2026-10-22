@@ -61,6 +61,28 @@ the dashboard owns the KPI tiles.
   was a metric card, is a button in the list's first row while something waits and the viewer can verify.
 - The first row names the view and its total. A URL that is no quick view reads "Custom view".
 
+## Filters
+
+Every active filter is a chip, then **Add filter** (shortcut `f`). Code: `src/features/findings/filters/`.
+
+- The page URL carries the API's own filter params (`severity`, `severity_not`, `epss_score_gte`...), so a
+  filter is a URL param and a chip is a reading of one. The facet panel and Add filter write the same params.
+- **Add filter** is generated from `GET /meta/filters/findings`: a searchable list grouped by Exploitation,
+  Finding, Asset and Work (anything the web has no group for lands in Other), then an editor typed by the field:
+  choices for an enum, an operator and a number, quick date ranges that look back for a seen date and ahead for
+  a deadline, Yes or No, "is empty", a member picker for people. A field the API adds appears with no web change
+  (its label falls back to the humanised field name until a translation is added).
+- The contract names only the fields the viewer may use. The picker also hides the asset-derived fields (asset
+  tag, criticality, group, owner) without `assets:read`. The API remains the authority.
+- A filter the page does not draw itself goes to the API as it is. The contract is fetched only when the picker
+  opens or the URL holds such a filter; a list that uses only page-owned filters loads with no extra request.
+- Chips from the open saved view come first, show a lock and have no remove button: switch or edit the view.
+  A view whose conditions are a tree shows one locked chip naming that.
+- A param no field knows is shown as an unknown filter with a remove button and is kept out of the request. If
+  the API refuses one (a 400 `INVALID_FILTER` naming the param) the list says "This link has a filter we do not
+  know" and offers to remove it, instead of a failed load.
+- Chip text is escaped, isolated text; a value from a link never becomes markup.
+
 ## Request budget
 
 A cold load of `/findings` sends at most 5 API requests: the session bootstrap, the support-access banner, one
