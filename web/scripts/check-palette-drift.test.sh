@@ -28,6 +28,7 @@ must_fail 'left stripe, width + colour' '<div className="rounded border border-l
 must_fail 'colour only on one side' "card: 'border-l-warning',"
 must_fail 'top stripe' '<div className="border-t-2 border-t-destructive" />'
 must_fail 'width plus all-sides colour' '<div className="border-l-4 border-primary" />'
+must_fail 'logical start stripe' "own && 'border-s-2 border-s-primary bg-primary/5'"
 must_pass 'neutral indent' '<div className="space-y-2 border-l-2 border-muted ps-3">'
 must_pass 'spinner' '<span className="animate-spin border-2 border-t-primary" />'
 must_pass 'annotated exception' '<div className="border-l-4 border-l-primary" /> {/* stripe-ok: wizard step rail */}'

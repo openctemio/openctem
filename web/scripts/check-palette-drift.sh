@@ -95,7 +95,7 @@ STRIPE_COLOUR="(primary|secondary|accent|destructive|warning|info|success|ring|s
 stripe_lines="$(printf '%s\n' "$added" \
   | grep -v 'stripe-ok:' \
   | grep -v 'animate-spin' \
-  | grep -E "\bborder-[lt]-${STRIPE_COLOUR}(/[0-9]+)?\b|\bborder-[lt]-[2-8]\b.*\bborder-${STRIPE_COLOUR}\b|\bborder-${STRIPE_COLOUR}\b.*\bborder-[lt]-[2-8]\b" \
+  | grep -E "\bborder-[ltse]-${STRIPE_COLOUR}(/[0-9]+)?\b|\bborder-[ltse]-[2-8]\b.*\bborder-${STRIPE_COLOUR}\b|\bborder-${STRIPE_COLOUR}\b.*\bborder-[ltse]-[2-8]\b" \
   | sed -E 's/^\+[[:space:]]*//' | cut -c1-160 || true)"
 stripe_fail=0
 if [[ -n "$stripe_lines" ]]; then
