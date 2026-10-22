@@ -1,6 +1,6 @@
 # RFC-009 — Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning
 
-> Status: **Proposed**; SCIM 9a–9c shipped with its admin UI (#198, #202, #203), SAML 9d–9e shipped (#204, #249: SP-initiated login + ACS; per-tenant SAML configuration now lives in the platform admin console, `/api/v1/admin/tenants/{tenantId}/sso/saml`, and changes wait for an organization owner's approval, #827); 9f (IdP-initiated login, SLO) not shipped (checked 2026-10-04). SCIM tokens expire (1 to 365 days, existing tokens 90 days after migration 003277) and rotate with a 24-hour overlap (2026-10-22; `docs/architecture/scim-provisioning.md`, "Token lifetime and rotation").
+> Status: **Proposed**; SCIM 9a–9c shipped with its admin UI (#198, #202, #203), SAML 9d–9e shipped (#204, #249: SP-initiated login + ACS; per-tenant SAML configuration now lives in the platform admin console, `/api/v1/admin/tenants/{tenantId}/sso/saml`, and changes wait for an organization owner's approval, #827); 9f (IdP-initiated login, SLO) not shipped (checked 2026-10-04). SCIM tokens expire (1 to 365 days, existing tokens 90 days after migration 003285) and rotate with a 24-hour overlap (2026-10-22; `docs/architecture/scim-provisioning.md`, "Token lifetime and rotation").
 > Adds enterprise identity to OpenCTEM beyond the current
 > OIDC/OAuth SSO (`internal/app/auth/sso.go`): inbound **SAML 2.0** login and
 > **SCIM 2.0** automated user provisioning/deprovisioning.
