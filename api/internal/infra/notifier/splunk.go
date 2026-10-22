@@ -156,14 +156,19 @@ func (c *SplunkClient) TestConnection(ctx context.Context) (*SendResult, error) 
 }
 
 // buildEvent maps a notification Message to a Splunk HEC envelope.
+// event_type is the event's catalog type, like the generic webhook's.
 func (c *SplunkClient) buildEvent(msg Message) splunkEvent {
+	eventType := msg.EventType
+	if eventType == "" {
+		eventType = TestEventType
+	}
 	return splunkEvent{
 		Time:       time.Now().UTC().Unix(),
 		Sourcetype: c.sourcetype,
 		Index:      c.index,
 		Source:     "openctem.io",
 		Event: splunkEventBody{
-			EventType: "notification",
+			EventType: eventType,
 			Title:     msg.Title,
 			Body:      msg.Body,
 			Severity:  msg.Severity,
