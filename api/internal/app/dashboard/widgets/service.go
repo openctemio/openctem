@@ -9,7 +9,10 @@
 //     dashboard service checked dashboards:org:view and the audience; list
 //     rows (finding titles) still follow the viewer's campaign membership.
 //
-// Nothing is cached across callers: every read computes for its own scope.
+// Results are stored per dashboard (snapshot.go): a personal snapshot is
+// served only to its owner and only while their scope is the one it was
+// computed for; an organization snapshot holds organization-wide figures and
+// is served to every permitted viewer, its list rows filtered per viewer.
 package widgets
 
 import (
@@ -69,8 +72,15 @@ type Service struct {
 	dataScope *datascope.Enforcer
 	facts     dashboard.FactReader
 	limiter   *limiter
+	previews  *previewLimiter
 	logger    *logger.Logger
 	now       func() time.Time
+
+	// Snapshot storage and the refresher's readers (SetSnapshots).
+	snapshots dashboard.SnapshotStore
+	repo      dashboard.Repository
+	members   MembershipReader
+	settings  dashboardapp.SettingsStore
 }
 
 // NewService returns a widget data service.
@@ -78,7 +88,7 @@ func NewService(dash *dashboardapp.Service, dataScope *datascope.Enforcer, facts
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &Service{dash: dash, dataScope: dataScope, facts: facts, limiter: newLimiter(MaxPerUser, MaxPerTenant, MaxPerProcess), logger: log, now: time.Now}
+	return &Service{dash: dash, dataScope: dataScope, facts: facts, limiter: newLimiter(MaxPerUser, MaxPerTenant, MaxPerProcess), previews: newPreviewLimiter(PreviewBurst, PreviewEvery), logger: log, now: time.Now}
 }
 
 // DashboardData is the result of every widget of one dashboard.
@@ -92,9 +102,18 @@ type DashboardData struct {
 	Restricted bool `json:"restricted"`
 	// FactsBuiltAt is the last full build of the organization's facts; nil
 	// while the first build runs (widgets then report "building").
-	FactsBuiltAt *time.Time    `json:"facts_built_at"`
-	ComputedAt   time.Time     `json:"computed_at"`
-	Widgets      []WidgetValue `json:"widgets"`
+	FactsBuiltAt *time.Time `json:"facts_built_at"`
+	// ComputedAt is when these figures were computed (the snapshot time).
+	ComputedAt time.Time `json:"computed_at"`
+	// RefreshSchedule is the effective schedule (the organization default
+	// resolved); NextRefreshAt is nil for a manual or paused schedule.
+	RefreshSchedule string     `json:"refresh_schedule,omitempty" enums:"manual,5m,15m,1h,6h,daily"`
+	NextRefreshAt   *time.Time `json:"next_refresh_at,omitempty"`
+	// Stale: older than twice the schedule, or the last refresh failed
+	// (LastRefreshError says why); the figures shown are the last good ones.
+	Stale            bool          `json:"stale"`
+	LastRefreshError string        `json:"last_refresh_error,omitempty"`
+	Widgets          []WidgetValue `json:"widgets"`
 }
 
 // WidgetValue is one widget's result. Exactly one of the shape payloads is
@@ -205,6 +224,11 @@ type ItemRow struct {
 	AssetName     string     `json:"asset_name,omitempty"`
 	SLADeadline   *time.Time `json:"sla_deadline,omitempty"`
 	KEV           bool       `json:"kev"`
+	// Pentest and CampaignID are kept in stored snapshots so the viewer's
+	// campaign membership can be applied on read; forViewer clears them
+	// from every response.
+	Pentest    bool   `json:"pentest,omitempty"`
+	CampaignID string `json:"campaign_id,omitempty"`
 }
 
 // ItemsValue is a ranked list.
@@ -212,8 +236,10 @@ type ItemsValue struct {
 	Rows []ItemRow `json:"rows"`
 }
 
-// PersonalData computes every widget of the caller's own dashboard, for the
-// caller's data scope. Another person's dashboard is not found.
+// PersonalData returns every widget of the caller's own dashboard, for the
+// caller's data scope: the stored snapshot when it was computed for this
+// layout and this scope, otherwise a fresh computation (stored for the next
+// open). Another person's dashboard is not found.
 func (s *Service) PersonalData(ctx context.Context, c dashboardapp.Caller, id string) (*DashboardData, error) {
 	d, err := s.dash.Get(ctx, c.TenantID.String(), c.UserID.String(), id)
 	if err != nil {
@@ -223,25 +249,32 @@ func (s *Service) PersonalData(ctx context.Context, c dashboardapp.Caller, id st
 	if err != nil {
 		return nil, err
 	}
-	return s.run(ctx, c, d.ID().String(), d.Widgets(), "personal", scope, scope)
+	out, err := s.read(ctx, c, d, scope, false)
+	if err != nil {
+		return nil, err
+	}
+	return s.forViewer(ctx, out, c, scope.CampaignViewer)
 }
 
-// OrgData computes every widget of an organization dashboard the caller may
+// OrgData returns every widget of an organization dashboard the caller may
 // read (dashboards:org:view and the audience, checked by the dashboard
-// service; outside the audience the dashboard is not found).
+// service; outside the audience the dashboard is not found). The figures
+// are organization-wide; list rows follow the caller's campaign membership.
 func (s *Service) OrgData(ctx context.Context, c dashboardapp.Caller, id string) (*DashboardData, error) {
 	d, err := s.dash.GetOrg(ctx, c, id)
 	if err != nil {
 		return nil, err
 	}
-	agg := dashboard.ReadScope{TenantID: c.TenantID}
-	rows := agg
-	rows.CampaignViewer = s.campaignViewer(ctx, c)
-	return s.run(ctx, c, d.ID().String(), d.Widgets(), "organization", agg, rows)
+	out, err := s.read(ctx, c, d.Dashboard, orgScope(c.TenantID), false)
+	if err != nil {
+		return nil, err
+	}
+	return s.forViewer(ctx, out, c, s.campaignViewer(ctx, c))
 }
 
 // Preview computes one widget spec for the caller's own scope (the gallery
-// and the config panel). The spec is validated like a saved widget.
+// and the config panel). The spec is validated like a saved widget; a
+// preview is never stored.
 func (s *Service) Preview(ctx context.Context, c dashboardapp.Caller, widgetType string, config map[string]any) (*WidgetValue, error) {
 	if !dashboard.IsTypedWidget(widgetType) {
 		return nil, fmt.Errorf("%w: preview takes a typed widget", shared.ErrValidation)
@@ -249,15 +282,27 @@ func (s *Service) Preview(ctx context.Context, c dashboardapp.Caller, widgetType
 	if _, err := dashboard.ParseWidgetSpec(widgetType, config); err != nil {
 		return nil, err
 	}
+	if wait := s.previews.take(c.TenantID.String()+"/"+c.UserID.String(), s.now()); wait > 0 {
+		return nil, &ErrPreviewRate{RetryAfter: wait}
+	}
 	scope, err := s.personalScope(ctx, c)
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.run(ctx, c, "", []dashboard.Widget{{WidgetType: widgetType, Config: config}}, "personal", scope, scope)
+	out, err := s.compute(ctx, c.TenantID, c.UserID, "", []dashboard.Widget{{WidgetType: widgetType, Config: config}}, "personal", scope, true)
+	if err != nil {
+		return nil, err
+	}
+	out, err = s.forViewer(ctx, out, c, scope.CampaignViewer)
 	if err != nil {
 		return nil, err
 	}
 	return &out.Widgets[0], nil
+}
+
+func orgScope(tenantID shared.ID) dashboard.ReadScope {
+	// Organization figures: every asset, every published pentest finding.
+	return dashboard.ReadScope{TenantID: tenantID}
 }
 
 func (s *Service) personalScope(ctx context.Context, c dashboardapp.Caller) (dashboard.ReadScope, error) {
@@ -280,30 +325,69 @@ func (s *Service) campaignViewer(ctx context.Context, c dashboardapp.Caller) *sh
 	return &uid
 }
 
-func (s *Service) run(ctx context.Context, c dashboardapp.Caller, dashID string, ws []dashboard.Widget, kind string, agg, rows dashboard.ReadScope) (*DashboardData, error) {
-	release, err := s.limiter.acquire(c.TenantID.String(), c.UserID.String())
-	if err != nil {
-		return nil, err
+// compute runs every widget of a layout for one scope. limited: an
+// interactive read that takes a concurrency slot (the refresher does not).
+func (s *Service) compute(ctx context.Context, tenantID, userID shared.ID, dashID string, ws []dashboard.Widget, kind string, scope dashboard.ReadScope, limited bool) (*DashboardData, error) {
+	if limited {
+		release, err := s.limiter.acquire(tenantID.String(), userID.String())
+		if err != nil {
+			return nil, err
+		}
+		defer release()
 	}
-	defer release()
 	ctx, cancel := context.WithTimeout(ctx, dashboardReadTimeout)
 	defer cancel()
 
-	builtAt, err := s.facts.FactsBuiltAt(ctx, c.TenantID)
+	builtAt, err := s.facts.FactsBuiltAt(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	out := &DashboardData{
-		DashboardID: dashID, Scope: kind, Restricted: agg.Assets.Restricted(),
+		DashboardID: dashID, Scope: kind, Restricted: scope.Assets.Restricted(),
 		FactsBuiltAt: builtAt, ComputedAt: s.now().UTC(), Widgets: make([]WidgetValue, 0, len(ws)),
 	}
 	for i, w := range ws {
-		out.Widgets = append(out.Widgets, s.widget(ctx, i, w, builtAt != nil, agg, rows))
+		out.Widgets = append(out.Widgets, s.widget(ctx, i, w, builtAt != nil, scope))
 	}
 	return out, nil
 }
 
-func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsReady bool, agg, rows dashboard.ReadScope) WidgetValue {
+// forViewer prepares stored or computed figures for one viewer: list rows of
+// pentest findings stay only for an administrator or a member of their
+// campaign, and the campaign fields never leave the server.
+func (s *Service) forViewer(ctx context.Context, d *DashboardData, c dashboardapp.Caller, viewer *shared.ID) (*DashboardData, error) {
+	var member map[string]bool
+	for i := range d.Widgets {
+		it := d.Widgets[i].Items
+		if it == nil {
+			continue
+		}
+		kept := it.Rows[:0]
+		for _, r := range it.Rows {
+			if r.Pentest && viewer != nil {
+				if member == nil {
+					ids, err := s.facts.CampaignsOf(ctx, c.TenantID, *viewer)
+					if err != nil {
+						return nil, err
+					}
+					member = make(map[string]bool, len(ids))
+					for _, id := range ids {
+						member[id.String()] = true
+					}
+				}
+				if r.CampaignID == "" || !member[r.CampaignID] {
+					continue
+				}
+			}
+			r.Pentest, r.CampaignID = false, ""
+			kept = append(kept, r)
+		}
+		it.Rows = kept
+	}
+	return d, nil
+}
+
+func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsReady bool, scope dashboard.ReadScope) WidgetValue {
 	v := WidgetValue{Index: i, WidgetType: w.WidgetType, ID: "w_legacy" + strconv.Itoa(i)}
 	var spec dashboard.WidgetSpec
 	if dashboard.IsTypedWidget(w.WidgetType) {
@@ -339,7 +423,7 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 		v.State, v.Reason = StateError, ReasonTimeout
 		return v
 	}
-	if err := s.compute(ctx, &v, m, spec, agg, rows); err != nil {
+	if err := s.metric(ctx, &v, m, spec, scope); err != nil {
 		reason := ReasonFailed
 		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
 			reason = ReasonTimeout
@@ -352,7 +436,7 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 }
 
 //nolint:cyclop // one branch per metric kind and shape
-func (s *Service) compute(ctx context.Context, v *WidgetValue, m dashboard.Metric, spec dashboard.WidgetSpec, agg, rows dashboard.ReadScope) error {
+func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric, spec dashboard.WidgetSpec, agg dashboard.ReadScope) error {
 	f := spec.Data.Filter.Merged(m.DefaultFilter)
 	gb := m.EffectiveGroupBy(spec.Data.GroupBy)
 	v.Shape = m.ShapeFor(gb)
@@ -399,14 +483,19 @@ func (s *Service) compute(ctx context.Context, v *WidgetValue, m dashboard.Metri
 		if m.ID == "sla.at_risk" {
 			kind = dashboard.RankSLADue
 		}
-		items, err := s.facts.Rank(ctx, rows, kind, f, spec.Data.Limit)
+		// An organization read lists every published pentest finding with
+		// its campaign; forViewer applies the viewer's membership on read.
+		items, err := s.facts.Rank(ctx, agg, kind, f, spec.Data.Limit)
 		if err != nil {
 			return err
 		}
 		out := &ItemsValue{Rows: make([]ItemRow, 0, len(items))}
 		for _, it := range items {
 			r := ItemRow{ID: it.FindingID.String(), Title: it.Title, Severity: it.Severity, PriorityClass: it.PriorityClass,
-				AssetName: it.AssetName, SLADeadline: it.SLADeadline, KEV: it.KEV}
+				AssetName: it.AssetName, SLADeadline: it.SLADeadline, KEV: it.KEV, Pentest: it.Pentest}
+			if it.Pentest {
+				r.CampaignID = it.CampaignID.String()
+			}
 			if it.AssetID != nil {
 				r.AssetID = it.AssetID.String()
 			}
