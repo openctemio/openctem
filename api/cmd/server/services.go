@@ -1257,6 +1257,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Widget results from the fact tables, stored as snapshots.
 	s.DashboardWidgets = dashwidgets.NewService(s.UserDashboard, s.DataScope, repos.DashboardWidget, log)
 	s.DashboardWidgets.SetSnapshots(repos.DashboardSnapshot, repos.UserDashboard, repos.Tenant, s.Tenant)
+	s.DashboardWidgets.SetAttackPaths(s.AttackSurface)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
