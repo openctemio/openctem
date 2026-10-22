@@ -26,6 +26,15 @@ type TaskWorkAsserter interface {
 	AssertFindingForFixWork(ctx context.Context, tenantID, findingID shared.ID) (viaTask bool, err error)
 }
 
+// CampaignAsserter is the optional extra of an asserter: the pentest
+// campaign check for a finding id. It returns shared.ErrNotFound when the
+// finding belongs to a pentest campaign the caller may not see. The guard
+// runs it on every by-id finding route, so a sub-resource of a finding (AI
+// triage, approvals, ticket links, activity, ...) is as closed as the finding.
+type CampaignAsserter interface {
+	AssertFindingCampaign(ctx context.Context, tenantID, findingID shared.ID) error
+}
+
 // dataScopeKind is the kind of object a guarded path names.
 type dataScopeKind int
 
@@ -83,6 +92,12 @@ func DataScopeGuard(a DataScopeAsserter) func(http.Handler) http.Handler {
 					return
 				}
 			case dataScopeFinding:
+				if ca, ok := a.(CampaignAsserter); ok {
+					if ca.AssertFindingCampaign(r.Context(), tenantID, id) != nil {
+						apierror.NotFound("Finding").WriteJSON(w)
+						return
+					}
+				}
 				if tw, ok := a.(TaskWorkAsserter); ok && fixWorkRoute(r.Method, r.URL.Path) {
 					via, err := tw.AssertFindingForFixWork(r.Context(), tenantID, id)
 					if err != nil {

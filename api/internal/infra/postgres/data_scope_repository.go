@@ -8,7 +8,9 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
@@ -238,3 +240,40 @@ func (r *DataScopeRepository) FindingIDsOwnedViaTask(ctx context.Context, tenant
 	}
 	return out, rows.Err()
 }
+
+// FindingPentestAccess reports whether a finding is a pentest finding and the
+// user's role in its campaign, in one query. A user id that is not a uuid has
+// no role.
+func (r *DataScopeRepository) FindingPentestAccess(ctx context.Context, tenantID, findingID shared.ID, userID string) (datascope.PentestFindingAccess, error) {
+	var (
+		source, status string
+		campaign       sql.NullString
+		role           sql.NullString
+	)
+	var uid any
+	if _, err := shared.IDFromString(userID); err == nil {
+		uid = userID
+	}
+	err := r.db.QueryRowContext(ctx,
+		`SELECT f.source, f.status, f.pentest_campaign_id::text,
+		        (SELECT m.role FROM pentest_campaign_members m
+		          WHERE m.tenant_id = f.tenant_id AND m.campaign_id = f.pentest_campaign_id
+		            AND m.user_id = $3::uuid)
+		 FROM findings f WHERE f.id = $1 AND f.tenant_id = $2`,
+		findingID.String(), tenantID.String(), uid).Scan(&source, &status, &campaign, &role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return datascope.PentestFindingAccess{}, nil
+	}
+	if err != nil {
+		return datascope.PentestFindingAccess{}, fmt.Errorf("lookup finding campaign access: %w", err)
+	}
+	return datascope.PentestFindingAccess{
+		Found:       true,
+		Pentest:     source == string(vulnerability.FindingSourcePentest),
+		HasCampaign: campaign.Valid,
+		Status:      status,
+		Role:        role.String,
+	}, nil
+}
+
+var _ datascope.PentestAccessReader = (*DataScopeRepository)(nil)
