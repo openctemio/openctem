@@ -113,6 +113,7 @@
   "dashboards.gallery.all": "Tất cả",
   "dashboards.gallery.description": "Bản xem trước dùng số liệu của chính bạn. Thêm widget rồi thay đổi cách đếm và cách hiển thị.",
   "dashboards.gallery.failed": "Không tải được danh sách widget.",
+  "dashboards.gallery.groups": "Nhóm widget",
   "dashboards.gallery.none": "Không có widget phù hợp.",
   "dashboards.gallery.noteHint": "Văn bản cho ngữ cảnh, liên kết hoặc hướng dẫn.",
   "dashboards.gallery.previewFailed": "Hiện chưa xem trước được. Bạn vẫn có thể thêm.",
