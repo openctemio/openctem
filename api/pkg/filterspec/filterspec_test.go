@@ -263,7 +263,7 @@ func TestUnknownParamWarnAndStrict(t *testing.T) {
 		t.Fatalf("warn mode should record unknown params, got %v", s.UnknownParams)
 	}
 	fe := parseErr(t, "severity=high&source_id=abc", Options{Unknown: UnknownStrict})
-	if fe.Details[0].Param != "source_id" || fe.Details[0].Reason != "unknown parameter" {
+	if fe.Details[0].Param != "source_id" || fe.Details[0].Reason != ReasonUnknownFilter {
 		t.Fatalf("strict: %+v", fe.Details)
 	}
 	// A known field with an operator it does not allow is unknown too.
