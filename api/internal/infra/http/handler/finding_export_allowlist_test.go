@@ -32,6 +32,9 @@ var findingExportExcluded = map[string]string{
 	"asset": "embedded (asset_name, asset_type exported)", "component": "embedded", "provenance": "embedded",
 	"package_fix": "embedded", "intel": "embedded", "vulnerability": "embedded", "assigned_to_user": "embedded",
 	"severity_override": "embedded", "pending_severity_request": "embedded",
+	// A bug-bounty report carries the researcher's text and handle: it leaves
+	// the platform only through the UI, like other free text.
+	"bounty_report":    "embedded free text (researcher report)",
 	"vulnerability_id": "id not useful offline", "branch_id": "id not useful offline", "component_id": "id not useful offline",
 	"tool_id": "id not useful offline", "sub_status_id": "id not useful offline", "duplicate_of": "id not useful offline",
 	"scan_id": "id not useful offline", "resolved_by": "person id", "assigned_by": "person id", "verified_by": "person id",

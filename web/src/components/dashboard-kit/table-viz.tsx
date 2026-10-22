@@ -14,7 +14,14 @@ import {
   type MetricUnit,
 } from '@/lib/format-metric'
 import { DrillLink, useLabel } from './viz-parts'
-import type { CategoryResult, DrillFn, MatrixResult, StagesResult, TimeSeriesResult } from './types'
+import type {
+  CategoryResult,
+  DrillFn,
+  MatrixResult,
+  PathsResult,
+  StagesResult,
+  TimeSeriesResult,
+} from './types'
 
 const TH = 'px-2 py-1.5 text-start text-xs font-medium text-muted-foreground'
 const TD = 'px-2 py-1.5 text-sm tabular-nums'
@@ -218,6 +225,44 @@ export function StagesTable({ result }: { result: StagesResult }) {
               <td className={TD + ' text-end'}>
                 {formatMetric(s.value, s.unit ?? 'count', locale)}
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export function PathsTable({ result }: { result: PathsResult }) {
+  const { t, locale } = useTranslation()
+  return (
+    <div className="overflow-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b">
+            <th className={TH} scope="col">
+              {t('dashboardKit.paths.crownJewel', 'Crown jewel')}
+            </th>
+            <th className={TH + ' text-end'} scope="col">
+              {t('dashboardKit.paths.entryPoints', 'Entry points reaching it')}
+            </th>
+            <th className={TH + ' text-end'} scope="col">
+              {t('dashboardKit.paths.score', 'Path score')}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.rows.map((r) => (
+            <tr key={r.id} className="border-b last:border-0">
+              <th scope="row" className={TD + ' font-normal text-start'}>
+                <Cell text={r.name} to={r.href} />
+              </th>
+              <td className={TD + ' text-end'}>
+                {r.entry_point
+                  ? t('dashboardKit.paths.isEntryPoint', 'Entry point itself')
+                  : formatCount(r.reachable_from, locale)}
+              </td>
+              <td className={TD + ' text-end'}>{formatCount(Math.round(r.score), locale)}</td>
             </tr>
           ))}
         </tbody>
