@@ -33,10 +33,12 @@ test.describe('Findings selection', () => {
 
     await box.check()
     await expect(bulkBar(page)).toBeVisible()
+    // The header's sort menu: Status, ascending.
     await page
-      .getByRole('button', { name: /^status$/i })
-      .first()
+      .getByRole('columnheader', { name: /^status/i })
+      .getByRole('button')
       .click()
+    await page.getByRole('menuitem', { name: 'Asc' }).click()
     await expect(bulkBar(page)).toBeHidden({ timeout: 10_000 })
   })
 
