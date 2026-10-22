@@ -78,6 +78,20 @@ export function ReceiptSummary({ receipt }: { receipt: ReceiptResponse }) {
               'The close was held for review: it would have closed too large a share of the open findings.'
             )
           : ''}
+        {!full && receipt.coverage?.note === 'incomplete'
+          ? ' ' +
+            t(
+              'findings.receipts.incomplete',
+              'Full coverage was declared, but a file failed, a record was skipped or the upload was cut short, so nothing was closed.'
+            )
+          : ''}
+        {!full && receipt.coverage?.note === 'scope_changed'
+          ? ' ' +
+            t(
+              'findings.receipts.scopeChanged',
+              'Full coverage was declared, but an asset left your scope before the close, so nothing was closed.'
+            )
+          : ''}
         {receipt.actions_truncated
           ? ' ' +
             t(
