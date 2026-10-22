@@ -91,8 +91,20 @@ triage ── GET /findings/{id}/duplicate-candidates (caller's data scope)
 | Duplicate candidates | `findings:triage` | Seed finding in the caller's data scope, else 404 (also for another tenant's id); candidates filtered with the findings-list scope rules |
 
 Reporter text is untrusted: it is stored as data, rendered only through the
-markdown sanitiser, and `bug_bounty` findings are never sent to AI triage
-automatically (RFC-121 D13).
+markdown sanitiser, and `bug_bounty` findings go to AI triage only when a
+person asks (RFC-121 D13). The AI triage service enforces it on every entry
+path (`internal/app/aitriage/bounty_policy.go`): auto-triage queues nothing, a
+request or bulk request without a user (a workflow action, an API key without
+a user) is refused with 403 `AI_POLICY_RESTRICTED`, and the worker fails a row
+queued without a requesting person before the model call. A person's request
+is answered, but the verdict starts nothing on its own: no false-positive
+proposal and no `ai_triage_completed` workflow event.
+
+The (intake, ref) identity is unique per organisation, not per data scope:
+a restricted member who creates a report whose identity another finding
+already holds gets 409 without that finding's id, asset or title. The one
+bit it reveals ("this report id is already filed") is the cost of
+idempotent re-imports.
 
 ## Status
 

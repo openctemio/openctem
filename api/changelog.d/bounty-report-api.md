@@ -7,3 +7,4 @@
 ### Security: bug-bounty findings are never AI-triaged automatically
 
 - Reporter text is untrusted: findings with source `bug_bounty` are no longer queued for automatic AI triage when they are created; a person can still ask for it.
+- The rule holds on every AI triage entry path: auto-triage, workflow `trigger_ai_triage` actions and requests without a user are refused (403 `AI_POLICY_RESTRICTED`, bulk item `ai_policy_restricted`), the worker fails such a queued row before the model call, and a person's requested verdict on a `bug_bounty` finding creates no false-positive proposal and dispatches no workflow event.
