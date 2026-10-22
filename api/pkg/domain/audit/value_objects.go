@@ -423,6 +423,18 @@ const (
 	ActionScanZoneSensorAssigned   Action = "scan_zone.sensor_assigned"
 	ActionScanZoneSensorUnassigned Action = "scan_zone.sensor_unassigned"
 
+	// Proxy pool actions (RFC-034): every change to a pool, its endpoints or
+	// credentials, a sensor's network path, and the platform quarantining an
+	// endpoint.
+	ActionProxyPoolCreated            Action = "proxy_pool.created"
+	ActionProxyPoolUpdated            Action = "proxy_pool.updated"
+	ActionProxyPoolDeleted            Action = "proxy_pool.deleted"
+	ActionProxyPoolEndpointsChanged   Action = "proxy_pool.endpoints_changed"
+	ActionProxyPoolCredentialsChanged Action = "proxy_pool.credentials_changed"
+	ActionProxyPoolEndpointUpdated    Action = "proxy_pool.endpoint_updated"
+	ActionProxyPoolEndpointQuarantine Action = "proxy_pool.endpoint_quarantined"
+	ActionSensorNetworkPathChanged    Action = "sensor.network_path_changed"
+
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
 	ActionAPIKeyRevoked Action = "api_key.revoked"
@@ -820,6 +832,9 @@ func (a Action) IsValid() bool {
 		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
+		ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
+		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
 		ActionCredentialRevealed,
@@ -958,6 +973,11 @@ func (a Action) Category() string {
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
+	case ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
+		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine:
+		return "proxy_pool"
+	case ActionSensorNetworkPathChanged:
+		return "sensor"
 	case ActionIntegrationSyncRequested:
 		return "integration"
 	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
@@ -1054,6 +1074,7 @@ const (
 	ResourceTypeToken          ResourceType = "token"
 	ResourceTypeSensor         ResourceType = "sensor"
 	ResourceTypeScanZone       ResourceType = "scan_zone"
+	ResourceTypeProxyPool      ResourceType = "proxy_pool"
 	ResourceTypeGroup          ResourceType = "group"
 	ResourceTypePermissionSet  ResourceType = "permission_set"
 	ResourceTypeRole           ResourceType = "role"
@@ -1118,7 +1139,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
+		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
