@@ -222,7 +222,7 @@ func (h *UserDashboardHandler) PreviewWidget(w http.ResponseWriter, r *http.Requ
 
 // RefreshPersonal handles POST /api/v1/me/dashboards/{id}/refresh
 // @Summary      Refresh my dashboard now
-// @Description  Recomputes the caller's personal dashboard from the fact tables and stores the snapshot ("Refresh now"). Budget: once a minute per person and dashboard, 30 an hour per organization (429 with Retry-After); 429 also while another refresh of the dashboard runs (the budget is not used). A refresh that cannot compute gives its budget back.
+// @Description  Recomputes the caller's personal dashboard from the fact tables and stores the snapshot ("Refresh now"). Budget: once a minute per person and dashboard, 30 an hour per organization (429 with Retry-After); 429 also while another refresh of the dashboard runs (the budget is not used). A refresh that finds no read slot free gives its budget back.
 // @Tags         Dashboards
 // @Produce      json
 // @Security     BearerAuth
@@ -246,7 +246,7 @@ func (h *UserDashboardHandler) RefreshPersonal(w http.ResponseWriter, r *http.Re
 
 // RefreshOrg handles POST /api/v1/organization/dashboards/{id}/refresh
 // @Summary      Refresh an organization dashboard now
-// @Description  Recomputes an organization dashboard the caller may read (dashboards:org:view and the audience) and stores the snapshot. Budget: once a minute per person and dashboard, 30 an hour per organization (429 with Retry-After); 429 also while another refresh of the dashboard runs (the budget is not used). A refresh that cannot compute gives its budget back.
+// @Description  Recomputes an organization dashboard the caller may read (dashboards:org:view and the audience) and stores the snapshot. Budget: once a minute per person and dashboard, 30 an hour per organization (429 with Retry-After); 429 also while another refresh of the dashboard runs (the budget is not used). A refresh that finds no read slot free gives its budget back.
 // @Tags         Dashboards
 // @Produce      json
 // @Security     BearerAuth

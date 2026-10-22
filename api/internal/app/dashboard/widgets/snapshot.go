@@ -219,7 +219,10 @@ func (s *Service) RefreshOrg(ctx context.Context, c dashboardapp.Caller, id stri
 // refreshNow recomputes d for scope under the dashboard's refresh lock and
 // within the budget. A refresh already running for the dashboard answers
 // ErrRefreshRunning without using the budget; a refresh that takes the
-// budget and then cannot compute (busy, failed) gives it back.
+// budget and then finds no read slot free (ErrBusy, nothing computed) gives
+// it back. A computation that started and failed (timeout, canceled
+// request) keeps the budget, so a dashboard that keeps failing cannot be
+// recomputed faster than the budget allows.
 func (s *Service) refreshNow(ctx context.Context, c dashboardapp.Caller, d *dashboard.Dashboard, scope dashboard.ReadScope) (*DashboardData, error) {
 	if s.snapshots == nil {
 		return s.read(ctx, c, d, scope, true)
@@ -236,10 +239,12 @@ func (s *Service) refreshNow(ctx context.Context, c dashboardapp.Caller, d *dash
 		return nil, err
 	}
 	out, err := s.read(ctx, c, d, scope, true)
-	if err != nil {
+	if errors.Is(err, ErrBusy) {
 		if rerr := s.snapshots.RefundRefreshBudget(context.WithoutCancel(ctx), c.TenantID, d.ID(), c.UserID); rerr != nil {
 			s.logger.Warn("refund dashboard refresh budget", "dashboard_id", d.ID().String(), "error", rerr.Error())
 		}
+	}
+	if err != nil {
 		return nil, err
 	}
 	return out, nil
