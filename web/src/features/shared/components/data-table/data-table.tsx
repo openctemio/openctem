@@ -69,6 +69,13 @@ import { pageSizeChoices } from '@/lib/page-size-options'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
+/** What a phone card needs to offer the row's selection checkbox. */
+export interface MobileRowSelection {
+  selectable: boolean
+  selected: boolean
+  onSelectedChange: (selected: boolean) => void
+}
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
@@ -153,8 +160,12 @@ interface DataTableProps<TData, TValue> {
    * Phone layout: below `md` each row renders through this as a stacked card
    * instead of the table — a many-column table squeezed to phone width leaves
    * only the pinned name readable. Pagination stays the same.
+   *
+   * The second argument is the row's selection: `selectable` is true when the
+   * table has a selection column, so a card offers the same checkbox the
+   * table row has.
    */
-  mobileRow?: (row: TData) => React.ReactNode
+  mobileRow?: (row: TData, selection: MobileRowSelection) => React.ReactNode
   /**
    * Without `mobileRow`, rows still render as cards below `md`, built from the
    * columns (first column as title, the next few as fields). Set false to keep
@@ -536,13 +547,20 @@ export function DataTable<TData, TValue>({
     return () => ro.disconnect()
   }, [measureEdges, data, columnVisibility])
 
-  // Clear the selection whenever the parent bumps resetSelectionKey.
-  const lastResetKey = React.useRef(resetSelectionKey)
+  // Clear the selection whenever the parent bumps resetSelectionKey, and
+  // whenever a server-paged table changes page, page size or sort: the rows
+  // the selection was made on are no longer the rows on screen, and a bulk
+  // action must never reach rows the user cannot see.
+  const pageScope = manualPagination
+    ? `${pagination?.pageIndex ?? 0}|${pagination?.pageSize ?? pageSize}|${JSON.stringify(sorting)}`
+    : ''
+  const lastResetKey = React.useRef(`${resetSelectionKey}|${pageScope}`)
   React.useEffect(() => {
-    if (lastResetKey.current === resetSelectionKey) return
-    lastResetKey.current = resetSelectionKey
+    const next = `${resetSelectionKey}|${pageScope}`
+    if (lastResetKey.current === next) return
+    lastResetKey.current = next
     setRowSelection({})
-  }, [resetSelectionKey])
+  }, [resetSelectionKey, pageScope])
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
   const pageRows = table.getRowModel().rows
@@ -772,7 +790,13 @@ export function DataTable<TData, TValue>({
                     <div id={ids.rows} className="divide-y">
                       {group.rows.map((row) =>
                         mobileRow ? (
-                          <div key={row.id}>{mobileRow(row.original)}</div>
+                          <div key={row.id}>
+                            {mobileRow(row.original, {
+                              selectable: canSelectGroups,
+                              selected: row.getIsSelected(),
+                              onSelectedChange: (v) => row.toggleSelected(v),
+                            })}
+                          </div>
                         ) : (
                           <AutoMobileCard
                             key={row.id}
