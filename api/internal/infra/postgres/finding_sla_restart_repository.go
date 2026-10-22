@@ -74,8 +74,10 @@ func (r *FindingSLARestartRepository) LoadRegressionCandidates(ctx context.Conte
 	return out, rows.Err()
 }
 
-// RestartSLA writes the new deadline and the sla_restarted activity together,
-// only while the finding is still open.
+// RestartSLA writes the new deadline, the clock start and the sla_restarted
+// activity together, only while the finding is still open and only once per
+// reopen: a clock that started after the last reopen (a scan and a retest
+// both reporting the same regression) is not extended again.
 func (r *FindingSLARestartRepository) RestartSLA(ctx context.Context, tenantID shared.ID, rs sladom.RegressionRestart) (bool, error) {
 	changes := map[string]any{
 		"reason":              sladom.RegressionRestartReason,
@@ -97,8 +99,9 @@ func (r *FindingSLARestartRepository) RestartSLA(ctx context.Context, tenantID s
 			return err
 		}
 		res, err := tx.ExecContext(ctx, `
-			UPDATE findings SET sla_deadline = $3, sla_status = 'on_track', updated_at = NOW()
-			WHERE tenant_id = $1 AND id = $2 AND status = ANY($4)`,
+			UPDATE findings SET sla_deadline = $3, sla_status = 'on_track', sla_started_at = NOW(), updated_at = NOW()
+			WHERE tenant_id = $1 AND id = $2 AND status = ANY($4)
+			  AND (sla_started_at IS NULL OR last_reopened_at IS NULL OR sla_started_at < last_reopened_at)`,
 			tenantID.String(), rs.FindingID.String(), rs.Deadline, pq.Array(openStatusesForSLA))
 		if err != nil {
 			return fmt.Errorf("restart sla: %w", err)
