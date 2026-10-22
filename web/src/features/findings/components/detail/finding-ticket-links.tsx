@@ -24,6 +24,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { sanitizeExternalUrl } from '@/lib/utils'
 import { usePermissions } from '@/context/permission-provider'
+import { SectionLoadError, isLoadFailure } from './section-load-error'
 import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
 import { CreateTicketDialog } from '../create-ticket-dialog'
 import {
@@ -62,7 +63,7 @@ export function FindingTicketLinks({
   const { hasPermission } = usePermissions()
   const canLinkExisting = canLink && hasPermission('findings:fix_apply')
   const key = currentTenant ? `/api/v1/findings/${findingId}/ticket-links` : null
-  const { data, mutate } = useSWR<{ links: TicketLink[] }>(
+  const { data, error, mutate } = useSWR<{ links: TicketLink[] }>(
     key,
     (u: string) => get<{ links: TicketLink[] }>(u),
     {
@@ -114,6 +115,14 @@ export function FindingTicketLinks({
         )
     }
   }
+
+  if (error && isLoadFailure(error) && active.length === 0)
+    return (
+      <SectionLoadError
+        title={t('findings.detail.section.tickets', 'ticket links')}
+        onRetry={() => void mutate()}
+      />
+    )
 
   if (active.length === 0 && others.length === 0 && holds.length === 0 && !canLink)
     return <span className="text-muted-foreground">—</span>

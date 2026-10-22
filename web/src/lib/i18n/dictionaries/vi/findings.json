@@ -1398,5 +1398,11 @@
   "findings.verification.itemSecret.register_updated": "Việc sử dụng thông tin xác thực kể từ khi bị lộ đã được kiểm tra và ghi nhận",
   "findings.validationEvidence.checkReachability": "Kiểm tra khả năng truy cập",
   "findings.bulk.status": "Trạng thái",
-  "findings.bulk.assignTo": "Giao cho…"
+  "findings.bulk.assignTo": "Giao cho…",
+  "findings.detail.sectionError": "Không thể tải {title}",
+  "findings.detail.section.task": "tác vụ khắc phục",
+  "findings.detail.section.tickets": "liên kết phiếu",
+  "findings.detail.section.retestCheck": "kiểm tra kiểm thử lại",
+  "findings.detail.loadFailed.title": "Không thể tải phát hiện này",
+  "findings.detail.loadFailed.description": "Đã xảy ra lỗi phía máy chủ hoặc kết nối bị gián đoạn. Hãy thử lại."
 }
