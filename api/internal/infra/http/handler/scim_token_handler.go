@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -98,18 +100,52 @@ func (h *SCIMTokenHandler) SetGroupMappings(w http.ResponseWriter, r *http.Reque
 
 type createSCIMTokenRequest struct {
 	Name string `json:"name"`
+	// ExpiresInDays is required, 1..365.
+	ExpiresInDays int `json:"expires_in_days"`
+}
+
+type rotateSCIMTokenRequest struct {
+	// ExpiresInDays of the replacement, 1..365; omitted or 0 keeps the
+	// replaced token's lifetime.
+	ExpiresInDays int `json:"expires_in_days"`
 }
 
 type scimTokenView struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Prefix     string  `json:"prefix"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Prefix string `json:"prefix"`
+	// Status is active, expired or revoked.
 	Status     string  `json:"status"`
 	CreatedAt  string  `json:"created_at"`
 	LastUsedAt *string `json:"last_used_at,omitempty"`
+	ExpiresAt  string  `json:"expires_at"`
 }
 
-// Create handles POST /api/v1/scim-tokens — mints a token, returns plaintext once.
+const scimTimeLayout = "2006-01-02T15:04:05Z07:00"
+
+func (h *SCIMTokenHandler) callerID(r *http.Request) *shared.ID {
+	if uid := middleware.GetUserID(r.Context()); uid != "" {
+		if id, perr := shared.IDFromString(uid); perr == nil {
+			return &id
+		}
+	}
+	return nil
+}
+
+func writeSCIMTokenError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, scimtoken.ErrNotFound):
+		apierror.NotFound("SCIM token").WriteJSON(w)
+	default:
+		return false
+	}
+	return true
+}
+
+// Create handles POST /api/v1/scim-tokens: mints a token valid for
+// expires_in_days (1..365, required) and returns the plaintext once.
 func (h *SCIMTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
@@ -117,17 +153,16 @@ func (h *SCIMTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req createSCIMTokenRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
-
-	var createdBy *shared.ID
-	if uid := middleware.GetUserID(r.Context()); uid != "" {
-		if id, perr := shared.IDFromString(uid); perr == nil {
-			createdBy = &id
-		}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
 	}
 
-	res, err := h.tokens.Mint(r.Context(), tenantID, req.Name, createdBy)
+	res, err := h.tokens.Mint(r.Context(), tenantID, req.Name, h.callerID(r), req.ExpiresInDays)
 	if err != nil {
+		if writeSCIMTokenError(w, err) {
+			return
+		}
 		h.logger.Error("mint scim token failed", "error", err)
 		apierror.InternalServerError("failed to create SCIM token").WriteJSON(w)
 		return
@@ -138,17 +173,74 @@ func (h *SCIMTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 			WithResourceName(res.Token.Name()).
 			WithSeverity(auditdom.SeverityHigh).
 			WithMessage(fmt.Sprintf("SCIM token %q created", res.Token.Name())).
-			WithMetadata("prefix", res.Token.Prefix()))
+			WithMetadata("prefix", res.Token.Prefix()).
+			WithMetadata("expires_at", res.Token.ExpiresAt().Format(scimTimeLayout)))
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"id":         res.Token.ID().String(),
 		"name":       res.Token.Name(),
 		"prefix":     res.Token.Prefix(),
 		"token":      res.Plaintext, // shown once
-		"created_at": res.Token.CreatedAt().UTC().Format("2006-01-02T15:04:05Z07:00"),
+		"created_at": res.Token.CreatedAt().UTC().Format(scimTimeLayout),
+		"expires_at": res.Token.ExpiresAt().UTC().Format(scimTimeLayout),
 		"endpoint":   "/scim/v2",
+	})
+}
+
+// Rotate handles POST /api/v1/scim-tokens/{id}/rotate: mints the replacement
+// (plaintext shown once) and cuts the replaced token off within 24 hours.
+func (h *SCIMTokenHandler) Rotate(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+	id, err := shared.IDFromString(chi.URLParam(r, "id"))
+	if err != nil {
+		apierror.NotFound("SCIM token").WriteJSON(w)
+		return
+	}
+	var req rotateSCIMTokenRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apierror.BadRequest("invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	res, err := h.tokens.Rotate(r.Context(), tenantID, id, h.callerID(r), req.ExpiresInDays)
+	if err != nil {
+		if writeSCIMTokenError(w, err) {
+			return
+		}
+		h.logger.Error("rotate scim token failed", "error", err)
+		apierror.InternalServerError("failed to rotate SCIM token").WriteJSON(w)
+		return
+	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+		auditapp.NewSuccessEvent(auditdom.ActionSCIMTokenRotated, auditdom.ResourceTypeSCIMToken, id.String()).
+			WithResourceName(res.Replaced.Name()).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage(fmt.Sprintf("SCIM token %q rotated", res.Replaced.Name())).
+			WithMetadata("replacement_id", res.Token.ID().String()).
+			WithMetadata("replaced_expires_at", res.ReplacedExpiresAt.Format(scimTimeLayout)).
+			WithMetadata("expires_at", res.Token.ExpiresAt().Format(scimTimeLayout)))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":                  res.Token.ID().String(),
+		"name":                res.Token.Name(),
+		"prefix":              res.Token.Prefix(),
+		"token":               res.Plaintext, // shown once
+		"created_at":          res.Token.CreatedAt().UTC().Format(scimTimeLayout),
+		"expires_at":          res.Token.ExpiresAt().UTC().Format(scimTimeLayout),
+		"endpoint":            "/scim/v2",
+		"replaced_id":         id.String(),
+		"replaced_expires_at": res.ReplacedExpiresAt.UTC().Format(scimTimeLayout),
 	})
 }
 
@@ -166,16 +258,21 @@ func (h *SCIMTokenHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	views := make([]scimTokenView, 0, len(toks))
+	now := time.Now()
 	for _, t := range toks {
 		v := scimTokenView{
 			ID:        t.ID().String(),
 			Name:      t.Name(),
 			Prefix:    t.Prefix(),
 			Status:    string(t.Status()),
-			CreatedAt: t.CreatedAt().UTC().Format("2006-01-02T15:04:05Z07:00"),
+			CreatedAt: t.CreatedAt().UTC().Format(scimTimeLayout),
+			ExpiresAt: t.ExpiresAt().UTC().Format(scimTimeLayout),
+		}
+		if t.IsActive() && !t.UsableAt(now) {
+			v.Status = "expired"
 		}
 		if lu := t.LastUsedAt(); lu != nil {
-			s := lu.UTC().Format("2006-01-02T15:04:05Z07:00")
+			s := lu.UTC().Format(scimTimeLayout)
 			v.LastUsedAt = &s
 		}
 		views = append(views, v)
