@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { ChevronDown, Loader2, Check } from 'lucide-react'
+import { ChevronDown, Loader2, Check, Lock } from 'lucide-react'
 import { FINDING_STATUS_CONFIG } from '../types'
 import type { FindingStatus } from '../types'
 import { useSWRConfig } from 'swr'
@@ -173,7 +173,9 @@ export function StatusSelect({
                         disabled={!move.allowed || disabled || loading}
                         aria-describedby={reason ? reasonId : undefined}
                       >
-                        {sub ? (
+                        {!move.allowed ? (
+                          <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                        ) : sub ? (
                           <span
                             className={cn(
                               'h-2 w-2 shrink-0 rounded-full',
@@ -197,15 +199,21 @@ export function StatusSelect({
                                 .join(' · ')}
                             </span>
                           )}
+                          {reason && (
+                            <span
+                              id={reasonId}
+                              className="block text-xs whitespace-normal text-muted-foreground"
+                            >
+                              {reason}
+                            </span>
+                          )}
                         </span>
                         {showCheck && current && <Check className="ms-auto h-3 w-3" />}
                       </DropdownMenuItem>
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-[240px]">
-                    <p id={reason ? reasonId : undefined} className="text-xs">
-                      {reason ?? describe(status)}
-                    </p>
+                    <p className="text-xs">{reason ?? describe(status)}</p>
                   </TooltipContent>
                 </Tooltip>
               )

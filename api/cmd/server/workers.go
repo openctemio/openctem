@@ -601,6 +601,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "idle-workspaces")))
 	}
 
+	// Service-account keys whose creator lost service_accounts:manage are marked
+	// revoked (the key-use check already refuses them).
+	if svc.ServiceKeyGate != nil {
+		w.ControllerManager.Register(controller.NewServiceKeyCreatorController(repos.ServiceAccount,
+			svc.ServiceKeyGate, repos.MemberLifecycle, 5*time.Minute, log.With("controller", "service-key-creator")))
+	}
+
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
 

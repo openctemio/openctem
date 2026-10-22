@@ -163,3 +163,55 @@ func (r *ServiceAccountRepository) RoleHasServiceAccountHolder(ctx context.Conte
 	}
 	return ok, nil
 }
+
+// ListServiceKeyCreators returns each (tenant, person) that created active or
+// suspended service-account keys, plus the keys with no recorded creator
+// (UserID zero). It feeds the sweep that revokes keys whose creator lost
+// service_accounts:manage; the per-key check at use time does not depend on it.
+func (r *ServiceAccountRepository) ListServiceKeyCreators(ctx context.Context) ([]serviceaccount.KeyCreator, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT k.tenant_id, k.created_by
+		FROM api_keys k JOIN users u ON u.id = k.user_id
+		WHERE u.kind = 'service' AND u.service_tenant_id = k.tenant_id
+		  AND k.status IN ('active', 'suspended')`)
+	if err != nil {
+		return nil, fmt.Errorf("list service key creators: %w", err)
+	}
+	defer rows.Close()
+	var out []serviceaccount.KeyCreator
+	for rows.Next() {
+		var t string
+		var c sql.NullString
+		if err := rows.Scan(&t, &c); err != nil {
+			return nil, fmt.Errorf("scan service key creator: %w", err)
+		}
+		tid, err := shared.IDFromString(t)
+		if err != nil {
+			continue
+		}
+		sc := serviceaccount.KeyCreator{TenantID: tid}
+		if c.Valid {
+			if cid, err := shared.IDFromString(c.String); err == nil {
+				sc.UserID = cid
+			}
+		}
+		out = append(out, sc)
+	}
+	return out, rows.Err()
+}
+
+// RevokeKeysWithoutCreator revokes the live service-account keys of a tenant
+// that record no creator (nobody answers for them). Returns how many.
+func (r *ServiceAccountRepository) RevokeKeysWithoutCreator(ctx context.Context, tenantID shared.ID) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE api_keys k SET status = 'revoked', revoked_at = NOW(), updated_at = NOW()
+		FROM users u
+		WHERE u.id = k.user_id AND u.kind = 'service' AND u.service_tenant_id = k.tenant_id
+		  AND k.tenant_id = $1 AND k.created_by IS NULL AND k.status IN ('active', 'suspended')`,
+		tenantID.String())
+	if err != nil {
+		return 0, fmt.Errorf("revoke service keys without creator: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
