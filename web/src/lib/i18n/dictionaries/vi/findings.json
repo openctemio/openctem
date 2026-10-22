@@ -813,8 +813,6 @@
   "findings.activity.loadFailedBody": "Lịch sử của phát hiện này không hiển thị vì yêu cầu bị lỗi. Hãy thử lại sau.",
   "findings.activity.startDiscussion": "Bắt đầu thảo luận bên dưới.",
   "findings.approvalDialog.title": "Yêu cầu phê duyệt trạng thái",
-  "findings.approvalDialog.descriptionBefore": "Chuyển trạng thái sang",
-  "findings.approvalDialog.descriptionAfter": "cần được phê duyệt. Vui lòng nêu lý do.",
   "findings.approvalDialog.justification": "Lý do",
   "findings.approvalDialog.justificationPlaceholder": "Giải thích vì sao cần thay đổi trạng thái này...",
   "findings.approvalDialog.justificationRequired": "Cần nhập lý do",
@@ -1326,5 +1324,9 @@
   "findings.ticketHolds.belowThreshold": "Chưa gửi sang Jira — dưới ngưỡng tạo issue",
   "findings.ticketHolds.dailyCap": "Chưa gửi sang Jira — đã đạt giới hạn hôm nay",
   "findings.ticketHolds.createFailed": "Chưa gửi sang Jira — lần thử gần nhất thất bại",
-  "findings.ticketHolds.createAnyway": "Vẫn tạo"
+  "findings.ticketHolds.createAnyway": "Vẫn tạo",
+  "findings.approvalDialog.titleDecide": "Đánh dấu là dương tính giả",
+  "findings.approvalDialog.descriptionDecide": "Tổ chức của bạn cho phép bạn tự quyết định việc này. Hãy chọn lý do và giải thích.",
+  "findings.approvalDialog.descriptionRequest": "Đổi trạng thái sang {status} cần được phê duyệt. Hãy nêu lý do.",
+  "findings.approvalDialog.confirmTitleDecide": "Xác nhận dương tính giả"
 }
