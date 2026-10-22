@@ -409,6 +409,5 @@
   "confirm.savedView.saveChanges": "Save changes",
   "confirm.savedView.saveAsNew": "Save as new view…",
   "confirm.savedView.discard": "Discard changes",
-  "confirm.savedView.updated": "Updated view \"{name}\"",
-  "confirm.savedView.organization": "Everyone in the organization"
+  "confirm.savedView.updated": "Updated view \"{name}\""
 }

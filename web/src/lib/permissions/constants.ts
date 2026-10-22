@@ -115,8 +115,6 @@ export const Permission = {
   FindingsTriage: 'findings:triage',
   FindingsStatus: 'findings:status',
   FindingsExport: 'findings:export',
-  /** Share a saved findings view with the whole organization. */
-  FindingsViewsShare: 'findings:views:share',
   FindingsBulkUpdate: 'findings:bulk_update',
   FindingsApprove: 'findings:approve',
   FindingsFixApply: 'findings:fix_apply',
@@ -654,7 +652,6 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.FindingsAssign]: 'Assign Findings',
   [Permission.FindingsTriage]: 'Triage Findings',
   [Permission.FindingsExport]: 'Export Findings',
-  [Permission.FindingsViewsShare]: 'Share Findings Views with the Organization',
   [Permission.FindingsStatus]: 'Change Finding Status',
   [Permission.FindingsBulkUpdate]: 'Bulk Update Findings',
   [Permission.FindingsApprove]: 'Approve Findings',

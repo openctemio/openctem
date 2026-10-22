@@ -61,8 +61,6 @@ interface SavedViewsMenuProps {
   columns?: string[]
   /** The row density the list shows, saved with the view (omitted when no choice was made). */
   density?: string
-  /** The viewer may share a view with the whole organization (`findings:views:share`). */
-  canShareOrg?: boolean
   /** Throw away the unsaved changes: back to the view as saved. */
   onDiscard?: () => void
   /** Open a view (the page puts `view=<id>` in its URL). */
@@ -70,7 +68,6 @@ interface SavedViewsMenuProps {
 }
 
 const PERSONAL = 'personal'
-const ORGANIZATION = '__organization__'
 
 /** "2 filters added, columns changed": what the unsaved dot stands for. */
 export function summarizeChanges(
@@ -115,7 +112,6 @@ export function SavedViewsMenu({
   groupBy,
   columns,
   density,
-  canShareOrg = false,
   onDiscard,
   onSelect,
 }: SavedViewsMenuProps) {
@@ -146,8 +142,7 @@ export function SavedViewsMenu({
         page,
         name: name.trim(),
         query: viewQueryFromSearch(window.location.search),
-        group_id: share === PERSONAL || share === ORGANIZATION ? undefined : share,
-        org: share === ORGANIZATION ? true : undefined,
+        group_id: share === PERSONAL ? undefined : share,
         group_by: groupBy || undefined,
         columns,
         density,
@@ -404,11 +399,6 @@ export function SavedViewsMenu({
                     <SelectItem value={PERSONAL}>
                       {t('confirm.savedView.onlyMe', 'Only me')}
                     </SelectItem>
-                    {canShareOrg && (
-                      <SelectItem value={ORGANIZATION}>
-                        {t('confirm.savedView.organization', 'Everyone in the organization')}
-                      </SelectItem>
-                    )}
                     {groups.map((g) => (
                       <SelectItem key={g.id} value={g.id}>
                         {g.name}

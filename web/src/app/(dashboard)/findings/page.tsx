@@ -1902,8 +1902,10 @@ function FindingsContent() {
   }
   // The key handler is installed once and calls the latest openTriage.
   const openTriageRef = useRef(openTriage)
+  const canTriageRef = useRef(canChangeStatusOne)
   useEffect(() => {
     openTriageRef.current = openTriage
+    canTriageRef.current = canChangeStatusOne
   })
   const onTriageView = quickViewIsActive(searchParams, {
     key: 'needs_triage',
@@ -1925,6 +1927,7 @@ function FindingsContent() {
         )
       )
         return
+      if (!canTriageRef.current) return
       e.preventDefault()
       openTriageRef.current()
     }
@@ -2159,7 +2162,6 @@ function FindingsContent() {
         groupBy={groupParam}
         columns={columnsToSave(shownColumns)}
         density={urlDensity ?? viewDensity}
-        canShareOrg={hasPermission(Permission.FindingsViewsShare)}
         onDiscard={() => openSavedView(openView ?? null)}
         onSelect={openSavedView}
       />
@@ -2390,32 +2392,35 @@ function FindingsContent() {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          {/* The one primary action of the page: deciding. With nothing to
-              triage it stays, as a secondary button that opens the same view. */}
-          <Button
-            size="sm"
-            variant={triageCount > 0 ? 'default' : 'outline'}
-            onClick={openTriage}
-            aria-keyshortcuts="t"
-          >
-            <ListChecks className="h-4 w-4 sm:me-2" aria-hidden />
-            <span className="sr-only sm:not-sr-only">
-              {triageCount > 0
-                ? t('findings.header.triage', 'Triage')
-                : t('findings.header.triageView', 'Triage view')}
-            </span>
-            {triageCount > 0 && (
-              <span className="ms-2 font-mono text-xs tabular-nums" data-testid="triage-count">
-                {triageCount.toLocaleString()}
-              </span>
-            )}
-            <kbd
-              className="ms-2 hidden rounded border border-current/30 px-1 font-mono text-[10px] opacity-70 sm:inline"
-              aria-hidden
+          {/* The one primary action of the page: deciding, for someone who may
+              change a finding's status. With nothing to triage it stays, as a
+              secondary button that opens the same view. */}
+          {canChangeStatusOne && (
+            <Button
+              size="sm"
+              variant={triageCount > 0 ? 'default' : 'outline'}
+              onClick={openTriage}
+              aria-keyshortcuts="t"
             >
-              t
-            </kbd>
-          </Button>
+              <ListChecks className="h-4 w-4 sm:me-2" aria-hidden />
+              <span className="sr-only sm:not-sr-only">
+                {triageCount > 0
+                  ? t('findings.header.triage', 'Triage')
+                  : t('findings.header.triageView', 'Triage view')}
+              </span>
+              {triageCount > 0 && (
+                <span className="ms-2 text-xs tabular-nums" data-testid="triage-count">
+                  {triageCount.toLocaleString()}
+                </span>
+              )}
+              <kbd
+                className="ms-2 hidden rounded border border-current/30 px-1 font-sans text-[10px] sm:inline"
+                aria-hidden
+              >
+                t
+              </kbd>
+            </Button>
+          )}
         </PageHeader>
 
         <>
