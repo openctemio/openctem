@@ -36,6 +36,17 @@ The list is in exactly one of these, and each says what to do next
 - A failed list is an inline alert in the table area with Retry and the server's request id (Copy request ID).
   The heading, search, filters and chips stay, and there is no toast on top of it.
 - A refetch keeps the rows on screen with a thin progress bar above the table.
+- Set up a scan and Integrations show only to someone who can open those pages (`scans:read`, `integrations:read`).
+
+## Export
+
+Export runs on the server only (`GET /api/v1/findings/export`, `src/features/findings/api/export-findings.ts`).
+
+- Without `findings:export` there is no Export control. There is no client-side copy of the current page.
+- The export carries the list's filters and sort (not the page). The API applies the caller's data scope.
+- When the list total is above the `X-Export-Max-Rows` cap, the toast says how many findings were exported and
+  asks to narrow the filters. The `/api/v1` proxy passes the export headers through.
+- A 403 names the missing permission. A 429 says an export of yours is still running.
 
 ## Translation
 
