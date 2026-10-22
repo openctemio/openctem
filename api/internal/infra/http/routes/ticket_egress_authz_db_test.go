@@ -171,7 +171,12 @@ func (h *egressHarness) seed() {
 
 func (h *egressHarness) post(perms []permission.Permission, path, body string) (int, string) {
 	h.t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, h.srv.URL+path, strings.NewReader(body))
+	return h.send(http.MethodPost, perms, path, body)
+}
+
+func (h *egressHarness) send(method string, perms []permission.Permission, path, body string) (int, string) {
+	h.t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, strings.NewReader(body))
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -232,6 +237,19 @@ func TestTicketEgress_PentestRefusedOnGenericRoute(t *testing.T) {
 	}
 	if uris.String != "" {
 		t.Fatalf("refused finding got a work item link: %q", uris.String)
+	}
+}
+
+func TestTicketEgress_UnlinkNeedsFixApply(t *testing.T) {
+	h := newEgressHarness(t)
+	path := "/api/v1/findings/" + h.inScope.String() + "/ticket-links/" + shared.NewID().String()
+	status, body := h.send(http.MethodDelete, teWritePerms, path, "")
+	if status != http.StatusForbidden || !strings.Contains(body, "findings:fix_apply") {
+		t.Fatalf("unlink without findings:fix_apply = %d (%s), want 403 naming the permission", status, body)
+	}
+	withFix := append([]permission.Permission{permission.FindingsFixApply}, teWritePerms...)
+	if status, body := h.send(http.MethodDelete, withFix, path, ""); status == http.StatusForbidden {
+		t.Fatalf("unlink with findings:fix_apply refused by the gate: %s", body)
 	}
 }
 

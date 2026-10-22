@@ -339,12 +339,12 @@ func registerVulnerabilityRoutes(
 			// issue of the organization's Jira site; unlink. Linking also
 			// needs findings:fix_apply: moving a linked issue to Done is a
 			// fix claim, which a member without that permission could not
-			// make directly.
+			// make directly. Unlinking needs the same two permissions.
 			r.GET("/{id}/ticket-links", jiraHandler.ListTicketLinks, middleware.Require(permission.FindingsRead))
 			// Why the automatic path has not filed an issue yet (holds).
 			r.GET("/{id}/ticket-holds", jiraHandler.ListTicketHolds, middleware.Require(permission.FindingsRead))
 			r.POST("/{id}/ticket-links", jiraHandler.LinkTicketIssue, middleware.RequireAll(permission.FindingsWrite, permission.FindingsFixApply))
-			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.Require(permission.FindingsWrite))
+			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.RequireAll(permission.FindingsWrite, permission.FindingsFixApply))
 		}
 
 		// Delete operations
