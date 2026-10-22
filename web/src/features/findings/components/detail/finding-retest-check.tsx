@@ -53,6 +53,7 @@ import { useFindingRetests, type FindingRetestWithCheck } from '../../api/use-fi
 import { RetestCheckEditorDialog } from './retest-check-editor-dialog'
 import { RetestCheckTierBadge } from './retest-check-tier-badge'
 import { retestMeta } from './finding-retest'
+import { SectionLoadError, isLoadFailure } from './section-load-error'
 
 /** Where the organization's nuclei templates (and their sensor approval) are managed. */
 export const TEMPLATE_LIBRARY_HREF = '/settings/scanning/templates'
@@ -68,12 +69,21 @@ export function FindingRetestCheckSection({ finding, className }: FindingRetestC
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const canWrite = hasPermission(Permission.FindingsRetestChecksWrite)
-  const { data, error, isLoading } = useFindingRetestCheck(finding.id)
+  const { data, error, isLoading, mutate } = useFindingRetestCheck(finding.id)
   const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
   const remove = useRemoveRetestCheck(finding.id)
 
-  if (isLoading || error) return null
+  if (isLoading) return null
+  if (error) {
+    return isLoadFailure(error) ? (
+      <SectionLoadError
+        title={t('findings.detail.section.retestCheck', 'the retest check')}
+        onRetry={() => void mutate()}
+        className={className}
+      />
+    ) : null
+  }
   const check = data?.check ?? null
   if (!check && !canWrite) return null
 

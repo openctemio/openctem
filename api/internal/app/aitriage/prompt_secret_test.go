@@ -36,3 +36,17 @@ func TestTriagePrompt_NoSnippetForASecretFinding(t *testing.T) {
 	}
 	require.Contains(t, build(vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability), "LINE-MARKER", "other findings keep their snippet")
 }
+
+// A secret finding's description can quote the credential; the model
+// provider gets it masked.
+func TestTriagePrompt_RedactsSecretFindingDescription(t *testing.T) {
+	s := &AITriageService{promptSanitizer: NewPromptSanitizer()}
+	const tok = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSecret, "tool", vulnerability.SeverityHigh, "GitHub token")
+	require.NoError(t, err)
+	f.SetFindingType(vulnerability.FindingTypeSecret)
+	f.SetDescription("Found token " + tok + " in config")
+	p, _ := s.buildTriagePromptSafe(f)
+	require.NotContains(t, p, "ghp_")
+	require.Contains(t, p, "Found token")
+}

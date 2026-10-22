@@ -83,4 +83,18 @@ describe('DashboardView', () => {
     )
     expect(screen.getByText(/no widgets yet/)).toBeInTheDocument()
   })
+
+  it('applies the column span only at widths that have the columns (no zero-width phone widgets)', () => {
+    const wide = { ...stat('w_wide', 'findings.open'), w: 12 }
+    const { container } = render(
+      <DashboardView dashboard={{ layout: [wide], columns: 4 }} data={undefined} loading={false} />
+    )
+    const cell = container.querySelector('[data-widget-index="0"]') as HTMLElement
+    // An unconditional inline grid-column span on the one-column phone grid
+    // creates auto-width implicit columns that collapse to zero.
+    expect(cell.style.gridColumn).toBe('')
+    expect(cell.style.getPropertyValue('--span')).toBe('span 4 / span 4')
+    expect(cell.style.getPropertyValue('--span-sm')).toBe('span 2 / span 2')
+    expect(cell.className).toContain('xl:[grid-column:var(--span)]')
+  })
 })

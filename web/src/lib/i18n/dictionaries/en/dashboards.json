@@ -113,6 +113,7 @@
   "dashboards.gallery.all": "All",
   "dashboards.gallery.description": "Previews show your own figures. Add a widget, then change what it counts and how it is drawn.",
   "dashboards.gallery.failed": "The widget list could not be loaded.",
+  "dashboards.gallery.groups": "Widget groups",
   "dashboards.gallery.none": "No widget matches.",
   "dashboards.gallery.noteHint": "Text for context, links or instructions.",
   "dashboards.gallery.previewFailed": "No preview right now. You can still add it.",

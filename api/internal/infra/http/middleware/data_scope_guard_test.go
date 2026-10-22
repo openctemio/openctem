@@ -76,3 +76,42 @@ func TestDataScopeGuard(t *testing.T) {
 		t.Errorf("non-id route = %d, want pass-through", got)
 	}
 }
+
+func withTenant(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), TenantIDKey, shared.NewID().String()))
+}
+
+type campaignAsserter struct {
+	fakeAsserter
+	deny map[shared.ID]bool
+}
+
+func (c campaignAsserter) AssertFindingCampaign(_ context.Context, _, id shared.ID) error {
+	if c.deny[id] {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
+// Every route under /findings/{id}, including ones added later, is refused
+// when the campaign check denies, and a non-finding path never asks it.
+func TestDataScopeGuard_CampaignCheckCoversEveryFindingSubRoute(t *testing.T) {
+	closed, open := shared.NewID(), shared.NewID()
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	h := DataScopeGuard(campaignAsserter{deny: map[shared.ID]bool{closed: true}})(next)
+	for _, sub := range []string{"", "/ai-triage", "/ai-triage/history", "/activities", "/approvals", "/ticket-links",
+		"/ticket-holds", "/priority-explanation", "/comments/" + shared.NewID().String(), "/a-route-added-next-year"} {
+		for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, withTenant(httptest.NewRequest(m, "/api/v1/findings/"+closed.String()+sub, nil)))
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("%s /findings/{closed}%s = %d, want 404", m, sub, rec.Code)
+			}
+			rec = httptest.NewRecorder()
+			h.ServeHTTP(rec, withTenant(httptest.NewRequest(m, "/api/v1/findings/"+open.String()+sub, nil)))
+			if rec.Code != http.StatusTeapot {
+				t.Errorf("%s /findings/{open}%s = %d, want pass-through", m, sub, rec.Code)
+			}
+		}
+	}
+}
