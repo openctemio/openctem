@@ -7,6 +7,8 @@ const base = {
   filterCount: 0,
   hasSearch: false,
   canImport: true,
+  canSetUpScan: true,
+  canOpenIntegrations: true,
   onImport: vi.fn(),
   onClearFilters: vi.fn(),
 }
@@ -28,6 +30,19 @@ describe('FindingsEmptyState', () => {
   it('nothing yet: no import button without the import permission', () => {
     render(<FindingsEmptyState {...base} kind="nothing" canImport={false} />)
     expect(screen.queryByRole('button', { name: /import results/i })).not.toBeInTheDocument()
+  })
+
+  it('nothing yet: no link to a page the viewer cannot open', () => {
+    render(
+      <FindingsEmptyState
+        {...base}
+        kind="nothing"
+        canSetUpScan={false}
+        canOpenIntegrations={false}
+      />
+    )
+    expect(screen.queryByRole('link', { name: /set up a scan/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /integrations/i })).not.toBeInTheDocument()
   })
 
   it('no match: counts what the filters and the search hide, and clears them', () => {
