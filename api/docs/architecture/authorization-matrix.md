@@ -286,6 +286,9 @@ Details: [api-keys.md](./api-keys.md).
 > Deleting a business unit drops its asset links and detaches its child units
 > for the whole organization, so it is owner/admin only (owner decision
 > 2026-10-02); members keep creating, editing and linking assets.
+>
+> The gate is not the whole rule: which units a member sees follows their data
+> scope (see "Visibility of groups, units and services" under Data scope).
 
 #### AI applications (MCP) (`/api/v1/mcp-access`, `/api/v1/oauth/requests`)
 
@@ -332,6 +335,7 @@ and SBOM import write it.
 | `DELETE /api/v1/findings/{id}` | `findings:delete` (hard delete; the activity timeline goes with the row. An audit event `finding.deleted` is written first with the actor, title, severity, status, source, CVE, asset, fingerprint, tool and the number of activities removed; if that write fails the finding is not deleted) |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status`; moving a finding **out of** an approved false positive or an accepted risk needs `findings:approve` as well (403 otherwise), on this route and on bulk status. A workflow, automation action or ticket webhook cannot move a finding out of a decided status at all (false positive, accepted risk, duplicate; a workflow also not out of resolved) |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
+| `POST /api/v1/findings` with `bounty_report`, `PUT /api/v1/findings/{id}/bounty-report` (bug-bounty report fields, RFC-121) | `findings:write`; setting or changing `reward` or `disclosure` also needs `findings:triage` (403 `TRIAGE_PERMISSION_REQUIRED`, nothing written). Only `bug_bounty` findings; the finding (or the asset on create) must be in the caller's tenant and data scope (else 404); a second finding for the same intake and ref is 409. Audited with old and new values |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` | `findings:bulk_update` **and** `findings:status` (the bulk permission widens the reach of a move; it does not replace the right to make it) |
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
@@ -1579,10 +1583,35 @@ these counts cover only the assets they can see: `asset_count` on `GET
 and are replaced in the response), the asset, crown-jewel and in-business-unit
 counts of `GET /scoping/summary`, `asset_breakdown` and `risk_score` of `GET
 /attack-surface/stats`, and the exposure-chain `summary` (recomputed from the
-chains the caller may see). Counts that stay organization-wide, because they
-count configuration and expose no asset name or id: the business service,
-business unit, boundary, attacker profile, threat model and cycle totals of
+chains the caller may see), and the business service and business unit totals
+of `/scoping/summary` (only the visible ones, below). Counts that stay
+organization-wide, because they count configuration and expose no asset name or
+id: the boundary, attacker profile, threat model and cycle totals of
 `/scoping/summary`, the attack-path `summary`, and threat-model rollups.
+
+**Visibility of groups, units and services** (research/233 D4). The names,
+descriptions and owners of asset groups, business units and business services
+describe the organization, so a caller restricted to their scope rows sees one
+only when it touches their scope:
+
+| Container | Visible to a restricted caller when |
+|---|---|
+| Asset group | one of its live members is in their scope, or an active `asset_group_match` scope rule of an active team they are a current member of names it (an empty group named by the rule stays visible to that team) |
+| Business unit | the unit, or a unit below it in the hierarchy, holds a live asset in their scope; the ancestors of a visible unit are visible, so the tree stays connected |
+| Business service | it links a live asset in their scope |
+
+Anything else is absent from the list, search and stats, the totals count only
+the visible rows (nothing reports how many are hidden), and a read by id
+answers 404, as do a group's members and findings and a service's assets. A
+write answers 404 the same way, except on a container with no asset at all (one
+the caller just created; for a business unit also no unit below it, since a
+unit's criticality reaches the assets of the units below), which stays
+writable so it can be filled; a business
+unit cannot be placed under a parent the caller cannot see. The owner email of
+a group, unit or service is shown only to an owner, administrator or full-data
+reader; a restricted caller's edit keeps the stored value. The predicates live
+in `pkg/filterspec/visibility.go` and are applied in SQL. A member with no
+scope row sees no group, unit or service.
 
 **Team membership end dates are read at scope time.** A membership whose
 `expires_at` has passed grants no data scope even before the expiry
@@ -1884,8 +1913,9 @@ a personal address, or be a work domain nobody has verified.
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
-| `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
-| `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values. The group list itself stays tenant configuration |
+| `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered; 404 on a group not visible to the caller |
+| `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values |
+| `GET /asset-groups` (+ `/{id}`, search, `/stats` with its totals and breakdowns), `GET /business-units` (+ `/{id}`, search), `GET /business-services` (+ `/{id}`, `/{id}/assets`) | **bypass (every group, unit and service of the tenant with its name, description and owner, incl. the owner email; tenant-wide totals)** | only the containers visible to the caller ("Visibility of groups, units and services"); totals over those; 404 by id; owner email for full-data readers only (research/233 F1–F3) |
 | `GET /attack-surface/attack-paths` | **bypass (summary counts over the whole graph)** | `top_assets` filtered and `summary` recomputed over the assets the caller may see (entry points, reachable assets, critical reachable, crown jewels at risk, total paths, max depth); reachability itself is still the whole graph's. A viewer with `dashboards:org:view` keeps the organization summary and still gets only their own rows |
 | `GET /threat-intel/stats` (EPSS and KEV counts) | **bypass (organization-wide exposure counts)** | the open findings counted (EPSS high / critical, KEV past due) are those on assets in the caller's scope; `dashboards:org:view` or full data access counts the organization. The catalog totals (entries, ransomware, recently added) are public feed context |
 | `GET /validation/coverage` | **bypass (organization-wide KPI)** | per-severity totals, validated, downgrade and priority-class coverage count the findings on assets in the caller's scope; `dashboards:org:view` or full data access counts the organization |

@@ -99,11 +99,18 @@ func Compile(spec *Spec, reg *Registry, actor Actor) (*Where, error) {
 // CompileFrom is Compile with placeholders starting at $first, for queries
 // that bind other values before the filter.
 func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, error) {
+	w, _, err := compileWith(spec, reg, actor, first)
+	return w, err
+}
+
+// compileWith is CompileFrom returning its compiler, so CompileFacets can
+// compile more predicates over the same placeholders.
+func compileWith(spec *Spec, reg *Registry, actor Actor, first int) (*Where, *compiler, error) {
 	if reg == nil || spec == nil {
-		return nil, errors.New("filterspec: nil registry or spec")
+		return nil, nil, errors.New("filterspec: nil registry or spec")
 	}
 	if actor.tenantID.IsZero() {
-		return nil, errors.New("filterspec: actor without a tenant")
+		return nil, nil, errors.New("filterspec: actor without a tenant")
 	}
 	if first < 1 {
 		first = 1
@@ -129,18 +136,62 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 		}
 	}
 	if spec.Q != "" && reg.Search != nil {
-		v := spec.Q
-		if reg.Search.Pattern {
-			v = "%" + EscapeLike(v) + "%"
-		}
-		tpl := c.bindUpper(reg.Search.Template, spec.Q)
-		parts = append(parts, "("+c.render(tpl, c.bind(v))+")")
+		parts = append(parts, "("+c.search(spec.Q)+")")
 	}
 	order := c.orderBy(spec.Sort)
 	if err := c.e.err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &Where{SQL: strings.Join(parts, " AND "), Args: c.args, OrderBy: order, First: first, NextArg: c.next}, nil
+	return &Where{SQL: strings.Join(parts, " AND "), Args: c.args, OrderBy: order, First: first, NextArg: c.next}, c, nil
+}
+
+// search renders the registry's search template for q.
+func (c *compiler) search(q string) string {
+	v := q
+	if c.reg.Search.Pattern {
+		v = "%" + EscapeLike(v) + "%"
+	}
+	tpl := c.bindUpper(c.reg.Search.Template, q)
+	return c.render(tpl, c.bind(v))
+}
+
+// CompileFacets compiles base like Compile (the tenant predicate first, the
+// caller's data scope, the member visibility rule, base's filter and q) and
+// each facet's filter and q with the same compiler, so every facet predicate
+// shares Where's placeholders and Args. A facet predicate is never a WHERE
+// of its own: it is only for COUNT(*) FILTER (WHERE <predicate>) in a query
+// whose WHERE is the returned, scoped Where.SQL. A facet with no filter is
+// "TRUE". Fields are gated exactly as in Compile: a field the caller may
+// not use is an error.
+func CompileFacets(base *Spec, facets []*Spec, reg *Registry, actor Actor) (*Where, []string, error) {
+	w, c, err := compileWith(base, reg, actor, 1)
+	if err != nil {
+		return nil, nil, err
+	}
+	preds := make([]string, len(facets))
+	for i, f := range facets {
+		if f == nil {
+			return nil, nil, errors.New("filterspec: nil facet")
+		}
+		parts := []string{}
+		if f.Root != nil {
+			if s := c.node(f.Root); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if f.Q != "" && reg.Search != nil {
+			parts = append(parts, "("+c.search(f.Q)+")")
+		}
+		preds[i] = "TRUE"
+		if len(parts) > 0 {
+			preds[i] = "(" + strings.Join(parts, " AND ") + ")"
+		}
+	}
+	if err := c.e.err(); err != nil {
+		return nil, nil, err
+	}
+	w.Args, w.NextArg = c.args, c.next
+	return w, preds, nil
 }
 
 // ScopeSQL is the data-scope predicate "assetExpr is in the user's scope",

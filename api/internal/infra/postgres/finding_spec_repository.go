@@ -195,53 +195,135 @@ func (r *FindingRepository) GetSLABreakdownWhere(ctx context.Context, w *filters
 	return b, tx.Commit()
 }
 
-// findingExportTimeout bounds one export batch (RFC-048 §3.7).
+// findingExportTimeout bounds one export statement (RFC-048 §3.7).
 const findingExportTimeout = "60s"
 
-// MaxFindingExportBatch is the largest batch ExportBatchWhere returns.
+// MaxFindingExportBatch is the number of rows one export statement reads.
 const MaxFindingExportBatch = 1000
 
-// ExportBatchWhere returns the next batch of findings matching a compiled
-// filter, in id order after afterID (keyset paging: no OFFSET cost, stable
-// under concurrent inserts). Each batch is one short read-only transaction,
-// so a slow client never holds a transaction open.
-func (r *FindingRepository) ExportBatchWhere(ctx context.Context, w *filterspec.Where, afterID string, limit int) ([]*vulnerability.Finding, error) {
+// ExportSortedWhere streams up to limit findings matching a compiled filter,
+// in the filter's own order (w.OrderBy, which always ends with the id
+// tie-breaker), to emit in batches. All batches read one snapshot (a
+// read-only REPEATABLE READ transaction), so a row is never exported twice or
+// skipped while findings change, and each statement has a timeout. more says
+// whether rows past limit exist. An emit error stops the export.
+//
+// slotKey (tenant and user) admits one export per key across every API
+// replica: a transaction advisory lock, released when the export's
+// transaction ends, however it ends. A held slot is
+// vulnerability.ErrExportInProgress.
+func (r *FindingRepository) ExportSortedWhere(ctx context.Context, w *filterspec.Where, slotKey string, limit int,
+	emit func([]*vulnerability.Finding) error,
+) (rows int, more bool, err error) {
 	if err := checkFindingWhere(w); err != nil {
-		return nil, err
+		return 0, false, err
 	}
-	if limit <= 0 || limit > MaxFindingExportBatch {
-		limit = MaxFindingExportBatch
+	if limit <= 0 {
+		return 0, false, nil
 	}
-	if afterID == "" {
-		afterID = "00000000-0000-0000-0000-000000000000"
-	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
-		return nil, fmt.Errorf("begin finding export: %w", err)
+		return 0, false, fmt.Errorf("begin finding export: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingExportTimeout+"'"); err != nil {
-		return nil, fmt.Errorf("set finding export timeout: %w", err)
+	var got bool
+	if err := tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(hashtext('findings_export'), hashtext($1))`, slotKey).Scan(&got); err != nil {
+		return 0, false, fmt.Errorf("take finding export slot: %w", err)
 	}
-	args := append(append([]any(nil), w.Args...), afterID, limit)
-	// w.SQL comes only from filterspec.Compile (registry SQL, bound values).
-	query := r.selectQuery() + " WHERE " + w.SQL + //nolint:gosec // G202: see above
-		fmt.Sprintf(" AND findings.id > $%d::uuid ORDER BY findings.id LIMIT $%d", w.NextArg, w.NextArg+1)
-	rows, err := tx.QueryContext(ctx, query, args...)
+	if !got {
+		return 0, false, vulnerability.ErrExportInProgress
+	}
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingExportTimeout+"'"); err != nil {
+		return 0, false, fmt.Errorf("set finding export timeout: %w", err)
+	}
+	for rows <= limit {
+		// One row past the limit tells whether the export is truncated.
+		n := min(MaxFindingExportBatch, limit+1-rows)
+		query := buildFindingPageQuery(r.selectQuery(), w.SQL, w.OrderBy, n, rows)
+		batch, err := r.queryFindingBatch(ctx, tx, query, w.Args, n)
+		if err != nil {
+			return rows, false, err
+		}
+		if rows+len(batch) > limit {
+			more = true
+			batch = batch[:limit-rows]
+		}
+		if len(batch) > 0 {
+			if err := emit(batch); err != nil {
+				return rows, more, err
+			}
+			rows += len(batch)
+		}
+		if more || len(batch) < n {
+			break
+		}
+	}
+	return rows, more, tx.Commit()
+}
+
+func (r *FindingRepository) queryFindingBatch(ctx context.Context, tx *sql.Tx, query string, args []any, n int) ([]*vulnerability.Finding, error) {
+	res, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export findings: %w", err)
 	}
-	defer rows.Close()
-	out := make([]*vulnerability.Finding, 0, MaxFindingExportBatch)
-	for rows.Next() {
-		f, err := r.scanFindingFromRows(rows)
+	defer res.Close()
+	out := make([]*vulnerability.Finding, 0, min(n, MaxFindingExportBatch))
+	for res.Next() {
+		f, err := r.scanFindingFromRows(res)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, f)
 	}
-	if err := rows.Err(); err != nil {
+	if err := res.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate exported findings: %w", err)
+	}
+	return out, nil
+}
+
+// maxFindingFacets bounds the COUNT FILTER columns of one CountFacetsWhere.
+const maxFindingFacets = 16
+
+// CountFacetsWhere counts, in one statement, the findings matching each
+// facet predicate among the rows a compiled filter selects (the quick-view
+// counts). w comes from filterspec.CompileFacets: its WHERE is the scoped
+// one, and every predicate only narrows it inside COUNT(*) FILTER, so no
+// count can reach outside the caller's tenant or data scope. It runs in a
+// read-only transaction with the list's statement timeout; a timeout is
+// vulnerability.ErrFindingCountTimeout.
+func (r *FindingRepository) CountFacetsWhere(ctx context.Context, w *filterspec.Where, preds []string) ([]int64, error) {
+	if err := checkFindingWhere(w); err != nil {
+		return nil, err
+	}
+	if len(preds) == 0 || len(preds) > maxFindingFacets {
+		return nil, fmt.Errorf("count findings: %d facets (want 1..%d)", len(preds), maxFindingFacets)
+	}
+	cols := make([]string, len(preds))
+	for i, p := range preds {
+		cols[i] = "COUNT(*) FILTER (WHERE " + p + ")"
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin finding facet count: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingListTimeout+"'"); err != nil {
+		return nil, fmt.Errorf("set finding facet count timeout: %w", err)
+	}
+	out := make([]int64, len(preds))
+	dest := make([]any, len(preds))
+	for i := range out {
+		dest[i] = &out[i]
+	}
+	// The predicates and w.SQL come only from filterspec.CompileFacets
+	// (registry SQL, bound values).
+	query := "SELECT " + strings.Join(cols, ", ") + " FROM findings WHERE " + w.SQL //nolint:gosec // G202: see above
+	if err := tx.QueryRowContext(ctx, query, w.Args...).Scan(dest...); err != nil {
+		var pqErr *pq.Error
+		if (errors.As(err, &pqErr) && pqErr.Code == "57014") || errors.Is(err, context.DeadlineExceeded) {
+			return nil, vulnerability.ErrFindingCountTimeout
+		}
+		return nil, fmt.Errorf("failed to count finding facets: %w", err)
 	}
 	return out, tx.Commit()
 }

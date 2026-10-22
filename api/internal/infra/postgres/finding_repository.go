@@ -135,6 +135,9 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 	_, err = r.db.ExecContext(ctx, findingCreateSQL, args...)
 
 	if err != nil {
+		if isBountyReportViolation(err) {
+			return vulnerability.ErrBountyReportExists
+		}
 		if isUniqueViolation(err) {
 			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
 		}
@@ -161,6 +164,9 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 	_, err = tx.ExecContext(ctx, findingCreateSQL, args...)
 
 	if err != nil {
+		if isBountyReportViolation(err) {
+			return vulnerability.ErrBountyReportExists
+		}
 		if isUniqueViolation(err) {
 			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
 		}
@@ -1201,6 +1207,9 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	result, err := r.db.execStatusWrite(ctx, query, args...)
 
 	if err != nil {
+		if isBountyReportViolation(err) {
+			return vulnerability.ErrBountyReportExists
+		}
 		return fmt.Errorf("failed to update finding: %w", err)
 	}
 

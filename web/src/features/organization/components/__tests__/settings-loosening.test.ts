@@ -14,6 +14,7 @@ const base: SignInForm = {
   invitees: 'verified_domains',
   external_access_end_required: true,
   jit_requires_approval: true,
+  sso_require_mfa_evidence: true,
 }
 
 describe('looseningsOf (sign-in)', () => {
@@ -34,6 +35,7 @@ describe('looseningsOf (sign-in)', () => {
       invitees: 'any',
       external_access_end_required: false,
       jit_requires_approval: false,
+      sso_require_mfa_evidence: false,
       sso_exceptions: [{ user_id: 'u1' } as SignInForm['sso_exceptions'][number]],
     }
     expect(looseningsOf(base, next).sort()).toEqual(
@@ -47,6 +49,7 @@ describe('looseningsOf (sign-in)', () => {
         'inviteesAny',
         'externalEndOff',
         'jitOff',
+        'ssoMfaProofOff',
         'ssoExceptionAdded',
       ].sort()
     )

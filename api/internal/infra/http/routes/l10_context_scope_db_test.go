@@ -258,9 +258,11 @@ func TestBusinessContextLinks_DataScope_DB(t *testing.T) {
 		t.Errorf("business-service assets for the admin miss one: %.300s", body)
 	}
 	h.expect(h.scoped, false, http.MethodDelete, svc+"/"+h.assetOut, nil, http.StatusNotFound)
-	h.expect(h.scoped, false, http.MethodDelete, svc+"/"+h.assetIn, nil, http.StatusNoContent)
 	h.expect(h.scoped, false, http.MethodPost, svc, map[string]any{"asset_id": h.assetOut}, http.StatusNotFound)
-	h.expect(h.scoped, false, http.MethodPost, svc, map[string]any{"asset_id": h.assetIn}, http.StatusNoContent)
+	h.expect(h.scoped, false, http.MethodDelete, svc+"/"+h.assetIn, nil, http.StatusNoContent)
+	// The service now links only an out-of-scope asset: it is no longer
+	// visible to the member (research/233 D4), so a link answers 404.
+	h.expect(h.scoped, false, http.MethodPost, svc, map[string]any{"asset_id": h.assetIn}, http.StatusNotFound)
 	h.expect(h.admin, true, http.MethodPost, svc, map[string]any{"asset_id": h.assetB}, http.StatusNotFound)
 
 	// Business unit links change an asset's effective criticality.
