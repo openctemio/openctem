@@ -588,6 +588,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// SAML IdP certificate expiry: owners are alerted 30, 7 and 1 days before
+	// and on expiry, once per level per certificate.
+	if svc.SAML != nil {
+		w.ControllerManager.Register(controller.NewSAMLCertExpiryController(
+			svc.SAML, 6*time.Hour, log.With("controller", "saml-cert-expiry")))
+	}
+
 	// External members' access end dates (RFC-058): an expired membership is
 	// suspended within a minute.
 	if svc.Tenant != nil {
