@@ -65,7 +65,10 @@ func (h *BusinessServiceHandler) requireActOnLinks(w http.ResponseWriter, r *htt
 	}
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		apierror.NotFound("business service not found").WriteJSON(w)
+		apierror.NotFound("business service").WriteJSON(w)
+		return false
+	}
+	if !h.requireWritable(w, r, tenantID, serviceID) {
 		return false
 	}
 	rows, err := h.db.QueryContext(r.Context(),
@@ -105,29 +108,76 @@ func (h *BusinessServiceHandler) requireActOnLinks(w http.ResponseWriter, r *htt
 	return false
 }
 
-// assetCountColumn is businessServiceAssetCountColumn counting only the
-// assets in the caller's data scope; first is the next free placeholder and
-// the scope arguments are returned for the caller to append.
-func (h *BusinessServiceHandler) assetCountColumn(r *http.Request, tenantID string, first int) (string, []any, error) {
+// requireWritable answers 404 (written) unless the service is in the tenant
+// and the caller may change it: an unrestricted caller any service, a
+// restricted one a service visible to them or one with no linked asset (a
+// service they just created). A service they cannot see answers as an
+// unknown id does, never 403, so a write cannot probe for it.
+func (h *BusinessServiceHandler) requireWritable(w http.ResponseWriter, r *http.Request, tenantID, serviceID string) bool {
+	scope, err := h.readerScope(r, tenantID)
+	if err != nil {
+		h.logger.Error("business service write scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	visible, _, scopeArgs := serviceReadFrame(scope, 3)
+	var ok bool
+	if err := h.db.QueryRowContext(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM business_services
+		  WHERE tenant_id = $1 AND id = $2
+		    AND (`+visible+` OR NOT EXISTS (
+		        SELECT 1 FROM business_service_assets e
+		         WHERE e.tenant_id = $1 AND e.service_id = business_services.id)))`,
+		append([]any{tenantID, serviceID}, scopeArgs...)...,
+	).Scan(&ok); err != nil || !ok {
+		apierror.NotFound("business service").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// readerScope returns the caller's data scope in tenantID (nil when the
+// caller is unrestricted or no enforcer is wired).
+func (h *BusinessServiceHandler) readerScope(r *http.Request, tenantID string) (*shared.DataScope, error) {
 	if h.dataScope == nil {
-		return businessServiceAssetCountColumn, nil, nil
+		return nil, nil
 	}
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	scope, err := h.dataScope.Resolve(r.Context(), tid)
-	if err != nil {
-		return "", nil, err
-	}
+	return h.dataScope.Resolve(r.Context(), tid)
+}
+
+// serviceReadFrame is how a read of business_services rows follows the
+// reader's scope, with its placeholders at $first (user id) and $first+1
+// (tenant id) and those arguments (none for a nil scope):
+//   - visible: the row predicate, research/233 D4 (TRUE unless the scope
+//     is restricted): a restricted reader sees a service only when it links
+//     an asset in their scope;
+//   - countCol: asset_count counting only the linked assets in the scope.
+func serviceReadFrame(scope *shared.DataScope, first int) (visible, countCol string, args []any) {
 	if scope == nil {
-		return businessServiceAssetCountColumn, nil, nil
+		return "TRUE", businessServiceAssetCountColumn, nil
 	}
 	cond, args := filterspec.ScopeSQL("bsa.asset_id", scope, first)
-	return `(SELECT COUNT(DISTINCT bsa.asset_id)
+	countCol = `(SELECT COUNT(DISTINCT bsa.asset_id)
 		   FROM business_service_assets bsa
 		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = business_services.tenant_id
-		  WHERE bsa.service_id = business_services.id AND ` + cond + `) AS asset_count`, args, nil
+		  WHERE bsa.service_id = business_services.id AND ` + cond + `) AS asset_count`
+	visible = "TRUE"
+	if scope.Restricted() {
+		visible, _ = filterspec.BusinessServiceVisibleSQL("business_services.id", scope, first)
+	}
+	return visible, countCol, args
+}
+
+// presentService prepares a service for the caller: a restricted reader
+// never gets the owner email (personal data).
+func presentService(bs *BusinessServiceResponse, scope *shared.DataScope) {
+	if scope.Restricted() {
+		bs.OwnerEmail = ""
+	}
 }
 
 // NewBusinessServiceHandler creates a new BusinessServiceHandler.
@@ -144,22 +194,25 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var total int64
-	err := h.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM business_services WHERE tenant_id = $1", tenantID,
-	).Scan(&total)
-	if err != nil {
-		h.logger.Error("business service list count", "error", err)
-		apierror.InternalServerError("internal error").WriteJSON(w)
-		return
-	}
-
-	countCol, countArgs, err := h.assetCountColumn(r, tenantID, 4)
+	scope, err := h.readerScope(r, tenantID)
 	if err != nil {
 		h.logger.Error("business service list scope", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	// The list and its total hold only the services the reader sees.
+	totalVisible, _, totalArgs := serviceReadFrame(scope, 2)
+	var total int64
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM business_services WHERE tenant_id = $1 AND "+totalVisible,
+		append([]any{tenantID}, totalArgs...)...,
+	).Scan(&total); err != nil {
+		h.logger.Error("business service list count", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	visible, countCol, scopeArgs := serviceReadFrame(scope, 4)
 	rows, err := h.db.QueryContext(r.Context(),
 		`SELECT id, name, description, criticality, compliance_scope,
 		        handles_pii, handles_phi, handles_financial,
@@ -167,10 +220,10 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 		        owner_name, owner_email, created_at, updated_at,
 		        `+countCol+`
 		   FROM business_services
-		  WHERE tenant_id = $1
+		  WHERE tenant_id = $1 AND `+visible+`
 		  ORDER BY created_at DESC
 		  LIMIT $2 OFFSET $3`,
-		append([]any{tenantID, page.Limit(), page.Offset()}, countArgs...)...,
+		append([]any{tenantID, page.Limit(), page.Offset()}, scopeArgs...)...,
 	)
 	if err != nil {
 		h.logger.Error("business service list", "error", err)
@@ -187,6 +240,7 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 			apierror.InternalServerError("internal error").WriteJSON(w)
 			return
 		}
+		presentService(&bs, scope)
 		items = append(items, bs)
 	}
 	if err := rows.Err(); err != nil {
@@ -203,12 +257,14 @@ func (h *BusinessServiceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	countCol, countArgs, err := h.assetCountColumn(r, tenantID, 3)
+	scope, err := h.readerScope(r, tenantID)
 	if err != nil {
 		h.logger.Error("business service get scope", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	// A service the reader cannot see answers 404, as an unknown id does.
+	visible, countCol, scopeArgs := serviceReadFrame(scope, 3)
 	row := h.db.QueryRowContext(r.Context(),
 		`SELECT id, name, description, criticality, compliance_scope,
 		        handles_pii, handles_phi, handles_financial,
@@ -216,20 +272,21 @@ func (h *BusinessServiceHandler) Get(w http.ResponseWriter, r *http.Request) {
 		        owner_name, owner_email, created_at, updated_at,
 		        `+countCol+`
 		   FROM business_services
-		  WHERE tenant_id = $1 AND id = $2`,
-		append([]any{tenantID, id}, countArgs...)...,
+		  WHERE tenant_id = $1 AND id = $2 AND `+visible,
+		append([]any{tenantID, id}, scopeArgs...)...,
 	)
 
 	bs, err := scanBusinessService(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			apierror.NotFound("business service not found").WriteJSON(w)
+			apierror.NotFound("business service").WriteJSON(w)
 			return
 		}
 		h.logger.Error("business service get", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	presentService(&bs, scope)
 
 	writeJSON(w, http.StatusOK, bs)
 }
@@ -275,6 +332,9 @@ func (h *BusinessServiceHandler) Create(w http.ResponseWriter, r *http.Request) 
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	if scope, err := h.readerScope(r, tenantID); err != nil || scope.Restricted() {
+		bs.OwnerEmail = ""
+	}
 
 	writeJSON(w, http.StatusCreated, bs)
 }
@@ -296,12 +356,15 @@ func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) 
 	if !h.requireActOnLinks(w, r, tenantID, id) {
 		return
 	}
-	countCol, countArgs, err := h.assetCountColumn(r, tenantID, 15)
+	scope, err := h.readerScope(r, tenantID)
 	if err != nil {
 		h.logger.Error("business service update scope", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	// The owner email is hidden from a restricted caller, so their edit
+	// form never holds it: $15 keeps the stored value.
+	_, countCol, scopeArgs := serviceReadFrame(scope, 16)
 
 	row := h.db.QueryRowContext(r.Context(),
 		`UPDATE business_services
@@ -315,7 +378,7 @@ func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) 
 		        rpo_minutes = $11,
 		        rto_minutes = $12,
 		        owner_name = $13,
-		        owner_email = $14,
+		        owner_email = CASE WHEN $15::boolean THEN owner_email ELSE $14 END,
 		        updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2
 		 RETURNING id, name, description, criticality, compliance_scope,
@@ -327,19 +390,20 @@ func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) 
 			pq.StringArray(req.ComplianceScope),
 			req.HandlesPII, req.HandlesPHI, req.HandlesFinancial,
 			nilFloat64(req.AvailabilityTarget), nilInt(req.RPOMinutes), nilInt(req.RTOMinutes),
-			req.OwnerName, req.OwnerEmail}, countArgs...)...,
+			req.OwnerName, req.OwnerEmail, scope.Restricted()}, scopeArgs...)...,
 	)
 
 	bs, err := scanBusinessService(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			apierror.NotFound("business service not found").WriteJSON(w)
+			apierror.NotFound("business service").WriteJSON(w)
 			return
 		}
 		h.logger.Error("business service update", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
+	presentService(&bs, scope)
 
 	writeJSON(w, http.StatusOK, bs)
 }
@@ -363,7 +427,7 @@ func (h *BusinessServiceHandler) Delete(w http.ResponseWriter, r *http.Request) 
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		apierror.NotFound("business service not found").WriteJSON(w)
+		apierror.NotFound("business service").WriteJSON(w)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -396,13 +460,8 @@ func (h *BusinessServiceHandler) LinkAsset(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Verify service belongs to tenant.
-	var serviceExists bool
-	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM business_services WHERE tenant_id = $1 AND id = $2)",
-		tenantID, id,
-	).Scan(&serviceExists); err != nil || !serviceExists {
-		apierror.NotFound("business service not found").WriteJSON(w)
+	// Verify the service belongs to the tenant and the caller may change it.
+	if !h.requireWritable(w, r, tenantID, id) {
 		return
 	}
 
@@ -437,13 +496,9 @@ func (h *BusinessServiceHandler) UnlinkAsset(w http.ResponseWriter, r *http.Requ
 	id := chi.URLParam(r, "id")
 	assetID := chi.URLParam(r, "assetId")
 
-	// Verify service belongs to tenant before any mutation.
-	var serviceExists bool
-	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM business_services WHERE tenant_id = $1 AND id = $2)",
-		tenantID, id,
-	).Scan(&serviceExists); err != nil || !serviceExists {
-		apierror.NotFound("business service not found").WriteJSON(w)
+	// Verify the service belongs to the tenant and the caller may change it
+	// before any mutation.
+	if !h.requireWritable(w, r, tenantID, id) {
 		return
 	}
 	if !h.assetInScope(r, tenantID, assetID) {
@@ -474,13 +529,20 @@ func (h *BusinessServiceHandler) ListAssets(w http.ResponseWriter, r *http.Reque
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	// Verify service belongs to tenant.
+	// Verify the service belongs to the tenant and is visible to the reader.
+	scope, err := h.readerScope(r, tenantID)
+	if err != nil {
+		h.logger.Error("business service list assets scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	visible, _, scopeArgs := serviceReadFrame(scope, 3)
 	var serviceExists bool
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM business_services WHERE tenant_id = $1 AND id = $2)",
-		tenantID, id,
+		"SELECT EXISTS(SELECT 1 FROM business_services WHERE tenant_id = $1 AND id = $2 AND "+visible+")",
+		append([]any{tenantID, id}, scopeArgs...)...,
 	).Scan(&serviceExists); err != nil || !serviceExists {
-		apierror.NotFound("business service not found").WriteJSON(w)
+		apierror.NotFound("business service").WriteJSON(w)
 		return
 	}
 
