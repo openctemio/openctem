@@ -28,7 +28,7 @@ export function useChipText() {
     }
     // A true/false field reads "Known exploited: Yes", not "...is Yes".
     if (field.type === 'boolean') {
-      return `${name}: ${valueLabel(field, filter.values[0] ?? '')}`
+      return `${name}: ${toDisplayText(valueLabel(field, filter.values[0] ?? ''), 80)}`
     }
     const shown = filter.values.map((v) => toDisplayText(valueLabel(field, v), 80))
     const list =
