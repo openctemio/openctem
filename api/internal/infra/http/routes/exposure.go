@@ -240,7 +240,7 @@ func registerVulnerabilityRoutes(
 		// Bulk operations (must be before /{id})
 		// Each needs the single-item permission too: bulk_update widens the
 		// reach of a move, it does not replace the right to make it.
-		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus))
+		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus), requireStepUpWhenClosing())
 		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsAssign))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
@@ -286,7 +286,7 @@ func registerVulnerabilityRoutes(
 		// A severity downgrade waiting for approval: approving or rejecting it
 		// is an approval decision (findings:approve, eligibility checked by
 		// the approval policy in the service); the requester withdraws it.
-		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove), requireStepUp())
 		r.POST("/{id}/severity-requests/{request_id}/reject", h.RejectSeverityRequest, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/severity-requests/{request_id}/cancel", h.CancelSeverityRequest, middleware.Require(permission.FindingsSeverity))
 
@@ -348,7 +348,7 @@ func registerVulnerabilityRoutes(
 		}
 
 		// Delete operations
-		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete))
+		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// The findings filter contract (RFC-048): fields, operators, limits.
@@ -395,7 +395,7 @@ func registerVulnerabilityRoutes(
 	// Approval management routes - tenant from JWT token
 	router.Group("/api/v1/approvals", func(r Router) {
 		r.GET("/", h.ListApprovals, middleware.Require(permission.FindingsRead))
-		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove), requireStepUp())
 		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/cancel", h.CancelApproval, middleware.Require(permission.FindingsWrite))
 		r.POST("/{id}/remind", h.RemindApprovals, middleware.Require(permission.FindingsWrite))
@@ -407,7 +407,7 @@ func registerVulnerabilityRoutes(
 		// the service checks every member is in the caller's data scope.
 		r.GET("/batches", h.ListApprovalBatches, middleware.Require(permission.FindingsRead))
 		r.GET("/batches/{id}", h.GetApprovalBatch, middleware.Require(permission.FindingsRead))
-		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove))
+		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove), requireStepUp())
 		r.POST("/batches/{id}/reject", h.RejectApprovalBatch, middleware.Require(permission.FindingsApprove))
 		r.POST("/batches/{id}/cancel", h.CancelApprovalBatch, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)
