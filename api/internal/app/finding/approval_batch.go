@@ -327,7 +327,7 @@ func (s *VulnerabilityService) batchMembersInScope(ctx context.Context, store ba
 	}
 	out := make([]*vulnerability.Finding, 0, len(members))
 	for _, m := range members {
-		if err := s.dataScope.AssertFinding(ctx, b.TenantID, m.FindingID); err != nil {
+		if err := s.AssertFindingAccess(ctx, b.TenantID, m.FindingID); err != nil {
 			return nil, err
 		}
 		if m.Status != vulnerability.ApprovalStatusPending {
@@ -529,7 +529,7 @@ func (s *VulnerabilityService) GetGroupException(ctx context.Context, tenantID, 
 		return nil, nil, err
 	}
 	for _, m := range members {
-		if err := s.dataScope.AssertFinding(ctx, tenantID, m.FindingID); err != nil {
+		if err := s.AssertFindingAccess(ctx, tenantID, m.FindingID); err != nil {
 			return nil, nil, err
 		}
 	}
