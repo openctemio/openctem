@@ -917,6 +917,9 @@ func (s *AITriageService) GetTriageResult(ctx context.Context, tenantID, resultI
 	if err := s.dataScope.AssertFinding(ctx, tid, result.FindingID()); err != nil {
 		return nil, err
 	}
+	if err := s.dataScope.AssertFindingCampaign(ctx, tid, result.FindingID()); err != nil {
+		return nil, err
+	}
 
 	return s.toTriageResultResponse(result), nil
 }
@@ -1089,7 +1092,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		}
 
 		// Check if finding exists (from batch result)
-		if !existsMap[findingID] || !inScope(findingID) {
+		if !existsMap[findingID] || !inScope(findingID) || s.dataScope.AssertFindingCampaign(ctx, tenantID, findingID) != nil {
 			job.Status = "failed"
 			job.Error = "finding not found"
 			response.Jobs = append(response.Jobs, job)

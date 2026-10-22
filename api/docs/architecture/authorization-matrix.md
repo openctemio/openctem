@@ -1379,6 +1379,17 @@ comments, comment reactions, activity, the live `finding:{id}` channel and the
 MCP per-finding tools and prompts: the team sees every finding of its
 campaign, a client the published ones, anyone else gets 404; admins pass.
 
+The same rule is enforced in `middleware.DataScopeGuard` (through
+`Enforcer.AssertFindingCampaign`) for **every** route under
+`/findings/{id}/**`, not only the ones above: AI triage (latest, history,
+a result by id, and sending the finding to the model), approvals, ticket
+links and holds, the priority explanation and any route added later. A
+non-member, a client on an unpublished finding, or a non-admin on a pentest
+finding without a campaign gets 404 before the handler runs. A lookup error
+denies. The bulk AI triage request applies the rule to each finding it names
+(reported as "finding not found"). The check is one query per request and
+adds nothing for findings that are not pentest findings.
+
 Comments on a pentest finding carry a visibility (migration
 `002072_finding_comment_visibility`):
 

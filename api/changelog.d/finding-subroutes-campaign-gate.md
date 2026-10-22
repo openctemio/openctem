@@ -1,0 +1,3 @@
+### Security: pentest engagement membership now covers every finding sub-route
+
+- A member who is not on a pentest campaign could read the AI analysis of a pentest finding's proof of concept, its approval reasons, its ticket links and holds and its priority explanation, or send its content to the AI model, because only the finding itself checked campaign membership. The shared finding guard now applies the campaign rule to every `/findings/{id}/**` route (and `/compliance/findings/{id}/**`, `/verification-checklists/{id}/**`), including routes added later: non-members, clients on unpublished findings and non-admins on a campaign-less pentest finding get 404. Bulk AI triage skips such findings as "finding not found".
