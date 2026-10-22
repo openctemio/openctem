@@ -28,8 +28,12 @@ const (
 	CodeUnprocessableEntity Code = "UNPROCESSABLE_ENTITY"
 	CodeInternalError       Code = "INTERNAL_ERROR"
 	CodeServiceUnavailable  Code = "SERVICE_UNAVAILABLE"
-	CodeValidationFailed    Code = "VALIDATION_FAILED"
-	CodeRateLimitExceeded   Code = "RATE_LIMIT_EXCEEDED"
+	// CodeQueryTimeout is a 503 for a list or count read that ran past its
+	// statement timeout: the request is valid, but too broad to answer in
+	// time; narrowing the filter or search helps, retrying as is may not.
+	CodeQueryTimeout      Code = "QUERY_TIMEOUT"
+	CodeValidationFailed  Code = "VALIDATION_FAILED"
+	CodeRateLimitExceeded Code = "RATE_LIMIT_EXCEEDED"
 	// CodeUpstreamError is a 502: a service the request depends on (e.g. a
 	// template source's server) failed or refused it.
 	CodeUpstreamError Code = "UPSTREAM_ERROR"
@@ -260,7 +264,12 @@ func InternalServerError(message string) *Error {
 	return New(http.StatusInternalServerError, CodeInternalError, message)
 }
 
-// ServiceUnavailable creates a 503 Service Unavailable error.
+// QueryTimeout returns a 503 QUERY_TIMEOUT error.
+func QueryTimeout(message string) *Error {
+	return New(http.StatusServiceUnavailable, CodeQueryTimeout, message)
+}
+
+// ServiceUnavailable returns a 503 SERVICE_UNAVAILABLE error.
 func ServiceUnavailable(message string) *Error {
 	if message == "" {
 		message = "Service temporarily unavailable"

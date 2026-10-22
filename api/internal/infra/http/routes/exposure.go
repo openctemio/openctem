@@ -217,7 +217,9 @@ func registerVulnerabilityRoutes(
 	// Finding routes - tenant from JWT token
 	router.Group("/api/v1/findings", func(r Router) {
 		// Read operations
-		r.GET("/", h.ListFindings, middleware.Require(permission.FindingsRead))
+		// Under the heavy-read limiter like stats and groups: every page runs
+		// an exact count and may run a search.
+		r.GET("/", h.ListFindings, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead), heavyReads.Middleware())

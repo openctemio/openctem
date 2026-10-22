@@ -19,13 +19,45 @@ import (
 // vulnerability.FindingFields, so it always starts with the tenant predicate
 // and carries the caller's data scope.
 
-// findingListTimeout bounds one list or count statement (RFC-048 §3.7).
+// findingListTimeout bounds one list, count, stats or SLA statement
+// (RFC-048 §3.7): a search or filter that cannot finish in time is a 503
+// QUERY_TIMEOUT, never a request that holds a connection for minutes.
 const findingListTimeout = "5s"
 
 // maxFindingPageRows is the largest findings page (pagination.New clamps to it).
 const maxFindingPageRows = 100
 
 var errUncompiledFindingFilter = errors.New("finding filter was not compiled for the findings registry")
+
+// findingRowQuerier is a connection or a transaction.
+type findingRowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// beginFindingRead opens a read-only transaction whose statements stop after
+// findingListTimeout. The caller rolls it back (or commits).
+func (r *FindingRepository) beginFindingRead(ctx context.Context) (*sql.Tx, error) {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin finding read: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingListTimeout+"'"); err != nil {
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("set finding read timeout: %w", err)
+	}
+	return tx, nil
+}
+
+// findingTimeout maps a statement timeout (query_canceled) to
+// vulnerability.ErrFindingQueryTimeout, so the handler answers a typed 503
+// instead of a 500.
+func findingTimeout(err error) error {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "57014" {
+		return fmt.Errorf("%w: %w", vulnerability.ErrFindingQueryTimeout, err)
+	}
+	return err
+}
 
 // checkFindingWhere is defense in depth: a WHERE that does not start with the
 // findings tenant predicate did not come from Compile and is refused.
@@ -43,23 +75,20 @@ func (r *FindingRepository) ListWhere(ctx context.Context, w *filterspec.Where, 
 	if err := checkFindingWhere(w); err != nil {
 		return empty, err
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := r.beginFindingRead(ctx)
 	if err != nil {
-		return empty, fmt.Errorf("begin finding list: %w", err)
+		return empty, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingListTimeout+"'"); err != nil {
-		return empty, fmt.Errorf("set finding list timeout: %w", err)
-	}
 
 	var total int64
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM findings WHERE "+w.SQL, w.Args...).Scan(&total); err != nil {
-		return empty, fmt.Errorf("failed to count findings: %w", err)
+		return empty, findingTimeout(fmt.Errorf("failed to count findings: %w", err))
 	}
 	query := buildFindingPageQuery(r.selectQuery(), w.SQL, w.OrderBy, page.Limit(), page.Offset())
 	rows, err := tx.QueryContext(ctx, query, w.Args...)
 	if err != nil {
-		return empty, fmt.Errorf("failed to query findings: %w", err)
+		return empty, findingTimeout(fmt.Errorf("failed to query findings: %w", err))
 	}
 	defer rows.Close()
 	// A constant capacity: pagination.New caps a page at maxFindingPageRows,
@@ -73,7 +102,7 @@ func (r *FindingRepository) ListWhere(ctx context.Context, w *filterspec.Where, 
 		findings = append(findings, f)
 	}
 	if err := rows.Err(); err != nil {
-		return empty, fmt.Errorf("failed to iterate findings: %w", err)
+		return empty, findingTimeout(fmt.Errorf("failed to iterate findings: %w", err))
 	}
 	if err := tx.Commit(); err != nil {
 		return empty, fmt.Errorf("commit finding list: %w", err)
@@ -86,11 +115,16 @@ func (r *FindingRepository) CountWhere(ctx context.Context, w *filterspec.Where)
 	if err := checkFindingWhere(w); err != nil {
 		return 0, err
 	}
-	var total int64
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM findings WHERE "+w.SQL, w.Args...).Scan(&total); err != nil {
-		return 0, fmt.Errorf("failed to count findings: %w", err)
+	tx, err := r.beginFindingRead(ctx)
+	if err != nil {
+		return 0, err
 	}
-	return total, nil
+	defer func() { _ = tx.Rollback() }()
+	var total int64
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM findings WHERE "+w.SQL, w.Args...).Scan(&total); err != nil {
+		return 0, findingTimeout(fmt.Errorf("failed to count findings: %w", err))
+	}
+	return total, tx.Commit()
 }
 
 // GetStatsWhere computes the findings stats over a compiled filter, so the
@@ -99,7 +133,16 @@ func (r *FindingRepository) GetStatsWhere(ctx context.Context, w *filterspec.Whe
 	if err := checkFindingWhere(w); err != nil {
 		return nil, err
 	}
-	return r.queryFindingStats(ctx, findingStatsSelect+" WHERE "+w.SQL, w.Args)
+	tx, err := r.beginFindingRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	stats, err := r.queryFindingStats(ctx, tx, findingStatsSelect+" WHERE "+w.SQL, w.Args)
+	if err != nil {
+		return nil, findingTimeout(err)
+	}
+	return stats, tx.Commit()
 }
 
 // slaBreakdownSelect counts a filtered population by SLA standing. The age
@@ -132,19 +175,24 @@ func (r *FindingRepository) GetSLABreakdownWhere(ctx context.Context, w *filters
 	}
 	b := &vulnerability.SLABreakdown{PastDueBySeverity: map[vulnerability.Severity]int64{}}
 	var crit, high, med, low, info int64
-	if err := r.db.QueryRowContext(ctx, slaBreakdownSelect+" WHERE "+w.SQL, w.Args...).Scan(
+	tx, err := r.beginFindingRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := tx.QueryRowContext(ctx, slaBreakdownSelect+" WHERE "+w.SQL, w.Args...).Scan(
 		&b.Total, &b.PastDue, &b.DueSoon, &b.OnTrack,
 		&b.UpTo7, &b.D8to30, &b.D31to90, &b.Over90,
 		&crit, &high, &med, &low, &info,
 	); err != nil {
-		return nil, fmt.Errorf("failed to get sla breakdown: %w", err)
+		return nil, findingTimeout(fmt.Errorf("failed to get sla breakdown: %w", err))
 	}
 	b.PastDueBySeverity[vulnerability.SeverityCritical] = crit
 	b.PastDueBySeverity[vulnerability.SeverityHigh] = high
 	b.PastDueBySeverity[vulnerability.SeverityMedium] = med
 	b.PastDueBySeverity[vulnerability.SeverityLow] = low
 	b.PastDueBySeverity[vulnerability.SeverityInfo] = info
-	return b, nil
+	return b, tx.Commit()
 }
 
 // findingExportTimeout bounds one export statement (RFC-048 §3.7).
