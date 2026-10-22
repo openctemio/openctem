@@ -50,12 +50,9 @@ func NewSplunkClient(config Config) (*SplunkClient, error) {
 		}
 	}
 
-	hc := httpsec.SafeHTTPClient(30 * time.Second)
-	if config.AllowLoopback {
-		// Tests target httptest.NewServer (127.0.0.1); the SafeHTTPClient
-		// dialer would refuse that at connect time. Opt-in test path only.
-		hc = &http.Client{Timeout: 30 * time.Second}
-	}
+	// SSRF-guarded, redirects refused (newHTTPClient); AllowLoopback is
+	// the unit-test path against httptest servers only.
+	hc := newHTTPClient(30*time.Second, config.AllowLoopback)
 
 	sourcetype := config.Sourcetype
 	if sourcetype == "" {
