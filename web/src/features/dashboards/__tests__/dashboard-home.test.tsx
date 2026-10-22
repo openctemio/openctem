@@ -38,6 +38,7 @@ vi.mock('../api/use-dashboards-api', () => ({
     return { data: enabled ? { data: api.org } : undefined, isLoading: false }
   },
   useRevalidateAllDashboards: () => async () => {},
+  DASHBOARDS_KEY: '/api/v1/me/dashboards',
   createDashboard: api.create,
   setDefaultDashboard: vi.fn(),
   setOrgDefaultDashboard: vi.fn(),

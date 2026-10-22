@@ -16,6 +16,7 @@ import {
   colSpanFor,
   columnsClass,
   gridColumnSpan,
+  widgetSpanClass,
   normalizeColumns,
   widgetRowSpan,
 } from '../layout'
@@ -61,11 +62,14 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
         return (
           <div
             key={spec?.id ?? `${w.widget_type}-${i}`}
-            style={{
-              gridColumn: gridColumnSpan(colSpanFor(w.w, cols)),
-              gridRow: widgetRowSpan(w.h),
-            }}
-            className="flex min-w-0 flex-col"
+            style={
+              {
+                '--span': gridColumnSpan(colSpanFor(w.w, cols)),
+                '--span-sm': gridColumnSpan(Math.min(2, colSpanFor(w.w, cols))),
+                gridRow: widgetRowSpan(w.h),
+              } as React.CSSProperties
+            }
+            className={cn('flex min-w-0 flex-col', widgetSpanClass(cols))}
             data-widget-index={i}
           >
             <WidgetErrorBoundary

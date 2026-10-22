@@ -43,6 +43,15 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000'
 /** Sources whose findings come from people, not scanners. */
 export const HUMAN_SOURCES = new Set(['pentest', 'bug_bounty', 'red_team', 'manual'])
 
+/**
+ * Status, severity and assignee are managed in the campaign (or by the author)
+ * for findings people wrote, so the page and the drawer lock them. One rule for
+ * both; the API refuses the change too.
+ */
+export function isTriageLocked(source: string | undefined, readOnly = false): boolean {
+  return readOnly || (!!source && HUMAN_SOURCES.has(source))
+}
+
 // The API returns only the statuses of the one registry.
 const STATUS_MAP: Record<string, FindingStatus> = Object.fromEntries(
   ALL_FINDING_STATUSES.map((s) => [s, s])
