@@ -31,10 +31,12 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
+import { useTranslation } from '@/context/i18n-provider'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 
 import { PRIORITY_WINDOWS, SEVERITY_WINDOWS } from './sla-windows'
+import { buildSlaPolicyPayload } from '../lib/sla-policy-payload'
 import { NO_SLA } from '../schemas/sla-policy-schema'
 
 import {
@@ -78,6 +80,7 @@ function toFormData(policy: SlaPolicy): SlaPolicyFormData {
 }
 
 export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPolicyDialogProps) {
+  const { t } = useTranslation()
   const isEdit = Boolean(policy)
 
   // A new policy starts from the windows the API reports as effective (the
@@ -105,38 +108,31 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
   const isMutating = isCreating || isUpdating
 
   const onSubmit = async (data: SlaPolicyFormData) => {
-    const payload = {
-      name: data.name,
-      // An empty string clears the description (absent would keep the old one).
-      description: data.description ?? '',
-      // Only the default policy governs findings today (asset overrides have no
-      // editor yet), so a new policy is always the default.
-      is_default: isEdit ? data.is_default : true,
-      p0_days: data.p0_days,
-      p1_days: data.p1_days,
-      p2_days: data.p2_days,
-      p3_days: data.p3_days,
-      critical_days: data.critical_days,
-      high_days: data.high_days,
-      medium_days: data.medium_days,
-      low_days: data.low_days,
-      info_days: data.info_days,
-      warning_threshold_pct: data.warning_threshold_pct,
-      escalation_enabled: data.escalation_enabled,
-    }
+    const payload = buildSlaPolicyPayload(data, isEdit)
     try {
       if (isEdit && policy) {
         await updatePolicy({ id: policy.id, ...payload })
-        toast.success(`Policy "${data.name}" updated`)
+        toast.success(
+          t('settings.slaPolicies.dialog.updated', 'Policy "{name}" updated', { name: data.name })
+        )
       } else {
         await createPolicy(payload)
-        toast.success(`Policy "${data.name}" created`)
+        toast.success(
+          t('settings.slaPolicies.dialog.created', 'Policy "{name}" created', { name: data.name })
+        )
       }
       await invalidateSlaPoliciesCache()
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, `Failed to ${isEdit ? 'update' : 'create'} SLA policy`))
+      toast.error(
+        getErrorMessage(
+          err,
+          isEdit
+            ? t('settings.slaPolicies.dialog.updateFailed', 'Failed to update SLA policy')
+            : t('settings.slaPolicies.dialog.createFailed', 'Failed to create SLA policy')
+        )
+      )
     }
   }
 
@@ -148,12 +144,16 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit SLA Policy' : 'New SLA Policy'}</DialogTitle>
+          <DialogTitle>
+            {isEdit
+              ? t('settings.slaPolicies.dialog.titleEdit', 'Edit SLA policy')
+              : t('settings.slaPolicies.dialog.titleNew', 'New SLA policy')}
+          </DialogTitle>
           <DialogDescription>
-            Set the remediation windows in days. A finding with a CTEM priority class (P0–P3) gets
-            its deadline from the priority window; a finding without a class yet uses its severity
-            window. Saving changes deadlines computed from now on; existing deadlines stay as they
-            are.
+            {t(
+              'settings.slaPolicies.dialog.description',
+              'Set the remediation windows in days. A finding with a CTEM priority class (P0–P3) gets its deadline from the priority window; a finding without a class yet uses its severity window. Saving changes deadlines computed from now on; existing deadlines stay as they are.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -165,9 +165,15 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name</FormLabel>
+                    <FormLabel>{t('settings.slaPolicies.dialog.name', 'Name')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Production SLA" {...field} />
+                      <Input
+                        placeholder={t(
+                          'settings.slaPolicies.dialog.namePlaceholder',
+                          'Production SLA'
+                        )}
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -179,10 +185,15 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description</FormLabel>
+                    <FormLabel>
+                      {t('settings.slaPolicies.dialog.descriptionLabel', 'Description')}
+                    </FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Applied to production-facing assets"
+                        placeholder={t(
+                          'settings.slaPolicies.dialog.descriptionPlaceholder',
+                          'Applied to production-facing assets'
+                        )}
                         className="resize-none"
                         {...field}
                       />
@@ -196,9 +207,17 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
 
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <h4 className="text-sm font-medium">Priority-class windows (days)</h4>
+                  <h4 className="text-sm font-medium">
+                    {t(
+                      'settings.slaPolicies.dialog.priorityTitle',
+                      'Priority-class windows (days)'
+                    )}
+                  </h4>
                   <p className="text-xs text-muted-foreground">
-                    Used for every finding that has a priority class.
+                    {t(
+                      'settings.slaPolicies.dialog.priorityHint',
+                      'Used for every finding that has a priority class.'
+                    )}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -230,10 +249,14 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
 
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <h4 className="text-sm font-medium">Severity windows (days)</h4>
+                  <h4 className="text-sm font-medium">
+                    {t('settings.slaPolicies.dialog.severityTitle', 'Severity windows (days)')}
+                  </h4>
                   <p className="text-xs text-muted-foreground">
-                    Used only for findings that have no priority class yet. Info 0 = informational
-                    findings get no SLA (the default), whatever their priority class.
+                    {t(
+                      'settings.slaPolicies.dialog.severityHint',
+                      'Used only for findings that have no priority class yet. Info 0 = informational findings get no SLA (the default), whatever their priority class.'
+                    )}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -273,7 +296,9 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                 name="warning_threshold_pct"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Warning threshold (%)</FormLabel>
+                    <FormLabel>
+                      {t('settings.slaPolicies.dialog.warningLabel', 'Warning threshold (%)')}
+                    </FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -286,8 +311,10 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                       />
                     </FormControl>
                     <FormDescription>
-                      A finding is flagged &quot;warning&quot; once this percentage of its window
-                      has elapsed.
+                      {t(
+                        'settings.slaPolicies.dialog.warningHint',
+                        'A finding is flagged as "warning" once this percentage of its window has elapsed.'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -296,27 +323,13 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
 
               <Separator />
 
-              {/* Only an existing non-default policy can be promoted; the default
-                cannot be demoted here (that would leave no policy in force). */}
-              {isEdit && policy && !policy.is_default && (
-                <FormField
-                  control={form.control}
-                  name="is_default"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                      <div className="space-y-0.5">
-                        <FormLabel>Make this the default policy</FormLabel>
-                        <FormDescription>
-                          This policy applies to nothing until it is the default. The current
-                          default stops applying.
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
+              {!isEdit && (
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    'settings.slaPolicies.dialog.newNotDefault',
+                    'A new policy does not apply to any finding until you make it the default from the policy list.'
                   )}
-                />
+                </p>
               )}
 
               <FormField
@@ -325,10 +338,14 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
-                      <FormLabel>Deadline notifications</FormLabel>
+                      <FormLabel>
+                        {t('settings.slaPolicies.dialog.notifyLabel', 'Deadline notifications')}
+                      </FormLabel>
                       <FormDescription>
-                        Notify when a finding reaches the warning threshold and when it breaches its
-                        deadline. When off, the SLA status still changes but nobody is notified.
+                        {t(
+                          'settings.slaPolicies.dialog.notifyHint',
+                          'Notify when a finding reaches the warning threshold and when it breaches its deadline. When off, the SLA status still changes but nobody is notified.'
+                        )}
                       </FormDescription>
                     </div>
                     <FormControl>
@@ -341,8 +358,11 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
               {seedMissing && (
                 <p className="text-sm text-muted-foreground" role="status">
                   {effectiveLoading
-                    ? 'Loading the current windows…'
-                    : 'The current windows could not be loaded; try again in a moment.'}
+                    ? t('settings.slaPolicies.dialog.loading', 'Loading the current windows…')
+                    : t(
+                        'settings.slaPolicies.dialog.loadFailed',
+                        'The current windows could not be loaded; try again in a moment.'
+                      )}
                 </p>
               )}
             </DialogBody>
@@ -353,11 +373,13 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                 onClick={() => onOpenChange(false)}
                 disabled={isMutating}
               >
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={isMutating || seedMissing}>
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                {isEdit ? 'Save changes' : 'Create policy'}
+                {isEdit
+                  ? t('settings.slaPolicies.dialog.save', 'Save changes')
+                  : t('settings.slaPolicies.dialog.create', 'Create policy')}
               </Button>
             </DialogFooter>
           </DialogForm>

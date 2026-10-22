@@ -270,6 +270,8 @@ func registerVulnerabilityRoutes(
 		// decision states what the move itself would need.
 		r.GET("/{id}/transitions", h.GetFindingTransitions, middleware.Require(permission.FindingsRead))
 		r.POST("/transitions/preview", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
+		// How the finding can be verified (advisory; the engine enforces).
+		r.GET("/{id}/verification", h.GetFindingVerificationPlan, middleware.Require(permission.FindingsRead))
 
 		// Assignment operations
 		r.GET("/{id}/assignable", h.ListAssignableMembers, middleware.Require(permission.FindingsAssign))
@@ -311,7 +313,9 @@ func registerVulnerabilityRoutes(
 		// Retest now (POST /{id}/retests) re-runs the finding's own check.
 		if findingActionsHandler != nil {
 			// CTEM Stage-4: dispatch a validation (safe-check) job for this finding.
-			r.POST("/{id}/validate", findingActionsHandler.RequestValidation, middleware.Require(permission.FindingsWrite))
+			// An active probe whose outcome is applied to the finding: the same
+			// segregation-of-duties permission as a retest (findings:verify).
+			r.POST("/{id}/validate", findingActionsHandler.RequestValidation, middleware.Require(permission.FindingsVerify))
 		}
 
 		// Tags

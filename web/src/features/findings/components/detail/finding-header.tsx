@@ -61,7 +61,8 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   const isHuman = HUMAN_SOURCES.has(finding.source)
   const { hasPermission } = usePermissions()
   const router = useRouter()
-  const canWrite = hasPermission('findings:write')
+  // Re-verify dispatches the reachability check (POST /validate): findings:verify.
+  const canVerify = hasPermission('findings:verify')
   const canCreateTicket = useCanCreateTicket()
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
@@ -164,7 +165,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
       </h1>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {!isHuman && canWrite && (
+        {!isHuman && canVerify && (
           <Button
             variant="outline"
             size="sm"

@@ -1396,5 +1396,7 @@
   "findings.verification.itemSecret.exposure_cleared": "The credential is revoked at the provider and replaced where it was used",
   "findings.verification.itemSecret.evidence_attached": "Evidence is attached (provider audit entry, vault version, ticket)",
   "findings.verification.itemSecret.register_updated": "Use of the credential since exposure was checked and recorded",
-  "findings.validationEvidence.checkReachability": "Check reachability"
+  "findings.validationEvidence.checkReachability": "Check reachability",
+  "findings.bulk.status": "Status",
+  "findings.bulk.assignTo": "Assign to…"
 }

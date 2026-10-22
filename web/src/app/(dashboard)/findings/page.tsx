@@ -403,6 +403,8 @@ const SORTABLE_COLUMNS: Record<string, { api: string; invert?: boolean }> = {
   source: { api: 'source' },
   status: { api: 'status' },
   createdAt: { api: 'created_at' },
+  // Due date: soonest (most overdue) first on ascending.
+  slaStatus: { api: 'sla_deadline' },
 }
 
 /** The URL's API sort (`-created_at`, `severity,-created_at`) → table sorting state. */
@@ -931,6 +933,16 @@ function FindingsContent() {
   }, [findingsResponse])
 
   const selectedCount = selectedFindingIds.length
+  // Bulk actions need findings:bulk_update and the single-item permission of
+  // each action (the API checks both); selection is offered only when at least
+  // one bulk action is.
+  const canBulkUpdate = hasPermission(Permission.FindingsBulkUpdate)
+  const canBulkAssign = canBulkUpdate && hasPermission(Permission.FindingsAssign)
+  const canBulkStatus = canBulkUpdate && hasPermission(Permission.FindingsStatus)
+  const canBulkRemediate = hasPermission('findings:remediation:write') && remediationEnabled
+  const canSelect = canBulkAssign || canBulkStatus || canBulkRemediate
+  // One bulk write at a time (a double click must not send two).
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const handleRefresh = async () => {
     await Promise.all([mutateFindings(), mutateStats()])
@@ -1011,8 +1023,9 @@ function FindingsContent() {
 
   const handleBulkAssign = async (userId: string) => {
     const findingIds = selectedFindingIds
-    if (findingIds.length === 0 || !userId.trim()) return
+    if (findingIds.length === 0 || !userId.trim() || bulkBusy) return
 
+    setBulkBusy(true)
     try {
       const response = await csrfFetch('/api/v1/findings/bulk/assign', {
         method: 'POST',
@@ -1032,12 +1045,16 @@ function FindingsContent() {
       mutateFindings()
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to assign findings'))
+    } finally {
+      setBulkBusy(false)
     }
   }
 
-  const handleBulkStatusChange = async (status: string, resolution?: string) => {
-    if (selectedFindingIds.length === 0) return
+  /** Returns whether the write went through (a failed bulk resolve keeps its note). */
+  const handleBulkStatusChange = async (status: string, resolution?: string): Promise<boolean> => {
+    if (selectedFindingIds.length === 0 || bulkBusy) return false
 
+    setBulkBusy(true)
     try {
       // Dry run first (the API's transition engine): only the findings that
       // may move are sent; the others are reported with the reason.
@@ -1051,7 +1068,7 @@ function FindingsContent() {
         toast.error(t('findings.bulk.noneCanMove', 'None of the selected findings can move'), {
           description: refusedText,
         })
-        return
+        return false
       }
       if (dryRun.refused.length > 0) {
         toast.warning(
@@ -1079,8 +1096,12 @@ function FindingsContent() {
       clearSelection()
       mutateFindings()
       mutateStats()
+      return true
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to update findings'))
+      return false
+    } finally {
+      setBulkBusy(false)
     }
   }
 
@@ -1413,7 +1434,7 @@ function FindingsContent() {
       },
       {
         accessorKey: 'slaStatus',
-        enableSorting: false,
+        enableSorting: true,
         header: ({ column }) => <DataTableColumnHeader column={column} title="Due / SLA" />,
         cell: ({ row }) => {
           const status = row.original.slaStatus
@@ -1510,14 +1531,17 @@ function FindingsContent() {
         },
       },
     ]
+    // No bulk action for this user: no selection checkboxes either.
+    const shown = canSelect ? cols : cols.filter((c) => c.id !== 'select')
     return hasAnyPriority
-      ? cols
-      : cols.filter((c) => !('accessorKey' in c) || c.accessorKey !== 'priorityClass')
+      ? shown
+      : shown.filter((c) => !('accessorKey' in c) || c.accessorKey !== 'priorityClass')
   }, [
     handleRowAction,
     handleRowClick,
     hasPermission,
     hasAnyPriority,
+    canSelect,
     remediationEnabled,
     canCreateTicket,
     t,
@@ -2322,56 +2346,67 @@ function FindingsContent() {
             </div>
           </div>
 
-          <BulkActionBar count={selectedCount} onClear={clearSelection}>
-            <AssigneeSelect
-              placeholder="Assign to…"
+          {canSelect && (
+            <BulkActionBar count={selectedCount} onClear={clearSelection}>
+              {canBulkAssign && (
+                <AssigneeSelect
+                  placeholder={t('findings.bulk.assignTo', 'Assign to…')}
+                  disabled={bulkBusy}
 
-              onChange={(user) => {
-                if (user) void handleBulkAssign(user.id)
-              }}
-            />
+                  onChange={(user) => {
+                    if (user) void handleBulkAssign(user.id)
+                  }}
+                />
+              )}
 
-            {hasPermission('findings:remediation:write') && remediationEnabled && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => openRemediationFor(selectedFindings)}
-              >
-                <Wrench className="me-2 h-4 w-4" />
-                {t('remediationClaim.menu.bulk')}
-              </Button>
-            )}
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <Flag className="me-2 h-4 w-4" />
-                  Status
+              {canBulkRemediate && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => openRemediationFor(selectedFindings)}
+                >
+                  <Wrench className="me-2 h-4 w-4" />
+                  {t('remediationClaim.menu.bulk')}
                 </Button>
-              </DropdownMenuTrigger>
+              )}
 
-              <DropdownMenuContent side="top" align="center">
-                <DropdownMenuItem onClick={() => handleBulkStatusChange('confirmed')}>
-                  Confirmed
-                </DropdownMenuItem>
+              {canBulkStatus && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" disabled={bulkBusy}>
+                      {bulkBusy ? (
+                        <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Flag className="me-2 h-4 w-4" />
+                      )}
+                      {t('findings.bulk.status', 'Status')}
+                    </Button>
+                  </DropdownMenuTrigger>
 
-                <DropdownMenuItem onClick={() => handleBulkStatusChange('in_progress')}>
-                  In Progress
-                </DropdownMenuItem>
+                  <DropdownMenuContent side="top" align="center">
+                    <DropdownMenuItem onClick={() => void handleBulkStatusChange('confirmed')}>
+                      {t('findings.status.confirmed', 'Confirmed')}
+                    </DropdownMenuItem>
 
-                {/* Resolving needs findings:verify; the API refuses it otherwise. */}
-                {hasPermission(Permission.FindingsVerify) && (
-                  <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
-                    Resolved
-                  </DropdownMenuItem>
-                )}
+                    <DropdownMenuItem onClick={() => void handleBulkStatusChange('in_progress')}>
+                      {t('findings.status.in_progress', 'In Progress')}
+                    </DropdownMenuItem>
 
-                {/* false_positive requires the per-finding approval flow, so it is
+                    {/* Resolving needs findings:verify; the API refuses it otherwise. */}
+                    {hasPermission(Permission.FindingsVerify) && (
+                      <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
+                        {t('findings.status.resolved', 'Resolved')}
+                      </DropdownMenuItem>
+                    )}
+
+                    {/* false_positive requires the per-finding approval flow, so it is
 
                     intentionally not offered as a bulk action. */}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </BulkActionBar>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </BulkActionBar>
+          )}
 
           <FilterSheet
             open={filterSheetOpen}
@@ -2493,11 +2528,12 @@ function FindingsContent() {
           'The selected findings are closed as resolved and leave the open work queues and SLA tracking.'
         )}
         confirmText={t('confirm.finding.resolve', 'Resolve')}
-        disabled={!bulkResolveNote.trim()}
+        disabled={!bulkResolveNote.trim() || bulkBusy}
         handleConfirm={async () => {
-          await handleBulkStatusChange('resolved', bulkResolveNote.trim())
-          setBulkResolveNote('')
-          setBulkResolveOpen(false)
+          if (await handleBulkStatusChange('resolved', bulkResolveNote.trim())) {
+            setBulkResolveNote('')
+            setBulkResolveOpen(false)
+          }
         }}
       >
         {/* A bulk resolve reads no verification checklist: it is attested and needs a note. */}
