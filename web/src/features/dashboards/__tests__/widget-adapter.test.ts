@@ -118,6 +118,11 @@ describe('widgetModel', () => {
     expect(widgetModel({ ...base, shape: 'scalar' }, undefined, false).state).toBe('error')
     expect(widgetModel(undefined, undefined, false).state).toBe('loading')
     expect(reasonKeyOf('something new')).toBe('dashboards.reason.failed')
+    // CTEM metrics with nothing to measure explain why instead of "failed"
+    expect(
+      widgetModel({ ...base, state: 'not_measured', reason: 'no_crown_jewels' }, undefined, false)
+    ).toMatchObject({ state: 'not_measured', reasonKey: 'dashboards.reason.no_crown_jewels' })
+    expect(reasonKeyOf('no_relationship_data')).toBe('dashboards.reason.no_relationship_data')
   })
 
   it('flows are labelled new and fixed', () => {
