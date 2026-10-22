@@ -43,6 +43,8 @@ function card(
             <FindingRowMenu
               title={finding.title}
               onAction={onAction}
+              canAssign
+              canChangeStatus
               canCreateTicket={false}
               canRemediate={false}
               canDelete={false}

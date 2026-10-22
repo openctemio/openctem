@@ -157,6 +157,15 @@ describe('Findings list filters', () => {
     expect(contractState.asked.every((a) => a === false)).toBe(true)
   })
 
+  it('a crown-jewel drill-down is a context filter: no contract request, no second chip', () => {
+    openAt('?asset_crown_jewel=true')
+    render(<FindingsPage />)
+    expect(contractState.asked.every((a) => a === false)).toBe(true)
+    expect(lastListFilters().asset_crown_jewel).toBe(true)
+    expect(lastListFilters().extra).toBeUndefined()
+    expect(screen.queryByTestId('filter-chip-unknown')).toBeNull()
+  })
+
   it('draws a chip for each filter, facet ones included, with no contract', () => {
     openAt('?severity=high&status=new')
     render(<FindingsPage />)
