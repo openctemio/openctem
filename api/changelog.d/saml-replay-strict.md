@@ -7,5 +7,5 @@
 ### Added: SAML identity provider certificate expiry alerts
 
 - Owners are alerted in-app and by email 30, 7 and 1 day(s) before the organization's SAML IdP certificate expires, and when it has expired. Saving an expired certificate is refused, and the admin SAML view shows `certificate_not_after`.
-- Migration `003286_saml_cert_expiry_notice` adds the nullable `saml_providers.cert_expiry_notice_days`.
+- Migration `003295_saml_cert_expiry_notice` adds the nullable `saml_providers.cert_expiry_notice_days`.
 - **Upgrade note:** SAML IdPs that encrypt assertions are now refused; configure the IdP to send signed, unencrypted assertions.
