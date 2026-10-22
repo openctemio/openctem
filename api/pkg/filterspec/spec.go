@@ -157,7 +157,11 @@ func AsError(err error) (*Error, bool) {
 	return nil, false
 }
 
-var errUnknownParam = errors.New("unknown parameter")
+// ReasonUnknownFilter is the detail reason of a param the registry does not
+// know (strict mode). Clients match on it to explain the 400.
+const ReasonUnknownFilter = "unknown filter"
+
+var errUnknownParam = errors.New(ReasonUnknownFilter)
 
 // errs accumulates details up to MaxErrorDetails.
 type errs struct{ d []Detail }

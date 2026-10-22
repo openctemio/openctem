@@ -68,10 +68,13 @@ A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the
 
 ## Unknown params and aliases
 
-- During an endpoint's first release on the contract, unknown params are
-  ignored but logged by name, counted in `filter_unknown_param_total`, and
-  answered with `Deprecation` and `Warning` headers. Then the endpoint
-  switches to strict (400).
+- Every list endpoint on the contract is strict: an unknown param is `400
+  INVALID_FILTER` with `details[].param` naming it and `details[].reason`
+  `"unknown filter"` (the value is never echoed). A typo can never widen a
+  list, its counts, an export or a bulk change. The findings list, stats,
+  groups and export switched to strict when the findings list page moved to
+  the registry-driven filter bar (research 234); `GET /meta/filters/findings`
+  lists the accepted names.
 - Old names (`severities`, `search`, …) are aliases: they work, answer with
   `Deprecation`/`Sunset` and count in `deprecated_query_param_requests_total`.
 
