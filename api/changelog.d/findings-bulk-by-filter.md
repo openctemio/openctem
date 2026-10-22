@@ -8,5 +8,5 @@
 - Each organization may change 20,000 findings by filter per hour (checked under a per-tenant lock, so concurrent
   requests cannot overrun it). Each person may have one operation running.
 - Every run writes summary audit rows, and every changed finding gets its own row.
-- `GET /operations/{id}` reads an operation (creator only). New table `operations`, migration `003318_operations`
+- `GET /operations/{id}` reads an operation (creator only). New table `operations`, migration `003324_operations`
   (new and empty; no change to existing tables).
