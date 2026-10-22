@@ -66,6 +66,14 @@ type SnapshotStore interface {
 	// one serialized statement per tenant; otherwise it returns how long to
 	// wait.
 	TakeRefreshBudget(ctx context.Context, tenantID, dashboardID, userID shared.ID) (ok bool, retryAfter time.Duration, err error)
+	// RefundRefreshBudget gives back the Refresh now this person took on
+	// this dashboard within the last RefreshPerUserEvery (the refresh did
+	// not run, or failed).
+	RefundRefreshBudget(ctx context.Context, tenantID, dashboardID, userID shared.ID) error
+	// TryRefreshLock takes the dashboard's refresh lock without waiting:
+	// one recompute (Refresh now or scheduled) per dashboard at a time. ok
+	// is false when another holds it; release must be called when ok.
+	TryRefreshLock(ctx context.Context, tenantID, dashboardID shared.ID) (release func(), ok bool, err error)
 	// ScopeFingerprint fingerprints a read scope: the kind of scope, the
 	// owner's scope rows (restricted) or the assets hidden from them
 	// (unrestricted), and their pentest campaigns (unless allCampaigns).

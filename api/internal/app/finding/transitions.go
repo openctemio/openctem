@@ -320,12 +320,43 @@ func bulkRefusalReason(err error) string {
 // finding that came back cannot be closed on the evidence of the previous
 // fix. Tenant-scoped reads.
 func loadResolveEvidence(ctx context.Context, db *sql.DB, tenantID, findingID shared.ID, facts *vulnerability.TransitionFacts) error {
+	ev, err := readResolveEvidence(ctx, db, tenantID, findingID)
+	if err != nil {
+		return err
+	}
+	if ev.ChecklistComplete && ev.ChecklistFresh {
+		facts.ChecklistComplete = true
+		facts.ChecklistCompletedBy = ev.ChecklistCompletedBy
+	}
+	facts.RetestConfirmedFixed = ev.RetestOutcome == "confirmed_fixed" && ev.RetestFresh
+	return nil
+}
+
+// resolveEvidence is the stored proof a resolve may rest on, with whether
+// each piece is newer than the evidence horizon (the later of the last reopen
+// and the last sighting).
+type resolveEvidence struct {
+	ChecklistExists      bool
+	ChecklistComplete    bool
+	ChecklistFresh       bool
+	ChecklistIncomplete  []string // items not yet satisfied
+	ChecklistCompletedBy shared.ID
+	ChecklistCompletedAt *time.Time
+	RetestOutcome        string
+	RetestCompletedAt    *time.Time
+	RetestFresh          bool
+}
+
+// readResolveEvidence reads the checklist and the latest completed retest of
+// a finding. Tenant-scoped reads.
+func readResolveEvidence(ctx context.Context, db *sql.DB, tenantID, findingID shared.ID) (resolveEvidence, error) {
+	var ev resolveEvidence
 	var since sql.NullTime
 	err := db.QueryRowContext(ctx, `
 		SELECT GREATEST(last_reopened_at, last_seen_at) FROM findings
 		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), findingID.String()).Scan(&since)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read finding evidence horizon: %w", err)
+		return ev, fmt.Errorf("read finding evidence horizon: %w", err)
 	}
 	fresh := func(at *time.Time) bool {
 		return at != nil && (!since.Valid || at.After(since.Time))
@@ -333,12 +364,16 @@ func loadResolveEvidence(ctx context.Context, db *sql.DB, tenantID, findingID sh
 
 	checklist, err := loadVerificationChecklist(ctx, db, tenantID, findingID)
 	if err != nil {
-		return err
+		return ev, err
 	}
-	if checklist != nil && checklist.FindingID() == findingID && checklist.IsComplete() && fresh(checklist.CompletedAt()) {
-		facts.ChecklistComplete = true
+	if checklist != nil && checklist.FindingID() == findingID {
+		ev.ChecklistExists = true
+		ev.ChecklistIncomplete = checklist.IncompleteItems()
+		ev.ChecklistComplete = checklist.IsComplete()
+		ev.ChecklistCompletedAt = checklist.CompletedAt()
+		ev.ChecklistFresh = fresh(checklist.CompletedAt())
 		if by := checklist.CompletedBy(); by != nil {
-			facts.ChecklistCompletedBy = *by
+			ev.ChecklistCompletedBy = *by
 		}
 	}
 	var (
@@ -351,12 +386,13 @@ func loadResolveEvidence(ctx context.Context, db *sql.DB, tenantID, findingID sh
 		ORDER BY completed_at DESC NULLS LAST
 		LIMIT 1`, tenantID.String(), findingID.String()).Scan(&outcome, &completedAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read latest retest: %w", err)
+		return ev, fmt.Errorf("read latest retest: %w", err)
 	}
-	var retestAt *time.Time
+	ev.RetestOutcome = outcome.String
 	if completedAt.Valid {
-		retestAt = &completedAt.Time
+		t := completedAt.Time
+		ev.RetestCompletedAt = &t
 	}
-	facts.RetestConfirmedFixed = outcome.String == "confirmed_fixed" && fresh(retestAt)
-	return nil
+	ev.RetestFresh = fresh(ev.RetestCompletedAt)
+	return ev, nil
 }

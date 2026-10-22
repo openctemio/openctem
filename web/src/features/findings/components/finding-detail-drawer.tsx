@@ -139,6 +139,7 @@ export function FindingDetailDrawer({
 
   // Re-scoring needs findings:severity, which a remediation owner may lack.
   const canRescore = useCanMutate('PATCH /api/v1/findings/{id}/severity')
+  const canAssign = useCanMutate('POST /api/v1/findings/{id}/assign')
   const triage = useFindingTriage(
     detail ?? { id: '', status: 'new', severity: 'medium', assignee: undefined },
     {
@@ -285,6 +286,7 @@ export function FindingDetailDrawer({
                     )
                   }
                   loading={triage.assigneeBusy}
+                  disabled={!canAssign}
                 />
               </>
             }
