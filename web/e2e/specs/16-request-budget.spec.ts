@@ -91,6 +91,10 @@ test('every dashboard page stays within its request budget', async ({ page }) =>
   // stale allowance.
   for (const listed of Object.keys(routeBudgets)) expect(routes, listed).toContain(listed)
 
+  // A person's first visit to / stores their copy of the Overview template
+  // (one write, once); the budget is for every load after that.
+  await apiRequestsOfLoad(page, '/')
+
   const problems: string[] = []
   for (const route of routes) {
     const requests = await apiRequestsOfLoad(page, route)
