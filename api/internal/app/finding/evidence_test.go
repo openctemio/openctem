@@ -276,6 +276,31 @@ func TestAddFindingEvidence_NoteCapEnforced(t *testing.T) {
 	}
 }
 
+// The evidence list of a finding is capped, so a note added past the cap would
+// be neither listed nor counted against maxEvidenceNotes. A full context
+// refuses new notes instead.
+func TestAddFindingEvidence_RefusedWhenEvidenceListFull(t *testing.T) {
+	tenantID := shared.NewID()
+	f := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	store := newStubEvidenceStore()
+	s := newTestService(seedRepo(f), store)
+	for i := 0; i < maxEvidenceItems; i++ {
+		store.addFileAttachment(tenantID, f.ID().String())
+	}
+	_, err := s.AddFindingEvidence(context.Background(), AddEvidenceInput{
+		FindingID:   f.ID().String(),
+		TenantID:    tenantID.String(),
+		UserID:      shared.NewID().String(),
+		Description: "past the listed cap",
+	})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("note into a full evidence list: want ErrValidation, got %v", err)
+	}
+	if len(store.uploads) != 0 {
+		t.Fatalf("no note may be stored, got %d", len(store.uploads))
+	}
+}
+
 func addNote(t *testing.T, s *VulnerabilityService, f *vulnerability.Finding, tenantID, userID shared.ID) *FindingEvidence {
 	t.Helper()
 	ev, err := s.AddFindingEvidence(context.Background(), AddEvidenceInput{
