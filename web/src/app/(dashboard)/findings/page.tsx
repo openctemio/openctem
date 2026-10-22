@@ -698,6 +698,10 @@ function FindingsContent() {
     hasPermission(Permission.FindingsRead)
   const [taskQuery, setTaskQuery] = useState<{ query: string; ignored: string[] } | null>(null)
   const canCreateTicket = useCanCreateTicket()
+  // The row menu offers a change only to someone the API lets make it (the
+  // gates of POST /findings/{id}/assign and PATCH /findings/{id}/status).
+  const canAssignOne = hasPermission(Permission.FindingsAssign)
+  const canChangeStatusOne = hasPermission(Permission.FindingsStatus)
 
   // Statuses hidden from default dashboard view (pentest WIP, not ready for visibility)
   const HIDDEN_STATUSES = useMemo(() => [...FINDINGS_LIST_HIDDEN_STATUSES], [])
@@ -1534,6 +1538,8 @@ function FindingsContent() {
             <FindingRowMenu
               title={finding.title}
               onAction={(action) => handleRowAction(action, finding)}
+              canAssign={canAssignOne}
+              canChangeStatus={canChangeStatusOne}
               canCreateTicket={canCreateTicket}
               canRemediate={hasPermission('findings:remediation:write') && remediationEnabled}
               canDelete={hasPermission('findings:delete')}
@@ -1555,6 +1561,8 @@ function FindingsContent() {
     canSelect,
     remediationEnabled,
     canCreateTicket,
+    canAssignOne,
+    canChangeStatusOne,
     t,
   ])
 
@@ -2116,6 +2124,8 @@ function FindingsContent() {
         <FindingRowMenu
           title={f.title}
           onAction={(action) => handleRowAction(action, f)}
+          canAssign={canAssignOne}
+          canChangeStatus={canChangeStatusOne}
           canCreateTicket={canCreateTicket}
           canRemediate={hasPermission('findings:remediation:write') && remediationEnabled}
           canDelete={hasPermission('findings:delete')}
