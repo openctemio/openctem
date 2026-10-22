@@ -74,6 +74,46 @@ Reporter text is untrusted: it is stored as data, rendered only through the
 markdown sanitiser, and `bug_bounty` findings are never sent to AI triage
 automatically (RFC-121 D13).
 
+## Duplicate candidates
+
+`GET /api/v1/findings/{id}/duplicate-candidates` (`findings:triage`) works
+for any finding; for a bounty report it adds the report's CWE and endpoint
+path to the signals and compares dates with its `submitted_at`.
+
+- **Candidates:** other findings of the tenant, not folded duplicates, any
+  source and status (resolved included), on the same asset or on an asset
+  whose name has the same host (`assetHostSQL`), and sharing a CWE, a CVE or
+  a vulnerable path (the report's `endpoint_path` and the finding's own
+  injection points against the candidate's injection points).
+- **Order:** same asset first, then the number of matching signals, then the
+  earliest first detection. At most 20.
+- **Scope:** the seed finding is checked first (404 outside the caller's
+  scope or tenant); candidates are filtered in SQL with the caller's data
+  scope and the pentest member rule, so `known_since` is computed only from
+  findings the caller can read.
+
+Response (contract for the web candidates panel):
+
+```json
+{
+  "finding_id": "…",
+  "report_submitted_at": "2026-10-21T09:00:00Z",
+  "known_since": "2026-09-22T17:00:00Z",
+  "known_before_report": true,
+  "candidates": [
+    {"finding_id": "…", "title": "…", "source": "dast", "status": "confirmed",
+     "severity": "high", "asset_id": "…", "asset_name": "shop.example.com",
+     "first_detected_at": "2026-09-22T17:00:00Z",
+     "matched_on": ["same_asset", "cwe"], "known_before_report": true}
+  ],
+  "limit": 20
+}
+```
+
+`report_submitted_at`, `known_since` and the `known_before_report` fields are
+omitted when there is nothing to compare. The person then uses
+`POST /api/v1/findings/{id}/duplicates` (same asset only) or keeps both.
+
 ## Status
 
 | Part | State |
@@ -82,7 +122,7 @@ automatically (RFC-121 D13).
 | Report value object and the unique index | Done (`pkg/domain/vulnerability/bounty_report.go`, migration `findings_bounty_report_ref_unique`) |
 | Report fields on create and update (triage gate, audit) | Designed |
 | ctis `bounty_report` converter (JSON, CSV) | Designed |
-| Duplicate candidates endpoint | Designed |
+| Duplicate candidates endpoint | Done (`GET /api/v1/findings/{id}/duplicate-candidates`) |
 | Web Report section and candidates panel | Designed |
 | Programme saved view and dashboard tiles | Designed |
 | Signed webhook intake, invited hunters, scope export, public form | Later (RFC-121 §8) |
