@@ -48,6 +48,20 @@ join).
 
 ## Threat intelligence (`GET /threat-intel/stats`)
 
-`kev.tenant_open_count` is the tenant's open findings that reference a KEV
-CVE; `kev.past_due_count` is the subset past its KEV due date. `kev.total_entries`
-is the size of the global catalog and is context, not exposure.
+Tenant figures count the tenant's open findings in the reader's data scope,
+with the pentest visibility rule, in one join of the findings to the catalog
+(`CountTenantOpenKEV`); they are never cached:
+
+| Field | Counts |
+|---|---|
+| `kev.tenant_open_count` | open findings whose CVE is in the KEV catalog |
+| `kev.past_due_count` | of those, the KEV due date has passed |
+| `kev.tenant_ransomware_open_count` | of those, the KEV entry records known ransomware use |
+| `kev.tenant_new_kev_matches_30d` | of those, the CVE entered the catalog in the last 30 days |
+| `epss.high_risk_count`, `epss.critical_risk_count` | open findings with EPSS of at least 0.1 / 0.5 |
+
+Catalog figures describe the global feed, are the same for every organization
+and are cached briefly: `kev.total_entries`, `kev.ransomware_related_count`,
+`kev.recently_added_last_30_days`, `epss.total_scores`. They are context, not
+exposure: dashboards show only the tenant figures, and a catalog figure is
+labeled as such wherever it appears.

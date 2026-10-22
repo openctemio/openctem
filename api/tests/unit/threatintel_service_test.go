@@ -252,16 +252,12 @@ func (m *threatIntelMockKEVRepo) GetRansomwareRelated(_ context.Context, _ int) 
 	return m.ransomEntries, nil
 }
 
-func (m *threatIntelMockKEVRepo) CountTenantOpenInKEV(_ context.Context, _ shared.ID, _ *shared.DataScope) (int64, error) {
-	return 0, nil
-}
-
-func (m *threatIntelMockKEVRepo) CountTenantOpenPastDue(_ context.Context, _ shared.ID, _ *shared.DataScope) (int64, error) {
+func (m *threatIntelMockKEVRepo) CountTenantOpenKEV(_ context.Context, _ shared.ID, _ *shared.DataScope) (threatintel.TenantKEVCounts, error) {
 	m.tenantPastDueCalls++
 	if m.tenantPastDueErr != nil {
-		return 0, m.tenantPastDueErr
+		return threatintel.TenantKEVCounts{}, m.tenantPastDueErr
 	}
-	return m.tenantPastDueVal, nil
+	return threatintel.TenantKEVCounts{PastDue: m.tenantPastDueVal}, nil
 }
 
 func (m *threatIntelMockKEVRepo) CountRecentlyAdded(_ context.Context, _ int) (int64, error) {
@@ -1056,7 +1052,7 @@ func TestThreatIntelService_GetThreatIntelStats_Success(t *testing.T) {
 
 // TestThreatIntelService_GetThreatIntelStats_TenantScoped verifies that the
 // unified stats report the tenant-scoped / de-saturated counts (not the global
-// LIMIT-bounded len() figures): past-due comes from CountTenantOpenPastDue, the
+// LIMIT-bounded len() figures): past-due comes from CountTenantOpenKEV, the
 // EPSS high/critical buckets come from CountTenantOpenAboveScore at the 0.1/0.5
 // thresholds, and ransomware/recently-added come from real COUNTs.
 func TestThreatIntelService_GetThreatIntelStats_TenantScoped(t *testing.T) {

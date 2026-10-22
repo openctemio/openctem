@@ -9,6 +9,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
+	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	dashboard "github.com/openctemio/openctem/api/pkg/domain/dashboard"
@@ -23,6 +24,7 @@ import (
 // the authenticated context, never from the request.
 type UserDashboardHandler struct {
 	service *dashboardapp.Service
+	widgets *widgets.Service
 	logger  *logger.Logger
 }
 

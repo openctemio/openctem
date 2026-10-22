@@ -42,8 +42,12 @@ export const CHART_TOOLTIP_PROPS = {
 /** Chart hex for "resolved / good" — no severity or semantic token covers it. */
 export const RESOLVED_CHART_COLOR = '#22c55e'
 
-/** Health state used by the CTEM loop stage stripes and coverage bars. */
-export type CtemState = 'good' | 'warn' | 'crit'
+/**
+ * Health state used by the CTEM loop stage stripes and coverage bars. `none`
+ * is a figure that is not measured (no denominator, or its read failed): it is
+ * neutral grey, never green or amber.
+ */
+export type CtemState = 'good' | 'warn' | 'crit' | 'none'
 
 const GOOD_STRIPE = 'bg-emerald-500' // palette-ok: no semantic/severity token for "on-track" green
 const GOOD_TEXT = 'text-emerald-600 dark:text-emerald-400' // palette-ok: no semantic/severity token for success
@@ -53,18 +57,21 @@ export const STATE_STRIPE: Record<CtemState, string> = {
   good: GOOD_STRIPE,
   warn: SEVERITY_DOT_COLORS.medium,
   crit: SEVERITY_DOT_COLORS.critical,
+  none: 'bg-muted-foreground/30',
 }
 
 export const STATE_TEXT: Record<CtemState, string> = {
   good: GOOD_TEXT,
   warn: SEVERITY_TEXT_COLORS.medium,
   crit: SEVERITY_TEXT_COLORS.critical,
+  none: 'text-muted-foreground',
 }
 
 export const STATE_BAR: Record<CtemState, string> = {
   good: GOOD_BAR,
   warn: SEVERITY_DOT_COLORS.medium,
   crit: SEVERITY_DOT_COLORS.critical,
+  none: 'bg-muted-foreground/30',
 }
 
 /** Soft badge (bg + text + border) per health state — for pass/warn/fail chips.
@@ -77,6 +84,7 @@ export const STATE_BADGE_SOFT: Record<CtemState, string> = {
   good: GOOD_BADGE_SOFT,
   warn: SEVERITY_BADGE_SOFT.medium,
   crit: SEVERITY_BADGE_SOFT.critical,
+  none: 'bg-muted text-muted-foreground border-border',
 }
 
 /** A percentage-coverage value → health state (higher is better). */

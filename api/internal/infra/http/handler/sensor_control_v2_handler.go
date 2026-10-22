@@ -28,6 +28,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -45,6 +46,7 @@ type SensorControlV2Handler struct {
 	suppressions        *SuppressionHandler
 	suppressionsEnabled func(ctx context.Context, tenantID string) bool
 	content             *SensorContentV2Handler
+	egress              *proxypoolapp.Service
 	limits              protov2.Limits
 	logger              *logger.Logger
 }
@@ -741,7 +743,9 @@ func (h *SensorControlV2Handler) transitionFailed(w http.ResponseWriter, route s
 		protov2.NewProblem(protov2.ProblemCommandNotFound).Write(w)
 	case errors.As(err, &invalid):
 		protov2.NewProblem(protov2.ProblemInvalidTransition).WithState(invalid.State).Write(w)
-	case errors.Is(err, command.ErrCommandClaimed):
+	case errors.Is(err, command.ErrCommandClaimed), errors.Is(err, command.ErrEgressUnsupported):
+		// A sensor that cannot honor its proxy pool is told the job is
+		// not its own: it drops it, and the job waits for one that can.
 		protov2.NewProblem(protov2.ProblemCommandClaimed).Write(w)
 	case errors.Is(err, command.ErrTransitionConflict):
 		protov2.NewProblem(protov2.ProblemTransitionConflict).Write(w)

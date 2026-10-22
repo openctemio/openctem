@@ -11,13 +11,13 @@ here as they ship.
 | Fact layer: per-asset fact tables, dirty queue, change triggers, recompute and rebuild functions | **Shipped** (migration `002916_dashboard_fact_tables`) |
 | Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002963_dashboard_facts_maintainer`) |
 | Typed widget spec and metric catalog, server-side validation, `GET /me/dashboards/widget-catalog` | **Shipped** |
-| Widget data endpoint reading the facts; viewer-scope and organization-wide reads | Planned |
+| Widget data endpoint reading the facts (personal: viewer scope; organization: whole organization), preview | **Shipped** |
 | Snapshots, the refresher, Refresh now | Planned |
 | Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** (not yet used by a page) |
 
-The facts are built and kept current, but no endpoint reads them yet: the
-dashboard endpoints still aggregate `findings` directly until the widget
-registry ships.
+The typed widget endpoints read the facts; the older dashboard endpoints
+(`/dashboard/*`, used by the built-in views) still aggregate `findings`
+directly until the web renders typed widgets everywhere.
 
 ## Current figures and history
 
@@ -41,7 +41,12 @@ scope; stored snapshots are only the history behind a trend line.
   over 90 days (`overall_hours`), on the Classic card and the Executive page.
 - A failed read shows an error with Retry on the card it feeds; a figure with
   no denominator (no scannable asset, nothing to validate, no approval
-  decided, nothing fixed) shows "—" with the reason, never 0.
+  decided, nothing fixed) shows "—" with the reason, never 0, and its CTEM
+  loop stage is neutral grey, never green or amber.
+- A card that throws while rendering shows its own error with Retry (a
+  per-card error boundary); the rest of the dashboard renders.
+- A viewer with no open finding in scope sees "No open findings" and a link to
+  scans instead of a big "0 P0".
 
 ## Ownership: organization and personal dashboards
 
@@ -136,14 +141,17 @@ a manager leaves.
 - The grouped switcher (Organization / Mine), scope badge, freshness line and
   schedule picker on `/`, and the organization management section on
   `/dashboards` (work packages 11 and 12).
-- The widget data endpoint over the fact tables, and rendering typed widgets
-  on `/` (legacy tiles keep their live rendering until then).
+- Rendering typed widgets on `/` (legacy tiles keep their live rendering
+  until then), and serving widget data from stored snapshots.
 
 ### Key files
 
 - `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps;
   `widget_spec.go` and `metric_catalog.go` (typed widgets)
 - `web/src/features/dashboards/api/widget-spec.ts` — spec types, catalog hook, helpers
+- `internal/app/dashboard/widgets/` — widget results, scopes, limits;
+  `internal/infra/postgres/dashboard_widget_repository.go` — fact reads;
+  `web/src/features/dashboards/api/widget-data.ts` — result types and hooks
 - `internal/app/dashboard/service.go` — authorization, audit, copies, floor
 - `internal/infra/postgres/user_dashboard_repository.go` — tenant- and owner-bound queries, audience SQL
 - `internal/infra/http/handler/user_dashboard_handler.go`, `internal/infra/http/routes/dashboard.go`
@@ -221,6 +229,77 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   catalog, URLs or HTML. Tenant and scope are never part of a spec: the data
   endpoint takes them from the caller (personal) or the organization
   (organization dashboards) at read time.
+
+## Widget data
+
+| Route | Who | Numbers |
+|---|---|---|
+| `GET /api/v1/me/dashboards/{id}/data` | the dashboard's owner (another person's dashboard is 404) | the caller's own data scope |
+| `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
+| `POST /api/v1/me/dashboards/widget-preview` | any member | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+Every widget of the layout gets a result: typed widgets, and the legacy
+tiles the facts can answer (`LegacySpec`); other legacy tiles answer
+`unsupported` and keep their live rendering. Each result names its state
+(`ready`, `not_measured` with a reason such as `no_denominator` or
+`too_few_fixed`, `building` while the organization's first fact build runs,
+`unsupported`, `error`), its shape payload, the metric's polarity, the
+widget target and whether it is met, and `drill`: the findings list counted
+with the same filter (absent when the list cannot express the filter
+exactly: age band, "no SLA", KEV or reachable false, several asset groups).
+One failing widget never fails the others.
+
+How each figure is computed (`internal/app/dashboard/widgets`,
+`internal/infra/postgres/dashboard_widget_repository.go`):
+
+- **Counts** (F1, open lens): the sum of `finding_count`, grouped by up to
+  two dimensions. When the filter and group-by use only dimensions the
+  history carries (severity, priority, asset group), the previous period is
+  the open count at the end of the previous window (open now minus the net
+  changes since, from F2) and a scalar gets a sparkline of the open count at
+  each bucket end; otherwise `previous_reason` is `previous_not_in_history`.
+- **Within SLA** (F1): open findings with an SLA not breached over open
+  findings with an SLA; no SLA in scope is `not_measured`, never 0 % or 100 %.
+- **Time to fix** (F2): the fix-hours histograms of the days in the window,
+  summed; the median and p90 are estimated inside the doubling hour buckets
+  (`bucketed: true`); fewer than 5 fixes is `not_measured`.
+- **Open by priority over time** (F1 + F2): the open count per key at each
+  bucket end (day up to 31 days, week up to 90, month beyond), ending at the
+  live count. **New vs fixed** (F2): opened and fixed per bucket, with totals
+  for the window and the previous one.
+- **Fix next, SLA at risk** (F3): the in-scope partitions' top 10 merged
+  (exact for up to 10 rows; only the asset group filter, which does not cut
+  into the rank order); list fields are read from `findings` by id inside
+  the tenant, and a finding no longer open is left out.
+
+### Scope and isolation
+
+- The tenant comes from the authenticated caller; every statement starts
+  with `tenant_id = $1`. Asset group filters resolve inside the tenant.
+- **Personal** reads (and previews) use the caller's data scope
+  (`datascope.ResolveStrict`: scope rows for a member, hidden private
+  program assets for an unrestricted one, nothing for a member without
+  scope rows) and the pentest campaign rule for the caller unless they are
+  an administrator (an API key never is). A personal dashboard of a holder
+  of `dashboards:org:view` still follows their own scope, so its figures
+  equal their findings list.
+- **Organization** reads compute the whole organization (findings without
+  an asset included), pentest findings counted; list rows (finding titles)
+  apply the viewer's campaign membership.
+- Every read leaves out findings on program-only and soft-deleted assets,
+  like every dashboard read.
+- Nothing is cached: each read computes for its own caller. Reads are
+  bounded: 2 at a time per user, 6 per organization, 12 per API process
+  (429 with `Retry-After`), 5 s per statement and 20 s per dashboard.
+- Known gap: F2 has no source column, so a pentest finding without a
+  campaign (all-zero campaign id) counts in flows and time to fix for every
+  viewer; it is never listed and never counted in current figures.
+- Tests: `dashboard_widget_data_db_test.go` (figures equal the findings list
+  for a scoped member, a campaign tester, a full-data member, a member
+  without scope rows and an administrator; another tenant's and unpublished
+  findings never show; organization reads, 403 without the permission, 404
+  outside the audience and for another person's dashboard; preview refusals;
+  measured SLA and time to fix), `internal/app/dashboard/widgets` unit tests.
 
 ## Fact layer
 
@@ -497,8 +576,12 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   list total equals the figure. The targets live in one table,
   `web/src/features/dashboard/lib/drill.ts`: open P0 / P1
   (`/findings?state=open&priority_class=…`), SLA breached
-  (`/findings?state=open&sla_status=overdue,exceeded`), validation coverage
-  (`/validation`). The CTEM loop, the hero P0 number, the Executive P0, P1 and
+  (`/findings?state=open&sla_status=overdue,exceeded`), open findings in KEV
+  (`/findings?state=open&is_in_kev=true`), open findings related to the
+  viewer (`/findings?state=open&related_to=me`, the predicate the "Mine"
+  widgets count with), validation coverage (`/validation`). A figure whose
+  exact list the findings page cannot open yet (EPSS of at least 0.5) is not a
+  link rather than a link to a wider list. The CTEM loop, the hero P0 number, the Executive P0, P1 and
   SLA tiles, Executive top-risk rows (the finding) and the custom dashboard
   widgets use them.
 - A 403 on organization-only figures (`/dashboard/program-metrics`,
