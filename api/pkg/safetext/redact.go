@@ -44,6 +44,10 @@ var secretAssignmentRE = regexp.MustCompile(
 	`(?i)\b(api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|secret|password|passwd|pwd|token|auth)\b(\s*[:=]\s*)(['"]?)([^\s'"]{4,})(['"]?)`,
 )
 
+// cookieRE matches a Cookie / Set-Cookie header line; the header name stays,
+// the whole value (session ids, attributes) goes.
+var cookieRE = regexp.MustCompile(`(?im)^([ \t]*(?:set-)?cookie[ \t]*:[ \t]*)[^\r\n]+`)
+
 // bearerRE matches an Authorization header value or a "Bearer <token>".
 var bearerRE = regexp.MustCompile(`(?i)\b(authorization\s*[:=]\s*(?:bearer|basic|token)?\s*|bearer\s+)([A-Za-z0-9\-._~+/]{8,}=*)`)
 
@@ -57,6 +61,7 @@ func RedactSecrets(text string) string {
 	}
 	out := pemBlockRE.ReplaceAllString(text, RedactionPlaceholder)
 	out = pemOpenRE.ReplaceAllString(out, RedactionPlaceholder)
+	out = cookieRE.ReplaceAllString(out, "${1}"+RedactionPlaceholder)
 	out = bearerRE.ReplaceAllString(out, "${1}"+RedactionPlaceholder)
 	out = secretAssignmentRE.ReplaceAllString(out, "${1}${2}${3}"+RedactionPlaceholder+"${5}")
 	for _, re := range secretShapes {
