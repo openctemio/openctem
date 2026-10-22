@@ -497,7 +497,8 @@ function requestIdOf(body: unknown): string | undefined {
  */
 async function parseErrorResponse(response: Response): Promise<ApiError> {
   const contentType = response.headers.get('content-type')
-  const headerRequestId = response.headers.get('x-request-id') ?? undefined
+  const rawHeaderId = response.headers.get('x-request-id')
+  const headerRequestId = rawHeaderId && rawHeaderId.length <= 128 ? rawHeaderId : undefined
 
   // Try to parse JSON error response
   if (contentType?.includes('application/json')) {
