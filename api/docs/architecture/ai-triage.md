@@ -274,3 +274,7 @@ Context enrichment and redaction with a "what was sent"
 record, a structured result schema, the result card with apply actions and
 history, "Triage selected" bulk on a fair-share queue with a result cache,
 an atomic de-duplication index, and an evaluation set (RFC-119).
+
+### Secret findings and the model provider
+
+For a leaked-secret finding the code snippet is withheld, and the description is passed through the shared secret redactor (`safetext.RedactSecrets`) before it enters the prompt, so a credential quoted in the description never reaches the provider.
