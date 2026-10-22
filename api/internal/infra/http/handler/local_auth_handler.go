@@ -1327,6 +1327,9 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Unauthorized("Your sign-in verification expired or is no longer valid. Please sign in again.").WriteJSON(w)
 	case errors.Is(err, auth.ErrMFACodeInvalid):
 		apierror.Unauthorized("Invalid verification code").WriteJSON(w)
+	case errors.Is(err, auth.ErrSSOMFAEvidenceRequired):
+		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
+			"This organization requires your identity provider to confirm a second factor. Sign in again through your identity provider with multi-factor authentication.").WriteJSON(w)
 	case errors.Is(err, auth.ErrMFAEnrollmentRequired):
 		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
 			"This organization requires two-factor authentication. Sign in again to complete it.").WriteJSON(w)

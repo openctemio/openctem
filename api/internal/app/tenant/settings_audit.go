@@ -46,6 +46,7 @@ func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Seve
 		before.MFARequiredForAdmins && !after.MFARequiredForAdmins && !after.MFARequired,
 		personalPolicyRank(after.PersonalAccounts) < personalPolicyRank(before.PersonalAccounts),
 		before.JITRequiresApproval && !after.JITRequiresApproval,
+		before.SSORequireMFAEvidence && !after.SSORequireMFAEvidence,
 		addsSSOExceptions(before.SSOExceptions, after.SSOExceptions):
 		return audit.SeverityHigh
 	default:
@@ -108,6 +109,7 @@ func loosenedParts(before, after tenantdom.SecuritySettings) (signIn, sensorJobs
 	add(&signIn, before.EmailVerificationMode != tenantdom.EmailVerificationNever && after.EmailVerificationMode == tenantdom.EmailVerificationNever, "email verification turned off")
 	add(&signIn, personalPolicyRank(after.PersonalAccounts) < personalPolicyRank(before.PersonalAccounts), "personal accounts policy relaxed")
 	add(&signIn, before.JITRequiresApproval && !after.JITRequiresApproval, "approval of new single sign-on members turned off")
+	add(&signIn, before.SSORequireMFAEvidence && !after.SSORequireMFAEvidence, "identity provider no longer has to prove two-factor")
 	add(&signIn, addsSSOExceptions(before.SSOExceptions, after.SSOExceptions), "single sign-on exception added")
 	add(&signIn, before.EffectiveInvitees() != tenantdom.InviteesAny && after.EffectiveInvitees() == tenantdom.InviteesAny, "anyone may be invited")
 	add(&signIn, before.ExternalAccessEndRequired && !after.ExternalAccessEndRequired, "end date no longer required for external access")
