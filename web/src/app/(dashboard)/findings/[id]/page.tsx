@@ -293,7 +293,7 @@ export default function FindingDetailPage() {
             </div>
 
             <TabsContent value="overview" className="mt-5">
-              <OverviewTab finding={finding} activities={feed.activities} />
+              <OverviewTab finding={finding} />
             </TabsContent>
             <TabsContent value="evidence" className="mt-5">
               <EvidenceTab evidence={finding.evidence} finding={finding} />
