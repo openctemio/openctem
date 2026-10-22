@@ -18,6 +18,9 @@ var adminOnlyPermissions = []Permission{
 	SensorsDelete,
 	ScanZonesWrite,
 	ScanZonesDelete,
+	// Proxy pools decide where scan traffic exits and hold credentials.
+	SensorEgressWrite,
+	SensorEgressDelete,
 	// RFC-052: pairing, approval, grants and revocation (migration 001101
 	// extends the trigger).
 	SensorsPair,

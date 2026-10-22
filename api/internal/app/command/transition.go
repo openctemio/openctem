@@ -105,6 +105,13 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 		if !sameTransitionBody(t, cmd, in) {
 			return nil, ErrTransitionConflict
 		}
+		if t == TransitionClaim {
+			// The repeat of a claim carries the sensor's proxy pool like the
+			// claim did: a signing sensor runs this payload (egress.go).
+			if cmd, err = s.egressOne(ctx, in.SensorID, cmd); err != nil {
+				return nil, err
+			}
+		}
 		if t == TransitionClaim && s.jobs != nil {
 			// The repeat of a claim is handed out signed too. The sensor
 			// already holds the command, so a refusal leaves it as it is
@@ -124,7 +131,13 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	var out *commanddom.Command
 	switch t {
 	case TransitionClaim:
-		out, err = s.Acknowledge(ctx, in.TenantID, in.SensorID, in.CommandID)
+		// Not claimed at all by a sensor that cannot honor its proxy pool.
+		if _, err = s.egressOne(ctx, in.SensorID, cmd); err != nil {
+			return nil, err
+		}
+		if out, err = s.Acknowledge(ctx, in.TenantID, in.SensorID, in.CommandID); err == nil {
+			out, err = s.egressOne(ctx, in.SensorID, out)
+		}
 	case TransitionStart:
 		out, err = s.Start(ctx, in.TenantID, in.SensorID, in.CommandID)
 	case TransitionComplete:

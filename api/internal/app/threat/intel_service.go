@@ -821,12 +821,12 @@ func (s *IntelService) GetEPSSStats(ctx context.Context) (*EPSSStats, error) {
 	}, nil
 }
 
-// GetKEVStatsForTenant returns KEV statistics scoped to a single tenant's
-// exposure. Unlike GetKEVStats (which reports global catalog figures identical
-// for every tenant and saturates its LIMIT-bounded counts), the "past due"
-// figure here counts the tenant's OPEN findings that reference an overdue KEV
-// CVE, and the ransomware / recently-added figures are real de-saturated COUNTs
-// of the global KEV feed (legitimately global context, but true totals).
+// GetKEVStatsForTenant returns KEV statistics for one tenant. The tenant
+// figures (open in KEV, past due, ransomware, new in the last 30 days) count
+// the tenant's OPEN findings in the reader's data scope; they are never
+// cached. The catalog figures (total, ransomware entries, entries added in 30
+// days) describe the global feed, are identical for every tenant and are
+// labeled as catalog figures wherever they are shown.
 func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*KEVStats, error) {
 	catalog, err := s.getKEVCatalogCounts(ctx)
 	if err != nil {
@@ -834,22 +834,19 @@ func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared
 	}
 
 	// Tenant-scoped: never cached.
-	pastDue, err := s.repo.KEV().CountTenantOpenPastDue(ctx, tenantID, scope)
-	if err != nil {
-		return nil, err
-	}
-
-	openInKEV, err := s.repo.KEV().CountTenantOpenInKEV(ctx, tenantID, scope)
+	tenant, err := s.repo.KEV().CountTenantOpenKEV(ctx, tenantID, scope)
 	if err != nil {
 		return nil, err
 	}
 
 	return &KEVStats{
-		TotalEntries:            int(catalog.total),
-		TenantOpenCount:         int(openInKEV),
-		PastDueCount:            int(pastDue),
-		RecentlyAddedLast30Days: int(catalog.recent30d),
-		RansomwareRelatedCount:  int(catalog.ransomware),
+		TotalEntries:              int(catalog.total),
+		TenantOpenCount:           int(tenant.Open),
+		PastDueCount:              int(tenant.PastDue),
+		TenantRansomwareOpenCount: int(tenant.Ransomware),
+		TenantNewMatches30Days:    int(tenant.NewLast30Days),
+		RecentlyAddedLast30Days:   int(catalog.recent30d),
+		RansomwareRelatedCount:    int(catalog.ransomware),
 	}, nil
 }
 
@@ -944,13 +941,18 @@ func (s *IntelService) GetThreatIntelStats(ctx context.Context, tenantID shared.
 	return stats, nil
 }
 
-// KEVStats contains KEV catalog statistics.
+// KEVStats contains KEV statistics. The tenant_* and past_due_count figures
+// are the tenant's open findings in the reader's scope; total_entries,
+// recently_added_last_30_days and ransomware_related_count describe the
+// global catalog.
 type KEVStats struct {
-	TotalEntries            int `json:"total_entries"`
-	TenantOpenCount         int `json:"tenant_open_count"` // the tenant's open findings in the KEV catalog
-	PastDueCount            int `json:"past_due_count"`
-	RecentlyAddedLast30Days int `json:"recently_added_last_30_days"`
-	RansomwareRelatedCount  int `json:"ransomware_related_count"`
+	TotalEntries              int `json:"total_entries"`                // catalog: entries in the KEV catalog
+	TenantOpenCount           int `json:"tenant_open_count"`            // tenant: open findings in the KEV catalog
+	PastDueCount              int `json:"past_due_count"`               // tenant: of those, KEV due date passed
+	TenantRansomwareOpenCount int `json:"tenant_ransomware_open_count"` // tenant: of those, known ransomware use
+	TenantNewMatches30Days    int `json:"tenant_new_kev_matches_30d"`   // tenant: of those, CVE added to KEV in the last 30 days
+	RecentlyAddedLast30Days   int `json:"recently_added_last_30_days"`  // catalog: entries added in the last 30 days
+	RansomwareRelatedCount    int `json:"ransomware_related_count"`     // catalog: entries with known ransomware use
 }
 
 // EPSSStats contains EPSS statistics. When produced by GetEPSSStatsForTenant
