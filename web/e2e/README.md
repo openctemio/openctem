@@ -48,6 +48,7 @@ tests that cover the console's most user-visible flows.
 | `24-findings-states.spec.ts`                | Findings list: inline error, no access, nothing yet, no match |
 | `25-findings-quick-views.spec.ts`           | Sidebar quick views under Findings, counts, links             |
 | `26-findings-filters.spec.ts`               | Add filter, chips, unknown filter, pass-through filters       |
+| `27-findings-triage-and-views.spec.ts`      | Triage button, always-on Priority, columns in the URL         |
 
 Each spec is designed to:
 

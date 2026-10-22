@@ -10,7 +10,7 @@
 import useSWR from 'swr'
 
 import { useTenant } from '@/context/tenant-provider'
-import { del, get, post } from '@/lib/api/client'
+import { del, get, post, put } from '@/lib/api/client'
 import { SWR_REFERENCE } from '@/lib/swr-config'
 
 export type SavedViewPage = 'findings'
@@ -36,10 +36,20 @@ export interface SavedView {
 export interface SaveViewInput {
   page: SavedViewPage
   name: string
+  description?: string
   /** The page's flat query (the API's own params), e.g. "severity=critical&q=log4j". */
   query: string
   group_id?: string
   group_by?: string
+  /** The columns the list showed (saved with the view). */
+  columns?: string[]
+  /** The row density the list showed (saved with the view). */
+  density?: string
+  /**
+   * Share with the whole organization. Needs `findings:views:share`, which the
+   * Share option is gated on; the API accepts the field once it ships org views.
+   */
+  org?: boolean
 }
 
 export const savedViewsKey = (page: SavedViewPage) => `/api/v1/views?page=${page}`
@@ -61,6 +71,11 @@ export function createSavedView(input: SaveViewInput): Promise<SavedView> {
   return post<SavedView>('/api/v1/views', input)
 }
 
+/** Replaces a view the caller owns (the API keeps its page and owner). */
+export function updateSavedView(id: string, input: SaveViewInput): Promise<SavedView> {
+  return put<SavedView>(`/api/v1/views/${encodeURIComponent(id)}`, input)
+}
+
 export function deleteSavedView(id: string): Promise<void> {
   return del<void>(`/api/v1/views/${encodeURIComponent(id)}`)
 }
@@ -77,7 +92,7 @@ export function savedViewId(viewParam: string | null | undefined): string | unde
 }
 
 /** The page params that are not part of a view's filter. */
-const PAGE_ONLY = new Set(['page', 'per_page', 'group', 'tab', 'density'])
+const PAGE_ONLY = new Set(['page', 'per_page', 'group', 'tab', 'density', 'columns'])
 
 /**
  * The filter part of a page query string, to save as a view: the API's own

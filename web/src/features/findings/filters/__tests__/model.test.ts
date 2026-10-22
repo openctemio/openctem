@@ -98,7 +98,7 @@ describe('readFilters', () => {
 
   it('never turns page params into chips', () => {
     const q = new URLSearchParams(
-      'page=2&per_page=50&sort=-created_at&q=x&group=cve_id&view=verify&density=compact&tab=x&state=open'
+      'page=2&per_page=50&sort=-created_at&q=x&group=cve_id&view=verify&density=compact&columns=severity,status&tab=x&state=open'
     )
     expect(readFilters(q, contract)).toEqual({ filters: [], unknown: [] })
   })
