@@ -415,7 +415,7 @@ func (r *AssetTypeRepository) List(
 	// Build order clause
 	orderClause := " ORDER BY at.display_order, at.name"
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderClause = " ORDER BY at." + opts.Sort.SQL()
+		orderClause = " ORDER BY at." + opts.Sort.SQLWithTieBreaker("at.id")
 	}
 
 	// Query with pagination
@@ -469,7 +469,7 @@ func (r *AssetTypeRepository) ListWithCategory(
 	// Build order clause
 	orderClause := " ORDER BY at.display_order, at.name"
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderClause = " ORDER BY at." + opts.Sort.SQL()
+		orderClause = " ORDER BY at." + opts.Sort.SQLWithTieBreaker("at.id")
 	}
 
 	// Query with category join

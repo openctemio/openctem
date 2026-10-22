@@ -43,7 +43,7 @@ func (h *TemplateSourceHandler) buildAuditContext(r *http.Request) auditapp.Audi
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 }
 

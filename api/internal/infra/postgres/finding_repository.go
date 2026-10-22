@@ -1373,7 +1373,7 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 	// then recency) so the list surfaces what to work on next — not created_at.
 	orderBy := vulnerability.DefaultFindingSort
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderBy = opts.Sort.SQLWithDefault(vulnerability.DefaultFindingSort)
+		orderBy = opts.Sort.SQLWithDefaultAndTieBreaker(vulnerability.DefaultFindingSort, "findings.id")
 	}
 	baseQuery := buildFindingPageQuery(r.selectQuery(), whereClause, orderBy, page.Limit(), page.Offset())
 

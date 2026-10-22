@@ -216,7 +216,7 @@ func adminAuditContext(r *http.Request, tenantID string) audit.AuditContext {
 		// proxy), not the proxy's socket address.
 		ActorIP:   middleware.ClientIP(r),
 		UserAgent: r.UserAgent(),
-		RequestID: r.Header.Get("X-Request-ID"),
+		RequestID: middleware.GetRequestID(r.Context()),
 	}
 	if a := middleware.GetAdminUser(r.Context()); a != nil {
 		actx.ActorEmail = "platform-admin:" + a.Email()
