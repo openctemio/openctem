@@ -1402,5 +1402,17 @@
   "findings.detail.section.tickets": "ticket links",
   "findings.detail.section.retestCheck": "the retest check",
   "findings.detail.loadFailed.title": "Could not load this finding",
-  "findings.detail.loadFailed.description": "Something went wrong on our side or the connection dropped. Try again."
+  "findings.detail.loadFailed.description": "Something went wrong on our side or the connection dropped. Try again.",
+  "findings.row.actionsFor": "Actions for {title}",
+  "findings.row.viewDetails": "View details",
+  "findings.row.openToAssign": "Open to assign…",
+  "findings.row.openToChangeStatus": "Open to change status…",
+  "findings.row.copyId": "Copy ID",
+  "findings.row.copyLink": "Copy link",
+  "findings.row.openToMarkFalsePositive": "Open to mark as false positive…",
+  "findings.row.delete": "Delete",
+  "findings.list.selectAll": "Select all rows on this page",
+  "findings.list.selectRow": "Select finding {title}",
+  "findings.list.kev": "KEV",
+  "findings.bulk.assignFailed": "Failed to assign findings"
 }
