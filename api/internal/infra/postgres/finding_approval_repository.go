@@ -108,6 +108,15 @@ func approvalWhere(tenantID shared.ID, scope *shared.DataScope) (string, []any) 
 // per-status counts use the same tenant and scope condition.
 func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID, filter vulnerability.ApprovalFilter, page pagination.Pagination, scope *shared.DataScope) (vulnerability.ApprovalPage, error) {
 	where, args := approvalWhere(tenantID, scope)
+	if filter.PentestViewerID != nil {
+		// A pentest finding's approval (its reason, the finding title) is
+		// shown only to its campaign team, a client once published.
+		args = append(args, filter.PentestViewerID.String())
+		where += fmt.Sprintf(` AND a.finding_id IN (SELECT f.id FROM findings f WHERE f.tenant_id = $1 AND (f.source <> 'pentest' OR f.pentest_campaign_id IN (
+			SELECT m.campaign_id FROM pentest_campaign_members m
+			WHERE m.tenant_id = $1 AND m.user_id = $%d
+			  AND (m.role <> 'client' OR f.status NOT IN ('draft', 'in_review')))))`, len(args))
+	}
 
 	counts := make(map[vulnerability.ApprovalStatus]int64, len(vulnerability.ApprovalStatuses))
 	countRows, err := r.db.QueryContext(ctx,
