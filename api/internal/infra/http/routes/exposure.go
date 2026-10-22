@@ -270,6 +270,8 @@ func registerVulnerabilityRoutes(
 		// decision states what the move itself would need.
 		r.GET("/{id}/transitions", h.GetFindingTransitions, middleware.Require(permission.FindingsRead))
 		r.POST("/transitions/preview", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
+		// How the finding can be verified (advisory; the engine enforces).
+		r.GET("/{id}/verification", h.GetFindingVerificationPlan, middleware.Require(permission.FindingsRead))
 
 		// Assignment operations
 		r.GET("/{id}/assignable", h.ListAssignableMembers, middleware.Require(permission.FindingsAssign))
