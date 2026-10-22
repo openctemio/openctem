@@ -479,6 +479,12 @@ func (s *EmailService) NotifySSOChangePending(ctx context.Context, ownerEmail, o
 		summary+" Review it under Settings > SSO approvals. If you did not expect this change, reject it.")
 }
 
+// NotifySAMLCertificateExpiry tells an organization owner that the SAML
+// identity provider's signing certificate expires soon or has expired.
+func (s *EmailService) NotifySAMLCertificateExpiry(ctx context.Context, ownerEmail, ownerName, subject, message string) {
+	s.sendSecurityNotice(ctx, ownerEmail, ownerName, "", subject, message)
+}
+
 // NotifySupportAccess tells an organization owner about support access:
 // a grant, a revocation, a support session opened or ended.
 func (s *EmailService) NotifySupportAccess(ctx context.Context, email, name, subject, message string) {
