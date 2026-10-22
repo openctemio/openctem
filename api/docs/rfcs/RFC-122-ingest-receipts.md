@@ -84,7 +84,7 @@ cannot see. So:
 | Source | May close | How |
 |---|---|---|
 | Upload without a declared scope (the default) | never | the ingest runs with partial coverage whatever the file says |
-| Upload with `coverage=full` and an explicit scope (asset ids + the file's tool) | yes | open findings of that tool on those assets that the upload did not report, through the same guards as a covered scan (blinding guard, protected human sources, secrets never closed, the uploader's data scope must hold every declared asset, any failed file closes nothing); the uploader needs `findings:status` |
+| Upload with `coverage=full` and an explicit scope (asset ids + the file's tool) | yes | open findings of that tool on those assets that the upload did not report, through the same guards as a covered scan (blinding guard, protected human sources, secrets never closed, the uploader's data scope must hold every declared asset, any failed or skipped record closes nothing); the uploader needs `findings:status`, `findings:bulk_update` and step-up, as for a bulk close |
 | Sensor run, protocol v2, bound to a command | yes | the existing coverage rules (`EvaluateCommandCoverage`), unchanged |
 | Source mitigation statement (Tenable.sc) | yes | the existing source-asserted resolve, in enforce mode |
 | Anything else | never | |

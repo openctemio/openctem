@@ -98,3 +98,64 @@ describe('DashboardView', () => {
     expect(cell.className).toContain('xl:[grid-column:var(--span)]')
   })
 })
+
+describe('DashboardView CTEM widgets without anything to measure', () => {
+  it('crown jewels exposed and attack paths explain why, never a green 0', () => {
+    const data = {
+      dashboard_id: 'd',
+      scope: 'personal',
+      restricted: true,
+      facts_built_at: 'x',
+      computed_at: new Date().toISOString(),
+      stale: false,
+      widgets: [
+        {
+          id: 'w_cj',
+          index: 0,
+          widget_type: 'metric',
+          state: 'not_measured',
+          reason: 'no_crown_jewels',
+          metric: 'crown_jewels.exposed',
+          shape: 'scalar',
+          drill: '/findings?asset_crown_jewel=true',
+        },
+        {
+          id: 'w_p',
+          index: 1,
+          widget_type: 'metric',
+          state: 'not_measured',
+          reason: 'no_relationship_data',
+          metric: 'attack_paths.to_crown_jewels',
+          shape: 'paths',
+          drill: '/attack-paths',
+        },
+      ],
+    } as DashboardData
+    const paths = {
+      ...stat('w_p', 'attack_paths.to_crown_jewels'),
+      config: {
+        ...stat('w_p', 'x').config,
+        data: {
+          kind: 'metric',
+          metric: 'attack_paths.to_crown_jewels',
+          filter: {},
+          time: {},
+          limit: 5,
+        },
+        viz: { type: 'paths', options: {} },
+      },
+    }
+    render(
+      <DashboardView
+        dashboard={{ columns: 2, layout: [stat('w_cj', 'crown_jewels.exposed'), paths] }}
+        data={data}
+        loading={false}
+        failed={false}
+        onRetry={() => {}}
+      />
+    )
+    expect(screen.getByText(/no crown jewel is designated in this scope/)).toBeInTheDocument()
+    expect(screen.getByText(/no asset relationships are known/)).toBeInTheDocument()
+    expect(screen.queryByText('0')).toBeNull()
+  })
+})

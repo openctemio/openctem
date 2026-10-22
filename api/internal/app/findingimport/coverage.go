@@ -45,8 +45,13 @@ type coverageRepo interface {
 }
 
 // noteIncomplete: a declared full coverage that closed nothing because the
-// upload was not complete.
-const noteIncomplete = "incomplete"
+// upload was not complete (a failed file, a finding not stored, a record the
+// parser skipped, a request cut short). noteScopeChanged: the declared scope
+// was no longer the uploader's when the close was due.
+const (
+	noteIncomplete   = "incomplete"
+	noteScopeChanged = "scope_changed"
+)
 
 // receiptRecorder records the findings an upload closed on its receipt.
 type receiptRecorder interface {
@@ -82,8 +87,8 @@ func (s *Service) CheckCoverage(ctx context.Context, req Request) error {
 	if n != len(ids) {
 		return ErrCoverageScope
 	}
-	if req.Actor != nil {
-		in, err := req.Actor.AssetsInScope(ctx, ids)
+	if scope := req.coverageScope(); scope != nil {
+		in, err := scope.AssetsInScope(ctx, ids)
 		if err != nil {
 			return err
 		}
@@ -92,6 +97,17 @@ func (s *Service) CheckCoverage(ctx context.Context, req Request) error {
 		}
 	}
 	return nil
+}
+
+// coverageScope is who must be able to see every declared asset: the
+// uploader's visibility (CoverageScope), which also hides the private
+// program assets an unrestricted member is not part of, else their write
+// scope (Actor). nil: every asset of the organization (an administrator).
+func (r Request) coverageScope() ingest.ActorScope {
+	if r.CoverageScope != nil {
+		return r.CoverageScope
+	}
+	return r.Actor
 }
 
 // closeUncovered closes, for a complete full-coverage upload, the open
@@ -107,7 +123,10 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 	}
 	tools := map[string]bool{}
 	for _, fr := range results {
-		if fr.Error != nil || fr.Ingest != nil && len(fr.Ingest.FailedFindings) > 0 {
+		// A skipped record (below min_severity, or unusable) is a finding
+		// the file may hold but the upload did not report: closing on its
+		// absence would close what is still there.
+		if fr.Error != nil || fr.Stats.Skipped > 0 || fr.Ingest != nil && len(fr.Ingest.FailedFindings) > 0 {
 			return noteIncomplete, nil
 		}
 		if fr.Ingest != nil && fr.Tool != "" {
@@ -122,6 +141,14 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 		names = append(names, t)
 	}
 	sort.Strings(names)
+	// The declaration was checked when the request started; an upload can
+	// run for minutes. Check it again right before closing, so an asset that
+	// left the uploader's scope (or the organization) meanwhile closes
+	// nothing.
+	if err := s.CheckCoverage(ctx, req); err != nil {
+		s.logger.Warn("finding import: coverage scope changed", "tenant_id", req.TenantID.String(), "error", err)
+		return noteScopeChanged, nil
+	}
 	assets := uniqueIDs(req.Coverage.AssetIDs)
 	note = "resolved"
 	total := 0

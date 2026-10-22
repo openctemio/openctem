@@ -98,6 +98,9 @@ type Request struct {
 	// Coverage is what the upload declares it covered (§ coverage.go);
 	// the zero value is partial and closes nothing.
 	Coverage Coverage
+	// CoverageScope is the uploader's visibility for a full-coverage
+	// declaration (nil: fall back to Actor); see Request.coverageScope.
+	CoverageScope ingest.ActorScope
 	// ReceiptID is the upload's receipt (BeginUpload); zero in a preview.
 	// Every file of the upload is ingested under it: it is the report id,
 	// so the findings' scan_id, and the assets' import_id.

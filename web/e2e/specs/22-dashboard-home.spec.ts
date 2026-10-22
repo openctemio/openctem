@@ -27,7 +27,7 @@ for (const vp of VIEWPORTS) {
       await page.emulateMedia({ colorScheme: scheme })
       await page.goto('/')
       // The freshness line appears once a stored dashboard (or the first-visit
-      // copy of the Overview template) is shown.
+      // copy of the CTEM template) is shown.
       await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
       await expect(page.locator('[data-widget-index]').first()).toBeVisible()
       await page.waitForLoadState('networkidle')
@@ -80,4 +80,21 @@ test('the dashboard editor is usable with the keyboard', async ({ page }) => {
   await expect(page.getByTestId('editor-card').first()).toHaveAttribute('aria-label', name ?? '')
   await page.getByRole('button', { name: 'Cancel' }).first().click()
   await expect(page.getByTestId('dashboard-freshness')).toBeVisible()
+})
+
+test('a new user lands on the CTEM loop', async ({ page }) => {
+  // The e2e seed gives the user no dashboard: the first visit stores a
+  // personal copy of the CTEM template, computed in their own scope.
+  await page.goto('/')
+  await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
+  const loop = page.getByRole('list', { name: 'Stages' })
+  await expect(loop).toBeVisible()
+  const stages = loop.getByRole('listitem')
+  await expect(stages).toHaveCount(5)
+  for (const name of ['Scoping', 'Discovery', 'Prioritize', 'Validate', 'Mobilize']) {
+    await expect(loop.getByText(name, { exact: true })).toBeVisible()
+  }
+  // At most one stage is the place to act.
+  expect(await loop.locator('[aria-current="step"]').count()).toBeLessThanOrEqual(1)
+  await expect(page.getByText('Attack paths to crown jewels')).toBeVisible()
 })
