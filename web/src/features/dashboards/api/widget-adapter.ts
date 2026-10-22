@@ -9,8 +9,11 @@ import type {
   DurationResult,
   ItemsResult,
   MatrixResult,
+  PathsResult,
   RatioResult,
   ScalarResult,
+  StageState,
+  StagesResult,
   TimeSeriesResult,
   WidgetResult,
   WidgetState as KitState,
@@ -158,9 +161,60 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
       }
       return out
     }
+    case 'stages': {
+      const st = v.stages
+      if (!st) return undefined
+      const out: StagesResult = {
+        shape: 'stages',
+        focus: st.focus,
+        stages: st.stages.map((s) => ({
+          key: s.key,
+          label_key: `dashboards.loop.stage.${s.key}`,
+          label: s.key,
+          value: s.value,
+          unit: s.unit,
+          state: stageState(s.state),
+          drill: safeInternalHref(s.drill) ?? null,
+          reason_key: s.reason ? `dashboards.loop.reason.${s.reason}` : undefined,
+          flag_key: s.flag ? `dashboards.loop.flag.${s.flag}` : undefined,
+          detail: s.detail
+            ? {
+                label_key: `dashboards.loop.detail.${s.detail.key}`,
+                value: s.detail.value,
+                drill: safeInternalHref(s.detail.drill) ?? null,
+              }
+            : undefined,
+        })),
+      }
+      return out
+    }
+    case 'paths': {
+      const p = v.paths
+      if (!p) return undefined
+      const out: PathsResult = {
+        shape: 'paths',
+        reachable: p.reachable,
+        designated: p.designated,
+        rows: p.rows.map((r) => ({
+          id: r.asset_id,
+          name: r.name,
+          kind: r.asset_type || null,
+          criticality: r.criticality || null,
+          reachable_from: r.reachable_from,
+          entry_point: r.entry_point,
+          score: r.score,
+          href: `/assets/${encodeURIComponent(r.asset_id)}`,
+        })),
+      }
+      return out
+    }
     default:
       return undefined
   }
+}
+
+function stageState(s: string): StageState {
+  return s === 'good' || s === 'warn' || s === 'crit' ? s : 'unmeasured'
 }
 
 /** True when a ready result has nothing to draw (no findings yet for this widget). */

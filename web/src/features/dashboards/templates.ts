@@ -10,7 +10,7 @@
 import type { DashboardWidget } from './api/dashboards.types'
 import raw from './templates.json'
 
-export type TemplateKey = 'overview' | 'executive' | 'program' | 'triage'
+export type TemplateKey = 'ctem' | 'overview' | 'executive' | 'program' | 'triage'
 
 export interface DashboardTemplate {
   key: TemplateKey
@@ -20,8 +20,11 @@ export interface DashboardTemplate {
 
 export const DASHBOARD_TEMPLATES = raw as DashboardTemplate[]
 
-/** The template a person without any dashboard starts from. */
-export const DEFAULT_TEMPLATE: TemplateKey = 'overview'
+/** The template a person without any dashboard starts from: the CTEM story. */
+export const DEFAULT_TEMPLATE: TemplateKey = 'ctem'
+
+/** The metric of the CTEM loop widget. */
+export const CTEM_LOOP_METRIC = 'ctem.loop'
 
 export function templateByKey(key: TemplateKey): DashboardTemplate {
   return DASHBOARD_TEMPLATES.find((t) => t.key === key) ?? DASHBOARD_TEMPLATES[0]
