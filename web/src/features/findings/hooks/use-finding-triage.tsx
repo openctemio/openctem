@@ -141,6 +141,14 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   const { trigger: assignUser, isMutating: assigning } = useAssignFindingApi(finding.id)
   const { trigger: unassignUser, isMutating: unassigning } = useUnassignFindingApi(finding.id)
 
+  // Undo runs from a toast, long after the render that defined it: it must
+  // call the latest changeStatus, whose state is the status after the move
+  // (the render's own copy still sees the old one and would treat the undo as
+  // "already there").
+  const changeStatusRef = useRef<(next: FindingStatus, isUndo?: boolean) => Promise<void>>(
+    async () => {}
+  )
+
   const changeStatus = async (
     next: FindingStatus,
     isUndo = false,
@@ -166,7 +174,8 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       setMoveTarget(move)
       return
     }
-    if (!isUndo && !input && note === undefined && needsStatusNote(next)) {
+    // An undo asks for the note too: the API refuses these statuses without one.
+    if (!input && note === undefined && needsStatusNote(next)) {
       setNoteTarget(next)
       return
     }
@@ -198,7 +207,7 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
           : {
               action: {
                 label: t('findings.triage.undo', 'Undo'),
-                onClick: () => void changeStatus(previous, true),
+                onClick: () => void changeStatusRef.current(previous, true),
               },
               duration: 5000,
             }
@@ -212,6 +221,10 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       )
     }
   }
+
+  useEffect(() => {
+    changeStatusRef.current = changeStatus
+  })
 
   // A severity change asks for its reason first; the answer carries the
   // recomputed priority, SLA deadline and reason, written into the finding's

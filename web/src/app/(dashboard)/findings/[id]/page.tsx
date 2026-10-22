@@ -61,6 +61,7 @@ import {
 } from '@/features/findings/components/detail'
 import { FromTaskCrumb } from '@/features/remediation-hub/components/from-task-crumb'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
+import { isLoadFailure } from '@/features/findings/components/detail/section-load-error'
 import { PentestDetailsTab } from '@/features/findings/components/detail/pentest-details-tab'
 import { getSourceLayout, getOrderedTabs } from '@/features/findings/config/source-layout'
 import '@/features/findings/config/register-layouts'
@@ -134,7 +135,14 @@ export default function FindingDetailPage() {
   const id = params.id as string
   const { mutate } = useSWRConfig()
 
-  const { data: apiFinding, error, isLoading, mutate: mutateFinding } = useFindingApi(id)
+  // The page renders its own error state, so the generic error toast is off
+  // (a bad link must not also pop a raw error). 4xx is never retried.
+  const {
+    data: apiFinding,
+    error,
+    isLoading,
+    mutate: mutateFinding,
+  } = useFindingApi(id, { onError: () => {} })
 
   const handleTriageCompleted = () => {
     if (id) mutate(getTriageCacheKey(id))
@@ -148,6 +156,9 @@ export default function FindingDetailPage() {
   // also gives the Overview its latest AI triage.
   const feed = useFindingActivityFeed(id, {
     fromFinding: finding?.activities,
+    // Nothing else is requested until the finding itself loaded: a bad link
+    // costs one request, not three.
+    enabled: !!finding,
     onTriageActivity: handleTriageCompleted,
   })
 
@@ -170,6 +181,37 @@ export default function FindingDetailPage() {
     return (
       <Main>
         <LoadingSkeleton />
+      </Main>
+    )
+  }
+
+  // A server or network failure is retryable and must not read as "not found".
+  // Missing and refused ids share one copy, so the page gives no oracle.
+  if (error && !finding && isLoadFailure(error)) {
+    return (
+      <Main>
+        <div
+          className="flex h-[50vh] items-center justify-center"
+          data-testid="finding-load-failed"
+        >
+          <div className="text-center">
+            <h1 className="text-2xl font-semibold">
+              {t('findings.detail.loadFailed.title', 'Could not load this finding')}
+            </h1>
+            <p className="mt-2 text-muted-foreground">
+              {t(
+                'findings.detail.loadFailed.description',
+                'Something went wrong on our side or the connection dropped. Try again.'
+              )}
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              <Button onClick={() => void mutateFinding()}>{t('common.retry', 'Retry')}</Button>
+              <Button variant="outline" onClick={() => router.push('/findings')}>
+                {t('findings.detail.notFound.back', 'Back to findings')}
+              </Button>
+            </div>
+          </div>
+        </div>
       </Main>
     )
   }
@@ -295,7 +337,7 @@ export default function FindingDetailPage() {
             </div>
 
             <TabsContent value="overview" className="mt-5">
-              <OverviewTab finding={finding} activities={feed.activities} />
+              <OverviewTab finding={finding} />
             </TabsContent>
             <TabsContent value="evidence" className="mt-5">
               <EvidenceTab evidence={finding.evidence} finding={finding} />
