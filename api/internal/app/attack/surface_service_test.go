@@ -109,7 +109,7 @@ func TestGetStats_InternetFacingAndNewlyExposedAgreeWithOtherPages(t *testing.T)
 	if len(repo.listOpts) == 0 || repo.listOpts[0].Sort == nil || repo.listOpts[0].Sort.IsEmpty() {
 		t.Fatalf("exposed list must be sorted, got %+v", repo.listOpts)
 	}
-	if sql := repo.listOpts[0].Sort.SQL(); sql != "risk_score DESC, last_seen DESC" {
+	if sql := repo.listOpts[0].Sort.SQL(); sql != "risk_score DESC, last_seen DESC, id DESC" {
 		t.Fatalf("exposed list sort = %q", sql)
 	}
 }
