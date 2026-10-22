@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -204,7 +205,9 @@ func TestDashboardCTEMWidgets_ScopeAndParity_DB(t *testing.T) {
 			if tc.admin {
 				wantList++
 			}
-			q := strings.TrimPrefix(cj.Drill, "/findings?")
+			// group is the findings page's grouping view, not a list
+			// filter: the list refuses unknown parameters, so leave it out.
+			q := withoutParam(strings.TrimPrefix(cj.Drill, "/findings?"), "group")
 			if got := e.findingAssets(t, tc.user, tc.admin, q); int64(got) != wantList {
 				t.Errorf("parity exposed: widget %d, distinct assets in %s = %d", tc.exposed, cj.Drill, got)
 			}
@@ -277,4 +280,14 @@ func TestAssetListCoverageFilter_DB(t *testing.T) {
 	if code, _ := e.call(h.owner, true, nil, http.MethodGet, "/api/v1/assets?coverage=everything", nil); code != http.StatusBadRequest && code != http.StatusUnprocessableEntity {
 		t.Errorf("unknown coverage value = %d, want a validation error", code)
 	}
+}
+
+// withoutParam drops one parameter from a query string.
+func withoutParam(query, name string) string {
+	v, err := url.ParseQuery(query)
+	if err != nil {
+		return query
+	}
+	v.Del(name)
+	return v.Encode()
 }

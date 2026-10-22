@@ -14,8 +14,12 @@ import {
   DivergingViz,
   HeatmapViz,
   ItemsViz,
+  LoopViz,
   MatrixTable,
+  PathsTable,
+  PathsViz,
   ProgressViz,
+  StagesTable,
   StatViz,
   TimeSeriesTable,
   WidgetFrame,
@@ -78,6 +82,10 @@ function Viz({
       return <HeatmapViz result={r} drill={drill} />
     case 'items':
       return <ItemsViz result={r} viewAllHref={model.drill} />
+    case 'stages':
+      return viz === 'table' ? <StagesTable result={r} /> : <LoopViz result={r} />
+    case 'paths':
+      return viz === 'table' ? <PathsTable result={r} /> : <PathsViz result={r} href={href} />
     default:
       return null
   }
