@@ -221,6 +221,8 @@ func registerVulnerabilityRoutes(
 
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
+		// The list's quick views with the caller's counts (one scoped statement).
+		r.GET("/quick-views", h.FindingQuickViews, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 
 		// The FilterDocument form of the list (RFC-048): read-only, same
 		// permission and scope as GET /findings.
