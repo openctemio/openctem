@@ -218,7 +218,7 @@ func (h *FindingLifecycleHandler) actor(r *http.Request) lcapp.Actor {
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 		SessionID:  middleware.GetSessionID(r.Context()),
 	}}
 	if uid, err := shared.IDFromString(middleware.GetUserID(r.Context())); err == nil && !uid.IsZero() {

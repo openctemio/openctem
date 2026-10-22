@@ -80,6 +80,11 @@ var (
 	// has not been through it: a password session whose user has not enrolled,
 	// or a federated session not issued by that organization's own IdP.
 	ErrMFAEnrollmentRequired = errors.New("this organization requires two-factor authentication")
+	// ErrSSOMFAEvidenceRequired: the organization requires its identity
+	// provider to prove a second factor and this sign-in carried no proof.
+	// It is an ErrMFAEnrollmentRequired, so callers that only know that
+	// error still refuse the token.
+	ErrSSOMFAEvidenceRequired = fmt.Errorf("%w: the identity provider did not confirm a second factor", ErrMFAEnrollmentRequired)
 	// ErrMFAUnavailable: the server was started without 2FA storage.
 	ErrMFAUnavailable = errors.New("two-factor authentication is not available")
 )
@@ -590,7 +595,10 @@ func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID s
 // RefreshToken), next to enforceSSOPolicy.
 //
 //   - A session issued by THIS tenant's own SAML/OIDC provider passes: the
-//     tenant chose that IdP, and it owns the second factor.
+//     tenant chose that IdP, and it owns the second factor. When the tenant
+//     turned on "SSO must prove MFA" (SSORequireMFAEvidence), it passes only
+//     if the IdP proved a second factor in the signed id_token (amr=mfa) or
+//     assertion (a multi-factor AuthnContext).
 //   - A password session passes only when the user has 2FA on. The password
 //     login verified the code (loginMFAChallenge), so an enabled factor means
 //     this session went through the second step.
@@ -599,9 +607,10 @@ func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID s
 //     chose, so it is refused whether or not the user has enrolled. The user
 //     signs in again — with password and 2FA, or through this tenant's IdP.
 func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Session, userID shared.ID, tenantID string) error {
-	if !s.mfaEnabled() || sess.FederatedFor(tenantID) {
+	if !s.mfaEnabled() {
 		return nil
 	}
+	ownIdP := sess.FederatedFor(tenantID)
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -627,6 +636,14 @@ func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Ses
 		if !sec.MFARequiredFor(m.Role().String()) {
 			return nil
 		}
+	}
+	if ownIdP {
+		if !sec.SSORequireMFAEvidence || sess.MFAEvidence() {
+			return nil
+		}
+		s.logger.Warn("blocked own-IdP session without MFA evidence from a tenant that requires the IdP to prove 2FA",
+			"tenant_id", tid.String(), "user_id", userID.String())
+		return ErrSSOMFAEvidenceRequired
 	}
 	// An external member signed in at their trusted home organization
 	// passes only with a proven or attested second factor (RFC-058).

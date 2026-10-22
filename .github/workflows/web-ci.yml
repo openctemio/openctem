@@ -279,6 +279,7 @@ jobs:
           git fetch --no-tags origin "${{ github.base_ref }}"
           base="$(bash ../.github/scripts/effective-base.sh web "origin/${{ github.base_ref }}")"
           bash scripts/check-palette-drift.sh "$base"
+          sh scripts/check-palette-drift.test.sh
 
   # The Vitest suite, in three parallel shards (vitest --shard). Same setup as
   # `Web checks`; the endpoint check reads api/api/openapi/routes.txt.

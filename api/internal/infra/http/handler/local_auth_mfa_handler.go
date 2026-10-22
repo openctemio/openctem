@@ -410,7 +410,7 @@ func (h *LocalAuthHandler) ResetMemberMFA(w http.ResponseWriter, r *http.Request
 	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
-		RequestID: r.Header.Get("X-Request-ID"),
+		RequestID: middleware.GetRequestID(r.Context()),
 		TenantID:  tenantID,
 	}
 	if u := middleware.GetLocalUser(r.Context()); u != nil {
