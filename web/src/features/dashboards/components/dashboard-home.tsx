@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useSWRConfig } from 'swr'
-import { Copy, MoreHorizontal, Pencil, SlidersHorizontal, Star, Trash2 } from 'lucide-react'
+import { Copy, MoreHorizontal, Pencil, SlidersHorizontal, Star, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -37,6 +37,7 @@ import {
   setDashboardSchedule,
   setDefaultDashboard,
   setOrgDefaultDashboard,
+  updateDashboard,
   useMyDashboards,
   useOrgDashboards,
   useRevalidateAllDashboards,
@@ -45,6 +46,12 @@ import type { Dashboard, DashboardRefreshSchedule } from '../api/dashboards.type
 import { dashboardDataKey, refreshDashboard, useDashboardData } from '../api/widget-data'
 import { DEFAULT_TEMPLATE, templateByKey, templateLayout, templateNameKey } from '../templates'
 import { DASHBOARD_CHOICE_KEY, parseRef, pickLanding, refKey, type DashboardRef } from '../landing'
+import {
+  needsCtemHint,
+  readCtemHintDismissed,
+  withCtemLoop,
+  writeCtemHintDismissed,
+} from '../ctem-hint'
 import { DashboardFreshness } from './dashboard-freshness'
 import { DashboardSwitcher } from './dashboard-switcher'
 import { DashboardView } from './dashboard-view'
@@ -151,6 +158,61 @@ export function DashboardHome() {
     setCustomizing(false)
     writeChoice(ref)
   }, [])
+
+  // The one-time CTEM offer on an Overview copy made before the template
+  // carried the loop. Nothing changes until the viewer chooses.
+  const [hintDismissed, setHintDismissed] = useState(true)
+  useEffect(() => setHintDismissed(readCtemHintDismissed()), [])
+  const [hintBusy, setHintBusy] = useState(false)
+  const showCtemHint =
+    !hintDismissed &&
+    !seeded &&
+    active?.kind === 'personal' &&
+    needsCtemHint(dashboard ? { ...dashboard, kind: 'personal' } : undefined)
+  const dismissHint = () => {
+    writeCtemHintDismissed()
+    setHintDismissed(true)
+  }
+  const addCtemLoop = async () => {
+    if (!dashboard) return
+    setHintBusy(true)
+    try {
+      await updateDashboard(dashboard.id, {
+        name: dashboard.name,
+        description: dashboard.description,
+        columns: dashboard.columns,
+        layout: withCtemLoop(dashboard.layout ?? []),
+      })
+      dismissHint()
+      await Promise.all([revalidate(), data.mutate()])
+      toast.success(t('dashboards.ctemHint.added', 'The CTEM loop was added to this dashboard'))
+    } catch (e) {
+      toast.error(getErrorMessage(e))
+    } finally {
+      setHintBusy(false)
+    }
+  }
+  const switchToCtem = async () => {
+    setHintBusy(true)
+    try {
+      const tpl = templateByKey('ctem')
+      const d = await createDashboard({
+        name: t(templateNameKey(tpl.key), tpl.key),
+        columns: tpl.columns,
+        layout: templateLayout(tpl),
+      })
+      dismissHint()
+      await revalidate()
+      choose({ kind: 'personal', id: d.id })
+      toast.success(
+        t('dashboards.ctemHint.switched', 'The CTEM dashboard was added; your Overview is kept')
+      )
+    } catch (e) {
+      toast.error(getErrorMessage(e))
+    } finally {
+      setHintBusy(false)
+    }
+  }
 
   const refresh = async () => {
     if (!active) return
@@ -340,6 +402,35 @@ export function DashboardHome() {
                   {t('dashboards.view.chooseAnother', 'Choose another')}
                 </Link>
               </p>
+            )}
+            {showCtemHint && (
+              <div
+                className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                role="status"
+                data-testid="ctem-hint"
+              >
+                <span className="min-w-0 flex-1 text-muted-foreground">
+                  {t(
+                    'dashboards.ctemHint.text',
+                    'The CTEM loop is back: see scoping, discovery, prioritization, validation and mobilization at a glance.'
+                  )}
+                </span>
+                <Button size="sm" variant="outline" disabled={hintBusy} onClick={addCtemLoop}>
+                  {t('dashboards.ctemHint.add', 'Add the CTEM loop')}
+                </Button>
+                <Button size="sm" variant="ghost" disabled={hintBusy} onClick={switchToCtem}>
+                  {t('dashboards.ctemHint.switch', 'Switch to the CTEM template')}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8"
+                  onClick={dismissHint}
+                  aria-label={t('dashboards.ctemHint.dismiss', 'Dismiss')}
+                >
+                  <X className="h-4 w-4" aria-hidden />
+                </Button>
+              </div>
             )}
             <DashboardFreshness
               kind={active.kind}
