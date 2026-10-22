@@ -34,6 +34,7 @@ import { useTenantModules } from '@/features/integrations/api/use-tenant-modules
 import type { Evidence, EvidenceType, FindingDetail } from '../../types'
 import { EVIDENCE_TYPE_CONFIG } from '../../types'
 import { CodeHighlighter } from './code-highlighter'
+import { SectionLoadError } from './section-load-error'
 import { ValidationEvidencePanel } from './validation-evidence-panel'
 import { FindingEvidenceItems } from './finding-evidence-items'
 import { useFindingEvidenceItems } from '../../api/use-finding-evidence-items'
@@ -801,20 +802,10 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
       {attachmentsError && (
         <>
           <Separator />
-          <div
-            role="alert"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"
-          >
-            <span>
-              {t(
-                'findings.evidenceTab.attachmentsError',
-                'The uploaded files could not be loaded.'
-              )}
-            </span>
-            <Button size="sm" variant="outline" onClick={() => void retryAttachments()}>
-              {t('common.retry', 'Retry')}
-            </Button>
-          </div>
+          <SectionLoadError
+            title={t('findings.detail.section.uploadedFiles', 'the uploaded files')}
+            onRetry={() => void retryAttachments()}
+          />
         </>
       )}
 
