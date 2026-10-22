@@ -214,7 +214,7 @@ func (h *FindingEvidenceItemsHandler) auditContext(r *http.Request) auditapp.Aud
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 		SessionID:  middleware.GetSessionID(r.Context()),
 	}
 }

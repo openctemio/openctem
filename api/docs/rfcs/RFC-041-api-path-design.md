@@ -2,7 +2,9 @@
 
 > Status: **Accepted** (decisions D1–D12 approved 2026-10-03 as
 > recommended, §8). Design PR #871. P0 implemented; P1 in progress (§10);
-> the `/hooks/{provider}` move (D5) is not built yet.
+> the `/hooks/{provider}` move (D5) is not built yet. **Amended 2026-10-22**
+> (§11): D6, D9 and D10 are superseded as listed there, and the public API
+> review decisions D1–D16 are recorded.
 > Scope: `api/` (routes, OpenAPI, edge gateway), `web/` (API call sites,
 > generated types), sdk-go and the sensor (only through the protocol v2
 > feature negotiation of RFC-029), helm charts (edge rules).
@@ -398,7 +400,8 @@ callers, but it changes the path keys in `web/src/lib/api/generated/api.types.ts
 - **Errors use two formats:**
   - The user plane returns
     `{error, code, message, details, request_id}` (`pkg/apierror`).
-  - Sensor v2 returns RFC 9457 `application/problem+json`.
+  - Sensor v2 returns RFC 9457 `application/problem+json`. (The user
+    plane serves only its envelope; see §11 D2.)
 - **Updates use `PUT` 78 times and `PATCH` 37 times.** There is no rule for
   which.
 
@@ -665,8 +668,8 @@ The existing protocol v1 deprecation, generalised:
   `x-sunset: <date>`. The web's generated types then show the deprecation at
   compile time.
 - **Removal** replaces the alias with
-  `410 Gone` + `application/problem+json` naming the successor for one
-  release, then deletes it.
+  `410 Gone` and the error envelope naming the successor (§11 D15) for one
+  release train, then deletes it.
 - **Sensors** change only through `GET /api/v2/sensor/hello` features. The
   SDK keeps the old path whenever the feature is absent.
 
@@ -685,7 +688,7 @@ The release train runs every other Monday (RFC-037), and dates are
 | P1 | trains of 2026-10-26 and 2026-11-09 | invitation token to body (aliases, `Deprecation` now); SSO gate decision for the URL-tenant chain (fix if the test confirms the gap); Caddy routes by plane table; stale `/platform/*` rule removed; optional admin hostname; fix the live phantom web calls | web, gateway |
 | P2 | 2026-11 → 2026-12 | `/api/v1/organization/*` and `/api/v1/me/*` added, web moved in the same release, old paths aliased with `Deprecation`; sdk-go `evidence` and `credentials` v2 features; `/hooks/{provider}` (if D5) | web, SDK (optional), webhook docs |
 | P3 | 2027-01-15 | **removal** of the URL-tenant, `/users/me` and invitation-path aliases (web-only; one quarter after deprecation, telemetry at zero) | none if telemetry is zero |
-| P4 | 2027-04-01 + telemetry | protocol v1 removal per RFC-029 §5.4 (`/api/v1/agent/*`, the `/agents` 308s, `/api/v1/validation/evidence`); `/api/v1/webhooks/incoming/*` removed after 6 months of `Sunset` **and** 30 days of zero calls (customers re-point their Jira/GitHub webhooks) | sensors on v1 only (by then RFC-032 enrollment and protocol v2 are the norm), webhook owners. **Precondition:** v1 ingest routes without a v2 successor (`ingest/sarif`, `ingest/recon`, `ingest/scan`, `scans`, `telemetry-events`), which CI pipelines and the docs use, must first gain v2 features (RFC-029 results media types), or they stay outside the v1 removal. **Done early, 2026-10-05** (decided once telemetry showed zero v1 calls): all of `/api/v1/agent/*`, including the routes without a successor, and the `/agents` 308s were removed; `/api/v1/validation/evidence` stays |
+| P4 | 2027-04-01 + telemetry | protocol v1 removal per RFC-029 §5.4 (`/api/v1/agent/*`, the `/agents` 308s, `/api/v1/validation/evidence`); `/api/v1/webhooks/incoming/*` removed after 90 days of `Sunset` (§11 D15) **and** 30 days of zero calls (customers re-point their Jira/GitHub webhooks) | sensors on v1 only (by then RFC-032 enrollment and protocol v2 are the norm), webhook owners. **Precondition:** v1 ingest routes without a v2 successor (`ingest/sarif`, `ingest/recon`, `ingest/scan`, `scans`, `telemetry-events`), which CI pipelines and the docs use, must first gain v2 features (RFC-029 results media types), or they stay outside the v1 removal. **Done early, 2026-10-05** (decided once telemetry showed zero v1 calls): all of `/api/v1/agent/*`, including the routes without a successor, and the `/agents` 308s were removed; `/api/v1/validation/evidence` stays |
 
 Parameter-name normalisation (P6) can happen in any release, area by area,
 because it does not change the wire. Each batch regenerates the spec and the
@@ -762,12 +765,12 @@ Two notes from the approval:
 | D2 | Name of the token-scoped singleton that replaces `/tenants/{tenant}` | `/api/v1/organization` (the UI and RFC-022 say "organization"); alternative `/api/v1/tenant` |
 | D3 | Admin plane: keep `/api/v1/admin` plus an optional own host, or move to `/admin/api/v1` | keep the path, add `OPENCTEM_ADMIN_HOSTNAME`; the host gives origin isolation, the path move gives nothing an edge rule lacks |
 | D4 | Sensor plane: keep `/api/v2/sensor` as canonical; new sensor routes only as negotiated v2 features; no `/sensor/v2` | yes |
-| D5 | Inbound webhooks: move to `/hooks/{provider}` (customers re-point webhooks within 6 months) or keep `/api/v1/webhooks/incoming/*` | move; it is the only unauthenticated, Internet-facing machine plane, and a top-level prefix lets the edge give it its own body and rate limits |
-| D6 | Path parameter convention `{snake_case}` with `_id` (matches JSON and sensor v2), normalised area by area (no wire change; regenerates web types) | yes |
+| D5 | Inbound webhooks: move to `/hooks/{provider}` (customers re-point webhooks within the 90-day window of §11 D15) or keep `/api/v1/webhooks/incoming/*` | move; it is the only unauthenticated, Internet-facing machine plane, and a top-level prefix lets the edge give it its own body and rate limits |
+| D6 | Path parameter convention `{snake_case}` with `_id` (matches JSON and sensor v2), normalised area by area (no wire change; regenerates web types) | yes. **Amended 2026-10-22:** the leaf resource parameter is `{id}`; only parent parameters are `{snake_case_id}` (§11) |
 | D7 | Custom-method spelling: `POST /{coll}/{id}/{verb}` (house form) vs AIP `:verb` | slash form |
 | D8 | Pagination for new list routes: `page`/`per_page` with `{data,total,page,per_page,total_pages}`, plus `cursor`/`next_cursor` for exports and unbounded collections | yes |
-| D9 | Errors: keep the user-plane envelope; serve RFC 9457 when `Accept: application/problem+json`, and by default on new planes (inbound, organization) | yes |
-| D10 | Removal dates: web-only aliases 2027-01-15; external aliases ≥ 6 months after `Deprecation` and 30 days of zero use; sensor v1 per RFC-029 | yes |
+| D9 | Errors: keep the user-plane envelope; serve RFC 9457 when `Accept: application/problem+json`, and by default on new planes (inbound, organization) | yes. **Superseded 2026-10-22 (§11 D2):** the envelope only on the user, admin, SCIM-adjacent and hook planes; no `Accept` negotiation; sensor v2 keeps RFC 9457 |
+| D10 | Removal dates: web-only aliases 2027-01-15; external aliases ≥ 6 months after `Deprecation` and 30 days of zero use; sensor v1 per RFC-029 | yes. **Superseded 2026-10-22 (§11 D15):** external routes get 90 days, web-only routes no window; the dates already set for the aliases above stand |
 | D11 | Lint from day one as **blocking** with a frozen baseline, or report-only for a cycle | blocking (the openapicontract precedent worked) |
 | D12 | The 158 user and admin routes the web never calls: audit them for API-key/MCP use before any removal (separate issue) | separate issue, no removal in this RFC. Audited in issue #970: the duplicate and dead reads (`/services`, the generic `/state-history` reads, the `/finding-sources` sub-reads, `/relationships/usage-stats`, `/attachments/{id}/meta`, the single-command `/commands/{id}` routes, `PATCH /findings/{id}/triage`, `/auth/oauth/providers`) had no caller in the web, e2e, sdk-go, sensor, ctis, MCP tools or docs and were removed without a deprecation window (owner rule 2026-10-11: minimal back-compat); `removed_routes_test.go` keeps them out |
 
@@ -794,3 +797,41 @@ Two notes from the approval:
 | P0 | `Deprecated()` middleware + `deprecated_route_requests_total` | #880 |
 | P1 | live phantom web calls fixed or removed (four helpers that called routes the API never served) | #883 |
 | P1 | invitation token in the body (`POST /api/v1/invitations/{lookup,accept,accept-with-refresh,decline}`), `/{token}` aliases deprecated (sunset 2027-01-15), emailed link carries the token in the URL fragment, token paths redacted in logs, metrics, traces and the gateway log | #968 |
+
+## 11. Amendment 2026-10-22: public API review
+
+A review of the API a third party touches (routes, errors, lists, keys,
+webhooks, imports, the spec) produced decisions D1–D16, all adopted as
+recommended. They extend this RFC and the conventions guide
+([`api-conventions.md`](../architecture/api-conventions.md) §9–§13); where
+they differ from §8, this section wins. Rules in the guide are labelled
+**Shipped** or **Planned**.
+
+| # | Question | Decision | Why |
+|---|---|---|---|
+| D1 | Keep the `/api/v1` path version per plane? | Yes. No v2 redesign; converge v1 in place under D15 | A second version doubles the surface and the tests |
+| D2 | Error format | Our envelope only on the user, admin, hook and SCIM-adjacent planes, with specific `code`s, `details.fields[]`, `details.params` and an always-present `request_id`. The planned `Accept: application/problem+json` negotiation (§8 D9) is dropped; sensor v2 keeps RFC 9457 | Two formats double tests and client code with no consumer. The envelope already has a machine `code` |
+| D3 | Write access for API keys | Service-account keys may carry write scopes from a curated list; personal keys stay read-only; step-up routes and the deny list stay session-only; optional per-key CIDR list; writes audited with `api_key_id` | A machine identity survives offboarding and limits the blast radius per integration. Personal write keys are the usual leak path |
+| D4 | Status for a stale `If-Match` | `412 RESOURCE_CHANGED`, replacing `409 FINDING_CHANGED` and `409 SETTINGS_CONFLICT`; `428` only for scope, policy and approval objects | RFC 9110. Only the web app calls these today |
+| D5 | Error code registry | `pkg/apierror/codes.go` lists every code; domain errors map in one `handler.WriteError`; new local mappers are a lint finding; codes feed the spec and the `errors.<CODE>` i18n keys | Stable machine contract, i18n, removes ~111 copies |
+| D6 | List envelope and totals | `data` everywhere (the 29 `items` and 5 `results` types send both keys for one window); exact `total` up to 10,000, then `total_is_estimate`; paging headers | Finishes RFC-048 D9; removes the COUNT cost on big tenants |
+| D7 | Pagination beyond offset | `pagination=keyset&cursor=` (opaque, HMAC-signed, tenant-bound) on findings, assets, audit, events and activity; offset capped at 10,000 rows | Signed cursors stop forgery across tenants and sort tampering |
+| D8 | Sort grammar | `sort=` only; unknown field is `400 INVALID_SORT`; `sort_by`, `order_by`, `order` are aliases for the window | One grammar shared with `/query` |
+| D9 | Field selection | No generic `fields=`; extend `include=` to every resource with expansions and keep lean list representations | A projection bypasses per-field permission checks and complicates caching; no real consumer |
+| D10 | Async model | One `operations` resource for exports, large imports, recalculations and bulk AI triage; exports over 10,000 rows become operations with a signed one-hour download | One poll contract for clients and MCP; no ten-minute requests |
+| D11 | Import contract | `POST /findings/imports` returns `201` + `Location` (small) or `202` + operation (large); a receipt resource with one `counts` vocabulary across the nine importers; `closed` only for a declared full-coverage scope | Retry-safe CI; a partial scan cannot close findings |
+| D12 | Idempotency store | Postgres table keyed by tenant, credential, route and key hash, 24-hour janitor; Redis only as a cache; replaces `ci_idempotency.go` | Durable and fail-closed; no double import when Redis is down |
+| D13 | Spec scope | Two generated specs: public at `/openapi.yaml`, console (adds admin) only at `/api/v1/admin/openapi.yaml`; OpenAPI 3.1 | Tenants do not need the admin surface; modern generators need 3.1 |
+| D14 | Generated clients | Web uses a client generated from the 3.1 types; a Go REST client only when the first external integrator asks | Removes a class of drift; the sensor SDK's charter is the sensor runtime |
+| D15 | Deprecation window | Web-only routes (every non-`GET`, plus any `GET` with no key or MCP traffic for 14 days): no window, removed in the same PR as the web change. External routes (`GET`s reachable by keys, SCIM, hooks, MCP, CI and sensor planes): **90 days** with `Deprecation`/`Sunset`/`Link`, then `410 Gone` naming the successor for one release train, then deleted. Sensor protocol keeps RFC-029 §5.4. **Replaces the six months of §8 D10** | Minimal back-compat; 90 days is the shortest documented window that still lets an external integrator ship a fix |
+| D16 | Webhook signing and catalogue | Standard Webhooks headers and body; typed `type` + `version`; per-channel delivery rows with their own retry; redeliver and test endpoints; redirects refused; catalogue at `GET /webhook-event-types` | Integrity and replay protection; receivers can route on type |
+
+Also adopted: `RateLimit-*` headers beside `X-RateLimit-*`; `Location` on
+`201`; strict JSON decoding; the `{id}` leaf parameter (amends D6); SCIM tokens
+with a required expiry and a rotate endpoint.
+
+The correctness and safety slice of the review is built first and needs no
+external contract change: a request id in every error body and only validated
+ids in audit rows, an id tie-breaker in every sort, bounds on unbounded reads
+and bulk inputs, uniform answers for ids in another organization, and
+rate-limit headers on every `429`.
