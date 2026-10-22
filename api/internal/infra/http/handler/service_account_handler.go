@@ -155,7 +155,7 @@ func serviceAccountAuditContext(r *http.Request) audit.AuditContext {
 	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
-		RequestID: r.Header.Get("X-Request-ID"),
+		RequestID: middleware.GetRequestID(r.Context()),
 		TenantID:  middleware.GetTenantID(r.Context()),
 	}
 	if u := middleware.GetLocalUser(r.Context()); u != nil {

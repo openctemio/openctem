@@ -468,7 +468,7 @@ func (h *CIAdminHandler) tenant(w http.ResponseWriter, r *http.Request) (shared.
 func (h *CIAdminHandler) actor(r *http.Request) cirunapp.Actor {
 	ctx := r.Context()
 	return cirunapp.Actor{UserID: middleware.GetUserID(ctx), Email: auditActorEmail(ctx), IP: getClientIP(r),
-		UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		ScopeWrite:   middleware.HasPermission(ctx, permission.ScopeWrite.String()),
 		ScopeApprove: middleware.HasPermission(ctx, permission.ScopeApprove.String())}
 }

@@ -206,9 +206,9 @@ func (r *RepositoryExtensionRepository) ListByTenant(ctx context.Context, tenant
 	`
 
 	// Apply sorting (default to full_name ASC)
-	orderBy := "ar.full_name ASC"
+	orderBy := "ar.full_name ASC, ar.id ASC"
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderBy = "ar." + opts.Sort.SQLWithDefault("full_name ASC")
+		orderBy = "ar." + opts.Sort.SQLWithTieBreaker("ar.id")
 	}
 	baseQuery += " ORDER BY " + orderBy
 	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())

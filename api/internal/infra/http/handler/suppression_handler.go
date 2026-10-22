@@ -591,7 +591,7 @@ func (h *SuppressionHandler) auditApproval(r *http.Request, result *suppression.
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	event := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeSuppressionRule, rule.ID().String()).
 		WithResourceName(rule.Name()).
@@ -662,7 +662,7 @@ func (h *SuppressionHandler) MarkReviewed(w http.ResponseWriter, r *http.Request
 			ActorEmail: auditActorEmail(r.Context()),
 			ActorIP:    getClientIP(r),
 			UserAgent:  r.UserAgent(),
-			RequestID:  r.Header.Get("X-Request-ID"),
+			RequestID:  middleware.GetRequestID(r.Context()),
 		}
 		changes := auditdom.NewChanges().
 			Set("review_flagged_at", flaggedAt.UTC().Format(time.RFC3339), nil).
@@ -692,7 +692,7 @@ func (h *SuppressionHandler) auditSelfApprovalRefused(r *http.Request, ruleID st
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	action := auditdom.ActionSuppressionRuleSelfApprovalRefused
 	event := auditapp.NewFailureEvent(action, auditdom.ResourceTypeSuppressionRule, ruleID, cause).
@@ -914,7 +914,7 @@ func (h *SuppressionHandler) auditPolicyRefusal(r *http.Request, ruleID, reason 
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	event := auditapp.NewDeniedEvent(auditdom.ActionSuppressionRuleApprovalRefused, auditdom.ResourceTypeSuppressionRule, ruleID, reason).
 		WithMessage("Refused by the approval policy ("+reason+")").
@@ -940,7 +940,7 @@ func (h *SuppressionHandler) auditReviewRefusal(r *http.Request, tenantID, userI
 	}
 	actx := auditapp.AuditContext{
 		TenantID: tenantID.String(), ActorID: userID.String(), ActorEmail: auditActorEmail(r.Context()),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
 	event := auditapp.NewDeniedEvent(auditdom.ActionSuppressionRuleReviewed, auditdom.ResourceTypeSuppressionRule, ruleID.String(), cause.Error()).
 		WithSeverity(auditdom.SeverityHigh).

@@ -225,7 +225,7 @@ func (h *AuditHandler) Export(w http.ResponseWriter, r *http.Request) {
 		ActorEmail: auditActorEmail(ctx),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	if lerr := h.service.LogExport(ctx, actx, format, used, res, err != nil); lerr != nil {
 		h.logger.Warn("audit log export event failed", "error", lerr)
