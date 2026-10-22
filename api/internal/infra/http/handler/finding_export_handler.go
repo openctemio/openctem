@@ -169,7 +169,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  observation_not  query  []string  false  "observation: none of (comma list)"  collectionFormat(csv)  Enums(present, stale)
 // @Param  validation  query  []string  false  "validation: any of (comma list)"  collectionFormat(csv)  Enums(reproducible, not_reproducible)
 // @Param  validation_not  query  []string  false  "validation: none of (comma list)"  collectionFormat(csv)  Enums(reproducible, not_reproducible)
-// @Param  state  query  string  false  "state equals"  Enums(open, fixed, dispositioned, all)
+// @Param  state  query  string  false  "state equals"  Enums(open, fixed, dispositioned, closed, all)
 // @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
 // @Param  source_not  query  []string  false  "source: none of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
 // @Param  sla_status  query  []string  false  "sla status: any of (comma list)"  collectionFormat(csv)  Enums(on_track, warning, overdue, exceeded, not_applicable)
@@ -204,22 +204,22 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
 // @Param  cvss_score_gt  query  number  false  "cvss score greater than"
 // @Param  cvss_score_lt  query  number  false  "cvss score less than"
-// @Param  first_detected_at_gte  query  string  false  "first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  first_detected_at_lte  query  string  false  "first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  first_detected_at_gt  query  string  false  "first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  first_detected_at_lt  query  string  false  "first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  sla_deadline_gte  query  string  false  "sla deadline at least (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  sla_deadline_lte  query  string  false  "sla deadline at most (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  sla_deadline_gt  query  string  false  "sla deadline greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  sla_deadline_lt  query  string  false  "sla deadline less than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  last_seen_at_gte  query  string  false  "last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  last_seen_at_lte  query  string  false  "last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  last_seen_at_gt  query  string  false  "last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  last_seen_at_lt  query  string  false  "last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  resolved_at_gte  query  string  false  "resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  resolved_at_lte  query  string  false  "resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  resolved_at_gt  query  string  false  "resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  resolved_at_lt  query  string  false  "resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  first_detected_at_gte  query  string  false  "first detected at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_detected_at_lte  query  string  false  "first detected at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_detected_at_gt  query  string  false  "first detected at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_detected_at_lt  query  string  false  "first detected at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  sla_deadline_gte  query  string  false  "sla deadline at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  sla_deadline_lte  query  string  false  "sla deadline at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  sla_deadline_gt  query  string  false  "sla deadline greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  sla_deadline_lt  query  string  false  "sla deadline less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_at_gte  query  string  false  "last seen at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_at_lte  query  string  false  "last seen at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_at_gt  query  string  false  "last seen at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_at_lt  query  string  false  "last seen at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  resolved_at_gte  query  string  false  "resolved at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  resolved_at_lte  query  string  false  "resolved at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  resolved_at_gt  query  string  false  "resolved at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  resolved_at_lt  query  string  false  "resolved at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // @Param  network_port  query  []integer  false  "network port: any of (comma list)"  collectionFormat(csv)
 // @Param  network_port_not  query  []integer  false  "network port: none of (comma list)"  collectionFormat(csv)
 // @Param  network_port_gte  query  integer  false  "network port at least"
@@ -236,14 +236,19 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  asset_owner_id  query  []string  false  "asset owner id: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_owner_id_null  query  boolean  false  "asset owner id is unset (true) or set (false)"
 // @Param  exploit_available  query  boolean  false  "exploit available equals"
-// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  updated_at_gte  query  string  false  "updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  updated_at_lte  query  string  false  "updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
-// @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  pending_approval  query  boolean  false  "pending approval equals"
+// @Param  acceptance_expires_at_gte  query  string  false  "acceptance expires at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  acceptance_expires_at_lte  query  string  false  "acceptance expires at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  acceptance_expires_at_gt  query  string  false  "acceptance expires at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  acceptance_expires_at_lt  query  string  false  "acceptance expires at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_gte  query  string  false  "updated at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_lte  query  string  false  "updated at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // end filterspec-params
 // @Param        view   query  string  false  "Saved view ID: its filter, with the other params overriding it field by field"
 // @Param        q       query  string  false  "Free text"
