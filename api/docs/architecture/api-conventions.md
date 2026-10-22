@@ -149,7 +149,8 @@ POST /{collection}/{verb}            (collection-wide)
 POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
 ```
 
-- Up to 1,000 ids.
+- Up to 1,000 ids; more is a validation error. This holds for every bulk
+  route, including `PATCH`/`DELETE /asset-groups/bulk`.
 - The response reports per-id results:
   `{ "succeeded": [...], "failed": [{ "id": ..., "code": ... }] }`.
 - Use `bulk/delete` for deletion. Never send a `DELETE` with a body.
@@ -166,8 +167,18 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
     telemetry) use `cursor` with `next_cursor`. An empty `next_cursor` means
     the end. Cursors are opaque.
   - Do not add `limit`/`offset` or `page_size` to new routes.
+- **Bounded reads:** no endpoint returns an unbounded set. A collection under
+  one parent that has no paging (attachments of an object, owners of an asset,
+  role bindings of a team, assets of a business service) answers at most 1,000
+  rows with a stable order; a file import accepts at most 10,000 CSV records
+  (credential CSV) or 1,000 JSON items.
 - **Sorting:** `sort=field,-other` (a leading `-` means descending). Do not
   add `sort_by`/`sort_order`/`order`/`order_by` to new routes.
+  Every sort ends in an `id` tie-breaker (`pkg/pagination`,
+  `SortOption.SQL`), in the direction of the last sort key, so rows that tie
+  on every requested key page deterministically. A query that aliases or joins
+  its main table passes the qualified expression to
+  `SQLWithTieBreaker`, and a default sort string ends in a unique column.
 - **Filtering** follows [RFC-048](../rfcs/RFC-048-list-query-contract.md)
   ([how to use it](list-query-contract.md)). It supersedes the older
   plural / `min_` / `search` style, which stays only as deprecated aliases on
@@ -190,6 +201,12 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   `{ "code": "UPPER_SNAKE", "message": "...", "details": ... }` (`details` optional).
   - `code` is the machine-readable contract.
   - Add new codes to `pkg/apierror`. Do not invent them in handlers.
+  - Every error body carries `request_id`, equal to the `X-Request-ID`
+    response header. The request-id middleware validates an inbound id
+    (`^[A-Za-z0-9._-]{1,64}$`) and mints a UUID otherwise; `apierror` copies
+    the header into the body. Handlers and audit rows read the id with
+    `middleware.GetRequestID(r.Context())`, never from the raw request header
+    (a test fails on a raw read).
 - **The sensor v2 plane** returns RFC 9457 `application/problem+json`, with
   `code` as an extension member. The user, admin, SCIM-adjacent and hook
   planes return only the envelope above; there is no `Accept` negotiation
@@ -204,7 +221,7 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   | out of the caller's tenant or data scope | 404 |
   | state conflict | 409 |
   | validation failed | 422 |
-  | rate limited, with `Retry-After` | 429 |
+  | rate limited, with `Retry-After` and `RateLimit-*` | 429 |
 
   Never return 403 for out-of-scope objects, because that confirms the
   object exists.

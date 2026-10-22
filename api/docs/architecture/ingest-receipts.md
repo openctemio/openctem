@@ -12,10 +12,10 @@ organization's findings. The ingest service writes it; nothing else does.
 
 | Part | State |
 |---|---|
-| Receipts table, per-finding action log, coverage decisions, daily ingest fact (migration `003284_ingest_receipts`) | shipped |
+| Receipts table, per-finding action log, coverage decisions, daily ingest fact (migration `003293_ingest_receipts`) | shipped |
 | Writer in ingest (every report), in coverage decisions, and for uploads (one receipt per request) | shipped |
 | Retention job (`ingest-receipt-retention`) | shipped |
-| Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003288_idempotency_keys`) | shipped |
+| Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003301_idempotency_keys`) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
 | Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview (en, vi) | shipped |
 
@@ -162,7 +162,7 @@ and vi).
 
 ## Key files
 
-- `api/migrations/003284_ingest_receipts.up.sql`
+- `api/migrations/003293_ingest_receipts.up.sql`
 - `api/pkg/domain/ingestreceipt/receipt.go`
 - `api/internal/infra/postgres/ingest_receipt_repository.go`
 - `api/internal/app/ingest/receipt.go`, `coverage_autoresolve.go`
