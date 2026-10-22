@@ -145,11 +145,20 @@ func (e *Error) ToResponseWithRequestID(requestID string) Response {
 }
 
 // WriteJSON writes the error as JSON to the response writer.
+//
+// The body carries request_id whenever the response already has an
+// X-Request-ID header. The request-id middleware sets that header (validated
+// or minted, never the raw client value) before any handler runs, so every
+// error written through this method is correlated with no call-site change.
 func (e *Error) WriteJSON(w http.ResponseWriter) {
+	requestID := w.Header().Get(requestIDHeader)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(e.Status)
-	_ = json.NewEncoder(w).Encode(e.ToResponse())
+	_ = json.NewEncoder(w).Encode(e.ToResponseWithRequestID(requestID))
 }
+
+// requestIDHeader is the response header the request-id middleware sets.
+const requestIDHeader = "X-Request-ID"
 
 // WriteJSONWithRequestID writes the error as JSON with request ID.
 func (e *Error) WriteJSONWithRequestID(w http.ResponseWriter, requestID string) {
