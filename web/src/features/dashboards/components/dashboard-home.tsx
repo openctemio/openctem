@@ -8,7 +8,7 @@
  * dashboard's stored snapshot; the server decides whose numbers they are.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useSWRConfig } from 'swr'
 import { Copy, MoreHorizontal, Pencil, SlidersHorizontal, Star, Trash2 } from 'lucide-react'
@@ -30,6 +30,7 @@ import { PageHeader } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 import {
+  createDashboard,
   deleteDashboard,
   duplicateOrgDashboard,
   setDashboardSchedule,
@@ -41,6 +42,7 @@ import {
 } from '../api/use-dashboards-api'
 import type { Dashboard, DashboardRefreshSchedule } from '../api/dashboards.types'
 import { dashboardDataKey, refreshDashboard, useDashboardData } from '../api/widget-data'
+import { DEFAULT_TEMPLATE, templateByKey, templateLayout, templateNameKey } from '../templates'
 import { DASHBOARD_CHOICE_KEY, parseRef, pickLanding, refKey, type DashboardRef } from '../landing'
 import { DashboardFreshness } from './dashboard-freshness'
 import { DashboardSwitcher } from './dashboard-switcher'
@@ -78,15 +80,7 @@ function writeChoice(ref: DashboardRef) {
   }
 }
 
-export interface DashboardHomeProps {
-  /**
-   * What to show when the viewer has no stored dashboard at all (and so
-   * nothing to switch to). Rendered instead of the dashboard view.
-   */
-  empty?: ReactNode
-}
-
-export function DashboardHome({ empty }: DashboardHomeProps) {
+export function DashboardHome() {
   const { t } = useTranslation()
   const { canAny, can } = usePermissions()
   const canOrgView = canAny(Permission.DashboardsOrgView, Permission.DashboardsOrgManage)
@@ -110,6 +104,35 @@ export function DashboardHome({ empty }: DashboardHomeProps) {
   useEffect(() => {
     if (chosen === null) setChosen(readChoice())
   }, [chosen])
+
+  // A person with no dashboard at all (none of their own, none from the
+  // organization) gets a personal copy of the default template, computed in
+  // their own scope. Created once; a failure leaves the empty state.
+  const seeding = useRef(false)
+  const [seeded, setSeeded] = useState<string | null>(null)
+  const [seedFailed, setSeedFailed] = useState(false)
+  // A failed list read is not "nothing": the organization may have
+  // dashboards for the viewer, so no copy is made.
+  const nothing =
+    !listsLoading &&
+    !mine.error &&
+    !(canOrgView && org.error) &&
+    personal.length === 0 &&
+    (organization ?? []).length === 0
+  useEffect(() => {
+    if (!nothing || seeding.current) return
+    seeding.current = true
+    const tpl = templateByKey(DEFAULT_TEMPLATE)
+    const name = t(templateNameKey(tpl.key), tpl.key)
+    createDashboard({ name, columns: tpl.columns, layout: templateLayout(tpl) })
+      .then(async (d) => {
+        setSeeded(name)
+        await revalidate()
+        setChosen({ kind: 'personal', id: d.id })
+        writeChoice({ kind: 'personal', id: d.id })
+      })
+      .catch(() => setSeedFailed(true))
+  }, [nothing, revalidate, t])
 
   const active = useMemo(
     () => (listsLoading ? null : pickLanding(personal, organization ?? [], chosen)),
@@ -271,14 +294,16 @@ export function DashboardHome({ empty }: DashboardHomeProps) {
         {listsLoading ? (
           <DashboardSkeleton />
         ) : !dashboard || !active ? (
-          (empty ?? (
+          seedFailed || !nothing ? (
             <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
               {t('dashboards.view.none', 'You have no dashboards yet.')}{' '}
               <Link href="/dashboards" className="font-medium text-foreground underline">
                 {t('dashboards.switcher.new', 'New dashboard')}
               </Link>
             </div>
-          ))
+          ) : (
+            <DashboardSkeleton />
+          )
         ) : customizing ? (
           <DashboardEditor
             dashboard={dashboard}
@@ -291,6 +316,29 @@ export function DashboardHome({ empty }: DashboardHomeProps) {
           />
         ) : (
           <>
+            {seeded && (
+              <p
+                className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+                role="status"
+              >
+                {t(
+                  'dashboards.view.seeded',
+                  'This is the {name} layout, computed for your own access.',
+                  { name: seeded }
+                )}{' '}
+                <button
+                  type="button"
+                  className="font-medium text-foreground underline"
+                  onClick={() => setCustomizing(true)}
+                >
+                  {t('dashboards.actions.customize', 'Customize')}
+                </button>{' '}
+                ·{' '}
+                <Link href="/dashboards" className="font-medium text-foreground underline">
+                  {t('dashboards.view.chooseAnother', 'Choose another')}
+                </Link>
+              </p>
+            )}
             <DashboardFreshness
               kind={active.kind}
               data={data.data}
