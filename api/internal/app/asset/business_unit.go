@@ -72,11 +72,18 @@ func (s *BusinessUnitService) Create(ctx context.Context, input CreateBusinessUn
 	if err := applyRiskTolerance(bu, input.RiskTolerance); err != nil {
 		return nil, err
 	}
-	if err := s.applyParent(ctx, tid, bu, input.ParentID); err != nil {
+	scope, err := s.resolveScope(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyParent(ctx, tid, bu, input.ParentID, scope); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Create(ctx, bu); err != nil {
 		return nil, fmt.Errorf("failed to create business unit: %w", err)
+	}
+	if scope.Restricted() {
+		bu.HideOwnerEmail()
 	}
 	return bu, nil
 }
@@ -109,7 +116,7 @@ func applyRiskTolerance(bu *businessunitdom.BusinessUnit, val *string) error {
 // unchanged; empty string = clear the parent; otherwise the referenced BU must
 // exist within the same tenant, must not be the unit itself, and must not
 // introduce a cycle in the hierarchy.
-func (s *BusinessUnitService) applyParent(ctx context.Context, tid shared.ID, bu *businessunitdom.BusinessUnit, val *string) error {
+func (s *BusinessUnitService) applyParent(ctx context.Context, tid shared.ID, bu *businessunitdom.BusinessUnit, val *string, scope *shared.DataScope) error {
 	if val == nil {
 		return nil
 	}
@@ -131,6 +138,13 @@ func (s *BusinessUnitService) applyParent(ctx context.Context, tid shared.ID, bu
 			return fmt.Errorf("%w: parent business unit not found in this tenant", shared.ErrValidation)
 		}
 		return fmt.Errorf("failed to resolve parent business unit: %w", err)
+	}
+	// A restricted caller cannot place a unit under one they cannot see: the
+	// parent answers as if it did not exist.
+	if ok, err := s.visible(ctx, tid, pid, scope); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: parent business unit not found in this tenant", shared.ErrValidation)
 	}
 	// Cycle guard: walk the prospective parent's ancestor chain; if this unit
 	// appears, linking would create a cycle.
@@ -161,7 +175,8 @@ func (s *BusinessUnitService) applyParent(ctx context.Context, tid shared.ID, bu
 // maxHierarchyDepth bounds the ancestor walk when detecting cycles.
 const maxHierarchyDepth = 64
 
-// Get retrieves a BU.
+// Get retrieves a BU as the caller may see it: a unit not visible to a
+// restricted caller answers businessunit.ErrNotFound (404).
 func (s *BusinessUnitService) Get(ctx context.Context, tenantID, buID string) (*businessunitdom.BusinessUnit, error) {
 	tid, _ := shared.IDFromString(tenantID)
 	bid, _ := shared.IDFromString(buID)
@@ -169,25 +184,87 @@ func (s *BusinessUnitService) Get(ctx context.Context, tenantID, buID string) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := s.applyScopedStats(ctx, tid, bu); err != nil {
+	scope, err := s.resolveScope(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	if ok, err := s.visible(ctx, tid, bid, scope); err != nil {
+		return nil, err
+	} else if !ok {
+		return nil, businessunitdom.ErrNotFound
+	}
+	if err := s.present(ctx, tid, scope, bu); err != nil {
 		return nil, err
 	}
 	return bu, nil
 }
 
-// applyScopedStats replaces the stored rollup counters of units with counts
-// over the assets the caller may see. The stored counters cover every asset
-// of the unit, so a restricted reader would learn how many assets and
-// findings sit outside their scope. The units are changed in memory only.
-func (s *BusinessUnitService) applyScopedStats(ctx context.Context, tid shared.ID, units ...*businessunitdom.BusinessUnit) error {
-	if s.dataScope == nil || len(units) == 0 {
-		return nil
+// resolveScope returns the caller's data scope in tid (nil = unrestricted,
+// also when no enforcer is wired).
+func (s *BusinessUnitService) resolveScope(ctx context.Context, tid shared.ID) (*shared.DataScope, error) {
+	if s.dataScope == nil {
+		return nil, nil
 	}
 	scope, err := s.dataScope.Resolve(ctx, tid)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
-	if scope == nil {
+	return scope, nil
+}
+
+// visible reports whether the unit is visible to the caller (research/233
+// D4): always for an unrestricted caller; for a restricted one only when the
+// unit or a unit below it holds an asset in their scope.
+func (s *BusinessUnitService) visible(ctx context.Context, tid, bid shared.ID, scope *shared.DataScope) (bool, error) {
+	if !scope.Restricted() {
+		return true, nil
+	}
+	res, err := s.repo.List(ctx, businessunitdom.Filter{
+		TenantID: &tid, IDs: []shared.ID{bid}, DataScope: scope,
+	}, pagination.New(1, 1))
+	if err != nil {
+		return false, err
+	}
+	return len(res.Data) > 0, nil
+}
+
+// writableUnit loads the unit for a change by the caller. A restricted
+// caller may change a unit visible to them, or one with no asset (a unit
+// they just created); any other unit answers businessunit.ErrNotFound, as a
+// read does.
+func (s *BusinessUnitService) writableUnit(ctx context.Context, tid, bid shared.ID) (*businessunitdom.BusinessUnit, *shared.DataScope, error) {
+	bu, err := s.repo.GetByID(ctx, tid, bid)
+	if err != nil {
+		return nil, nil, err
+	}
+	scope, err := s.resolveScope(ctx, tid)
+	if err != nil {
+		return nil, nil, err
+	}
+	ok, err := s.visible(ctx, tid, bid, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ok {
+		return bu, scope, nil
+	}
+	ids, err := s.repo.ListAssetIDs(ctx, tid, bid)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(ids) > 0 {
+		return nil, nil, businessunitdom.ErrNotFound
+	}
+	return bu, scope, nil
+}
+
+// present prepares units for the caller's response, in memory only. The
+// stored rollup counters cover every asset of the unit, so a scoped caller
+// gets counts over the assets they may see (a restricted reader would
+// otherwise learn how many assets and findings sit outside their scope),
+// and a restricted caller never gets the owner email (personal data).
+func (s *BusinessUnitService) present(ctx context.Context, tid shared.ID, scope *shared.DataScope, units ...*businessunitdom.BusinessUnit) error {
+	if scope == nil || len(units) == 0 {
 		return nil
 	}
 	ids := make([]shared.ID, len(units))
@@ -200,19 +277,27 @@ func (s *BusinessUnitService) applyScopedStats(ctx context.Context, tid shared.I
 	}
 	for _, u := range units {
 		u.ShowStats(stats[u.ID()])
+		if scope.Restricted() {
+			u.HideOwnerEmail()
+		}
 	}
 	return nil
 }
 
-// List lists BUs.
+// List lists the BUs visible to the caller; the total counts only those.
 func (s *BusinessUnitService) List(ctx context.Context, tenantID string, filter businessunitdom.Filter, page pagination.Pagination) (pagination.Result[*businessunitdom.BusinessUnit], error) {
 	tid, _ := shared.IDFromString(tenantID)
 	filter.TenantID = &tid
+	scope, err := s.resolveScope(ctx, tid)
+	if err != nil {
+		return pagination.Result[*businessunitdom.BusinessUnit]{}, err
+	}
+	filter.DataScope = scope
 	res, err := s.repo.List(ctx, filter, page)
 	if err != nil {
 		return res, err
 	}
-	if err := s.applyScopedStats(ctx, tid, res.Data...); err != nil {
+	if err := s.present(ctx, tid, scope, res.Data...); err != nil {
 		return pagination.Result[*businessunitdom.BusinessUnit]{}, err
 	}
 	return res, nil
@@ -244,9 +329,14 @@ func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUn
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid business unit id", shared.ErrValidation)
 	}
-	bu, err := s.repo.GetByID(ctx, tid, bid)
+	bu, scope, err := s.writableUnit(ctx, tid, bid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get business unit: %w", err)
+	}
+	if scope.Restricted() {
+		// The owner email is hidden from a restricted caller, so their
+		// edit form never holds it: keep the stored value.
+		input.OwnerEmail = bu.OwnerEmail()
 	}
 	bu.Update(input.Name, input.Description, input.OwnerName, input.OwnerEmail)
 	bu.SetTags(input.Tags)
@@ -256,14 +346,14 @@ func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUn
 	if err := applyRiskTolerance(bu, input.RiskTolerance); err != nil {
 		return nil, err
 	}
-	if err := s.applyParent(ctx, tid, bu, input.ParentID); err != nil {
+	if err := s.applyParent(ctx, tid, bu, input.ParentID, scope); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, bu); err != nil {
 		return nil, fmt.Errorf("failed to update business unit: %w", err)
 	}
 	// Saved first: the response carries the reader's scoped counters.
-	if err := s.applyScopedStats(ctx, tid, bu); err != nil {
+	if err := s.present(ctx, tid, scope, bu); err != nil {
 		return nil, err
 	}
 	return bu, nil
@@ -273,6 +363,9 @@ func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUn
 func (s *BusinessUnitService) Delete(ctx context.Context, tenantID, buID string) error {
 	tid, _ := shared.IDFromString(tenantID)
 	bid, _ := shared.IDFromString(buID)
+	if _, _, err := s.writableUnit(ctx, tid, bid); err != nil {
+		return err
+	}
 	return s.repo.Delete(ctx, tid, bid)
 }
 
@@ -285,7 +378,7 @@ func (s *BusinessUnitService) AddAsset(ctx context.Context, tenantID, buID, asse
 	// Verify the BU and the asset both belong to this tenant before linking
 	// (the link table is otherwise tenant-blind, allowing a foreign asset to
 	// be associated and pollute risk rollups).
-	if _, err := s.repo.GetByID(ctx, tid, bid); err != nil {
+	if _, _, err := s.writableUnit(ctx, tid, bid); err != nil {
 		return err
 	}
 	if s.assetChecker != nil {
@@ -311,7 +404,7 @@ func (s *BusinessUnitService) RemoveAsset(ctx context.Context, tenantID, buID, a
 	if err != nil {
 		return err
 	}
-	if _, err := s.repo.GetByID(ctx, tid, bid); err != nil {
+	if _, _, err := s.writableUnit(ctx, tid, bid); err != nil {
 		return err
 	}
 	if err := s.assertAssetInScope(ctx, tid, aid); err != nil {

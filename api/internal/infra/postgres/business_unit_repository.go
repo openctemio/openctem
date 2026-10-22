@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/businessunit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -134,7 +135,23 @@ func (r *BusinessUnitRepository) List(ctx context.Context, filter businessunit.F
 		// Escape LIKE special characters to prevent wildcard injection
 		escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(*filter.Search)
 		args = append(args, "%"+escaped+"%")
-		// argIdx not incremented — no further conditions
+		argIdx++
+	}
+	if len(filter.IDs) > 0 {
+		ids := make([]string, len(filter.IDs))
+		for i, id := range filter.IDs {
+			ids[i] = id.String()
+		}
+		where += fmt.Sprintf(" AND id = ANY($%d::uuid[])", argIdx)
+		args = append(args, pq.Array(ids))
+		argIdx++
+	}
+	// A restricted reader lists, counts and finds only the units visible to
+	// them (filterspec visibility.go); the total is over those units only.
+	if filter.DataScope.Restricted() {
+		cond, scopeArgs := filterspec.BusinessUnitVisibleSQL("business_units.id", filter.DataScope, argIdx)
+		where += " AND " + cond
+		args = append(args, scopeArgs...)
 	}
 	var total int
 	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM business_units "+where, args...).Scan(&total); err != nil {

@@ -146,6 +146,11 @@ func (b *BusinessUnit) ShowStats(st Stats) {
 	b.avgRiskScore = st.AvgRiskScore
 }
 
+// HideOwnerEmail blanks the owner email for display, without touching
+// updated_at: a reader without full data access never sees it (personal
+// data). Never persist the unit after calling it.
+func (b *BusinessUnit) HideOwnerEmail() { b.ownerEmail = "" }
+
 // Errors
 var ErrNotFound = fmt.Errorf("%w: business unit not found", shared.ErrNotFound)
 
@@ -153,6 +158,12 @@ var ErrNotFound = fmt.Errorf("%w: business unit not found", shared.ErrNotFound)
 type Filter struct {
 	TenantID *shared.ID
 	Search   *string
+	// IDs narrows the list to these units (the single-unit read path).
+	IDs []shared.ID
+	// DataScope: a restricted scope keeps only the units visible to that
+	// reader (the unit or one below it holds an asset in the scope); nil or
+	// an unrestricted scope lists every unit of the tenant.
+	DataScope *shared.DataScope
 }
 
 // Repository defines persistence.
