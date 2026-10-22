@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scoping"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // ScopingSummaryRepository computes the Scoping overview in one query.
@@ -66,13 +67,13 @@ SELECT
 	         WHERE ao.asset_id = cj.id
 	           AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $1))
 	           AND (ao.user_id  IS NULL OR ao.user_id  IN (SELECT user_id FROM tenant_members WHERE tenant_id = $1)))),
-	(SELECT COUNT(*) FROM business_services bs WHERE bs.tenant_id = $1),
+	(SELECT COUNT(*) FROM business_services bs WHERE bs.tenant_id = $1/*SVCVIS*/),
 	(SELECT COUNT(*) FROM business_services bs
 	  WHERE bs.tenant_id = $1
 	    AND EXISTS (SELECT 1 FROM business_service_assets bsa
 	                  JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $1/*SCOPE*/
 	                 WHERE bsa.service_id = bs.id)),
-	(SELECT COUNT(*) FROM business_units bu WHERE bu.tenant_id = $1),
+	(SELECT COUNT(*) FROM business_units bu WHERE bu.tenant_id = $1/*BUVIS*/),
 	(SELECT COUNT(*) FROM live_assets),
 	(SELECT COUNT(*) FROM live_assets la
 	  WHERE EXISTS (SELECT 1 FROM business_unit_assets bua
@@ -111,13 +112,23 @@ func (r *ScopingSummaryRepository) GetSummary(ctx context.Context, tenantID shar
 		scopeAssets, cycleProfiles               sql.NullInt64
 	)
 	query, args := scopingSummaryQuery, []any{tenantID.String()}
+	svcVisible, unitVisible := "", ""
 	if scope != nil {
 		cond, scopeArgs := dataScopeCondAt("a.id", scope, 2)
 		query = strings.ReplaceAll(query, "/*SCOPE*/", " AND "+cond)
 		args = append(args, scopeArgs...)
+		// A restricted reader counts only the services and units visible to
+		// them (research/233 D4), as the business service and unit lists do.
+		if scope.Restricted() {
+			svc, _ := filterspec.BusinessServiceVisibleSQL("bs.id", scope, 2)
+			unit, _ := filterspec.BusinessUnitVisibleSQL("bu.id", scope, 2)
+			svcVisible, unitVisible = " AND "+svc, " AND "+unit
+		}
 	} else {
 		query = strings.ReplaceAll(query, "/*SCOPE*/", "")
 	}
+	query = strings.ReplaceAll(query, "/*SVCVIS*/", svcVisible)
+	query = strings.ReplaceAll(query, "/*BUVIS*/", unitVisible)
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&s.CrownJewels.Total, &s.CrownJewels.WithOwner,
 		&s.BusinessServices.Total, &s.BusinessServices.WithAssets,

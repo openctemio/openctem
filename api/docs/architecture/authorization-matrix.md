@@ -1582,9 +1582,10 @@ these counts cover only the assets they can see: `asset_count` on `GET
 and are replaced in the response), the asset, crown-jewel and in-business-unit
 counts of `GET /scoping/summary`, `asset_breakdown` and `risk_score` of `GET
 /attack-surface/stats`, and the exposure-chain `summary` (recomputed from the
-chains the caller may see). Counts that stay organization-wide, because they
-count configuration and expose no asset name or id: the business service,
-business unit, boundary, attacker profile, threat model and cycle totals of
+chains the caller may see), and the business service and business unit totals
+of `/scoping/summary` (only the visible ones, below). Counts that stay
+organization-wide, because they count configuration and expose no asset name or
+id: the boundary, attacker profile, threat model and cycle totals of
 `/scoping/summary`, the attack-path `summary`, and threat-model rollups.
 
 **Visibility of groups, units and services** (research/233 D4). The names,
@@ -1602,7 +1603,9 @@ Anything else is absent from the list, search and stats, the totals count only
 the visible rows (nothing reports how many are hidden), and a read by id
 answers 404, as do a group's members and findings and a service's assets. A
 write answers 404 the same way, except on a container with no asset at all (one
-the caller just created), which stays writable so it can be filled; a business
+the caller just created; for a business unit also no unit below it, since a
+unit's criticality reaches the assets of the units below), which stays
+writable so it can be filled; a business
 unit cannot be placed under a parent the caller cannot see. The owner email of
 a group, unit or service is shown only to an owner, administrator or full-data
 reader; a restricted caller's edit keeps the stored value. The predicates live

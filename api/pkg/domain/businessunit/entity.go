@@ -160,6 +160,8 @@ type Filter struct {
 	Search   *string
 	// IDs narrows the list to these units (the single-unit read path).
 	IDs []shared.ID
+	// ParentID narrows the list to the direct children of this unit.
+	ParentID *shared.ID
 	// DataScope: a restricted scope keeps only the units visible to that
 	// reader (the unit or one below it holds an asset in the scope); nil or
 	// an unrestricted scope lists every unit of the tenant.

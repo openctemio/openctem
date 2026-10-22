@@ -57,6 +57,7 @@ type visFixture struct {
 	groupSvc   *assetapp.AssetGroupService
 	unitSvc    *assetapp.BusinessUnitService
 	serviceH   *handler.BusinessServiceHandler
+	enf        *datascope.Enforcer
 	ownerEmail string
 }
 
@@ -208,6 +209,7 @@ func newVisFixture(t *testing.T) *visFixture {
 	f.unitSvc = assetapp.NewBusinessUnitService(postgres.NewBusinessUnitRepository(pg), postgres.NewAssetRepository(pg), logger.NewNop())
 	f.unitSvc.SetDataScope(enf)
 	f.serviceH = handler.NewBusinessServiceHandler(db, logger.NewNop()).WithDataScope(enf)
+	f.enf = enf
 	return f
 }
 
@@ -459,6 +461,62 @@ func TestVisibility_WritesFollowVisibility(t *testing.T) {
 	}
 	if err := f.db.QueryRow(`SELECT owner_email FROM business_services WHERE id = $1`, f.services["Checkout"].String()).Scan(&email); err != nil || email != f.ownerEmail {
 		t.Errorf("service owner email after ck's edit = %q (%v), want kept", email, err)
+	}
+}
+
+// A unit with no asset of its own but units below it that hold assets is
+// not an empty unit: its criticality is inherited by those assets, so a
+// reader who cannot see it must not rename, re-rate, move or fill it. Retail
+// (Checkout and Catalog below it, assets x, y, z) is invisible to it.
+func TestVisibility_UnitWithAssetsBelowIsNotWritable(t *testing.T) {
+	f := newVisFixture(t)
+	ctx, tenant := f.as("it")
+	retail := f.units["Retail"].String()
+	critical := "critical"
+	if _, err := f.unitSvc.Update(ctx, assetapp.UpdateBusinessUnitInput{TenantID: tenant.String(), ID: retail, Name: "Retail", Criticality: &critical}); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("it updates Retail: %v, want not found", err)
+	}
+	if err := f.unitSvc.AddAsset(ctx, tenant.String(), retail, firstAsset(t, f, "w")); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("it adds w to Retail: %v, want not found", err)
+	}
+	if err := f.unitSvc.Delete(ctx, tenant.String(), retail); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("it deletes Retail: %v, want not found", err)
+	}
+	var crit string
+	if err := f.db.QueryRow(`SELECT criticality FROM business_units WHERE id = $1`, retail).Scan(&crit); err != nil || crit == critical {
+		t.Errorf("Retail criticality after it's edit = %q (%v), want unchanged", crit, err)
+	}
+	// A unit it just created (no asset, no unit below) stays writable.
+	bu, err := f.unitSvc.Create(ctx, assetapp.CreateBusinessUnitInput{TenantID: tenant.String(), Name: "it fresh"})
+	if err != nil {
+		t.Fatalf("it creates a unit: %v", err)
+	}
+	if _, err := f.unitSvc.Update(ctx, assetapp.UpdateBusinessUnitInput{TenantID: tenant.String(), ID: bu.ID().String(), Name: "it fresh 2"}); err != nil {
+		t.Errorf("it updates the unit it just created: %v", err)
+	}
+}
+
+// The scoping overview counts only the services and units the reader sees,
+// as their lists do, not the organization's totals.
+func TestVisibility_ScopingSummaryCountsVisibleOnly(t *testing.T) {
+	f := newVisFixture(t)
+	repo := postgres.NewScopingSummaryRepository(&postgres.DB{DB: f.db})
+	for _, name := range []string{"admin", "xo", "it", "none"} {
+		ctx, tenant := f.as(name)
+		scope, err := f.enf.Resolve(ctx, tenant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := repo.GetSummary(ctx, tenant, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := s.BusinessServices.Total, len(visServiceMatrix[name]); got != want {
+			t.Errorf("%s: business_services.total = %d, want %d", name, got, want)
+		}
+		if got, want := s.BusinessUnits.Total, len(visUnitMatrix[name]); got != want {
+			t.Errorf("%s: business_units.total = %d, want %d", name, got, want)
+		}
 	}
 }
 
