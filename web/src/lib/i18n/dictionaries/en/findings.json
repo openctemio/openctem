@@ -1398,5 +1398,10 @@
   "findings.verification.itemSecret.register_updated": "Use of the credential since exposure was checked and recorded",
   "findings.validationEvidence.checkReachability": "Check reachability",
   "findings.bulk.status": "Status",
-  "findings.bulk.assignTo": "Assign to…"
+  "findings.bulk.assignTo": "Assign to…",
+  "findings.approvalBand.aria": "Waiting on an approval",
+  "findings.approvalBand.title": "Awaiting approval: {status}",
+  "findings.approvalBand.requestedBy": "Requested by {who} {when}",
+  "findings.approvalBand.reason": "Reason:",
+  "findings.approvalBand.decide": "Decide in the approvals inbox"
 }
