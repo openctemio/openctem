@@ -148,7 +148,7 @@ func TestSAMLProvider_CertificateNoticeState(t *testing.T) {
 		t.Fatalf("set notice: %v", err)
 	}
 	notice := func(tid shared.ID) *int {
-		recs, err := repo.ListEnabledCertificates(ctx, 10000)
+		recs, err := repo.ListEnabledCertificates(ctx, shared.ID{}, 10000)
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
@@ -193,7 +193,7 @@ func TestSAMLProvider_CertificateNoticeState(t *testing.T) {
 	if err := repo.Upsert(ctx, next); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	recs, _ := repo.ListEnabledCertificates(ctx, 10000)
+	recs, _ := repo.ListEnabledCertificates(ctx, shared.ID{}, 10000)
 	for _, r := range recs {
 		if r.TenantID == tenantA {
 			t.Fatal("a disabled SAML config must not be swept")
