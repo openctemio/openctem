@@ -1395,10 +1395,6 @@
   "findings.list.kev": "KEV",
   "findings.bulk.assignFailed": "Không thể giao các phát hiện",
   "findings.toast.refreshed": "Đã làm mới các phát hiện",
-  "findings.toast.exportStarted": "Đã bắt đầu xuất",
-  "findings.toast.nothingToExport": "Không có phát hiện nào để xuất",
-  "findings.toast.csvExported": "Đã xuất CSV thành công",
-  "findings.toast.jsonExported": "Đã xuất JSON thành công",
   "findings.toast.deleted": "Đã xóa phát hiện",
   "findings.toast.deleteFailed": "Không thể xóa phát hiện",
   "findings.toast.idCopied": "Đã sao chép ID phát hiện",
@@ -1624,5 +1620,14 @@
   "findings.filter.value.asset_criticality.low": "Thấp",
   "findings.filter.value.asset_criticality.none": "Chưa đánh giá",
   "findings.filter.setByView": "Do chế độ xem đã lưu đặt",
-  "findings.contextChips.crownJewels": "Tài sản trọng yếu"
+  "findings.contextChips.crownJewels": "Tài sản trọng yếu",
+  "findings.export.truncated": "Đã xuất {max} phát hiện đầu tiên trong số {total}",
+  "findings.export.truncatedHint": "Mỗi lần xuất chứa tối đa {max} phát hiện. Thu hẹp bộ lọc để xuất phần còn lại.",
+  "findings.export.done": "Đã tải xuống tệp xuất",
+  "findings.export.forbidden": "Bạn không thể xuất phát hiện",
+  "findings.export.forbiddenHint": "Cần quyền Xuất phát hiện để xuất. Hãy liên hệ quản trị viên tổ chức.",
+  "findings.export.busy": "Một lần xuất của bạn vẫn đang chạy",
+  "findings.export.busyHint": "Hãy đợi nó hoàn tất rồi thử lại.",
+  "findings.export.failed": "Xuất thất bại. Hãy thử lại.",
+  "findings.bulk.statusFailed": "Không thể cập nhật các phát hiện"
 }
