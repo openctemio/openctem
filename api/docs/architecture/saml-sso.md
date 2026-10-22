@@ -122,7 +122,7 @@ expiry stops every SAML sign-in.
   500 organizations per page by tenant id, and
   alerts the organization's owners, in-app (system alert, High) and by email,
   when the certificate reaches 30, 7 or 1 day(s) before expiry and when it has
-  expired. `saml_providers.cert_expiry_notice_days` (migration `003277`) keeps the
+  expired. `saml_providers.cert_expiry_notice_days` (migration `003286`) keeps the
   tightest level sent, so each level is sent once; saving a different certificate
   resets it. Only the owners of the organization that owns the certificate are
   told.
@@ -137,7 +137,7 @@ expiry stops every SAML sign-in.
 | HTTP | `internal/infra/http/handler/saml_handler.go`, routes in `routes/auth.go` |
 | Response hardening, replay cache | `internal/app/auth/saml_strict.go` |
 | Certificate expiry alerts | `internal/app/auth/saml_cert_expiry.go`, `internal/infra/controller/saml_cert_expiry.go` |
-| Migration | `000182_saml_providers`, `003277_saml_cert_expiry_notice` |
+| Migration | `000182_saml_providers`, `003286_saml_cert_expiry_notice` |
 
 ## Default role of just-in-time members
 
