@@ -320,7 +320,7 @@ func (h *EmergingThreatHandler) SetState(w http.ResponseWriter, r *http.Request)
 		State: threatalert.State(req.State), Reason: req.Reason, Note: strings.TrimSpace(req.Note), Actor: actor,
 	}, audit.AuditContext{
 		TenantID: tid.String(), ActorID: actor.String(), ActorEmail: auditActorEmail(r.Context()),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	})
 	if err != nil {
 		h.writeErr(w, err)

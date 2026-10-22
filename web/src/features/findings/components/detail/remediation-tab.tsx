@@ -1,7 +1,6 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -9,8 +8,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   ExternalLink,
-  Calendar,
-  Clock,
   CheckCircle2,
   Circle,
   Loader,
@@ -166,63 +163,8 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
       .slice(0, 2)
   }
 
-  const isOverdue = remediation.deadline && new Date(remediation.deadline) < new Date()
-  const daysUntilDeadline = remediation.deadline
-    ? Math.ceil(
-        (new Date(remediation.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-      )
-    : null
-
-  const completedSteps = remediation.steps.filter((s) => s.status === 'completed').length
-  const totalSteps = remediation.steps.length
-
   return (
     <div className="space-y-6">
-      {/* Progress Overview */}
-      <div className="rounded-lg border bg-muted/30 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold">
-              {t('findings.remediationTab.progress', 'Remediation Progress')}
-            </h3>
-            <p className="text-muted-foreground text-sm">
-              {totalSteps > 0
-                ? t('findings.remediationTab.stepsDone', '{done} of {total} steps completed', {
-                    done: completedSteps,
-                    total: totalSteps,
-                  })
-                : t('findings.remediationTab.noTracked', 'No tracked remediation steps')}
-            </p>
-          </div>
-          <div className="text-end">
-            <p className="text-2xl font-bold">
-              {totalSteps > 0 ? `${remediation.progress}%` : '—'}
-            </p>
-            {remediation.deadline && (
-              <div
-                className={`flex items-center justify-end gap-1 text-xs ${isOverdue ? 'text-red-400' : 'text-muted-foreground'}`}
-              >
-                {isOverdue ? <Clock className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
-                {isOverdue ? (
-                  <span>
-                    {t('findings.remediationTab.overdue', 'Overdue by {days} days', {
-                      days: Math.abs(daysUntilDeadline!),
-                    })}
-                  </span>
-                ) : (
-                  <span>
-                    {t('findings.remediationTab.due', 'Due {date}', {
-                      date: formatDate(remediation.deadline),
-                    })}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-        {totalSteps > 0 && <Progress value={remediation.progress} className="h-2" />}
-      </div>
-
       {/* Remediation Context - from finding extended data and apiRemediation JSONB */}
       {(finding?.remediationType ||
         finding?.estimatedFixTime !== undefined ||

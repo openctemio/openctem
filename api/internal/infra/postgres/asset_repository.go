@@ -25,6 +25,10 @@ import (
 // Default sort order for assets
 const defaultSortOrder = "created_at DESC"
 
+// assetListDefaultSort is the asset list default; the list query joins the
+// finding-count lateral, so the tie-breaker is qualified.
+const assetListDefaultSort = "created_at DESC, a.id DESC"
+
 // providerUnsetSentinel is the value the /assets/stats facet emits for
 // assets whose provider column is NULL (via COALESCE(provider, 'unset')).
 // The provider filter maps it back to `provider IS NULL` so clicking the
@@ -685,9 +689,9 @@ func (r *AssetRepository) List(
 	}
 
 	// Apply sorting (default to created_at DESC)
-	orderBy := defaultSortOrder
+	orderBy := assetListDefaultSort
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderBy = opts.Sort.SQLWithDefault(defaultSortOrder)
+		orderBy = opts.Sort.SQLWithDefaultAndTieBreaker(assetListDefaultSort, "a.id")
 	}
 	baseQuery += " ORDER BY " + orderBy
 	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
