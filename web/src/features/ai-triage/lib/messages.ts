@@ -3,10 +3,8 @@
  *
  * The API never sends raw error text: a failed triage carries a failure code
  * (`error_code`), a refused request an error code (`AI_DISABLED`, ...), and
- * the config endpoint a reason. Each maps to one translated message here.
+ * a reason in the config. Each maps to one translated message here.
  */
-import type { AIUnavailableReason } from '../types'
-
 type T = (key: string, fallback: string, vars?: Record<string, string | number>) => string
 
 /** Failure codes of a failed triage and their English text. */
@@ -56,50 +54,4 @@ const REQUEST_ERRORS: Record<string, string> = {
 export function triageRequestErrorMessage(t: T, code: string | undefined): string | undefined {
   if (!code || !(code in REQUEST_ERRORS)) return undefined
   return t(`findings.aiTriage.requestError.${code}`, REQUEST_ERRORS[code])
-}
-
-/**
- * Why the button is disabled. `canManage` (organization owner or
- * administrator) decides whether the text says where to turn it on or whom
- * to ask.
- */
-export function aiUnavailableMessage(
-  t: T,
-  reason: AIUnavailableReason | undefined,
-  canManage: boolean
-): string {
-  switch (reason) {
-    case 'not_enabled':
-      return canManage
-        ? t(
-            'findings.aiTriage.unavailable.notEnabledAdmin',
-            'AI triage is off for this organization. Turn it on in Settings > AI.'
-          )
-        : t(
-            'findings.aiTriage.unavailable.notEnabledMember',
-            'AI triage is off for this organization. Ask an organization administrator to turn it on.'
-          )
-    case 'platform_not_configured':
-      return t(
-        'findings.aiTriage.unavailable.platformNotConfigured',
-        'AI is not set up on this installation. A platform administrator sets up the AI provider in the console (System > AI provider).'
-      )
-    case 'own_provider_not_allowed':
-      return t(
-        'findings.aiTriage.unavailable.ownProviderNotAllowed',
-        'The platform no longer allows organizations to use their own AI provider. An organization administrator switches the AI source in Settings > AI.'
-      )
-    case 'own_provider_not_configured':
-      return t(
-        'findings.aiTriage.unavailable.ownProviderNotConfigured',
-        'The own AI provider is not set up yet. An organization administrator finishes it in Settings > AI.'
-      )
-    case 'budget_exhausted':
-      return t(
-        'findings.aiTriage.unavailable.budgetExhausted',
-        'This organization used its monthly AI allowance. It resets at the start of next month.'
-      )
-    default:
-      return t('findings.aiTriage.unavailable.generic', 'AI triage is not available.')
-  }
 }

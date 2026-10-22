@@ -61,3 +61,20 @@ export function widgetRowSpan(h: number): string {
   const span = Math.max(1, Math.min(8, h || 1))
   return `span ${span} / span ${span}`
 }
+
+/**
+ * Classes that apply a widget's column span only once the grid has that many
+ * columns (see `columnsClass`). The span arrives in `--span` (and, for four
+ * columns, the two-column span in `--span-sm`). A span applied on a one-column
+ * phone grid would create zero-width implicit columns and hide the widget.
+ */
+export function widgetSpanClass(columns: number | undefined): string {
+  switch (normalizeColumns(columns)) {
+    case 1:
+      return ''
+    case 4:
+      return 'sm:[grid-column:var(--span-sm)] xl:[grid-column:var(--span)]'
+    default:
+      return 'md:[grid-column:var(--span)]'
+  }
+}
