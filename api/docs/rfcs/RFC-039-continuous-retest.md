@@ -82,7 +82,7 @@ resolved/verified → open move. What is still wrong:
 | Route | Gate | What it really does |
 |---|---|---|
 | `POST /findings/{id}/request-verification` | `findings:write` | `QuickScan` of the **whole asset** with a scanner the user types. Requires `fix_applied`. Not linked back to the finding; nothing reads its `verification-scan` tag. An ad-hoc host scan has no branch, so report-level auto-resolve cannot close the finding, and coverage auto-resolve is `dry_run` by default. **The web offers it in the ⋯ menu for every status except `fix_applied`, where the API refuses it.** |
-| `POST /findings/{id}/validate` | `findings:write` | RFC-011 validation: a `validate` command. `nuclei` single-template re-run when the finding has a template/CVE signature and a `validate:nuclei` sensor is online, else a TCP `safe-check`. Outcome applied by `applyOutcomeToFinding`. |
+| `POST /findings/{id}/validate` | `findings:verify` | RFC-011 validation: a `validate` command. `nuclei` single-template re-run when the finding has a template/CVE signature and a `validate:nuclei` sensor is online, else a TCP `safe-check`. Outcome applied by `applyOutcomeToFinding`. |
 | `POST /findings/actions/fix-applied` | `findings:fix_apply` | marks `fix_applied` and auto-queues validation (proof of fix) |
 | pentest `/retests` | pentest perms | manual pentest retest records |
 

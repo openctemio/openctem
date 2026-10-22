@@ -311,7 +311,9 @@ func registerVulnerabilityRoutes(
 		// Retest now (POST /{id}/retests) re-runs the finding's own check.
 		if findingActionsHandler != nil {
 			// CTEM Stage-4: dispatch a validation (safe-check) job for this finding.
-			r.POST("/{id}/validate", findingActionsHandler.RequestValidation, middleware.Require(permission.FindingsWrite))
+			// An active probe whose outcome is applied to the finding: the same
+			// segregation-of-duties permission as a retest (findings:verify).
+			r.POST("/{id}/validate", findingActionsHandler.RequestValidation, middleware.Require(permission.FindingsVerify))
 		}
 
 		// Tags
