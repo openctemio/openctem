@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -219,7 +220,7 @@ type ImportIngestSummary struct {
 // @Failure      503  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /findings/imports [post]
-func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { //nolint:cyclop // one upload flow: params, key, parts, receipt
+func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { //nolint:cyclop,gocognit // one upload flow: params, key, parts, receipt
 	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
 		apierror.BadRequest("invalid tenant").WriteJSON(w)
@@ -270,44 +271,12 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 	}
 
 	// Idempotency-Key (a preview writes nothing and ignores it).
-	var claim *idempotency.Claim
-	var hasher *requestHasher
+	claim, hasher, handled := h.claimKey(w, r, tid, q, maxBody, req.DryRun)
+	if handled {
+		return
+	}
 	completed := false
-	if key := r.Header.Get(idempotency.Header); key != "" && !req.DryRun {
-		scope, err := idempotency.NewScope(tid, importPrincipal(r), findingImportRoute, key)
-		if err != nil {
-			apierror.BadRequest(err.Error()).WriteJSON(w)
-			return
-		}
-		if h.idem == nil {
-			h.logger.Error("finding import: Idempotency-Key sent but no key store is wired")
-			storeUnavailable(w)
-			return
-		}
-		c, existing, err := h.idem.Claim(r.Context(), scope, findingImportTimeout+5*time.Minute)
-		if err != nil {
-			h.logger.Error("finding import: idempotency store", "error", logger.SanitizeError(err))
-			storeUnavailable(w)
-			return
-		}
-		if existing != nil {
-			if existing.State != idempotency.StateDone {
-				writeIdempotencyRefusal(w, true)
-				return
-			}
-			fp, err := fingerprintRequest(r, maxBody, w)
-			if err != nil {
-				writeBodyError(w, err)
-				return
-			}
-			if fp != existing.RequestSHA256 {
-				writeIdempotencyRefusal(w, false)
-				return
-			}
-			replay(w, existing)
-			return
-		}
-		claim, hasher = c, newRequestHasher(q)
+	if claim != nil {
 		defer func() {
 			if !completed {
 				if err := h.idem.Release(context.WithoutCancel(r.Context()), claim); err != nil {
@@ -457,6 +426,51 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write(body)
+}
+
+// claimKey claims the request's Idempotency-Key. handled is true when the
+// answer was written: a bad key (400), the store down (503, fail closed), a
+// key in flight (409) or reused (422), or a replay of the stored answer.
+// Without a key (or in a preview) claim and hasher are nil.
+func (h *FindingImportHandler) claimKey(w http.ResponseWriter, r *http.Request, tid shared.ID, q url.Values, maxBody int64,
+	dryRun bool) (*idempotency.Claim, *requestHasher, bool) {
+	key := r.Header.Get(idempotency.Header)
+	if key == "" || dryRun {
+		return nil, nil, false
+	}
+	scope, err := idempotency.NewScope(tid, importPrincipal(r), findingImportRoute, key)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return nil, nil, true
+	}
+	if h.idem == nil {
+		h.logger.Error("finding import: Idempotency-Key sent but no key store is wired")
+		storeUnavailable(w)
+		return nil, nil, true
+	}
+	c, existing, err := h.idem.Claim(r.Context(), scope, findingImportTimeout+5*time.Minute)
+	if err != nil {
+		h.logger.Error("finding import: idempotency store", "error", logger.SanitizeError(err))
+		storeUnavailable(w)
+		return nil, nil, true
+	}
+	if existing == nil {
+		return c, newRequestHasher(q), false
+	}
+	if existing.State != idempotency.StateDone {
+		writeIdempotencyRefusal(w, true)
+		return nil, nil, true
+	}
+	fp, err := fingerprintRequest(r, maxBody, w)
+	switch {
+	case err != nil:
+		writeBodyError(w, err)
+	case fp != existing.RequestSHA256:
+		writeIdempotencyRefusal(w, false)
+	default:
+		replay(w, existing)
+	}
+	return nil, nil, true
 }
 
 // importPrincipal is who an Idempotency-Key belongs to: the API key, or the
