@@ -1,7 +1,7 @@
 'use client'
 
 import { toDisplayText } from '@/lib/untrusted-text'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -35,9 +35,12 @@ import { useTenantModules } from '@/features/integrations/api/use-tenant-modules
 import type { Evidence, EvidenceType, FindingDetail } from '../../types'
 import { EVIDENCE_TYPE_CONFIG } from '../../types'
 import { CodeHighlighter } from './code-highlighter'
+import { SectionLoadError } from './section-load-error'
 import { ValidationEvidencePanel } from './validation-evidence-panel'
 import { FindingEvidenceItems } from './finding-evidence-items'
 import { useFindingEvidenceItems } from '../../api/use-finding-evidence-items'
+import { useFindingAttachments } from '../../api/use-finding-attachments'
+import { useFindingValidationEvidenceApi } from '../../api/use-findings-api'
 import { ComplianceMappingCard } from './compliance-mapping-card'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { ManualEvidenceNotesSection } from './manual-evidence-notes'
@@ -140,34 +143,21 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
     (moduleIds.length === 0 || moduleIds.includes('compliance')) &&
     hasPermission('compliance:mappings:read')
   const [expandedStacks, setExpandedStacks] = useState<Set<number>>(new Set())
-  const [apiAttachments, setApiAttachments] = useState<
-    Array<{
-      id: string
-      filename: string
-      content_type: string
-      size: number
-      url: string
-      scan_status?: string
-      scan_result?: string
-    }>
-  >([])
-
-  // Fetch attachments from API for pentest/manual findings
-  const isPentestSource = ['pentest', 'bug_bounty', 'red_team', 'manual'].includes(
-    finding?.source || ''
+  // Files uploaded to pentest and manual findings (through the API client; a
+  // failure shows a row with Retry instead of an empty section).
+  const {
+    data: attachmentList,
+    error: attachmentsError,
+    isLoading: attachmentsLoading,
+    mutate: retryAttachments,
+  } = useFindingAttachments(finding?.id ?? null, finding?.source)
+  const apiAttachments = attachmentList?.data ?? []
+  // Validation (re-verify) results: shared with the panel below, which reads
+  // the same request.
+  const { data: validationList, isLoading: validationLoading } = useFindingValidationEvidenceApi(
+    finding?.id ?? null
   )
-  useEffect(() => {
-    if (!isPentestSource || !finding?.id) return
-    const controller = new AbortController()
-    fetch(`/api/v1/attachments?context_type=finding&context_id=${finding.id}`, {
-      credentials: 'include',
-      signal: controller.signal,
-    })
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((res) => setApiAttachments(res.data || []))
-      .catch(() => {})
-    return () => controller.abort()
-  }, [isPentestSource, finding?.id])
+  const validationCount = validationList?.evidence?.length ?? 0
 
   // Extract stacks, related locations, and attachments from finding
   const stacks = finding?.stacks || []
@@ -354,6 +344,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
   const hasApiAttachments = apiAttachments.length > 0
   const hasAnyContent =
     toolEvidence.length > 0 ||
+    validationCount > 0 ||
     hasAffectedCode ||
     hasCodeSnippets ||
     hasEvidence ||
@@ -362,9 +353,15 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
     hasAttachments ||
     hasApiAttachments
 
-  if (!hasAnyContent) {
-    return (
-      <div className="space-y-6">
+  // The empty state only when every source is empty and none is still loading.
+  const showEmpty = !hasAnyContent && !validationLoading && !attachmentsLoading && !attachmentsError
+
+  // Calculate line numbers for context snippet
+  const contextStartLine = finding?.contextStartLine || 1
+
+  return (
+    <div className="space-y-6">
+      {showEmpty && (
         <EmptyState
           icon={Paperclip}
           title={t('findings.evidenceTab.emptyTitle', 'No Evidence')}
@@ -374,21 +371,8 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
           )}
           card={false}
         />
-        {finding?.id && (
-          <>
-            <Separator />
-            <ManualEvidenceNotesSection findingId={finding.id} />
-          </>
-        )}
-      </div>
-    )
-  }
+      )}
 
-  // Calculate line numbers for context snippet
-  const contextStartLine = finding?.contextStartLine || 1
-
-  return (
-    <div className="space-y-6">
       {/* What the tool sent and received (masked; reveal is audited) */}
       {finding?.id && toolEvidence.length > 0 && (
         <div>
@@ -817,6 +801,16 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
               })}
             </div>
           </div>
+        </>
+      )}
+
+      {attachmentsError && (
+        <>
+          <Separator />
+          <SectionLoadError
+            title={t('findings.detail.section.uploadedFiles', 'the uploaded files')}
+            onRetry={() => void retryAttachments()}
+          />
         </>
       )}
 

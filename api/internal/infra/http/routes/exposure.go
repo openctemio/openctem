@@ -223,6 +223,8 @@ func registerVulnerabilityRoutes(
 
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
+		// The list's quick views with the caller's counts (one scoped statement).
+		r.GET("/quick-views", h.FindingQuickViews, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 
 		// The FilterDocument form of the list (RFC-048): read-only, same
 		// permission and scope as GET /findings.
@@ -298,6 +300,10 @@ func registerVulnerabilityRoutes(
 		// in the body into this one; merging with an approval disposition
 		// also needs findings:approve (checked in the service).
 		r.POST("/{id}/duplicates", h.AddFindingDuplicate, middleware.Require(permission.FindingsTriage))
+		// Bug-bounty report fields (RFC-121): an edit of the finding; a
+		// reward or disclosure change also needs findings:triage (checked in
+		// the service, 403 naming it).
+		r.PUT("/{id}/bounty-report", h.UpdateFindingBountyReport, middleware.Require(permission.FindingsWrite), handler.FindingIfMatch)
 		// Cross-rule correlation (research/134 section 12): the detections of
 		// one issue; un-duplicating a correlated detection and confirming a
 		// suggestion are triage decisions.

@@ -86,6 +86,8 @@ export interface AssetSearchFilters {
   programAssets?: string
   /** stale: a class past its freshness window; never: a passive class never observed (RFC-075). */
   freshness?: string
+  /** covered / uncovered by the coverage ledger: a successful scan in the last 30 days or not. */
+  coverage?: 'covered' | 'uncovered'
   /** Assets using any of these technologies (normalised names, RFC-112). */
   technologies?: string[]
   /** Assets with a technology in any of these categories (RFC-112). */
@@ -488,6 +490,8 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.programAssets) params.program_assets = filters.programAssets
   if (filters.freshness === 'stale' || filters.freshness === 'never')
     params.freshness = filters.freshness
+  if (filters.coverage === 'covered' || filters.coverage === 'uncovered')
+    params.coverage = filters.coverage
   if (filters.technologies?.length) params.technology = filters.technologies.join(',')
   if (filters.technologyCategories?.length)
     params.technology_category = filters.technologyCategories.join(',')

@@ -236,3 +236,46 @@ func FuzzParseWidgetSpec(f *testing.F) {
 		}
 	})
 }
+
+func TestParseWidgetSpec_CTEMMetrics(t *testing.T) {
+	valid := []string{
+		`{"v":2,"id":"w_l","data":{"kind":"metric","metric":"ctem.loop"},"viz":{"type":"loop"}}`,
+		`{"v":2,"id":"w_l","data":{"kind":"metric","metric":"ctem.loop"},"viz":{"type":"table"}}`,
+		`{"v":2,"id":"w_p","data":{"kind":"metric","metric":"attack_paths.to_crown_jewels","limit":5},"viz":{"type":"paths"}}`,
+		`{"v":2,"id":"w_c","data":{"kind":"metric","metric":"crown_jewels.exposed"},"viz":{"type":"stat"},"target":{"op":"<=","value":0}}`,
+		`{"v":2,"id":"w_c","data":{"kind":"metric","metric":"crown_jewels.exposed","filter":{"priority_class":["P0"]}},"viz":{"type":"stat"}}`,
+	}
+	for _, js := range valid {
+		if _, err := ParseWidgetSpec(WidgetKindMetric, cfg(t, js)); err != nil {
+			t.Errorf("%s: %v", js, err)
+		}
+	}
+	// Defaults: the loop draws as a loop, attack paths list 10 at most.
+	s, err := ParseWidgetSpec(WidgetKindMetric, cfg(t, `{"v":2,"id":"w_p","data":{"kind":"metric","metric":"attack_paths.to_crown_jewels"},"viz":{}}`))
+	if err != nil || s.Viz.Type != VizPaths || s.Data.Limit != defaultItemsLimit {
+		t.Errorf("paths defaults: %+v %v", s, err)
+	}
+	invalid := []string{
+		// a loop is not a bar, a stat or a list
+		`{"v":2,"id":"w_l","data":{"kind":"metric","metric":"ctem.loop"},"viz":{"type":"bar"}}`,
+		// current figures: no time window, no comparison
+		`{"v":2,"id":"w_l","data":{"kind":"metric","metric":"ctem.loop","time":{"range":"30d"}},"viz":{"type":"loop"}}`,
+		`{"v":2,"id":"w_c","data":{"kind":"metric","metric":"crown_jewels.exposed","time":{"compare":"previous_period"}},"viz":{"type":"stat"}}`,
+		// no filters other than the declared ones
+		`{"v":2,"id":"w_l","data":{"kind":"metric","metric":"ctem.loop","filter":{"severity":["high"]}},"viz":{"type":"loop"}}`,
+		`{"v":2,"id":"w_c","data":{"kind":"metric","metric":"crown_jewels.exposed","filter":{"kev":true}},"viz":{"type":"stat"}}`,
+		// no group-by, a bounded list, no target on a loop
+		`{"v":2,"id":"w_c","data":{"kind":"metric","metric":"crown_jewels.exposed","group_by":["severity"]},"viz":{"type":"bar"}}`,
+		`{"v":2,"id":"w_p","data":{"kind":"metric","metric":"attack_paths.to_crown_jewels","limit":11},"viz":{"type":"paths"}}`,
+		`{"v":2,"id":"w_l","data":{"kind":"metric","metric":"ctem.loop","limit":3},"viz":{"type":"loop"}}`,
+		`{"v":2,"id":"w_l","data":{"kind":"metric","metric":"ctem.loop"},"viz":{"type":"loop"},"target":{"op":">=","value":1}}`,
+		// the new visualizations do not fit other shapes
+		`{"v":2,"id":"w_x","data":{"kind":"metric","metric":"findings.open"},"viz":{"type":"loop"}}`,
+		`{"v":2,"id":"w_x","data":{"kind":"metric","metric":"fix.next"},"viz":{"type":"paths"}}`,
+	}
+	for _, js := range invalid {
+		if _, err := ParseWidgetSpec(WidgetKindMetric, cfg(t, js)); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("%s: want a validation error, got %v", js, err)
+		}
+	}
+}

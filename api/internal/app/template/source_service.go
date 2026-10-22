@@ -348,17 +348,10 @@ func (s *SourceService) GetSource(ctx context.Context, tenantID, sourceID string
 		return nil, fmt.Errorf("%w: invalid source id", shared.ErrValidation)
 	}
 
-	source, err := s.repo.GetByID(ctx, sid)
-	if err != nil {
-		return nil, err
-	}
-
-	// Validate ownership
-	if !source.BelongsToTenant(tid) {
-		return nil, shared.NewDomainError("FORBIDDEN", "source belongs to another tenant", shared.ErrForbidden)
-	}
-
-	return source, nil
+	// Tenant-scoped load: another tenant's source answers not-found, exactly
+	// like an id that does not exist, so the response never says which ids
+	// exist in other tenants.
+	return s.repo.GetByTenantAndID(ctx, tid, sid)
 }
 
 // ListSourcesInput represents the input for listing template sources.
