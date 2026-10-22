@@ -149,7 +149,8 @@ POST /{collection}/{verb}            (collection-wide)
 POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
 ```
 
-- Up to 1,000 ids.
+- Up to 1,000 ids; more is a validation error. This holds for every bulk
+  route, including `PATCH`/`DELETE /asset-groups/bulk`.
 - The response reports per-id results:
   `{ "succeeded": [...], "failed": [{ "id": ..., "code": ... }] }`.
 - Use `bulk/delete` for deletion. Never send a `DELETE` with a body.
@@ -166,6 +167,11 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
     telemetry) use `cursor` with `next_cursor`. An empty `next_cursor` means
     the end. Cursors are opaque.
   - Do not add `limit`/`offset` or `page_size` to new routes.
+- **Bounded reads:** no endpoint returns an unbounded set. A collection under
+  one parent that has no paging (attachments of an object, owners of an asset,
+  role bindings of a team, assets of a business service) answers at most 1,000
+  rows with a stable order; a file import accepts at most 10,000 CSV records
+  (credential CSV) or 1,000 JSON items.
 - **Sorting:** `sort=field,-other` (a leading `-` means descending). Do not
   add `sort_by`/`sort_order`/`order`/`order_by` to new routes.
 - **Filtering** follows [RFC-048](../rfcs/RFC-048-list-query-contract.md)
