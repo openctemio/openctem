@@ -215,8 +215,12 @@ Every tenant OIDC provider (Entra ID, Okta, Google Workspace) must return an
 completing login (`SSOService.verifyIDToken` → `oidc.Client.VerifyIDToken`):
 
 - **Signature** — verified against the provider's JWKS (`Provider.JWKSURL`)
-  by the shared core (see "One verifier, separate trust" below): RS256/384/512,
-  PS256 or ES256 with the key type matching, never HMAC or `none`.
+  by the shared core (see "One verifier, separate trust" below). Only
+  **RS256, PS256 or ES256** are accepted (`oidc.IdentityTokenAlgorithms`), with
+  the key type matching, never HMAC (a leaked client secret could mint tokens)
+  or `none`. The same list applies to OIDC back-channel logout tokens and to the
+  platform's Microsoft and Google sign-in. CI workload tokens keep the shared
+  list, which also has RS384/RS512 (`TokenPolicy.Algorithms` can only narrow it).
 - **Audience** — must contain our `client_id`; `azp`, when present (required
   with several audiences), must be our `client_id`.
 - **Expiry** — `exp`, `iat` and `sub` required; `exp`/`nbf`/`iat` enforced with
@@ -248,6 +252,15 @@ The `openid` scope is therefore required:
 
 For Okta and Google the email still comes from the userinfo endpoint (with its
 `email_verified` claim); for Entra it comes from the verified `id_token`.
+
+**Platform social sign-in.** "Sign in with Microsoft" and "Sign in with Google"
+also require a verified `id_token` (code flow, delivered server to server, so
+there is no nonce). For Google the account's subject and verified email come
+from the `id_token`, checked against Google's JWKS, our client id and Google's
+issuer. The userinfo API only supplies the display name and picture, and it must
+describe the same `sub`. A Google login without an `id_token` (the `openid` scope
+was removed from `OAUTH_GOOGLE_SCOPES`) is refused. GitHub has no `id_token`;
+its identity comes from its API as before.
 
 ### Google Workspace: the `hd` claim
 
