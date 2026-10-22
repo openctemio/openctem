@@ -117,10 +117,12 @@ offboarding without step-up and is removed.
 | Route | Why |
 |---|---|
 | `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}` | A new key outlives the session; deleting one hides it. Revoking stays one click. |
-| `POST /api/v1/scim-tokens` | A SCIM token creates, suspends and re-roles every member. |
+| `POST /api/v1/scim-tokens`, `POST /api/v1/scim-tokens/{id}/rotate` | A SCIM token creates, suspends and re-roles every member; a rotation hands out a new one. |
 | `PUT /api/v1/scim-tokens/group-mappings` | The mapping decides which role a directory group's members receive. |
 | `POST /api/v1/integrations`, `POST /api/v1/integrations/notifications`, `PUT`/`DELETE /api/v1/integrations/{id}`, `POST /api/v1/integrations/{id}/disable`, `PUT /api/v1/integrations/{id}/notification` | Connecting, repointing or removing an integration decides where data and credentials go. |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | MFA requirement, IP allowlist, allowed domains, SSO enforcement. |
+| `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST …/settings/modules/reset`, `POST …/settings/modules/presets/{presetId}/apply` | Turns features on or off for the whole organization: what it scans, which integrations and AI run, what it exposes. The validate and preview dry-runs change nothing and need no step-up. |
+| `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST …/{id}/rotate` | A stored secret authenticates the organization to an outside system (Git tokens, cloud keys); a stolen session must not plant, swap or remove one. |
 | `PATCH /api/v1/tenants/{tenant}/settings/risk-scoring` | Risk scoring settings: every asset's risk band and, through the ownership floor, finding priorities ([scoring versions](scoring-versions.md)). |
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
 | `DELETE /api/v1/tenants/{tenant}` | Deletes the organization. |

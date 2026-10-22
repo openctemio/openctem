@@ -70,6 +70,7 @@ import {
   TruncatedText,
   SegmentedLens,
   DrillDownBreadcrumb,
+  type MobileRowSelection,
 } from '@/features/shared'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -101,11 +102,7 @@ import {
   MoreHorizontal,
   UserPlus,
   Flag,
-  CheckCircle,
   ExternalLink,
-  Trash2,
-  Copy,
-  Link2,
   Plus,
   FileUp,
   AlertCircle,
@@ -113,12 +110,10 @@ import {
   Route,
   ClipboardList,
   AlertOctagon,
-  Ticket,
   Wrench,
   Search,
   ArrowLeft,
   Layers,
-  ChevronRight,
   SquareCode,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -134,6 +129,11 @@ import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badg
 import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
 import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
 import { formatDueRelative } from '@/features/sla/lib/sla'
+import {
+  FindingRowMenu,
+  type FindingRowAction,
+} from '@/features/findings/components/finding-row-menu'
+import { FindingPhoneCard } from '@/features/findings/components/finding-phone-card'
 import { AssigneeSelect } from '@/features/findings/components/assignee-select'
 import {
   FindingGroupsTable,
@@ -169,14 +169,13 @@ import type { Severity } from '@/features/shared/types'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { csrfFetch, del, post } from '@/lib/api/client'
+import { del, post } from '@/lib/api/client'
 import { usePermissions } from '@/context/permission-provider'
 import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
 import { findingLocation } from '@/features/findings/lib/finding-location'
-import { middleEllipsis } from '@/lib/middle-ellipsis'
 import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/url-codec'
 import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
 import { savedViewId, type SavedView } from '@/features/saved-views/api/use-saved-views'
@@ -683,6 +682,10 @@ function FindingsContent() {
     hasPermission(Permission.FindingsRead)
   const [taskQuery, setTaskQuery] = useState<{ query: string; ignored: string[] } | null>(null)
   const canCreateTicket = useCanCreateTicket()
+  // The row menu offers a change only to someone the API lets make it (the
+  // gates of POST /findings/{id}/assign and PATCH /findings/{id}/status).
+  const canAssignOne = hasPermission(Permission.FindingsAssign)
+  const canChangeStatusOne = hasPermission(Permission.FindingsStatus)
 
   // Statuses hidden from default dashboard view (pentest WIP, not ready for visibility)
   const HIDDEN_STATUSES = useMemo(() => [...FINDINGS_LIST_HIDDEN_STATUSES], [])
@@ -754,6 +757,14 @@ function FindingsContent() {
     debouncedSearch,
     sortParam,
   ].join('|')
+  // The rows a selection was made on: one page of one filtered, sorted list.
+  // Any change of page, page size, filter, search, sort or view starts with
+  // nothing selected, so a bulk action only ever reaches rows on screen.
+  const selectionScope = `${pagination.pageIndex}|${pagination.pageSize}|${filterKey}`
+  useEffect(() => {
+    setSelectedFindings((prev) => (prev.length > 0 ? [] : prev))
+  }, [selectionScope])
+
   // The filter the current page number belongs to. While a new filter waits
   // for its page reset (the effect below), the list already asks page 1:
   // asking the old page first sent the list request twice (research/81).
@@ -1039,24 +1050,19 @@ function FindingsContent() {
 
     setBulkBusy(true)
     try {
-      const response = await csrfFetch('/api/v1/findings/bulk/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ finding_ids: findingIds, user_id: userId.trim() }),
+      // post() answers STEP_UP_REQUIRED with the shared re-authentication
+      // dialog and retries once, and turns an error body into a message.
+      const result = await post<BulkFindingResult>('/api/v1/findings/bulk/assign', {
+        finding_ids: findingIds,
+        user_id: userId.trim(),
       })
-      if (!response.ok) throw new Error('Failed to assign findings')
-      showBulkResult(
-        summarizeBulkResult(
-          await response.json().catch(() => undefined),
-          findingIds.length,
-          'Assigned'
-        )
-      )
+      showBulkResult(summarizeBulkResult(result, findingIds.length, 'Assigned'))
       clearSelection()
       mutateFindings()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to assign findings'))
+      toast.error(
+        getErrorMessage(error, t('findings.bulk.assignFailed', 'Failed to assign findings'))
+      )
     } finally {
       setBulkBusy(false)
     }
@@ -1180,7 +1186,7 @@ function FindingsContent() {
   }, [])
 
   const handleRowAction = useCallback(
-    (action: string, finding: Finding) => {
+    (action: FindingRowAction, finding: Finding) => {
       switch (action) {
         case 'view':
           handleRowClick(finding)
@@ -1234,14 +1240,16 @@ function FindingsContent() {
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
             onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
+            aria-label={t('findings.list.selectAll', 'Select all rows on this page')}
           />
         ),
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label="Select row"
+            aria-label={t('findings.list.selectRow', 'Select finding {title}', {
+              title: toDisplayText(row.original.title, 80),
+            })}
             onClick={(e) => e.stopPropagation()}
           />
         ),
@@ -1468,65 +1476,15 @@ function FindingsContent() {
         cell: ({ row }) => {
           const finding = row.original
           return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleRowAction('view', finding)}>
-                  <ExternalLink className="me-2 h-4 w-4" />
-                  View Details
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleRowAction('assign', finding)}>
-                  <UserPlus className="me-2 h-4 w-4" />
-                  Assign
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleRowAction('status', finding)}>
-                  <CheckCircle className="me-2 h-4 w-4" />
-                  Change Status
-                </DropdownMenuItem>
-                {canCreateTicket && (
-                  <DropdownMenuItem onClick={() => handleRowAction('create_ticket', finding)}>
-                    <Ticket className="me-2 h-4 w-4" />
-                    {t('findings.header.createTicket', 'Create ticket')}
-                  </DropdownMenuItem>
-                )}
-                {hasPermission('findings:remediation:write') && remediationEnabled && (
-                  <DropdownMenuItem onClick={() => handleRowAction('remediate', finding)}>
-                    <Wrench className="me-2 h-4 w-4" />
-                    {t('remediationClaim.menu.addToRemediation')}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => handleRowAction('copy_id', finding)}>
-                  <Copy className="me-2 h-4 w-4" />
-                  Copy ID
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleRowAction('copy_link', finding)}>
-                  <Link2 className="me-2 h-4 w-4" />
-                  Copy Link
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-amber-500"
-                  onClick={() => handleRowAction('false_positive', finding)}
-                >
-                  <Flag className="me-2 h-4 w-4" />
-                  Mark as False Positive
-                </DropdownMenuItem>
-                {hasPermission('findings:delete') && (
-                  <DropdownMenuItem
-                    className="text-red-500"
-                    onClick={() => handleRowAction('delete', finding)}
-                  >
-                    <Trash2 className="me-2 h-4 w-4" />
-                    Delete
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <FindingRowMenu
+              title={finding.title}
+              onAction={(action) => handleRowAction(action, finding)}
+              canAssign={canAssignOne}
+              canChangeStatus={canChangeStatusOne}
+              canCreateTicket={canCreateTicket}
+              canRemediate={hasPermission('findings:remediation:write') && remediationEnabled}
+              canDelete={hasPermission('findings:delete')}
+            />
           )
         },
       },
@@ -1544,6 +1502,8 @@ function FindingsContent() {
     canSelect,
     remediationEnabled,
     canCreateTicket,
+    canAssignOne,
+    canChangeStatusOne,
     t,
   ])
 
@@ -2075,52 +2035,25 @@ function FindingsContent() {
     </div>
   )
 
-  // Phone layout of a finding row (list and grouped views alike).
-  const mobileRow = (f: Finding) => (
-    <button
-      type="button"
-      onClick={() => handleRowClick(f)}
-      className="flex w-full items-start gap-3 px-3 py-3 text-start transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <SeverityBadge severity={f.severity} className="mt-0.5 shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p dir="auto" className="line-clamp-2 text-sm font-medium [unicode-bidi:isolate]">
-          {toDisplayText(f.title, 500)}
-        </p>
-        {(f.cve || f.scanner) && (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {f.cve && <span className="font-mono">{f.cve}</span>}
-            {f.cve && f.scanner && ' · '}
-            {f.scanner}
-          </p>
-        )}
-        {f.location?.asset && (
-          <p dir="auto" className="mt-0.5 truncate text-xs [unicode-bidi:isolate]">
-            {toDisplayText(f.location.asset, 500)}
-          </p>
-        )}
-        {f.location?.detail && (
-          <p
-            dir="auto"
-            className="truncate font-mono text-xs text-muted-foreground [unicode-bidi:isolate]"
-          >
-            {middleEllipsis(toDisplayText(f.location.detail, 2000), 28)}
-          </p>
-        )}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {f.priorityClass && <PriorityClassBadge priorityClass={f.priorityClass} />}
-          <FindingStatusBadge status={f.status} />
-          <FindingSubStatus subStatusId={f.subStatusId} />
-          {f.branchOnly && <BranchOnlyBadge />}
-          {f.isInKev && (
-            <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
-              KEV
-            </Badge>
-          )}
-        </div>
-      </div>
-      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-    </button>
+  // Phone layout of a finding row (list and grouped views alike): a card with
+  // the row's checkbox and menu.
+  const mobileRow = (f: Finding, selection: MobileRowSelection) => (
+    <FindingPhoneCard
+      finding={f}
+      selection={selection}
+      onOpen={handleRowClick}
+      menu={
+        <FindingRowMenu
+          title={f.title}
+          onAction={(action) => handleRowAction(action, f)}
+          canAssign={canAssignOne}
+          canChangeStatus={canChangeStatusOne}
+          canCreateTicket={canCreateTicket}
+          canRemediate={hasPermission('findings:remediation:write') && remediationEnabled}
+          canDelete={hasPermission('findings:delete')}
+        />
+      }
+    />
   )
 
   // "View" on a group opens the list filtered to it, for every dimension
@@ -2184,7 +2117,7 @@ function FindingsContent() {
     onRowClick: handleRowClick,
     onSelectionChange: setSelectedFindings,
     // A new grouping or view starts with nothing selected.
-    resetSelectionKey: `${selectionEpoch}|${groupParam}|${viewParam}`,
+    resetSelectionKey: `${selectionEpoch}|${selectionScope}`,
     mobileRow,
     reloadKey: groupsReloadKey,
   }
@@ -2333,7 +2266,8 @@ function FindingsContent() {
                   sorting={sorting}
                   onSortingChange={handleSortingChange}
                   onSelectionChange={setSelectedFindings}
-                  resetSelectionKey={selectionEpoch}
+                  resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
+                  onRowClick={handleRowClick}
                   mobileRow={mobileRow}
                   initialColumnVisibility={DEFAULT_HIDDEN_COLUMNS}
                   showSelectionCount={false}

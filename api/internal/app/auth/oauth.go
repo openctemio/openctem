@@ -154,9 +154,10 @@ func (s *OAuthService) accounts() federatedAccounts {
 	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger}
 }
 
-// Issuers of the social providers that have no id_token on this path: the
-// identity comes from the provider's own API over the access token, so only
-// that provider can produce it.
+// Canonical issuers of the social providers' account bindings. Google's
+// identity comes from its verified id_token (either issuer spelling) and is
+// stored under this one; GitHub has no id_token, so its identity comes from
+// its own API over the access token.
 const (
 	googleIssuer = "https://accounts.google.com"
 	githubIssuer = "https://github.com"
@@ -583,7 +584,7 @@ type OAuthUserInfo struct {
 func (s *OAuthService) getUserInfo(ctx context.Context, provider OAuthProvider, tokens *oauthTokens) (*OAuthUserInfo, error) {
 	switch provider {
 	case OAuthProviderGoogle:
-		return s.getGoogleUserInfo(ctx, tokens.AccessToken)
+		return s.getGoogleUserInfo(ctx, tokens)
 	case OAuthProviderGitHub:
 		return s.getGitHubUserInfo(ctx, tokens.AccessToken)
 	case OAuthProviderMicrosoft:
@@ -594,8 +595,70 @@ func (s *OAuthService) getUserInfo(ctx context.Context, provider OAuthProvider, 
 	return nil, ErrInvalidProvider
 }
 
-// getGoogleUserInfo fetches user info from Google.
-func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string) (*OAuthUserInfo, error) {
+// googleJWKSURL holds Google's id_token signing keys.
+const googleJWKSURL = "https://www.googleapis.com/oauth2/v3/certs"
+
+// getGoogleUserInfo takes the identity (subject, verified email) from the
+// signature-verified id_token: RS256/PS256/ES256 against Google's JWKS, our
+// client id as the audience, Google's issuer. The userinfo API only supplies
+// the display name and picture, and must describe the same subject. A login
+// without an id_token (the "openid" scope was removed) is refused.
+func (s *OAuthService) getGoogleUserInfo(ctx context.Context, tokens *oauthTokens) (*OAuthUserInfo, error) {
+	if tokens == nil || strings.TrimSpace(tokens.IDToken) == "" {
+		return nil, errors.New("google login returned no id_token (the 'openid' scope is required)")
+	}
+	cfg := s.getProviderConfig(OAuthProviderGoogle)
+	if cfg == nil {
+		return nil, ErrInvalidProvider
+	}
+	claims, err := s.oidcVerifier.VerifyIDToken(ctx, tokens.IDToken, oidc.Expectations{
+		JWKSURI:    googleJWKSURL,
+		ClientID:   cfg.ClientID,
+		IssuerRule: oidc.GoogleIssuer,
+		SkipNonce:  true, // code flow: id_token delivered server-to-server
+	})
+	if err != nil {
+		return nil, fmt.Errorf("google id_token verification failed: %w", err)
+	}
+	info, err := googleUserInfoFromClaims(claims)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := s.getGoogleProfile(ctx, tokens.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if profile.ID != info.Subject {
+		return nil, errors.New("google userinfo describes another account than the id_token")
+	}
+	info.Name = profile.Name
+	if info.Name == "" {
+		info.Name = claims.Name
+	}
+	info.AvatarURL = profile.AvatarURL
+	return info, nil
+}
+
+// googleUserInfoFromClaims maps verified Google id_token claims: the email
+// must be verified by Google, and the account is keyed on (Google issuer, sub).
+func googleUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
+	if !bool(claims.EmailVerified) {
+		return nil, fmt.Errorf("email not verified by Google")
+	}
+	if strings.TrimSpace(claims.Email) == "" {
+		return nil, errors.New("google id_token has no email claim")
+	}
+	return &OAuthUserInfo{
+		ID:      claims.Subject,
+		Email:   claims.Email,
+		Name:    claims.Name,
+		Issuer:  googleIssuer,
+		Subject: claims.Subject,
+	}, nil
+}
+
+// getGoogleProfile fetches the display name and picture from Google.
+func (s *OAuthService) getGoogleProfile(ctx context.Context, accessToken string) (*OAuthUserInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
 	if err != nil {
 		return nil, err
@@ -615,30 +678,15 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string
 	}
 
 	var data struct {
-		ID            string `json:"id"`
-		Email         string `json:"email"`
-		Name          string `json:"name"`
-		Picture       string `json:"picture"`
-		EmailVerified bool   `json:"verified_email"` // Google uses "verified_email" in v2
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Picture string `json:"picture"`
 	}
 	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &data); err != nil {
 		return nil, err
 	}
-
-	// SECURITY: Only accept verified emails from Google
-	if !data.EmailVerified {
-		return nil, fmt.Errorf("email not verified by Google")
-	}
-
-	return &OAuthUserInfo{
-		ID:        data.ID,
-		Email:     data.Email,
-		Name:      data.Name,
-		AvatarURL: data.Picture,
-		// The v2 userinfo id is the Google account id, the OIDC sub.
-		Issuer:  googleIssuer,
-		Subject: data.ID,
-	}, nil
+	// The v2 userinfo id is the Google account id, the OIDC sub.
+	return &OAuthUserInfo{ID: data.ID, Name: data.Name, AvatarURL: data.Picture}, nil
 }
 
 // getGitHubUserInfo fetches user info from GitHub.

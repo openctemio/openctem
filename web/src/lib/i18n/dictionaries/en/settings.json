@@ -579,5 +579,20 @@
   "settings.slaPolicies.page.delete": "Delete {name}",
   "settings.slaPolicies.page.defaultNoDelete": "The default policy cannot be deleted. Make another policy the default first.",
   "settings.slaPolicies.page.defaultDone": "\"{name}\" is now the default policy",
-  "settings.slaPolicies.page.defaultFailed": "Failed to change the default policy"
+  "settings.slaPolicies.page.defaultFailed": "Failed to change the default policy",
+  "settings.scim.expiry.label": "Expires after",
+  "settings.scim.expiry.days": "{days} days",
+  "settings.scim.expiry.hint": "The token stops working after this time. Rotate it before then; the old token keeps working for 24 hours after a rotation.",
+  "settings.scim.status.active": "Active",
+  "settings.scim.status.expired": "Expired",
+  "settings.scim.status.revoked": "Revoked",
+  "settings.scim.column.expires": "Expires",
+  "settings.scim.metric.expired": "Expired tokens",
+  "settings.scim.rotate.label": "Rotate {name}",
+  "settings.scim.rotate.title": "Rotate the SCIM token {name}?",
+  "settings.scim.rotate.desc": "A new token is generated and shown once. The current token keeps working for 24 hours so you can update your identity provider, then it stops.",
+  "settings.scim.rotate.confirm": "Rotate",
+  "settings.scim.rotate.rotating": "Rotating…",
+  "settings.scim.rotate.done": "Token rotated. The old token stops working in 24 hours.",
+  "settings.scim.rotate.failed": "Failed to rotate the token"
 }
