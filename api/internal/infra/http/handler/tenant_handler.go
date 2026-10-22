@@ -522,7 +522,7 @@ func (h *TenantHandler) buildAuditContext(r *http.Request) auditsvc.AuditContext
 	actx := auditsvc.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
-		RequestID: r.Header.Get("X-Request-ID"),
+		RequestID: middleware.GetRequestID(r.Context()),
 	}
 
 	// Set actor info if available
@@ -1970,7 +1970,7 @@ func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request
 	// Delete the invitation (public decline: the token authorizes it; pass the
 	// invitation's own tenant so the scoping check is satisfied).
 	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), auditsvc.AuditContext{
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}); err != nil {
 		h.handleServiceError(w, err)
 		return

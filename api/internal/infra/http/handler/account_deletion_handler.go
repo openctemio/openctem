@@ -52,7 +52,7 @@ func (h *UserHandler) DeleteMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actx := auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: getClientIP(r),
-		UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID")}
+		UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context())}
 	eraseAfter, err := h.accountDeletion.Request(r.Context(), u.ID(), actx)
 	var sole *accountdeletion.SoleOwnerError
 	switch {
