@@ -115,8 +115,8 @@ func (r *DashboardSnapshotRepository) MarkSnapshotFailed(ctx context.Context, te
 // TouchSnapshot implements dashboard.SnapshotStore.
 func (r *DashboardSnapshotRepository) TouchSnapshot(ctx context.Context, tenantID, dashboardID shared.ID, at time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE dash_snapshots SET viewed_at = $3
-		WHERE tenant_id = $1 AND dashboard_id = $2 AND viewed_at < $3 - interval '1 hour'`,
+		UPDATE dash_snapshots SET viewed_at = $3::timestamptz
+		WHERE tenant_id = $1 AND dashboard_id = $2 AND viewed_at < $3::timestamptz - interval '1 hour'`,
 		tenantID.String(), dashboardID.String(), at)
 	if err != nil {
 		return fmt.Errorf("touch dashboard snapshot: %w", err)
