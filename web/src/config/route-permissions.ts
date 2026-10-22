@@ -615,6 +615,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  '/settings/scanning/proxies': {
+    permission: Permission.SensorEgressRead,
+    module: Module.Sensors,
+    message: 'You need permission to view sensor proxies.',
+  },
   // The sensor scan-job part of the security settings: read like
   // Authentication (team:update), changed by the owner only (the API).
   '/settings/scanning/sensor-safety': {
