@@ -38,6 +38,12 @@ in the activity panel.
   labelled as global, and attack paths and combined exposures are shown as the
   reason an issue matters.
 - **A dismissal needs a reason**, and the reason goes into the timeline.
+- **A request waiting on someone is visible where you are.** While a
+  false-positive or accepted-risk request is pending, `FindingApprovalBand`
+  (page and drawer) shows the requested status, who asked, when and why, whatever
+  the finding's status is. The requester can cancel it there; approvers get a link
+  to the approvals inbox, where the decision is made; everyone else reads it. The
+  buttons are cosmetic: the API decides who may cancel or approve.
 - **AI triage is opt-in and permission-aware.** The header button shows only to a
   user who may run it (`ai_triage:trigger`) in an organization that turned AI triage
   on (Settings > AI). Without `ai_triage:read` the page sends no AI triage request
