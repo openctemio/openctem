@@ -737,8 +737,12 @@ export interface FindingApiFilters {
   view?: string
   /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
   families?: string[]
-  /** The state lens: open | fixed | dispositioned | all (research 24, C2). Sent as `state`. */
-  state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+  /** An approval request for the finding is pending. Sent as `pending_approval=true`. */
+  pending_approval?: boolean
+  /** Accepted risks that lapse by then (`P30D` = 30 days ahead). Sent as `acceptance_expires_at_lte`. */
+  acceptance_expires_at_lte?: string
+  /** The state lens: open | fixed | dispositioned | closed | all (research 24, C2). Sent as `state`. */
+  state?: 'open' | 'fixed' | 'dispositioned' | 'closed' | 'all'
   /** The asset's primary owner (a group-by-owner row's View). Sent as `asset_owner_id`. */
   asset_owner_id?: string
   /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
@@ -767,7 +771,7 @@ export interface FindingStatsResponse {
   epss_high_open?: number
   sla_breached?: number
   /** The state lens counts of the same filter: open, fixed, dispositioned, all. */
-  by_state?: Partial<Record<'open' | 'fixed' | 'dispositioned' | 'all', number>>
+  by_state?: Partial<Record<'open' | 'fixed' | 'dispositioned' | 'closed' | 'all', number>>
   /** The Open lens by severity (critical, high, medium, low, info). */
   open_by_severity?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
   /** Fixes claimed by an owner (fix_applied), waiting for a verifier. */

@@ -1516,5 +1516,20 @@
   "findings.empty.noMatchHint": "Nothing in this view matches. Widen the view to see more.",
   "findings.empty.clearFilters": "Clear filters",
   "findings.empty.clearSearch": "Clear search",
-  "findings.empty.searchAllStates": "Search all statuses"
+  "findings.empty.searchAllStates": "Search all statuses",
+  "findings.view.total": "{count, plural, one {# finding} other {# findings}}",
+  "findings.view.awaitingVerification": "Awaiting verification",
+  "findings.view.all": "All findings",
+  "findings.view.custom": "Custom view",
+  "findings.view.saved": "Saved view",
+  "findings.quickView.active": "Active",
+  "findings.quickView.needs_triage": "Needs triage",
+  "findings.quickView.my_queue": "My queue",
+  "findings.quickView.sla_breached": "SLA breached",
+  "findings.quickView.pending_approval": "Pending approval",
+  "findings.quickView.accepted_expiring": "Accepted · expiring",
+  "findings.quickView.closed": "Closed",
+  "findings.quickView.nav": "Findings views",
+  "findings.lens.closed.label": "Closed",
+  "findings.lens.closed.description": "Fixed and dispositioned together"
 }

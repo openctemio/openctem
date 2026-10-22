@@ -44,6 +44,26 @@ saved-views menu, comes from `t()` with a key in the English and Vietnamese cata
 `src/features/findings/__tests__/list-i18n.test.ts` fails on a hard-coded string in those files or a key
 missing from either catalog. Table columns carry a translated `meta.label`, so the View menu lists names, not ids.
 
+## Quick views
+
+The sidebar lists seven built-in views under Findings, each with a live count: Active, Needs triage, My queue,
+SLA breached, Pending approval, Accepted · expiring, Closed. They replace the metric strip and the state tabs;
+the dashboard owns the KPI tiles.
+
+- The API defines the views (`GET /findings/quick-views`). Each view carries the exact `GET /findings` query
+  string, so a view's count equals the total of the list it opens, in the viewer's own data scope. The web keeps
+  no second definition (`src/features/findings/lib/quick-views.ts`).
+- A view is a plain link: `/findings?<params>`. A view with no `state` of its own is opened with `state=all`,
+  because the page's default is the Open lens and the count counted every state.
+- A row is active when the URL is exactly that view (page, sort, search and grouping do not count).
+- The views show, and their counts are requested, only on the list page. Other pages pay nothing.
+- A zero count shows nothing. SLA breached is in the error colour when above zero. Awaiting verification, which
+  was a metric card, is a button in the list's first row while something waits and the viewer can verify.
+- The first row names the view and its total. A URL that is no quick view reads "Custom view".
+
 ## Request budget
 
-A cold load of `/findings` sends at most 5 API requests (`e2e/request-budget.json`).
+A cold load of `/findings` sends at most 5 API requests: the session bootstrap, the support-access banner, one
+stats response (the organization total, for the empty state), one quick-views response and the list. The source
+catalog loads when the Source filter opens (or a source is already picked). Refresh sends each request once.
+`e2e/request-budget.json` holds the number.

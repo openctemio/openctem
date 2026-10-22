@@ -1516,5 +1516,20 @@
   "findings.empty.noMatchHint": "Không có gì khớp trong chế độ xem này. Hãy mở rộng để xem thêm.",
   "findings.empty.clearFilters": "Xóa bộ lọc",
   "findings.empty.clearSearch": "Xóa tìm kiếm",
-  "findings.empty.searchAllStates": "Tìm trong mọi trạng thái"
+  "findings.empty.searchAllStates": "Tìm trong mọi trạng thái",
+  "findings.view.total": "{count, plural, other {# phát hiện}}",
+  "findings.view.awaitingVerification": "Chờ xác minh",
+  "findings.view.all": "Tất cả phát hiện",
+  "findings.view.custom": "Chế độ xem tùy chỉnh",
+  "findings.view.saved": "Chế độ xem đã lưu",
+  "findings.quickView.active": "Đang hoạt động",
+  "findings.quickView.needs_triage": "Cần phân loại",
+  "findings.quickView.my_queue": "Hàng đợi của tôi",
+  "findings.quickView.sla_breached": "Vi phạm SLA",
+  "findings.quickView.pending_approval": "Chờ phê duyệt",
+  "findings.quickView.accepted_expiring": "Chấp nhận rủi ro · sắp hết hạn",
+  "findings.quickView.closed": "Đã đóng",
+  "findings.quickView.nav": "Các chế độ xem phát hiện",
+  "findings.lens.closed.label": "Đã đóng",
+  "findings.lens.closed.description": "Đã sửa và đã xử lý (không phải sửa) gộp lại"
 }
