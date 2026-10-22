@@ -448,7 +448,7 @@ func (r *AssetGroupRepository) List(
 	// Build order clause
 	orderClause := " ORDER BY ag.created_at DESC"
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		sortSQL := opts.Sort.SQL()
+		sortSQL := opts.Sort.SQLWithTieBreaker("ag.id")
 		// finding_count is a computed column alias, don't prefix with ag.
 		if strings.HasPrefix(sortSQL, "finding_count") {
 			orderClause = " ORDER BY " + sortSQL
