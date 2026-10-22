@@ -1,0 +1,4 @@
+### Changed: API conventions and RFC-041 amended after the public API review
+
+- `api/docs/architecture/api-conventions.md` and RFC-041 (new section 11) record the decisions of the public API review: one error envelope with specific codes and an always-present `request_id`, `data` list envelope with capped exact totals, signed keyset cursors, `412 RESOURCE_CHANGED` for stale `If-Match`, idempotency keys, an operations resource for long-running work, write scopes only on service-account keys, signed outbound webhooks, two generated specs, and the `{id}` leaf path parameter. Rules not built yet are marked Planned.
+- The deprecation window for external routes is now 90 days (it was six months); routes only the web app calls are removed with no window. RFC-041 D9 and D10 and RFC-048 D9 point to the amendment.

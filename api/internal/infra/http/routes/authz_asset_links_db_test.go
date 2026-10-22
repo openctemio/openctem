@@ -69,8 +69,17 @@ func TestAssetLinks_BusinessServiceDeleteNeedsAllLinksInScope(t *testing.T) {
 	h.exec(`INSERT INTO business_services (id, tenant_id, name, criticality) VALUES ($1, $2, 'svc', 'low')`, svc.String(), h.tenant.String())
 	h.exec(`INSERT INTO business_service_assets (tenant_id, service_id, asset_id) VALUES ($1, $2, $3)`, h.tenant.String(), svc.String(), h.assetB.String())
 	p := "/api/v1/business-services/" + svc.String()
+	// The service links only an asset outside the member's scope, so it is
+	// not visible to them (research/233 D4): 404, never a 403 that would
+	// confirm it exists.
+	if st, _ := authz170Do(t, h, h.memberA, false, perms, http.MethodDelete, p, nil); st != http.StatusNotFound {
+		t.Errorf("DELETE service linking only an out-of-scope asset = %d, want 404", st)
+	}
+	// Linking an in-scope asset too makes it visible; the delete is then
+	// refused because a linked asset is out of scope.
+	h.exec(`INSERT INTO business_service_assets (tenant_id, service_id, asset_id) VALUES ($1, $2, $3)`, h.tenant.String(), svc.String(), h.assetA.String())
 	if st, _ := authz170Do(t, h, h.memberA, false, perms, http.MethodDelete, p, nil); st != http.StatusForbidden {
-		t.Errorf("DELETE service linking out-of-scope asset = %d, want 403", st)
+		t.Errorf("DELETE service linking an out-of-scope asset = %d, want 403", st)
 	}
 	var n int
 	_ = h.db.QueryRow(`SELECT count(*) FROM business_services WHERE id=$1`, svc.String()).Scan(&n)

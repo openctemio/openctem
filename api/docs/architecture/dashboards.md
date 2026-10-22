@@ -211,11 +211,15 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `flow.new_vs_fixed` | time series of flows | none | F2 |
   | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
   | `fix.next`, `sla.at_risk` | items (ranked findings) | none | F3 |
+  | `crown_jewels.exposed` | scalar (assets), preset P0+P1, filter priority only | none | F1 + `assets` |
+  | `ctem.loop` | stages (the five CTEM stages) | none | see "CTEM metrics" |
+  | `attack_paths.to_crown_jewels` | paths (reachable crown jewels) | none | attack-path scoring + `assets` |
 
 - **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
   stat; duration: stat; category: bar, column, table, donut, stat; time
   series: area, line, column, table (a flow: diverging, column, table, never
-  an area); matrix: heatmap, table, column; items: list, table. The first is
+  an area); matrix: heatmap, table, column; items: list, table; stages: loop, table;
+  paths: paths, table. The first is
   the default; a widget without `viz.type` gets it.
 - **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
   personal or organization dashboard): the config is decoded with unknown
@@ -280,6 +284,60 @@ How each figure is computed (`internal/app/dashboard/widgets`,
   (exact for up to 10 rows; only the asset group filter, which does not cut
   into the rank order); list fields are read from `findings` by id inside
   the tenant, and a finding no longer open is left out.
+
+### CTEM metrics
+
+The CTEM story on the dashboard is three catalog metrics, drawn by the
+`loop` and `paths` visualizations and the `stat` of a count. They are
+current figures (no time window or comparison) and, like every widget,
+computed for the read's scope and stored in the snapshot.
+
+| Stage of `ctem.loop` | Figure | Second figure | Opens | Not measured when |
+|---|---|---|---|---|
+| Scoping | crown jewels in scope (`assets.is_crown_jewel`) | crown jewels with an open P0/P1 finding | `/assets?is_crown_jewel=true&program_assets=exclude` | never (0 designated is "designate crown jewels") |
+| Discovery | % of assets the coverage ledger tracks (`asset_coverage`, a capability that applies) with a successful run of any capability in the last 30 days | assets not covered | `/assets?coverage=uncovered&program_assets=exclude` | the ledger tracks no asset in scope |
+| Prioritize | open P0 findings (F1) | open KEV findings (F1) | the findings list of the same filter | never |
+| Validate | % of open findings with validation evidence (the Validation overview's coverage) | retests completed in the last 30 days | `/validation` | no open finding in scope |
+| Mobilize | % of open findings with an SLA that is not breached (F1) | breached findings | the breached findings list | no open finding has an SLA |
+
+- Each stage has a state (`good`, `warn`, `crit`, `not_measured`):
+  coverage shares are good from 80 %, need attention from 40 %; open P0 is
+  good at 0, off track from 5; within SLA is good from 90 %, needs attention
+  from 70 %. `focus` is the stage with the largest gap (the first off track,
+  else the first that needs attention); the web marks it as the current step.
+- `crown_jewels.exposed` counts crown jewels with an open finding of the
+  filter's priorities (F1 rows of the asset, with the campaign rule). It
+  opens the findings of those priorities on crown jewels grouped by asset
+  (`asset_crown_jewel=true&group=asset_id`): the number of groups is the
+  figure.
+  With no crown jewel designated in the read's scope it is `not_measured`
+  (`no_crown_jewels`), never a 0 that meets a "0 exposed" target.
+- `attack_paths.to_crown_jewels` reads the attack-path scoring (the whole
+  organization's relationship graph, cached for 5 minutes per organization
+  and API process) and keeps the crown jewels reached from a public entry
+  point, or entry points themselves, that are in the read's scope, not
+  deleted and not program-only (`VisibleAssets`). It returns the reachable
+  count, the designated count (so "none designated" and "none reachable"
+  differ) and the top rows (name, type, criticality, number of entry points
+  reaching it, depth, path score; at most `limit`, 10). Entry points and
+  intermediate hops are never named; the number of entry points reaching a
+  crown jewel is the same figure the attack-path page shows the viewer.
+  It is `not_measured` when no crown jewel is designated in scope
+  (`no_crown_jewels`) and when the organization has no relationship data
+  and nothing is reachable (`no_relationship_data`): "none reachable" is
+  only a figure when there is something to reach and a graph to reach it
+  through.
+- The asset list filter `coverage=covered|uncovered` and the findings
+  filter `asset_crown_jewel` use the same predicates as these figures, so a
+  figure equals its list for the same viewer. Dashboards leave program-only
+  assets out; the lists show them unless `program_assets=exclude` (assets).
+- Tests: `dashboard_ctem_widgets_db_test.go` (a scoped member, a campaign
+  tester, a member without scope rows and an administrator: crown jewels,
+  coverage, validation and attack paths outside the scope, program-only
+  assets and another tenant's assets never count or show; figures equal the
+  asset and findings lists), `internal/app/dashboard/widgets/ctem_test.go`
+  (every stage reads the server-built scope, not-measured stages carry no
+  value, out-of-scope crown jewels never reach the result).
 
 ### Scope and isolation
 
@@ -689,12 +747,21 @@ widget kit's frame, with its own error boundary.
   while it still exists and they can still read it), else their own default,
   else the organization default, else the first organization dashboard, else
   their first own dashboard. A person with no dashboard at all (none of their
-  own, none from the organization) gets a personal copy of the Overview
+  own, none from the organization) gets a personal copy of the CTEM
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
+- **CTEM offer**: a personal dashboard that is a copy of the Overview template
+  (its `w_ov*` widget ids) without the CTEM loop shows a one-time hint: "Add
+  the CTEM loop" (inserts the loop after the leading row of figures and saves
+  the layout), "Switch to the CTEM template" (adds a CTEM dashboard and opens
+  it; the Overview copy is kept), or dismiss. Nothing changes until the viewer
+  chooses; the dismissal is kept in the browser. No request is made for the
+  hint.
 - **Templates** are typed widget configs in
-  `web/src/features/dashboards/templates.json`: Overview, Executive,
-  Vulnerability program, Triage. `/dashboards` copies one into a personal
+  `web/src/features/dashboards/templates.json`: CTEM (the first-visit
+  default: active exposure figures, the CTEM loop, fix next, attack paths to
+  crown jewels, priority over time), Overview (with the CTEM loop after its
+  figures), Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
   dashboard ("Use template"); the copy is a stored dashboard like any other.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
@@ -793,7 +860,7 @@ with the same rules as the shared error state.
 ### Result shapes and visualizations
 
 The kit draws the widget result shapes (`types.ts`): `scalar`, `ratio`,
-`duration`, `category`, `time_series`, `matrix`, `items`, `stages`. A null
+`duration`, `category`, `time_series`, `matrix`, `items`, `stages`, `paths`. A null
 figure means not measured and is never drawn as 0.
 
 | Visualization | Shapes | Notes |
@@ -805,7 +872,8 @@ figure means not measured and is never drawn as 0.
 | `AreaLineViz` | time_series (stocks) | stacked area or lines, markers for scoring changes |
 | `DivergingViz` | time_series with `opened` / `fixed` | opened up, fixed down, the net in words |
 | `HeatmapViz` | matrix | every value printed, shaded on the sequential ramp |
-| `FunnelViz` | stages | the stage strip; unmeasured stages are grey with their reason |
+| `LoopViz` | stages | the CTEM loop as an ordered list (`<ol>`); each stage's figure and second figure link to their lists, its state is an icon and words in a pill (never a coloured stripe; cards keep one neutral border), unmeasured stages show "—" with the reason; the focus stage is `aria-current="step"` and marked "Act here" with the brand accent (`--brand`, the only use of it) |
+| `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
 
 Rules every visualization follows:

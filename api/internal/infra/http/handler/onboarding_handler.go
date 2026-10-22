@@ -108,7 +108,7 @@ func (h *LocalAuthHandler) OnboardingAccept(w http.ResponseWriter, r *http.Reque
 	}
 	u := acc.User
 	actx := auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: getClientIP(r),
-		UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID")}
+		UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context())}
 	res, err := h.onboarding.Accept(r.Context(), u, strings.TrimSpace(req.Ref), actx)
 	switch {
 	case err == nil:
@@ -223,7 +223,7 @@ func (h *TenantHandler) decideJoinRequest(w http.ResponseWriter, r *http.Request
 	}
 	by := middleware.GetLocalUserID(r.Context())
 	actx := auditapp.AuditContext{TenantID: tenantID.String(), ActorID: by.String(), ActorEmail: auditActorEmail(r.Context()),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID")}
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context())}
 	if approve {
 		var req DecideJoinRequestRequest
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {

@@ -114,6 +114,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.pending_approval) params.set('pending_approval', 'true')
   if (filters.acceptance_expires_at_lte)
     params.set('acceptance_expires_at_lte', filters.acceptance_expires_at_lte)
+  if (filters.asset_crown_jewel) params.set('asset_crown_jewel', 'true')
   if (filters.view) params.set('view', filters.view)
   if (filters.sort) params.set('sort', filters.sort)
   return params

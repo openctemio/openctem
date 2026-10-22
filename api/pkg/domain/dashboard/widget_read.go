@@ -96,4 +96,41 @@ type FactReader interface {
 	// CampaignsOf lists the pentest campaigns userID is a member of in the
 	// tenant.
 	CampaignsOf(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
+
+	// CrownJewels counts the crown jewels in scope (designated) and those
+	// with at least one open finding of the given priority classes (F1,
+	// campaign rule applied).
+	CrownJewels(ctx context.Context, scope ReadScope, priorities []string) (CrownJewelCounts, error)
+	// Discovery reads the coverage ledger (asset_coverage) for the assets in
+	// scope: assets the ledger tracks, and those with a successful run of
+	// any capability since the given time.
+	Discovery(ctx context.Context, scope ReadScope, since time.Time) (DiscoveryCounts, error)
+	// Validation counts open findings in scope with validation evidence,
+	// and the retests completed since the given time.
+	Validation(ctx context.Context, scope ReadScope, since time.Time) (ValidationCounts, error)
+	// VisibleAssets keeps the ids that are assets of the tenant, not
+	// deleted, not program-only and inside the scope.
+	VisibleAssets(ctx context.Context, scope ReadScope, ids []shared.ID) (map[shared.ID]bool, error)
+}
+
+// CrownJewelCounts are the crown jewels of a scope.
+type CrownJewelCounts struct {
+	Designated int64
+	Exposed    int64
+}
+
+// DiscoveryCounts are the coverage ledger figures of a scope. Uncovered =
+// Tracked - Covered.
+type DiscoveryCounts struct {
+	Tracked int64
+	Covered int64
+}
+
+// ValidationCounts are the validation figures of a scope.
+type ValidationCounts struct {
+	// Open findings, and those of them with validation evidence.
+	Open      int64
+	Validated int64
+	// RetestsRun is the retests completed in the window.
+	RetestsRun int64
 }
