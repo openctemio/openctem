@@ -260,7 +260,7 @@ func (s *WidgetSpec) normalizeMetric() error {
 	}
 	shape := m.ShapeFor(m.EffectiveGroupBy(s.Data.GroupBy))
 	switch shape {
-	case ShapeItems:
+	case ShapeItems, ShapePaths:
 		if s.Data.Limit == 0 {
 			s.Data.Limit = defaultItemsLimit
 		}
@@ -310,8 +310,8 @@ func (t *WidgetTime) normalize(m Metric) error {
 	if !containsStr(TimeRanges, t.Range) || !containsStr(TimeBuckets, t.Bucket) || !containsStr(Comparisons, t.Compare) {
 		return fmt.Errorf("%w: config.data.time has a value outside %v / %v / %v", shared.ErrValidation, TimeRanges, TimeBuckets, Comparisons)
 	}
-	if m.Kind == MetricKindItems && (t.Range != defaultTimeRange || t.Compare != CompareNone) {
-		return fmt.Errorf("%w: a list has no time range or comparison", shared.ErrValidation)
+	if m.Current() && (t.Range != defaultTimeRange || t.Compare != CompareNone) {
+		return fmt.Errorf("%w: metric %s has no time range or comparison", shared.ErrValidation, m.ID)
 	}
 	return nil
 }
