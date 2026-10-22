@@ -10,6 +10,7 @@ import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
 import { useTranslation } from '@/context/i18n-provider'
+import { planMethod, useFindingVerificationPlan } from '../../api/use-finding-verification'
 import {
   useRequestValidationApi,
   useFindingValidationEvidenceApi,
@@ -184,6 +185,11 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
   const { trigger: requestValidation, isMutating } = useRequestValidationApi(findingId)
   const { hasPermission } = usePermissions()
   const { t } = useTranslation()
+  // The reachability check is offered only where the server says it can run
+  // (an active network asset, not a secret); it is advisory, so it needs the
+  // same permission as a retest.
+  const { data: plan } = useFindingVerificationPlan(findingId)
+  const safeCheck = planMethod(plan, 'safe_check')
 
   const handleValidate = useCallback(async () => {
     try {
@@ -209,6 +215,8 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
   }, [requestValidation, mutate, t])
 
   const evidence = data?.evidence ?? []
+  // Nothing recorded and nothing to run here: the Verification panel says why.
+  if (!isLoading && evidence.length === 0 && !safeCheck?.available) return null
 
   return (
     <section className="space-y-3">
@@ -220,14 +228,14 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
           </h3>
           {evidence.length > 0 ? <Badge variant="secondary">{evidence.length}</Badge> : null}
         </div>
-        {hasPermission('findings:write') ? (
+        {hasPermission('findings:verify') && safeCheck?.available ? (
           <Button size="sm" variant="outline" onClick={handleValidate} disabled={isMutating}>
             {isMutating ? (
               <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
               <RefreshCw className="me-1.5 h-3.5 w-3.5" />
             )}
-            {t('findings.validationEvidence.validateNow', 'Validate now')}
+            {t('findings.validationEvidence.checkReachability', 'Check reachability')}
           </Button>
         ) : null}
       </div>
@@ -240,7 +248,7 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
         <p className="text-muted-foreground text-sm">
           {t(
             'findings.validationEvidence.empty',
-            'No validation evidence yet. Run a safe-check to confirm whether this exposure is still reachable.'
+            'No validation evidence yet. A reachability check shows whether the target still answers; it does not prove a fix.'
           )}
         </p>
       ) : (
