@@ -362,6 +362,11 @@ func (s *AITriageService) RequestTriage(ctx context.Context, req TriageRequest) 
 		}
 		userID = &id
 	}
+	// A bug-bounty report goes to the model only at a person's request (a
+	// workflow action has no user).
+	if err := refuseUnrequested(f, userID); err != nil {
+		return nil, err
+	}
 
 	// Create triage result
 	triageType := aitriagedom.TriageType(req.TriageType)
@@ -548,6 +553,11 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		}
 		s.logger.Error("AI triage: AI data policy check failed", "error", err, "result_id", resultID.String())
 		return fail(FailInternal)
+	}
+	// A bug-bounty report queued without a requesting person (auto-triage,
+	// a workflow action) never reaches the model.
+	if refuseUnrequested(finding, result.RequestedBy()) != nil {
+		return s.failTriage(ctx, result, FailPolicyRestricted)
 	}
 
 	// Create LLM provider. Passing the tenant scopes the AI_RATE_LIMIT_RPM
@@ -764,7 +774,12 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// idempotency). A result that needed review (coerced output or prompt
 	// injection markers in the finding) proposes nothing. The verdict never
 	// changes the finding's priority on its own.
-	s.proposeFalsePositive(ctx, tenantID, findingID, analysis)
+	// A bug-bounty report's verdict starts nothing on its own: no proposal,
+	// no workflow event (RFC-121 D13); a person reads the result.
+	followUps := !personRequestOnly(finding)
+	if followUps {
+		s.proposeFalsePositive(ctx, tenantID, findingID, analysis)
+	}
 
 	s.logger.Info("triage completed",
 		"result_id", resultID.String(),
@@ -782,7 +797,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// coerced the LLM output (invalid enum, missing field) and the
 	// result is advisory only. See logTriageNeedsReview above and
 	// pkg/domain/aitriage/entity.go for the contract.
-	if s.workflowDispatcher != nil {
+	if s.workflowDispatcher != nil && followUps {
 		triageData := map[string]any{
 			"severity_assessment":       analysis.SeverityAssessment,
 			"severity_justification":    analysis.SeverityJustification,
@@ -1108,7 +1123,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 			response.Jobs = append(response.Jobs, job)
 			response.Failed++
 			continue
-		} else if err := s.checkEgress(ctx, tenantID, f); err != nil {
+		} else if err := s.bulkPolicy(ctx, tenantID, f, userID); err != nil {
 			job.Status = "failed"
 			job.Error = FailPolicyRestricted
 			if !errors.Is(err, ErrPolicyRestricted) {
@@ -1223,6 +1238,10 @@ func (s *AITriageService) EnqueueAutoTriage(ctx context.Context, tenantID, findi
 			return nil
 		}
 		return err
+	}
+	// A bug-bounty report is never auto-triaged: no job, no row.
+	if personRequestOnly(f) {
+		return nil
 	}
 
 	// Create triage result

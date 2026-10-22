@@ -108,7 +108,7 @@ func (h *LocalAuthHandler) CancelOrganizationDeletion(w http.ResponseWriter, r *
 	}
 	actx := auditapp.AuditContext{
 		ActorID: ident.User.ID().String(), ActorEmail: ident.User.Email(),
-		ActorIP: middleware.ClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: middleware.ClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
 	if err := h.deletions.Cancel(r.Context(), actx, tenantID, ident.User.ID()); err != nil {
 		writeDeletionError(w, err, h.logger)

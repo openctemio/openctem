@@ -157,7 +157,7 @@ func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext 
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    clientIP,
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 }
 
@@ -627,6 +627,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        min_risk_score  query   int     false  "Minimum risk score (0-100)"
 // @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
 // @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
+// @Param        coverage      query     string  false  "covered: a run of any capability succeeded in the last 30 days; uncovered: tracked by the coverage ledger without one"  Enums(covered, uncovered)
 // @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
 // @Param        technology    query     string  false  "Assets using any of these technologies (comma-separated names, case-insensitive, at most 20)"
 // @Param        technology_category query string false "Assets with a technology in any of these categories (comma-separated): web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header, other"
@@ -719,6 +720,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		FirstSeenAfter:       parseQueryTimePtr(query.Get("first_seen_after")),
 		ProgramAssets:        query.Get("program_assets"),
 		Freshness:            query.Get("freshness"),
+		Coverage:             query.Get("coverage"),
 		Technologies:         assettech.ParseFilterValues(query.Get("technology")),
 		TechnologyCategories: technologyCategoryStrings(query.Get("technology_category")),
 		Sort:                 query.Get("sort"),

@@ -199,12 +199,22 @@ func TestFindingsList_ContractHeadersAndErrors(t *testing.T) {
 		t.Errorf("alias: %d %v", status, hdr)
 	}
 
-	// Unknown param (the web's source_id): ignored in the warn window, named
-	// in a Warning, never echoed with its value.
-	status, hdr, _ = h.listFindings(t, admin, "source_id=secret-value&severity=high")
-	warn := strings.Join(hdr.Values("Warning"), " ")
-	if status != http.StatusOK || !strings.Contains(warn, "source_id") || strings.Contains(warn, "secret-value") || hdr.Get("Deprecation") == "" {
-		t.Errorf("unknown param: %d %v", status, hdr)
+	// Unknown param: 400 INVALID_FILTER naming it, never echoing its value,
+	// on the list, its stats and its groups (a typo must not widen them).
+	for _, path := range []string{"/api/v1/findings", "/api/v1/findings/stats", "/api/v1/findings/groups"} {
+		status, body := h.do(admin.user, admin.admin, http.MethodGet, path+"?source_id=secret-value&severity=high", nil)
+		var e struct {
+			Code    string `json:"code"`
+			Details []struct {
+				Param  string `json:"param"`
+				Reason string `json:"reason"`
+			} `json:"details"`
+		}
+		_ = json.Unmarshal([]byte(body), &e)
+		if status != http.StatusBadRequest || e.Code != "INVALID_FILTER" || len(e.Details) != 1 ||
+			e.Details[0].Param != "source_id" || e.Details[0].Reason != "unknown filter" || strings.Contains(body, "secret-value") {
+			t.Errorf("%s unknown param = %d %s, want 400 INVALID_FILTER on source_id without its value", path, status, body)
+		}
 	}
 
 	for q, param := range map[string]string{
