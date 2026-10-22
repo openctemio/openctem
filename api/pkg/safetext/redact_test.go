@@ -110,3 +110,33 @@ func TestRedactSecrets_CookieHeaders(t *testing.T) {
 		t.Fatalf("unrelated header changed: %s", got)
 	}
 }
+
+// Scanner output carries credentials in JSON bodies, query strings and the
+// verbose transcript of an HTTP client; each is masked, and a second pass
+// changes nothing (stored rows are masked again on read).
+func TestRedactSecrets_HTTPTranscriptShapes(t *testing.T) {
+	cases := map[string]string{
+		`{"password":"hunter2hunter","api_key": "k3yv4lu3xyz"}`:                   "hunter2hunter|k3yv4lu3xyz",
+		`{"access_token":"opaqueTOKEN123456","refresh_token":"REFRESHabc123456"}`: "opaqueTOKEN123456|REFRESHabc123456",
+		`GET /cb?access_token=opaqueTOKEN123456&x=1`:                              "opaqueTOKEN123456",
+		"> Cookie: sid=CURLSESSION1\n< Set-Cookie: sid=CURLSESSION2; HttpOnly":    "CURLSESSION1|CURLSESSION2",
+		`{"Cookie": "sid=JSONSESSION3"}`:                                          "JSONSESSION3",
+		`{"Authorization": "Basic dXNlcjpwYXNzd29yZA=="}`:                         "dXNlcjpwYXNzd29yZA",
+		"Authorization: Negotiate YIIGhgYGKwYBBQUCoIIGejCCBnag":                   "YIIGhgYGKwYBBQUCoIIGejCCBnag",
+		"Proxy-Authorization: NTLM TlRMTVNTUAABAAAAB4IIog==":                      "TlRMTVNTUAABAAAAB4IIog",
+	}
+	for in, leaks := range cases {
+		got := RedactSecrets(in)
+		for _, leak := range strings.Split(leaks, "|") {
+			if strings.Contains(got, leak) {
+				t.Errorf("%q survived in %q", leak, got)
+			}
+		}
+		if again := RedactSecrets(got); again != got {
+			t.Errorf("not idempotent: %q -> %q", got, again)
+		}
+	}
+	if got := RedactSecrets("Authorization: Negotiate YIIGhgYGKwYBBQUCoIIGejCCBnag"); got != "Authorization: Negotiate "+RedactionPlaceholder {
+		t.Errorf("scheme must stay: %q", got)
+	}
+}
