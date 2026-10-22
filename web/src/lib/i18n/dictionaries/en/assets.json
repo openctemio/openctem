@@ -1052,5 +1052,7 @@
   "assets.riskImpact.alone": "The approval policy lets you decide this yourself. It is recorded in the audit log with your reason.",
   "assets.riskImpact.pending": "Another change to this asset is already waiting for approval; wait for it to be decided.",
   "assets.riskImpact.reason": "Reason for lowering the risk",
-  "assets.riskImpact.reasonPlaceholder": "Why is this asset less exposed or less critical than recorded?"
+  "assets.riskImpact.reasonPlaceholder": "Why is this asset less exposed or less critical than recorded?",
+  "assets.facetPanel.uncovered": "No successful scan in 30 days",
+  "assets.facetPanel.covered": "Scanned successfully in 30 days"
 }

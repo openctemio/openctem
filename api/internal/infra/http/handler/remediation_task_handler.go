@@ -804,7 +804,7 @@ func (h *RemediationTaskHandler) auditContext(r *http.Request) audit.AuditContex
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 }
 

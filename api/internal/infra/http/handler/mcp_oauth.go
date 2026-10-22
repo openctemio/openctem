@@ -217,7 +217,7 @@ func noStoreJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func oauthActor(r *http.Request) mcpoauthapp.Actor {
-	return mcpoauthapp.Actor{IP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID")}
+	return mcpoauthapp.Actor{IP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context())}
 }
 
 // --- Consent API (signed-in session) ---------------------------------------

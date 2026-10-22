@@ -431,7 +431,7 @@ func (h *WebEndpointHandler) Update(w http.ResponseWriter, r *http.Request) {
 			WithSeverity(auditdom.SeverityLow)
 		_ = h.audit.LogEvent(r.Context(), auditapp.AuditContext{
 			TenantID: tenantID.String(), ActorID: middleware.GetUserID(r.Context()), ActorEmail: auditActorEmail(r.Context()),
-			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		}, event)
 	}
 	writeJSON(w, http.StatusOK, toWebEndpointResponse(e))

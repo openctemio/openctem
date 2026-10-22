@@ -179,7 +179,7 @@ export function GateFieldRow({
     <li
       className={cn(
         'flex flex-col gap-2 px-3 py-2.5 text-sm sm:flex-row sm:items-start sm:justify-between',
-        own && 'border-s-2 border-s-primary bg-primary/5'
+        own && 'bg-primary/5'
       )}
       data-field={f}
       data-source={fr.source}
