@@ -220,7 +220,10 @@ capped at 64 characters.
   known-safe characters and length; anything else is `other`), and the
   response carries `Deprecation` plus a `Warning: 299 - "unknown query
   parameter …"` header.
-- **`strict`**: `400 INVALID_FILTER`.
+- **`strict`**: `400 INVALID_FILTER`, `details[].reason` `"unknown filter"`.
+  The findings list, stats, groups and export are strict since 2026-10-22
+  (the warn window closed early; the web console sends only registry names,
+  pinned by `TestFindingFields_WebParamsParseStrict`).
 - Old param names (`severities`, `exclude_statuses`, `epss_min`, `search`, …)
   are **aliases**: accepted, mapped to the new field, answered with
   `Deprecation`/`Sunset` (RFC 9745 / RFC 8594) and counted in
