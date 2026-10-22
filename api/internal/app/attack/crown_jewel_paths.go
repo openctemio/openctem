@@ -20,13 +20,14 @@ type CrownJewelPath struct {
 }
 
 // ReachableCrownJewels returns every reachable crown jewel of the tenant in
-// path-score order. The graph is the whole tenant's (shared cache); the
-// caller applies the reader's asset scope to the ids and shows nothing
-// else of the graph (no entry point or hop names).
-func (s *SurfaceService) ReachableCrownJewels(ctx context.Context, tenantID shared.ID) ([]CrownJewelPath, error) {
+// path-score order, and whether the tenant has any relationship data (with
+// none, "nothing reachable" is not a measurement). The graph is the whole
+// tenant's (shared cache); the caller applies the reader's asset scope to
+// the ids and shows nothing else of the graph (no entry point or hop names).
+func (s *SurfaceService) ReachableCrownJewels(ctx context.Context, tenantID shared.ID) ([]CrownJewelPath, bool, error) {
 	res, err := s.GetAttackPathScores(ctx, tenantID)
 	if err != nil || res == nil {
-		return nil, err
+		return nil, false, err
 	}
 	src := res.TopAssets
 	var depth map[string]int
@@ -45,5 +46,5 @@ func (s *SurfaceService) ReachableCrownJewels(ctx context.Context, tenantID shar
 		out = append(out, CrownJewelPath{AssetID: id, Name: a.Name, AssetType: a.AssetType, Criticality: a.Criticality,
 			ReachableFrom: a.ReachableFrom, IsEntryPoint: a.IsEntryPoint, Depth: depth[a.AssetID], PathScore: a.PathScore})
 	}
-	return out, nil
+	return out, res.Summary.HasRelationshipData, nil
 }

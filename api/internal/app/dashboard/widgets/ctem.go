@@ -40,10 +40,16 @@ const (
 const (
 	ReasonNoTrackedAssets   = "no_tracked_assets"
 	ReasonNothingToValidate = "nothing_to_validate"
-	FlagDesignate           = "designate_crown_jewels"
-	FlagExploitableNow      = "exploitable_now"
-	FlagNoneRunYet          = "none_run_yet"
-	FlagOnTrack             = "on_track"
+	// ReasonNoCrownJewels: no crown jewel is designated in the scope, so
+	// "none exposed" or "none reachable" would be a false all-clear.
+	ReasonNoCrownJewels = "no_crown_jewels"
+	// ReasonNoRelationshipData: the tenant has no asset relationships, so
+	// "no crown jewel reachable" is not a measurement.
+	ReasonNoRelationshipData = "no_relationship_data"
+	FlagDesignate            = "designate_crown_jewels"
+	FlagExploitableNow       = "exploitable_now"
+	FlagNoneRunYet           = "none_run_yet"
+	FlagOnTrack              = "on_track"
 )
 
 // Unit of a stage figure.
@@ -109,9 +115,10 @@ type PathsValue struct {
 }
 
 // AttackPathReader returns the reachable crown jewels of the whole tenant
-// graph, in path-score order. The widget keeps the ones in the read's scope.
+// graph, in path-score order, and whether the tenant has relationship data.
+// The widget keeps the ones in the read's scope.
 type AttackPathReader interface {
-	ReachableCrownJewels(ctx context.Context, tenantID shared.ID) ([]attack.CrownJewelPath, error)
+	ReachableCrownJewels(ctx context.Context, tenantID shared.ID) ([]attack.CrownJewelPath, bool, error)
 }
 
 // SetAttackPaths wires the attack-path reader. Unwired, the attack-path
@@ -146,9 +153,14 @@ func (s *Service) crownJewelsExposed(ctx context.Context, v *WidgetValue, f dash
 	if err != nil {
 		return err
 	}
+	v.Drill = drillCrownJewelsExposed(pr)
+	if c.Designated == 0 {
+		// Nothing designated: 0 exposed would read as an all-clear.
+		v.State, v.Reason = StateNotMeasured, ReasonNoCrownJewels
+		return nil
+	}
 	v.Scalar = &ScalarValue{Value: c.Exposed}
 	v.TargetMet = targetMet(v.Target, float64(c.Exposed))
-	v.Drill = drillCrownJewelsExposed(pr)
 	return nil
 }
 
@@ -264,7 +276,13 @@ func (s *Service) attackPaths(ctx context.Context, v *WidgetValue, limit int, sc
 	if err != nil {
 		return err
 	}
-	all, err := s.paths.ReachableCrownJewels(ctx, scope.TenantID)
+	v.Drill = drillAttackPaths
+	if cj.Designated == 0 {
+		// No crown jewel in scope: "none reachable" would be a false all-clear.
+		v.State, v.Reason = StateNotMeasured, ReasonNoCrownJewels
+		return nil
+	}
+	all, hasGraph, err := s.paths.ReachableCrownJewels(ctx, scope.TenantID)
 	if err != nil {
 		return err
 	}
@@ -289,8 +307,12 @@ func (s *Service) attackPaths(ctx context.Context, v *WidgetValue, limit int, sc
 				ReachableFrom: p.ReachableFrom, EntryPoint: p.IsEntryPoint, Depth: p.Depth, Score: round1(p.PathScore)})
 		}
 	}
+	if out.Reachable == 0 && !hasGraph {
+		// No relationships known: unreachable is unknown, not measured 0.
+		v.State, v.Reason = StateNotMeasured, ReasonNoRelationshipData
+		return nil
+	}
 	v.Paths = out
-	v.Drill = drillAttackPaths
 	return nil
 }
 

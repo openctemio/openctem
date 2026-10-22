@@ -310,6 +310,8 @@ computed for the read's scope and stored in the snapshot.
   opens the findings of those priorities on crown jewels grouped by asset
   (`asset_crown_jewel=true&group=asset_id`): the number of groups is the
   figure.
+  With no crown jewel designated in the read's scope it is `not_measured`
+  (`no_crown_jewels`), never a 0 that meets a "0 exposed" target.
 - `attack_paths.to_crown_jewels` reads the attack-path scoring (the whole
   organization's relationship graph, cached for 5 minutes per organization
   and API process) and keeps the crown jewels reached from a public entry
@@ -320,6 +322,11 @@ computed for the read's scope and stored in the snapshot.
   reaching it, depth, path score; at most `limit`, 10). Entry points and
   intermediate hops are never named; the number of entry points reaching a
   crown jewel is the same figure the attack-path page shows the viewer.
+  It is `not_measured` when no crown jewel is designated in scope
+  (`no_crown_jewels`) and when the organization has no relationship data
+  and nothing is reachable (`no_relationship_data`): "none reachable" is
+  only a figure when there is something to reach and a graph to reach it
+  through.
 - The asset list filter `coverage=covered|uncovered` and the findings
   filter `asset_crown_jewel` use the same predicates as these figures, so a
   figure equals its list for the same viewer. Dashboards leave program-only

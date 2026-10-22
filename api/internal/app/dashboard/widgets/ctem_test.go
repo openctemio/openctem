@@ -90,10 +90,13 @@ func (f *ctemFacts) VisibleAssets(_ context.Context, s dashboard.ReadScope, ids 
 	return out, nil
 }
 
-type fakePaths struct{ rows []attack.CrownJewelPath }
+type fakePaths struct {
+	rows    []attack.CrownJewelPath
+	noGraph bool
+}
 
-func (p fakePaths) ReachableCrownJewels(context.Context, shared.ID) ([]attack.CrownJewelPath, error) {
-	return p.rows, nil
+func (p fakePaths) ReachableCrownJewels(context.Context, shared.ID) ([]attack.CrownJewelPath, bool, error) {
+	return p.rows, !p.noGraph, nil
 }
 
 func ctemWidget(metric, viz string, limit int) dashboard.Widget {
@@ -238,5 +241,40 @@ func TestAttackPaths_UnwiredIsNotMeasured(t *testing.T) {
 	v := s.widget(context.Background(), 0, ctemWidget("attack_paths.to_crown_jewels", "paths", 0), true, restrictedScope())
 	if v.State != StateNotMeasured || v.Paths != nil {
 		t.Fatalf("%+v", v)
+	}
+}
+
+// No crown jewel designated in scope: "0 exposed" and "none reachable" are
+// not measurements and must never render as a green 0.
+func TestCrownJewelMetrics_NoneDesignatedIsNotMeasured(t *testing.T) {
+	facts := &ctemFacts{cj: dashboard.CrownJewelCounts{Designated: 0, Exposed: 0}}
+	s := NewService(nil, nil, facts, nil)
+	s.SetAttackPaths(fakePaths{})
+	w := ctemWidget("crown_jewels.exposed", "stat", 0)
+	w.Config["target"] = map[string]any{"op": "<=", "value": 0}
+	v := s.widget(context.Background(), 0, w, true, restrictedScope())
+	if v.State != StateNotMeasured || v.Reason != ReasonNoCrownJewels || v.Scalar != nil || v.TargetMet != nil {
+		t.Errorf("crown jewels exposed without crown jewels: %+v", v)
+	}
+	v = s.widget(context.Background(), 0, ctemWidget("attack_paths.to_crown_jewels", "paths", 0), true, restrictedScope())
+	if v.State != StateNotMeasured || v.Reason != ReasonNoCrownJewels || v.Paths != nil {
+		t.Errorf("attack paths without crown jewels: %+v", v)
+	}
+}
+
+// No relationship data in the tenant: an empty reachable list is unknown.
+func TestAttackPaths_NoRelationshipDataIsNotMeasured(t *testing.T) {
+	facts := &ctemFacts{cj: dashboard.CrownJewelCounts{Designated: 3}}
+	s := NewService(nil, nil, facts, nil)
+	s.SetAttackPaths(fakePaths{noGraph: true})
+	v := s.widget(context.Background(), 0, ctemWidget("attack_paths.to_crown_jewels", "paths", 0), true, restrictedScope())
+	if v.State != StateNotMeasured || v.Reason != ReasonNoRelationshipData || v.Paths != nil {
+		t.Errorf("attack paths without relationships: %+v", v)
+	}
+	// With a graph, an empty list is a measured 0.
+	s.SetAttackPaths(fakePaths{})
+	v = s.widget(context.Background(), 0, ctemWidget("attack_paths.to_crown_jewels", "paths", 0), true, restrictedScope())
+	if v.State != StateReady || v.Paths == nil || v.Paths.Reachable != 0 {
+		t.Errorf("attack paths with a graph: %+v", v)
 	}
 }

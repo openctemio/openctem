@@ -186,7 +186,15 @@ func TestDashboardCTEMWidgets_ScopeAndParity_DB(t *testing.T) {
 				t.Errorf("parity designated: widget %d, asset list %d", tc.designated, got)
 			}
 			cj := byID(t, out, "w_cj")
-			if cj.Scalar == nil || cj.Scalar.Value != tc.exposed {
+			paths := byID(t, out, "w_paths")
+			if tc.designated == 0 {
+				// No crown jewel in scope: never a green 0.
+				for _, w := range []widgets.WidgetValue{cj, paths} {
+					if w.State != widgets.StateNotMeasured || w.Reason != widgets.ReasonNoCrownJewels || w.Scalar != nil || w.Paths != nil {
+						t.Errorf("%s without crown jewels = %+v, want not measured", w.ID, w)
+					}
+				}
+			} else if cj.Scalar == nil || cj.Scalar.Value != tc.exposed {
 				t.Fatalf("crown jewels exposed = %+v, want %d", cj.Scalar, tc.exposed)
 			}
 			// Dashboards leave program-only assets out; the findings list
@@ -239,7 +247,9 @@ func TestDashboardCTEMWidgets_ScopeAndParity_DB(t *testing.T) {
 				t.Errorf("parity P0: widget %d, list %d", tc.p0, got)
 			}
 
-			paths := byID(t, out, "w_paths")
+			if tc.designated == 0 {
+				return
+			}
 			if paths.Paths == nil || paths.Paths.Reachable != tc.reachable || paths.Paths.Designated != tc.designated {
 				t.Fatalf("paths = %+v, want reachable %d", paths.Paths, tc.reachable)
 			}
