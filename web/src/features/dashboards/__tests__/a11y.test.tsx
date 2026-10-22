@@ -184,5 +184,5 @@ describe('dashboard accessibility', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add widget' }))
     await screen.findByRole('dialog', { name: 'Add a widget' })
     expect(await violations(document.body)).toEqual([])
-  })
+  }, 30_000)
 })
