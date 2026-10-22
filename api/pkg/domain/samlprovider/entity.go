@@ -110,7 +110,9 @@ type CertificateRecord struct {
 
 // CertificateExpiryStore is the certificate-expiry sweep's view of the store.
 // It reads across organizations (a system job); every write names its tenant.
+// ListEnabledCertificates pages by tenant id: it returns up to limit records
+// whose tenant id sorts after afterTenantID (the zero ID starts at the first).
 type CertificateExpiryStore interface {
-	ListEnabledCertificates(ctx context.Context, limit int) ([]CertificateRecord, error)
+	ListEnabledCertificates(ctx context.Context, afterTenantID shared.ID, limit int) ([]CertificateRecord, error)
 	SetCertificateNotice(ctx context.Context, tenantID shared.ID, days int) error
 }

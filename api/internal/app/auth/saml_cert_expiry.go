@@ -77,29 +77,47 @@ func (s *SAMLService) SweepCertificateExpiry(ctx context.Context, now time.Time)
 	if s.expiry.store == nil || s.expiry.owners == nil {
 		return 0, nil
 	}
-	recs, err := s.expiry.store.ListEnabledCertificates(ctx, 500)
-	if err != nil {
-		return 0, err
-	}
 	alerted := 0
-	for _, rec := range recs {
-		cert, perr := parseCertificatePEM(rec.Certificate)
-		if perr != nil {
-			s.logger.Warn("saml certificate does not parse", "tenant_id", rec.TenantID.String())
-			continue
+	var after shared.ID
+	for {
+		recs, err := s.expiry.store.ListEnabledCertificates(ctx, after, samlCertSweepPage)
+		if err != nil {
+			return alerted, err
 		}
-		level := samlCertNoticeFor(cert.NotAfter, now)
-		if level < 0 || (rec.NoticeDays != nil && *rec.NoticeDays <= level) {
-			continue
+		for _, rec := range recs {
+			if s.sweepCertificate(ctx, rec, now) {
+				alerted++
+			}
 		}
-		s.alertCertificateExpiry(ctx, rec.TenantID, cert, level, now)
-		if err := s.expiry.store.SetCertificateNotice(ctx, rec.TenantID, level); err != nil {
-			s.logger.Error("record saml certificate notice", "tenant_id", rec.TenantID.String(), "error", err)
-			continue
+		if len(recs) < samlCertSweepPage {
+			break
 		}
-		alerted++
+		after = recs[len(recs)-1].TenantID
 	}
 	return alerted, nil
+}
+
+// samlCertSweepPage is how many organizations the sweep reads per page.
+var samlCertSweepPage = 500
+
+// sweepCertificate alerts one organization when its certificate reached a new
+// notice level, and reports whether it did.
+func (s *SAMLService) sweepCertificate(ctx context.Context, rec samldom.CertificateRecord, now time.Time) bool {
+	cert, perr := parseCertificatePEM(rec.Certificate)
+	if perr != nil {
+		s.logger.Warn("saml certificate does not parse", "tenant_id", rec.TenantID.String())
+		return false
+	}
+	level := samlCertNoticeFor(cert.NotAfter, now)
+	if level < 0 || (rec.NoticeDays != nil && *rec.NoticeDays <= level) {
+		return false
+	}
+	s.alertCertificateExpiry(ctx, rec.TenantID, cert, level, now)
+	if err := s.expiry.store.SetCertificateNotice(ctx, rec.TenantID, level); err != nil {
+		s.logger.Error("record saml certificate notice", "tenant_id", rec.TenantID.String(), "error", err)
+		return false
+	}
+	return true
 }
 
 func (s *SAMLService) alertCertificateExpiry(ctx context.Context, tenantID shared.ID, cert *x509.Certificate, level int, now time.Time) {

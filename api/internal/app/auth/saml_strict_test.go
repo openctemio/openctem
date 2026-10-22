@@ -240,3 +240,44 @@ func newSAMLPost(field, value string) *http.Request {
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return r
 }
+
+// A comment inside the signed NameID does not truncate it: canonicalization
+// drops comments, so the signature still verifies, and the subject the
+// service reads must be the whole value the IdP signed, never the text before
+// the comment (the 2018 comment-injection class).
+func TestSAMLNameIDCommentInjectionReadsWholeValue(t *testing.T) {
+	f := newSAMLACSFixture(t)
+	const signed = "owner@acme.com.evil.example"
+	_, resp := f.respond(t, false, time.Now(), func(a *saml.IdpAuthnRequest) {
+		a.Assertion.Subject.NameID.Value = signed
+	})
+	injected := editResponse(t, resp, func(root *etree.Element) {
+		a := childByTag(root, "Assertion")
+		nid := childByTag(childByTag(a, "Subject"), "NameID")
+		if nid.Text() != signed {
+			t.Fatalf("fixture NameID = %q", nid.Text())
+		}
+		nid.SetText("owner@acme.com")
+		nid.CreateComment("x")
+		nid.CreateText(".evil.example")
+	})
+	sp, rc, err := f.svc.resolveServiceProvider(context.Background(), "acme", samlACSBase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := url.Values{"SAMLResponse": {injected}}.Encode()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acme/acs", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if err := r.ParseForm(); err != nil {
+		t.Fatal(err)
+	}
+	a, err := f.svc.parseStrictResponse(context.Background(), sp, rc, r, []string{f.requestID})
+	if err != nil {
+		// The comment is outside the signed canonical form, so the response
+		// still verifies; the test exists to check what is read from it.
+		t.Fatalf("the commented response should still verify: %v", err)
+	}
+	if got := a.Subject.NameID.Value; got != signed {
+		t.Fatalf("NameID read as %q, want the whole signed value %q", got, signed)
+	}
+}

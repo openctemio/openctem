@@ -100,17 +100,19 @@ func (r *SAMLProviderRepository) Delete(ctx context.Context, tenantID shared.ID)
 }
 
 // ListEnabledCertificates returns the IdP certificate of every enabled SAML
-// config, for the certificate-expiry sweep (a system job across organizations).
-func (r *SAMLProviderRepository) ListEnabledCertificates(ctx context.Context, limit int) ([]samlprovider.CertificateRecord, error) {
+// config, for the certificate-expiry sweep (a system job across organizations),
+// one page of tenant ids after afterTenantID at a time.
+func (r *SAMLProviderRepository) ListEnabledCertificates(ctx context.Context, afterTenantID shared.ID,
+	limit int) ([]samlprovider.CertificateRecord, error) {
 	if limit <= 0 {
 		limit = 500
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tenant_id, idp_certificate, cert_expiry_notice_days
 		  FROM saml_providers
-		 WHERE enabled
+		 WHERE enabled AND ($1 = '' OR tenant_id > $1::uuid)
 		 ORDER BY tenant_id
-		 LIMIT $1`, limit)
+		 LIMIT $2`, afterTenantID.StringOrEmpty(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list saml certificates: %w", err)
 	}

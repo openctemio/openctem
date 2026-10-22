@@ -107,7 +107,9 @@ replica only) and logs a warning at start. Every refusal is logged with its
 reason; the browser sees the same generic SAML error.
 
 Signature-wrapping regression cases live in `TestSAMLXSWCorpus`
-(`internal/app/auth/saml_strict_test.go`).
+(`internal/app/auth/saml_strict_test.go`). A comment inside a signed NameID
+(dropped by canonicalization, so the signature still verifies) never truncates
+it: the whole signed value is read (`TestSAMLNameIDCommentInjectionReadsWholeValue`).
 
 ## Certificate expiry
 
@@ -116,7 +118,8 @@ expiry stops every SAML sign-in.
 
 - `PUT …/sso/saml` refuses a certificate that has already expired.
 - The admin read view returns `certificate_not_after` (RFC 3339).
-- The `saml-cert-expiry` controller (every 6 h) reads each **enabled** config and
+- The `saml-cert-expiry` controller (every 6 h) reads every **enabled** config,
+  500 organizations per page by tenant id, and
   alerts the organization's owners, in-app (system alert, High) and by email,
   when the certificate reaches 30, 7 or 1 day(s) before expiry and when it has
   expired. `saml_providers.cert_expiry_notice_days` (migration `003277`) keeps the

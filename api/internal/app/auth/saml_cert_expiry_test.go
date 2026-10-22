@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -40,8 +41,17 @@ type fakeCertStore struct {
 	recs []samldom.CertificateRecord
 }
 
-func (f *fakeCertStore) ListEnabledCertificates(context.Context, int) ([]samldom.CertificateRecord, error) {
-	return f.recs, nil
+// ListEnabledCertificates pages by tenant id like the Postgres store.
+func (f *fakeCertStore) ListEnabledCertificates(_ context.Context, after shared.ID, limit int) ([]samldom.CertificateRecord, error) {
+	sorted := append([]samldom.CertificateRecord(nil), f.recs...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].TenantID.String() < sorted[j].TenantID.String() })
+	var out []samldom.CertificateRecord
+	for _, r := range sorted {
+		if (after.IsZero() || r.TenantID.String() > after.String()) && len(out) < limit {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeCertStore) SetCertificateNotice(_ context.Context, tenantID shared.ID, days int) error {
@@ -137,6 +147,35 @@ func TestSAMLCertExpirySweep(t *testing.T) {
 	last := inApp.got[len(inApp.got)-1]
 	if !strings.Contains(last.Title, "expired") {
 		t.Fatalf("expired alert title: %q", last.Title)
+	}
+}
+
+// Every enabled organization is swept, not only the first page: an
+// organization past the first page must still be alerted.
+func TestSAMLCertExpirySweepPagesThroughAllOrganizations(t *testing.T) {
+	prev := samlCertSweepPage
+	samlCertSweepPage = 2
+	t.Cleanup(func() { samlCertSweepPage = prev })
+
+	now := time.Now()
+	store := &fakeCertStore{}
+	owners := fakeCertOwners{}
+	for i := 0; i < 5; i++ {
+		tid := shared.NewID()
+		store.recs = append(store.recs, samldom.CertificateRecord{TenantID: tid,
+			Certificate: certPEMValidUntil(t, now.Add(3*24*time.Hour))})
+		owners[tid] = []ssochange.OwnerContact{{UserID: shared.NewID()}}
+	}
+	inApp := &capturedInApp{}
+	svc := NewSAMLService(nil, nil, nil, logger.NewNop())
+	svc.SetCertExpiryAlerts(store, owners, inApp)
+
+	n, err := svc.SweepCertificateExpiry(context.Background(), now)
+	if err != nil || n != 5 {
+		t.Fatalf("sweep: n=%d err=%v, want all 5 organizations alerted", n, err)
+	}
+	if len(inApp.got) != 5 {
+		t.Fatalf("alerts: got %d, want 5", len(inApp.got))
 	}
 }
 
