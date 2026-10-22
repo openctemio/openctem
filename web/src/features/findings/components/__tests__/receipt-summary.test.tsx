@@ -89,6 +89,17 @@ describe('ReceiptSummary', () => {
     rerender(<ReceiptSummary receipt={receipt({ coverage: { type: 'full', note: 'held' } })} />)
     expect(screen.getByTestId('receipt-summary')).toHaveTextContent(/held for review/)
   })
+
+  it('says why a declared full coverage closed nothing', () => {
+    const { rerender } = render(
+      <ReceiptSummary receipt={receipt({ coverage: { type: 'partial', note: 'incomplete' } })} />
+    )
+    expect(screen.getByTestId('receipt-summary')).toHaveTextContent(/record was skipped/)
+    rerender(
+      <ReceiptSummary receipt={receipt({ coverage: { type: 'partial', note: 'scope_changed' } })} />
+    )
+    expect(screen.getByTestId('receipt-summary')).toHaveTextContent(/left your scope/)
+  })
 })
 
 describe('RecentImports', () => {
