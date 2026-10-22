@@ -129,3 +129,14 @@ func TestWebhook_PayloadCarriesEventType(t *testing.T) {
 		t.Fatalf("test delivery event_type/version = %q/%d", got.EventType, got.EventVersion)
 	}
 }
+
+// The Splunk HEC event carries the catalog type too.
+func TestSplunk_EventCarriesEventType(t *testing.T) {
+	c := &SplunkClient{sourcetype: defaultSplunkSourcetype}
+	if got := c.buildEvent(Message{EventType: "coverage_gap"}).Event.EventType; got != "coverage_gap" {
+		t.Fatalf("event_type %q, want coverage_gap", got)
+	}
+	if got := c.buildEvent(Message{}).Event.EventType; got != TestEventType {
+		t.Fatalf("untyped event_type %q, want %q", got, TestEventType)
+	}
+}

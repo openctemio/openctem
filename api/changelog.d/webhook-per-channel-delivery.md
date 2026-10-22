@@ -7,6 +7,7 @@
 ### Behaviour change: generic webhooks carry the real event type
 
 - `event_type` in a generic webhook body is the event's catalogue type (`new_finding`, `sensor.offline`, ...) instead of always `notification`; a test delivery is `test`. New fields: `event_version` (payload version of the type, 1 today), `idempotency_key` (same value as the `Idempotency-Key` header, stable across retries) and `occurred_at`.
+- The Splunk HEC event's `event_type` is the catalog type as well.
 - **Upgrade note:** a receiver that matched `event_type == "notification"` must match the catalogue types instead.
 
 ### Security: notification channels never follow redirects
