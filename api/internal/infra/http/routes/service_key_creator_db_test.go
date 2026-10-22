@@ -8,6 +8,7 @@ package routes
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -337,8 +339,15 @@ func TestServiceAccountGrantTriggersMigration_UpDownUp(t *testing.T) {
 		}
 		return true
 	}
+	// Replaying a migration is DDL: it runs as the schema owner, the way the
+	// migrations do (testdb.MigratorURL), not on the app connection.
+	mdb, err := sql.Open("postgres", testdb.MigratorURL())
+	if err != nil {
+		t.Fatalf("open migrator connection: %v", err)
+	}
+	t.Cleanup(func() { _ = mdb.Close() })
 	apply := func(sqlText string) {
-		if _, err := h.db.Exec(sqlText); err != nil {
+		if _, err := mdb.Exec(sqlText); err != nil {
 			t.Fatal(err)
 		}
 	}
