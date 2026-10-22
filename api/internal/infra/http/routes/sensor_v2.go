@@ -176,6 +176,12 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 			r.POST("/commands/{command_id}/fail", ctl.FailCommand, controlWrite...)
 			r.POST("/commands/{command_id}/release", ctl.ReleaseCommand, controlWrite...)
 		}
+		if ctl.HasEgress() {
+			// Proxy pools (docs/architecture/sensor-proxies.md): the leasing
+			// sensor's pool credentials and its health report.
+			r.POST("/commands/{command_id}/"+protov2.EgressCredentialsAction, ctl.EgressCredentials, controlWrite...)
+			r.POST("/commands/{command_id}/"+protov2.EgressReportAction, ctl.EgressReport, controlWrite...)
+		}
 		if ctl.HasLogs() {
 			// Per-task logs (RFC-029 §4.4.1): the control write budget, a
 			// 256 KiB body (decoded with that bound by the handler).
@@ -211,6 +217,8 @@ var v2RouteNames = map[string]string{
 	protov2.PathPrefix + "/commands/{command_id}/complete":                      "complete",
 	protov2.PathPrefix + "/commands/{command_id}/fail":                          "fail",
 	protov2.PathPrefix + "/commands/{command_id}/logs":                          "logs",
+	protov2.PathPrefix + "/commands/{command_id}/egress-credentials":            "egress_credentials",
+	protov2.PathPrefix + "/commands/{command_id}/egress-report":                 "egress_report",
 	protov2.PathPrefix + protov2.SuppressionsPath:                               "suppressions",
 	protov2.PathPrefix + protov2.ContentPath + "/desired":                       "content_desired",
 	protov2.PathPrefix + protov2.ContentPath + "/packs/{digest}":                "content_pack",
@@ -247,7 +255,11 @@ func sensorControlV2Handler(h Handlers, log *logger.Logger) *handler.SensorContr
 			return h.ModuleGate.IsEnabled(ctx, tenantID, moduledom.ModuleSuppressions)
 		}
 	}
-	return handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, suppressionsEnabled, log)
+	ctl := handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, suppressionsEnabled, log)
+	if h.ProxyPool != nil {
+		ctl.SetEgress(h.ProxyPool.Service())
+	}
+	return ctl
 }
 
 // sensorInFlightKey is the authenticated sensor's in-flight key and whether
