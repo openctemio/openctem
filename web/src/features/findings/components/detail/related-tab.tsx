@@ -152,7 +152,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
   const { t } = useTranslation()
   const similarFindings = finding.similarFindings || []
   const linkedFindings = finding.linkedFindings || []
-  const sameCveFindings = finding.sameCveFindings || []
+  const sameCveFindings = finding.cve ? finding.sameCveFindings || [] : []
 
   const totalRelated = similarFindings.length + linkedFindings.length + sameCveFindings.length
 
@@ -189,7 +189,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
             {finding.occurrenceCount !== undefined && (
               <div className="flex items-center gap-3">
                 <div className="bg-muted flex h-8 w-8 items-center justify-center rounded-full">
-                  <Repeat className="h-4 w-4 text-blue-400" />
+                  <Repeat className="h-4 w-4 text-info" />
                 </div>
                 <div>
                   <p className="text-lg font-bold">{finding.occurrenceCount}</p>
@@ -202,7 +202,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
             {finding.duplicateCount !== undefined && (
               <div className="flex items-center gap-3">
                 <div className="bg-muted flex h-8 w-8 items-center justify-center rounded-full">
-                  <Copy className="h-4 w-4 text-orange-400" />
+                  <Copy className="h-4 w-4 text-warning" />
                 </div>
                 <div>
                   <p className="text-lg font-bold">{finding.duplicateCount}</p>
@@ -215,7 +215,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
             {finding.correlationId && (
               <div className="flex items-center gap-3">
                 <div className="bg-muted flex h-8 w-8 items-center justify-center rounded-full">
-                  <Fingerprint className="h-4 w-4 text-purple-400" />
+                  <Fingerprint className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <p
@@ -237,39 +237,45 @@ export function RelatedTab({ finding }: RelatedTabProps) {
       {/* Summary Stats - only show when there's related findings data */}
       {totalRelated > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="flex items-center gap-3 rounded-lg border p-4">
-            <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
-              <Eye className="h-5 w-5 text-blue-400" />
+          {similarFindings.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg border p-4">
+              <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
+                <Eye className="h-5 w-5 text-info" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{similarFindings.length}</p>
+                <p className="text-muted-foreground text-xs">
+                  {t('findings.relatedTab.similar', 'Similar')}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold">{similarFindings.length}</p>
-              <p className="text-muted-foreground text-xs">
-                {t('findings.relatedTab.similar', 'Similar')}
-              </p>
+          )}
+          {linkedFindings.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg border p-4">
+              <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
+                <Link2 className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{linkedFindings.length}</p>
+                <p className="text-muted-foreground text-xs">
+                  {t('findings.relatedTab.linked', 'Linked')}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3 rounded-lg border p-4">
-            <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
-              <Link2 className="h-5 w-5 text-purple-400" />
+          )}
+          {finding.cve && sameCveFindings.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg border p-4">
+              <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
+                <Copy className="h-5 w-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{sameCveFindings.length}</p>
+                <p className="text-muted-foreground text-xs">
+                  {t('findings.relatedTab.sameCve', 'Same CVE')}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold">{linkedFindings.length}</p>
-              <p className="text-muted-foreground text-xs">
-                {t('findings.relatedTab.linked', 'Linked')}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 rounded-lg border p-4">
-            <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
-              <Copy className="h-5 w-5 text-orange-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{sameCveFindings.length}</p>
-              <p className="text-muted-foreground text-xs">
-                {t('findings.relatedTab.sameCve', 'Same CVE')}
-              </p>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -278,7 +284,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
         <div>
           <div className="mb-3">
             <h3 className="flex items-center gap-2 font-semibold">
-              <Eye className="h-4 w-4 text-blue-400" />
+              <Eye className="h-4 w-4 text-info" />
               {t('findings.relatedTab.similarTitle', 'Similar Findings')}
             </h3>
             <p className="text-muted-foreground text-sm">
@@ -303,7 +309,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
           <div>
             <div className="mb-3">
               <h3 className="flex items-center gap-2 font-semibold">
-                <Link2 className="h-4 w-4 text-purple-400" />
+                <Link2 className="h-4 w-4 text-primary" />
                 {t('findings.relatedTab.linkedTitle', 'Linked Findings')}
               </h3>
               <p className="text-muted-foreground text-sm">
@@ -325,7 +331,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
           <div>
             <div className="mb-3">
               <h3 className="flex items-center gap-2 font-semibold">
-                <Copy className="h-4 w-4 text-orange-400" />
+                <Copy className="h-4 w-4 text-warning" />
                 {t('findings.relatedTab.sameCveTitle', 'Same CVE ({cve})', { cve: finding.cve })}
               </h3>
               <p className="text-muted-foreground text-sm">

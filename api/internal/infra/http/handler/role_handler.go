@@ -266,7 +266,7 @@ func (h *RoleHandler) buildAuditContext(r *http.Request) audit.AuditContext {
 	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
-		RequestID: r.Header.Get("X-Request-ID"),
+		RequestID: middleware.GetRequestID(r.Context()),
 	}
 
 	if localUser := middleware.GetLocalUser(r.Context()); localUser != nil {

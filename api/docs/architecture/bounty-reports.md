@@ -43,7 +43,12 @@ triage ── GET /findings/{id}/duplicate-candidates (caller's data scope)
   assessed by the triager and priority comes from the normal pipeline;
 - `state` is the channel's state of the report and never moves the finding's
   status (human sources are never closed by automation);
-- `url` is an https back-link that the server never fetches;
+- `url` is an https back-link that the server never fetches, in printable
+  ASCII without user info (an internationalised host in its `xn--` form, so
+  a look-alike host shows as such);
+- single-line fields refuse control and invisible formatting characters
+  (bidirectional controls, zero-width characters); a stored object that no
+  longer validates, or one on a finding of another source, is never returned;
 - `reward` and `disclosure` are data; changing them needs `findings:triage`
   and writes an audit row with the old and new values.
 
@@ -62,6 +67,26 @@ triage ── GET /findings/{id}/duplicate-candidates (caller's data scope)
 - `FindingRepository.FindByBountyReport(tenant, intake, ref)` is the lookup a
   re-import or a webhook delivery uses to update the same row.
 
+### API contract (for the web console)
+
+- `FindingResponse.bounty_report` (on every finding read, omitted when the
+  finding has none) is the stored object: `intake`, `ref`, `researcher`,
+  `submitted_at`, `reported_severity`, `state`, `weakness`, `endpoint_path`,
+  `parameter`, `url`, `reward {amount, currency, status}`,
+  `disclosure {state, agreed_date}`.
+- `POST /api/v1/findings` accepts the same object as `bounty_report` with
+  `source: "bug_bounty"`.
+- `PUT /api/v1/findings/{id}/bounty-report` takes the whole object (fields
+  left out are cleared; unknown fields are refused) and returns the finding.
+  It honours `If-Match` with the finding's `row_version`.
+- Errors: 400 validation (message names the field), 403
+  `TRIAGE_PERMISSION_REQUIRED` for reward or disclosure without
+  `findings:triage`, 404 outside the caller's scope or tenant, 409 when
+  another finding holds the same intake and ref.
+- Audit action `finding.bounty_report_changed`, metadata `intake`, `ref` and
+  `changes` (`{field: {old, new}}`).
+- A `bug_bounty` finding is never queued for AI triage automatically.
+
 ## Authorization and isolation
 
 | Action | Gate | Isolation |
@@ -71,8 +96,20 @@ triage ── GET /findings/{id}/duplicate-candidates (caller's data scope)
 | Duplicate candidates | `findings:triage` | Seed finding in the caller's data scope, else 404 (also for another tenant's id); candidates filtered with the findings-list scope rules |
 
 Reporter text is untrusted: it is stored as data, rendered only through the
-markdown sanitiser, and `bug_bounty` findings are never sent to AI triage
-automatically (RFC-121 D13).
+markdown sanitiser, and `bug_bounty` findings go to AI triage only when a
+person asks (RFC-121 D13). The AI triage service enforces it on every entry
+path (`internal/app/aitriage/bounty_policy.go`): auto-triage queues nothing, a
+request or bulk request without a user (a workflow action, an API key without
+a user) is refused with 403 `AI_POLICY_RESTRICTED`, and the worker fails a row
+queued without a requesting person before the model call. A person's request
+is answered, but the verdict starts nothing on its own: no false-positive
+proposal and no `ai_triage_completed` workflow event.
+
+The (intake, ref) identity is unique per organisation, not per data scope:
+a restricted member who creates a report whose identity another finding
+already holds gets 409 without that finding's id, asset or title. The one
+bit it reveals ("this report id is already filed") is the cost of
+idempotent re-imports.
 
 ## Duplicate candidates
 
@@ -120,7 +157,7 @@ omitted when there is nothing to compare. The person then uses
 |---|---|
 | RFC and this page | Done |
 | Report value object and the unique index | Done (`pkg/domain/vulnerability/bounty_report.go`, migration `findings_bounty_report_ref_unique`) |
-| Report fields on create and update (triage gate, audit) | Designed |
+| Report fields on create and update (triage gate, audit) | Done (`internal/app/finding/bounty_report.go`, `PUT /api/v1/findings/{id}/bounty-report`) |
 | ctis `bounty_report` converter (JSON, CSV) | Designed |
 | Duplicate candidates endpoint | Done (`GET /api/v1/findings/{id}/duplicate-candidates`) |
 | Web Report section and candidates panel | Designed |
