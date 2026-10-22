@@ -52,7 +52,7 @@ func (h *CredentialImportHandler) buildAuditContext(r *http.Request) auditapp.Au
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    clientIP,
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 }
 

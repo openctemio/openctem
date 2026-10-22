@@ -161,7 +161,7 @@ func (h *EASMSettingsHandler) actx(r *http.Request) auditapp.AuditContext {
 	ctx := r.Context()
 	return auditapp.AuditContext{
 		TenantID: middleware.MustGetTenantID(ctx), ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
 }
 
