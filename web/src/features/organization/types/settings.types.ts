@@ -71,6 +71,8 @@ export interface SecuritySettings {
   sso_exceptions?: SSOException[]
   /** SSO newcomers wait for an administrator's approval (api RFC-058). */
   jit_requires_approval?: boolean
+  /** A sign-in through the organization's own IdP must carry its MFA proof. */
+  sso_require_mfa_evidence?: boolean
 }
 
 export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
@@ -102,6 +104,7 @@ export interface UpdateSecuritySettingsInput {
   /** Replaces the whole list. */
   sso_exceptions?: SSOException[]
   jit_requires_approval?: boolean
+  sso_require_mfa_evidence?: boolean
 }
 
 // ============================================

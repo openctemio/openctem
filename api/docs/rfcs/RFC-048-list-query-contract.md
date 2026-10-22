@@ -129,7 +129,9 @@ export / report / alert / MCP tool input                   ──┘            
 
 A field declares the operators it allows; anything else is `INVALID_FILTER`.
 Times are RFC 3339 or `YYYY-MM-DD` (midnight UTC; `_lte` on a date means end
-of day) or a negative ISO 8601 duration relative to now (`-P30D`, `-PT12H`).
+of day) or an ISO 8601 duration relative to now: negative is ago (`-P30D`,
+`-PT12H`), unsigned or `+` is ahead (`P30D`, `+P1W`; for future dates such as
+`acceptance_expires_at_lte=P30D`, added 2026-10-22).
 GET semantics are simple: every param is ANDed and a comma list is OR within
 one field. OR across fields and nesting exist only in the POST document.
 
@@ -190,7 +192,8 @@ one field. OR across fields and nesting exist only in the POST document.
 | Value length | 200; `q` 255 |
 | POST body | 32 KB, enforced before JSON decoding |
 | Statement timeout | 5 s for list/stats/groups, 60 s for export |
-| Rate | `…/search` and export in the per-user API bucket; one concurrent export per user |
+| Rate | `…/search` and export in the per-user API bucket; one concurrent export per user across replicas (database lock) |
+| Export rows | 10,000 per request, in the list's sort, allowlisted fields only (larger exports: background operation, not built yet) |
 
 ```json
 {
@@ -217,7 +220,10 @@ capped at 64 characters.
   known-safe characters and length; anything else is `other`), and the
   response carries `Deprecation` plus a `Warning: 299 - "unknown query
   parameter …"` header.
-- **`strict`**: `400 INVALID_FILTER`.
+- **`strict`**: `400 INVALID_FILTER`, `details[].reason` `"unknown filter"`.
+  The findings list, stats, groups and export are strict since 2026-10-22
+  (the warn window closed early; the web console sends only registry names,
+  pinned by `TestFindingFields_WebParamsParseStrict`).
 - Old param names (`severities`, `exclude_statuses`, `epss_min`, `search`, …)
   are **aliases**: accepted, mapped to the new field, answered with
   `Deprecation`/`Sunset` (RFC 9745 / RFC 8594) and counted in
