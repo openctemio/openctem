@@ -5,7 +5,8 @@
   `SELECTION_CHANGED` with the new count otherwise). The cap is 10,000 findings. Up to 1,000 run in the request; more
   run in the background as an operation.
 - False positive, accepted risk and duplicate are never set by filter. A closing status needs step-up and a note.
-- Each organization may change 20,000 findings by filter per hour. Each person may have one operation running.
+- Each organization may change 20,000 findings by filter per hour (checked under a per-tenant lock, so concurrent
+  requests cannot overrun it). Each person may have one operation running.
 - Every run writes summary audit rows, and every changed finding gets its own row.
 - `GET /operations/{id}` reads an operation (creator only). New table `operations`, migration `003288_operations`
   (new and empty; no change to existing tables).

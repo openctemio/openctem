@@ -37,6 +37,10 @@ const operationColumns = `id, tenant_id, created_by, kind,
 
 const operationSelect = "SELECT " + operationColumns + " FROM operations"
 
+// operationBudgetLockSQL serializes budgeted creates of one tenant ($1) until
+// the creating transaction ends.
+const operationBudgetLockSQL = `SELECT pg_advisory_xact_lock(hashtextextended('operations:budget:' || $1, 0))`
+
 func scanOperation(row interface{ Scan(...any) error }) (*operation.Operation, error) {
 	var op operation.Operation
 	var id, tenantID, createdBy, kind, status string
@@ -72,7 +76,7 @@ func scanOperation(row interface{ Scan(...any) error }) (*operation.Operation, e
 }
 
 // Create inserts a running operation (see operation.Store).
-func (r *OperationRepository) Create(ctx context.Context, op *operation.Operation) (*operation.Operation, bool, error) {
+func (r *OperationRepository) Create(ctx context.Context, op *operation.Operation, budget operation.Budget) (*operation.Operation, bool, error) {
 	if op.IdempotencyKey != "" {
 		prev, err := r.ByKey(ctx, op.TenantID, op.CreatedBy, op.IdempotencyKey)
 		if err == nil {
@@ -97,6 +101,20 @@ func (r *OperationRepository) Create(ctx context.Context, op *operation.Operatio
 		  AND updated_at < now() - `+operationStaleSQL,
 		op.TenantID.String(), op.CreatedBy.String()); err != nil {
 		return nil, false, fmt.Errorf("expire stale operations: %w", err)
+	}
+	if budget.Max > 0 {
+		// One creator at a time per tenant reads the total and inserts, so
+		// two people (or two replicas) cannot both fit under the budget.
+		if _, err := tx.ExecContext(ctx, operationBudgetLockSQL, op.TenantID.String()); err != nil {
+			return nil, false, fmt.Errorf("lock operation budget: %w", err)
+		}
+		used, err := rowsSince(ctx, tx, op.TenantID, budget.Kinds, budget.Since)
+		if err != nil {
+			return nil, false, err
+		}
+		if used+op.Total > budget.Max {
+			return nil, false, operation.ErrBudget
+		}
 	}
 	var key any
 	if op.IdempotencyKey != "" {
@@ -187,15 +205,15 @@ func (r *OperationRepository) Finish(ctx context.Context, tenantID, id shared.ID
 	return nil
 }
 
-// RowsSince sums the items of the tenant's operations of these kinds
+// rowsSince sums the items of the tenant's operations of these kinds
 // created after since.
-func (r *OperationRepository) RowsSince(ctx context.Context, tenantID shared.ID, kinds []operation.Kind, since time.Time) (int, error) {
+func rowsSince(ctx context.Context, tx *sql.Tx, tenantID shared.ID, kinds []operation.Kind, since time.Time) (int, error) {
 	ks := make([]string, len(kinds))
 	for i, k := range kinds {
 		ks[i] = string(k)
 	}
 	var n int
-	if err := r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total), 0) FROM operations
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(total), 0) FROM operations
 		WHERE tenant_id = $1 AND kind = ANY($2) AND created_at > $3`,
 		tenantID.String(), pq.Array(ks), since).Scan(&n); err != nil {
 		return 0, fmt.Errorf("sum operation rows: %w", err)

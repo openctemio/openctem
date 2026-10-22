@@ -90,7 +90,17 @@ var (
 	ErrBusy = errors.New("you already have an operation running; wait for it to finish")
 	// ErrIdempotencyMismatch: the idempotency key was used with another request.
 	ErrIdempotencyMismatch = errors.New("idempotency key was already used with a different request")
+	// ErrBudget: the new operation would take the tenant over its budget.
+	ErrBudget = errors.New("the organization's budget for this kind of operation is spent")
 )
+
+// Budget bounds the items a tenant's operations of Kinds may total since
+// Since, the new one included. Max 0 means no budget.
+type Budget struct {
+	Kinds []Kind
+	Since time.Time
+	Max   int
+}
 
 // Store persists operations. Every read and write is bound to the tenant
 // and the creator.
@@ -99,8 +109,10 @@ type Store interface {
 	// and idempotency key) returns the existing row and replay=true, or
 	// ErrIdempotencyMismatch when its request hash differs. A creator with a
 	// running operation gets ErrBusy (a stale one is marked interrupted
-	// first).
-	Create(ctx context.Context, op *Operation) (stored *Operation, replay bool, err error)
+	// first). With a budget, the tenant's total is checked and the row
+	// inserted under one per-tenant lock, so concurrent creators (other
+	// people, other replicas) cannot overrun it together: ErrBudget.
+	Create(ctx context.Context, op *Operation, budget Budget) (stored *Operation, replay bool, err error)
 	// ByKey reads the creator's operation with this idempotency key.
 	ByKey(ctx context.Context, tenantID, createdBy shared.ID, key string) (*Operation, error)
 	// Get reads one operation of the creator.
@@ -109,7 +121,4 @@ type Store interface {
 	Advance(ctx context.Context, tenantID, id shared.ID, p Progress) error
 	// Finish ends an operation with a final status.
 	Finish(ctx context.Context, tenantID, id shared.ID, status Status, p Progress, errMsg string) error
-	// RowsSince sums the items of the tenant's operations of these kinds
-	// created after since (the hourly bulk budget).
-	RowsSince(ctx context.Context, tenantID shared.ID, kinds []Kind, since time.Time) (int, error)
 }
