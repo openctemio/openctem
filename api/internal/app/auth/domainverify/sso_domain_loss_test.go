@@ -46,6 +46,15 @@ func TestReverifyDue_LapsedSSODomainAlertsOnce(t *testing.T) {
 		t.Fatalf("expected one alert for the lapsed tenant's domain, got %v %v", loss.tenants, loss.domains)
 	}
 
+	// The lapsed domain no longer satisfies the precondition of turning SSO
+	// enforcement on; the healthy tenant's still does.
+	if ok, err := svc.HasVerifiedSSODomain(context.Background(), lapsed); err != nil || ok {
+		t.Fatalf("a lapsed domain must not count as verified for SSO: %v %v", ok, err)
+	}
+	if ok, _ := svc.HasVerifiedSSODomain(context.Background(), healthy); !ok {
+		t.Fatal("the healthy tenant's domain still counts")
+	}
+
 	// Still failing on the next sweep: no repeat.
 	if _, err := svc.ReverifyDue(context.Background(), 0, 100); err != nil {
 		t.Fatal(err)
