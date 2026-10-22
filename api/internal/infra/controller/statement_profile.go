@@ -119,6 +119,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"StalledRunRepairController":       SQLLight,
 	"TaskTicketController":             SQLLight,
 	"TeamMembershipExpiryController":   SQLLight,
+	"ServiceKeyCreatorController":      SQLLight,
 	"VersionCheckController":           SQLLight,
 	"VEXRequestNoticeController":       SQLLight,
 	"VEXStatementExpiryController":     SQLLight,
