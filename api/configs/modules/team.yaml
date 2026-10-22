@@ -12,6 +12,7 @@
   jobs:
     - MemberAccessExpiryController
     - TeamMembershipExpiryController
+    - ServiceKeyCreatorController
     - AccessRequestRetentionController
     - SignupEventRetentionController
     - RoleSyncController

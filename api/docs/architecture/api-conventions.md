@@ -132,6 +132,7 @@ POST /{collection}/{verb}            (collection-wide)
   - `resolve` / `reopen`
   - `suspend` / `reactivate`
   - `revoke`, `rotate`, `claim`, `release`, `start`, `complete`, `fail`
+  - `refresh` (recompute stored results now, such as a dashboard snapshot)
 - Adding a verb is a reviewed change to the lint's list.
 - Do not use a verb when the change is plain state with no side effects.
   `PATCH /notifications/{id}` with `{ "read": true }` is better than

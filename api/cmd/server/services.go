@@ -55,6 +55,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/assignment"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
+	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/participation"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
@@ -683,7 +684,9 @@ type Services struct {
 
 	// Per-user customizable dashboards (RFC-021)
 	UserDashboard *dashboardapp.Service
-	SavedView     *savedviewapp.Service
+	// DashboardWidgets computes widget results and keeps their snapshots.
+	DashboardWidgets *dashwidgets.Service
+	SavedView        *savedviewapp.Service
 
 	// Integrations & Notifications
 	Integration    *integration.IntegrationService
@@ -768,6 +771,8 @@ type Services struct {
 	// Permission Sync
 	PermVersion *accesscontrol.PermissionVersionService
 	PermCache   *accesscontrol.PermissionCacheService
+	// ServiceKeyGate ties service-account keys to their creator's access.
+	ServiceKeyGate apikey.ServiceKeyGate
 
 	// Membership cache (Redis-backed wrapper around tenant.Repository
 	// .GetMembership). Read by RequireMembership +
@@ -1249,6 +1254,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.UserDashboard.SetLimitReader(s.Entitlement)
 	s.UserDashboard.SetMembershipReader(repos.Tenant)
 	s.UserDashboard.SetSettingsStore(s.Tenant)
+	// Widget results from the fact tables, stored as snapshots.
+	s.DashboardWidgets = dashwidgets.NewService(s.UserDashboard, s.DataScope, repos.DashboardWidget, log)
+	s.DashboardWidgets.SetSnapshots(repos.DashboardSnapshot, repos.UserDashboard, repos.Tenant, s.Tenant)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
@@ -2876,6 +2884,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {
 		s.APIKey.SetHolderPermissions(apikey.NewHolderPermissions(repos.Tenant, s.PermCache))
+		// A service-account key answers to the person who minted it. The holder
+		// reads the role tables directly (no cache): a team membership ends by
+		// the clock, which no cache invalidation can signal.
+		// No organization gate here: Authenticate already checks the key's
+		// organization, and the sweep must not revoke keys over an organization
+		// suspension that may be lifted.
+		gateMembers := apikey.NewMembershipChecker(repos.Tenant, repos.User, nil)
+		gateHolder := apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role})
+		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
+		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
 	}
 
 	// Wire permission services to tenant service
@@ -3740,4 +3758,21 @@ func (a assetRiskGovernor) GovernRisk(ctx context.Context, in asset.RiskGovernIn
 		Actor: in.Actor, CanApprove: in.CanApprove, Reason: in.Reason, Audit: in.Audit,
 	})
 	return asset.RiskGovernOutcome{Held: out.Held}, err
+}
+
+// rolePermissionSource reads a user's effective permissions straight from the
+// role tables (direct roles and active, unexpired team bindings), skipping the
+// permission cache.
+type rolePermissionSource struct{ roles role.Repository }
+
+func (r rolePermissionSource) GetPermissionsWithFallback(ctx context.Context, tenantID, userID string) ([]string, error) {
+	tid, err := role.ParseID(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	uid, err := role.ParseID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return r.roles.GetUserPermissions(ctx, tid, uid)
 }
