@@ -2,6 +2,7 @@ package asset
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/mail"
 	"strings"
@@ -166,7 +167,15 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 	}
 
 	s.logger.Info("asset group created", "id", group.ID(), "name", logger.SanitizeValue(input.Name))
-	return s.readerView(ctx, tenantID, group)
+	view, err := s.readerView(ctx, tenantID, group)
+	if errors.Is(err, shared.ErrNotFound) {
+		// A restricted creator's group with none of their assets is not
+		// visible to them yet; they still get what they just wrote, less
+		// the owner email no restricted caller is shown.
+		group.HideOwnerEmail()
+		return group, nil
+	}
+	return view, err
 }
 
 // GetAssetGroup retrieves an asset group by tenant and ID, as the caller
@@ -184,15 +193,23 @@ func (s *AssetGroupService) GetAssetGroup(ctx context.Context, tenantIDStr strin
 	return s.readerView(ctx, tenantID, group)
 }
 
-// readerView returns group with the counts the caller may see. An
-// unrestricted caller gets the stored row; a restricted one gets the group
-// re-read with the counts computed over the members in their data scope.
-// Every handler response that carries a group goes through it.
+// readerView returns group as the caller may see it. An unrestricted caller
+// gets the stored row; a restricted one gets the group re-read with the
+// counts computed over the members in their data scope and without the
+// owner email, or shared.ErrNotFound when the group is not visible to them
+// (research/233 D4: none of its members is in their scope and no scope rule
+// of their teams names it). Every handler response that carries a group
+// goes through it.
 func (s *AssetGroupService) readerView(ctx context.Context, tenantID shared.ID, group *assetgroupdom.AssetGroup) (*assetgroupdom.AssetGroup, error) {
 	scope, err := s.dataScope.Resolve(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
+	return s.viewAs(ctx, tenantID, group, scope)
+}
+
+// viewAs is readerView for a resolved scope.
+func (s *AssetGroupService) viewAs(ctx context.Context, tenantID shared.ID, group *assetgroupdom.AssetGroup, scope *shared.DataScope) (*assetgroupdom.AssetGroup, error) {
 	if scope == nil {
 		return group, nil
 	}
@@ -206,7 +223,68 @@ func (s *AssetGroupService) readerView(ctx context.Context, tenantID shared.ID, 
 	if len(res.Data) == 0 {
 		return nil, shared.ErrNotFound
 	}
-	return res.Data[0], nil
+	view := res.Data[0]
+	if scope.Restricted() {
+		view.HideOwnerEmail()
+	}
+	return view, nil
+}
+
+// visibleGroup returns the caller's scope when they may see the group of
+// the tenant, and shared.ErrNotFound otherwise (another tenant's, unknown, or not
+// visible to a restricted caller): the read paths of one group (its
+// members, its findings) answer 404 for a group the caller cannot see.
+func (s *AssetGroupService) visibleGroup(ctx context.Context, tenantIDStr string, groupID shared.ID) (*shared.DataScope, error) {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	group, err := s.repo.GetByTenantAndID(ctx, tenantID, groupID)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope.Restricted() {
+		if _, err := s.viewAs(ctx, tenantID, group, scope); err != nil {
+			return nil, err
+		}
+	}
+	return scope, nil
+}
+
+// writableGroup loads the group of the tenant for a change by the caller. A
+// restricted caller may change a group visible to them, or an empty one (a
+// group they just created holds none of their assets yet); any other group
+// answers shared.ErrNotFound, as a read does. It also reports whether the
+// caller is restricted, so an update keeps the owner email they cannot see.
+func (s *AssetGroupService) writableGroup(ctx context.Context, tenantID, groupID shared.ID) (*assetgroupdom.AssetGroup, bool, error) {
+	group, err := s.repo.GetByTenantAndID(ctx, tenantID, groupID)
+	if err != nil {
+		return nil, false, err
+	}
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, false, fmt.Errorf("resolve data scope: %w", err)
+	}
+	if !scope.Restricted() {
+		return group, false, nil
+	}
+	if _, err := s.viewAs(ctx, tenantID, group, scope); err == nil {
+		return group, true, nil
+	} else if !errors.Is(err, shared.ErrNotFound) {
+		return nil, true, err
+	}
+	members, err := s.repo.GetGroupAssets(ctx, groupID, pagination.New(1, 1), nil)
+	if err != nil {
+		return nil, true, err
+	}
+	if members.Total > 0 {
+		return nil, true, shared.ErrNotFound
+	}
+	return group, true, nil
 }
 
 // UpdateAssetGroup updates an existing asset group.
@@ -215,9 +293,14 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	group, err := s.repo.GetByTenantAndID(ctx, tenantID, id)
+	group, restricted, err := s.writableGroup(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
+	}
+	if restricted {
+		// The owner email is hidden from a restricted caller, so their
+		// edit form never holds it: keep the stored value.
+		input.OwnerEmail = nil
 	}
 
 	if input.Name != nil {
@@ -284,7 +367,13 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	}
 
 	s.logger.Info("asset group updated", "id", id)
-	return s.readerView(ctx, tenantID, group)
+	view, err := s.readerView(ctx, tenantID, group)
+	if errors.Is(err, shared.ErrNotFound) {
+		// An empty group a restricted caller may change but not see.
+		group.HideOwnerEmail()
+		return group, nil
+	}
+	return view, err
 }
 
 // DeleteAssetGroup deletes an asset group within the given tenant scope.
@@ -293,6 +382,9 @@ func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, tenantIDStr st
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	if _, _, err := s.writableGroup(ctx, tenantID, id); err != nil {
+		return err
 	}
 	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
 		return err
@@ -364,8 +456,9 @@ func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAsset
 
 	page := pagination.New(input.Page, input.PerPage)
 
-	// A restricted reader's counts, risk, findings (and the filters and
-	// sorts on them) cover only the members in their data scope (L-18).
+	// A restricted reader lists only the groups visible to them, and their
+	// counts, risk, findings (and the filters and sorts on them) cover only
+	// the members in their data scope (L-18).
 	if tid, err := shared.IDFromString(input.TenantID); err == nil {
 		scope, err := s.dataScope.Resolve(ctx, tid)
 		if err != nil {
@@ -377,6 +470,11 @@ func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAsset
 	result, err := s.repo.List(ctx, filter, opts, page)
 	if err != nil {
 		return nil, err
+	}
+	if filter.DataScope.Restricted() {
+		for _, g := range result.Data {
+			g.HideOwnerEmail()
+		}
 	}
 
 	return &ListAssetGroupsOutput{
@@ -452,20 +550,19 @@ func (s *AssetGroupService) memberAssetIDs(ctx context.Context, tenantID shared.
 	return ids, nil
 }
 
-// verifyGroupTenant ensures the group belongs to the given tenant before any
-// membership operation. The asset_group_members queries are keyed only by
-// group_id (the join table has no tenant_id), so without this guard a caller
-// could read or mutate another tenant's group by supplying its UUID (IDOR).
-// Returns assetgroup.ErrNotFound (→ 404) when the group is not in the tenant.
+// verifyGroupTenant ensures the group belongs to the given tenant, and that
+// a restricted caller may change it (writableGroup), before any membership
+// change. The asset_group_members queries are keyed only by group_id (the
+// join table has no tenant_id), so without this guard a caller could mutate
+// another tenant's group by supplying its UUID (IDOR). Returns
+// shared.ErrNotFound (→ 404) otherwise.
 func (s *AssetGroupService) verifyGroupTenant(ctx context.Context, tenantIDStr string, groupID shared.ID) error {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
-	if _, err := s.repo.GetByTenantAndID(ctx, tenantID, groupID); err != nil {
-		return err
-	}
-	return nil
+	_, _, err = s.writableGroup(ctx, tenantID, groupID)
+	return err
 }
 
 // AddAssetsToGroup adds assets to a group.
@@ -570,13 +667,10 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID 
 
 // GetGroupAssets retrieves assets in a group.
 func (s *AssetGroupService) GetGroupAssets(ctx context.Context, tenantID string, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupAsset], error) {
-	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
-		return pagination.Result[*assetgroupdom.GroupAsset]{}, err
-	}
-	tid, _ := shared.IDFromString(tenantID) // validated by verifyGroupTenant
-	scope, err := s.dataScope.Resolve(ctx, tid)
+	// A group the caller cannot see answers 404, not an empty page.
+	scope, err := s.visibleGroup(ctx, tenantID, groupID)
 	if err != nil {
-		return pagination.Result[*assetgroupdom.GroupAsset]{}, fmt.Errorf("resolve data scope: %w", err)
+		return pagination.Result[*assetgroupdom.GroupAsset]{}, err
 	}
 	page := pagination.New(pageNum, perPage)
 	return s.repo.GetGroupAssets(ctx, groupID, page, scope)
@@ -584,13 +678,10 @@ func (s *AssetGroupService) GetGroupAssets(ctx context.Context, tenantID string,
 
 // GetGroupFindings retrieves findings for assets in a group.
 func (s *AssetGroupService) GetGroupFindings(ctx context.Context, tenantID string, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupFinding], error) {
-	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
-		return pagination.Result[*assetgroupdom.GroupFinding]{}, err
-	}
-	tid, _ := shared.IDFromString(tenantID) // validated by verifyGroupTenant
-	scope, err := s.dataScope.Resolve(ctx, tid)
+	// A group the caller cannot see answers 404, not an empty page.
+	scope, err := s.visibleGroup(ctx, tenantID, groupID)
 	if err != nil {
-		return pagination.Result[*assetgroupdom.GroupFinding]{}, fmt.Errorf("resolve data scope: %w", err)
+		return pagination.Result[*assetgroupdom.GroupFinding]{}, err
 	}
 	page := pagination.New(pageNum, perPage)
 	return s.repo.GetGroupFindings(ctx, groupID, page, scope)

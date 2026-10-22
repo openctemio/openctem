@@ -203,7 +203,7 @@ func TestParseValuesDates(t *testing.T) {
 			}
 		}
 	}
-	for _, bad := range []string{"-P", "-PT", "-P0D", "P30D", "-P99999W", "yesterday", "2026-13-01"} {
+	for _, bad := range []string{"-P", "-PT", "-P0D", "P", "+P0D", "P99999W", "-P99999W", "--P1D", "yesterday", "2026-13-01"} {
 		fe := parseErr(t, "last_seen_at_gte="+url.QueryEscape(bad), testOpts())
 		if fe.Details[0].Param != "last_seen_at_gte" {
 			t.Fatalf("%q: %+v", bad, fe.Details)
@@ -263,7 +263,7 @@ func TestUnknownParamWarnAndStrict(t *testing.T) {
 		t.Fatalf("warn mode should record unknown params, got %v", s.UnknownParams)
 	}
 	fe := parseErr(t, "severity=high&source_id=abc", Options{Unknown: UnknownStrict})
-	if fe.Details[0].Param != "source_id" || fe.Details[0].Reason != "unknown parameter" {
+	if fe.Details[0].Param != "source_id" || fe.Details[0].Reason != ReasonUnknownFilter {
 		t.Fatalf("strict: %+v", fe.Details)
 	}
 	// A known field with an operator it does not allow is unknown too.
@@ -807,5 +807,57 @@ func TestOverlay(t *testing.T) {
 	if fmt.Sprint(got["severity"]) != "[low]" || fmt.Sprint(got["status"]) != "[new]" || len(got["rule_id"]) != 1 ||
 		len(got["is_in_kev"]) != 1 || out.Q != "x" || len(out.Sort) != 1 || out.Page != 2 {
 		t.Fatalf("overlay: %v q=%q sort=%v page=%d", got, out.Q, out.Sort, out.Page)
+	}
+}
+
+func TestParseRelativeTimeAheadAndAgo(t *testing.T) {
+	for raw, want := range map[string]time.Time{
+		"-P30D": fixedNow.Add(-30 * 24 * time.Hour),
+		"P30D":  fixedNow.Add(30 * 24 * time.Hour),
+		"+P1W":  fixedNow.Add(7 * 24 * time.Hour),
+		"PT2H":  fixedNow.Add(2 * time.Hour),
+	} {
+		s := mustParse(t, "last_seen_at_lte="+url.QueryEscape(raw), testOpts())
+		if got := s.Leaves()[0].Values[0].(time.Time); !got.Equal(want.UTC()) {
+			t.Errorf("%s = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func TestCompileFacets(t *testing.T) {
+	reg := testRegistry(t)
+	base := mustParse(t, "severity=high", testOpts())
+	facets := []*Spec{
+		mustParse(t, "status=new", testOpts()),
+		mustParse(t, "related_to=me&is_in_kev=true", testOpts()),
+		{},
+		mustParse(t, "q=log4j", testOpts()),
+	}
+	w, preds, err := CompileFacets(base, facets, reg, memberActor(t))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if !strings.HasPrefix(w.SQL, "f.tenant_id = $1") || !strings.Contains(w.SQL, "user_accessible_assets") {
+		t.Fatalf("base is not scoped: %s", w.SQL)
+	}
+	if len(preds) != 4 || preds[2] != "TRUE" {
+		t.Fatalf("preds: %q", preds)
+	}
+	// Every placeholder of the predicates is bound in w.Args, after the base's.
+	all := w.SQL + " " + strings.Join(preds, " ")
+	for i := 1; i <= len(w.Args); i++ {
+		if !strings.Contains(all, "$"+strconv.Itoa(i)) {
+			t.Errorf("$%d unused", i)
+		}
+	}
+	if strings.Contains(all, "$"+strconv.Itoa(len(w.Args)+1)) || w.NextArg != len(w.Args)+1 {
+		t.Fatalf("unbound placeholder: %s args=%d next=%d", all, len(w.Args), w.NextArg)
+	}
+	// A permission-gated field is refused in a facet exactly as in Compile.
+	if _, _, err := CompileFacets(&Spec{}, []*Spec{mustParse(t, "pentest_note=x", testOpts())}, reg, memberActor(t)); err == nil {
+		t.Fatal("a facet used a field the caller may not use")
+	}
+	if _, _, err := CompileFacets(&Spec{}, []*Spec{nil}, reg, memberActor(t)); err == nil {
+		t.Fatal("nil facet accepted")
 	}
 }

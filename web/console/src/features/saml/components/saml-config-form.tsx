@@ -277,6 +277,9 @@ export function SamlConfigForm({
                       placeholder={'-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----'}
                       className="min-h-[140px] font-mono text-xs"
                     />
+                    {data?.certificate_not_after && (
+                      <CertificateExpiry notAfter={data.certificate_not_after} />
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -439,5 +442,41 @@ export function SamlConfigForm({
         handleConfirm={() => void handleDelete()}
       />
     </div>
+  )
+}
+
+/** The stored certificate's expiry; highlighted within 30 days. */
+function CertificateExpiry({ notAfter }: { notAfter: string }) {
+  const { t } = useTranslation()
+  const [now] = useState(() => Date.now())
+  const at = new Date(notAfter)
+  if (Number.isNaN(at.getTime())) return null
+  const days = Math.ceil((at.getTime() - now) / 86_400_000)
+  const date = at.toISOString().slice(0, 10)
+  if (days <= 0) {
+    return (
+      <p className="text-destructive text-xs" role="status">
+        {t('admin.samlConfigForm.certificateExpired', 'The stored certificate expired on {date}.', {
+          date,
+        })}
+      </p>
+    )
+  }
+  return (
+    <p
+      className={
+        days <= 30 ? 'text-xs text-amber-600 dark:text-amber-400' : 'text-muted-foreground text-xs'
+      }
+      role="status"
+    >
+      {t(
+        'admin.samlConfigForm.certificateExpires',
+        'The stored certificate expires on {date} ({days} days).',
+        {
+          date,
+          days,
+        }
+      )}
+    </p>
   )
 }

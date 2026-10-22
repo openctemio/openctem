@@ -283,7 +283,9 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !inTenant {
-			apierror.Forbidden("user_id does not belong to this tenant").WriteJSON(w)
+			// One answer for a user of another tenant, an unknown id and an
+			// inactive member, so the response never says which ids exist.
+			apierror.NotFound("User").WriteJSON(w)
 			return
 		}
 		ao, err = accesscontrol.NewAssetOwnerForUser(parsedAssetID, userID, ownershipType, assignedBy)
@@ -312,7 +314,8 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !inTenant {
-			apierror.Forbidden("group_id does not belong to this tenant").WriteJSON(w)
+			// Same answer for a foreign group and an unknown id.
+			apierror.NotFound("Group").WriteJSON(w)
 			return
 		}
 		ao, err = accesscontrol.NewAssetOwnerForGroup(parsedAssetID, groupID, ownershipType, assignedBy)
@@ -572,7 +575,7 @@ func (h *AssetOwnerHandler) auditOwnerAccess(r *http.Request, action auditdom.Ac
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	event := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeAsset, assetID.String()).
 		WithMessage(msg).
