@@ -27,6 +27,7 @@ import en_automations from './en/automations.json'
 import en_common from './en/common.json'
 import en_dashboardMetrics from './en/dashboardMetrics.json'
 import en_dashboardKit from './en/dashboardKit.json'
+import en_dashboards from './en/dashboards.json'
 import en_components from './en/components.json'
 import en_confirm from './en/confirm.json'
 import en_contentCatalog from './en/contentCatalog.json'
@@ -100,6 +101,7 @@ import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
 import vi_dashboardMetrics from './vi/dashboardMetrics.json'
 import vi_dashboardKit from './vi/dashboardKit.json'
+import vi_dashboards from './vi/dashboards.json'
 import vi_components from './vi/components.json'
 import vi_confirm from './vi/confirm.json'
 import vi_contentCatalog from './vi/contentCatalog.json'
@@ -178,6 +180,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   common: en_common,
   dashboardMetrics: en_dashboardMetrics,
   dashboardKit: en_dashboardKit,
+  dashboards: en_dashboards,
   components: en_components,
   confirm: en_confirm,
   contentCatalog: en_contentCatalog,
@@ -254,6 +257,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   common: vi_common,
   dashboardMetrics: vi_dashboardMetrics,
   dashboardKit: vi_dashboardKit,
+  dashboards: vi_dashboards,
   components: vi_components,
   confirm: vi_confirm,
   contentCatalog: vi_contentCatalog,

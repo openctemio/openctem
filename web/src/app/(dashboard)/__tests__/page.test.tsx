@@ -32,7 +32,10 @@ vi.mock('@/context/tenant-provider', () => ({
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useNavItemAccess: () => () => true,
+  usePermissions: () => ({ can: () => false, canAny: () => false }),
   Permission: {
+    DashboardsOrgView: 'dashboards:org:view',
+    DashboardsOrgManage: 'dashboards:org:manage',
     ScansWrite: 'scans:write',
     FindingsRead: 'findings:read',
     RemediationRead: 'remediation:read',
@@ -71,8 +74,12 @@ vi.mock('@/features/dashboard/api/dashboard-overview', () => ({
 }))
 vi.mock('@/features/dashboards/api/use-dashboards-api', () => ({
   useMyDashboards: () => ({ data: { data: [] }, isLoading: false }),
-  useRevalidateDashboards: () => async () => {},
+  useOrgDashboards: () => ({ data: undefined, isLoading: false }),
+  useRevalidateAllDashboards: () => async () => {},
   setDefaultDashboard: vi.fn(),
+  setOrgDefaultDashboard: vi.fn(),
+  setDashboardSchedule: vi.fn(),
+  duplicateOrgDashboard: vi.fn(),
   deleteDashboard: vi.fn(),
 }))
 
@@ -156,14 +163,13 @@ vi.mock('@/features/dashboard/hooks/use-ctem-dashboard', () => ({
   useCtemMaturityTrend: () => ({ data: undefined, isLoading: false }),
 }))
 
-describe('CTEM Dashboard page', () => {
+describe('Dashboard page without stored dashboards', () => {
   it('renders the action-first CTEM story sections plus the dashboard switcher header', async () => {
     render(<Dashboard />)
 
-    // Header + switcher controls (Refresh / Switch Dashboard / Options)
+    // Header + switcher (no stored dashboard yet: the built-in CTEM overview)
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
-    expect(screen.getByText('Refresh')).toBeInTheDocument()
-    expect(screen.getByText('Options')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
 
     // CTEM story
     expect(screen.getByText('Active exposure')).toBeInTheDocument()

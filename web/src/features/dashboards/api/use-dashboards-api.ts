@@ -12,7 +12,9 @@ import { get, post, put, del } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import type {
   Dashboard,
+  DashboardKind,
   DashboardListResponse,
+  DashboardRefreshSchedule,
   CreateDashboardInput,
   UpdateDashboardInput,
 } from './dashboards.types'
@@ -56,4 +58,57 @@ export function deleteDashboard(id: string) {
 
 export function setDefaultDashboard(id: string) {
   return post(`${DASHBOARDS_KEY}/${id}/default`, {})
+}
+
+export const ORG_DASHBOARDS_KEY = '/api/v1/organization/dashboards'
+
+/**
+ * The organization dashboards the caller may read (dashboards:org:view and
+ * each dashboard's audience, decided by the server). Pass `enabled: false`
+ * without the permission so no request is made.
+ */
+export function useOrgDashboards(enabled: boolean, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && enabled ? ORG_DASHBOARDS_KEY : null
+  return useSWR<DashboardListResponse>(key, fetchList, config)
+}
+
+/** Revalidate both dashboard lists (call after any mutation). */
+export function useRevalidateAllDashboards() {
+  const { mutate } = useSWRConfig()
+  return () => Promise.all([mutate(DASHBOARDS_KEY), mutate(ORG_DASHBOARDS_KEY)])
+}
+
+function basePath(kind: DashboardKind) {
+  return kind === 'organization' ? ORG_DASHBOARDS_KEY : DASHBOARDS_KEY
+}
+
+/**
+ * Sets a dashboard's refresh schedule. Empty = the organization default.
+ * Personal: the owner; organization: dashboards:org:manage.
+ */
+export function setDashboardSchedule(
+  kind: DashboardKind,
+  id: string,
+  schedule: DashboardRefreshSchedule,
+  dailyMinute?: number
+) {
+  return put<Dashboard>(`${basePath(kind)}/${id}/schedule`, {
+    refresh_schedule: schedule,
+    refresh_daily_minute: schedule === 'daily' ? (dailyMinute ?? 0) : null,
+  })
+}
+
+/** Makes an organization dashboard the organization's default (dashboards:org:manage). */
+export function setOrgDefaultDashboard(id: string) {
+  return post(`${ORG_DASHBOARDS_KEY}/${id}/default`, {})
+}
+
+/** "Duplicate to mine": a personal copy of an organization dashboard's layout. */
+export function duplicateOrgDashboard(id: string) {
+  return post<Dashboard>(DASHBOARDS_KEY, {
+    from_organization_dashboard_id: id,
+    name: '',
+    layout: [],
+  })
 }
