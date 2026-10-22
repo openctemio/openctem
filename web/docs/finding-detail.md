@@ -121,6 +121,17 @@ a data flow.
 The fix rules live in `lib/fix-guidance.ts`, the signals in `lib/finding-signals.ts`;
 both are unit-tested.
 
+## Scanner-supplied text
+
+Snippets, stack frames, data-flow steps and file paths come from scanner output and
+are untrusted. `CodeHighlighter` and the path/message texts go through
+`lib/untrusted-text.ts`: bidi and other control characters show as visible `\u{XXXX}`
+escapes (a line cannot reorder what the reader sees), and a snippet over 20,000
+characters is cut with "Show more" (the expanded view is capped at 70,000; Copy copies
+the whole text). The Related tab shows only the groups that have data (similar,
+linked, same CVE), or an empty state; the Remediation tab shows no progress header
+because the finding record carries no tracked steps.
+
 ## Known gaps
 
 - The type-specific fields are stored since #823 (columns) and #849 (the typed
