@@ -85,7 +85,7 @@ CREATE TABLE notification_outbox (
     last_error TEXT,
     processed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deliveries JSONB NOT NULL DEFAULT '[]'  -- per-channel state (migration 003287)
+    deliveries JSONB NOT NULL DEFAULT '[]'  -- per-channel state (migration 003313)
 );
 ```
 
