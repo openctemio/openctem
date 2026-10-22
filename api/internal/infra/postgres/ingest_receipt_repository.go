@@ -96,7 +96,7 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 				findings_suppressed = findings_suppressed + $13,
 				actions_recorded = actions_recorded + $14,
 				actions_truncated = actions_truncated OR $15,
-				errors = `+mergeErrorsSQL("$16")+`,
+				errors = `+mergeErrorsHead+`$16`+mergeErrorsTail+`,
 				updated_at = GREATEST(updated_at, $17)
 			WHERE tenant_id = $1 AND id = $2`,
 			d.TenantID.String(), id.String(), d.Reports, d.Received, d.AssetsCreated, d.AssetsUpdated,
@@ -270,13 +270,13 @@ func upsertIngestFact(ctx context.Context, tx *sql.Tx, d *ingestreceipt.Delta, k
 	return nil
 }
 
-// mergeErrorsSQL appends the JSON array param to errors, keeping the first
-// MaxErrors entries.
-func mergeErrorsSQL(param string) string {
-	return fmt.Sprintf(`(SELECT COALESCE(jsonb_agg(e.value ORDER BY e.ord), '[]'::jsonb)
-		FROM (SELECT value, ord FROM jsonb_array_elements(errors || %s::jsonb) WITH ORDINALITY AS x(value, ord)
-			ORDER BY ord LIMIT %d) e)`, param, ingestreceipt.MaxErrors)
-}
+// mergeErrorsHead and mergeErrorsTail wrap a JSON array parameter appended to
+// errors, keeping the first MaxErrors (100) entries; each query puts its
+// parameter number between them (string constants only).
+const mergeErrorsHead = `(SELECT COALESCE(jsonb_agg(e.value ORDER BY e.ord), '[]'::jsonb)
+		FROM (SELECT value, ord FROM jsonb_array_elements(errors || `
+const mergeErrorsTail = `::jsonb) WITH ORDINALITY AS x(value, ord)
+			ORDER BY ord LIMIT 100) e)`
 
 // CreateUpload records the start of an upload: its receipt exists before
 // anything is written, so every finding and asset it writes names an
@@ -329,7 +329,7 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 			coverage = CASE WHEN $10 = 'full' THEN 'full' ELSE coverage END,
 			coverage_note = COALESCE(NULLIF($11, ''), coverage_note),
 			findings_untouched = CASE WHEN $12::integer IS NULL THEN findings_untouched ELSE $12::integer END,
-			errors = `+mergeErrorsSQL("$13")+`,
+			errors = `+mergeErrorsHead+`$13`+mergeErrorsTail+`,
 			finished_at = now(),
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload'`,
