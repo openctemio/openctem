@@ -2400,9 +2400,10 @@ func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, 
 		WHERE ao.asset_id = $1
 		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
 		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $2))
-		ORDER BY ao.ownership_type = 'primary' DESC, ao.assigned_at ASC`
+		ORDER BY ao.ownership_type = 'primary' DESC, ao.assigned_at ASC, ao.id ASC
+		LIMIT $3`
 
-	rows, err := r.db.QueryContext(ctx, query, assetID.String(), tenantID.String())
+	rows, err := r.db.QueryContext(ctx, query, assetID.String(), tenantID.String(), maxSubResourceRows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list asset owners with names: %w", err)
 	}
@@ -2443,6 +2444,9 @@ func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, 
 			AssignedByName:   assignedByName,
 			AssignmentSource: source,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate asset owners with names: %w", err)
 	}
 	return results, nil
 }

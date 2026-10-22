@@ -74,7 +74,7 @@ func (h *ReportScheduleHandler) audit(r *http.Request, action auditdom.Action, s
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	_ = h.auditService.LogEvent(r.Context(), actx, event)
 }

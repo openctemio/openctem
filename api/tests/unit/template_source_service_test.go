@@ -62,7 +62,8 @@ func (m *tmplSrcMockRepo) GetByTenantAndID(_ context.Context, tenantID, sourceID
 		return nil, shared.NewDomainError("NOT_FOUND", "source not found", shared.ErrNotFound)
 	}
 	if !s.BelongsToTenant(tenantID) {
-		return nil, shared.NewDomainError("FORBIDDEN", "source belongs to another tenant", shared.ErrForbidden)
+		// Like the real repository (WHERE id = $1 AND tenant_id = $2).
+		return nil, shared.NewDomainError("NOT_FOUND", "source not found", shared.ErrNotFound)
 	}
 	return s, nil
 }
@@ -637,12 +638,15 @@ func TestTemplateSourceService_GetSource_WrongTenant(t *testing.T) {
 
 	src := tmplSrcAddSource(repo, tenantID, "Source A")
 
+	// Another tenant's source answers exactly like an unknown id, so the
+	// response is no existence oracle across tenants.
 	_, err := svc.GetSource(ctx, otherTenantID.String(), src.ID.String())
-	if err == nil {
-		t.Fatal("expected error when tenant does not match")
+	_, unknownErr := svc.GetSource(ctx, otherTenantID.String(), shared.NewID().String())
+	if !errors.Is(err, shared.ErrNotFound) || errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("foreign source: expected ErrNotFound only, got %v", err)
 	}
-	if !errors.Is(err, shared.ErrForbidden) {
-		t.Errorf("expected ErrForbidden, got %v", err)
+	if unknownErr == nil || err.Error() != unknownErr.Error() {
+		t.Fatalf("foreign %q and unknown %v must answer the same", err, unknownErr)
 	}
 }
 

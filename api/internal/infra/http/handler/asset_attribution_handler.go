@@ -312,7 +312,7 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 			WithSeverity(auditdom.SeverityMedium)
 		actx := auditapp.AuditContext{
 			TenantID: tenant, ActorID: userID, ActorEmail: auditActorEmail(ctx),
-			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		}
 		_ = h.audit.LogEvent(ctx, actx, event)
 		auditConfirmEntries(ctx, h.audit, actx, added, "ownership_tab")

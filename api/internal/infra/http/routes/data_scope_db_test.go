@@ -1098,10 +1098,9 @@ func TestDataScope_AssetGroupCounts_FollowReaderScope(t *testing.T) {
 			}
 		}
 	}
-	// A member with no scope row sees the group with nothing in it.
-	_, body := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/asset-groups/"+g, nil)
-	if !strings.Contains(body, `"asset_count":0`) || !strings.Contains(body, `"finding_count":0`) {
-		t.Errorf("scopeless member GET group: want zero counts (body %.400s)", body)
+	// A member with no scope row does not see the group (research/233 D4).
+	if status, body := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/asset-groups/"+g, nil); status != http.StatusNotFound {
+		t.Errorf("scopeless member GET group = %d, want 404 (body %.400s)", status, body)
 	}
 }
 

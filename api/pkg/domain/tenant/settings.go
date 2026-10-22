@@ -209,6 +209,15 @@ type SecuritySettings struct {
 	// created before keep their stored value (off) until an owner turns it
 	// on. MFARequired, when on, covers everyone anyway.
 	MFARequiredForAdmins bool `json:"mfa_required_for_admins,omitempty"`
+	// SSORequireMFAEvidence ("SSO must prove MFA"): a sign-in through the
+	// organization's own identity provider counts toward the two-factor
+	// requirement only when the provider proved a second factor in the
+	// signature-verified id_token (amr contains "mfa") or SAML assertion (a
+	// multi-factor AuthnContextClassRef). It applies to members who must use
+	// two-factor authentication (MFARequiredFor); without it, the own IdP's
+	// sign-in is trusted to own the second factor. Changed by an owner with
+	// step-up.
+	SSORequireMFAEvidence bool `json:"sso_require_mfa_evidence,omitempty"`
 	// A session_timeout_min key left in stored JSON is ignored: it was never
 	// enforced (sessions follow the platform's refresh and session lifetimes).
 	IPWhitelist    []string `json:"ip_whitelist"`    // Allowed IP addresses/CIDR ranges
