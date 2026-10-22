@@ -537,6 +537,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		repos.DashboardFacts, log.With("controller", "dashboard-facts")))
 	w.ControllerManager.Register(controller.NewDashboardFactReconcileController(
 		repos.DashboardFacts, log.With("controller", "dashboard-facts-reconcile")))
+	// Dashboard snapshots: scheduled refreshes, every minute.
+	w.ControllerManager.Register(controller.NewDashboardSnapshotsController(
+		svc.DashboardWidgets, log.With("controller", "dashboard-snapshots")))
 
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
