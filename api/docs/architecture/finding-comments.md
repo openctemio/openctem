@@ -18,7 +18,8 @@ the fact. Comments therefore keep their history.
   `finding.comment_deleted`. Nothing is removed from the activity trail. The
   activities endpoint hides the text of a deleted comment's `comment_added` and
   `comment_updated` entries and marks them `deleted: true`; the feed shows
-  "deleted a comment" in its place.
+  "deleted a comment" in its place. If the list of deleted comments cannot
+  be read, the activities request fails (500) rather than serve their text.
 - The audit event is written **before** the change; if it cannot be written the
   edit or delete is refused (fail closed).
 - Only the author can edit or delete. An unknown actor (no resolvable local
@@ -26,7 +27,11 @@ the fact. Comments therefore keep their history.
 - **Decision lock.** A comment written by a participant of an approval request
   (its requester, approver or rejecter) while that request was open, or up to
   the moment it was approved or rejected, is locked: edit and delete return 403.
-  A request that was canceled or expired decided nothing and locks nothing.
+  An accepted risk whose period has ended (expired) was still a decision and
+  keeps the lock; a decided request with no recorded decision time locks from
+  the request on. A request that was canceled decided nothing and locks
+  nothing. Severity change requests are a separate workflow and do not lock
+  comments.
   There is no link column between comments and approvals; the lock is derived
   from the finding's approval history, so it needs no migration.
 - Status-change comments stay immutable, as before.

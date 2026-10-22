@@ -144,6 +144,19 @@ func TestFindingComment_DecisionComment_IsLocked(t *testing.T) {
 		t.Errorf("edit by a non-participant: %v", err)
 	}
 
+	// An approved acceptance whose period ended (expired) was still a
+	// decision: its comments stay locked.
+	decided := time.Now().UTC().Add(time.Minute)
+	ap.Status, ap.ApprovedAt = vulnerability.ApprovalStatusExpired, &decided
+	if _, err := svc.UpdateFindingComment(ctx, tenantID.String(), mine.ID().String(), requester.String(), "rewritten"); !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("edit of an expired acceptance's comment = %v, want forbidden", err)
+	}
+	// A decided request without a decision time fails closed.
+	ap.Status, ap.ApprovedAt = vulnerability.ApprovalStatusApproved, nil
+	if err := svc.DeleteFindingComment(ctx, tenantID.String(), mine.ID().String(), requester.String()); !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("delete with no decision time = %v, want forbidden", err)
+	}
+
 	// A canceled request decided nothing: it locks nothing.
 	ap.Status = vulnerability.ApprovalStatusCanceled
 	if _, err := svc.UpdateFindingComment(ctx, tenantID.String(), mine.ID().String(), requester.String(), "now ok"); err != nil {

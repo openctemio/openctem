@@ -3,6 +3,7 @@ package finding
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -13,8 +14,9 @@ import (
 // assertCommentNotDecisionLocked refuses a change to a comment written by a
 // participant of an approval request while that request was open or after it
 // was decided. Such a comment is the justification beside a false-positive,
-// acceptance or severity decision and must not be rewritten or removed.
-// A request that was canceled or expired decided nothing and locks nothing.
+// acceptance decision and must not be rewritten or removed. A request that
+// was canceled decided nothing and locks nothing; an accepted risk whose
+// period ended (expired) was decided and stays locked.
 func (s *VulnerabilityService) assertCommentNotDecisionLocked(ctx context.Context, tenantID shared.ID, comment *vulnerability.FindingComment) error {
 	if s.approvalRepo == nil {
 		return nil
@@ -32,29 +34,28 @@ func (s *VulnerabilityService) assertCommentNotDecisionLocked(ctx context.Contex
 	return nil
 }
 
-// commentLockedByApproval reports whether the approval locks the comment.
+// commentLockedByApproval reports whether the approval locks the comment: a
+// participant's comment written from the request on, up to the decision. An
+// approved request stays a decision after its acceptance period ends
+// (expired), so it keeps its lock. A decided request with no decision time
+// locks from the request on (fail closed).
 func commentLockedByApproval(c *vulnerability.FindingComment, a *vulnerability.Approval) bool {
-	if a == nil {
+	if a == nil || !participant(a, c.AuthorID()) || c.CreatedAt().Before(a.CreatedAt) {
 		return false
 	}
-	author := c.AuthorID()
+	var decidedAt *time.Time
 	switch a.Status {
 	case vulnerability.ApprovalStatusPending:
-		// open: locked from the request on
-		return !c.CreatedAt().Before(a.CreatedAt) && participant(a, author)
-	case vulnerability.ApprovalStatusApproved:
-		if a.ApprovedAt == nil {
-			return false
-		}
-		return !c.CreatedAt().Before(a.CreatedAt) && !c.CreatedAt().After(*a.ApprovedAt) && participant(a, author)
+		return true
+	case vulnerability.ApprovalStatusApproved, vulnerability.ApprovalStatusExpired:
+		decidedAt = a.ApprovedAt
 	case vulnerability.ApprovalStatusRejected:
-		if a.RejectedAt == nil {
-			return false
-		}
-		return !c.CreatedAt().Before(a.CreatedAt) && !c.CreatedAt().After(*a.RejectedAt) && participant(a, author)
+		decidedAt = a.RejectedAt
 	default:
+		// Canceled: nothing was decided.
 		return false
 	}
+	return decidedAt == nil || !c.CreatedAt().After(*decidedAt)
 }
 
 func participant(a *vulnerability.Approval, id shared.ID) bool {

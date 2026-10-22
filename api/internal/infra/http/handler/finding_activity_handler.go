@@ -161,7 +161,14 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 	}
 
 	data := make([]FindingActivityResponse, len(result.Data))
-	deleted := h.deletedComments(r.Context(), tenantID, findingID, result.Data)
+	deleted, err := h.deletedComments(r.Context(), tenantID, findingID, result.Data)
+	if err != nil {
+		// Fail closed: without the list of deleted comments, a deleted
+		// comment's text would be served.
+		h.logger.Error("failed to look up deleted comments", "error", err)
+		apierror.InternalServerError("An unexpected error occurred").WriteJSON(w)
+		return
+	}
 	for i, a := range result.Data {
 		data[i] = hideDeletedCommentText(toFindingActivityResponse(a), deleted)
 		if access.ClientOnly {
@@ -204,9 +211,9 @@ func (h *FindingActivityHandler) handleServiceError(w http.ResponseWriter, err e
 }
 
 // deletedComments returns the ids of the comments on this page of the feed
-// that were deleted. On a lookup failure it returns nil and logs: the entries
-// then show as stored, never fewer than the caller may read.
-func (h *FindingActivityHandler) deletedComments(ctx context.Context, tenantID, findingID string, acts []*vulnerability.FindingActivity) map[string]bool {
+// that were deleted. A lookup failure is an error: the caller refuses rather
+// than serve a deleted comment's text.
+func (h *FindingActivityHandler) deletedComments(ctx context.Context, tenantID, findingID string, acts []*vulnerability.FindingActivity) (map[string]bool, error) {
 	var ids []string
 	for _, a := range acts {
 		switch a.ActivityType() {
@@ -217,14 +224,9 @@ func (h *FindingActivityHandler) deletedComments(ctx context.Context, tenantID, 
 		}
 	}
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
-	set, err := h.activityService.DeletedCommentIDs(ctx, tenantID, findingID, ids)
-	if err != nil {
-		h.logger.Warn("failed to look up deleted comments", "error", err)
-		return nil
-	}
-	return set
+	return h.activityService.DeletedCommentIDs(ctx, tenantID, findingID, ids)
 }
 
 // hideDeletedCommentText replaces the text of a deleted comment's original and
