@@ -133,6 +133,8 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
+// @Param  description  query  string  false  "description contains"
+// @Param  description_contains  query  string  false  "description contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
@@ -183,7 +185,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // end filterspec-params
 // @Param        view   query  string  false  "Saved view ID: its filter, with the other params overriding it field by field"
-// @Param        q         query  string  false  "Free text"
+// @Param        q         query  string  false  "Matches title, file path, rule id, CVE id (exact) and asset name"
 // @Param        sort      query  string  false  "Ignored by groups (accepted for URL parity with the list)"
 // @Param        page      query  int     false  "Page number"  default(1)
 // @Param        per_page  query  int     false  "Groups per page"  default(50)
@@ -293,6 +295,8 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
+// @Param  description  query  string  false  "description contains"
+// @Param  description_contains  query  string  false  "description contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
@@ -342,7 +346,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // end filterspec-params
-// @Param        q      query  string  false  "Free text"
+// @Param        q      query  string  false  "Matches title, file path, rule id, CVE id (exact) and asset name"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      400  {object}  map[string]interface{}  "INVALID_FILTER"
 // @Router       /findings/related-cves/{cveId} [get]

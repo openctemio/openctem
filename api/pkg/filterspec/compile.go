@@ -133,7 +133,8 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 		if reg.Search.Pattern {
 			v = "%" + EscapeLike(v) + "%"
 		}
-		parts = append(parts, "("+c.render(reg.Search.Template, c.bind(v))+")")
+		tpl := c.bindUpper(reg.Search.Template, spec.Q)
+		parts = append(parts, "("+c.render(tpl, c.bind(v))+")")
 	}
 	order := c.orderBy(spec.Sort)
 	if err := c.e.err(); err != nil {
@@ -384,11 +385,23 @@ func (c *compiler) template(f *Field, l *Leaf, tpl string) string {
 		ph = c.bindArray(f, l.Values)
 	case OpContains:
 		s, _ := l.Values[0].(string)
+		// A search template reused as a contains field (the query
+		// language's text term) also takes the exact value.
+		tpl = c.bindUpper(tpl, s)
 		ph = c.bind("%" + EscapeLike(s) + "%")
 	default:
 		ph = c.bindValue(f, l.Values[0])
 	}
 	return "(" + c.render(tpl, ph) + ")"
+}
+
+// bindUpper replaces UpperToken in tpl with one placeholder bound to text
+// trimmed and upper-cased (an exact identifier match, never a pattern).
+func (c *compiler) bindUpper(tpl, text string) string {
+	if !strings.Contains(tpl, UpperToken) {
+		return tpl
+	}
+	return strings.ReplaceAll(tpl, UpperToken, c.bind(strings.ToUpper(strings.TrimSpace(text))))
 }
 
 func (c *compiler) bindValue(f *Field, v any) string {
