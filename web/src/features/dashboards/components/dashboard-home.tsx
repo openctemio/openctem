@@ -57,8 +57,8 @@ export function DashboardSkeleton() {
 }
 
 // The editor (drag and drop kit) loads only when Customize is opened.
-const DashboardCanvasEditor = dynamic(
-  () => import('./dashboard-canvas-editor').then((m) => m.DashboardCanvasEditor),
+const DashboardEditor = dynamic(
+  () => import('../editor/dashboard-editor').then((m) => m.DashboardEditor),
   { ssr: false, loading: () => <DashboardSkeleton /> }
 )
 
@@ -280,7 +280,15 @@ export function DashboardHome({ empty }: DashboardHomeProps) {
             </div>
           ))
         ) : customizing ? (
-          <DashboardCanvasEditor dashboard={dashboard} onExit={() => setCustomizing(false)} />
+          <DashboardEditor
+            dashboard={dashboard}
+            kind={active.kind}
+            data={data.data}
+            onExit={(saved) => {
+              setCustomizing(false)
+              if (saved) void Promise.all([revalidate(), data.mutate()])
+            }}
+          />
         ) : (
           <>
             <DashboardFreshness

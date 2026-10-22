@@ -42,6 +42,11 @@ const RULES: { file: string; forbidden: RegExp; why: string }[] = [
     why: 'dashboard: only the default CTEM view is in the first load',
   },
   {
+    file: 'features/dashboards/components/dashboard-home.tsx',
+    forbidden: /dashboard-editor$|^@dnd-kit\//,
+    why: 'dashboard home: the editor and its drag and drop kit load when Customize opens',
+  },
+  {
     file: 'features/dashboard/components/ctem-dashboard.tsx',
     forbidden: /analyst-detail$/,
     why: 'CTEM dashboard: the analyst charts load after the cards',
