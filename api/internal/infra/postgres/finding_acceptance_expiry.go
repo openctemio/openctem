@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -199,10 +200,15 @@ func (r *FindingAcceptanceExpiryRepository) endAcceptance(ctx context.Context, d
 				return err
 			}
 		}
-		if why.audit != "" {
-			if err := insertDecisionAudit(ctx, tx, due.TenantID, due.FindingID, why.audit, "high", why.message, changes); err != nil {
-				return err
-			}
+		// Every end of an acceptance leaves an audit row (the timeline goes
+		// with the finding): the decision's own action when it has one, else
+		// the system's status change.
+		action, severity := why.audit, "high"
+		if action == "" {
+			action, severity = string(audit.ActionFindingStatusChanged), "medium"
+		}
+		if err := insertDecisionAudit(ctx, tx, due.TenantID, due.FindingID, action, severity, why.message, changes); err != nil {
+			return err
 		}
 		wrote = true
 		return nil
