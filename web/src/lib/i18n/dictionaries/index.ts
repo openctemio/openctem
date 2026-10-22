@@ -64,6 +64,7 @@ import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
 import en_ticketPolicy from './en/ticketPolicy.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
+import en_proxyPools from './en/proxyPools.json'
 import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
 import en_sensors from './en/sensors.json'
@@ -138,6 +139,7 @@ import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
 import vi_ticketPolicy from './vi/ticketPolicy.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
+import vi_proxyPools from './vi/proxyPools.json'
 import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
 import vi_sensors from './vi/sensors.json'
@@ -218,6 +220,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   ticketMapping: en_ticketMapping,
   ticketPolicy: en_ticketPolicy,
   ticketingIntegration: en_ticketingIntegration,
+  proxyPools: en_proxyPools,
   scans: en_scans,
   scope: en_scope,
   sensors: en_sensors,
@@ -295,6 +298,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   ticketMapping: vi_ticketMapping,
   ticketPolicy: vi_ticketPolicy,
   ticketingIntegration: vi_ticketingIntegration,
+  proxyPools: vi_proxyPools,
   scans: vi_scans,
   scope: vi_scope,
   sensors: vi_sensors,

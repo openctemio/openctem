@@ -23,6 +23,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -30,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/jwt"
@@ -46,6 +48,7 @@ type ctlHarness struct {
 	repo     *postgres.SensorRepository
 	cmds     *command.Service
 	results  *handler.SensorResultsV2Handler
+	egress   *proxypoolapp.Service
 	tenantID string
 	jwtToken string
 }
@@ -59,6 +62,13 @@ type ctlSensor struct {
 
 // opts configure the command service (the claim-time scope re-check).
 func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
+	t.Helper()
+	return newCtlHarnessWith(t, false, opts...)
+}
+
+// newCtlHarnessWith is newCtlHarness, with the proxy pool service wired into
+// the command service and the v2 routes when egress is true.
+func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHarness {
 	t.Helper()
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -85,6 +95,15 @@ func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
 		postgres.NewAuditRepository(db), log)
 	ingestSvc.SetReachSource(postgres.NewSensorReachRepository(db))
 	cmdRepo := postgres.NewCommandRepository(db)
+	var poolSvc *proxypoolapp.Service
+	if egress {
+		enc, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		poolSvc = proxypoolapp.NewService(postgres.NewProxyPoolRepository(db), enc, nil, log)
+		opts = append(opts, command.WithSensorLookup(sensorRepo), command.WithEgress(poolSvc))
+	}
 	cmdSvc := command.NewService(cmdRepo, log, opts...)
 	sensorSvc.SetCancelFinder(cmdRepo)
 
@@ -94,6 +113,9 @@ func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
 	ch.SetCommandLogs(commandlog.NewService(postgres.NewCommandLogRepository(db)))
 	sh := handler.NewSuppressionHandler(suppression.NewService(postgres.NewSuppressionRepository(db), log), log)
 	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, nil, log)
+	if poolSvc != nil {
+		ctl.SetEgress(poolSvc)
+	}
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), postgres.NewIngestJobRepository(db),
 		postgres.NewIngestJobRepository(db), cmdRepo, protov2.DefaultLimits(), 100, log)
 
@@ -114,7 +136,8 @@ func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
 
-	h := &ctlHarness{t: t, db: sqldb, srv: srv, sensors: sensorSvc, repo: sensorRepo, cmds: cmdSvc, results: results, jwtToken: tok}
+	h := &ctlHarness{t: t, db: sqldb, srv: srv, sensors: sensorSvc, repo: sensorRepo, cmds: cmdSvc, results: results, jwtToken: tok,
+		egress: poolSvc}
 	h.tenantID = h.newTenant()
 	return h
 }

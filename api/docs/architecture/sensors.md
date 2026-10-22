@@ -5,7 +5,8 @@
 > Protocol v2: [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (results) and
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; protocol v1 retired 2026-10-05).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
-> Proxies and network egress (proposed): [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
+> Proxies for scan traffic (proxy pools, built): [sensor-proxies.md](sensor-proxies.md);
+> the wider egress design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
 > Trust between sensors and the platform (what each side verifies about the
 > other, current gaps): [sensor-platform-trust.md](sensor-platform-trust.md),
@@ -2300,8 +2301,9 @@ platform returned; a different digest gets the action `send_config_report`.
 > (sdk-go#111, sensor#102) add `SENSOR_CONTROL_PROXY`, `SENSOR_CONTENT_PROXY`
 > (content sources, including `SafeHTTPClient`, which checks the target before
 > the proxy) and `SENSOR_SCAN_PROXY` (`inherit` or `direct`). "Today" below
-> describes sensors built on older SDKs; "Proposed" (profiles, forwarder) is
-> not built.
+> describes sensors built on older SDKs; "Proposed" (profiles per zone) is
+> not built. Scan traffic through organization proxy pools is built:
+> [sensor-proxies.md](sensor-proxies.md).
 
 A sensor sends three kinds of traffic, and RFC-034 configures each one
 separately:

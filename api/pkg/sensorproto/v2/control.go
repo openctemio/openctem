@@ -340,3 +340,56 @@ type SuppressionList struct {
 	Count int               `json:"count"`
 	Rules []SuppressionRule `json:"rules"`
 }
+
+// Proxy pools for scan traffic (docs/architecture/sensor-proxies.md). Both
+// actions live under CommandsPath + "/{command_id}" and are answered only to
+// the sensor holding the command's lease (HeaderLeaseEpoch). Protocol v3
+// does not carry them: they stay on v2 HTTPS.
+const (
+	// EgressCredentialsAction: POST, the credentials of the job's proxy pool.
+	EgressCredentialsAction = "egress-credentials"
+	// EgressReportAction: POST, the sensor's per-endpoint health report of
+	// the job, sent before complete or fail.
+	EgressReportAction = "egress-report"
+	// MaxEgressReportEndpoints bounds the endpoints of one report.
+	MaxEgressReportEndpoints = 64
+)
+
+// EgressCredentialsRequest is the body of POST /commands/{id}/egress-credentials.
+type EgressCredentialsRequest struct {
+	PoolID string `json:"pool_id"`
+}
+
+// EgressCredential is one endpoint's credentials.
+type EgressCredential struct {
+	EndpointID string `json:"endpoint_id"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+}
+
+// EgressCredentialsResponse answers POST /commands/{id}/egress-credentials:
+// the pool's endpoints that have credentials. Never stored with the command.
+type EgressCredentialsResponse struct {
+	Credentials []EgressCredential `json:"credentials"`
+}
+
+// EgressEndpointReport is what a sensor saw through one endpoint during a
+// job: connections, failures by class, the proxy handshake latency and the
+// last proxy error (no credentials).
+type EgressEndpointReport struct {
+	EndpointID        string `json:"endpoint_id"`
+	OK                int    `json:"ok"`
+	ProxyDown         int    `json:"proxy_down"`
+	ProxyAuth         int    `json:"proxy_auth"`
+	TargetUnreachable int    `json:"target_unreachable"`
+	TargetRefused     int    `json:"target_refused"`
+	HandshakeMsP50    int    `json:"handshake_ms_p50"`
+	HandshakeMsP95    int    `json:"handshake_ms_p95"`
+	LastError         string `json:"last_error"`
+}
+
+// EgressReportRequest is the body of POST /commands/{id}/egress-report.
+type EgressReportRequest struct {
+	PoolID    string                 `json:"pool_id"`
+	Endpoints []EgressEndpointReport `json:"endpoints"`
+}
