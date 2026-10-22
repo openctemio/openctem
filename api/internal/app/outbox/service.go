@@ -550,7 +550,7 @@ func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, en
 		Body:           delivery.Scrub(intg.Integration.ID(), entry.Body()),
 		Severity:       entry.Severity().String(),
 		URL:            entry.URL(),
-		IdempotencyKey: "outbox-" + entry.ID().String(),
+		IdempotencyKey: idempotencyKey(entry),
 		EventType:      entry.EventType(),
 		EventVersion:   integration.EventPayloadVersion(integration.EventType(entry.EventType())),
 		OccurredAt:     entry.CreatedAt(),
@@ -566,6 +566,18 @@ func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, en
 		msg = s.applyTemplate(msg, ext.MessageTemplate())
 	}
 	return msg
+}
+
+// idempotencyKey is "outbox-<event id>": stable across the retries of one
+// event, and a redelivery keeps the key of the event it sends again, so a
+// receiver that already processed it can recognise it.
+func idempotencyKey(entry *outboxdom.Outbox) string {
+	if orig, ok := entry.Metadata()[MetaRedeliveryOf].(string); ok {
+		if _, err := uuid.Parse(orig); err == nil {
+			return "outbox-" + orig
+		}
+	}
+	return "outbox-" + entry.ID().String()
 }
 
 // minimalTitle is the title of a message that carries no details: the event
@@ -593,7 +605,17 @@ func (s *Service) configureClientFromCredentials(
 	metadata := intg.Metadata()
 
 	switch provider {
-	case integration.ProviderSlack, integration.ProviderTeams, integration.ProviderWebhook:
+	case integration.ProviderWebhook:
+		config.WebhookURL = credentials
+		// Signed with the integration's secret (and the previous one during
+		// a rotation overlap). A stored secret that does not decrypt fails
+		// the delivery: never send unsigned to a receiver that verifies.
+		secrets, err := integration.SigningSecrets(metadata, s.credentialDecrypt, time.Now())
+		if err != nil {
+			return err
+		}
+		config.SigningSecrets = secrets
+	case integration.ProviderSlack, integration.ProviderTeams:
 		// These providers use webhook URL as credentials
 		config.WebhookURL = credentials
 	case integration.ProviderTelegram:
