@@ -62,6 +62,26 @@ triage ── GET /findings/{id}/duplicate-candidates (caller's data scope)
 - `FindingRepository.FindByBountyReport(tenant, intake, ref)` is the lookup a
   re-import or a webhook delivery uses to update the same row.
 
+### API contract (for the web console)
+
+- `FindingResponse.bounty_report` (on every finding read, omitted when the
+  finding has none) is the stored object: `intake`, `ref`, `researcher`,
+  `submitted_at`, `reported_severity`, `state`, `weakness`, `endpoint_path`,
+  `parameter`, `url`, `reward {amount, currency, status}`,
+  `disclosure {state, agreed_date}`.
+- `POST /api/v1/findings` accepts the same object as `bounty_report` with
+  `source: "bug_bounty"`.
+- `PUT /api/v1/findings/{id}/bounty-report` takes the whole object (fields
+  left out are cleared; unknown fields are refused) and returns the finding.
+  It honours `If-Match` with the finding's `row_version`.
+- Errors: 400 validation (message names the field), 403
+  `TRIAGE_PERMISSION_REQUIRED` for reward or disclosure without
+  `findings:triage`, 404 outside the caller's scope or tenant, 409 when
+  another finding holds the same intake and ref.
+- Audit action `finding.bounty_report_changed`, metadata `intake`, `ref` and
+  `changes` (`{field: {old, new}}`).
+- A `bug_bounty` finding is never queued for AI triage automatically.
+
 ## Authorization and isolation
 
 | Action | Gate | Isolation |
@@ -80,7 +100,7 @@ automatically (RFC-121 D13).
 |---|---|
 | RFC and this page | Done |
 | Report value object and the unique index | Done (`pkg/domain/vulnerability/bounty_report.go`, migration `findings_bounty_report_ref_unique`) |
-| Report fields on create and update (triage gate, audit) | Designed |
+| Report fields on create and update (triage gate, audit) | Done (`internal/app/finding/bounty_report.go`, `PUT /api/v1/findings/{id}/bounty-report`) |
 | ctis `bounty_report` converter (JSON, CSV) | Designed |
 | Duplicate candidates endpoint | Designed |
 | Web Report section and candidates panel | Designed |
