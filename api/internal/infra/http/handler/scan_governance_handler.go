@@ -210,7 +210,7 @@ func decodeGovernanceBody(w http.ResponseWriter, r *http.Request, dst any) bool 
 }
 
 func governanceAuditContext(r *http.Request) auditsvc.AuditContext {
-	actx := auditsvc.AuditContext{ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID")}
+	actx := auditsvc.AuditContext{ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context())}
 	if u := middleware.GetLocalUser(r.Context()); u != nil {
 		actx.ActorID, actx.ActorEmail = u.ID().String(), u.Email()
 	}

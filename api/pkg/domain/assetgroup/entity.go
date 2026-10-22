@@ -217,6 +217,11 @@ func (g *AssetGroup) UpdateOwner(owner, email string) {
 	g.updatedAt = time.Now().UTC()
 }
 
+// HideOwnerEmail blanks the owner email for display, without touching
+// updated_at: a reader without full data access never sees it (personal
+// data). Never persist the group after calling it.
+func (g *AssetGroup) HideOwnerEmail() { g.ownerEmail = "" }
+
 func (g *AssetGroup) SetTags(tags []string) {
 	if tags == nil {
 		tags = make([]string, 0)

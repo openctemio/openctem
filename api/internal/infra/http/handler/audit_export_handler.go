@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -225,7 +226,7 @@ func (h *AuditHandler) Export(w http.ResponseWriter, r *http.Request) {
 		ActorEmail: auditActorEmail(ctx),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	if lerr := h.service.LogExport(ctx, actx, format, used, res, err != nil); lerr != nil {
 		h.logger.Warn("audit log export event failed", "error", lerr)
@@ -251,4 +252,28 @@ func safeFileToken(v string) string {
 		}
 	}
 	return b.String()
+}
+
+// exportSlots allows one running audit log export per tenant and user on
+// this API instance, so one caller cannot tie up the database with parallel
+// dumps. (The findings export holds its slot in the database instead.)
+var exportSlots = struct {
+	sync.Mutex
+	busy map[string]bool
+}{busy: map[string]bool{}}
+
+func acquireExportSlot(key string) bool {
+	exportSlots.Lock()
+	defer exportSlots.Unlock()
+	if exportSlots.busy[key] {
+		return false
+	}
+	exportSlots.busy[key] = true
+	return true
+}
+
+func releaseExportSlot(key string) {
+	exportSlots.Lock()
+	delete(exportSlots.busy, key)
+	exportSlots.Unlock()
 }
