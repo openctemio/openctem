@@ -149,3 +149,103 @@ describe('specOf', () => {
     expect(specOf({ widget_type: 'metric', config: {} })).toBeUndefined()
   })
 })
+
+describe('CTEM shapes', () => {
+  it('maps the loop: stage names, states, reasons, second figures and the focus', () => {
+    const v: WidgetValue = {
+      id: 'w_l',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'stages',
+      metric: 'ctem.loop',
+      stages: {
+        focus: 1,
+        stages: [
+          {
+            key: 'scoping',
+            state: 'warn',
+            value: 0,
+            unit: 'count',
+            drill: '/assets?is_crown_jewel=true',
+            flag: 'designate_crown_jewels',
+          },
+          {
+            key: 'discovery',
+            state: 'not_measured',
+            reason: 'no_tracked_assets',
+            value: null,
+            unit: 'percent',
+            drill: '/assets?coverage=uncovered',
+          },
+          {
+            key: 'mobilize',
+            state: 'crit',
+            value: 61.5,
+            unit: 'percent',
+            drill: 'https://evil.example/x',
+            detail: { key: 'breached', value: 4, drill: '/findings?state=open' },
+          },
+        ],
+      },
+    }
+    const m = widgetModel(v, spec('ctem.loop'), false)
+    expect(m.state).toBe('ready')
+    if (m.result?.shape !== 'stages') throw new Error('not stages')
+    expect(m.result.focus).toBe(1)
+    const [scoping, discovery, mobilize] = m.result.stages
+    expect(scoping.label_key).toBe('dashboards.loop.stage.scoping')
+    expect(scoping.flag_key).toBe('dashboards.loop.flag.designate_crown_jewels')
+    expect(discovery.state).toBe('unmeasured')
+    expect(discovery.value).toBeNull()
+    expect(discovery.reason_key).toBe('dashboards.loop.reason.no_tracked_assets')
+    // Only same-origin lists are linked.
+    expect(mobilize.drill).toBeNull()
+    expect(mobilize.detail).toEqual({
+      label_key: 'dashboards.loop.detail.breached',
+      value: 4,
+      drill: '/findings?state=open',
+    })
+  })
+
+  it('maps attack paths: rows open their asset, an empty list is not "no data"', () => {
+    const v: WidgetValue = {
+      id: 'w_p',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'paths',
+      metric: 'attack_paths.to_crown_jewels',
+      drill: '/attack-paths',
+      paths: { reachable: 0, designated: 3, rows: [] },
+    }
+    const m = widgetModel(v, spec('attack_paths.to_crown_jewels'), false)
+    expect(m.state).toBe('ready')
+    expect(m.drill).toBe('/attack-paths')
+    const withRow = widgetModel(
+      {
+        ...v,
+        paths: {
+          reachable: 1,
+          designated: 3,
+          rows: [
+            {
+              asset_id: 'a/1',
+              name: 'db',
+              asset_type: 'host',
+              criticality: 'critical',
+              reachable_from: 2,
+              entry_point: false,
+              depth: 2,
+              score: 9,
+            },
+          ],
+        },
+      },
+      spec('attack_paths.to_crown_jewels'),
+      false
+    )
+    if (withRow.result?.shape !== 'paths') throw new Error('not paths')
+    expect(withRow.result.rows[0].href).toBe('/assets/a%2F1')
+  })
+})

@@ -83,3 +83,13 @@ describe('FindingContextChips', () => {
     expect(container).toBeEmptyDOMElement()
   })
 })
+
+describe('FindingContextChips crown jewels', () => {
+  it('shows the crown jewel filter of a dashboard link and removes only it', async () => {
+    const onRemove = vi.fn()
+    render(<FindingContextChips crownJewel onRemove={onRemove} />)
+    expect(screen.getByText('Crown jewels')).toBeInTheDocument()
+    screen.getAllByRole('button').at(-1)?.click()
+    expect(onRemove).toHaveBeenCalledWith('asset_crown_jewel')
+  })
+})
