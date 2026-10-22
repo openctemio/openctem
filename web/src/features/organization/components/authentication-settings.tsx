@@ -50,6 +50,7 @@ export interface SignInForm {
   external_access_end_required: boolean
   sso_exceptions: SSOException[]
   jit_requires_approval: boolean
+  sso_require_mfa_evidence: boolean
 }
 
 /** The fields this page saves, for "last changed by". */
@@ -64,6 +65,7 @@ export const SIGN_IN_FIELDS = [
   'external_access_end_required',
   'sso_exceptions',
   'jit_requires_approval',
+  'sso_require_mfa_evidence',
 ] as const
 
 export function signInFormFrom(settings: TenantSettings | undefined): SignInForm {
@@ -79,6 +81,7 @@ export function signInFormFrom(settings: TenantSettings | undefined): SignInForm
     external_access_end_required: s?.external_access_end_required ?? false,
     sso_exceptions: s?.sso_exceptions ?? [],
     jit_requires_approval: s?.jit_requires_approval ?? false,
+    sso_require_mfa_evidence: s?.sso_require_mfa_evidence ?? false,
   }
 }
 
@@ -127,6 +130,7 @@ export function looseningsOf(saved: SignInForm, next: SignInForm): string[] {
     out.push('personalLooser')
   }
   if (saved.jit_requires_approval && !next.jit_requires_approval) out.push('jitOff')
+  if (saved.sso_require_mfa_evidence && !next.sso_require_mfa_evidence) out.push('ssoMfaProofOff')
   if (next.sso_exceptions.some((e) => !saved.sso_exceptions.some((s) => s.user_id === e.user_id))) {
     out.push('ssoExceptionAdded')
   }
@@ -146,6 +150,7 @@ const LOOSENING_TEXT: Record<string, string> = {
   emailNever: 'Email addresses are no longer verified.',
   personalLooser: 'Personal accounts get more access.',
   jitOff: 'New SSO members get access without approval.',
+  ssoMfaProofOff: 'Your identity provider no longer has to confirm a second factor.',
   ssoExceptionAdded: 'More members may sign in without single sign-on.',
   inviteesAny: 'Anyone may be invited.',
   externalEndOff: 'External members no longer need an end date.',
@@ -197,6 +202,7 @@ export function AuthenticationSettings() {
         external_access_end_required: form.external_access_end_required,
         sso_exceptions: form.sso_exceptions,
         jit_requires_approval: form.jit_requires_approval,
+        sso_require_mfa_evidence: form.sso_require_mfa_evidence,
       })
       if (result) await mutate(result, { revalidate: false })
       toast.success(t('org.auth.saved', 'Sign-in settings saved'))
@@ -299,6 +305,17 @@ export function AuthenticationSettings() {
               checked={form.mfa_required || form.mfa_required_for_admins}
               onChange={(v) => patchForm({ mfa_required_for_admins: v })}
               disabled={disabled || form.mfa_required}
+            />
+            <ToggleRow
+              id="tenant-sso-mfa-proof"
+              label={t('org.auth.mfa.ssoProof', 'SSO must prove two-factor')}
+              hint={t(
+                'org.auth.mfa.ssoProofHint',
+                'For members who must use two-factor, a sign-in through your identity provider counts only when the provider confirms a second factor in the signed sign-in response. Turn on multi-factor authentication in your identity provider first.'
+              )}
+              checked={form.sso_require_mfa_evidence}
+              onChange={(v) => patchForm({ sso_require_mfa_evidence: v })}
+              disabled={disabled}
             />
           </CardContent>
         </Card>
