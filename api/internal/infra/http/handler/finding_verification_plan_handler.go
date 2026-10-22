@@ -3,8 +3,12 @@ package handler
 import (
 	"net/http"
 
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 )
+
+// FindingVerificationPlanResponse is the body of GET /findings/{id}/verification.
+type FindingVerificationPlanResponse = finding.VerificationPlan
 
 // GetFindingVerificationPlan handles GET /api/v1/findings/{id}/verification.
 // @Summary      How a finding can be verified
@@ -13,7 +17,7 @@ import (
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id   path      string  true  "Finding ID"
-// @Success      200  {object}  finding.VerificationPlan
+// @Success      200  {object}  FindingVerificationPlanResponse
 // @Failure      404  {object}  map[string]string
 // @Router       /findings/{id}/verification [get]
 func (h *VulnerabilityHandler) GetFindingVerificationPlan(w http.ResponseWriter, r *http.Request) {
