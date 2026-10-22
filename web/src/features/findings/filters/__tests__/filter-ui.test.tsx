@@ -373,7 +373,17 @@ describe('FilterBar', () => {
   })
 
   it("shows the open view's filters as locked chips that cannot be removed", () => {
-    bar('epss_score_gte=0.5', { viewFilter: { severity: ['critical'], is_in_kev: true } })
+    bar('epss_score_gte=0.5', {
+      viewFilter: {
+        v: 1,
+        filter: {
+          all: [
+            { field: 'severity', op: 'in', value: ['critical'] },
+            { field: 'is_in_kev', op: 'eq', value: true },
+          ],
+        },
+      },
+    })
     const chips = screen.getAllByTestId('filter-chip')
     expect(chips).toHaveLength(3)
     const locked = chips.filter((c) => c.getAttribute('data-locked') === 'true')
@@ -381,8 +391,24 @@ describe('FilterBar', () => {
     for (const c of locked) expect(within(c).queryByRole('button')).toBeNull()
   })
 
+  it('does not let a filter override a field the open view already sets', async () => {
+    bar('', {
+      viewFilter: { v: 1, filter: { all: [{ field: 'severity', op: 'in', value: ['low'] }] } },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /add filter/i }))
+    const option = screen.getByRole('option', { name: /^Severity/ })
+    expect(option).toHaveAttribute('aria-disabled', 'true')
+    expect(option).toHaveTextContent('Set by the saved view')
+    expect(screen.getByRole('option', { name: 'EPSS score' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+  })
+
   it('names a view whose conditions are a tree', () => {
-    bar('', { viewFilter: { all: [{ field: 'severity', op: 'in', value: ['low'] }] } })
+    bar('', {
+      viewFilter: { v: 1, filter: { any: [{ field: 'severity', op: 'in', value: ['low'] }] } },
+    })
     expect(screen.getByText('Conditions from the saved view')).toBeInTheDocument()
   })
 
@@ -409,7 +435,9 @@ describe('FilterBar', () => {
   })
 
   it('has no accessibility violations with chips', async () => {
-    bar('severity=critical&epss_score_gte=0.5&sevrity=x', { viewFilter: { is_in_kev: true } })
+    bar('severity=critical&epss_score_gte=0.5&sevrity=x', {
+      viewFilter: { v: 1, filter: { all: [{ field: 'is_in_kev', op: 'eq', value: true }] } },
+    })
     const res = await axe.run(document.body, {
       rules: { 'color-contrast': { enabled: false }, region: { enabled: false } },
     })

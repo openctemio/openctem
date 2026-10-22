@@ -150,26 +150,64 @@ export function readFilters(
   return { filters, unknown }
 }
 
-/** The filters of an open saved view (a flat filter document), locked. */
+interface DocLeaf {
+  field: string
+  op: string
+  value: unknown
+}
+
+const isLeaf = (n: unknown): n is DocLeaf =>
+  !!n && typeof n === 'object' && 'field' in n && 'op' in n && 'value' in n
+
+/**
+ * The filters of an open saved view, locked. A view is stored as a filter
+ * document, `{"v":1,"filter":{"all":[{"field","op","value"},...]},"q":...,"sort":[...]}`
+ * (the API's own form). Its top-level conditions become chips; an `any` or a
+ * `not` below the top is not a chip, so the view is reported as complex and
+ * the page names it with one locked chip instead of guessing.
+ */
 export function viewFilters(
-  filter: Record<string, unknown> | undefined,
+  doc: Record<string, unknown> | undefined,
   contract: FilterContract
 ): { filters: ActiveFilter[]; complex: boolean } {
-  if (!filter) return { filters: [], complex: false }
-  const complex = ['all', 'any', 'not', 'field', 'op'].some((k) => k in filter)
-  if (complex) return { filters: [], complex: true }
+  const root = doc?.filter as Record<string, unknown> | undefined
+  if (!root || typeof root !== 'object') return { filters: [], complex: false }
+  const nodes: unknown[] | null = isLeaf(root) ? [root] : Array.isArray(root.all) ? root.all : null
+  if (!nodes) return { filters: [], complex: true }
   const filters: ActiveFilter[] = []
-  for (const [param, raw] of Object.entries(filter)) {
-    if (NON_FILTER_PARAMS.has(param)) continue
-    const meaning = paramMeaning(param, contract)
-    if (!meaning) continue
-    const values = (Array.isArray(raw) ? raw : [raw])
+  let complex = false
+  for (const node of nodes) {
+    if (!isLeaf(node)) {
+      complex = true
+      continue
+    }
+    const field = contract.fields.find((f) => f.name === node.field)
+    const op = node.op as FilterOp
+    const param = field ? paramFor(field, op) : undefined
+    if (!field || !param) {
+      complex = true
+      continue
+    }
+    const values = (Array.isArray(node.value) ? node.value : [node.value])
       .filter((v) => v !== null && v !== undefined && typeof v !== 'object')
       .map(String)
     if (values.length === 0) continue
-    filters.push({ param, field: meaning.field.name, op: meaning.op, values, locked: true })
+    filters.push({ param, field: field.name, op, values, locked: true })
   }
-  return { filters, complex: false }
+  return { filters, complex }
+}
+
+/** The fields an open saved view already sets: a filter on one would override the view's. */
+export function viewFields(doc: Record<string, unknown> | undefined): Set<string> {
+  const root = doc?.filter as Record<string, unknown> | undefined
+  const nodes: unknown[] = !root
+    ? []
+    : isLeaf(root)
+      ? [root]
+      : Array.isArray(root.all)
+        ? root.all
+        : []
+  return new Set(nodes.filter(isLeaf).map((n) => n.field))
 }
 
 /** `search` with the filter set: any value of the same param is replaced, the page resets. */
