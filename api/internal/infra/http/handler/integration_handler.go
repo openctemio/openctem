@@ -1071,7 +1071,7 @@ func (h *IntegrationHandler) syncConnector(w http.ResponseWriter, r *http.Reques
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	res, err := h.connector.RequestSync(r.Context(), tid, iid, tenablesc.TriggerManual, &actx)
 	switch {
@@ -2062,7 +2062,7 @@ func (h *IntegrationHandler) ResumeCoverageRotation(w http.ResponseWriter, r *ht
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	intg, err := h.connector.ResumeRotation(r.Context(), tid, iid, &actx)
 	switch {

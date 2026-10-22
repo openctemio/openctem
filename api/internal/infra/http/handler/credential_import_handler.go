@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -52,7 +53,7 @@ func (h *CredentialImportHandler) buildAuditContext(r *http.Request) auditapp.Au
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    clientIP,
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 }
 
@@ -205,6 +206,31 @@ func (h *CredentialImportHandler) Import(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(result)
 }
 
+// maxCredentialCSVRows bounds the records (header included) of one credential
+// CSV import.
+const maxCredentialCSVRows = 10000
+
+var errCSVTooManyRows = errors.New("csv: too many rows")
+
+// readCSVRecords reads like csv.Reader.ReadAll but stops with
+// errCSVTooManyRows as soon as more than max records are present.
+func readCSVRecords(r *csv.Reader, max int) ([][]string, error) {
+	var records [][]string
+	for {
+		rec, err := r.Read()
+		if errors.Is(err, io.EOF) {
+			return records, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(records) >= max {
+			return nil, errCSVTooManyRows
+		}
+		records = append(records, rec)
+	}
+}
+
 // ImportCSV handles POST /api/v1/credentials/import/csv
 // @Summary Import credential leaks from CSV
 // @Description Import credential leaks from CSV file
@@ -235,9 +261,14 @@ func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Reque
 	}
 	defer file.Close()
 
-	// Read CSV
+	// Read CSV, at most maxCredentialCSVRows records (header included): the
+	// body limit bounds bytes, not rows, and every row costs a dedup lookup.
 	reader := csv.NewReader(file)
-	records, err := reader.ReadAll()
+	records, err := readCSVRecords(reader, maxCredentialCSVRows)
+	if errors.Is(err, errCSVTooManyRows) {
+		apierror.BadRequest(fmt.Sprintf("The CSV has too many rows (at most %d, header included)", maxCredentialCSVRows)).WriteJSON(w)
+		return
+	}
 	if err != nil {
 		apierror.BadRequest("Invalid CSV format").WriteJSON(w)
 		return
