@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,6 +27,7 @@ var (
 	ErrSAMLTenantNotFound = ErrSSOTenantNotFound
 	ErrSAMLNotConfigured  = samldom.ErrNotFound
 	ErrSAMLInvalidCert    = fmt.Errorf("%w: invalid IdP certificate (expected a PEM-encoded X.509 certificate)", shared.ErrValidation)
+	ErrSAMLCertExpired    = fmt.Errorf("%w: the IdP certificate has expired; upload the IdP's current signing certificate", shared.ErrValidation)
 	ErrSAMLDisabled       = fmt.Errorf("%w: SAML login is not enabled for this organization", shared.ErrValidation)
 	// ErrSAMLResponseInvalid is a generic error for any assertion-validation
 	// failure (signature, conditions, audience, InResponseTo). The specific
@@ -47,12 +49,17 @@ type SAMLService struct {
 	tenantRepo tenantdom.Repository
 	sso        *SSOService
 	logger     *logger.Logger
+	// replay records each accepted assertion ID once (Redis in production).
+	replay SAMLReplayStore
+	// expiry alerts owners before the IdP certificate expires.
+	expiry samlCertExpiryNotifier
 }
 
 // NewSAMLService wires the service. sso supplies the shared session/provisioning
 // tail (CompleteFederatedLogin).
 func NewSAMLService(repo samldom.Repository, tenantRepo tenantdom.Repository, sso *SSOService, log *logger.Logger) *SAMLService {
-	return &SAMLService{repo: repo, tenantRepo: tenantRepo, sso: sso, logger: log.With("service", "saml")}
+	return &SAMLService{repo: repo, tenantRepo: tenantRepo, sso: sso, logger: log.With("service", "saml"),
+		replay: newMemorySAMLReplayStore()}
 }
 
 // SAMLConfigInput is an admin create/update of a tenant's SAML config.
@@ -161,19 +168,34 @@ func (s *SAMLService) baseServiceProvider(orgSlug, baseURL string) *saml.Service
 }
 
 // validateCertificatePEM ensures the supplied IdP certificate is a parseable
-// PEM X.509 certificate (the trust anchor for assertion-signature validation).
+// PEM X.509 certificate (the trust anchor for assertion-signature validation)
+// that has not expired: every signature check fails against an expired
+// certificate, so saving one would only break sign-in.
 func validateCertificatePEM(certPEM string) error {
+	cert, err := parseCertificatePEM(certPEM)
+	if err != nil {
+		return err
+	}
+	if time.Now().After(cert.NotAfter) {
+		return ErrSAMLCertExpired
+	}
+	return nil
+}
+
+// parseCertificatePEM parses the stored PEM IdP certificate.
+func parseCertificatePEM(certPEM string) (*x509.Certificate, error) {
 	if strings.TrimSpace(certPEM) == "" {
-		return ErrSAMLInvalidCert
+		return nil, ErrSAMLInvalidCert
 	}
 	block, _ := pem.Decode([]byte(certPEM))
 	if block == nil {
-		return ErrSAMLInvalidCert
+		return nil, ErrSAMLInvalidCert
 	}
-	if _, err := x509.ParseCertificate(block.Bytes); err != nil {
-		return ErrSAMLInvalidCert
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, ErrSAMLInvalidCert
 	}
-	return nil
+	return cert, nil
 }
 
 // Login starts an SP-initiated SAML login (RFC-009 9e). It returns the IdP
@@ -224,10 +246,10 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 			return nil, ErrSAMLResponseInvalid
 		}
 	}
-	assertion, perr := sp.ParseResponse(r, possibleRequestIDs)
+	assertion, perr := s.parseStrictResponse(ctx, sp, tenantAndCfg, r, possibleRequestIDs)
 	if perr != nil {
 		// Never leak the specific crypto/condition failure to the caller.
-		s.logger.Warn("saml assertion validation failed", "org", orgSlug, "error", perr)
+		s.logger.Warn("saml assertion validation failed", "org", logger.SanitizeValue(orgSlug), "error", perr)
 		return nil, ErrSAMLResponseInvalid
 	}
 
@@ -251,6 +273,46 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(),
 		federatedBinding{authTime: authAt, mfa: samlMFAEvidence(assertion)},
 		samlIdentityKey(assertion, tenantAndCfg.tenant.ID()))
+}
+
+// parseStrictResponse validates the posted response: the hardening checks
+// (one signed assertion, no SHA-1), then the library's signature, condition,
+// audience, destination and InResponseTo checks, then the replay cache. Only
+// the HTTP-POST binding is accepted: an artifact would make the server call
+// out to resolve it, and no artifact endpoint is ever advertised.
+func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceProvider, rc resolvedSAML, r *http.Request,
+	possibleRequestIDs []string) (*saml.Assertion, error) {
+	if r.PostForm.Get("SAMLart") != "" || r.Form.Get("SAMLart") != "" {
+		return nil, samlStrictErr("artifact binding is not accepted")
+	}
+	raw, err := base64.StdEncoding.DecodeString(r.PostForm.Get("SAMLResponse"))
+	if err != nil || len(raw) == 0 {
+		return nil, samlStrictErr("SAMLResponse is not base64")
+	}
+	cert, err := parseCertificatePEM(rc.cfg.IDPCertificate())
+	if err != nil {
+		return nil, err
+	}
+	strict, err := checkSAMLResponseStrict(raw, []*x509.Certificate{cert}, saml.Clock)
+	if err != nil {
+		return nil, err
+	}
+	sp.SignatureVerifier = samlNoWeakAlgorithmsVerifier{}
+	assertion, err := sp.ParseXMLResponse(raw, possibleRequestIDs, *r.URL)
+	if err != nil {
+		var ire *saml.InvalidResponseError
+		if errors.As(err, &ire) && ire.PrivateErr != nil {
+			return nil, ire.PrivateErr
+		}
+		return nil, err
+	}
+	if assertion.ID != strict.assertionID {
+		return nil, samlStrictErr("validated assertion is not the signed one")
+	}
+	if err := s.consumeAssertion(ctx, rc.tenant.ID(), assertion, time.Now()); err != nil {
+		return nil, err
+	}
+	return assertion, nil
 }
 
 // samlIdentityKey is the assertion's identity: the IdP entity id plus a

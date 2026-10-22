@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/crewjam/saml"
+	dsig "github.com/russellhaering/goxmldsig"
 
 	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -65,7 +66,24 @@ func TestSAMLACS_ParsesPostedSignedResponse(t *testing.T) {
 // the takeover guard.
 func runSAMLACS(t *testing.T, forceAuthn bool, authnAt time.Time) (*saml.IdpAuthnRequest, error) {
 	t.Helper()
-	const base = "https://app.example.com"
+	f := newSAMLACSFixture(t)
+	authn, resp := f.respond(t, forceAuthn, authnAt, nil)
+	return authn, f.post(resp)
+}
+
+// samlACSFixture is one organization with SAML configured, its service and
+// a test IdP holding the configured certificate's key.
+type samlACSFixture struct {
+	svc       *SAMLService
+	idp       *saml.IdentityProvider
+	requestID string
+	forced    bool
+}
+
+const samlACSBase = "https://app.example.com"
+
+func newSAMLACSFixture(t *testing.T) *samlACSFixture {
+	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -88,18 +106,27 @@ func runSAMLACS(t *testing.T, forceAuthn bool, authnAt time.Time) (*saml.IdpAuth
 	sso := &SSOService{userRepo: &fakeUserRepo{byEmail: pwUser}, logger: logger.NewNop()}
 	svc := NewSAMLService(repo, acsTenantRepo{t: tn}, sso, logger.NewNop())
 
-	redirect, requestID, err := svc.Login(context.Background(), "acme", base, forceAuthn)
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-
-	spMD := svc.baseServiceProvider("acme", base).Metadata()
+	spMD := svc.baseServiceProvider("acme", samlACSBase).Metadata()
 	mdURL, _ := url.Parse("https://idp.example.com/metadata")
 	ssoURL, _ := url.Parse("https://idp.example.com/sso")
 	idp := &saml.IdentityProvider{Key: key, Certificate: cert, MetadataURL: *mdURL, SSOURL: *ssoURL,
-		ServiceProviderProvider: acsSPProvider{md: spMD}}
+		ServiceProviderProvider: acsSPProvider{md: spMD}, SignatureMethod: dsig.RSASHA256SignatureMethod}
+	return &samlACSFixture{svc: svc, idp: idp}
+}
+
+// respond starts a login and returns the IdP's base64 SAMLResponse. mutate,
+// when set, runs after the assertion is made and before the response is
+// signed and encoded.
+func (f *samlACSFixture) respond(t *testing.T, forceAuthn bool, authnAt time.Time,
+	mutate func(*saml.IdpAuthnRequest)) (*saml.IdpAuthnRequest, string) {
+	t.Helper()
+	redirect, requestID, err := f.svc.Login(context.Background(), "acme", samlACSBase, forceAuthn)
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	f.requestID, f.forced = requestID, forceAuthn
 	authnHTTP, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, redirect, nil)
-	authn, err := saml.NewIdpAuthnRequest(idp, authnHTTP)
+	authn, err := saml.NewIdpAuthnRequest(f.idp, authnHTTP)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,17 +140,24 @@ func runSAMLACS(t *testing.T, forceAuthn bool, authnAt time.Time) (*saml.IdpAuth
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if mutate != nil {
+		mutate(authn)
+	}
 	form, err := authn.PostBinding()
 	if err != nil {
 		t.Fatal(err)
 	}
+	return authn, form.SAMLResponse
+}
 
-	body := url.Values{"SAMLResponse": {form.SAMLResponse}, "RelayState": {form.RelayState}}.Encode()
+// post sends samlResponse to the ACS as the browser would, bound to the last
+// login's request ID.
+func (f *samlACSFixture) post(samlResponse string) error {
+	body := url.Values{"SAMLResponse": {samlResponse}}.Encode()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acme/acs", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	_, err = svc.ACS(context.Background(), "acme", base, r, []string{requestID}, forceAuthn)
-	return authn, err
+	_, err := f.svc.ACS(context.Background(), "acme", samlACSBase, r, []string{f.requestID}, f.forced)
+	return err
 }
 
 // Step-up for a SAML account: the re-sign-in sends ForceAuthn and the ACS

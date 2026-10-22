@@ -97,7 +97,7 @@ function WidgetSkeleton({ kind }: { kind: SkeletonKind }) {
     case 'stages':
       return (
         <div
-          className={cn('grid grid-cols-5 gap-2', SKELETON_HEIGHT)}
+          className={cn('grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5', SKELETON_HEIGHT)}
           role="status"
           aria-label={label}
         >

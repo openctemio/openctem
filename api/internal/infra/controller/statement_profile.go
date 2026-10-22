@@ -104,6 +104,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"CIDecorationController":              SQLLight,
 	"ControlTestSchedulerController":      SQLLight,
 	"DomainReverifyController":            SQLLight,
+	"SAMLCertExpiryController":            SQLLight,
 	"SSOEnforcementEntitlementController": SQLLight,
 	"DurableJobsController":               SQLLight,
 	"EASMDNSController":                   SQLLight,
