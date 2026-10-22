@@ -3,7 +3,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { StatViz, ProgressViz } from '../stat-viz'
 import { BarViz, barRows } from '../bar-viz'
 import { ColumnViz, DivergingViz, netOf, toRows } from '../series-viz'
-import { FunnelViz, HeatmapViz, ItemsViz, heatStep } from '../grid-viz'
+import { HeatmapViz, ItemsViz, heatStep } from '../grid-viz'
+import { LoopViz } from '../loop-viz'
 import type { CategoryResult, TimeSeriesResult } from '../types'
 
 describe('StatViz', () => {
@@ -203,7 +204,7 @@ describe('grid visualizations', () => {
 
   it('stages show not measured as grey with the reason, never as good', () => {
     render(
-      <FunnelViz
+      <LoopViz
         result={{
           shape: 'stages',
           stages: [

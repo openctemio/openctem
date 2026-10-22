@@ -2,19 +2,18 @@
 
 /**
  * CSS-drawn visualizations: the heatmap (a matrix with every value printed,
- * shaded on one validated sequential ramp), the stage strip (the CTEM loop,
- * a remediation flow) and the items list (fix next, my SLA due).
+ * shaded on one validated sequential ramp) and the items list (fix next, my
+ * SLA due). The CTEM loop is loop-viz.tsx.
  */
 
-import { CheckCircle2, CircleMinus, TriangleAlert, XCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { SEQUENTIAL_STEPS, sequentialStep } from '@/lib/chart-palette'
-import { formatCount, formatMetric, formatRelativeTime } from '@/lib/format-metric'
+import { formatCount, formatRelativeTime } from '@/lib/format-metric'
 import { cn } from '@/lib/utils'
-import { MatrixTable, StagesTable } from './table-viz'
+import { MatrixTable } from './table-viz'
 import { ChartOrTable, DrillLink, useLabel } from './viz-parts'
-import type { DrillFn, ItemsResult, MatrixResult, StageState, StagesResult } from './types'
+import type { DrillFn, ItemsResult, MatrixResult } from './types'
 
 /** The ramp step for a value between 0 and max (0 stays on the empty cell). */
 export function heatStep(value: number, max: number): number {
@@ -74,63 +73,6 @@ export function HeatmapViz({ result, drill }: { result: MatrixResult; drill?: Dr
     </div>
   )
   return <ChartOrTable chart={chart} table={<MatrixTable result={result} drill={drill} />} />
-}
-
-const STAGE_ICON: Record<StageState, React.ReactNode> = {
-  good: <CheckCircle2 className="size-3.5 text-success" aria-hidden />,
-  warn: <TriangleAlert className="size-3.5 text-warning" aria-hidden />,
-  crit: <XCircle className="size-3.5 text-destructive" aria-hidden />,
-  unmeasured: <CircleMinus className="size-3.5 text-muted-foreground" aria-hidden />,
-}
-
-const STAGE_BAR: Record<StageState, string> = {
-  good: 'bg-success',
-  warn: 'bg-warning',
-  crit: 'bg-destructive',
-  unmeasured: 'bg-muted-foreground/40',
-}
-
-export function FunnelViz({ result }: { result: StagesResult }) {
-  const { t, locale } = useTranslation()
-  const label = useLabel()
-  const stateText: Record<StageState, string> = {
-    good: t('dashboardKit.stage.good', 'On track'),
-    warn: t('dashboardKit.stage.warn', 'Needs attention'),
-    crit: t('dashboardKit.stage.crit', 'Off track'),
-    unmeasured: t('dashboardKit.stage.unmeasured', 'Not measured'),
-  }
-  const chart = (
-    <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-      {result.stages.map((s) => {
-        const body = (
-          <div className="flex h-full flex-col gap-1 overflow-hidden rounded-lg border p-2.5 hover:bg-accent/40">
-            <span className={cn('-mx-2.5 -mt-2.5 mb-1 h-1', STAGE_BAR[s.state])} aria-hidden />
-            <span className="text-xs text-muted-foreground">{label(s)}</span>
-            <span
-              className={cn(
-                'text-xl font-semibold tabular-nums',
-                s.value == null && 'text-muted-foreground'
-              )}
-            >
-              {formatMetric(s.value, s.unit ?? 'count', locale)}
-            </span>
-            <span className="mt-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
-              {STAGE_ICON[s.state]}
-              {s.value == null && s.reason_key ? t(s.reason_key) : stateText[s.state]}
-            </span>
-          </div>
-        )
-        return (
-          <li key={s.key} data-state={s.state}>
-            <DrillLink to={s.drill} className="block h-full rounded-lg">
-              {body}
-            </DrillLink>
-          </li>
-        )
-      })}
-    </ol>
-  )
-  return <ChartOrTable chart={chart} table={<StagesTable result={result} />} />
 }
 
 export function ItemsViz({
