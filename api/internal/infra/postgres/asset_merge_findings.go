@@ -84,6 +84,11 @@ var findingMergeRefs = []mergeRef{
 	// survivor against the policy; the survivor's own hold wins.
 	{table: "ticket_create_holds", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"integration_id"}}}},
+	// What an upload or run did to the loser is now what it did to the
+	// survivor; a receipt that already acted on the survivor keeps its own
+	// row (one row per receipt and finding).
+	{table: "finding_ingest_actions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"receipt_id"}}}},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},
