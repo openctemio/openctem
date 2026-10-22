@@ -1,0 +1,2 @@
+### Security: a repeated claim hands out the same job as the first delivery
+- The claim by id (and a repeat of a claim the sensor already holds) signed the stored command, which lacks the organization's HTTP policy, the program rules, the sensor's `settings_layers` and the template signatures. A signing sensor then ran the job without them. The claim now builds the delivered payload the same way as the poll and claim-N paths, and the job signature covers it.
