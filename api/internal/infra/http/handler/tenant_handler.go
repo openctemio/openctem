@@ -2324,6 +2324,9 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		SSORequireMFAEvidence:                     req.SSORequireMFAEvidence,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
+		// Lockout guard: "SSO must prove two-factor" must not refuse this
+		// owner's own session.
+		RequesterSessionID: middleware.GetSessionID(r.Context()),
 	}
 
 	actx := h.buildAuditContext(r)

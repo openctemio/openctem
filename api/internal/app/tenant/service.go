@@ -26,6 +26,7 @@ import (
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -109,6 +110,9 @@ type TenantService struct {
 	// warning is logged): the never-lock-out guarantee still holds because the
 	// owner is always break-glass exempt at the enforcement gate.
 	ssoPathChecker SSOPathChecker
+	// sessions reads the acting owner's session for the "SSO must prove
+	// two-factor" lockout guard. Optional: when nil the guard is skipped.
+	sessions SessionReader
 	// Member lifecycle (disable, offboard, erase): the transactional store
 	// and the in-app notice to administrators. Optional.
 	lifecycle         tenantdom.LifecycleRepository
@@ -159,6 +163,12 @@ type UserInfoProvider interface {
 // UpdateSecuritySettings to refuse enabling sso_enforced with no way in.
 type SSOPathChecker interface {
 	HasUsableSSOPath(ctx context.Context, orgSlug string) (bool, error)
+}
+
+// SessionReader loads a sign-in session by id (the "SSO must prove
+// two-factor" lockout guard).
+type SessionReader interface {
+	GetByID(ctx context.Context, id shared.ID) (*sessiondom.Session, error)
 }
 
 // NewTenantService creates a new TenantService.
@@ -227,6 +237,18 @@ func (s *TenantService) SetRoleService(svc *accesscontrol.RoleService) {
 func (s *TenantService) SetSSOPathChecker(c SSOPathChecker) {
 	s.ssoPathChecker = c
 }
+
+// SetSessionReader wires the session store used by the "SSO must prove
+// two-factor" lockout guard.
+func (s *TenantService) SetSessionReader(r SessionReader) {
+	s.sessions = r
+}
+
+// ErrSSOMFAProofLocksOutRequester is returned when saving the two-factor
+// settings would refuse the saving owner's own session at its next refresh:
+// it came through the organization's identity provider without proof of a
+// second factor.
+var ErrSSOMFAProofLocksOutRequester = fmt.Errorf("%w: your current sign-in through the identity provider did not confirm a second factor, so this change would sign you out with no way back in; turn on multi-factor authentication in the identity provider and sign in again first", shared.ErrValidation)
 
 // WithTenantPermissionCacheService sets the permission cache service for TenantService.
 // This enables immediate cache invalidation when members are removed.
@@ -1965,6 +1987,10 @@ type UpdateSecuritySettingsInput struct {
 	JITRequiresApproval *bool `json:"jit_requires_approval"`
 	// SSORequireMFAEvidence: see tenantdom.SecuritySettings.
 	SSORequireMFAEvidence *bool `json:"sso_require_mfa_evidence"`
+	// RequesterSessionID is the saving owner's session. When set, a change
+	// that would make "SSO must prove two-factor" refuse that session is
+	// refused (lockout guard). Empty for the platform administrator.
+	RequesterSessionID string `json:"-"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
 	// the API sees it (trusted-proxy aware). When set, an IP allowlist that
 	// would exclude it is refused (lockout guard). Empty for the platform
@@ -2010,6 +2036,34 @@ func (s *TenantService) ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) 
 // ErrIPAllowlistExcludesRequester is returned when saving an IP allowlist that
 // does not include the saving administrator's own IP.
 var ErrIPAllowlistExcludesRequester = fmt.Errorf("%w: IP allowlist must include your current IP address", shared.ErrValidation)
+
+// guardSSOMFAProofLockout refuses a security change that would make "SSO
+// must prove two-factor" refuse the saving owner's own session: one issued by
+// this organization's IdP without proof of a second factor. The owner could
+// not sign back in to undo it (the route is owner-only, and the platform
+// console does not manage this switch). Only a change that newly blocks the
+// session is refused, so a later unrelated save still works.
+func (s *TenantService) guardSSOMFAProofLockout(ctx context.Context, tenantID, sessionID string, before, after tenantdom.SecuritySettings) error {
+	blocks := func(sec tenantdom.SecuritySettings) bool {
+		return sec.SSORequireMFAEvidence && sec.MFARequiredFor(string(tenantdom.RoleOwner))
+	}
+	if sessionID == "" || s.sessions == nil || !blocks(after) || blocks(before) {
+		return nil
+	}
+	sid, err := shared.IDFromString(sessionID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid session", shared.ErrValidation)
+	}
+	sess, err := s.sessions.GetByID(ctx, sid)
+	if err != nil {
+		// Fail closed: the guard cannot tell whether the owner keeps access.
+		return fmt.Errorf("failed to read the current session: %w", err)
+	}
+	if sess.FederatedFor(tenantID) && !sess.MFAEvidence() {
+		return ErrSSOMFAProofLocksOutRequester
+	}
+	return nil
+}
 
 // UpdateSecuritySettings updates only the security settings.
 func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID string, input UpdateSecuritySettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
@@ -2102,6 +2156,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		// requester IP and is not subject to the allowlist).
 		if input.IPWhitelist != nil && input.RequesterIP != "" && !security.IPAllowed(input.RequesterIP) {
 			return fmt.Errorf("%w (%s)", ErrIPAllowlistExcludesRequester, input.RequesterIP)
+		}
+		if err := s.guardSSOMFAProofLockout(ctx, tenantID, input.RequesterSessionID, before, security); err != nil {
+			return err
 		}
 
 		return t.UpdateSecuritySettings(security)
