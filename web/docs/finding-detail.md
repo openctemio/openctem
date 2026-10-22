@@ -81,7 +81,13 @@ in the activity panel.
    package and the asset context (api PR "the finding detail embeds its CVE record
    and affected package"). The priority score breakdown is fetched only when "How
    this was scored" is opened.
-8. **House style.** Theme tokens only (the palette-drift gate). Monospace only for
+8. **Honest states.** A missing or refused finding shows one "not found" copy (no
+   way to tell the two apart), with no error toast and a single request: the
+   activity and comment reads wait for the finding. A server or network error
+   shows "could not load" with a Retry instead. A section whose read fails (the
+   task band, ticket links, the retest check) shows an error row with Retry, never
+   a blank or "—"; a 403/404 on a section keeps it hidden.
+9. **House style.** Theme tokens only (the palette-drift gate). Monospace only for
    identifiers, versions, paths and code. Sentence case. A skeleton shaped like the
    page.
 
