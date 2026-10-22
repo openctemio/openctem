@@ -132,7 +132,7 @@ statement touches at most 5,000 findings.
 ## Producer record: the upload receipt
 
 Every committed upload (one request, all its files) gets one receipt in
-`ingest_receipts` (migration 003284, formerly `finding_imports`; see
+`ingest_receipts` (migration 003293, formerly `finding_imports`; see
 [ingest-receipts.md](ingest-receipts.md)) before anything is written: tenant,
 uploader (`actor_user_id`), the SHA-256 of the first file name (the names
 themselves are only in the audit log), status `processing`. Each file's

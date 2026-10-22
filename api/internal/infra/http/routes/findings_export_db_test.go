@@ -140,3 +140,98 @@ func TestFindingsExport_ScopeFilterAndContract(t *testing.T) {
 		t.Errorf("audit rows = %d, metadata %s (must hold the shape, not the values)", n, meta)
 	}
 }
+
+// The export follows the list's sort, rejects unknown params, refuses an
+// honest 403 naming the permission, holds one export per user across
+// replicas (the slot is a database lock, not process memory), carries only
+// the allowlisted fields and records the sort in the audit row.
+func TestFindingsExport_SortStrictSlotAndAllowlist(t *testing.T) {
+	h := newGroupScopeHarness(t)
+	fa, fb, fb2, fp := h.findingA.String(), h.findingB.String(), h.findingB2.String(), h.findingP.String()
+	admin := flCaller{"owner", h.owner, true}
+	memberA := flCaller{"memberA", h.memberA, false}
+	h.exec(`UPDATE findings SET cvss_score = 9.1, snippet = 'EVIDENCE-SNIPPET', metadata = '{"k":"META-VALUE"}' WHERE id = $1`, fb)
+	h.exec(`UPDATE findings SET cvss_score = 7.0 WHERE id = $1`, fa)
+	h.exec(`UPDATE findings SET cvss_score = 5.0 WHERE id = $1`, fb2)
+	h.exec(`UPDATE findings SET cvss_score = 1.0 WHERE id = $1`, fp)
+
+	// Sort: rows come in the requested order, the same as the list's.
+	resp, body := h.export(t, admin, http.MethodGet, "sort=-cvss_score", nil, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("sorted export = %d %.200s", resp.StatusCode, body)
+	}
+	rows, err := csv.NewReader(strings.NewReader(body)).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(rows)-1)
+	for _, r := range rows[1:] {
+		got = append(got, r[0])
+	}
+	if want := []string{fb, fa, fb2, fp}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("sort=-cvss_score order = %v, want %v", got, want)
+	}
+	if resp.Header.Get("X-Export-Max-Rows") != "10000" {
+		t.Errorf("X-Export-Max-Rows = %q", resp.Header.Get("X-Export-Max-Rows"))
+	}
+
+	// NDJSON: exactly the allowlisted keys, no evidence or metadata.
+	resp, body = h.export(t, admin, http.MethodGet, "format=ndjson&id="+fb, nil, "")
+	var row map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(body)), &row); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("ndjson: %d %v %.200s", resp.StatusCode, err, body)
+	}
+	if _, ok := row["snippet"]; ok || strings.Contains(body, "EVIDENCE-SNIPPET") || strings.Contains(body, "META-VALUE") {
+		t.Errorf("ndjson row carries evidence or metadata: %s", body)
+	}
+	if _, ok := row["asset_name"]; !ok || len(row) != 40 {
+		t.Errorf("ndjson keys (%d) = %v", len(row), row)
+	}
+
+	// Unknown param: 400 INVALID_FILTER, not a wider export.
+	resp, body = h.export(t, admin, http.MethodGet, "severty=critical", nil, "")
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "INVALID_FILTER") || !strings.Contains(body, "severty") {
+		t.Errorf("unknown param export = %d %s", resp.StatusCode, body)
+	}
+
+	// No findings:export: an honest 403 that names the permission (the web
+	// explains it; there is no fallback that exports one page instead).
+	resp, body = h.export(t, memberA, http.MethodGet, "", nil, strings.Join(dsMemberPerms, ","))
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, permission.FindingsExport.String()) {
+		t.Errorf("export without findings:export = %d %s", resp.StatusCode, body)
+	}
+
+	// One export per user across replicas: another connection (another API
+	// instance) holding the user's slot makes this request 429.
+	ctx := context.Background()
+	conn, err := h.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('findings_export'), hashtext($1))`,
+		h.tenant.String()+":"+h.owner.String()); err != nil {
+		t.Fatal(err)
+	}
+	if resp, body := h.export(t, admin, http.MethodGet, "", nil, ""); resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("export while the slot is held elsewhere = %d %.200s, want 429", resp.StatusCode, body)
+	}
+	_ = tx.Rollback()
+	if resp, _ := h.export(t, admin, http.MethodGet, "", nil, ""); resp.StatusCode != http.StatusOK {
+		t.Errorf("export after the slot was released = %d", resp.StatusCode)
+	}
+
+	// The audit row records the sort.
+	var n int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'data.exported'
+		AND metadata->'sort' @> '["-cvss_score"]'::jsonb`, h.tenant.String()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("audit rows with the sort = %d, want 1", n)
+	}
+}
