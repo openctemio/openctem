@@ -2,17 +2,13 @@
  * Source Layout Registry
  *
  * Config-driven architecture that maps findingType/source to:
- * - Source panel (rendered between header and tabs)
  * - Tab order (first tab is default active)
  * - Hidden tabs (e.g., attack-path for non-SAST sources)
  */
 
-import type { ComponentType } from 'react'
 import type { FindingDetail, FindingType, FindingSource } from '../types'
 
 export interface SourceLayoutConfig {
-  /** Source panel rendered between header and tabs */
-  sourcePanel?: ComponentType<{ finding: FindingDetail }>
   /** Tab order — first tab is default active. Unlisted tabs use default order */
   tabOrder?: string[]
   /** Tabs to hide for this source */

@@ -33,6 +33,9 @@ vi.mock('@/components/layout', () => ({
 vi.mock('@/features/findings/hooks/use-finding-activity-feed', () => ({
   useFindingActivityFeed: vi.fn(() => ({})),
 }))
+vi.mock('@/features/findings/hooks/use-finding-evidence-count', () => ({
+  useFindingEvidenceCount: () => 0,
+}))
 vi.mock('@/features/findings/hooks/use-finding-triage', () => ({
   useFindingTriage: () => ({}),
 }))

@@ -115,6 +115,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
     params.set('pending_approval', String(filters.pending_approval))
   if (filters.acceptance_expires_at_lte)
     params.set('acceptance_expires_at_lte', filters.acceptance_expires_at_lte)
+  if (filters.asset_crown_jewel) params.set('asset_crown_jewel', 'true')
   if (filters.view) params.set('view', filters.view)
   if (filters.sort) params.set('sort', filters.sort)
   // Filters the page carries as they are (the filter contract names them).

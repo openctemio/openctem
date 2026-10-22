@@ -319,6 +319,7 @@ function SignalsSection({
   const patch = (p: Partial<InventoryFilters>) => onChange({ ...filters, ...p, page: 1 })
   const selectedCount =
     (filters.freshness ? 1 : 0) +
+    (filters.coverage ? 1 : 0) +
     (filters.isCrownJewel !== undefined ? 1 : 0) +
     (filters.hasFindings !== undefined ? 1 : 0) +
     (filters.lastSeenBefore ? 1 : 0) +
@@ -366,6 +367,18 @@ function SignalsSection({
           label={t('assets.facetPanel.seenRecently', 'Seen recently')}
           checked
           onCheckedChange={() => patch({ lastSeenAfter: undefined })}
+        />
+      )}
+      <FacetOption
+        label={t('assets.facetPanel.uncovered', 'No successful scan in 30 days')}
+        checked={filters.coverage === 'uncovered'}
+        onCheckedChange={(on) => patch({ coverage: on ? 'uncovered' : undefined })}
+      />
+      {filters.coverage === 'covered' && (
+        <FacetOption
+          label={t('assets.facetPanel.covered', 'Scanned successfully in 30 days')}
+          checked
+          onCheckedChange={() => patch({ coverage: undefined })}
         />
       )}
       <FacetOption

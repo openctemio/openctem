@@ -77,8 +77,8 @@ func MCPCredentialAuth(apiKeyAuth func(http.Handler) http.Handler, tokens MCPTok
 				apierror.Unauthorized("Invalid credentials").WriteJSON(w)
 				return
 			}
-			if !limiter.allow("grant:"+p.GrantID, MCPGrantRateLimitPerHour) {
-				apierror.TooManyRequests("Rate limit exceeded for this connection").WriteJSON(w)
+			if d := limiter.decide("grant:"+p.GrantID, MCPGrantRateLimitPerHour); !d.allowed {
+				writeRateLimited(w, d, "Rate limit exceeded for this connection")
 				return
 			}
 			perms := p.Permissions
