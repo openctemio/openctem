@@ -256,11 +256,10 @@ func TestApplySuppressions_DispositionSurvivesReopenPredicate(t *testing.T) {
 	f := buildSuppFinding(t, tenantID, shared.NewID(), "semgrep", "sql-injection", "fp-1")
 	p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f})
 
-	// AutoReopenByFingerprintsBatch excludes resolution IN
-	// ('false_positive','accepted_risk','duplicate','suppressed'). Assert our
-	// resolution is that sentinel so re-ingest never reopens a suppressed finding.
+	// A suppressed finding is in a disposition status, which re-ingest never
+	// reopens; its resolution note records the rule.
 	if f.Resolution() != "suppressed" {
-		t.Fatalf("resolution = %q, want the auto-reopen-excluded sentinel 'suppressed'", f.Resolution())
+		t.Fatalf("resolution = %q, want 'suppressed'", f.Resolution())
 	}
 }
 
