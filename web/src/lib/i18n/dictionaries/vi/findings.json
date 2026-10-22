@@ -1396,5 +1396,7 @@
   "findings.verification.itemSecret.exposure_cleared": "Thông tin xác thực đã bị thu hồi tại nhà cung cấp và được thay thế ở nơi sử dụng",
   "findings.verification.itemSecret.evidence_attached": "Đã đính kèm bằng chứng (nhật ký kiểm toán của nhà cung cấp, phiên bản vault, phiếu)",
   "findings.verification.itemSecret.register_updated": "Việc sử dụng thông tin xác thực kể từ khi bị lộ đã được kiểm tra và ghi nhận",
-  "findings.validationEvidence.checkReachability": "Kiểm tra khả năng truy cập"
+  "findings.validationEvidence.checkReachability": "Kiểm tra khả năng truy cập",
+  "findings.bulk.status": "Trạng thái",
+  "findings.bulk.assignTo": "Giao cho…"
 }
