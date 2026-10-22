@@ -177,6 +177,14 @@ func TestSLAPolicy_MigrationDedupesDefaults_DB(t *testing.T) {
 	bOnly := ins(tenantB, "only", true, 0, 90)
 	// Tenant C: only an inactive default; it is unset.
 	cInactive := ins(tenantC, "inactive", false, 0, 90)
+	// Tenant B also has a non-default policy written before the API bounds:
+	// its windows are clamped so the CHECK can be validated.
+	bWide := shared.NewID().String()
+	if _, err := db.ExecContext(ctx, `INSERT INTO sla_policies
+		(id, tenant_id, name, is_default, is_active, critical_days, low_days, info_days)
+		VALUES ($1, $2, 'wide', false, true, 0, 500, 400)`, bWide, tenantB.String()); err != nil {
+		t.Fatal(err)
+	}
 
 	testdb.Migrate(t, db, dir, v, v, false)
 
@@ -199,6 +207,12 @@ func TestSLAPolicy_MigrationDedupesDefaults_DB(t *testing.T) {
 	var low int
 	if err := db.QueryRowContext(ctx, `SELECT low_days FROM sla_policies WHERE id = $1`, aKeep).Scan(&low); err != nil || low != 77 {
 		t.Errorf("windows were rewritten: low_days=%d err=%v", low, err)
+	}
+
+	var crit, wideLow, info int
+	if err := db.QueryRowContext(ctx, `SELECT critical_days, low_days, info_days FROM sla_policies WHERE id = $1`, bWide).
+		Scan(&crit, &wideLow, &info); err != nil || crit != 1 || wideLow != 365 || info != 365 {
+		t.Errorf("out-of-range windows = %d/%d/%d err=%v, want clamped to 1/365/365", crit, wideLow, info, err)
 	}
 
 	// down then up again works on the migrated data.

@@ -29,6 +29,21 @@ ALTER TABLE sla_policies
 ALTER TABLE sla_policies VALIDATE CONSTRAINT chk_sla_policies_default_active;
 
 -- Same bounds as the service: critical..low 1..365 days, info 0 (no SLA)..365.
+-- A row written before the API bounds existed would make VALIDATE fail the
+-- deploy, so out-of-range windows are clamped into the range first (a no-op
+-- on rows already inside it).
+UPDATE sla_policies SET
+    critical_days = LEAST(GREATEST(critical_days, 1), 365),
+    high_days     = LEAST(GREATEST(high_days, 1), 365),
+    medium_days   = LEAST(GREATEST(medium_days, 1), 365),
+    low_days      = LEAST(GREATEST(low_days, 1), 365),
+    info_days     = LEAST(GREATEST(info_days, 0), 365),
+    updated_at    = now()
+WHERE critical_days NOT BETWEEN 1 AND 365
+   OR high_days NOT BETWEEN 1 AND 365
+   OR medium_days NOT BETWEEN 1 AND 365
+   OR low_days NOT BETWEEN 1 AND 365
+   OR info_days NOT BETWEEN 0 AND 365;
 ALTER TABLE sla_policies
     ADD CONSTRAINT chk_sla_policies_severity_days
     CHECK (critical_days BETWEEN 1 AND 365
