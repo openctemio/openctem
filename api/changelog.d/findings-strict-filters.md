@@ -7,3 +7,5 @@
 - Old param names (`severities`, `statuses`, `search`, ...) still work with `Deprecation` and `Sunset`
   headers. `GET /meta/filters/findings` lists every accepted name.
 - Integrations that send extra params to these endpoints must drop them.
+- `assigned_to_me` accepts only `true` (assigned to or owned by me) and `false` (no filter); any other
+  value is `400 INVALID_FILTER` instead of silently returning every finding.
