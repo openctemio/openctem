@@ -248,6 +248,7 @@ var Vocabulary = map[string]bool{
 	"resolve": true, "reopen": true, "suspend": true, "reactivate": true,
 	"revoke": true, "rotate": true, "claim": true, "release": true,
 	"start": true, "complete": true, "fail": true, "commit": true,
+	"refresh": true,
 }
 
 // Synonyms are verbs that duplicate a vocabulary word.
@@ -257,7 +258,7 @@ var Synonyms = map[string]string{"activate": "enable", "deactivate": "disable", 
 // verbs seen in routes) so it can be held to the action rules.
 var actionWords = map[string]bool{
 	"assign": true, "unassign": true, "accept": true, "decline": true, "resend": true,
-	"refresh": true, "regenerate": true, "renew": true, "reset": true, "recalculate": true,
+	"regenerate": true, "renew": true, "reset": true, "recalculate": true,
 	"validate": true, "check": true, "clone": true, "duplicate": true, "merge": true,
 	"dismiss": true, "archive": true, "restore": true, "upload": true, "download": true,
 	"generate": true, "evaluate": true, "enrich": true, "classify": true, "triage": true,

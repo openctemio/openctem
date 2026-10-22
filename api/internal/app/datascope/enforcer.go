@@ -203,6 +203,17 @@ func (e *Enforcer) ResolveStrict(ctx context.Context, tenantID shared.ID) (*shar
 	return e.Resolve(ctx, tenantID)
 }
 
+// ResolveForStrict is ResolveFor for a read on behalf of a person that must
+// never fall back to "unrestricted" because the enforcer is not wired (a
+// background job computing for a stored user): an unwired enforcer is an
+// error (ErrNotConfigured).
+func (e *Enforcer) ResolveForStrict(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
+	if e == nil || e.repo == nil {
+		return nil, ErrNotConfigured
+	}
+	return e.ResolveFor(ctx, tenantID, c)
+}
+
 // ResolveFor is Resolve for an explicit caller.
 func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
 	if e == nil || e.repo == nil {

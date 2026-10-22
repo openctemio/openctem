@@ -176,7 +176,7 @@ func directStateSQL() string {
 		            WHEN now() - COALESCE(f.first_detected_at, f.created_at) < interval '61 days' THEN '31-60'
 		            WHEN now() - COALESCE(f.first_detected_at, f.created_at) < interval '91 days' THEN '61-90'
 		            ELSE '90+' END AS age_band,
-		       CASE WHEN f.source = 'pentest' THEN COALESCE(f.pentest_campaign_id, '00000000-0000-0000-0000-000000000000'::uuid)
+		       CASE WHEN f.source = 'pentest' THEN COALESCE(f.pentest_campaign_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
 		            ELSE '00000000-0000-0000-0000-000000000000'::uuid END AS campaign,
 		       count(*)::integer AS finding_count, COALESCE(sum(f.epss_score), 0)::numeric(14,5) AS epss_sum
 		FROM findings f
@@ -264,7 +264,7 @@ func TestDashboardFacts_EqualDirectQueries_DB(t *testing.T) {
 	t.Run("F2 per-day events equal finding timestamps", func(t *testing.T) {
 		day := func(col string) string { return `(` + col + ` AT TIME ZONE 'UTC')::date` }
 		key := `COALESCE(asset_id, '00000000-0000-0000-0000-000000000000'::uuid), severity, COALESCE(priority_class, 'none'),
-			CASE WHEN source = 'pentest' THEN COALESCE(pentest_campaign_id, '00000000-0000-0000-0000-000000000000'::uuid)
+			CASE WHEN source = 'pentest' THEN COALESCE(pentest_campaign_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
 			     ELSE '00000000-0000-0000-0000-000000000000'::uuid END`
 		base := `FROM findings WHERE tenant_id = $1 AND NOT branch_only AND status NOT IN ('draft', 'in_review')`
 		checks := map[string][2]string{
@@ -309,7 +309,7 @@ func TestDashboardFacts_EqualDirectQueries_DB(t *testing.T) {
 
 	t.Run("F3 equals the top 10 per asset, kind and campaign", func(t *testing.T) {
 		part := `PARTITION BY COALESCE(asset_id, '00000000-0000-0000-0000-000000000000'::uuid), source = 'pentest',
-			CASE WHEN source = 'pentest' THEN COALESCE(pentest_campaign_id, '00000000-0000-0000-0000-000000000000'::uuid) END`
+			CASE WHEN source = 'pentest' THEN COALESCE(pentest_campaign_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid) END`
 		base := `FROM findings WHERE tenant_id = $1 AND NOT branch_only AND ` + vulnerability.OpenStatusSQL("status") +
 			` AND priority_class IN ('P0', 'P1', 'P2')`
 		direct := `SELECT kind, id, rn FROM (

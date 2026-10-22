@@ -97,7 +97,15 @@ export interface DashboardData {
   restricted: boolean
   /** Null while the organization's first fact build runs. */
   facts_built_at: string | null
+  /** When these figures were computed (the stored snapshot's time). */
   computed_at: string
+  /** The effective schedule (organization default resolved). */
+  refresh_schedule?: 'manual' | '5m' | '15m' | '1h' | '6h' | 'daily'
+  /** Absent for a manual or paused schedule. */
+  next_refresh_at?: string
+  /** Older than twice the schedule, or the last refresh failed: the last good figures. */
+  stale: boolean
+  last_refresh_error?: string
   widgets: WidgetValue[]
 }
 
@@ -107,7 +115,22 @@ export function dashboardDataKey(kind: DashboardKind, id: string): string {
     : `/api/v1/me/dashboards/${id}/data`
 }
 
-/** Every widget result of one dashboard. */
+export function dashboardRefreshPath(kind: DashboardKind, id: string): string {
+  return kind === 'organization'
+    ? `/api/v1/organization/dashboards/${id}/refresh`
+    : `/api/v1/me/dashboards/${id}/refresh`
+}
+
+/**
+ * Refresh now: recomputes and stores the snapshot. Budgeted on the server
+ * (once a minute per person and dashboard, 30 an hour per organization);
+ * a 429 carries Retry-After.
+ */
+export function refreshDashboard(kind: DashboardKind, id: string) {
+  return post<DashboardData>(dashboardRefreshPath(kind, id), {})
+}
+
+/** Every widget result of one dashboard (the stored snapshot). */
 export function useDashboardData(kind: DashboardKind, id: string | null) {
   const { currentTenant } = useTenant()
   return useSWR<DashboardData>(

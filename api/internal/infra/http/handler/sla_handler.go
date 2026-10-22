@@ -159,6 +159,8 @@ func (h *SLAHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.NotFound("SLA Policy").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists) || errors.Is(err, sladom.ErrAlreadyExists):
 		apierror.Conflict("SLA Policy already exists").WriteJSON(w)
+	case errors.Is(err, sladom.ErrDefaultProtected):
+		apierror.New(http.StatusConflict, "SLA_DEFAULT_POLICY_PROTECTED", sladom.ErrDefaultProtected.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
@@ -308,6 +310,7 @@ func (h *SLAHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  SLAPolicyResponse
 // @Failure      400  {object}  map[string]string
 // @Failure      404  {object}  map[string]string
+// @Failure      409  {object}  map[string]string "default policy cannot be deactivated or unset"
 // @Router       /sla-policies/{id} [put]
 func (h *SLAHandler) Update(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -373,6 +376,7 @@ func (h *SLAHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Success      204  "No Content"
 // @Failure      400  {object}  map[string]string
 // @Failure      404  {object}  map[string]string
+// @Failure      409  {object}  map[string]string "default policy cannot be deleted"
 // @Router       /sla-policies/{id} [delete]
 func (h *SLAHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -477,6 +481,10 @@ func slaChangeSeverity(before any, after SLAPolicyResponse) auditdom.Severity {
 	changes := auditapp.DiffChanges(before, after)
 	if changes == nil {
 		return auditdom.SeverityMedium
+	}
+	// Making a policy the default re-scores every open finding's deadline.
+	if b, ok := changes.Before["is_default"].(bool); ok && !b && after.IsDefault {
+		return auditdom.SeverityHigh
 	}
 	for k, b := range changes.Before {
 		if !strings.HasSuffix(k, "_days") {
