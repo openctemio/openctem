@@ -120,6 +120,11 @@ they sign in again through the IdP with multi-factor authentication. Turning the
 switch on therefore ends own-IdP sessions without proof within one access-token
 lifetime. Members outside the 2FA requirement are not affected. Turning it off
 is graded High in the audit log, and the owners and administrators are told.
+Lockout guard: a save that would newly make the switch refuse the saving
+owner's own session (one through the organization's IdP without proof) is
+refused with 400, because the owner could not get a token again to undo it and
+the platform console does not manage this switch. The owner turns on MFA in the
+IdP and signs in again first, or saves from a password session with 2FA.
 The gate is `AuthService.enforceMFAPolicy` (`internal/app/auth/mfa.go`).
 
 ## Immediate session revocation
