@@ -99,7 +99,7 @@ type RemoveAssetsRequest struct {
 
 // BulkUpdateRequest represents bulk update request.
 type BulkUpdateRequest struct {
-	GroupIDs []string `json:"group_ids" validate:"required,min=1,dive,uuid"`
+	GroupIDs []string `json:"group_ids" validate:"required,min=1,max=1000,dive,uuid"`
 	Update   struct {
 		Environment *string `json:"environment" validate:"omitempty,asset_group_environment"`
 		Criticality *string `json:"criticality" validate:"omitempty,asset_group_criticality"`
@@ -108,7 +108,7 @@ type BulkUpdateRequest struct {
 
 // BulkDeleteRequest represents bulk delete request.
 type BulkDeleteRequest struct {
-	GroupIDs []string `json:"group_ids" validate:"required,min=1,dive,uuid"`
+	GroupIDs []string `json:"group_ids" validate:"required,min=1,max=1000,dive,uuid"`
 }
 
 // AssetGroupStatsResponse represents stats response.
