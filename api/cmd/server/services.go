@@ -1748,6 +1748,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// are sealed with the platform key (re-keyed by cmd/rekey).
 	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
 	s.Retest.SetEvidenceStore(s.Evidence)
+	// The finding verification plan asks the retest service whether a
+	// retest would run and why not.
+	s.Vulnerability.SetRetestAvailability(s.Retest)
+	s.Vulnerability.SetCoverageAutoResolveMode(string(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve)))
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
