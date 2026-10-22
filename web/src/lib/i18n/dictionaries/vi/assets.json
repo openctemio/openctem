@@ -1052,5 +1052,7 @@
   "assets.riskImpact.alone": "Chính sách phê duyệt cho phép bạn tự quyết định. Quyết định được ghi vào nhật ký kiểm toán cùng lý do của bạn.",
   "assets.riskImpact.pending": "Một thay đổi khác của tài sản này đang chờ phê duyệt; hãy chờ quyết định.",
   "assets.riskImpact.reason": "Lý do hạ mức rủi ro",
-  "assets.riskImpact.reasonPlaceholder": "Vì sao tài sản này ít bị phơi bày hoặc ít quan trọng hơn so với ghi nhận?"
+  "assets.riskImpact.reasonPlaceholder": "Vì sao tài sản này ít bị phơi bày hoặc ít quan trọng hơn so với ghi nhận?",
+  "assets.facetPanel.uncovered": "Không có lần quét thành công trong 30 ngày",
+  "assets.facetPanel.covered": "Đã quét thành công trong 30 ngày"
 }

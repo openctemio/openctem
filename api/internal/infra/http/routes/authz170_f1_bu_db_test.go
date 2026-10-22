@@ -40,11 +40,25 @@ func TestAuthz170F1_BusinessUnitCountsTenantWide(t *testing.T) {
 	t.Cleanup(srv.Close)
 	h.srv = srv
 
+	// A unit holding only an out-of-scope asset is not visible to memberA
+	// (research/233 D4): 404, never its counters.
 	status, body := h.do(h.memberA, false, http.MethodGet, "/api/v1/business-units/"+bu.String(), nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("GET business unit holding only B1 = %d (%.200s), want 404", status, body)
+	}
+
+	// With in-scope asset A1 too, the unit is visible and its counters
+	// cover A1 only.
+	h.exec(`INSERT INTO business_unit_assets (id, tenant_id, business_unit_id, asset_id) VALUES ($1, $2, $3, $4)`,
+		shared.NewID().String(), h.tenant.String(), bu.String(), h.assetA.String())
+	if err := repo.RecalculateCounts(t.Context(), h.tenant, bu); err != nil {
+		t.Fatal(err)
+	}
+	status, body = h.do(h.memberA, false, http.MethodGet, "/api/v1/business-units/"+bu.String(), nil)
 	if status != http.StatusOK {
 		t.Fatalf("GET business unit = %d (%.200s)", status, body)
 	}
-	if strings.Contains(body, `"asset_count":1`) || strings.Contains(body, `"finding_count":1`) {
-		t.Errorf("memberA reads rollups over an out-of-scope asset: %.400s", body)
+	if !strings.Contains(body, `"asset_count":1`) {
+		t.Errorf("memberA reads rollups over an out-of-scope asset (want asset_count 1): %.400s", body)
 	}
 }

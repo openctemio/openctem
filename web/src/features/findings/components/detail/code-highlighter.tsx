@@ -1,6 +1,9 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
+import { toDisplayBlock } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 
 // Language detection based on file extension
@@ -768,7 +771,7 @@ interface CodeHighlighterProps {
   highlightLine?: number
 }
 
-export function CodeHighlighter({
+function CodeBlock({
   code,
   filePath,
   className,
@@ -823,6 +826,41 @@ export function CodeHighlighter({
     >
       <code>{highlighted}</code>
     </pre>
+  )
+}
+
+/** Characters shown before "Show more"; the rest is capped by `toDisplayBlock`. */
+export const CODE_PREVIEW_CHARS = 20_000
+
+/**
+ * Scanner-supplied code (snippets, stack frames, data-flow steps) is
+ * attacker-influenced: bidi and control characters are shown as visible
+ * escapes (a Trojan-Source line cannot reorder what the reader sees), and a
+ * huge snippet is cut with a "Show more" instead of freezing the tab.
+ */
+export function CodeHighlighter(props: CodeHighlighterProps) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const raw = props.code ?? ''
+  const truncated = !expanded && raw.length > CODE_PREVIEW_CHARS
+  const code = useMemo(
+    () => toDisplayBlock(truncated ? raw.slice(0, CODE_PREVIEW_CHARS) : raw),
+    [raw, truncated]
+  )
+  return (
+    <>
+      <CodeBlock {...props} code={code} />
+      {truncated && (
+        <Button
+          variant="link"
+          size="sm"
+          className="mt-1 h-auto p-0 text-xs"
+          onClick={() => setExpanded(true)}
+        >
+          {t('findings.code.showMore', 'Show more')}
+        </Button>
+      )}
+    </>
   )
 }
 

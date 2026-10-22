@@ -49,7 +49,7 @@ const TONE: Record<
   { card: string; icon: string; badge: string; bar: string; edge: string; Icon: typeof Circle }
 > = {
   pending: {
-    card: 'border-l-muted-foreground/30',
+    card: '',
     icon: 'text-muted-foreground',
     badge: 'bg-muted text-muted-foreground',
     bar: 'bg-muted-foreground/40',
@@ -57,7 +57,7 @@ const TONE: Record<
     Icon: Circle,
   },
   waiting: {
-    card: 'border-l-warning',
+    card: '',
     icon: 'text-warning',
     badge: 'bg-warning/10 text-warning',
     bar: 'bg-warning',
@@ -65,7 +65,7 @@ const TONE: Record<
     Icon: Hourglass,
   },
   running: {
-    card: 'border-l-info',
+    card: '',
     icon: 'text-info motion-safe:animate-spin',
     badge: 'bg-info/10 text-info',
     bar: 'bg-info',
@@ -73,7 +73,7 @@ const TONE: Record<
     Icon: Loader2,
   },
   done: {
-    card: 'border-l-success',
+    card: '',
     icon: 'text-success',
     badge: 'bg-success/10 text-success',
     bar: 'bg-success',
@@ -81,7 +81,7 @@ const TONE: Record<
     Icon: CheckCircle2,
   },
   partial: {
-    card: 'border-l-warning',
+    card: '',
     icon: 'text-warning',
     badge: 'bg-warning/10 text-warning',
     bar: 'bg-warning',
@@ -89,7 +89,7 @@ const TONE: Record<
     Icon: AlertTriangle,
   },
   failed: {
-    card: 'border-l-destructive',
+    card: '',
     icon: 'text-destructive',
     badge: 'bg-destructive/10 text-destructive',
     bar: 'bg-destructive',
@@ -97,7 +97,7 @@ const TONE: Record<
     Icon: XCircle,
   },
   skipped: {
-    card: 'border-l-muted-foreground/30 opacity-80',
+    card: 'opacity-80',
     icon: 'text-muted-foreground',
     badge: 'bg-muted text-muted-foreground',
     bar: 'bg-muted-foreground/40',
@@ -508,7 +508,7 @@ function StepCard({
       aria-pressed={selected}
       aria-label={t('scans.flow.open', undefined, { name, state })}
       className={cn(
-        'block rounded-md border border-l-4 bg-card p-2.5 text-start text-xs shadow-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        'block rounded-md border bg-card p-2.5 text-start text-xs shadow-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         style.card,
         selected && 'ring-2 ring-primary',
         fixedWidth ? 'w-[var(--card-w)]' : 'w-full'
