@@ -52,12 +52,13 @@ func SigningSecrets(meta map[string]any, decrypt func(string) (string, error), n
 	if prev == "" || until == "" {
 		return out, nil
 	}
-	end, err := time.Parse(time.RFC3339, until)
-	if err != nil || !now.Before(end) {
-		return out, nil
-	}
-	if p, err := decrypt(prev); err == nil && p != "" {
-		out = append(out, p)
+	// An unparsable or past end means the overlap is over: the current
+	// secret alone signs. A previous secret that no longer decrypts is
+	// dropped the same way; the current one still signs every delivery.
+	if end, perr := time.Parse(time.RFC3339, until); perr == nil && now.Before(end) {
+		if p, derr := decrypt(prev); derr == nil && p != "" {
+			out = append(out, p)
+		}
 	}
 	return out, nil
 }
