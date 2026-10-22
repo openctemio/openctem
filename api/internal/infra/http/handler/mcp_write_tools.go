@@ -220,7 +220,7 @@ func (h *MCPHandler) runWriteTool(r *http.Request, tool *mcpTool, tenantID strin
 		return toolErrorResult(classifyMCPError(err)), true
 	}
 	pending, err := h.confirmer.RequestConfirmation(ctx, p, tool.Name, digest, summary, mcpoauthapp.Actor{
-		IP: auditClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		IP: auditClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	})
 	if err != nil {
 		h.logger.Warn("mcp confirmation request failed", "error", err.Error())

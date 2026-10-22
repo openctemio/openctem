@@ -209,7 +209,7 @@ func (h *EASMHandler) auditRule(r *http.Request, in easmapp.RuleActionInput, res
 	ctx := r.Context()
 	actx := auditapp.AuditContext{
 		TenantID: middleware.MustGetTenantID(ctx), ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
 	reason := logger.SanitizeValue(in.Reason)
 	if t := res.Target; t != nil {

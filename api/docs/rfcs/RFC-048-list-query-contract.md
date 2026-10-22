@@ -222,8 +222,8 @@ capped at 64 characters.
   are **aliases**: accepted, mapped to the new field, answered with
   `Deprecation`/`Sunset` (RFC 9745 / RFC 8594) and counted in
   `deprecated_query_param_requests_total{route,param,client}`. An alias is
-  removed when its counter reads zero for 30 days and 6 months have passed
-  (RFC-041 D10).
+  removed when its counter reads zero for 30 days and 90 days have passed
+  (RFC-041 §11 D15, which replaced the 6 months of D10).
 - Bad values for known params are **always** 400.
 
 ### 3.9 Web encoding
@@ -323,7 +323,7 @@ capped at 64 characters.
 | D6 | Strictness | unknown or invalid params: log, count and `Deprecation` header for one release, then 400 `INVALID_FILTER`; bad values for known params 400 at once |
 | D7 | Expression string | later, as an optional third encoding, SQL precedence |
 | D8 | Search spelling | `POST /{coll}/search` |
-| D9 | Pagination and counts | offset ≤ 10,000 then cursor; exact count until a threshold, then estimate |
+| D9 | Pagination and counts | offset ≤ 10,000 then cursor; exact count until a threshold, then estimate. **Settled 2026-10-22 (RFC-041 §11 D6, D7):** the threshold is 10,000 rows, the estimate is flagged `total_is_estimate`, the cursor is `pagination=keyset&cursor=` (opaque, signed, tenant-bound), and the list key is `data` |
 | D10 | Log privacy | redact free-text params at the gateway; API logs param names only |
 | D11 | Order | findings → stats/groups/export → saved views → assets → MCP → long tail |
 | D12 | Stored-filter actor | views as the viewer; reports, alerts, campaign progress as their owner; system use only via an allowlisted `SystemActor` |
