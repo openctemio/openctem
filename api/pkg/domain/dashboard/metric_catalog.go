@@ -22,6 +22,12 @@ const (
 	ShapeTimeSeries Shape = "time_series"
 	ShapeMatrix     Shape = "matrix"
 	ShapeItems      Shape = "items"
+	// ShapeStages is the CTEM loop: one figure per stage with its status
+	// and the list it counts.
+	ShapeStages Shape = "stages"
+	// ShapePaths is the attack paths that reach crown jewels: a reachable
+	// count and the top paths.
+	ShapePaths Shape = "paths"
 )
 
 // VizType is how a widget result is drawn.
@@ -41,6 +47,8 @@ const (
 	VizList      VizType = "list"
 	VizDonut     VizType = "donut"
 	VizNote      VizType = "note"
+	VizLoop      VizType = "loop"
+	VizPaths     VizType = "paths"
 )
 
 // vizByShape lists the visualizations valid for each result shape; the first
@@ -53,6 +61,8 @@ var vizByShape = map[Shape][]VizType{
 	ShapeTimeSeries: {VizArea, VizLine, VizColumn, VizTable},
 	ShapeMatrix:     {VizHeatmap, VizTable, VizColumn},
 	ShapeItems:      {VizList, VizTable},
+	ShapeStages:     {VizLoop, VizTable},
+	ShapePaths:      {VizPaths, VizTable},
 }
 
 // Dimension is a fact column a widget may filter or group by.
@@ -100,6 +110,14 @@ const (
 	MetricKindSeries MetricKind = "series"
 	// MetricKindItems is a ranked list of findings (F3).
 	MetricKindItems MetricKind = "items"
+	// MetricKindAssetCount counts assets (crown jewels) with open findings
+	// matching the filter (F1 joined to assets): always a scalar.
+	MetricKindAssetCount MetricKind = "asset_count"
+	// MetricKindStages is the CTEM loop: five stage figures, each read from
+	// the source named in docs/architecture/dashboards.md ("CTEM metrics").
+	MetricKindStages MetricKind = "stages"
+	// MetricKindPaths is the attack paths that reach a crown jewel in scope.
+	MetricKindPaths MetricKind = "paths"
 )
 
 // Metric is one catalog entry.
@@ -159,6 +177,14 @@ var catalog = []Metric{
 	// keeps the merged list exact.
 	{ID: "fix.next", Group: "exposure", Kind: MetricKindItems, Filters: f3Dims, Polarity: PolarityNeutral},
 	{ID: "sla.at_risk", Group: "remediation", Kind: MetricKindItems, Filters: f3Dims, Polarity: PolarityNeutral},
+	// Crown jewels in scope with at least one open finding of the filter's
+	// priority classes (P0 and P1 by default).
+	{ID: "crown_jewels.exposed", Group: "ctem", Kind: MetricKindAssetCount, Filters: []Dimension{DimPriorityClass},
+		DefaultFilter: WidgetFilter{PriorityClass: []string{"P0", "P1"}}, Polarity: PolarityLowerBetter},
+	// The five CTEM stages for the reader's scope.
+	{ID: "ctem.loop", Group: "ctem", Kind: MetricKindStages, Polarity: PolarityNeutral},
+	// Attack paths ending at a crown jewel in scope, entry point in scope.
+	{ID: "attack_paths.to_crown_jewels", Group: "ctem", Kind: MetricKindPaths, Polarity: PolarityLowerBetter},
 }
 
 var catalogByID = func() map[string]Metric {
@@ -198,6 +224,12 @@ func (m Metric) ShapeFor(groupBy []Dimension) Shape {
 		return ShapeTimeSeries
 	case MetricKindItems:
 		return ShapeItems
+	case MetricKindAssetCount:
+		return ShapeScalar
+	case MetricKindStages:
+		return ShapeStages
+	case MetricKindPaths:
+		return ShapePaths
 	default: // count
 		switch len(groupBy) {
 		case 0:
@@ -229,6 +261,17 @@ func (m Metric) Vizzes(groupBy []Dimension) []VizType {
 		}
 	}
 	return out
+}
+
+// Current reports a metric with no time window or comparison: a ranked
+// list, the CTEM loop, attack paths and asset counts are read as they are
+// now (no fact history traces them).
+func (m Metric) Current() bool {
+	switch m.Kind {
+	case MetricKindItems, MetricKindAssetCount, MetricKindStages, MetricKindPaths:
+		return true
+	}
+	return false
 }
 
 // EffectiveGroupBy is the widget's group-by, or the metric default.

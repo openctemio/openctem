@@ -78,7 +78,7 @@ func (h *SCIMTokenHandler) SetGroupMappings(w http.ResponseWriter, r *http.Reque
 		ActorEmail: middleware.GetUsername(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	if err := h.groups.SetRoleMappings(r.Context(), tenantID, body.Mappings, actx); err != nil {
 		if errors.Is(err, shared.ErrForbidden) {
