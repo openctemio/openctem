@@ -77,7 +77,9 @@ Every active filter is a chip, then **Add filter** (shortcut `f`). Code: `src/fe
 - A filter the page does not draw itself goes to the API as it is. The contract is fetched only when the picker
   opens or the URL holds such a filter; a list that uses only page-owned filters loads with no extra request.
 - Chips from the open saved view come first, show a lock and have no remove button: switch or edit the view.
-  A view whose conditions are a tree shows one locked chip naming that.
+  A view whose conditions are a tree (an `any` or a `not` below the top) shows one locked chip naming that.
+  The picker disables a field the view already sets, because the server lets a request filter replace the
+  view's own condition on that field.
 - A param no field knows is shown as an unknown filter with a remove button and is kept out of the request. If
   the API refuses one (a 400 `INVALID_FILTER` naming the param) the list says "This link has a filter we do not
   know" and offers to remove it, instead of a failed load.

@@ -77,6 +77,8 @@ interface AddFilterPopoverProps {
   contractLoading: boolean
   contractFailed: boolean
   canReadAssets: boolean
+  /** Fields the open saved view already sets: a filter on one would override the view. */
+  lockedFields?: ReadonlySet<string>
   onOpenChange?: (open: boolean) => void
   onApply: (field: FieldContract, op: FilterOp, values: string[]) => void
 }
@@ -93,6 +95,7 @@ export function AddFilterPopover({
   contractLoading,
   contractFailed,
   canReadAssets,
+  lockedFields,
   onOpenChange,
   onApply,
 }: AddFilterPopoverProps) {
@@ -186,13 +189,20 @@ export function AddFilterPopover({
                 <CommandGroup key={group} heading={t(...GROUP_LABELS[group])}>
                   {fields.map((f) => {
                     const label = labels.fieldLabel(f.name)
+                    const locked = lockedFields?.has(f.name) ?? false
                     return (
                       <CommandItem
                         key={f.name}
                         value={`${label} ${f.name}`}
+                        disabled={locked}
                         onSelect={() => setPicked(f)}
                       >
                         {label}
+                        {locked && (
+                          <span className="ms-auto text-xs text-muted-foreground">
+                            {t('findings.filter.setByView', 'Set by the saved view')}
+                          </span>
+                        )}
                       </CommandItem>
                     )
                   })}

@@ -1643,5 +1643,6 @@
   "findings.filter.value.asset_criticality.high": "High",
   "findings.filter.value.asset_criticality.medium": "Medium",
   "findings.filter.value.asset_criticality.low": "Low",
-  "findings.filter.value.asset_criticality.none": "Not rated"
+  "findings.filter.value.asset_criticality.none": "Not rated",
+  "findings.filter.setByView": "Set by the saved view"
 }

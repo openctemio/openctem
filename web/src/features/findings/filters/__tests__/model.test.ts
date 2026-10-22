@@ -8,6 +8,7 @@ import {
   pickableFields,
   readFilters,
   valuesOf,
+  viewFields,
   viewFilters,
   withFilter,
   withoutParam,
@@ -129,9 +130,16 @@ describe('readFilters', () => {
 })
 
 describe('viewFilters', () => {
-  it('turns a flat view filter into locked chips', () => {
+  const doc = (...all: unknown[]) => ({ v: 1, filter: { all } })
+
+  it('turns the top-level conditions of a stored view into locked chips', () => {
     const r = viewFilters(
-      { severity: ['critical', 'high'], epss_score_gte: 0.1, is_in_kev: true },
+      doc(
+        { field: 'severity', op: 'in', value: ['critical', 'high'] },
+        { field: 'epss_score', op: 'gte', value: 0.1 },
+        { field: 'is_in_kev', op: 'eq', value: true },
+        { field: 'severity', op: 'not_in', value: ['low'] }
+      ),
       contract
     )
     expect(r.complex).toBe(false)
@@ -140,28 +148,63 @@ describe('viewFilters', () => {
       ['severity', ['critical', 'high']],
       ['epss_score_gte', ['0.1']],
       ['is_in_kev', ['true']],
+      ['severity_not', ['low']],
     ])
   })
 
-  it('a node document is reported, not guessed at', () => {
-    expect(
-      viewFilters({ all: [{ field: 'severity', op: 'in', value: ['low'] }] }, contract)
-    ).toEqual({
+  it('a single leaf is a view of one condition', () => {
+    const r = viewFilters(
+      { v: 1, filter: { field: 'severity', op: 'in', value: ['low'] } },
+      contract
+    )
+    expect(r.filters.map((f) => f.param)).toEqual(['severity'])
+  })
+
+  it('an any or a not below the top is reported, not guessed at', () => {
+    const r = viewFilters(
+      doc(
+        { field: 'severity', op: 'in', value: ['low'] },
+        { any: [{ field: 'is_in_kev', op: 'eq', value: true }] }
+      ),
+      contract
+    )
+    expect(r.complex).toBe(true)
+    expect(r.filters.map((f) => f.param)).toEqual(['severity'])
+    expect(viewFilters({ v: 1, filter: { any: [] } }, contract)).toEqual({
       filters: [],
       complex: true,
     })
   })
 
-  it('nothing for a view without a filter', () => {
-    expect(viewFilters(undefined, contract)).toEqual({ filters: [], complex: false })
+  it('a condition on a field or operator the contract lacks is reported as complex', () => {
+    expect(viewFilters(doc({ field: 'nope', op: 'in', value: ['x'] }), contract).complex).toBe(true)
+    expect(viewFilters(doc({ field: 'is_in_kev', op: 'gte', value: 1 }), contract).complex).toBe(
+      true
+    )
   })
 
-  it('ignores params that are not filters and values that are objects', () => {
-    const r = viewFilters(
-      { sort: '-created_at', severity: [{ bad: 1 }] as unknown as string[] },
-      contract
-    )
+  it('nothing for a view without a filter', () => {
+    expect(viewFilters(undefined, contract)).toEqual({ filters: [], complex: false })
+    expect(viewFilters({ v: 1, sort: ['-created_at'] }, contract)).toEqual({
+      filters: [],
+      complex: false,
+    })
+  })
+
+  it('ignores values that are objects', () => {
+    const r = viewFilters(doc({ field: 'severity', op: 'in', value: [{ bad: 1 }] }), contract)
     expect(r.filters).toEqual([])
+  })
+})
+
+describe('viewFields', () => {
+  it('names the fields a view already sets', () => {
+    const f = viewFields({
+      v: 1,
+      filter: { all: [{ field: 'severity', op: 'in', value: ['low'] }, { any: [] }] },
+    })
+    expect([...f]).toEqual(['severity'])
+    expect(viewFields(undefined).size).toBe(0)
   })
 })
 

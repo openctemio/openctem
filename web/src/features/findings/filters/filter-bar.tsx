@@ -10,6 +10,7 @@ import { AddFilterPopover } from './add-filter-popover'
 import { FilterChip } from './filter-chip'
 import {
   readFilters,
+  viewFields,
   viewFilters,
   withFilter,
   withoutParam,
@@ -66,6 +67,7 @@ export function FilterBar({
     [search, contract, skip]
   )
   const fromView = useMemo(() => viewFilters(viewFilter, contract), [viewFilter, contract])
+  const lockedFields = useMemo(() => viewFields(viewFilter), [viewFilter])
 
   return (
     <div data-testid="findings-filter-bar" className="flex min-w-0 flex-wrap items-center gap-2">
@@ -122,6 +124,7 @@ export function FilterBar({
         contractLoading={contractLoading}
         contractFailed={contractFailed}
         canReadAssets={canReadAssets}
+        lockedFields={lockedFields}
         onOpenChange={onPickerOpenChange}
         onApply={(field: FieldContract, op: FilterOp, values: string[]) =>
           onSearchChange(withFilter(search, field, op, values))
