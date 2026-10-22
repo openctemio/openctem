@@ -26,6 +26,18 @@ import (
 // ownerAudit records the audit events of a task owner's moves.
 type ownerAudit struct{ events []auditapp.AuditEvent }
 
+// ownerMoves counts the task-owner move events; every status move also
+// writes its own finding.status_changed event, which is not counted here.
+func (a *ownerAudit) ownerMoves() []auditapp.AuditEvent {
+	var out []auditapp.AuditEvent
+	for _, e := range a.events {
+		if string(e.Action) == "remediation_task.owner_moved_finding" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (a *ownerAudit) LogEvent(_ context.Context, _ auditapp.AuditContext, e auditapp.AuditEvent) error {
 	a.events = append(a.events, e)
 	return nil
@@ -96,21 +108,20 @@ func TestTaskOwnerAccess_ReadFixWorkAndEnd(t *testing.T) {
 		assert.ErrorIs(t, err, shared.ErrForbidden, to)
 	}
 	assert.Equal(t, "new", r.status(inB))
-	assert.Empty(t, r.audit.events, "refused moves are not audited as moves")
+	assert.Empty(t, r.audit.ownerMoves(), "refused moves are not audited as moves")
 
 	// The fix workflow is open to them: start work, audited.
 	_, err = vuln.UpdateFindingStatus(viaTask, inB2.String(), tenant, finding.UpdateFindingStatusInput{
 		Status: "in_progress", ActorID: r.member.String()})
 	require.NoError(t, err)
 	assert.Equal(t, "in_progress", r.status(inB2))
-	require.Len(t, r.audit.events, 1)
-	assert.Equal(t, "remediation_task.owner_moved_finding", string(r.audit.events[0].Action))
+	require.Len(t, r.audit.ownerMoves(), 1)
 	// The same move on a finding in their own scope is not a task-owner move.
 	ownScope := r.finding(r.assetA, "confirmed", nil)
 	_, err = vuln.UpdateFindingStatus(member, ownScope.String(), tenant, finding.UpdateFindingStatusInput{
 		Status: "in_progress", ActorID: r.member.String()})
 	require.NoError(t, err)
-	assert.Len(t, r.audit.events, 1)
+	assert.Len(t, r.audit.ownerMoves(), 1)
 
 	// Mark fixed by the unassigned owner claims every open finding, on the
 	// asset outside their scope too (S13), and nothing outside the task.
