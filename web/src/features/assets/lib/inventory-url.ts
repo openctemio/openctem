@@ -42,6 +42,7 @@ export type InventoryFilters = Pick<
   | 'isCrownJewel'
   | 'programAssets'
   | 'freshness'
+  | 'coverage'
   | 'technologies'
   | 'technologyCategories'
   | 'hasFindings'
@@ -67,6 +68,8 @@ export const HIGH_RISK_SCORE = 70
 const LENS_PARAM = 'lens'
 const TAGS_MODE_PARAM = 'tags_mode'
 const MIN_RISK_PARAM = 'min_risk_score'
+/** coverage=covered|uncovered (the dashboard's Discovery stage opens uncovered). */
+const COVERAGE_PARAM = 'coverage'
 
 function isLens(v: string): v is AssetLens {
   return ASSET_LENSES.some((l) => l.id === v)
@@ -162,6 +165,9 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
     out.minRiskScore = minRisk
   }
 
+  const coverage = sp.get(COVERAGE_PARAM)
+  if (coverage === 'covered' || coverage === 'uncovered') out.coverage = coverage
+
   const page = Number(sp.get('page'))
   if (Number.isFinite(page) && page > 0) out.page = page
   const perPage = Number(sp.get('per_page'))
@@ -191,6 +197,7 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   if (f.lens) sp.set(LENS_PARAM, f.lens)
   if (f.tagsMode === 'all' && f.tags?.length) sp.set(TAGS_MODE_PARAM, 'all')
   if (f.minRiskScore !== undefined) sp.set(MIN_RISK_PARAM, String(f.minRiskScore))
+  if (f.coverage) sp.set(COVERAGE_PARAM, f.coverage)
   if (f.page && f.page > 1) sp.set('page', String(f.page))
   if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('per_page', String(f.pageSize))
 
@@ -358,6 +365,7 @@ export function countActiveFilters(f: InventoryFilters): number {
   if (f.subType) n += 1
   if (f.lens) n += 1
   if (f.minRiskScore !== undefined) n += 1
+  if (f.coverage) n += 1
   for (const values of Object.values(f.propertiesFilter ?? {})) n += values.length
   if (f.lastSeenBefore || f.lastSeenAfter) n += 1
   if (f.expiresBefore || f.expiresAfter) n += 1
