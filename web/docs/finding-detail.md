@@ -38,6 +38,12 @@ in the activity panel.
   labelled as global, and attack paths and combined exposures are shown as the
   reason an issue matters.
 - **A dismissal needs a reason**, and the reason goes into the timeline.
+- **AI triage is opt-in and permission-aware.** The header button shows only to a
+  user who may run it (`ai_triage:trigger`) in an organization that turned AI triage
+  on (Settings > AI). Without `ai_triage:read` the page sends no AI triage request
+  and shows no error. The "AI analysis" section on Overview is read from the finding's
+  own AI triage endpoint (`/findings/{id}/ai-triage`), so it stays after newer
+  comments and activity.
 
 ## Principles
 
