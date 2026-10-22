@@ -11,7 +11,7 @@ status a finding shows is in
 
 `sla_started_at` is when the current clock started. It is written with every
 deadline, in the database, so no writer can forget it
-(`trg_findings_sla_episode`, migration `003261`):
+(`trg_findings_sla_episode`, migration `finding_sla_episode`):
 
 | Event | `sla_started_at` |
 |---|---|
@@ -67,8 +67,8 @@ sent; the status and the timeline row are written either way.
 
 ## Upgrade
 
-Migration `003261` adds the three columns and backfills `sla_started_at`
+Migration `finding_sla_episode` adds the three columns and backfills `sla_started_at`
 (`last_reopened_at`, else `first_detected_at`); findings already `warning` or
-`overdue` count as announced, so a deploy sends nothing. `003262` creates the
-partial index concurrently and `003263` drops `idx_findings_sla_overdue`,
+`overdue` count as announced, so a deploy sends nothing. `findings_sla_breach_due_index` creates the
+partial index concurrently and `drop_findings_sla_overdue_index` drops `idx_findings_sla_overdue`,
 which filtered on retired values and served no query.
