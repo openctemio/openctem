@@ -402,7 +402,7 @@ func (r *FindingSourceRepository) List(
 	// Build order clause
 	orderClause := " ORDER BY fs.display_order, fs.name"
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderClause = " ORDER BY fs." + opts.Sort.SQL()
+		orderClause = " ORDER BY fs." + opts.Sort.SQLWithTieBreaker("fs.id")
 	}
 
 	// Query with pagination
@@ -456,7 +456,7 @@ func (r *FindingSourceRepository) ListWithCategory(
 	// Build order clause
 	orderClause := " ORDER BY fs.display_order, fs.name"
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderClause = " ORDER BY fs." + opts.Sort.SQL()
+		orderClause = " ORDER BY fs." + opts.Sort.SQLWithTieBreaker("fs.id")
 	}
 
 	// Query with category join

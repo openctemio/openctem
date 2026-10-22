@@ -81,7 +81,7 @@ func savedViewCaller(r *http.Request) savedviewapp.Caller {
 		Has: func(p string) bool { return middleware.HasPermission(ctx, p) },
 		Audit: auditapp.AuditContext{
 			TenantID: middleware.GetTenantID(ctx), ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
-			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		},
 	}
 }

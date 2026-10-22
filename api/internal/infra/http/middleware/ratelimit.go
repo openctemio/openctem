@@ -174,9 +174,7 @@ func (rl *RateLimiter) serveKeyed(w http.ResponseWriter, r *http.Request, k stri
 	}
 
 	// Set rate limit headers on all responses
-	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.burst))
-	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+	setRateLimitHeaders(w, rl.burst, remaining, resetTime)
 
 	if !limiter.Allow() {
 		if rl.log != nil {
@@ -188,7 +186,7 @@ func (rl *RateLimiter) serveKeyed(w http.ResponseWriter, r *http.Request, k stri
 		}
 
 		// Update remaining to 0 since we're rate limited
-		w.Header().Set("X-RateLimit-Remaining", "0")
+		setRateLimitRemaining(w, 0)
 		w.Header().Set("Retry-After", strconv.Itoa(rl.retryAfterSeconds()))
 		apierror.RateLimitExceeded().WriteJSON(w)
 		return
@@ -306,9 +304,7 @@ func DistributedRateLimit(cfg DistributedRateLimitConfig) func(http.Handler) htt
 			}
 
 			// Set standard rate limit headers
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(cfg.Limiter.Limit()))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(result.Remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(result.ResetAt.Unix(), 10))
+			setRateLimitHeaders(w, cfg.Limiter.Limit(), result.Remaining, result.ResetAt)
 
 			if !result.Allowed {
 				retryAfter := int(time.Until(result.RetryAt).Seconds())
@@ -933,9 +929,7 @@ func (f *FindingActivityRateLimiter) ListMiddleware() func(http.Handler) http.Ha
 			}
 
 			// Set rate limit headers
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(f.listLimiter.burst))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+			setRateLimitHeaders(w, f.listLimiter.burst, remaining, resetTime)
 
 			if !limiter.Allow() {
 				f.log.Warn("finding activity rate limit exceeded",
@@ -944,7 +938,7 @@ func (f *FindingActivityRateLimiter) ListMiddleware() func(http.Handler) http.Ha
 					"request_id", GetRequestID(r.Context()),
 				)
 
-				w.Header().Set("X-RateLimit-Remaining", "0")
+				setRateLimitRemaining(w, 0)
 				w.Header().Set("Retry-After", "1")
 				apierror.RateLimitExceeded().WriteJSON(w)
 				return
@@ -1070,9 +1064,7 @@ func (a *AnalyticsRateLimiter) wrapWithKey(rl *RateLimiter, category string) fun
 			}
 
 			// Set rate limit headers
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.burst))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+			setRateLimitHeaders(w, rl.burst, remaining, resetTime)
 
 			if !limiter.Allow() {
 				a.log.Warn("analytics rate limit exceeded",
@@ -1082,7 +1074,7 @@ func (a *AnalyticsRateLimiter) wrapWithKey(rl *RateLimiter, category string) fun
 					"request_id", GetRequestID(r.Context()),
 				)
 
-				w.Header().Set("X-RateLimit-Remaining", "0")
+				setRateLimitRemaining(w, 0)
 				w.Header().Set("Retry-After", "1")
 				apierror.RateLimitExceeded().WriteJSON(w)
 				return
@@ -1192,9 +1184,7 @@ func (a *AITriageRateLimiter) RequestMiddleware() func(http.Handler) http.Handle
 			}
 
 			// Set rate limit headers
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(a.requestLimiter.burst))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+			setRateLimitHeaders(w, a.requestLimiter.burst, remaining, resetTime)
 
 			if !limiter.Allow() {
 				a.log.Warn("AI triage rate limit exceeded",
@@ -1203,7 +1193,7 @@ func (a *AITriageRateLimiter) RequestMiddleware() func(http.Handler) http.Handle
 					"request_id", GetRequestID(r.Context()),
 				)
 
-				w.Header().Set("X-RateLimit-Remaining", "0")
+				setRateLimitRemaining(w, 0)
 				w.Header().Set("Retry-After", "6") // 6 seconds for 10 requests/min
 				apierror.RateLimitExceeded().WriteJSON(w)
 				return
@@ -1244,9 +1234,7 @@ func (t *TriggerRateLimiter) wrapWithTenantKey(rl *RateLimiter) func(http.Handle
 			}
 
 			// Set rate limit headers
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.burst))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+			setRateLimitHeaders(w, rl.burst, remaining, resetTime)
 
 			if !limiter.Allow() {
 				t.log.Warn("trigger rate limit exceeded",
@@ -1255,7 +1243,7 @@ func (t *TriggerRateLimiter) wrapWithTenantKey(rl *RateLimiter) func(http.Handle
 					"request_id", GetRequestID(r.Context()),
 				)
 
-				w.Header().Set("X-RateLimit-Remaining", "0")
+				setRateLimitRemaining(w, 0)
 				w.Header().Set("Retry-After", "1")
 				apierror.RateLimitExceeded().WriteJSON(w)
 				return
@@ -1355,9 +1343,7 @@ func (a *AdminMappingRateLimiter) WriteMiddleware() func(http.Handler) http.Hand
 			}
 
 			// Set rate limit headers
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(a.writeLimiter.burst))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+			setRateLimitHeaders(w, a.writeLimiter.burst, remaining, resetTime)
 
 			if !limiter.Allow() {
 				a.log.Warn("admin mapping rate limit exceeded",
@@ -1366,7 +1352,7 @@ func (a *AdminMappingRateLimiter) WriteMiddleware() func(http.Handler) http.Hand
 					"request_id", GetRequestID(r.Context()),
 				)
 
-				w.Header().Set("X-RateLimit-Remaining", "0")
+				setRateLimitRemaining(w, 0)
 				w.Header().Set("Retry-After", "6") // 6 seconds for 10 requests/min
 				apierror.RateLimitExceeded().WriteJSON(w)
 				return
@@ -1481,9 +1467,7 @@ func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler
 			}
 
 			// Set rate limit headers
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rel.limiter.burst))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+			setRateLimitHeaders(w, rel.limiter.burst, remaining, resetTime)
 
 			if !limiter.Allow() {
 				if rel.log != nil {
@@ -1494,7 +1478,7 @@ func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler
 					)
 				}
 
-				w.Header().Set("X-RateLimit-Remaining", "0")
+				setRateLimitRemaining(w, 0)
 				w.Header().Set("Retry-After", "1")
 				apierror.RateLimitExceeded().WriteJSON(w)
 				return
