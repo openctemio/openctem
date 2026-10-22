@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -112,7 +113,7 @@ func (s stubSCIMAuth) Authenticate(_ context.Context, plaintext string) (*scimto
 	if plaintext == "" {
 		return nil, scimtoken.ErrNotFound
 	}
-	return scimtoken.New(shared.NewID(), s.tenantID, "t", "hash", "pref"), nil
+	return scimtoken.New(shared.NewID(), s.tenantID, "t", "hash", "pref", time.Now().Add(time.Hour)), nil
 }
 
 type scimTestEnv struct {

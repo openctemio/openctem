@@ -209,8 +209,10 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 `sessions.step_up_at`, server-side and per session. Routes:
 
 - `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}`
-- `POST /api/v1/scim-tokens`
-- `PATCH /api/v1/tenants/{tenant}/settings/security`
+- `POST /api/v1/scim-tokens`, `POST /api/v1/scim-tokens/{id}/rotate`
+- `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
+- `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
+- `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
@@ -638,7 +640,7 @@ authenticator code, and is audited.
 | Endpoint | Gate |
 |----------|------|
 | `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`); a `PUT` that adds, changes or removes a mapping **to admin** is owner only (service check, 403) |
-| `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`); create also needs **step-up** |
+| `POST /api/v1/scim-tokens` · `POST /{id}/rotate` · `DELETE /{id}` | **owner only** (`RequireOwner`); create and rotate also need **step-up** |
 
 > A SCIM token can create, suspend and re-role every member, so minting and
 > revoking one is the owner's decision (owner decision 2026-10-02). Which IdP
@@ -719,7 +721,7 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete`; every write also needs **step-up** |
 
 #### Organization-wide scan configuration
 
