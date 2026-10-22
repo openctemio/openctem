@@ -27,14 +27,18 @@ const api = vi.hoisted(() => ({
   mine: [] as Dashboard[],
   org: [] as Dashboard[],
   orgEnabled: [] as boolean[],
+  orgError: undefined as Error | undefined,
+  create: vi.fn(),
 }))
 vi.mock('../api/use-dashboards-api', () => ({
   useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
   useOrgDashboards: (enabled: boolean) => {
     api.orgEnabled.push(enabled)
+    if (enabled && api.orgError) return { data: undefined, error: api.orgError, isLoading: false }
     return { data: enabled ? { data: api.org } : undefined, isLoading: false }
   },
   useRevalidateAllDashboards: () => async () => {},
+  createDashboard: api.create,
   setDefaultDashboard: vi.fn(),
   setOrgDefaultDashboard: vi.fn(),
   setDashboardSchedule: vi.fn(() => Promise.resolve()),
@@ -114,7 +118,7 @@ const snapshot = (scope: 'personal' | 'organization', open: number): DashboardDa
 function renderHome(locale: 'en' | 'vi' = 'en') {
   return render(
     <I18nProvider locale={locale}>
-      <DashboardHome empty={<div>EMPTY_VIEW</div>} />
+      <DashboardHome />
     </I18nProvider>
   )
 }
@@ -126,13 +130,56 @@ describe('DashboardHome', () => {
     api.mine = []
     api.org = []
     api.orgEnabled = []
+    api.orgError = undefined
     data.byKey = {}
     vi.clearAllMocks()
   })
 
-  it('shows the empty view when the viewer has no stored dashboard', () => {
+  it('a person with no dashboard at all gets a personal copy of the Overview template, once', async () => {
+    api.create.mockResolvedValue({ id: 'new1' })
+    const { rerender } = renderHome()
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
+    const input = api.create.mock.calls[0][0] as {
+      name: string
+      columns: number
+      layout: Array<{ widget_type: string }>
+    }
+    expect(input.name).toBe('Overview')
+    expect(input.columns).toBe(4)
+    expect(input.layout.length).toBeGreaterThan(4)
+    expect(input.layout.every((w) => w.widget_type === 'metric')).toBe(true)
+    rerender(
+      <I18nProvider locale="en">
+        <DashboardHome />
+      </I18nProvider>
+    )
+    expect(api.create).toHaveBeenCalledTimes(1)
+    expect(window.localStorage.getItem(DASHBOARD_CHOICE_KEY)).toBe('personal:new1')
+  })
+
+  it('no copy when the organization has dashboards for the viewer; a failed copy shows the empty state', async () => {
+    perms.list = ['dashboards:org:view']
+    api.org = [dash('o1', 'Overview', { is_org_default: true })]
     renderHome()
-    expect(screen.getByText('EMPTY_VIEW')).toBeInTheDocument()
+    expect(api.create).not.toHaveBeenCalled()
+  })
+
+  it('no copy when the organization list failed to load', async () => {
+    perms.list = ['dashboards:org:view']
+    api.orgError = new Error('boom')
+    renderHome()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(api.create).not.toHaveBeenCalled()
+  })
+
+  it('a failed copy leaves a way to create one', async () => {
+    api.create.mockRejectedValue(new Error('no'))
+    renderHome()
+    expect(await screen.findByText('You have no dashboards yet.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'New dashboard' })).toHaveAttribute(
+      'href',
+      '/dashboards'
+    )
   })
 
   it('opens my default dashboard from its snapshot, in my scope, and never asks for organization dashboards without the permission', async () => {

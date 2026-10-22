@@ -83,9 +83,9 @@ func TestAutoReopenBatch_HumanResolvedReopens_DeliberateDispositionsDoNot(t *tes
 	verifiedID, verifiedFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "manual_retest_passed")
 	nullResID, nullResFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "")
 
-	// Should NOT reopen: deliberate dispositions carried in the resolution column.
-	fpDispoID, fpDispoFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "false_positive")
-	acceptID, acceptFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "accepted_risk")
+	// Should NOT reopen: deliberate dispositions are their own statuses.
+	fpDispoID, fpDispoFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "false_positive", "false_positive")
+	acceptID, acceptFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "accepted", "accepted_risk")
 
 	fps := []string{humanFP, autoFP, verifiedFP, nullResFP, fpDispoFP, acceptFP}
 	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, fps)
@@ -105,7 +105,7 @@ func TestAutoReopenBatch_HumanResolvedReopens_DeliberateDispositionsDoNot(t *tes
 		}
 	}
 
-	// Confirm persisted status: reopened → confirmed; dispositions → resolved.
+	// Confirm persisted status: reopened → confirmed; dispositions unchanged.
 	if got := statusOf(ctx, t, db, humanID); got != "confirmed" {
 		t.Errorf("human-resolved finding status = %s, want confirmed", got)
 	}
@@ -118,11 +118,11 @@ func TestAutoReopenBatch_HumanResolvedReopens_DeliberateDispositionsDoNot(t *tes
 	if got := statusOf(ctx, t, db, nullResID); got != "confirmed" {
 		t.Errorf("null-resolution finding status = %s, want confirmed", got)
 	}
-	if got := statusOf(ctx, t, db, fpDispoID); got != "resolved" {
-		t.Errorf("false_positive-resolution finding status = %s, want resolved (unchanged)", got)
+	if got := statusOf(ctx, t, db, fpDispoID); got != "false_positive" {
+		t.Errorf("false_positive finding status = %s, want false_positive (unchanged)", got)
 	}
-	if got := statusOf(ctx, t, db, acceptID); got != "resolved" {
-		t.Errorf("accepted_risk-resolution finding status = %s, want resolved (unchanged)", got)
+	if got := statusOf(ctx, t, db, acceptID); got != "accepted" {
+		t.Errorf("accepted finding status = %s, want accepted (unchanged)", got)
 	}
 
 	// The regression trigger (migration 000199) must have classified the reopen:

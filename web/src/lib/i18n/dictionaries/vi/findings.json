@@ -1398,5 +1398,7 @@
   "findings.approvalDialog.titleDecide": "Đánh dấu là dương tính giả",
   "findings.approvalDialog.descriptionDecide": "Tổ chức của bạn cho phép bạn tự quyết định việc này. Hãy chọn lý do và giải thích.",
   "findings.approvalDialog.descriptionRequest": "Đổi trạng thái sang {status} cần được phê duyệt. Hãy nêu lý do.",
-  "findings.approvalDialog.confirmTitleDecide": "Xác nhận dương tính giả"
+  "findings.approvalDialog.confirmTitleDecide": "Xác nhận dương tính giả",
+  "findings.bulk.status": "Trạng thái",
+  "findings.bulk.assignTo": "Giao cho…"
 }
