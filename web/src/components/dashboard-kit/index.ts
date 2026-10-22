@@ -18,8 +18,10 @@ export { WidgetFrame, WidgetErrorBoundary, type WidgetFrameProps } from './widge
 export { StatViz, ProgressViz, type StatVizProps } from './stat-viz'
 export { BarViz, barRows, type BarVizProps } from './bar-viz'
 export { ColumnViz, AreaLineViz, DivergingViz, netOf, toRows } from './series-viz'
-export { HeatmapViz, FunnelViz, ItemsViz, heatStep } from './grid-viz'
-export { CategoryTable, TimeSeriesTable, MatrixTable, StagesTable } from './table-viz'
+export { HeatmapViz, ItemsViz, heatStep } from './grid-viz'
+export { LoopViz } from './loop-viz'
+export { PathsViz } from './paths-viz'
+export { CategoryTable, TimeSeriesTable, MatrixTable, StagesTable, PathsTable } from './table-viz'
 export {
   ChartOrTable,
   DeltaText,
