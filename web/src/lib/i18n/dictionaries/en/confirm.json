@@ -377,5 +377,8 @@
   "confirm.asset.bulkDeleteButton": "Delete {count} assets",
   "confirm.asset.bulkWithFindingsOne": "1 of them has findings, so it is not deleted; you can archive it afterwards.",
   "confirm.asset.bulkWithFindings": "{count} of them have findings, so they are not deleted; you can archive them afterwards.",
-  "confirm.savedView.trigger": "Views"
+  "confirm.savedView.trigger": "Views",
+  "confirm.slaPolicy.makeDefaultTitle": "Make \"{name}\" the default SLA policy?",
+  "confirm.slaPolicy.makeDefaultDesc": "New deadlines will follow this policy from now on. Open findings are re-scored right away: where this policy has tighter windows their deadlines move earlier; they are never moved later, so switching back does not restore the old deadlines.",
+  "confirm.slaPolicy.makeDefaultConfirm": "Make default"
 }

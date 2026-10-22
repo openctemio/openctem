@@ -72,6 +72,7 @@ type Service struct {
 	dataScope *datascope.Enforcer
 	facts     dashboard.FactReader
 	limiter   *limiter
+	previews  *previewLimiter
 	logger    *logger.Logger
 	now       func() time.Time
 
@@ -87,7 +88,7 @@ func NewService(dash *dashboardapp.Service, dataScope *datascope.Enforcer, facts
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &Service{dash: dash, dataScope: dataScope, facts: facts, limiter: newLimiter(MaxPerUser, MaxPerTenant, MaxPerProcess), logger: log, now: time.Now}
+	return &Service{dash: dash, dataScope: dataScope, facts: facts, limiter: newLimiter(MaxPerUser, MaxPerTenant, MaxPerProcess), previews: newPreviewLimiter(PreviewBurst, PreviewEvery), logger: log, now: time.Now}
 }
 
 // DashboardData is the result of every widget of one dashboard.
@@ -280,6 +281,9 @@ func (s *Service) Preview(ctx context.Context, c dashboardapp.Caller, widgetType
 	}
 	if _, err := dashboard.ParseWidgetSpec(widgetType, config); err != nil {
 		return nil, err
+	}
+	if wait := s.previews.take(c.TenantID.String()+"/"+c.UserID.String(), s.now()); wait > 0 {
+		return nil, &ErrPreviewRate{RetryAfter: wait}
 	}
 	scope, err := s.personalScope(ctx, c)
 	if err != nil {
