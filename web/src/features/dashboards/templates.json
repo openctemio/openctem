@@ -1,5 +1,182 @@
 [
   {
+    "key": "ctem",
+    "columns": 4,
+    "widgets": [
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct1",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.priority_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 0
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct2",
+          "data": {
+            "kind": "metric",
+            "metric": "intel.kev_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct3",
+          "data": {
+            "kind": "metric",
+            "metric": "crown_jewels.exposed",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 0
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct4",
+          "data": {
+            "kind": "metric",
+            "metric": "sla.within",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "progress",
+            "options": {}
+          },
+          "target": {
+            "op": ">=",
+            "value": 95
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct5",
+          "data": {
+            "kind": "metric",
+            "metric": "ctem.loop",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "loop",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_ct6",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.next",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_ct7",
+          "data": {
+            "kind": "metric",
+            "metric": "attack_paths.to_crown_jewels",
+            "filter": {},
+            "time": {},
+            "limit": 5
+          },
+          "viz": {
+            "type": "paths",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct8",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.open_by_priority",
+            "filter": {},
+            "time": {
+              "range": "90d"
+            }
+          },
+          "viz": {
+            "type": "area",
+            "options": {}
+          }
+        }
+      }
+    ]
+  },
+  {
     "key": "overview",
     "columns": 4,
     "widgets": [
@@ -95,6 +272,25 @@
           "target": {
             "op": "<=",
             "value": 168
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov10",
+          "data": {
+            "kind": "metric",
+            "metric": "ctem.loop",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "loop",
+            "options": {}
           }
         }
       },

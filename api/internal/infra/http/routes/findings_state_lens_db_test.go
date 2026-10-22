@@ -140,8 +140,8 @@ func TestFindingsStateLens_CountContract(t *testing.T) {
 		t.Errorf("memberA fixed lens on B1 = %v (total %d), want none", ids, total)
 	}
 	// An unknown lens is a 400 INVALID_FILTER, not "everything".
-	if status, _, body := h.listFindings(t, admin, "state=closed"); status != http.StatusBadRequest || !strings.Contains(body, "INVALID_FILTER") {
-		t.Errorf("state=closed = %d %.200s, want 400 INVALID_FILTER", status, body)
+	if status, _, body := h.listFindings(t, admin, "state=shut"); status != http.StatusBadRequest || !strings.Contains(body, "INVALID_FILTER") {
+		t.Errorf("state=shut = %d %.200s, want 400 INVALID_FILTER", status, body)
 	}
 }
 
