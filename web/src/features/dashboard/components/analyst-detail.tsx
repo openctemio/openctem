@@ -1,11 +1,10 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertTriangle } from 'lucide-react'
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   ResponsiveContainer,
@@ -29,11 +28,11 @@ interface AnalystDetailProps {
 }
 
 /**
- * The analyst-detail layer — the four charts that lived on the old dashboard
- * (Findings Trend, Severity donut, Asset Distribution, Recent Activity),
- * retained unchanged in spirit and moved below the CTEM action story.
+ * The analyst-detail layer below the CTEM action story: new findings per
+ * month, open findings by severity, assets by type and recent activity.
  */
 export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
+  const { t } = useTranslation()
   const findingsBySeverity = stats.findings.bySeverity || {}
   const assetsByType = stats.assets.byType || {}
 
@@ -58,40 +57,42 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-semibold tracking-tight">Analyst detail</h2>
+      <h2 className="text-sm font-semibold tracking-tight">
+        {t('dashboardMetrics.analyst.title')}
+      </h2>
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-7">
         {/* Findings Trend */}
         <Card className="col-span-1 gap-4 lg:col-span-4">
           <CardHeader>
-            <CardTitle>Findings trend</CardTitle>
-            <CardDescription>Security findings over the last 6 months</CardDescription>
+            {/* A flow (findings created per month), so columns, not a stacked
+                area that reads as a stock. */}
+            <CardTitle>{t('dashboardMetrics.analyst.newPerMonth')}</CardTitle>
+            <CardDescription>{t('dashboardMetrics.analyst.newPerMonthDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             {stats.findingTrend.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={stats.findingTrend}>
+                <BarChart data={stats.findingTrend}>
                   <XAxis dataKey="date" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                   <Tooltip {...CHART_TOOLTIP_PROPS} />
-                  <Legend />
+                  {/* Severity order (critical first), not alphabetical. */}
+                  <Legend itemSorter={null} />
                   {SEVERITY_LEVELS.map((s) => (
-                    <Area
+                    <Bar
                       key={s}
-                      type="monotone"
                       dataKey={s}
                       stackId="1"
-                      stroke={SEVERITY_COLORS[s]}
                       fill={SEVERITY_COLORS[s]}
-                      fillOpacity={0.8}
                       name={s === 'info' ? INFORMATIONAL_LABEL : SEVERITY_LABELS[s]}
                     />
                   ))}
-                </AreaChart>
+                </BarChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[300px] items-center justify-center">
-                <p className="text-muted-foreground">No findings trend data</p>
+                <p className="text-muted-foreground">{t('dashboardMetrics.analyst.noTrend')}</p>
               </div>
             )}
           </CardContent>
@@ -100,8 +101,8 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
         {/* Severity Distribution */}
         <Card className="col-span-1 gap-4 lg:col-span-3">
           <CardHeader>
-            <CardTitle>Severity distribution</CardTitle>
-            <CardDescription>Findings by severity level</CardDescription>
+            <CardTitle>{t('dashboardMetrics.widget.severity.title')}</CardTitle>
+            <CardDescription>{t('dashboardMetrics.analyst.severityDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             {severityData.length > 0 ? (
@@ -126,7 +127,7 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[300px] items-center justify-center">
-                <p className="text-muted-foreground">No findings data</p>
+                <p className="text-muted-foreground">{t('dashboardMetrics.analyst.noFindings')}</p>
               </div>
             )}
           </CardContent>
@@ -137,8 +138,12 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
         {/* Asset Distribution */}
         <Card className="flex h-full min-h-[380px] flex-col gap-4">
           <CardHeader>
-            <CardTitle>Asset distribution</CardTitle>
-            <CardDescription>{stats.assets.total} total assets by type</CardDescription>
+            <CardTitle>{t('dashboardMetrics.analyst.assets')}</CardTitle>
+            <CardDescription>
+              {t('dashboardMetrics.analyst.assetsDesc', undefined, {
+                n: stats.assets.total.toLocaleString(),
+              })}
+            </CardDescription>
           </CardHeader>
           <CardContent className="min-h-0 flex-1">
             {assetDistribution.length > 0 ? (
@@ -161,7 +166,7 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[250px] items-center justify-center">
-                <p className="text-muted-foreground">No asset data</p>
+                <p className="text-muted-foreground">{t('dashboardMetrics.analyst.noAssets')}</p>
               </div>
             )}
           </CardContent>
@@ -170,8 +175,8 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
         {/* Recent Activity */}
         <Card className="flex h-full flex-col gap-4 overflow-hidden">
           <CardHeader className="flex-shrink-0">
-            <CardTitle>Recent activity</CardTitle>
-            <CardDescription>Latest security events and updates</CardDescription>
+            <CardTitle>{t('dashboardMetrics.analyst.activity')}</CardTitle>
+            <CardDescription>{t('dashboardMetrics.analyst.activityDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="min-h-0 flex-1 overflow-y-auto">
             {stats.recentActivity.length > 0 ? (
@@ -193,7 +198,7 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
               </div>
             ) : (
               <div className="flex h-[200px] items-center justify-center">
-                <p className="text-muted-foreground">No recent activity</p>
+                <p className="text-muted-foreground">{t('dashboardMetrics.analyst.noActivity')}</p>
               </div>
             )}
           </CardContent>
