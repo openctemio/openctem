@@ -34,7 +34,7 @@ Multipart form:
 | `?dry_run=true` | Preview: parse and count; nothing is written |
 | `?format=` | Force the format of a single file |
 | `?min_severity=` | Drop findings below `info`, `low`, `medium`, `high` or `critical` |
-| `?coverage=full&asset_id=…` | Declares the upload a complete scan of the named assets (1 to 100) by each file's tool: the open findings of that tool on them that the upload does not report are closed. Needs `findings:status`; every asset must be in the uploader's data scope ([ingest-receipts.md](ingest-receipts.md#full-coverage-uploads)) |
+| `?coverage=full&asset_id=…` | Declares the upload a complete scan of the named assets (1 to 100) by each file's tool: the open findings of that tool on them that the upload does not report are closed. Needs `findings:status`, `findings:bulk_update` and step-up; not with `min_severity`; every asset must be visible to the uploader ([ingest-receipts.md](ingest-receipts.md#full-coverage-uploads)) |
 | `Idempotency-Key` header | 1 to 128 printable ASCII characters: a retry of the same upload returns the first answer (below) |
 
 The format is read from the content (`importer.IsZip`, `importer.Detect` on
@@ -64,7 +64,7 @@ error.
 
 A client that may retry (a CI job whose answer was lost) sends
 `Idempotency-Key`. The key is kept in Postgres (`idempotency_keys`, migration
-003301), hashed, per organization, principal (the user or API key) and
+003320), hashed, per organization, principal (the user or API key) and
 route, for 24 hours:
 
 - the same key with the same request (the query and each part's form name
@@ -134,7 +134,7 @@ statement touches at most 5,000 findings.
 ## Producer record: the upload receipt
 
 Every committed upload (one request, all its files) gets one receipt in
-`ingest_receipts` (migration 003293, formerly `finding_imports`; see
+`ingest_receipts` (migration 003308, formerly `finding_imports`; see
 [ingest-receipts.md](ingest-receipts.md)) before anything is written: tenant,
 uploader (`actor_user_id`), the SHA-256 of the first file name (the names
 themselves are only in the audit log), status `processing`. Each file's

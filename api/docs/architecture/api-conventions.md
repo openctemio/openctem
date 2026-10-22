@@ -190,8 +190,9 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   - Booleans use `is_`/`has_`, e.g. `is_in_kev=true`.
   - Free text is `q`.
   - OR and nesting: `POST /{collection}/search` with a FilterDocument.
-  - A bad value, an unknown param (after the warn release) or an unsortable
-    field is `400 INVALID_FILTER`.
+  - A bad value, an unknown param or an unsortable field is
+    `400 INVALID_FILTER` (`details[].param` names it; an unknown one has
+    `reason: "unknown filter"`).
 
 ## 6. Bodies and errors
 
