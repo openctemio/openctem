@@ -16,9 +16,6 @@ export const DEFAULT_COLUMNS = 2
 /** Fixed height (px) of one grid row. A widget of height `h` spans `h` rows. */
 export const ROW_HEIGHT = 128
 
-/** localStorage key the main dashboard uses to remember the selected view. */
-export const DASHBOARD_VIEW_STORAGE_KEY = 'openctem:dashboard-view'
-
 /** Clamp a raw columns value to the supported 1..4 range (default 2). */
 export function normalizeColumns(columns: number | undefined): number {
   const c = Math.round(columns ?? DEFAULT_COLUMNS)
@@ -63,16 +60,4 @@ export function gridColumnSpan(span: number): string {
 export function widgetRowSpan(h: number): string {
   const span = Math.max(1, Math.min(8, h || 1))
   return `span ${span} / span ${span}`
-}
-
-/** Legacy 12-grid column span — kept for the read-only helper still imported elsewhere. */
-export function widgetColSpan(w: number): string {
-  const span = Math.max(2, Math.min(BASE_GRID, w || BASE_GRID))
-  return `span ${span} / span ${span}`
-}
-
-/** Width (in 12-grid units) of one column for an N-column layout. */
-export function widthForColumns(columns: number): number {
-  const cols = normalizeColumns(columns)
-  return Math.max(1, Math.round(BASE_GRID / cols))
 }
