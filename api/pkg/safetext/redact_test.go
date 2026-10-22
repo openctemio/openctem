@@ -100,3 +100,13 @@ func TestRedactSecrets_BenignTextUntouched(t *testing.T) {
 		}
 	}
 }
+
+func TestRedactSecrets_CookieHeaders(t *testing.T) {
+	got := RedactSecrets("Cookie: a=1; b=2\nSet-Cookie: sid=SECRETSID; Path=/\nX-Cookie-Note: keep")
+	if strings.Contains(got, "SECRETSID") || strings.Contains(got, "a=1") {
+		t.Fatalf("cookie value survived: %s", got)
+	}
+	if !strings.Contains(got, "X-Cookie-Note: keep") {
+		t.Fatalf("unrelated header changed: %s", got)
+	}
+}
