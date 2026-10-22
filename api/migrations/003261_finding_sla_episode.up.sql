@@ -13,9 +13,13 @@
 -- starts a new episode and clears both.
 --
 -- Live impact: three nullable columns (no rewrite); one backfill UPDATE over
--- findings with a deadline, with the updated_at and row_version triggers off
--- so the backfill does not show as an edit. Rows already overdue or warning
--- count as announced, so the deploy sends nothing.
+-- OPEN findings with a deadline only (the file runs in one transaction, so
+-- the lock taken by ADD COLUMN is held until the backfill commits; closed rows
+-- are left alone: a NULL sla_started_at falls back to the detection/reopen
+-- time in every reader, and a reopen clears the notified-at columns anyway).
+-- The updated_at and row_version triggers are off so the backfill does not
+-- show as an edit. Rows already overdue or warning count as announced, so the
+-- deploy sends nothing.
 
 ALTER TABLE findings
     ADD COLUMN IF NOT EXISTS sla_started_at timestamptz,
@@ -36,7 +40,8 @@ UPDATE findings SET
     sla_started_at = COALESCE(last_reopened_at, first_detected_at, created_at),
     sla_breach_notified_at = CASE WHEN sla_status IN ('overdue', 'exceeded') THEN NOW() END,
     sla_at_risk_notified_at = CASE WHEN sla_status IN ('warning', 'overdue', 'exceeded') THEN NOW() END
-WHERE sla_deadline IS NOT NULL;
+WHERE sla_deadline IS NOT NULL
+  AND is_open_finding_status(status);
 
 ALTER TABLE findings ENABLE TRIGGER trigger_findings_updated_at;
 ALTER TABLE findings ENABLE TRIGGER trg_findings_row_version;

@@ -366,3 +366,27 @@ func TestSLAEpisode_PentestClockStartsAtPublication(t *testing.T) {
 		t.Fatalf("pentest clock start = %v, want now", r.started)
 	}
 }
+
+// A pentest finding is visible only to its campaign members, but notices go
+// to the tenant's channels: its breach notice carries no title.
+func TestSLAEpisode_PentestNoticeCarriesNoTitle(t *testing.T) {
+	fx := newScoringFixture(t)
+	tid := fx.newTenant(t)
+	aid := fx.newAsset(t, tid, "github.com/acme/sla-episode-pentest-title")
+	fid := fx.newFinding(t, tid, aid, vulnerability.SeverityHigh, "sla-episode-pentest-title")
+	fx.setDeadline(t, tid, fid, time.Now().Add(-2*time.Hour), "on_track")
+	if _, err := fx.db.Exec(`UPDATE findings SET source = 'pentest', status = 'confirmed', title = 'SQL injection in payroll login' WHERE tenant_id = $1 AND id = $2`,
+		tid.String(), fid.String()); err != nil {
+		t.Fatal(err)
+	}
+
+	c, log := newEscalation(fx)
+	reconcile(t, c)
+	got := log.breachesFor(fid)
+	if len(got) != 1 {
+		t.Fatalf("breach events = %d, want 1", len(got))
+	}
+	if got[0].FindingTitle != "" {
+		t.Fatalf("pentest notice title = %q, want none", got[0].FindingTitle)
+	}
+}

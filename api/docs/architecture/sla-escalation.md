@@ -49,7 +49,9 @@ transaction per batch of 1,000 findings (at most 20 batches per tick).
 replicas announce each episode once. The partial index
 `idx_findings_sla_breach_due` holds only open findings with an unannounced
 deadline, so a tick reads the newly due rows. Notifications name the finding by
-its title (at most 200 characters) and carry its id in the metadata. The
+its title (at most 200 characters) and carry its id in the metadata. A pentest
+finding is named by its id only: notices go to the tenant's channels, and a
+pentest finding is visible only to its campaign members. The
 governing policy's `escalation_enabled` decides whether a notification is
 sent; the status and the timeline row are written either way.
 
