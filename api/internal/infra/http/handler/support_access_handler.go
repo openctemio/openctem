@@ -90,7 +90,7 @@ func toSupportGrantResponse(g *supportaccess.Grant, now time.Time) SupportGrantR
 }
 
 func supportClient(r *http.Request) supportapp.Client {
-	return supportapp.Client{IP: middleware.ClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID")}
+	return supportapp.Client{IP: middleware.ClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context())}
 }
 
 func (h *SupportAccessHandler) writeError(w http.ResponseWriter, err error, op string) {

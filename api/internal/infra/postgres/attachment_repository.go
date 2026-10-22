@@ -83,9 +83,10 @@ func (r *AttachmentRepository) Delete(ctx context.Context, tenantID, id shared.I
 func (r *AttachmentRepository) ListByContext(ctx context.Context, tenantID shared.ID, contextType, contextID string) ([]*attachment.Attachment, error) {
 	query := `SELECT ` + attachmentCols + ` FROM attachments
 		WHERE tenant_id = $1 AND context_type = $2 AND context_id = $3
-		ORDER BY created_at ASC`
+		ORDER BY created_at ASC, id ASC
+		LIMIT $4`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), contextType, contextID)
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), contextType, contextID, maxSubResourceRows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list attachments: %w", err)
 	}

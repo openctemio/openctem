@@ -640,6 +640,9 @@ function FindingsContent() {
   const [ownerNullParam] = useUrlFilter('asset_owner_id_null', '')
   // An asset group's links (its findings tab, its severity breakdown).
   const [assetGroupParam] = useUrlFilter('asset_group_id', '')
+  // The dashboard's "crown jewels exposed" (findings on crown jewels).
+  const [crownJewelParam] = useUrlFilter('asset_crown_jewel', '')
+  const crownJewelActive = crownJewelParam === 'true'
   const ownerUnassigned = ownerNullParam === 'true'
   // Bumped after a change, so the grouped view reloads its groups and rows.
   const [groupsReloadKey, setGroupsReloadKey] = useState(0)
@@ -866,6 +869,7 @@ function FindingsContent() {
     ownerParam,
     ownerNullParam,
     assetGroupParam,
+    crownJewelActive,
     groupParam,
     viewParam,
     lens,
@@ -925,6 +929,7 @@ function FindingsContent() {
     if (ownerParam) filters.asset_owner_id = ownerParam
     if (ownerUnassigned) filters.asset_owner_unassigned = true
     if (assetGroupParam) filters.asset_group_id = assetGroupParam
+    if (crownJewelActive) filters.asset_crown_jewel = true
     if (effectiveSeverities.length > 0) filters.severities = effectiveSeverities
     if (savedId) filters.view = savedId
     if (!savedId || rawLens) filters.state = lens
@@ -966,6 +971,7 @@ function FindingsContent() {
     ownerParam,
     ownerUnassigned,
     assetGroupParam,
+    crownJewelActive,
     effectiveSeverities,
     statuses,
     sourceFilter,
@@ -1009,6 +1015,7 @@ function FindingsContent() {
       asset_owner_id: apiFilters.asset_owner_id,
       asset_owner_unassigned: apiFilters.asset_owner_unassigned,
       asset_group_id: apiFilters.asset_group_id,
+      asset_crown_jewel: apiFilters.asset_crown_jewel,
     }),
     [HIDDEN_STATUSES, apiFilters]
   )
@@ -1024,6 +1031,7 @@ function FindingsContent() {
     ownerId: ownerParam,
     ownerUnassigned,
     assetGroupId: assetGroupParam,
+    crownJewel: crownJewelActive,
   }
   const hasContextScope = hasFindingContextFilters(contextFilterValues)
   // keepPreviousData: a context change keeps the numbers until the new ones arrive.

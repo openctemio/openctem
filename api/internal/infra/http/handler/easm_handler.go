@@ -214,7 +214,7 @@ func (h *EASMHandler) Decide(w http.ResponseWriter, r *http.Request) {
 	if h.audit != nil {
 		actx := auditapp.AuditContext{
 			TenantID: tenant, ActorID: userID, ActorEmail: auditActorEmail(ctx),
-			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		}
 		auditConfirmEntries(ctx, h.audit, actx, res.Scope, "review_queue")
 		for _, d := range res.Decided {

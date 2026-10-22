@@ -250,3 +250,11 @@ describe('buildFindingsQuery asset_group_id', () => {
     expect(buildFindingsQuery({}).has('asset_group_id')).toBe(false)
   })
 })
+
+describe('buildFindingsQuery asset_crown_jewel', () => {
+  it('sends asset_crown_jewel=true only when set', async () => {
+    const { buildFindingsQuery } = await import('../use-findings-api')
+    expect(buildFindingsQuery({ asset_crown_jewel: true }).get('asset_crown_jewel')).toBe('true')
+    expect(buildFindingsQuery({}).has('asset_crown_jewel')).toBe(false)
+  })
+})

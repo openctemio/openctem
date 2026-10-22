@@ -20,7 +20,7 @@ func configAuditContext(r *http.Request) auditapp.AuditContext {
 		ActorID:   middleware.GetUserID(r.Context()),
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
-		RequestID: r.Header.Get("X-Request-ID"),
+		RequestID: middleware.GetRequestID(r.Context()),
 	}
 	if u := middleware.GetLocalUser(r.Context()); u != nil {
 		actx.ActorID = u.ID().String()
