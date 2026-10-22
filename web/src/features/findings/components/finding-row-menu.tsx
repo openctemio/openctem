@@ -37,6 +37,10 @@ export type FindingRowAction =
 interface FindingRowMenuProps {
   title: string
   onAction: (action: FindingRowAction) => void
+  /** May assign this finding (the drawer's assignee picker); hides "Open to assign…" otherwise. */
+  canAssign: boolean
+  /** May change its status (the drawer's status select, false positive included). */
+  canChangeStatus: boolean
   canCreateTicket: boolean
   canRemediate: boolean
   canDelete: boolean
@@ -46,11 +50,14 @@ interface FindingRowMenuProps {
  * The row's action menu. The table row and the phone card render this one
  * component, so the two never offer different actions. Assign, status and
  * false positive need the full finding flow (assignee picker, status select
- * with its approval step), so their labels say they open it.
+ * with its approval step), so their labels say they open it; each is offered
+ * only to someone the API lets make that change.
  */
 export function FindingRowMenu({
   title,
   onAction,
+  canAssign,
+  canChangeStatus,
   canCreateTicket,
   canRemediate,
   canDelete,
@@ -74,14 +81,18 @@ export function FindingRowMenu({
           <ExternalLink className="me-2 h-4 w-4" aria-hidden />
           {t('findings.row.viewDetails', 'View details')}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onAction('assign')}>
-          <UserPlus className="me-2 h-4 w-4" aria-hidden />
-          {t('findings.row.openToAssign', 'Open to assign…')}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onAction('status')}>
-          <CheckCircle className="me-2 h-4 w-4" aria-hidden />
-          {t('findings.row.openToChangeStatus', 'Open to change status…')}
-        </DropdownMenuItem>
+        {canAssign && (
+          <DropdownMenuItem onClick={() => onAction('assign')}>
+            <UserPlus className="me-2 h-4 w-4" aria-hidden />
+            {t('findings.row.openToAssign', 'Open to assign…')}
+          </DropdownMenuItem>
+        )}
+        {canChangeStatus && (
+          <DropdownMenuItem onClick={() => onAction('status')}>
+            <CheckCircle className="me-2 h-4 w-4" aria-hidden />
+            {t('findings.row.openToChangeStatus', 'Open to change status…')}
+          </DropdownMenuItem>
+        )}
         {canCreateTicket && (
           <DropdownMenuItem onClick={() => onAction('create_ticket')}>
             <Ticket className="me-2 h-4 w-4" aria-hidden />
@@ -103,11 +114,13 @@ export function FindingRowMenu({
           <Link2 className="me-2 h-4 w-4" aria-hidden />
           {t('findings.row.copyLink', 'Copy link')}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-warning" onClick={() => onAction('false_positive')}>
-          <Flag className="me-2 h-4 w-4" aria-hidden />
-          {t('findings.row.openToMarkFalsePositive', 'Open to mark as false positive…')}
-        </DropdownMenuItem>
+        {(canChangeStatus || canDelete) && <DropdownMenuSeparator />}
+        {canChangeStatus && (
+          <DropdownMenuItem className="text-warning" onClick={() => onAction('false_positive')}>
+            <Flag className="me-2 h-4 w-4" aria-hidden />
+            {t('findings.row.openToMarkFalsePositive', 'Open to mark as false positive…')}
+          </DropdownMenuItem>
+        )}
         {canDelete && (
           <DropdownMenuItem className="text-destructive" onClick={() => onAction('delete')}>
             <Trash2 className="me-2 h-4 w-4" aria-hidden />
