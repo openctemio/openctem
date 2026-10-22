@@ -468,7 +468,7 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	importIDs := make([]string, 0, len(results))
 	names := make([]string, 0, len(results))
