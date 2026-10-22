@@ -169,6 +169,7 @@ var stepUpRoutes = []string{
 	"POST /api/v1/findings/{id}/severity-requests/{id}/approve",
 	"DELETE /api/v1/findings/{id}",
 	"POST /api/v1/findings/bulk/status",
+	"POST /api/v1/findings/bulk/by-filter/status",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
