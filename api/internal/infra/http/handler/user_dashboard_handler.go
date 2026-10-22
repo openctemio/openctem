@@ -176,7 +176,7 @@ func (h *UserDashboardHandler) caller(w http.ResponseWriter, r *http.Request) (d
 		Has:      func(p string) bool { return middleware.HasPermission(ctx, p) },
 		Audit: auditapp.AuditContext{
 			TenantID: tid.String(), ActorID: uid.String(), ActorEmail: auditActorEmail(ctx),
-			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		},
 	}, true
 }

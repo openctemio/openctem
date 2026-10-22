@@ -1363,7 +1363,7 @@ func (h *SensorHandler) buildAuditContext(r *http.Request) *audit.AuditContext {
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    clientIP,
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 }
 
