@@ -109,6 +109,9 @@ type TenantService struct {
 	// warning is logged): the never-lock-out guarantee still holds because the
 	// owner is always break-glass exempt at the enforcement gate.
 	ssoPathChecker SSOPathChecker
+	// ssoDomains reports whether a tenant holds a domain verified for SSO
+	// (requiring SSO needs one). Nil: requiring SSO is refused.
+	ssoDomains SSODomainChecker
 	// Member lifecycle (disable, offboard, erase): the transactional store
 	// and the in-app notice to administrators. Optional.
 	lifecycle         tenantdom.LifecycleRepository
@@ -160,6 +163,16 @@ type UserInfoProvider interface {
 type SSOPathChecker interface {
 	HasUsableSSOPath(ctx context.Context, orgSlug string) (bool, error)
 }
+
+// SSODomainChecker reports whether an organization holds at least one domain
+// verified (DNS TXT) for SSO. Implemented by domainverify.Service.
+type SSODomainChecker interface {
+	HasVerifiedSSODomain(ctx context.Context, tenantID shared.ID) (bool, error)
+}
+
+// ErrSSOEnforceNeedsVerifiedDomain refuses turning SSO enforcement on for an
+// organization without a domain verified for SSO.
+var ErrSSOEnforceNeedsVerifiedDomain = fmt.Errorf("%w: cannot enforce SSO — verify at least one of the organization's domains for SSO first", shared.ErrValidation)
 
 // NewTenantService creates a new TenantService.
 func NewTenantService(repo tenantdom.Repository, log *logger.Logger, opts ...TenantServiceOption) *TenantService {
@@ -226,6 +239,12 @@ func (s *TenantService) SetRoleService(svc *accesscontrol.RoleService) {
 // ready (mirrors SetSessionService / SetRoleService).
 func (s *TenantService) SetSSOPathChecker(c SSOPathChecker) {
 	s.ssoPathChecker = c
+}
+
+// SetSSODomainChecker wires the verified-domain check that turning SSO
+// enforcement on needs.
+func (s *TenantService) SetSSODomainChecker(c SSODomainChecker) {
+	s.ssoDomains = c
 }
 
 // WithTenantPermissionCacheService sets the permission cache service for TenantService.
@@ -2088,6 +2107,25 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 				if !usable {
 					return fmt.Errorf("%w: cannot enforce SSO — configure an active SSO identity provider first", shared.ErrValidation)
 				}
+			}
+		}
+
+		// Verified-domain precondition: turning enforcement on needs a domain
+		// verified for SSO, so the organization has proven the identities its
+		// IdP speaks for. Checked on the off-to-on transition only, and fail
+		// closed. A domain that later fails re-verification does NOT lift
+		// enforcement (that would reopen password sign-in to whoever broke the
+		// DNS record); the owners are alerted and decide.
+		if input.SSOEnforced != nil && *input.SSOEnforced && !before.SSOEnforced {
+			if s.ssoDomains == nil {
+				return ErrSSOEnforceNeedsVerifiedDomain
+			}
+			ok, derr := s.ssoDomains.HasVerifiedSSODomain(ctx, t.ID())
+			if derr != nil {
+				return fmt.Errorf("failed to check verified domains: %w", derr)
+			}
+			if !ok {
+				return ErrSSOEnforceNeedsVerifiedDomain
 			}
 		}
 

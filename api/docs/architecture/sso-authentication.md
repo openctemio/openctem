@@ -440,6 +440,25 @@ admin enforcing SSO with no way for anyone to sign in. If the checker is not
 wired the guard is skipped (logged) — the owner break-glass below is the real
 lock-out guarantee.
 
+**Verified-domain precondition** (research/232 D11): turning enforcement on
+(off → on, today from the platform console,
+`PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement`) also needs at least one
+domain the organization verified for SSO by DNS TXT
+(`domainverify.Service.HasVerifiedSSODomain`). Otherwise the change is refused with 400:
+"verify at least one of the organization's domains for SSO first". This check
+fails closed: it refuses when it is not wired or the lookup fails. It does not
+run when enforcement is already on, so re-saving and unrelated saves keep
+working after a domain lapses. Turning enforcement off is never blocked.
+
+**A lapsed domain does not lift enforcement** (threat T24). The
+`domain-reverify` sweep downgrades a domain whose TXT record is gone to
+`failed`, so it stops admitting new people through SSO (JIT, SCIM). Enforcement
+**stays on**, because switching it off would reopen password sign-in to whoever
+removed the DNS record. On the verified-to-failed transition the organization's
+owners and administrators get an in-app alert (system alert, High) that names
+the domain and says enforcement stays. It is sent once, and the owners decide
+what to do (`TenantService.SSODomainVerificationLost`).
+
 ### How a session's login method is recorded
 
 Each session row carries `sessions.auth_method` (migration `000192`), one of
