@@ -129,7 +129,9 @@ export / report / alert / MCP tool input                   ──┘            
 
 A field declares the operators it allows; anything else is `INVALID_FILTER`.
 Times are RFC 3339 or `YYYY-MM-DD` (midnight UTC; `_lte` on a date means end
-of day) or a negative ISO 8601 duration relative to now (`-P30D`, `-PT12H`).
+of day) or an ISO 8601 duration relative to now: negative is ago (`-P30D`,
+`-PT12H`), unsigned or `+` is ahead (`P30D`, `+P1W`; for future dates such as
+`acceptance_expires_at_lte=P30D`, added 2026-10-22).
 GET semantics are simple: every param is ANDed and a comma list is OR within
 one field. OR across fields and nesting exist only in the POST document.
 

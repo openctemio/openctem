@@ -48,9 +48,40 @@ tenant predicate and, for a restricted caller, the data-scope predicate.
 | `GET /findings/stats`, `GET /findings/groups` | the same params and the same compiled WHERE, so their counts match the list |
 | `POST /findings/search` | the FilterDocument form: OR, nesting, up to 500 ids |
 | `GET /meta/filters/findings` | the machine-readable contract and the document JSON Schema |
+| `GET /findings/quick-views` | the built-in quick views with the caller's counts (below) |
 
 The registry also carries the findings visibility rule every non-admin
 caller gets: pentest findings only for members of their campaign.
+
+### Quick views
+
+`GET /findings/quick-views` (`findings:read`, heavy-read limiter) returns the
+list's built-in views in display order, each with the caller's count and the
+`GET /findings` query string that lists it:
+
+| Key | `params` |
+|---|---|
+| `active` | `state=open` |
+| `needs_triage` | `status=new` |
+| `my_queue` | `state=open&related_to=me` |
+| `sla_breached` | `state=open&sla_status=overdue,exceeded` (the stats `sla_breached` rule) |
+| `pending_approval` | `pending_approval=true` |
+| `accepted_expiring` | `status=accepted&acceptance_expires_at_lte=P30D` |
+| `closed` | `state=closed` (fixed and dispositioned) |
+
+The definitions live in one place (`vulnerability.FindingQuickViews`). Each
+view's params are parsed with the strict registry and compiled with
+`filterspec.CompileFacets`: the base WHERE is the caller's scoped one (tenant,
+data scope, pentest membership, the list's default branch rule) and each view
+is a `COUNT(*) FILTER (WHERE ...)` over it, in one read-only statement with the
+5 s list timeout (503 when it runs out). A count therefore always equals the
+total of `GET /findings?<params>` for the same caller. There is no server
+cache, so a scope change applies on the next read; the response may be cached
+privately for 60 s.
+
+Fields added for the views: `pending_approval` (an approval request for the
+finding is pending), `acceptance_expires_at` (ranges; unset unless accepted)
+and the `closed` value of `state`.
 
 ## Actors
 

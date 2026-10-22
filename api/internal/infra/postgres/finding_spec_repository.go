@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -192,6 +194,53 @@ func (r *FindingRepository) ExportBatchWhere(ctx context.Context, w *filterspec.
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate exported findings: %w", err)
+	}
+	return out, tx.Commit()
+}
+
+// maxFindingFacets bounds the COUNT FILTER columns of one CountFacetsWhere.
+const maxFindingFacets = 16
+
+// CountFacetsWhere counts, in one statement, the findings matching each
+// facet predicate among the rows a compiled filter selects (the quick-view
+// counts). w comes from filterspec.CompileFacets: its WHERE is the scoped
+// one, and every predicate only narrows it inside COUNT(*) FILTER, so no
+// count can reach outside the caller's tenant or data scope. It runs in a
+// read-only transaction with the list's statement timeout; a timeout is
+// vulnerability.ErrFindingCountTimeout.
+func (r *FindingRepository) CountFacetsWhere(ctx context.Context, w *filterspec.Where, preds []string) ([]int64, error) {
+	if err := checkFindingWhere(w); err != nil {
+		return nil, err
+	}
+	if len(preds) == 0 || len(preds) > maxFindingFacets {
+		return nil, fmt.Errorf("count findings: %d facets (want 1..%d)", len(preds), maxFindingFacets)
+	}
+	cols := make([]string, len(preds))
+	for i, p := range preds {
+		cols[i] = "COUNT(*) FILTER (WHERE " + p + ")"
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin finding facet count: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingListTimeout+"'"); err != nil {
+		return nil, fmt.Errorf("set finding facet count timeout: %w", err)
+	}
+	out := make([]int64, len(preds))
+	dest := make([]any, len(preds))
+	for i := range out {
+		dest[i] = &out[i]
+	}
+	// The predicates and w.SQL come only from filterspec.CompileFacets
+	// (registry SQL, bound values).
+	query := "SELECT " + strings.Join(cols, ", ") + " FROM findings WHERE " + w.SQL //nolint:gosec // G202: see above
+	if err := tx.QueryRowContext(ctx, query, w.Args...).Scan(dest...); err != nil {
+		var pqErr *pq.Error
+		if (errors.As(err, &pqErr) && pqErr.Code == "57014") || errors.Is(err, context.DeadlineExceeded) {
+			return nil, vulnerability.ErrFindingCountTimeout
+		}
+		return nil, fmt.Errorf("failed to count finding facets: %w", err)
 	}
 	return out, tx.Commit()
 }

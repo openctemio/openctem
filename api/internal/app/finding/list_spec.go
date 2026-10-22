@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -306,4 +307,56 @@ func (s *FindingActionsService) GetRelatedCVEsBySpec(
 	filter.Compiled = filterW
 	filter.CompiledVisibility = visW
 	return s.findingRepo.FindRelatedCVEs(ctx, tid, cveID, filter)
+}
+
+type findingFacetRepo interface {
+	CountFacetsWhere(ctx context.Context, w *filterspec.Where, preds []string) ([]int64, error)
+}
+
+// QuickViewCount is one quick view with its count for the caller.
+type QuickViewCount struct {
+	Key    string
+	Params string
+	Count  int64
+}
+
+// CountQuickViews counts every built-in quick view (vulnerability
+// FindingQuickViews) for the caller, in one statement: each view's params
+// are parsed with the strict findings registry and compiled as facets over
+// the caller's scoped WHERE (the list's own default branch rule), so a
+// count equals the total GET /findings?<params> returns to the same caller.
+// It fails closed like every filtered read.
+func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCaller) ([]QuickViewCount, error) {
+	repo, ok := s.findingRepo.(findingFacetRepo)
+	if !ok {
+		return nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	views := vulnerability.FindingQuickViews()
+	facets := make([]*filterspec.Spec, len(views))
+	for i, v := range views {
+		q, perr := url.ParseQuery(v.Params)
+		if perr != nil {
+			return nil, fmt.Errorf("quick view %s: %w", v.Key, perr)
+		}
+		if facets[i], perr = filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict}); perr != nil {
+			return nil, fmt.Errorf("quick view %s: %w", v.Key, perr)
+		}
+	}
+	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(&filterspec.Spec{}), facets, vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := repo.CountFacetsWhere(ctx, where, preds)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]QuickViewCount, len(views))
+	for i, v := range views {
+		out[i] = QuickViewCount{Key: v.Key, Params: v.Params, Count: counts[i]}
+	}
+	return out, nil
 }
