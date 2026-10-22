@@ -1963,6 +1963,8 @@ type UpdateSecuritySettingsInput struct {
 	ExternalAccessEndRequired *bool   `json:"external_access_end_required"`
 	// JITRequiresApproval: see tenantdom.SecuritySettings (RFC-058).
 	JITRequiresApproval *bool `json:"jit_requires_approval"`
+	// SSORequireMFAEvidence: see tenantdom.SecuritySettings.
+	SSORequireMFAEvidence *bool `json:"sso_require_mfa_evidence"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
 	// the API sees it (trusted-proxy aware). When set, an IP allowlist that
 	// would exclude it is refused (lockout guard). Empty for the platform
@@ -2034,6 +2036,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.JITRequiresApproval != nil {
 			security.JITRequiresApproval = *input.JITRequiresApproval
+		}
+		if input.SSORequireMFAEvidence != nil {
+			security.SSORequireMFAEvidence = *input.SSORequireMFAEvidence
 		}
 		if input.EmailVerificationMode != nil {
 			security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)
