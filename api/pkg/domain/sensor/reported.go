@@ -68,6 +68,13 @@ const CapabilityScopeLimits = "scope.limits@1"
 // declares never counts.
 const CapabilityNetConfined = "net.confined@1"
 
+// CapabilityEgressUpstream is the capability of a sensor that runs a job's
+// tool connections through the job's proxy pool (the "egress" member) from
+// its per-task forwarder, and never directly. A sensor whose jobs use a pool
+// gets scan and retest jobs only when it reported this and
+// CapabilityNetConfined; what an administrator declares never counts.
+const CapabilityEgressUpstream = "egress.upstream@1"
+
 // CapabilityHTTPIdentity is the capability of a sensor whose tools send the
 // job's http_policy User-Agent and headers on every request (sdk-go
 // toolhost.CapabilityHTTPIdentity). A job carrying a program's
@@ -109,6 +116,7 @@ var sensorWideCapabilities = []string{
 	CapabilityValidate,
 	CapabilityScopeLimits,
 	CapabilityNetConfined,
+	CapabilityEgressUpstream,
 	CapabilityHTTPIdentity,
 	CapabilityReachProbe,
 	CapabilityRuleSources,

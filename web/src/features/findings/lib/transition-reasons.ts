@@ -15,8 +15,8 @@ const FALLBACK: Record<string, string> = {
   ticket_cannot_close: 'A ticket can only report work state',
   pentest_module: 'Managed in the pentest campaign',
   evidence_required:
-    'Needs a retest pass, or the verification checklist completed by another person',
-  checklist_required: 'Needs the verification checklist',
+    'Needs proof: a passing retest, or the checklist completed by another person. See Verification.',
+  checklist_required: 'Needs proof: a passing retest or the completed checklist. See Verification.',
   not_found: 'Not found',
   not_in_lifecycle: "Not a move of your organization's lifecycle",
   same_sub_status: 'Already there',
