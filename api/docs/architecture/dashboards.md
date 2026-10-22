@@ -709,6 +709,27 @@ widget kit's frame, with its own error boundary.
   never drawn as 0. Names, definitions and dimension values are in the
   `dashboards` i18n namespace (en and vi).
 
+### Translation and accessibility checks
+
+- `web/src/features/dashboards/__tests__/i18n-completeness.test.tsx`: every
+  `dashboards.*` / `dashboardKit.*` key the dashboard surfaces use exists in
+  en and vi; every metric, dimension value, visualization, range, schedule,
+  reason and template is named; Vietnamese text is not a copy of the English;
+  no display text is hard-coded in the components (JSX text and literal
+  `aria-label` / `placeholder` / `title` / `alt`); every template rendered in
+  Vietnamese shows no English message.
+- `api/pkg/domain/dashboard/templates_test.go`: every catalog metric has a
+  name and definition in both web dictionaries; every template widget passes
+  the server's spec validation.
+- `web/src/features/dashboards/__tests__/a11y.test.tsx`: axe-core on a
+  dashboard with every result shape, on the editor and on the gallery
+  (colour contrast is left to the browser suite).
+- `web/e2e/specs/22-dashboard-home.spec.ts`: `/` at 390 and 1440 px in light
+  and dark: widgets render, no horizontal scroll on a phone, no serious or
+  critical axe violation inside `main` (chart canvases excluded), a
+  screenshot of each combination attached to the report; the editor's
+  keyboard move and undo.
+
 ## Widget kit (web)
 
 `web/src/components/dashboard-kit/` is what every dashboard widget renders

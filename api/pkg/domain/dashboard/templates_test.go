@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
@@ -63,6 +64,30 @@ func TestWebDashboardTemplatesAreValidSpecs(t *testing.T) {
 		}
 		if _, err := dashboard.NewDashboard(shared.NewID(), shared.NewID(), tpl.Key, "", tpl.Columns, widgets); err != nil {
 			t.Errorf("%s: as a dashboard: %v", tpl.Key, err)
+		}
+	}
+}
+
+// Every catalog metric has a translated name and definition in the web
+// console (en and vi), so a metric added here never shows as a raw id.
+func TestCatalogMetricsAreNamedInTheWebConsole(t *testing.T) {
+	for _, locale := range []string{"en", "vi"} {
+		path := filepath.Join("..", "..", "..", "..", "web", "src", "lib", "i18n", "dictionaries", locale, "dashboards.json")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", locale, err)
+		}
+		var dict map[string]string
+		if err := json.Unmarshal(raw, &dict); err != nil {
+			t.Fatalf("parse %s: %v", locale, err)
+		}
+		for _, m := range dashboard.Catalog() {
+			base := "dashboards.metric." + strings.ReplaceAll(m.ID, ".", "_")
+			for _, k := range []string{base + ".name", base + ".definition"} {
+				if strings.TrimSpace(dict[k]) == "" {
+					t.Errorf("%s: %s has no %s", locale, m.ID, k)
+				}
+			}
 		}
 	}
 }

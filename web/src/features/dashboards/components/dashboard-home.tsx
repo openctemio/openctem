@@ -30,6 +30,7 @@ import { PageHeader } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 import {
+  DASHBOARDS_KEY,
   createDashboard,
   deleteDashboard,
   duplicateOrgDashboard,
@@ -121,12 +122,13 @@ export function DashboardHome() {
     createDashboard({ name, columns: tpl.columns, layout: templateLayout(tpl) })
       .then(async (d) => {
         setSeeded(name)
-        await revalidate()
+        // The new dashboard is the whole list: no second request for it.
+        await mutate(DASHBOARDS_KEY, { data: [d] }, { revalidate: false })
         setChosen({ kind: 'personal', id: d.id })
         writeChoice({ kind: 'personal', id: d.id })
       })
       .catch(() => setSeedFailed(true))
-  }, [nothing, revalidate, t])
+  }, [nothing, mutate, t])
 
   const active = useMemo(
     () => (listsLoading ? null : pickLanding(personal, organization ?? [], chosen)),
