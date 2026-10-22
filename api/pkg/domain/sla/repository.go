@@ -21,9 +21,11 @@ type Repository interface {
 	// GetTenantDefault retrieves the default policy for a tenant.
 	GetTenantDefault(ctx context.Context, tenantID shared.ID) (*Policy, error)
 
-	// UnsetTenantDefaults clears is_default on all of the tenant's tenant-wide
-	// policies except exceptID, enforcing a single default per tenant.
-	UnsetTenantDefaults(ctx context.Context, tenantID, exceptID shared.ID) error
+	// UpdateMakingDefault writes the policy (already marked default) and
+	// clears is_default on the tenant's other tenant-wide policies in ONE
+	// transaction, serialized per tenant so concurrent calls end with exactly
+	// one default. Only the policy's own tenant is read or written.
+	UpdateMakingDefault(ctx context.Context, policy *Policy) error
 
 	// Update updates an existing policy. Only the row of the policy's own
 	// tenant is written; another tenant's id is not found.
@@ -34,7 +36,4 @@ type Repository interface {
 
 	// ListByTenant returns all policies for a tenant.
 	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*Policy, error)
-
-	// ExistsByAsset checks if an asset-specific policy exists.
-	ExistsByAsset(ctx context.Context, assetID shared.ID) (bool, error)
 }

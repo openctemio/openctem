@@ -337,6 +337,9 @@ func (p *Policy) UpdateSLADays(critical, high, medium, low, info int) error {
 	if critical < 1 || high < 1 || medium < 1 || low < 1 || info < NoSLA {
 		return fmt.Errorf("%w: SLA days must be at least 1 (info may be 0 = no SLA)", shared.ErrValidation)
 	}
+	if critical > MaxSLADays || high > MaxSLADays || medium > MaxSLADays || low > MaxSLADays || info > MaxSLADays {
+		return fmt.Errorf("%w: SLA days must be at most %d", shared.ErrValidation, MaxSLADays)
+	}
 	p.criticalDays = critical
 	p.highDays = high
 	p.mediumDays = medium
