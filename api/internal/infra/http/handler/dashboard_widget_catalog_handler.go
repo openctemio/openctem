@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 	dashboard "github.com/openctemio/openctem/api/pkg/domain/dashboard"
 )
 
@@ -92,4 +95,112 @@ func (h *UserDashboardHandler) WidgetCatalog(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, widgetCatalog)
+}
+
+// SetWidgetData wires the widget data service (the data and preview routes
+// answer 503 without it).
+func (h *UserDashboardHandler) SetWidgetData(svc *widgets.Service) *UserDashboardHandler {
+	h.widgets = svc
+	return h
+}
+
+func (h *UserDashboardHandler) widgetsReady(w http.ResponseWriter) bool {
+	if h.widgets == nil {
+		apierror.ServiceUnavailable("dashboard data is not available").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+func (h *UserDashboardHandler) widgetError(w http.ResponseWriter, err error) {
+	if errors.Is(err, widgets.ErrBusy) {
+		w.Header().Set("Retry-After", "2")
+		apierror.TooManyRequests(widgets.ErrBusy.Error()).WriteJSON(w)
+		return
+	}
+	h.handleError(w, err)
+}
+
+// PersonalData handles GET /api/v1/me/dashboards/{id}/data
+// @Summary      Widget results of my dashboard
+// @Description  Every widget of the caller's personal dashboard, computed from the dashboard fact tables for the caller's own data scope and the pentest campaign rule. Typed widgets and the legacy tiles the facts can answer return a result; other legacy tiles return state "unsupported". Another person's dashboard is 404. 429 when too many dashboard reads run.
+// @Tags         Dashboards
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Dashboard ID"
+// @Success      200  {object}  widgets.DashboardData
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /me/dashboards/{id}/data [get]
+func (h *UserDashboardHandler) PersonalData(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok || !h.widgetsReady(w) {
+		return
+	}
+	out, err := h.widgets.PersonalData(r.Context(), c, r.PathValue("id"))
+	if err != nil {
+		h.widgetError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// OrgData handles GET /api/v1/organization/dashboards/{id}/data
+// @Summary      Widget results of an organization dashboard
+// @Description  Every widget of an organization dashboard, computed for the whole organization (needs dashboards:org:view; outside the dashboard's audience it is 404). Finding titles in lists still follow the viewer's pentest campaign membership. 429 when too many dashboard reads run.
+// @Tags         Dashboards
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Dashboard ID"
+// @Success      200  {object}  widgets.DashboardData
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /organization/dashboards/{id}/data [get]
+func (h *UserDashboardHandler) OrgData(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok || !h.widgetsReady(w) {
+		return
+	}
+	out, err := h.widgets.OrgData(r.Context(), c, r.PathValue("id"))
+	if err != nil {
+		h.widgetError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// WidgetPreviewRequest is one typed widget to preview.
+type WidgetPreviewRequest struct {
+	WidgetType string         `json:"widget_type" enums:"metric,note"`
+	Config     map[string]any `json:"config"`
+}
+
+// PreviewWidget handles POST /api/v1/me/dashboards/widget-preview
+// @Summary      Preview a typed widget
+// @Description  Computes one typed widget spec for the caller's own data scope (the widget gallery and the config panel). The spec is validated like a saved widget (400 when refused). 429 when too many dashboard reads run.
+// @Tags         Dashboards
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      WidgetPreviewRequest  true  "Widget"
+// @Success      200   {object}  widgets.WidgetValue
+// @Failure      400   {object}  apierror.Error
+// @Failure      429   {object}  apierror.Error
+// @Router       /me/dashboards/widget-preview [post]
+func (h *UserDashboardHandler) PreviewWidget(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok || !h.widgetsReady(w) {
+		return
+	}
+	var req WidgetPreviewRequest
+	if !decodeDashboardBody(w, r, &req) {
+		return
+	}
+	out, err := h.widgets.Preview(r.Context(), c, req.WidgetType, req.Config)
+	if err != nil {
+		h.widgetError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }

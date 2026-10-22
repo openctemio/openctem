@@ -107,12 +107,16 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 		}
 		if t == TransitionClaim {
 			// The repeat of a claim hands out what the first delivery did
-			// (policy, program rules, tool settings, template signatures),
-			// signed when the install signs jobs. The sensor already holds
-			// the command, so a refusal leaves it as it is (its lease runs
-			// out unless the sensor goes on).
+			// (policy, program rules, tool settings, template signatures)
+			// and the sensor's proxy pool (egress.go: a signing sensor runs
+			// this payload), signed when the install signs jobs. The sensor
+			// already holds the command, so a refusal leaves it as it is
+			// (its lease runs out unless the sensor goes on).
 			delivered, err := s.deliverStored(ctx, in.SensorID, cmd)
 			if err != nil {
+				return nil, err
+			}
+			if delivered, err = s.egressOne(ctx, in.SensorID, delivered); err != nil {
 				return nil, err
 			}
 			cmd = delivered
@@ -133,7 +137,13 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	var out *commanddom.Command
 	switch t {
 	case TransitionClaim:
-		out, err = s.Acknowledge(ctx, in.TenantID, in.SensorID, in.CommandID)
+		// Not claimed at all by a sensor that cannot honor its proxy pool.
+		if _, err = s.egressOne(ctx, in.SensorID, cmd); err != nil {
+			return nil, err
+		}
+		if out, err = s.Acknowledge(ctx, in.TenantID, in.SensorID, in.CommandID); err == nil {
+			out, err = s.egressOne(ctx, in.SensorID, out)
+		}
 	case TransitionStart:
 		out, err = s.Start(ctx, in.TenantID, in.SensorID, in.CommandID)
 	case TransitionComplete:
@@ -150,6 +160,11 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 		stored, err := s.Get(ctx, out.TenantID.String(), out.ID.String())
 		if err == nil {
 			out, err = s.deliverStored(ctx, in.SensorID, stored)
+		}
+		if err == nil {
+			// The proxy pool reference rides the delivered payload like the
+			// one a poll hands out (egress.go).
+			out, err = s.egressOne(ctx, in.SensorID, out)
 		}
 		if err == nil && s.jobs != nil {
 			out, err = s.signJob(ctx, in.SensorID, out, s.enforcesLimitsFor(ctx, stored.TenantID, in.SensorID))

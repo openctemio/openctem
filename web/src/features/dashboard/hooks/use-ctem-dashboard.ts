@@ -138,8 +138,15 @@ export interface ThreatIntelStats {
     total_entries: number
     /** The tenant's open findings in the KEV catalog (older API builds omit it). */
     tenant_open_count?: number
+    /** Of the tenant's open KEV findings: KEV due date passed. */
     past_due_count: number
+    /** Of the tenant's open KEV findings: known ransomware use (older API builds omit it). */
+    tenant_ransomware_open_count?: number
+    /** Of the tenant's open KEV findings: CVE added to KEV in the last 30 days. */
+    tenant_new_kev_matches_30d?: number
+    /** Catalog figure (the same for every organization): KEV entries with known ransomware use. */
     ransomware_related_count: number
+    /** Catalog figure: KEV entries added in the last 30 days. */
     recently_added_last_30_days: number
   }
 }

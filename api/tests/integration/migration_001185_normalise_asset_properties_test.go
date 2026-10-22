@@ -5,11 +5,10 @@ package integration
 // keys only other classes may hold (a port on a domain), keep updated_at,
 // and the down migration restores every changed row exactly. Rows of
 // another tenant are normalised by the same rule and restored to their own
-// values only. Runs as the schema owner in a rolled-back transaction.
+// values only. Runs in a rolled-back transaction in a private database.
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -21,10 +20,13 @@ import (
 )
 
 func TestMigration001185NormalisesAssetProperties(t *testing.T) {
-	appDB := openLifecycleDB(t)
+	// A private, fully migrated database: the replay runs DDL, which on the
+	// shared test database deadlocked with other packages' tests writing to
+	// the same tables in parallel.
+	db := testdb.PrivateDatabase(t, "mig001185", "../../migrations")
 	ctx := context.Background()
-	tenantA := seedLifecycleTenant(ctx, t, appDB)
-	tenantB := seedLifecycleTenant(ctx, t, appDB)
+	tenantA := seedLifecycleTenant(ctx, t, db)
+	tenantB := seedLifecycleTenant(ctx, t, db)
 
 	read := func(name string) string {
 		t.Helper()
@@ -41,11 +43,6 @@ func TestMigration001185NormalisesAssetProperties(t *testing.T) {
 		}
 	}
 
-	db, err := sql.Open("postgres", testdb.MigratorURL())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)

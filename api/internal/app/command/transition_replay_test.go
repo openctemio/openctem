@@ -3,11 +3,14 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
@@ -118,5 +121,51 @@ func TestClaimReplayDeliversTheFirstDeliveryPayload(t *testing.T) {
 	}
 	if string(stored.Payload) != `{"scanner":"nuclei","targets":["app.example.com"],"http_policy":{"user_agent":"creator"}}` {
 		t.Error("the stored command was changed")
+	}
+}
+
+type replayEgress struct{}
+
+func (replayEgress) JobEgress(context.Context, shared.ID, shared.ID) (*proxypool.JobEgress, error) {
+	return &proxypool.JobEgress{Mode: "pool", PoolID: "pool-1", Revision: 3}, nil
+}
+
+// The repeat of a claim carries the sensor's proxy pool like the first
+// delivery: a signing sensor runs this payload, and a job without its pool
+// would leave the sensor's network directly.
+func TestClaimReplayCarriesTheProxyPool(t *testing.T) {
+	tid, sid := shared.NewID(), shared.NewID()
+	stored := &commanddom.Command{ID: shared.NewID(), TenantID: tid, Type: commanddom.CommandTypeScan,
+		Status: commanddom.CommandStatusAcknowledged, SensorID: &sid,
+		Payload: json.RawMessage(`{"scanner":"nuclei","targets":["app.example.com"]}`)}
+	var st jobsign.Statement
+	sen := &sensordom.Sensor{}
+	sen.Reported.Capabilities = []string{sensordom.CapabilityEgressUpstream, sensordom.CapabilityNetConfined}
+	s := &Service{
+		repo: replayRepo{cmd: stored}, logger: logger.NewNop(), now: time.Now,
+		jobs: capturingSigner{got: &st}, sensors: replaySensors{sen}, egress: replayEgress{},
+	}
+	res, err := s.Transition(context.Background(), TransitionClaim,
+		TransitionInput{TenantID: tid.String(), SensorID: sid.String(), CommandID: stored.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inner json.RawMessage
+	if err := json.Unmarshal(res.Command.Payload, &inner); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(inner, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got[PayloadKeyEgress]), `"pool_id":"pool-1"`) {
+		t.Errorf("the replayed claim lacks the proxy pool: %s", inner)
+	}
+
+	// A sensor that cannot honor the pool is refused, not handed a bare job.
+	sen.Reported.Capabilities = nil
+	if _, err := s.Transition(context.Background(), TransitionClaim,
+		TransitionInput{TenantID: tid.String(), SensorID: sid.String(), CommandID: stored.ID.String()}); !errors.Is(err, ErrEgressUnsupported) {
+		t.Errorf("err = %v, want ErrEgressUnsupported", err)
 	}
 }

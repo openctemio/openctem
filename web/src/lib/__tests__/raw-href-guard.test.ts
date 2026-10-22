@@ -72,6 +72,14 @@ const REVIEWED = new Set([
   'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p1Open}',
   'features/dashboard/components/ctem/exposure-hero.tsx|Link|href={DRILL.p0Open}',
   'features/dashboards/widgets/registry.tsx|StatShell|href={DRILL.p0Open}',
+  'features/dashboards/widgets/registry.tsx|StatShell|href={DRILL.slaBreached}',
+  'features/dashboards/widgets/registry.tsx|StatShell|href={DRILL.mineOpen}',
+  'features/dashboards/widgets/registry.tsx|StatShell|href={`${DRILL.mineOpen}&severity=critical,high`}',
+  'features/dashboards/widgets/registry.tsx|StatShell|href={`${DRILL.mineOpen}&sla_status=overdue,exceeded`}',
+  'features/dashboards/widgets/registry.tsx|Link|href={DRILL.kevOpen}',
+  'features/dashboard/components/ctem/threat-intel-card.tsx|Kv|href={DRILL.kevOpen}',
+  // Kv only forwards its caller's DRILL constant.
+  'features/dashboard/components/ctem/threat-intel-card.tsx|Link|href={href}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
