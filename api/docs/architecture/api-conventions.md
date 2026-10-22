@@ -4,8 +4,11 @@ This is the short style guide every new or changed HTTP route follows.
 
 - The reasoning, the inventory behind it and the migration plan are in
   [RFC-041](../rfcs/RFC-041-api-path-design.md).
-- Status: **Accepted** with RFC-041. Existing
-  routes that differ are recorded in a baseline and converge over time.
+- Status: **Accepted** with RFC-041, **amended 2026-10-22** by the public API
+  review (RFC-041 §11, decisions D1–D16 as adopted). Existing routes that
+  differ are recorded in a baseline and converge over time.
+- A rule marked **Planned** is adopted but not enforced or built yet. Do not
+  rely on it, and do not add code that contradicts it.
 - Rules marked **(lint)** are enforced by `tools/lint/routestyle` (RFC-041
   §7). The plane table is `internal/infra/http/routes/plane`.
 
@@ -188,8 +191,9 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   - `code` is the machine-readable contract.
   - Add new codes to `pkg/apierror`. Do not invent them in handlers.
 - **The sensor v2 plane** returns RFC 9457 `application/problem+json`, with
-  `code` as an extension member. Serving it on the user plane for
-  `Accept: application/problem+json` is **Planned** (RFC-041 D9).
+  `code` as an extension member. The user, admin, SCIM-adjacent and hook
+  planes return only the envelope above; there is no `Accept` negotiation
+  (RFC-041 D9, amended in §11). The envelope's additions are in §10.
 - **Status codes:**
 
   | Situation | Status |
@@ -225,13 +229,23 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
 - Incoming `Idempotency-Key` handling on mutating routes is **Planned**; do not
   rely on it.
 - **Mark the operation `deprecated: true` in the spec.**
-- **Remove it on the date only after the telemetry is at zero:**
-  - web-only routes: 30 days;
-  - external routes: 30 days, and at least 6 months after `Deprecation`;
-  - sensor protocol: RFC-029 §5.4.
-
-  Removal first answers `410 Gone` with a problem naming the successor for
-  one release, then deletes the route.
+- **Classify the audience first.**
+  - *Web-only* routes are every route that is not a `GET`, because API keys
+    are read-only, plus any `GET` with no key or MCP traffic for 14 days.
+    They get **no window**: remove or rename them in the same PR as the web
+    change, and add them to `removed_routes_test.go`.
+  - *External* routes are the `GET`s that keys reach, and the SCIM, hook,
+    MCP, CI and sensor planes. They get a **90-day window** from the first
+    release carrying the `Deprecation` header.
+  - The sensor protocol keeps RFC-029 §5.4.
+- **After the window**, and only with the telemetry at zero for 30 days, the
+  route answers `410 Gone` (the standard envelope, with the successor in
+  `details.successor` and the `Link` header) for one release train (two
+  weeks), then is deleted.
+- **Announce once:** a changelog fragment in the *Deprecated* category, an
+  entry on the docs site "API deprecations" page (route, successor,
+  `Deprecation` date, `Sunset` date), and `deprecated: true` plus `x-sunset`
+  in the spec.
 - **Sensors:** a new or moved sensor route ships as a protocol v2 feature in
   `hello`. The SDK falls back while the feature is absent.
 
@@ -246,3 +260,188 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   (`api/openapi/route-style-baseline.txt`) only shrinks.
 - **The web calls only routes that exist.** The phantom-call test checks
   `endpoints.ts` against the generated spec (RFC-041 §7).
+
+## 9. Adopted additions (RFC-041 §11)
+
+These rules were adopted on 2026-10-22. **Shipped** means it holds today;
+everything else is **Planned**. The decision numbers are RFC-041 §11 D1–D16.
+
+### 9.1 Paths and bodies
+
+- **Version (D1).** `/api/v1` stays per plane. There is no v2 redesign: the
+  API converges in place under the deprecation policy of §7.
+- **Path parameters (amends §3).** The leaf resource parameter is `{id}`;
+  parent parameters are `{snake_case_id}`, for example
+  `/scan-workflows/{workflow_id}/runs/{id}`. 769 routes already use `{id}` and
+  the name is not on the wire; only the parent names reach generated clients.
+  **Planned** (the lint and the baseline follow).
+- **Create** returns `201` with a `Location` header and the resource body.
+- **Partial update** is `PATCH` with merge semantics (absent untouched,
+  `null` clears). `PUT` replaces a whole document only. A `PUT` request type
+  whose fields are all optional is a lint finding. **Planned**
+- **Bulk (amends §4.2).** The response is
+  `200 { "succeeded": ["id"], "failed": [{ "id", "code", "message" }] }`.
+  **Planned**
+- **Strict bodies.** An unknown field is `400 VALIDATION_FAILED` with the
+  field code `UNKNOWN_FIELD`, through one shared decoder that also caps the
+  size. **Planned**
+- **Secrets are write-only:** never echoed, shown once on create or rotate,
+  `has_secret` and `secret_last4` in reads, never in a URL. **Shipped**
+- **Tenant-supplied URLs** (webhooks, integrations, template sources) are
+  validated with `httpsec.ValidateURL` and fetched with the safe client, with
+  redirects refused or re-validated. **Planned** (a lint for raw
+  `http.Client` use).
+
+### 9.2 Reads
+
+- **Lists (D6).** `{ "data": [...], "total", "page", "per_page",
+  "total_pages", "next_cursor" }`. The key is `data`, never `items` or
+  `results`; the existing `items`/`results` lists send both keys for one
+  window. `total` is exact up to 10,000 rows; above that it is omitted and
+  `total_is_estimate: true` with `estimated_total` is sent. The paging state
+  is also sent in `X-Total`, `X-Total-Pages`, `X-Page`, `X-Per-Page`,
+  `X-Next-Page` and `Link` (`rel=next|prev|first`). **Planned**
+- **Keyset paging (D7).** `pagination=keyset&cursor=` on findings, assets,
+  audit, events and activity. The cursor is opaque, HMAC-signed and bound to
+  the tenant and the sort, so it cannot be forged across tenants. Offset
+  paging stops at 10,000 rows. Append-only collections are keyset only.
+  **Planned**
+- **Sort (D8).** `sort=field,-field` only. An unknown field is
+  `400 INVALID_SORT` listing the allowed fields. `sort_by`, `order_by` and
+  `order` stay as aliases for the window, then go. **Planned**
+- **Order is deterministic.** Every sort ends in `id`. **Shipped**
+- **Bounded reads.** No endpoint returns an unbounded set; bulk routes take at
+  most 1,000 ids. **Shipped**
+- **Field selection (D9).** There is no generic `fields=`: a projection would
+  bypass per-field permission checks and complicate caching, and nobody
+  asked for it. Resources with expansions use `include=` (allowlisted,
+  permission-checked); list representations stay lean.
+- **Conditional reads.** Single resources that change rarely (settings,
+  bootstrap, catalogs) send `ETag` and answer `If-None-Match` with `304`.
+  **Planned**
+
+### 9.3 Writes and safety
+
+- **Stale `If-Match` (D4).** `412` with `RESOURCE_CHANGED` and the current
+  `ETag`, replacing `409 FINDING_CHANGED` and `409 SETTINGS_CONFLICT`. `428`
+  is required only where a lost update is a security issue (scope, policy and
+  approval objects). The only caller today is the web app, so there is no
+  window. **Planned**
+- **Idempotency (D12).** `Idempotency-Key` (at most 255 characters) is
+  honoured on imports, ticket creation, operation-starting `POST`s and all
+  service-account key writes. The record is a Postgres row keyed by tenant,
+  credential, route and key hash, kept 24 hours. The same key with another
+  body is `422 IDEMPOTENCY_KEY_REUSED`; while the first request is running
+  it is `409 IDEMPOTENCY_KEY_IN_USE`; a replay carries
+  `Idempotent-Replayed: true`. If the store is unavailable the answer is
+  `503`, never a silent second write. **Planned**
+- **Long-running work (D10).** One resource, `/api/v1/operations/{id}`,
+  tenant-scoped and readable by its creator or a permission holder, for
+  exports, large imports, recalculations and bulk AI triage:
+  `{ id, kind, status: queued|running|succeeded|failed|canceled, progress,
+  result_url?, error? }`. Starting one returns `202` with `Location` and
+  `Retry-After`. `202` is reserved for this and for four-eyes "pending
+  approval" (`Location: /approvals/{id}`). Exports above 10,000 rows become
+  operations with a signed, single-tenant download that expires in one hour;
+  synchronous streaming stays for 10,000 rows or fewer. **Planned**
+- **Finding imports (D11).** `POST /findings/imports` (multipart) answers
+  `201` with `Location` for a small file, or `202` with an operation for a
+  large one. `GET /findings/imports/{id}` is the receipt:
+  `{ status, source, scope, counts: { created, updated, reactivated, closed,
+  untouched, skipped, failed }, by_severity, errors: [{ index, code }],
+  started_at, finished_at, idempotency_key }`. `closed` is non-zero only when
+  the import declares full coverage of an explicit scope (asset set and
+  tool); a partial scan never closes findings. All nine importers use the
+  same `counts` vocabulary. **Planned**
+
+### 9.4 Credentials
+
+- **Write access for keys (D3).** Personal `oct_` keys stay read-only.
+  **Service-account** keys may carry write scopes from a curated
+  `KeyWritable` permission list: finding triage, assign, status, comment and
+  import; asset and asset-group writes; ticket and integration creation;
+  remediation tasks; scan runs.
+  - Every step-up route stays session-only, because step-up refuses keys.
+  - The deny list (keys, SCIM tokens, service accounts, users, tenants,
+    admin) stays as it is.
+  - A key may carry its own CIDR allowlist on top of the organization's.
+  - Writes are audited with `api_key_id`.
+  - Expiry is at most 365 days, as for every key.
+  **Planned**
+- **SCIM tokens** get a required expiry (1 to 365 days) and a rotate
+  endpoint. **Planned**
+
+## 10. Errors in full (D2, D5)
+
+One envelope on the user, admin, SCIM-adjacent and hook planes (sensor v2
+keeps RFC 9457):
+
+```json
+{ "code": "FINDING_NOT_ASSIGNABLE", "message": "...", "request_id": "...",
+  "details": { "fields": [ { "field": "assignee_id", "code": "NOT_FOUND" } ],
+               "params": { } } }
+```
+
+- `code` is `UPPER_SNAKE`, specific, and listed in the registry
+  `pkg/apierror/codes.go` with its status, description and params. The spec
+  lists the codes per operation. **Planned** (the registry)
+- `message` is English for logs and developers. The web app translates from
+  `code` and `params` through the `errors.<CODE>` i18n keys (en and vi).
+- `request_id` is always present and equals the `X-Request-ID` header.
+  **Shipped**
+- Internal error text is never in `message`. `err.Error()` is allowed only
+  for domain errors that are explicitly public.
+- Domain errors map to codes in **one** `handler.WriteError(w, r, err)`; new
+  local `handleError` mappers are a lint finding (shrink-only baseline).
+  **Planned**
+- Status codes: the table in §6 plus `412` (precondition failed), `428`
+  (precondition required), `409` (state conflict) and `410` (a removed route,
+  for one release train). An object outside the caller's tenant or data scope
+  is `404` on reads and writes alike, including a principal named in a
+  request body (a user or group of another organization). **Shipped** for the
+  asset owner routes; the cross-tenant sweep for the rest is **Planned**.
+
+## 11. Headers
+
+Every response carries `X-Request-ID`. Every rate limiter, on its 200s and on
+its `429`, sends `RateLimit-Limit`, `RateLimit-Remaining` and
+`RateLimit-Reset` (seconds until the allowance is full), plus `Retry-After` on
+a `429`. The older `X-RateLimit-*` names (reset as a Unix time) are sent for
+one window and then dropped. **Shipped** for the limiters that exist today.
+Deprecated routes carry `Deprecation`, `Sunset` and
+`Link rel="successor-version"` (§7).
+
+## 12. Outbound webhooks (D16)
+
+Tenant webhooks follow the Standard Webhooks signing scheme. **Planned**
+
+- Headers `webhook-id`, `webhook-timestamp`,
+  `webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">`.
+- A per-endpoint `whsec_` secret, shown once, write-only, rotated with a
+  24-hour overlap in which both signatures are sent. Rotation needs step-up.
+- Body `{ type, version, id, occurred_at, tenant_id, data }`, `type` from a
+  typed catalogue (`finding.created`, `scan.completed`, ...) served at
+  `GET /webhook-event-types` with a JSON Schema per type; `version` is per
+  type. An HMAC with a timestamp gives integrity and replay protection that a
+  shared secret in a header does not.
+- One delivery row per event and channel with its own retry state (backoff 1
+  minute, 5 minutes, 30 minutes, 2 hours, 6 hours, 12 hours, 24 hours), so a
+  failing channel is retried even when another succeeded.
+  `POST /integrations/{id}/deliveries/{id}/redeliver` and
+  `POST /integrations/{id}/test` exist. Redirects are refused.
+
+## 13. The spec and clients (D13, D14)
+
+- Two generated specs. The **public** spec (user, self, auth for clients,
+  SCIM, hooks and MCP metadata) is served at `/openapi.yaml` and published on
+  the docs site per release. The **console** spec, which adds the admin plane,
+  is served only at `/api/v1/admin/openapi.yaml`. The build converts Swagger
+  2.0 to OpenAPI 3.1. **Planned**
+- Every public operation has an `operationId` derived from the handler name,
+  one tag, `security`, a typed 2xx, and 400/401/403/404/429 references to the
+  error schema; a list declares its paging parameters and the `data`
+  envelope. **Planned** (a Spectral ruleset with a shrink-only baseline)
+- The web app moves to a generated client on the 3.1 types so that a call to
+  a missing route is a type error. A generated Go REST client is built only
+  when the first external integrator asks; until then the spec is published.
+  **Planned**
