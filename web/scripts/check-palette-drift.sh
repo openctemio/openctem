@@ -22,6 +22,14 @@
 # tokens genuinely do not cover — brand colours, third-party embeds, or a set of
 # distinct accents (the integrations category cards need eight; the semantic
 # tokens intentionally do not provide eight).
+#
+# Second rule, same step: no coloured accent stripes on cards, tiles or rows (owner
+# rule 2026-10-22, "they look too AI"). An added line is refused when it puts a
+# colour on one side only (`border-l-primary`, `border-t-warning`, `border-l-4
+# border-primary`, `border-t-red-500`). State is a status pill or dot plus text, an
+# icon, or the value's own semantic colour; cards keep a uniform 1px neutral border.
+# Neutral sides (`border-l-2 border-muted`, an indent rule) are fine. Allow a real
+# exception with `stripe-ok: <reason>` on the line.
 set -euo pipefail
 
 BASE_REF="${1:-origin/develop}"
@@ -81,6 +89,34 @@ if [[ -z "$added" ]]; then
   exit 0
 fi
 
+# --- no accent stripes ---------------------------------------------------------
+# Colour classes that are NOT neutral: semantic accents, severity, palette hexes.
+STRIPE_COLOUR="(primary|secondary|accent|destructive|warning|info|success|ring|signal|sev-[a-z]+|severity-[a-z]+|${PALETTE}-[0-9]{2,3}|\\[#[0-9a-fA-F]+\\])"
+stripe_lines="$(printf '%s\n' "$added" \
+  | grep -v 'stripe-ok:' \
+  | grep -v 'animate-spin' \
+  | grep -E "\bborder-[lt]-${STRIPE_COLOUR}(/[0-9]+)?\b|\bborder-[lt]-[2-8]\b.*\bborder-${STRIPE_COLOUR}\b|\bborder-${STRIPE_COLOUR}\b.*\bborder-[lt]-[2-8]\b" \
+  | sed -E 's/^\+[[:space:]]*//' | cut -c1-160 || true)"
+stripe_fail=0
+if [[ -n "$stripe_lines" ]]; then
+  stripe_fail=1
+  cat >&2 <<EOF
+
+This branch adds a coloured left/top border stripe on a card, tile or row:
+
+$stripe_lines
+
+No accent stripes (they read as generic AI styling). Show state with a small
+status pill or dot plus text, an icon, or the value's own semantic colour, and
+keep the card on a uniform 1px neutral border. A selected row is the raised
+surface (bg-muted/40) plus a check or bold label. A neutral indent rule such as
+\`border-l-2 border-muted\` is fine. If this really is not a card stripe, say so:
+
+  className="border-l-4 border-primary" // stripe-ok: <reason>
+
+EOF
+fi
+
 violations="$(printf '%s\n' "$added" \
   | grep -v 'palette-ok:' \
   | grep -oE "\b${PROPS}-${PALETTE}-[0-9]{2,3}\b" \
@@ -88,7 +124,7 @@ violations="$(printf '%s\n' "$added" \
 
 if [[ -z "$violations" ]]; then
   echo "check-palette-drift: no new hardcoded palette classes."
-  exit 0
+  exit "$stripe_fail"
 fi
 
 count="$(printf '%s\n' "$violations" | awk '{s+=$1} END{print s+0}')"
