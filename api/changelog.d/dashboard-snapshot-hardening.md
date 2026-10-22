@@ -7,7 +7,7 @@
   batches.
 - Only one refresh of a dashboard runs at a time: a second Refresh now answers 429 without using the
   budget, and the scheduled refresher skips a dashboard that is being refreshed.
-- A Refresh now that could not compute (busy or failed) gives its budget back.
+- A Refresh now that found no read slot free gives its budget back (a computation that started and failed keeps it).
 - Widget previews are limited per person (a burst of 24, then one every 2 seconds; 429 with
   `Retry-After`).
 - A member's personal dashboard snapshots are deleted as soon as the membership is removed, suspended

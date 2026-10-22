@@ -19,6 +19,7 @@ type fakeSnapshots struct {
 	budgetOK         bool
 	taken, refunded  int
 	locked, released int
+	fpErr            error
 }
 
 func (f *fakeSnapshots) TryRefreshLock(context.Context, shared.ID, shared.ID) (func(), bool, error) {
@@ -43,6 +44,9 @@ func (f *fakeSnapshots) RefundRefreshBudget(context.Context, shared.ID, shared.I
 }
 
 func (f *fakeSnapshots) ScopeFingerprint(context.Context, shared.ID, shared.ID, *shared.DataScope, bool) (string, error) {
+	if f.fpErr != nil {
+		return "", f.fpErr
+	}
 	return "restricted:k", nil
 }
 
@@ -84,5 +88,16 @@ func TestRefreshNow_LockBudgetAndRefund(t *testing.T) {
 	}
 	if f.taken != 1 || f.refunded != 1 || f.released != 1 {
 		t.Errorf("taken %d refunded %d released %d, want 1 1 1", f.taken, f.refunded, f.released)
+	}
+
+	// A computation that started and failed keeps the budget: a dashboard
+	// that keeps failing is not recomputed faster than the budget allows.
+	boom := errors.New("boom")
+	f = &fakeSnapshots{lockFree: true, budgetOK: true, fpErr: boom}
+	if _, err := svc(f, 1).refreshNow(context.Background(), c, d, scope); !errors.Is(err, boom) {
+		t.Fatalf("failed computation: err = %v, want boom", err)
+	}
+	if f.taken != 1 || f.refunded != 0 || f.released != 1 {
+		t.Errorf("taken %d refunded %d released %d, want 1 0 1", f.taken, f.refunded, f.released)
 	}
 }

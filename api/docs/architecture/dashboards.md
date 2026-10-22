@@ -330,8 +330,9 @@ and `last_refresh_error`.
   per organization whoever asks (`dash_refresh_requests`; the check and the
   insert run under a per-tenant transaction lock, so concurrent requests
   cannot both pass). Over budget: 429 with `Retry-After`. A refresh that
-  took the budget and then could not compute (no read slot free, or the
-  computation failed) gives it back.
+  took the budget and then found no read slot free gives it back; a
+  computation that started and failed (timeout, canceled request) keeps it,
+  so a failing dashboard cannot be recomputed faster than the budget.
 - **One refresh per dashboard at a time**: Refresh now and the refresher take
   the dashboard's lock (`pg_try_advisory_xact_lock`, held by an open
   transaction until the recompute ends, so a crashed request frees it). A
