@@ -13,7 +13,8 @@ here as they ship.
 | Typed widget spec and metric catalog, server-side validation, `GET /me/dashboards/widget-catalog` | **Shipped** |
 | Widget data endpoint reading the facts (personal: viewer scope; organization: whole organization), preview | **Shipped** |
 | Snapshots, the refresher, Refresh now (migration `003260_dashboard_snapshots`) | **Shipped** |
-| Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** (not yet used by a page) |
+| Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** |
+| Dashboard home on `/`: one renderer for stored dashboards, Organization / Mine switcher, scope badge, freshness line, Refresh now, schedule picker | **Shipped** |
 
 The typed widget endpoints read the facts; the older dashboard endpoints
 (`/dashboard/*`, used by the built-in views) still aggregate `findings`
@@ -135,11 +136,8 @@ a manager leaves.
 
 ### Planned
 
-- The grouped switcher (Organization / Mine), scope badge, freshness line and
-  schedule picker on `/`, and the organization management section on
-  `/dashboards` (work packages 11 and 12).
-- Rendering typed widgets on `/` (legacy tiles keep their live rendering
-  until then), with the freshness line, Refresh now and the schedule picker.
+- The organization management section on `/dashboards` (create, order,
+  default, audience).
 - Refreshing a person's dashboards soon after their own changes (coalesced,
   counted against the Refresh now budget).
 
@@ -148,6 +146,11 @@ a manager leaves.
 - `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps;
   `widget_spec.go` and `metric_catalog.go` (typed widgets)
 - `web/src/features/dashboards/api/widget-spec.ts` — spec types, catalog hook, helpers
+- `web/src/features/dashboards/components/dashboard-home.tsx` — the `/` page (switcher,
+  freshness, actions); `dashboard-view.tsx` and `widget-view.tsx` — the one renderer
+  (a frame and error boundary per widget); `api/widget-adapter.ts` — widget results to
+  kit shapes and states; `landing.ts` — which dashboard `/` opens; `metrics.ts` — names,
+  definitions and units of the catalog metrics (i18n namespace `dashboards`)
 - `internal/app/dashboard/widgets/` — widget results, scopes, limits;
   `snapshot.go` (snapshots, Refresh now, refresher);
   `internal/infra/postgres/dashboard_snapshot_repository.go`,
@@ -653,6 +656,34 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   switched-off module (`MODULE_NOT_ENABLED`) and a failure (message and
   Retry). The shared `ErrorState` does this for every page; the dashboard's
   CTEM maturity card is left out for a viewer without the grant.
+
+## Dashboard home (web)
+
+`/` renders every stored dashboard with one renderer: each widget of the
+layout is drawn from the dashboard's snapshot (`GET …/{id}/data`) in the
+widget kit's frame, with its own error boundary.
+
+- **Landing**: the dashboard the viewer last chose (kept in their browser
+  while it still exists and they can still read it), else their own default,
+  else the organization default, else the first organization dashboard, else
+  their first own dashboard. A viewer with no stored dashboard sees the
+  built-in overview.
+- **Switcher**: one menu with "Organization" (shown only with
+  `dashboards:org:view` or `dashboards:org:manage`; without them the list is
+  never requested) and "Mine", search above eight entries, New and Manage.
+- **Scope badge**: "Organization-wide" or "Your scope", from the response's
+  `scope`; drill-downs open lists in the viewer's own access.
+- **Freshness line**: when the figures were computed, the next scheduled
+  refresh, stale and failed states, Refresh now (429 answered with a
+  message), and the schedule picker for the owner of a personal dashboard or
+  a manager of an organization dashboard (the server checks both).
+- **Actions**: Customize (personal), Duplicate to mine (organization), Set as
+  default (personal; organization for managers), Delete (personal).
+- Widget states map from the server: `building` → no data yet, `not_measured`
+  and `unsupported` → not measured with the reason, an empty list or series →
+  nothing to show, a result without its payload → error; a null figure is
+  never drawn as 0. Names, definitions and dimension values are in the
+  `dashboards` i18n namespace (en and vi).
 
 ## Widget kit (web)
 
