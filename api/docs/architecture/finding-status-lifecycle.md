@@ -198,7 +198,11 @@ endpoint and the bulk change mark their transaction
 `openctem.person_move` (`vulnerability.WithPersonMove`), and the trigger skips
 it (migration `002205`). The drawer offers Undo only for moves that do not
 close the finding; reopening a resolved finding is a deliberate move from the
-status control.
+status control. A finding closed as `mitigated` (a compensating control) is not
+reopened by detection: a scan that still sees the issue behind the control
+leaves it resolved, with no regression flag and no new deadline, and validation
+re-checks the control. Re-detection decides by status and closure reason, never
+by the free-text resolution note.
 
 Moving a finding out of an approved false positive or an accepted risk is a
 reversal of a decision, so the transition engine asks for `findings:approve`
