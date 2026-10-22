@@ -26,7 +26,7 @@ var filterOperations = []struct {
 	{"/findings", "get", "findings", []string{"q", "sort", "page", "per_page", "view"}},
 	{"/findings/stats", "get", "findings", []string{"q", "view", "sla_breakdown"}},
 	{"/findings/groups", "get", "findings", []string{"q", "sort", "page", "per_page", "group_by", "view"}},
-	{"/findings/export", "get", "findings", []string{"q", "format", "view"}},
+	{"/findings/export", "get", "findings", []string{"q", "format", "view", "sort"}},
 	{"/findings/related-cves/{cveId}", "get", "findings", []string{"q"}},
 }
 
