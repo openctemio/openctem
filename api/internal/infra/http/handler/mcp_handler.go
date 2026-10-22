@@ -444,7 +444,7 @@ func (h *MCPHandler) auditToolCall(r *http.Request, tenantID, toolName string, a
 		ActorEmail: auditActorEmail(ctx),
 		ActorIP:    auditClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	_ = h.audit.LogEvent(ctx, actx, event)
 }
@@ -479,7 +479,7 @@ func (h *MCPHandler) auditPromptGet(r *http.Request, tenantID, promptName string
 		ActorEmail: auditActorEmail(ctx),
 		ActorIP:    auditClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	_ = h.audit.LogEvent(ctx, actx, event)
 }

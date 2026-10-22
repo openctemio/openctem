@@ -28,6 +28,11 @@ const (
 	// it a findings:write user could loop unbounded note uploads on one finding
 	// (row/blob growth).
 	maxEvidenceNotes = 200
+	// maxEvidenceItems is the number of attachments the evidence list of one
+	// finding returns (the attachment repository caps one context at 1,000
+	// rows). A note past it would never be listed or counted, so the note
+	// cap could be bypassed; refuse new notes once the context is full.
+	maxEvidenceItems = 1000
 )
 
 // evidenceContextType is the attachment context_type used to link
@@ -153,6 +158,9 @@ func (s *VulnerabilityService) AddFindingEvidence(ctx context.Context, input Add
 	}
 	if noteCount >= maxEvidenceNotes {
 		return nil, fmt.Errorf("%w: a finding may hold at most %d evidence notes", shared.ErrValidation, maxEvidenceNotes)
+	}
+	if len(existing) >= maxEvidenceItems {
+		return nil, fmt.Errorf("%w: a finding may hold at most %d evidence items", shared.ErrValidation, maxEvidenceItems)
 	}
 
 	payload := evidenceNote{
