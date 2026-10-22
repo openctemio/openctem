@@ -192,7 +192,8 @@ one field. OR across fields and nesting exist only in the POST document.
 | Value length | 200; `q` 255 |
 | POST body | 32 KB, enforced before JSON decoding |
 | Statement timeout | 5 s for list/stats/groups, 60 s for export |
-| Rate | `…/search` and export in the per-user API bucket; one concurrent export per user |
+| Rate | `…/search` and export in the per-user API bucket; one concurrent export per user across replicas (database lock) |
+| Export rows | 10,000 per request, in the list's sort, allowlisted fields only (larger exports: background operation, not built yet) |
 
 ```json
 {

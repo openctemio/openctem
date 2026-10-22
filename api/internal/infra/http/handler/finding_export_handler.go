@@ -1,18 +1,23 @@
 package handler
 
-// Server-side findings export (RFC-048 §3.6, research 17 R5): the filter is
-// the list's (GET params or a FilterDocument), compiled as the caller, so an
-// export can never contain a row the caller cannot list. Rows stream in id
-// order in keyset batches, capped at finding.MaxExportRows; one export runs
-// per user at a time; every export is audit-logged without filter values.
+// Server-side findings export (RFC-048 §3.6, research 17 R5, research 234
+// D10): the filter is the list's (GET params or a FilterDocument), parsed
+// strictly and compiled as the caller, so an export can never contain a row
+// the caller cannot list. Rows come in the list's sort, from one database
+// snapshot, capped at finding.MaxExportRows; one export runs per user at a
+// time across replicas; every export is audit-logged without filter values.
+// Each row is the FindingExportRow allowlist: no evidence, code snippets,
+// stack traces, fix code, metadata or secret details ever leave this way.
 // CSV cells that a spreadsheet would run as a formula are neutralized.
 
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"reflect"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -25,35 +30,96 @@ import (
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
-// exportSlots allows one running export per tenant and user on this API
-// instance, so one caller cannot tie up the database with parallel dumps.
-var exportSlots = struct {
-	sync.Mutex
-	busy map[string]bool
-}{busy: map[string]bool{}}
+// FindingExportRow is the allowlist of what a findings export carries, in
+// CSV column order. A field is added here only by decision: an export leaves
+// the platform's access control, so evidence (snippets, scanner output,
+// stack traces, attachments, data flow), fix code, free-form metadata,
+// descriptions and every secret detail stay out.
+// TestFindingExportRow_EveryResponseFieldDecided fails when FindingResponse
+// gains a field that is neither exported nor excluded here.
+type FindingExportRow struct {
+	ID               string     `json:"id"`
+	Title            string     `json:"title"`
+	Severity         string     `json:"severity"`
+	Status           string     `json:"status"`
+	PriorityClass    string     `json:"priority_class"`
+	Source           string     `json:"source"`
+	FindingType      string     `json:"finding_type"`
+	ToolName         string     `json:"tool_name"`
+	RuleID           string     `json:"rule_id"`
+	RuleName         string     `json:"rule_name"`
+	CVEID            string     `json:"cve_id"`
+	CVEIDs           []string   `json:"cve_ids"`
+	CWEIDs           []string   `json:"cwe_ids"`
+	CVSSScore        *float64   `json:"cvss_score"`
+	CVSSVector       string     `json:"cvss_vector"`
+	EPSSScore        *float64   `json:"epss_score"`
+	EPSSPercentile   *float64   `json:"epss_percentile"`
+	IsInKEV          bool       `json:"is_in_kev"`
+	ExploitAvailable bool       `json:"exploit_available"`
+	IsReachable      bool       `json:"is_reachable"`
+	SLAStatus        string     `json:"sla_status"`
+	SLADeadline      *time.Time `json:"sla_deadline"`
+	AssetID          string     `json:"asset_id"`
+	AssetName        string     `json:"asset_name"`
+	AssetType        string     `json:"asset_type"`
+	FilePath         string     `json:"file_path"`
+	StartLine        int        `json:"start_line"`
+	EndLine          int        `json:"end_line"`
+	NetworkPort      int        `json:"network_port"`
+	NetworkTransport string     `json:"network_transport"`
+	NetworkService   string     `json:"network_service"`
+	Family           string     `json:"family"`
+	AssignedTo       string     `json:"assigned_to"`
+	Observation      string     `json:"observation"`
+	Validation       string     `json:"validation"`
+	FirstDetectedAt  time.Time  `json:"first_detected_at"`
+	LastSeenAt       time.Time  `json:"last_seen_at"`
+	ResolvedAt       *time.Time `json:"resolved_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
 
-func acquireExportSlot(key string) bool {
-	exportSlots.Lock()
-	defer exportSlots.Unlock()
-	if exportSlots.busy[key] {
-		return false
+// findingExportColumns are FindingExportRow's json names in field order: the
+// CSV header.
+var findingExportColumns = func() []string {
+	t := reflect.TypeOf(FindingExportRow{})
+	out := make([]string, t.NumField())
+	for i := range out {
+		out[i] = strings.Split(t.Field(i).Tag.Get("json"), ",")[0]
 	}
-	exportSlots.busy[key] = true
-	return true
-}
+	return out
+}()
 
-func releaseExportSlot(key string) {
-	exportSlots.Lock()
-	delete(exportSlots.busy, key)
-	exportSlots.Unlock()
-}
-
-// findingCSVHeader is the column set of a CSV export. Snippets, secrets and
-// free-form metadata are left out on purpose.
-var findingCSVHeader = []string{
-	"id", "title", "severity", "status", "priority_class", "source", "finding_type", "tool_name", "rule_id",
-	"cve_id", "cvss_score", "epss_score", "is_in_kev", "sla_status", "asset_id", "asset_name", "file_path",
-	"start_line", "network_port", "network_service", "assigned_to", "first_detected_at", "last_seen_at", "created_at",
+// toFindingExportRow copies the allowlisted fields of an enriched response.
+func toFindingExportRow(f FindingResponse) FindingExportRow {
+	deref := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return *p
+	}
+	title := f.Title
+	if title == "" {
+		title = f.Message
+	}
+	row := FindingExportRow{
+		ID: f.ID, Title: title, Severity: f.Severity, Status: f.Status, PriorityClass: deref(f.PriorityClass),
+		Source: f.Source, FindingType: f.FindingType, ToolName: f.ToolName, RuleID: f.RuleID, RuleName: f.RuleName,
+		CVEID: f.CVEID, CVEIDs: f.CVEIDs, CWEIDs: f.CWEIDs, CVSSScore: f.CVSSScore, CVSSVector: f.CVSSVector,
+		EPSSScore: f.EPSSScore, EPSSPercentile: f.EPSSPercentile, IsInKEV: f.IsInKEV,
+		ExploitAvailable: f.ExploitAvailable, IsReachable: f.IsReachable,
+		SLAStatus: f.SLAStatus, SLADeadline: f.SLADeadline, AssetID: f.AssetID,
+		FilePath: f.FilePath, StartLine: f.StartLine, EndLine: f.EndLine,
+		NetworkPort: f.NetworkPort, NetworkTransport: f.NetworkTransport, NetworkService: f.NetworkService,
+		Family: f.Family, AssignedTo: deref(f.AssignedTo), Observation: f.Observation, Validation: f.Validation,
+		FirstDetectedAt: f.FirstDetectedAt, LastSeenAt: f.LastSeenAt, ResolvedAt: f.ResolvedAt,
+		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
+	}
+	if f.Asset != nil {
+		row.AssetName, row.AssetType = f.Asset.Name, f.Asset.Type
+	}
+	return row
 }
 
 // csvSafe neutralizes a cell a spreadsheet would evaluate as a formula
@@ -63,24 +129,9 @@ var findingCSVHeader = []string{
 // leading apostrophe.
 func csvSafe(s string) string { return sanitizeCSVCell(s) }
 
-// dropSecretSnippets removes the code lines of a secret finding from an
-// export: file, line, preview and link are enough to find it, and an export
-// leaves the platform's access control.
-func dropSecretSnippets(r *FindingResponse) {
-	if r.FindingType == string(vulnerability.FindingTypeSecret) || r.Source == string(vulnerability.FindingSourceSecret) {
-		r.Snippet = ""
-		r.ContextSnippet = ""
-		r.ContextStartLine = 0
-	}
-}
-
-func findingCSVRow(f FindingResponse) []string {
-	str := func(p *string) string {
-		if p == nil {
-			return ""
-		}
-		return *p
-	}
+// csvCells renders a row in findingExportColumns order. Lists are joined
+// with ";", times are RFC 3339 UTC, zero numbers and unset values are empty.
+func (row FindingExportRow) csvCells() []string {
 	num := func(p *float64) string {
 		if p == nil {
 			return ""
@@ -99,24 +150,26 @@ func findingCSVRow(f FindingResponse) []string {
 		}
 		return t.UTC().Format(time.RFC3339)
 	}
-	assetName := ""
-	if f.Asset != nil {
-		assetName = f.Asset.Name
+	tsp := func(t *time.Time) string {
+		if t == nil {
+			return ""
+		}
+		return ts(*t)
 	}
-	title := f.Title
-	if title == "" {
-		title = f.Message
+	cells := []string{
+		row.ID, row.Title, row.Severity, row.Status, row.PriorityClass, row.Source, row.FindingType, row.ToolName,
+		row.RuleID, row.RuleName, row.CVEID, strings.Join(row.CVEIDs, ";"), strings.Join(row.CWEIDs, ";"),
+		num(row.CVSSScore), row.CVSSVector, num(row.EPSSScore), num(row.EPSSPercentile),
+		strconv.FormatBool(row.IsInKEV), strconv.FormatBool(row.ExploitAvailable), strconv.FormatBool(row.IsReachable),
+		row.SLAStatus, tsp(row.SLADeadline), row.AssetID, row.AssetName, row.AssetType, row.FilePath,
+		intOrEmpty(row.StartLine), intOrEmpty(row.EndLine), intOrEmpty(row.NetworkPort), row.NetworkTransport,
+		row.NetworkService, row.Family, row.AssignedTo, row.Observation, row.Validation,
+		ts(row.FirstDetectedAt), ts(row.LastSeenAt), tsp(row.ResolvedAt), ts(row.CreatedAt), ts(row.UpdatedAt),
 	}
-	row := []string{
-		f.ID, title, f.Severity, f.Status, str(f.PriorityClass), f.Source, f.FindingType, f.ToolName, f.RuleID,
-		f.CVEID, num(f.CVSSScore), num(f.EPSSScore), strconv.FormatBool(f.IsInKEV), f.SLAStatus, f.AssetID, assetName, f.FilePath,
-		intOrEmpty(f.StartLine), intOrEmpty(f.NetworkPort), f.NetworkService, str(f.AssignedTo),
-		ts(f.FirstDetectedAt), ts(f.LastSeenAt), ts(f.CreatedAt),
+	for i := range cells {
+		cells[i] = csvSafe(cells[i])
 	}
-	for i := range row {
-		row[i] = csvSafe(row[i])
-	}
-	return row
+	return cells
 }
 
 // ExportFindingsDocument handles POST /api/v1/findings/export
@@ -140,9 +193,13 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // ExportFindings handles GET /api/v1/findings/export (and the POST form)
 // @Summary      Export findings
 // @Description  Streams every finding the list's filter selects as CSV (default) or NDJSON (`format=ndjson`),
-// @Description  in id order, at most 100,000 rows; the X-Export-Truncated trailer says whether rows were left
-// @Description  out. Same scope as GET /findings. Needs findings:export. One export per user at a time (429
-// @Description  otherwise). Audit-logged without filter values. CSV formula cells are neutralized.
+// @Description  in the list's sort (`sort`, default priority), at most 10,000 rows; the X-Export-Max-Rows header
+// @Description  gives the cap and the X-Export-Truncated trailer says whether rows were left out (narrow the filter;
+// @Description  larger exports are not offered yet). Same scope as GET /findings. Unknown params are 400
+// @Description  INVALID_FILTER. Each row has the export allowlist only: no evidence, snippets, stack traces, fix
+// @Description  code, metadata or secret details. Needs findings:export (403 names it). One export per user at a
+// @Description  time across replicas (429 otherwise). Audit-logged without filter values. CSV formula cells are
+// @Description  neutralized.
 // @Tags         Findings
 // @Produce      text/csv
 // @Produce      application/x-ndjson
@@ -253,7 +310,9 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // end filterspec-params
 // @Param        view   query  string  false  "Saved view ID: its filter, with the other params overriding it field by field"
 // @Param        q       query  string  false  "Free text"
+// @Param        sort    query  string  false  "The list's sort keys, e.g. -cvss_score,severity"
 // @Success      200  {string}  string  "CSV or NDJSON stream"
+// @Failure      403  {object}  map[string]interface{}  "missing findings:export"
 // @Failure      400  {object}  map[string]interface{}  "INVALID_FILTER"
 // @Failure      429  {object}  map[string]interface{}
 // @Router       /findings/export [get]
@@ -270,6 +329,9 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 
 	route := h.findingsListRoute()
 	route.Name = "GET /findings/export"
+	// An export is strict for every caller: an unknown param is a 400, never
+	// a silently wider export.
+	route.Options.Unknown = filterspec.UnknownStrict
 	route.Options.Extra = append(route.Options.Extra, "format")
 	var spec *filterspec.Spec
 	var ok bool
@@ -289,14 +351,6 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 	if spec, ok = applySavedView(h.savedViews, savedview.PageFindings, w, r, spec); !ok {
 		return
 	}
-
-	caller := filterCaller(r)
-	slot := caller.TenantID + ":" + caller.UserID
-	if !acquireExportSlot(slot) {
-		apierror.TooManyRequests("An export is already running for you; wait for it to finish").WriteJSON(w)
-		return
-	}
-	defer releaseExportSlot(slot)
 
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
@@ -321,7 +375,7 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(http.StatusOK)
 		if format == exportFormatCSV {
 			csvw = csv.NewWriter(w)
-			_ = csvw.Write(findingCSVHeader)
+			_ = csvw.Write(findingExportColumns)
 		}
 	}
 	emit := func(batch []*vulnerability.Finding) error {
@@ -331,15 +385,15 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		data := make([]FindingResponse, len(batch))
 		for i, f := range batch {
 			data[i] = toFindingResponse(f)
-			dropSecretSnippets(&data[i])
 		}
 		h.enrichFindingsWithAssetInfo(ctx, tenantID, data)
 		for _, f := range data {
+			row := toFindingExportRow(f)
 			var err error
 			if format == exportFormatCSV {
-				err = csvw.Write(findingCSVRow(f))
+				err = csvw.Write(row.csvCells())
 			} else {
-				err = enc.Encode(f)
+				err = enc.Encode(row)
 			}
 			if err != nil {
 				return err
@@ -357,10 +411,14 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		return nil
 	}
 
-	res, err := h.service.ExportFindingsBySpec(ctx, caller, spec, format, h.exportAuditContext(r), emit)
+	res, err := h.service.ExportFindingsBySpec(ctx, filterCaller(r), spec, format, h.exportAuditContext(r), emit)
 	if err != nil && !started {
 		if _, isFilter := filterspec.AsError(err); isFilter {
 			filterquery.WriteError(w, err)
+			return
+		}
+		if errors.Is(err, vulnerability.ErrExportInProgress) {
+			apierror.TooManyRequests("An export is already running for you; wait for it to finish").WriteJSON(w)
 			return
 		}
 		h.handleServiceError(w, err, "Finding")
