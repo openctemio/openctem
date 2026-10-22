@@ -3299,6 +3299,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = auth.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
+	// Each assertion is accepted once across every replica; without Redis the
+	// IDs are kept in process (single replica only).
+	if redisClient != nil {
+		s.SAML.SetReplayStore(redisClient)
+	} else {
+		log.Warn("saml: no Redis client; assertion replay cache kept in process (single-replica only)")
+	}
+	s.SAML.SetCertExpiryAlerts(repos.SAMLProvider, repos.Tenant, s.Notification)
 
 	// A platform administrator's SAML / identity-provider change waits for an
 	// owner of the organization; owners are told in-app (and by email, wired

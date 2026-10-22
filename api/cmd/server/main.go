@@ -285,6 +285,9 @@ func run() int {
 	// Owners are emailed about an SSO change that waits for their approval.
 	if services.SSOChange != nil && services.Email != nil {
 		services.SSOChange.SetMailer(services.Email)
+		if services.SAML != nil {
+			services.SAML.SetCertExpiryMailer(services.Email)
+		}
 	}
 
 	// Wire SMTP availability checker into auth service for smart email verification.
