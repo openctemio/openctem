@@ -1260,6 +1260,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Widget results from the fact tables, stored as snapshots.
 	s.DashboardWidgets = dashwidgets.NewService(s.UserDashboard, s.DataScope, repos.DashboardWidget, log)
 	s.DashboardWidgets.SetSnapshots(repos.DashboardSnapshot, repos.UserDashboard, repos.Tenant, s.Tenant)
+	s.DashboardWidgets.SetAttackPaths(s.AttackSurface)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
@@ -3321,6 +3322,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so
 	// this is re-applied there too.
 	s.Tenant.SetSSOPathChecker(s.SSO)
+	s.Tenant.SetSessionReader(repos.Session)
 
 	// Member lifecycle (RFC-050): disable / re-enable / offboard / erase run
 	// in one transaction each; administrators are told in-app when a disable

@@ -112,7 +112,7 @@ func (r UpdateAISettingsRequest) update() tenantai.Update {
 func (h *AISettingsHandler) actx(r *http.Request) auditapp.AuditContext {
 	ctx := r.Context()
 	actx := auditapp.AuditContext{
-		ActorID: middleware.GetUserID(ctx), ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorID: middleware.GetUserID(ctx), ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
 	if lu := middleware.GetLocalUser(ctx); lu != nil {
 		actx.ActorID, actx.ActorEmail = lu.ID().String(), lu.Email()

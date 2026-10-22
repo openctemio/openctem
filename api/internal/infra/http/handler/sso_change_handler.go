@@ -224,7 +224,7 @@ func (h *SSOChangeHandler) decide(w http.ResponseWriter, r *http.Request, approv
 			TenantID:  tenantID.String(),
 			ActorIP:   middleware.ClientIP(r),
 			UserAgent: r.UserAgent(),
-			RequestID: r.Header.Get("X-Request-ID"),
+			RequestID: middleware.GetRequestID(r.Context()),
 		}
 		if u := middleware.GetLocalUser(r.Context()); u != nil {
 			actx.ActorID = u.ID().String()

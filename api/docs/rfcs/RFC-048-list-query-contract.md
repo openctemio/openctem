@@ -129,7 +129,9 @@ export / report / alert / MCP tool input                   ──┘            
 
 A field declares the operators it allows; anything else is `INVALID_FILTER`.
 Times are RFC 3339 or `YYYY-MM-DD` (midnight UTC; `_lte` on a date means end
-of day) or a negative ISO 8601 duration relative to now (`-P30D`, `-PT12H`).
+of day) or an ISO 8601 duration relative to now: negative is ago (`-P30D`,
+`-PT12H`), unsigned or `+` is ahead (`P30D`, `+P1W`; for future dates such as
+`acceptance_expires_at_lte=P30D`, added 2026-10-22).
 GET semantics are simple: every param is ANDed and a comma list is OR within
 one field. OR across fields and nesting exist only in the POST document.
 
@@ -190,7 +192,8 @@ one field. OR across fields and nesting exist only in the POST document.
 | Value length | 200; `q` 255 |
 | POST body | 32 KB, enforced before JSON decoding |
 | Statement timeout | 5 s for list/stats/groups, 60 s for export |
-| Rate | `…/search` and export in the per-user API bucket; one concurrent export per user |
+| Rate | `…/search` and export in the per-user API bucket; one concurrent export per user across replicas (database lock) |
+| Export rows | 10,000 per request, in the list's sort, allowlisted fields only (larger exports: background operation, not built yet) |
 
 ```json
 {
@@ -222,8 +225,8 @@ capped at 64 characters.
   are **aliases**: accepted, mapped to the new field, answered with
   `Deprecation`/`Sunset` (RFC 9745 / RFC 8594) and counted in
   `deprecated_query_param_requests_total{route,param,client}`. An alias is
-  removed when its counter reads zero for 30 days and 6 months have passed
-  (RFC-041 D10).
+  removed when its counter reads zero for 30 days and 90 days have passed
+  (RFC-041 §11 D15, which replaced the 6 months of D10).
 - Bad values for known params are **always** 400.
 
 ### 3.9 Web encoding
@@ -323,7 +326,7 @@ capped at 64 characters.
 | D6 | Strictness | unknown or invalid params: log, count and `Deprecation` header for one release, then 400 `INVALID_FILTER`; bad values for known params 400 at once |
 | D7 | Expression string | later, as an optional third encoding, SQL precedence |
 | D8 | Search spelling | `POST /{coll}/search` |
-| D9 | Pagination and counts | offset ≤ 10,000 then cursor; exact count until a threshold, then estimate |
+| D9 | Pagination and counts | offset ≤ 10,000 then cursor; exact count until a threshold, then estimate. **Settled 2026-10-22 (RFC-041 §11 D6, D7):** the threshold is 10,000 rows, the estimate is flagged `total_is_estimate`, the cursor is `pagination=keyset&cursor=` (opaque, signed, tenant-bound), and the list key is `data` |
 | D10 | Log privacy | redact free-text params at the gateway; API logs param names only |
 | D11 | Order | findings → stats/groups/export → saved views → assets → MCP → long tail |
 | D12 | Stored-filter actor | views as the viewer; reports, alerts, campaign progress as their owner; system use only via an allowlisted `SystemActor` |
