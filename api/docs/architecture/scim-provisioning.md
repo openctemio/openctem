@@ -40,7 +40,7 @@ like an API key:
 
 - **Lifetime.** `POST /api/v1/scim-tokens` requires `expires_in_days`, 1 to
   365 (`scimtoken.ValidateLifetimeDays`); `scim_tokens.expires_at` is NOT NULL
-  (migration `003285`). An expired token answers 401 like an unknown one
+  (migration `003300`). An expired token answers 401 like an unknown one
   (`TokenService.Authenticate` checks `UsableAt(now)`), so a caller cannot
   tell expired from never existed. The list shows `expires_at` and the status
   `expired`.
@@ -117,7 +117,7 @@ like an API key:
 | Piece | Where |
 |-------|-------|
 | Token entity + repo iface | `pkg/domain/scimtoken/entity.go` |
-| Token persistence | `internal/infra/postgres/scim_token_repository.go`, migrations `000179_scim_tokens`, `003285_scim_tokens_expiry` |
+| Token persistence | `internal/infra/postgres/scim_token_repository.go`, migrations `000179_scim_tokens`, `003300_scim_tokens_expiry` |
 | Token service (mint/rotate/revoke/authenticate) | `internal/app/scim/token_service.go` |
 | Provisioning service | `internal/app/scim/provisioning.go` |
 | Bearer-token middleware | `internal/infra/http/middleware/scim_auth.go` |
