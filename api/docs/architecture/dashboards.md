@@ -12,8 +12,9 @@ here as they ship.
 | Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002963_dashboard_facts_maintainer`) |
 | Typed widget spec and metric catalog, server-side validation, `GET /me/dashboards/widget-catalog` | **Shipped** |
 | Widget data endpoint reading the facts (personal: viewer scope; organization: whole organization), preview | **Shipped** |
-| Snapshots, the refresher, Refresh now | Planned |
-| Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** (not yet used by a page) |
+| Snapshots, the refresher, Refresh now (migration `003260_dashboard_snapshots`) | **Shipped** |
+| Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** |
+| Dashboard home on `/`: one renderer for stored dashboards, Organization / Mine switcher, scope badge, freshness line, Refresh now, schedule picker | **Shipped** |
 
 The typed widget endpoints read the facts; the older dashboard endpoints
 (`/dashboard/*`, used by the built-in views) still aggregate `findings`
@@ -135,21 +136,26 @@ a manager leaves.
 
 ### Planned
 
-- Stored snapshots, the refresher, Refresh now and refresh after the user's own
-  actions (dashboard work package 10). Until then a dashboard's widgets read the
-  existing live endpoints, which follow the viewer.
-- The grouped switcher (Organization / Mine), scope badge, freshness line and
-  schedule picker on `/`, and the organization management section on
-  `/dashboards` (work packages 11 and 12).
-- Rendering typed widgets on `/` (legacy tiles keep their live rendering
-  until then), and serving widget data from stored snapshots.
+- The organization management section on `/dashboards` (create, order,
+  default, audience).
+- Refreshing a person's dashboards soon after their own changes (coalesced,
+  counted against the Refresh now budget).
 
 ### Key files
 
 - `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps;
   `widget_spec.go` and `metric_catalog.go` (typed widgets)
 - `web/src/features/dashboards/api/widget-spec.ts` — spec types, catalog hook, helpers
+- `web/src/features/dashboards/components/dashboard-home.tsx` — the `/` page (switcher,
+  freshness, actions); `dashboard-view.tsx` and `widget-view.tsx` — the one renderer
+  (a frame and error boundary per widget); `api/widget-adapter.ts` — widget results to
+  kit shapes and states; `landing.ts` — which dashboard `/` opens; `metrics.ts` — names,
+  definitions and units of the catalog metrics (i18n namespace `dashboards`)
 - `internal/app/dashboard/widgets/` — widget results, scopes, limits;
+  `snapshot.go` (snapshots, Refresh now, refresher);
+  `internal/infra/postgres/dashboard_snapshot_repository.go`,
+  `internal/infra/controller/dashboard_snapshots.go`,
+  `migrations/003260_dashboard_snapshots.up.sql`;
   `internal/infra/postgres/dashboard_widget_repository.go` — fact reads;
   `web/src/features/dashboards/api/widget-data.ts` — result types and hooks
 - `internal/app/dashboard/service.go` — authorization, audit, copies, floor
@@ -288,18 +294,93 @@ How each figure is computed (`internal/app/dashboard/widgets`,
   apply the viewer's campaign membership.
 - Every read leaves out findings on program-only and soft-deleted assets,
   like every dashboard read.
-- Nothing is cached: each read computes for its own caller. Reads are
+- Results are stored per dashboard (see "Snapshots and refresh"): a
+  personal snapshot only for its owner and only while their scope is
+  unchanged, an organization snapshot for every permitted viewer. Reads are
   bounded: 2 at a time per user, 6 per organization, 12 per API process
   (429 with `Retry-After`), 5 s per statement and 20 s per dashboard.
-- Known gap: F2 has no source column, so a pentest finding without a
-  campaign (all-zero campaign id) counts in flows and time to fix for every
-  viewer; it is never listed and never counted in current figures.
+- A pentest finding without a campaign is stored under the all-f campaign
+  id, which matches no membership: like any campaign finding it counts in
+  flows and time to fix only for organization-wide and administrator reads
+  (F2 has no source column, so the campaign id alone decides).
+- Previews are limited per person: a burst of 24, then one every 2 s (per
+  API process; 429 with `Retry-After`).
 - Tests: `dashboard_widget_data_db_test.go` (figures equal the findings list
   for a scoped member, a campaign tester, a full-data member, a member
   without scope rows and an administrator; another tenant's and unpublished
   findings never show; organization reads, 403 without the permission, 404
   outside the audience and for another person's dashboard; preview refusals;
   measured SLA and time to fix), `internal/app/dashboard/widgets` unit tests.
+
+## Snapshots and refresh
+
+Opening a dashboard reads its stored snapshot (`dash_snapshots`, one row per
+dashboard); it does not compute. A snapshot is computed on open only when
+there is none, when the layout changed (`layout_hash`), or, for a personal
+dashboard, when the owner's scope changed since it was computed
+(`scope_key`). The data and preview routes of "Widget data" return the
+snapshot with `computed_at`, the effective `refresh_schedule` (the
+organization default resolved), `next_refresh_at` (absent for manual or
+paused), `stale` (older than twice the schedule, or the last refresh failed)
+and `last_refresh_error`.
+
+| Route | Who | Effect |
+|---|---|---|
+| `POST /api/v1/me/dashboards/{id}/refresh` | the owner (404 for anyone else) | recompute and store now |
+| `POST /api/v1/organization/dashboards/{id}/refresh` | `dashboards:org:view` inside the audience | recompute and store now |
+
+- **Refresh now budget**: once a minute per person and dashboard, 30 an hour
+  per organization whoever asks (`dash_refresh_requests`; the check and the
+  insert run under a per-tenant transaction lock, so concurrent requests
+  cannot both pass). Over budget: 429 with `Retry-After`. A refresh that
+  took the budget and then found no read slot free gives it back; a
+  computation that started and failed (timeout, canceled request) keeps it,
+  so a failing dashboard cannot be recomputed faster than the budget.
+- **One refresh per dashboard at a time**: Refresh now and the refresher take
+  the dashboard's lock (`pg_try_advisory_xact_lock`, held by an open
+  transaction until the recompute ends, so a crashed request frees it). A
+  Refresh now while another runs answers 429 without using the budget; the
+  refresher skips a dashboard that is being refreshed.
+- **Refresher** (`dashboard-snapshots` controller, every minute, one replica):
+  claims the snapshots whose `next_refresh_at` is due with `FOR UPDATE SKIP
+  LOCKED` and a 5-minute lease, recomputes them, and sets the next time from
+  the schedule (also written to `user_dashboards.next_refresh_at`). A failure
+  keeps the last good snapshot, records `last_error` and retries within 15
+  minutes. Manual and paused dashboards are never refreshed on a schedule.
+  Refresh-now records older than a day and personal snapshots nobody opened
+  for 14 days are pruned (recomputed on the next open).
+- **Personal snapshots** are computed for the owner as they are now: in a
+  request from the caller's data scope; in the refresher from the owner's
+  membership (administrator and owner from the role, scope through
+  `datascope.ResolveForStrict`, which fails when the enforcer is not wired).
+  An owner who is no longer an active member has the snapshot removed and
+  nothing computed on their behalf. A trigger on `tenant_members` deletes a
+  member's personal snapshots as soon as the membership is deleted, suspended
+  or offboarded (migration `dashboard_snapshots_member_removal`). `scope_key` fingerprints the kind of
+  scope, the owner's scope rows (restricted) or the private program assets
+  hidden from them (unrestricted), and their pentest campaigns (hashes only);
+  a snapshot whose key differs from the owner's current key is never served,
+  so a narrowed scope takes effect on the next open. A result computed while
+  the scope changed is returned but not stored.
+- **Organization snapshots** (`scope_key` `organization`) hold
+  organization-wide figures once for every permitted viewer. Their lists keep
+  each pentest finding's campaign in the stored data; on every read the rows
+  of campaigns the viewer is not a member of are removed (administrators see
+  all) and the campaign fields are cleared from the response.
+- **Isolation**: a snapshot row carries the tenant and the dashboard; it is
+  written only for a dashboard of that tenant (and, personal, of that owner)
+  in one statement, and read by tenant and dashboard after the dashboard
+  service authorized the caller. Nothing is cached in memory.
+- Tests: `dashboard_snapshot_db_test.go` (served from the snapshot until
+  Refresh now; per-person and per-organization budget; scope widened and
+  narrowed take effect at once; layout change; another person's dashboard
+  404; failed refresh shown as stale; one organization snapshot, per-viewer
+  campaign rows, no campaign fields in responses; the refresher recomputes
+  due snapshots and drops the one of a member who left);
+  `dashboard_snapshot_hardening_db_test.go` (one refresh in flight per
+  dashboard, refund, preview limit, pentest findings without a campaign in
+  the trends); `dashboard_snapshot_migrations_db_test.go` (member removal
+  trigger, the all-f campaign id and the rebuild request, up and down).
 
 ## Fact layer
 
@@ -343,8 +424,11 @@ What is stored, exactly:
   out by default). The lens follows `pkg/domain/vulnerability/finding_lens.go`;
   `dash_finding_lens()` is its SQL form, and a test fails if the two differ.
 - **Pentest findings keep their campaign.** For `source = 'pentest'`,
-  `pentest_campaign_id` is the campaign (the all-zero id when the finding has
-  none); for every other source it is the all-zero id. A viewer-scope read
+  `pentest_campaign_id` is the campaign (the all-f id
+  `ffffffff-ffff-ffff-ffff-ffffffffffff` when the finding has none, which no
+  campaign membership matches; migration
+  `dashboard_facts_pentest_no_campaign`, which also requested a full
+  rebuild); for every other source it is the all-zero id. A viewer-scope read
   applies the campaign membership rule on it
   (`source <> 'pentest' OR pentest_campaign_id IN <the viewer's campaigns>`),
   and a published read can leave pentest findings out or include them.
@@ -592,6 +676,34 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   switched-off module (`MODULE_NOT_ENABLED`) and a failure (message and
   Retry). The shared `ErrorState` does this for every page; the dashboard's
   CTEM maturity card is left out for a viewer without the grant.
+
+## Dashboard home (web)
+
+`/` renders every stored dashboard with one renderer: each widget of the
+layout is drawn from the dashboard's snapshot (`GET …/{id}/data`) in the
+widget kit's frame, with its own error boundary.
+
+- **Landing**: the dashboard the viewer last chose (kept in their browser
+  while it still exists and they can still read it), else their own default,
+  else the organization default, else the first organization dashboard, else
+  their first own dashboard. A viewer with no stored dashboard sees the
+  built-in overview.
+- **Switcher**: one menu with "Organization" (shown only with
+  `dashboards:org:view` or `dashboards:org:manage`; without them the list is
+  never requested) and "Mine", search above eight entries, New and Manage.
+- **Scope badge**: "Organization-wide" or "Your scope", from the response's
+  `scope`; drill-downs open lists in the viewer's own access.
+- **Freshness line**: when the figures were computed, the next scheduled
+  refresh, stale and failed states, Refresh now (429 answered with a
+  message), and the schedule picker for the owner of a personal dashboard or
+  a manager of an organization dashboard (the server checks both).
+- **Actions**: Customize (personal), Duplicate to mine (organization), Set as
+  default (personal; organization for managers), Delete (personal).
+- Widget states map from the server: `building` → no data yet, `not_measured`
+  and `unsupported` → not measured with the reason, an empty list or series →
+  nothing to show, a result without its payload → error; a null figure is
+  never drawn as 0. Names, definitions and dimension values are in the
+  `dashboards` i18n namespace (en and vi).
 
 ## Widget kit (web)
 

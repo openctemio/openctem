@@ -377,5 +377,8 @@
   "confirm.asset.bulkDeleteButton": "Xóa {count} tài sản",
   "confirm.asset.bulkWithFindingsOne": "1 tài sản trong số đó có phát hiện nên sẽ không bị xóa; bạn có thể lưu trữ nó sau.",
   "confirm.asset.bulkWithFindings": "{count} tài sản trong số đó có phát hiện nên sẽ không bị xóa; bạn có thể lưu trữ chúng sau.",
-  "confirm.savedView.trigger": "Chế độ xem"
+  "confirm.savedView.trigger": "Chế độ xem",
+  "confirm.slaPolicy.makeDefaultTitle": "Đặt \"{name}\" làm chính sách SLA mặc định?",
+  "confirm.slaPolicy.makeDefaultDesc": "Từ nay hạn chót mới sẽ theo chính sách này. Các phát hiện đang mở được tính lại ngay: nơi chính sách này có thời hạn ngắn hơn thì hạn chót được kéo sớm hơn; hạn chót không bao giờ bị lùi lại, nên đổi trở lại sẽ không khôi phục hạn chót cũ.",
+  "confirm.slaPolicy.makeDefaultConfirm": "Đặt làm mặc định"
 }

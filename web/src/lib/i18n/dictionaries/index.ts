@@ -27,6 +27,7 @@ import en_automations from './en/automations.json'
 import en_common from './en/common.json'
 import en_dashboardMetrics from './en/dashboardMetrics.json'
 import en_dashboardKit from './en/dashboardKit.json'
+import en_dashboards from './en/dashboards.json'
 import en_components from './en/components.json'
 import en_confirm from './en/confirm.json'
 import en_contentCatalog from './en/contentCatalog.json'
@@ -63,6 +64,7 @@ import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
 import en_ticketPolicy from './en/ticketPolicy.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
+import en_proxyPools from './en/proxyPools.json'
 import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
 import en_sensors from './en/sensors.json'
@@ -100,6 +102,7 @@ import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
 import vi_dashboardMetrics from './vi/dashboardMetrics.json'
 import vi_dashboardKit from './vi/dashboardKit.json'
+import vi_dashboards from './vi/dashboards.json'
 import vi_components from './vi/components.json'
 import vi_confirm from './vi/confirm.json'
 import vi_contentCatalog from './vi/contentCatalog.json'
@@ -136,6 +139,7 @@ import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
 import vi_ticketPolicy from './vi/ticketPolicy.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
+import vi_proxyPools from './vi/proxyPools.json'
 import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
 import vi_sensors from './vi/sensors.json'
@@ -178,6 +182,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   common: en_common,
   dashboardMetrics: en_dashboardMetrics,
   dashboardKit: en_dashboardKit,
+  dashboards: en_dashboards,
   components: en_components,
   confirm: en_confirm,
   contentCatalog: en_contentCatalog,
@@ -215,6 +220,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   ticketMapping: en_ticketMapping,
   ticketPolicy: en_ticketPolicy,
   ticketingIntegration: en_ticketingIntegration,
+  proxyPools: en_proxyPools,
   scans: en_scans,
   scope: en_scope,
   sensors: en_sensors,
@@ -254,6 +260,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   common: vi_common,
   dashboardMetrics: vi_dashboardMetrics,
   dashboardKit: vi_dashboardKit,
+  dashboards: vi_dashboards,
   components: vi_components,
   confirm: vi_confirm,
   contentCatalog: vi_contentCatalog,
@@ -291,6 +298,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   ticketMapping: vi_ticketMapping,
   ticketPolicy: vi_ticketPolicy,
   ticketingIntegration: vi_ticketingIntegration,
+  proxyPools: vi_proxyPools,
   scans: vi_scans,
   scope: vi_scope,
   sensors: vi_sensors,
