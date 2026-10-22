@@ -56,6 +56,7 @@ import {
   OverviewTab,
   RelatedTab,
   RemediationTab,
+  VerificationPanel,
 } from '@/features/findings/components/detail'
 import { FromTaskCrumb } from '@/features/remediation-hub/components/from-task-crumb'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
@@ -218,6 +219,10 @@ export default function FindingDetailPage() {
           <div className="rounded-lg border bg-card p-3 lg:p-4">
             <FindingProperties finding={finding} triage={triage} />
           </div>
+          <VerificationPanel
+            findingId={finding.id}
+            className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+          />
           <FindingRetestSection
             finding={{ ...finding, status: triage.status }}
             className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
