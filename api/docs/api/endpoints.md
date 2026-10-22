@@ -62,6 +62,7 @@ User and admin routes return the `pkg/apierror` envelope:
 {
   "code": "NOT_FOUND",
   "message": "asset not found",
+  "request_id": "5d1c0f7e-3b0e-4a43-9c58-0f4f3a0f6c11",
   "details": {}
 }
 ```
