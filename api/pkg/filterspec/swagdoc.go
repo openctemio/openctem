@@ -121,7 +121,7 @@ func rangeWord(op Op) string {
 
 func timeHint(f *Field) string {
 	if f.Type == TypeTime {
-		return " (RFC 3339, YYYY-MM-DD, or -P30D)"
+		return " (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 	}
 	return ""
 }
