@@ -112,3 +112,8 @@ export function duplicateOrgDashboard(id: string) {
     layout: [],
   })
 }
+
+/** Replaces an organization dashboard's name, columns and layout (dashboards:org:manage). */
+export function updateOrgDashboard(id: string, input: UpdateDashboardInput) {
+  return put<Dashboard>(`${ORG_DASHBOARDS_KEY}/${id}`, input)
+}
