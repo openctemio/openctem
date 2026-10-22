@@ -155,7 +155,7 @@ func retestCheckAudit(r *http.Request, tenantID shared.ID) auditapp.AuditContext
 	return auditapp.AuditContext{
 		TenantID: tenantID.String(), ActorID: middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()), ActorIP: getClientIP(r),
-		UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
 }
 

@@ -187,6 +187,12 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   `{ "code": "UPPER_SNAKE", "message": "...", "details": ... }` (`details` optional).
   - `code` is the machine-readable contract.
   - Add new codes to `pkg/apierror`. Do not invent them in handlers.
+  - Every error body carries `request_id`, equal to the `X-Request-ID`
+    response header. The request-id middleware validates an inbound id
+    (`^[A-Za-z0-9._-]{1,64}$`) and mints a UUID otherwise; `apierror` copies
+    the header into the body. Handlers and audit rows read the id with
+    `middleware.GetRequestID(r.Context())`, never from the raw request header
+    (a test fails on a raw read).
 - **The sensor v2 plane** returns RFC 9457 `application/problem+json`, with
   `code` as an extension member. Serving it on the user plane for
   `Accept: application/problem+json` is **Planned** (RFC-041 D9).

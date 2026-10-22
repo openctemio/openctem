@@ -149,7 +149,7 @@ func (h *MCPSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	saved, err := h.store.UpdateMCPSettings(ctx, middleware.GetTenantID(ctx), s, auditapp.AuditContext{
-		ActorID: middleware.GetUserID(ctx), ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorID: middleware.GetUserID(ctx), ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	})
 	if err != nil {
 		switch {

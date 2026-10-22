@@ -331,7 +331,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	actx := auditapp.AuditContext{
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
 	out, err := h.settings.UpdateScopeSettings(ctx, tenantID, ss, actx)
 	if err != nil {
@@ -392,7 +392,7 @@ func (h *ScopeHandler) UpdateIntrusiveSettings(w http.ResponseWriter, r *http.Re
 	}
 	actx := auditapp.AuditContext{
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
 	out, err := h.settings.UpdateIntrusiveScopeSettings(ctx, tenantID, tenant.IntrusiveScopeSettings{T2MaxDuration: req.T2MaxDuration, T2AttestationDays: req.T2AttestationDays}, req.Reason, actx)
 	if err != nil {
