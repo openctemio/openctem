@@ -241,9 +241,9 @@ func (r *ExposureRepository) List(
 	}
 
 	// Apply sorting
-	orderBy := "first_seen_at DESC"
+	orderBy := "first_seen_at DESC, id DESC"
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderBy = opts.Sort.SQLWithDefault("first_seen_at DESC")
+		orderBy = opts.Sort.SQLWithDefault("first_seen_at DESC, id DESC")
 	}
 	baseQuery += " ORDER BY " + orderBy
 	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
