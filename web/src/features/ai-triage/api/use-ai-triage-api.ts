@@ -7,6 +7,8 @@ import type { SWRConfiguration } from 'swr'
 import { get, post } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
+import { usePermissionsSafe } from '@/context/permission-provider'
+import { Permission } from '@/lib/permissions/constants'
 import type {
   AITriageResult,
   AIConfig,
@@ -172,7 +174,11 @@ async function postTriage(
  */
 export function useTriageResult(findingId: string | null, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
-  const key = currentTenant && findingId ? buildTriageEndpoint(findingId) : null
+  // The read endpoints answer 403 without ai_triage:read: do not send the
+  // request (and so raise no error toast) for a user who cannot read.
+  const { hasPermission } = usePermissionsSafe()
+  const canRead = hasPermission(Permission.AITriageRead)
+  const key = canRead && currentTenant && findingId ? buildTriageEndpoint(findingId) : null
 
   return useSWR<AITriageResult | null>(key, fetchTriageResult, {
     ...defaultConfig,
@@ -195,8 +201,10 @@ export function useTriageHistory(
   config?: SWRConfiguration
 ) {
   const { currentTenant } = useTenant()
+  const { hasPermission } = usePermissionsSafe()
+  const canRead = hasPermission(Permission.AITriageRead)
   const key =
-    currentTenant && findingId
+    canRead && currentTenant && findingId
       ? buildTriageHistoryEndpoint(findingId, options?.limit, options?.offset)
       : null
 
@@ -272,7 +280,9 @@ async function fetchAIConfig(url: string): Promise<AIConfig> {
  */
 export function useAIConfig(config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
-  const key = currentTenant ? AI_CONFIG_ENDPOINT : null
+  const { hasPermission } = usePermissionsSafe()
+  const canRead = hasPermission(Permission.AITriageRead)
+  const key = canRead && currentTenant ? AI_CONFIG_ENDPOINT : null
 
   return useSWR<AIConfig>(key, fetchAIConfig, {
     ...defaultConfig,
