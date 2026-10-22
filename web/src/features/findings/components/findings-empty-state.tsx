@@ -16,6 +16,10 @@ interface FindingsEmptyStateProps {
   filterCount: number
   hasSearch: boolean
   canImport: boolean
+  /** May open the scans page (scans:read); hides "Set up a scan" otherwise. */
+  canSetUpScan: boolean
+  /** May open the integrations settings (integrations:read). */
+  canOpenIntegrations: boolean
   onImport: () => void
   onClearFilters: () => void
   /** Offered when the view is not already "All". */
@@ -35,6 +39,8 @@ export function FindingsEmptyState({
   filterCount,
   hasSearch,
   canImport,
+  canSetUpScan,
+  canOpenIntegrations,
   onImport,
   onClearFilters,
   onSearchAllStates,
@@ -78,14 +84,18 @@ export function FindingsEmptyState({
               {t('findings.empty.importResults', 'Import results')}
             </Button>
           )}
-          <Button size="sm" variant="outline" asChild>
-            <Link href="/scans">{t('findings.empty.setUpScan', 'Set up a scan')}</Link>
-          </Button>
-          <Button size="sm" variant="ghost" asChild>
-            <Link href="/settings/integrations">
-              {t('findings.empty.integrations', 'Integrations')}
-            </Link>
-          </Button>
+          {canSetUpScan && (
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/scans">{t('findings.empty.setUpScan', 'Set up a scan')}</Link>
+            </Button>
+          )}
+          {canOpenIntegrations && (
+            <Button size="sm" variant="ghost" asChild>
+              <Link href="/settings/integrations">
+                {t('findings.empty.integrations', 'Integrations')}
+              </Link>
+            </Button>
+          )}
         </div>
       </Body>
     )
