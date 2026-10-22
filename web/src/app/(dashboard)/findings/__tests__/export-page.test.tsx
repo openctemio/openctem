@@ -110,6 +110,11 @@ vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: () => ({ asset: null, isLoading: false, error: undefined }),
 }))
 
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
+
 import FindingsPage from '../page'
 import { ApiClientError } from '@/lib/api/error-handler'
 
