@@ -27,12 +27,14 @@ const api = vi.hoisted(() => ({
   mine: [] as Dashboard[],
   org: [] as Dashboard[],
   orgEnabled: [] as boolean[],
+  orgError: undefined as Error | undefined,
   create: vi.fn(),
 }))
 vi.mock('../api/use-dashboards-api', () => ({
   useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
   useOrgDashboards: (enabled: boolean) => {
     api.orgEnabled.push(enabled)
+    if (enabled && api.orgError) return { data: undefined, error: api.orgError, isLoading: false }
     return { data: enabled ? { data: api.org } : undefined, isLoading: false }
   },
   useRevalidateAllDashboards: () => async () => {},
@@ -128,6 +130,7 @@ describe('DashboardHome', () => {
     api.mine = []
     api.org = []
     api.orgEnabled = []
+    api.orgError = undefined
     data.byKey = {}
     vi.clearAllMocks()
   })
@@ -158,6 +161,14 @@ describe('DashboardHome', () => {
     perms.list = ['dashboards:org:view']
     api.org = [dash('o1', 'Overview', { is_org_default: true })]
     renderHome()
+    expect(api.create).not.toHaveBeenCalled()
+  })
+
+  it('no copy when the organization list failed to load', async () => {
+    perms.list = ['dashboards:org:view']
+    api.orgError = new Error('boom')
+    renderHome()
+    await new Promise((r) => setTimeout(r, 0))
     expect(api.create).not.toHaveBeenCalled()
   })
 
