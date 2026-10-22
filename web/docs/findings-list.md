@@ -21,6 +21,29 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 - The row menu items that need the full flow (assign, change status, mark as false positive) say they open
   it ("Open to assign…").
 
+## Empty and error states
+
+The list is in exactly one of these, and each says what to do next
+(`src/features/findings/lib/empty-kind.ts`, `findings-empty-state.tsx`):
+
+| Kind        | When                                                            | Next action                                      |
+| ----------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| Nothing yet | the organization has no findings and nothing narrows the list   | Import results, Set up a scan, Integrations      |
+| No match    | filters, the search, a context scope or the state hide findings | Clear filters or search, Search all statuses     |
+| No access   | the list read was refused (403)                                 | names the missing permission when the server did |
+
+- The total comes from the scope-only stats. When it is unknown, the list never claims the organization is empty.
+- A failed list is an inline alert in the table area with Retry and the server's request id (Copy request ID).
+  The heading, search, filters and chips stay, and there is no toast on top of it.
+- A refetch keeps the rows on screen with a thin progress bar above the table.
+
+## Translation
+
+Every string on the list, and in the shared table, facet panel, bulk bar, filter button, filter sheet and
+saved-views menu, comes from `t()` with a key in the English and Vietnamese catalogs.
+`src/features/findings/__tests__/list-i18n.test.ts` fails on a hard-coded string in those files or a key
+missing from either catalog. Table columns carry a translated `meta.label`, so the View menu lists names, not ids.
+
 ## Request budget
 
 A cold load of `/findings` sends at most 5 API requests (`e2e/request-budget.json`).

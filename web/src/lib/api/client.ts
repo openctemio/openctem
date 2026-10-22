@@ -328,7 +328,13 @@ export async function apiClient<T = unknown>(
         if (isRedirectingToLogin) {
           devLog.log('[API Client] Already redirecting, skipping 401 handling')
           const error = await parseErrorResponse(response)
-          throw new ApiClientError(error.message, error.code, error.statusCode, error.details)
+          throw new ApiClientError(
+            error.message,
+            error.code,
+            error.statusCode,
+            error.details,
+            error.requestId
+          )
         }
 
         const refreshed = await tryRefreshToken()
@@ -388,7 +394,13 @@ export async function apiClient<T = unknown>(
         )
       }
 
-      throw new ApiClientError(error.message, error.code, error.statusCode, error.details)
+      throw new ApiClientError(
+        error.message,
+        error.code,
+        error.statusCode,
+        error.details,
+        error.requestId
+      )
     }
 
     // Handle empty responses (204 No Content)
@@ -474,11 +486,18 @@ export async function apiClient<T = unknown>(
   }
 }
 
+/** The request id an error body carries, when it is a plain string. */
+function requestIdOf(body: unknown): string | undefined {
+  const id = (body as { request_id?: unknown } | null)?.request_id
+  return typeof id === 'string' && id.length <= 128 ? id : undefined
+}
+
 /**
  * Parse error response from backend
  */
 async function parseErrorResponse(response: Response): Promise<ApiError> {
   const contentType = response.headers.get('content-type')
+  const headerRequestId = response.headers.get('x-request-id') ?? undefined
 
   // Try to parse JSON error response
   if (contentType?.includes('application/json')) {
@@ -492,6 +511,7 @@ async function parseErrorResponse(response: Response): Promise<ApiError> {
           message: data.error.message || response.statusText,
           details: data.error.details,
           statusCode: response.status,
+          requestId: requestIdOf(data.error) ?? requestIdOf(data) ?? headerRequestId,
         }
       }
 
@@ -502,6 +522,7 @@ async function parseErrorResponse(response: Response): Promise<ApiError> {
           message: data.message,
           details: data.details,
           statusCode: response.status,
+          requestId: requestIdOf(data) ?? headerRequestId,
         }
       }
 
@@ -522,6 +543,7 @@ async function parseErrorResponse(response: Response): Promise<ApiError> {
     code: `HTTP_${response.status}`,
     message: response.statusText || 'HTTP error',
     statusCode: response.status,
+    requestId: headerRequestId,
   }
 }
 

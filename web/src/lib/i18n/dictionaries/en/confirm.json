@@ -380,5 +380,22 @@
   "confirm.savedView.trigger": "Views",
   "confirm.slaPolicy.makeDefaultTitle": "Make \"{name}\" the default SLA policy?",
   "confirm.slaPolicy.makeDefaultDesc": "New deadlines will follow this policy from now on. Open findings are re-scored right away: where this policy has tighter windows their deadlines move earlier; they are never moved later, so switching back does not restore the old deadlines.",
-  "confirm.slaPolicy.makeDefaultConfirm": "Make default"
+  "confirm.slaPolicy.makeDefaultConfirm": "Make default",
+  "confirm.savedView.saved": "Saved view \"{name}\"",
+  "confirm.savedView.saveFailed": "Could not save the view",
+  "confirm.savedView.deleteFailed": "Could not delete the view",
+  "confirm.savedView.created": "Created \"{name}\"",
+  "confirm.savedView.duplicateFailed": "Could not duplicate the view",
+  "confirm.savedView.sharedWith": "Shared with {group}",
+  "confirm.savedView.duplicateLabel": "Duplicate view {name}",
+  "confirm.savedView.modified": "(modified)",
+  "confirm.savedView.mine": "My views",
+  "confirm.savedView.sharedWithMyGroups": "Shared with my groups",
+  "confirm.savedView.clear": "Clear view",
+  "confirm.savedView.saveCurrent": "Save current filters as a view",
+  "confirm.savedView.saveTitle": "Save view",
+  "confirm.savedView.saveDesc": "Saves the current filters, sort and grouping. A shared view shares the filters, not the results: everyone sees the findings they are allowed to see.",
+  "confirm.savedView.name": "Name",
+  "confirm.savedView.visibleTo": "Visible to",
+  "confirm.savedView.onlyMe": "Only me"
 }
