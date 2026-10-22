@@ -43,7 +43,12 @@ triage ── GET /findings/{id}/duplicate-candidates (caller's data scope)
   assessed by the triager and priority comes from the normal pipeline;
 - `state` is the channel's state of the report and never moves the finding's
   status (human sources are never closed by automation);
-- `url` is an https back-link that the server never fetches;
+- `url` is an https back-link that the server never fetches, in printable
+  ASCII without user info (an internationalised host in its `xn--` form, so
+  a look-alike host shows as such);
+- single-line fields refuse control and invisible formatting characters
+  (bidirectional controls, zero-width characters); a stored object that no
+  longer validates, or one on a finding of another source, is never returned;
 - `reward` and `disclosure` are data; changing them needs `findings:triage`
   and writes an audit row with the old and new values.
 
