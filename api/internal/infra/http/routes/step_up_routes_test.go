@@ -319,6 +319,17 @@ func TestFindingDecisionStepUp_BulkAndRejectCancel(t *testing.T) {
 	if _, reached := call(t, stale, `{"status":"in_progress"}`); !reached {
 		t.Error("an open-state bulk move must not need step-up")
 	}
+	// The service lower-cases and trims the status, and the handler's decoder
+	// stops after the first JSON value: neither spelling may skip the gate.
+	for _, body := range []string{`{"status":"RESOLVED"}`, `{"status":" resolved "}`, `{"status":"resolved"} trailing`,
+		`{"status":"in_progress"`, `{"status":5}`, `{"status":"no_such_status"}`} {
+		if code, reached := call(t, stale, body); reached || code != http.StatusForbidden {
+			t.Errorf("bulk body %s with a stale session: got %d reached=%v, want 403", body, code, reached)
+		}
+	}
+	if _, reached := call(t, stale, `{"status":" In_Progress "}`); !reached {
+		t.Error("an open-state bulk move in any spelling must not need step-up")
+	}
 	for _, st := range []string{"resolved", "false_positive", "accepted", ""} {
 		code, reached := call(t, stale, `{"status":"`+st+`"}`)
 		if reached || code != http.StatusForbidden {

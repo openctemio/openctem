@@ -1314,9 +1314,12 @@ func requireStepUp() Middleware {
 // requireStepUpWhenClosing is requireStepUp for POST /findings/bulk/status
 // only when the target status closes findings (resolved, false positive,
 // accepted, ...): moving findings between open states needs no
-// re-authentication. The body is read, then restored for the handler. A body
-// that cannot be parsed, or names no status, is gated too (the handler
-// then rejects it).
+// re-authentication. The body is read, then restored for the handler. It is
+// decoded the way the handler decodes it (first JSON value, trailing bytes
+// ignored) and the status normalised the way the service parses it (case,
+// spaces), so the gate and the handler always see the same target. Only a
+// valid open status skips the gate: a body that cannot be parsed, or names no
+// or an unknown status, is gated too (the handler then rejects it).
 func requireStepUpWhenClosing() Middleware {
 	gate := requireStepUp()
 	return func(next http.Handler) http.Handler {
@@ -1331,11 +1334,13 @@ func requireStepUpWhenClosing() Middleware {
 			var req struct {
 				Status string `json:"status"`
 			}
-			if json.Unmarshal(body, &req) == nil && (req.Status == "" || vulnerability.FindingStatus(req.Status).IsClosed()) {
-				gated.ServeHTTP(w, r)
-				return
+			if json.NewDecoder(bytes.NewReader(body)).Decode(&req) == nil {
+				if st, err := vulnerability.ParseFindingStatus(req.Status); err == nil && !st.IsClosed() {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
-			next.ServeHTTP(w, r)
+			gated.ServeHTTP(w, r)
 		})
 	}
 }
