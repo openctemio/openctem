@@ -1997,7 +1997,7 @@ function FindingsContent() {
         </h2>
         {!groupBy && (
           <span
-            className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground"
+            className="shrink-0 text-sm tabular-nums text-muted-foreground"
             aria-label={t(
               'findings.view.total',
               '{count, plural, one {# finding} other {# findings}}',
@@ -2017,7 +2017,7 @@ function FindingsContent() {
             onClick={() => setViewParam('verify')}
           >
             {t('findings.view.awaitingVerification', 'Awaiting verification')}
-            <span className="ms-2 font-mono tabular-nums text-muted-foreground">
+            <span className="ms-2 tabular-nums text-muted-foreground">
               {awaitingVerification.toLocaleString()}
             </span>
           </Button>
