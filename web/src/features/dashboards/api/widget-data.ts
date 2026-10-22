@@ -88,6 +88,35 @@ export interface WidgetValue {
       kev: boolean
     }>
   }
+  /** The CTEM loop (ctem.loop). A stage's value is null when not measured. */
+  stages?: {
+    stages: Array<{
+      key: 'scoping' | 'discovery' | 'prioritize' | 'validate' | 'mobilize'
+      state: 'good' | 'warn' | 'crit' | 'not_measured'
+      reason?: string
+      value: number | null
+      unit: 'count' | 'percent'
+      drill?: string
+      flag?: string
+      detail?: { key: string; value: number; drill?: string }
+    }>
+    focus: number | null
+  }
+  /** Attack paths to crown jewels (attack_paths.to_crown_jewels). */
+  paths?: {
+    reachable: number
+    designated: number
+    rows: Array<{
+      asset_id: string
+      name: string
+      asset_type: string
+      criticality: string
+      reachable_from: number
+      entry_point: boolean
+      depth: number
+      score: number
+    }>
+  }
 }
 
 export interface DashboardData {

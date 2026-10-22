@@ -10,7 +10,7 @@ import type { MetricUnit } from '@/lib/format-metric'
 import type { Polarity as KitPolarity, SkeletonKind } from '@/components/dashboard-kit'
 import type { Dimension, Polarity, ResultShape, WidgetSpec } from './api/widget-spec'
 
-export type MetricGroup = 'exposure' | 'remediation' | 'threat_intel'
+export type MetricGroup = 'ctem' | 'exposure' | 'remediation' | 'threat_intel'
 
 export interface MetricMeta {
   id: string
@@ -42,9 +42,17 @@ export const METRICS: readonly MetricMeta[] = [
   { id: 'fix.time_to_fix', group: 'remediation', unit: 'hours', defaultGroupBy: [] },
   { id: 'flow.new_vs_fixed', group: 'remediation', unit: 'count', defaultGroupBy: [] },
   { id: 'sla.at_risk', group: 'remediation', unit: 'count', defaultGroupBy: [] },
+  { id: 'crown_jewels.exposed', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'ctem.loop', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'attack_paths.to_crown_jewels', group: 'ctem', unit: 'count', defaultGroupBy: [] },
 ]
 
-export const METRIC_GROUPS: readonly MetricGroup[] = ['exposure', 'remediation', 'threat_intel']
+export const METRIC_GROUPS: readonly MetricGroup[] = [
+  'ctem',
+  'exposure',
+  'remediation',
+  'threat_intel',
+]
 
 const BY_ID = new Map(METRICS.map((m) => [m.id, m]))
 
@@ -110,7 +118,10 @@ export function skeletonFor(shape: ResultShape | undefined): SkeletonKind {
     case 'duration':
       return 'stat'
     case 'items':
+    case 'paths':
       return 'list'
+    case 'stages':
+      return 'stages'
     case 'matrix':
       return 'grid'
     default:

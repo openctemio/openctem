@@ -111,6 +111,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.asset_owner_id) params.set('asset_owner_id', filters.asset_owner_id)
   if (filters.asset_owner_unassigned) params.set('asset_owner_id_null', 'true')
   if (filters.asset_group_id) params.set('asset_group_id', filters.asset_group_id)
+  if (filters.asset_crown_jewel) params.set('asset_crown_jewel', 'true')
   if (filters.view) params.set('view', filters.view)
   if (filters.sort) params.set('sort', filters.sort)
   return params
