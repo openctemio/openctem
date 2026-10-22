@@ -70,7 +70,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 	return filterquery.Route{
 		Name:         "GET /findings/groups",
 		Registry:     vulnerability.FindingFields,
-		Options:      filterspec.Options{Unknown: filterspec.UnknownWarn, Extra: []string{"group_by"}},
+		Options:      filterspec.Options{Unknown: filterspec.UnknownStrict, Extra: []string{"group_by"}},
 		DeprecatedAt: findingsListDeprecatedAt,
 		SunsetAt:     findingsListSunsetAt,
 		Logger:       h.logger,
