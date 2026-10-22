@@ -94,7 +94,7 @@ describe('Evidence tab sources', () => {
   it('shows an error row with Retry when the uploaded files fail to load', async () => {
     uploadsError = new Error('boom')
     renderTab(finding({ source: 'pentest' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('The uploaded files could not be loaded.')
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load the uploaded files')
     expect(screen.queryByText('No Evidence')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(retry).toHaveBeenCalled()

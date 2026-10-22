@@ -135,7 +135,6 @@
   "findings.evidenceTab.typeReference": "Tham chiếu",
   "findings.evidenceTab.typeCode": "Mã",
   "findings.evidenceTab.typeAttachment": "Tệp đính kèm",
-  "findings.evidenceTab.attachmentsError": "Không tải được các tệp đã tải lên.",
   "findings.evidenceTab.uploaded": "Bằng chứng đã tải lên ({count})",
   "findings.relatedTab.colFinding": "Phát hiện",
   "findings.relatedTab.colSeverity": "Mức độ nghiêm trọng",
@@ -1396,6 +1395,7 @@
   "findings.detail.sectionError": "Không thể tải {title}",
   "findings.detail.section.task": "tác vụ khắc phục",
   "findings.detail.section.tickets": "liên kết phiếu",
+  "findings.detail.section.uploadedFiles": "các tệp đã tải lên",
   "findings.detail.section.retestCheck": "kiểm tra kiểm thử lại",
   "findings.detail.loadFailed.title": "Không thể tải phát hiện này",
   "findings.detail.loadFailed.description": "Đã xảy ra lỗi phía máy chủ hoặc kết nối bị gián đoạn. Hãy thử lại."
