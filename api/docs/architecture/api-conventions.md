@@ -200,7 +200,7 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   | out of the caller's tenant or data scope | 404 |
   | state conflict | 409 |
   | validation failed | 422 |
-  | rate limited, with `Retry-After` | 429 |
+  | rate limited, with `Retry-After` and `RateLimit-*` | 429 |
 
   Never return 403 for out-of-scope objects, because that confirms the
   object exists.

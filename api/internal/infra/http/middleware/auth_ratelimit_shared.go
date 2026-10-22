@@ -121,9 +121,7 @@ func (b *authBucket) middleware(key func(*http.Request) string) func(http.Handle
 				return
 			}
 
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(b.limit))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(res.Remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(res.ResetAt.Unix(), 10))
+			setRateLimitHeaders(w, b.limit, res.Remaining, res.ResetAt)
 			if !res.Allowed {
 				retryAfter := max(1, int(time.Until(res.RetryAt).Seconds()))
 				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
