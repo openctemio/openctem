@@ -26,8 +26,8 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   after the tracker resolves the key, so a moved issue cannot slip through.
   Linking needs `findings:fix_apply` in addition to `findings:write`: moving
   a linked issue to Done is a fix claim, which a member without
-  `findings:fix_apply` could not make directly (unlinking needs
-  `findings:write` only).
+  `findings:fix_apply` could not make directly. Unlinking needs the same two
+  permissions as linking.
 - **Task issues** (one issue per remediation task): `POST /api/v1/remediation/tasks/{task_id}/ticket-links`
   creates the task's issue (title, fix, finding count, deadline, link back; no
   finding details) in a configured project; the task ticket controller then

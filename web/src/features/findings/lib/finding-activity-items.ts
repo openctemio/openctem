@@ -193,9 +193,11 @@ export function describeFindingEvent(a: Activity): EventText | null {
         detail: str(m.error_message),
       }
     case 'comment_updated':
-    case 'comment_deleted':
-      // Not shown: the comment itself carries "edited", a deleted one is gone.
+      // Not shown: the comment itself carries "edited".
       return null
+    case 'comment_deleted':
+      // Comments are append-only: a deleted one leaves this placeholder.
+      return { icon: MessageSquare, summary: 'deleted a comment' }
     default:
       return { icon: RefreshCw, summary: str(a.content) ?? raw.replace(/_/g, ' ') }
   }
@@ -272,7 +274,9 @@ export function toFindingActivityItems(
     const raw = str(a.metadata?.activityType)
     const isComment = a.type === 'comment' || a.type === 'internal_note'
     if (isComment && (raw === undefined || raw === 'comment_added')) {
-      if (!haveComments) out.push(activityToComment(a, opts))
+      // A deleted comment's text is withheld by the API; its comment_deleted
+      // entry is the placeholder.
+      if (!haveComments && a.metadata?.deleted !== true) out.push(activityToComment(a, opts))
       continue
     }
     const text = describeFindingEvent(a)
