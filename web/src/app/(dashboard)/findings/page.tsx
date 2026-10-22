@@ -4,7 +4,11 @@ import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
 import { useListParams } from '@/hooks/use-list-params'
-import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
+import {
+  summarizeBulkResult,
+  type BulkFindingResult,
+  type BulkSummary,
+} from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
@@ -165,7 +169,7 @@ import type { Severity } from '@/features/shared/types'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { csrfFetch } from '@/lib/api/client'
+import { csrfFetch, del, post } from '@/lib/api/client'
 import { usePermissions } from '@/context/permission-provider'
 import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { Permission } from '@/lib/permissions'
@@ -1079,20 +1083,14 @@ function FindingsContent() {
         )
       }
       const findingIds = dryRun.allowed
-      const response = await csrfFetch('/api/v1/findings/bulk/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ finding_ids: findingIds, status, resolution }),
+      // post() answers STEP_UP_REQUIRED (a bulk move to a closing status) with
+      // the shared re-authentication dialog and retries once.
+      const result = await post<BulkFindingResult>('/api/v1/findings/bulk/status', {
+        finding_ids: findingIds,
+        status,
+        resolution,
       })
-      if (!response.ok) throw new Error('Failed to update findings')
-      showBulkResult(
-        summarizeBulkResult(
-          await response.json().catch(() => undefined),
-          findingIds.length,
-          'Updated'
-        )
-      )
+      showBulkResult(summarizeBulkResult(result, findingIds.length, 'Updated'))
       clearSelection()
       mutateFindings()
       mutateStats()
@@ -1148,14 +1146,8 @@ function FindingsContent() {
 
     setIsDeleting(true)
     try {
-      const response = await csrfFetch(`/api/v1/findings/${findingToDelete.id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete finding')
-      }
+      // del() answers STEP_UP_REQUIRED with the shared re-authentication dialog.
+      await del(`/api/v1/findings/${encodeURIComponent(findingToDelete.id)}`)
 
       toast.success('Finding deleted', {
         description: findingToDelete.title,
