@@ -39,7 +39,7 @@ import {
 import type { Severity } from '@/features/shared/types'
 import { useFindingApi, useFindingApprovals } from '../api/use-findings-api'
 import { useFindingTriage } from '../hooks/use-finding-triage'
-import { findingDescription, toFindingDetail } from '../lib/finding-detail'
+import { findingDescription, isTriageLocked, toFindingDetail } from '../lib/finding-detail'
 import { displayTitle } from '../lib/finding-display'
 import {
   APPROVAL_STATUS_CONFIG,
@@ -140,6 +140,7 @@ export function FindingDetailDrawer({
   // Re-scoring needs findings:severity, which a remediation owner may lack.
   const canRescore = useCanMutate('PATCH /api/v1/findings/{id}/severity')
   const canAssign = useCanMutate('POST /api/v1/findings/{id}/assign')
+  const locked = isTriageLocked(detail?.source)
   const triage = useFindingTriage(
     detail ?? { id: '', status: 'new', severity: 'medium', assignee: undefined },
     {
@@ -260,12 +261,13 @@ export function FindingDetailDrawer({
                   onChange={triage.changeStatus}
                   loading={triage.statusBusy}
                   showCheck
+                  disabled={locked}
                 />
                 <SeveritySelect
                   value={triage.severity}
                   onChange={triage.changeSeverity}
                   loading={triage.severityBusy}
-                  disabled={!canRescore || !!detail.pendingSeverityRequest}
+                  disabled={locked || !canRescore || !!detail.pendingSeverityRequest}
                   cvss={detail.cvss}
                   showCheck
                 />
@@ -286,7 +288,7 @@ export function FindingDetailDrawer({
                     )
                   }
                   loading={triage.assigneeBusy}
-                  disabled={!canAssign}
+                  disabled={locked || !canAssign}
                 />
               </>
             }
