@@ -1414,6 +1414,9 @@ type ListAssetsInput struct {
 	// Freshness: stale (an attribute class past its TTL) or never (a passive
 	// class that applies was never observed); docs/architecture/asset-freshness.md.
 	Freshness string `validate:"omitempty,oneof=stale never"`
+	// Coverage: covered or uncovered by the coverage ledger
+	// (asset.CoverageWindow).
+	Coverage string `validate:"omitempty,oneof=covered uncovered"`
 	// Technologies: assets using any of these technologies (normalised
 	// names); TechnologyCategories: assets with a technology in any of these
 	// categories (RFC-112).
@@ -1595,6 +1598,7 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	}
 	filter.ProgramAssets = input.ProgramAssets
 	filter.Freshness = input.Freshness
+	filter.Coverage = input.Coverage
 	filter.Technologies = input.Technologies
 	filter.TechnologyCategories = input.TechnologyCategories
 	if len(input.DataClassifications) > 0 {

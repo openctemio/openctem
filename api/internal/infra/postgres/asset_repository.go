@@ -1257,6 +1257,14 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, cond)
 	}
 
+	// Coverage ledger (the dashboard's Discovery stage counts with the same
+	// predicate, so its figure equals this list).
+	if cond := CoverageCondition(filter.Coverage, fmt.Sprintf("$%d", argIndex)); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, time.Now().Add(-asset.CoverageWindow).UTC())
+		argIndex++
+	}
+
 	// Technologies (RFC-112): assets using any of the named technologies,
 	// and assets with a technology in any of the categories. Pinned to the
 	// asset's tenant.

@@ -296,6 +296,10 @@ type Filter struct {
 	// its TTL) or "never" (a passive class that applies was never observed);
 	// docs/architecture/asset-freshness.md. "" = no filter.
 	Freshness string
+	// Coverage keeps assets the coverage ledger tracks that had a
+	// successful run of any capability within CoverageWindow ("covered"),
+	// or none ("uncovered"). "" = no filter.
+	Coverage string
 	// Technologies keeps assets using any of these technologies (normalised
 	// names, RFC-112); TechnologyCategories keeps assets with a technology
 	// in any of these categories.
@@ -508,6 +512,14 @@ func (f Filter) WithMinRiskScore(score int) Filter {
 	return f
 }
 
+// CoverageWindow is how recent a successful run must be for an asset to
+// count as covered (the asset list's coverage filter and the dashboard's
+// Discovery stage).
+const CoverageWindow = 30 * 24 * time.Hour
+
+// CoverageValues are the values of the coverage filter.
+var CoverageValues = []string{"covered", "uncovered"}
+
 // WithMaxRiskScore adds a maximum risk score filter.
 func (f Filter) WithMaxRiskScore(score int) Filter {
 	f.MaxRiskScore = &score
@@ -693,6 +705,7 @@ func (f Filter) IsEmpty() bool {
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
 		f.Freshness == "" &&
+		f.Coverage == "" &&
 		len(f.Technologies) == 0 &&
 		len(f.TechnologyCategories) == 0 &&
 		f.ParentID == nil &&
