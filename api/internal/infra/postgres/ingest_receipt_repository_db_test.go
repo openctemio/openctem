@@ -290,3 +290,22 @@ func TestIngestReceipt_UploadAndRetention_DB(t *testing.T) {
 		t.Fatalf("%d old fact rows kept", n)
 	}
 }
+
+// Deleting a finding (or an asset with many findings) cascades into
+// finding_ingest_actions by finding_id alone. Without an index that leads
+// with finding_id, every deleted finding is a scan of the whole action log
+// (up to 50,000 rows per receipt for 90 days).
+func TestIngestReceipt_ActionsIndexedForFindingCascade_DB(t *testing.T) {
+	f := newReceiptFixture(t)
+	var n int
+	if err := f.db.QueryRowContext(f.ctx, `
+		SELECT count(*)
+		FROM pg_index i
+		JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+		WHERE i.indrelid = 'finding_ingest_actions'::regclass AND a.attname = 'finding_id'`).Scan(&n); err != nil {
+		t.Fatalf("index lookup: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("no index on finding_ingest_actions leads with finding_id: the ON DELETE CASCADE from findings scans the table")
+	}
+}
