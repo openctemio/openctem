@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/openctemio/openctem/api/pkg/safetext"
 	"slices"
 	"strings"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // AITriageJobEnqueuer defines the interface for enqueueing AI triage jobs.
