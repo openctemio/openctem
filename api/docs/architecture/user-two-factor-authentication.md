@@ -82,7 +82,8 @@ organization and fails closed when it cannot.
   then signs the user out and back in, which leads to enrollment. A policy turned on
   mid-session therefore takes effect within one access-token lifetime (15 min default).
 - A session issued by **this organization's own** SAML/OIDC provider passes: the
-  organization chose that IdP, and it owns the second factor.
+  organization chose that IdP, and it owns the second factor. With **"SSO must
+  prove two-factor"** on (below), it passes only with the IdP's proof.
 - Any other federated session — social OAuth (GitHub/Google/personal Microsoft),
   another organization's IdP, or an SSO session created before migration `000269`
   recorded the issuing organization — never went through our second step, so it
@@ -95,6 +96,31 @@ organization and fails closed when it cannot.
 - Owners and admins see each member's status in the members list
   (`GET /tenants/{t}/members?include=user` → `mfa_status`: `enabled`, `disabled` or
   `idp`). Other roles do not get the field.
+
+### "SSO must prove two-factor" (`sso_require_mfa_evidence`)
+
+Design: research/232 D9, threat T17 (MFA bypass through federation). Off by
+default. An owner turns it on (with step-up) under Settings → Security →
+Authentication → Two-factor authentication.
+
+When it is on, a member who must use 2FA (`mfa_required`, or
+`mfa_required_for_admins` for an owner or admin) and who signs in through the
+organization's **own** IdP gets a token only when that sign-in carried the
+IdP's proof of a second factor:
+
+- OIDC: the signature-verified id_token's `amr` contains `mfa` (RFC 8176);
+- SAML: the validated assertion's `AuthnContextClassRef` is a multi-factor
+  context (`internal/app/auth/mfa_evidence.go` lists them).
+
+The proof is recorded on the session at sign-in (`sessions.mfa_evidence`) and
+comes only from the signed token or assertion, never from userinfo. Without it,
+token exchange and refresh answer `403 {code:"MFA_ENROLLMENT_REQUIRED"}` with a
+message that names the identity provider. The client signs the user out, and
+they sign in again through the IdP with multi-factor authentication. Turning the
+switch on therefore ends own-IdP sessions without proof within one access-token
+lifetime. Members outside the 2FA requirement are not affected. Turning it off
+is graded High in the audit log, and the owners and administrators are told.
+The gate is `AuthService.enforceMFAPolicy` (`internal/app/auth/mfa.go`).
 
 ## Immediate session revocation
 
