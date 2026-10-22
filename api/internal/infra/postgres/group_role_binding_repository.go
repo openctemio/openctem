@@ -32,8 +32,9 @@ func (r *GroupRoleBindingRepository) listBindings(ctx context.Context, where str
 		JOIN groups g ON g.id = b.group_id AND g.tenant_id = b.tenant_id
 		JOIN roles ro ON ro.id = b.role_id AND ro.tenant_id = b.tenant_id
 		WHERE ` + where + `
-		ORDER BY g.name, ro.name`
-	rows, err := r.db.QueryContext(ctx, query, args...)
+		ORDER BY g.name, ro.name, b.group_id, b.role_id
+		LIMIT $3`
+	rows, err := r.db.QueryContext(ctx, query, append(args, maxSubResourceRows)...)
 	if err != nil {
 		return nil, fmt.Errorf("list role bindings: %w", err)
 	}

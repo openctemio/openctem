@@ -83,24 +83,54 @@ func (s *SortOption) IsEmpty() bool {
 	return len(s.sorts) == 0
 }
 
-// SQL returns the ORDER BY clause without the "ORDER BY" prefix.
+// SQL returns the ORDER BY clause without the "ORDER BY" prefix, ending in an
+// id tie-breaker so pages never repeat or skip rows that share a sort key.
 // Returns empty string if no sorts.
-// Example: "created_at DESC, name ASC"
+// Example: "created_at DESC, name ASC, id ASC"
+//
+// The tie-breaker is the bare column "id". A query that joins another table
+// with an id column, or aliases its main table, must use SQLWithTieBreaker
+// with the qualified expression.
 func (s *SortOption) SQL() string {
+	return s.SQLWithTieBreaker("id")
+}
+
+// SQLWithTieBreaker is SQL with an explicit, qualified expression for the id
+// tie-breaker (for example "a.id"). idExpr must be a trusted constant, never
+// client input. The tie-breaker follows the direction of the last sort and is
+// omitted when the client already sorted by that expression.
+func (s *SortOption) SQLWithTieBreaker(idExpr string) string {
 	if len(s.sorts) == 0 {
 		return ""
 	}
 
-	parts := make([]string, 0, len(s.sorts))
+	parts := make([]string, 0, len(s.sorts)+1)
+	hasID := false
 	for _, sort := range s.sorts {
+		if sort.Field == "id" || sort.Field == idExpr {
+			hasID = true
+		}
 		parts = append(parts, sort.Field+" "+string(sort.Order))
+	}
+	if !hasID && idExpr != "" {
+		parts = append(parts, idExpr+" "+string(s.sorts[len(s.sorts)-1].Order))
 	}
 	return strings.Join(parts, ", ")
 }
 
-// SQLWithDefault returns the ORDER BY clause, using defaultSort if no sorts specified.
+// SQLWithDefault returns the ORDER BY clause, using defaultSort if no sorts
+// specified. defaultSort must already end in a unique column.
 func (s *SortOption) SQLWithDefault(defaultSort string) string {
 	if sql := s.SQL(); sql != "" {
+		return sql
+	}
+	return defaultSort
+}
+
+// SQLWithDefaultAndTieBreaker is SQLWithDefault with a qualified tie-breaker
+// expression for joined or aliased queries.
+func (s *SortOption) SQLWithDefaultAndTieBreaker(defaultSort, idExpr string) string {
+	if sql := s.SQLWithTieBreaker(idExpr); sql != "" {
 		return sql
 	}
 	return defaultSort
