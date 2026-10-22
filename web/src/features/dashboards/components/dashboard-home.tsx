@@ -112,8 +112,14 @@ export function DashboardHome() {
   const seeding = useRef(false)
   const [seeded, setSeeded] = useState<string | null>(null)
   const [seedFailed, setSeedFailed] = useState(false)
+  // A failed list read is not "nothing": the organization may have
+  // dashboards for the viewer, so no copy is made.
   const nothing =
-    !listsLoading && !mine.error && personal.length === 0 && (organization ?? []).length === 0
+    !listsLoading &&
+    !mine.error &&
+    !(canOrgView && org.error) &&
+    personal.length === 0 &&
+    (organization ?? []).length === 0
   useEffect(() => {
     if (!nothing || seeding.current) return
     seeding.current = true
