@@ -1,2 +1,2 @@
--- Reverts 003277_idempotency_keys.
+-- Reverts 003288_idempotency_keys.
 DROP TABLE IF EXISTS idempotency_keys;
