@@ -1395,10 +1395,6 @@
   "findings.list.kev": "KEV",
   "findings.bulk.assignFailed": "Failed to assign findings",
   "findings.toast.refreshed": "Findings refreshed",
-  "findings.toast.exportStarted": "Export started",
-  "findings.toast.nothingToExport": "No findings to export",
-  "findings.toast.csvExported": "CSV exported successfully",
-  "findings.toast.jsonExported": "JSON exported successfully",
   "findings.toast.deleted": "Finding deleted",
   "findings.toast.deleteFailed": "Failed to delete finding",
   "findings.toast.idCopied": "Finding ID copied to clipboard",
@@ -1627,5 +1623,14 @@
   "findings.header.add": "Add",
   "findings.header.triage": "Triage",
   "findings.header.triageView": "Triage view",
-  "findings.contextChips.crownJewels": "Crown jewels"
+  "findings.contextChips.crownJewels": "Crown jewels",
+  "findings.export.truncated": "Exported the first {max} of {total} findings",
+  "findings.export.truncatedHint": "One export holds at most {max} findings. Narrow the filters to export the rest.",
+  "findings.export.done": "Export downloaded",
+  "findings.export.forbidden": "You cannot export findings",
+  "findings.export.forbiddenHint": "Exporting needs the Export findings permission. Ask an organization administrator.",
+  "findings.export.busy": "An export of yours is still running",
+  "findings.export.busyHint": "Wait for it to finish, then try again.",
+  "findings.export.failed": "The export failed. Try again.",
+  "findings.bulk.statusFailed": "Failed to update findings"
 }
