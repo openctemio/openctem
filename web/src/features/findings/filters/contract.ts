@@ -56,6 +56,7 @@ export const CONTEXT_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'asset_owner_id',
   'asset_owner_id_null',
   'asset_group_id',
+  'asset_crown_jewel',
 ])
 
 const IN_OPS = ['in', 'not_in'] as const
