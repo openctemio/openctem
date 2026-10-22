@@ -1894,6 +1894,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A suspended organization takes no provisioning.
 	s.SCIMToken.SetOrganizationGate(s.OrganizationGate)
 	s.SCIMToken.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
+	// Minting a SCIM token needs scim for the organization.
+	s.SCIMToken.SetFeatureGate(s.Entitlement)
 	s.SCIMProvisioning = scim.NewProvisioningService(
 		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)

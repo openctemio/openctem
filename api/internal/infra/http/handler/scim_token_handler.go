@@ -131,6 +131,9 @@ func (h *SCIMTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.tokens.Mint(r.Context(), tenantID, req.Name, createdBy)
 	if err != nil {
+		if WriteFeatureDenied(w, err) {
+			return
+		}
 		h.logger.Error("mint scim token failed", "error", err)
 		apierror.InternalServerError("failed to create SCIM token").WriteJSON(w)
 		return

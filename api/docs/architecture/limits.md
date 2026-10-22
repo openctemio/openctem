@@ -106,12 +106,14 @@ decides which organizations get them.
 |---|---|---|
 | `sso.connections` | creating or changing a SAML or OIDC connection: console PUT/POST, a pending change's submission and its approval (`SSOService.requireConnections`) | sign-in through a connection already configured keeps working (never a lock-out); deleting one always works |
 | `sso.enforcement` | turning SSO enforcement on (`TenantService.UpdateSecuritySettings`) | enforcement stays during the grace, then the `sso-enforcement-entitlement` controller (hourly) turns it off and tells the owners and administrators: members sign in with a password (and 2FA where required) again |
-| `scim` | the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | keeps working during the grace (`Usable`), then 403 |
+| `scim` | minting a SCIM token (`TokenService.Mint`) and the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | existing tokens keep working during the grace (`Usable`), then 403; no new token |
 | `sso.group_links` | changing SCIM group to role mappings (`GroupService.SetRoleMappings`) | existing mappings keep applying |
 | `ldap` | reserved: there is no LDAP sign-in yet | — |
 
 `Usable(tenant, feature)` answers "may it keep running": allowed, or denied
-less than the grace period ago. A refused change answers
+less than the grace period ago. The grace of a named feature is a row in
+`tenant_module_grace` like a module's (the key is a module id or a named
+feature). A refused change answers
 `403 FEATURE_NOT_INCLUDED`, or `503` when the limits could not be read; every
 seam fails closed.
 
