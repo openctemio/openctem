@@ -39,6 +39,7 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'facts_building':
     case 'timeout':
     case 'empty':
+    case 'pending':
       return `dashboards.reason.${reason}`
     default:
       return 'dashboards.reason.failed'
