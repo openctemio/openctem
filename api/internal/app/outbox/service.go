@@ -570,7 +570,7 @@ func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, en
 
 // idempotencyKey is "outbox-<event id>": stable across the retries of one
 // event, and a redelivery keeps the key of the event it sends again, so a
-// receiver that already processed it can recognise it.
+// receiver that already processed it can recognize it.
 func idempotencyKey(entry *outboxdom.Outbox) string {
 	if orig, ok := entry.Metadata()[MetaRedeliveryOf].(string); ok {
 		if _, err := uuid.Parse(orig); err == nil {
