@@ -2,8 +2,9 @@
  * ValidationEvidencePanel Tests (RFC-011)
  * - empty state when no evidence
  * - renders evidence rows with outcome label
- * - "Validate now" triggers a validation request (findings:write)
- * - button hidden without findings:write
+ * - "Check reachability" triggers a validation request (findings:verify),
+ *   offered only where the verification plan says a safe-check can run
+ * - nothing rendered when there is no evidence and no safe-check
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -25,6 +26,18 @@ vi.mock('../../../api/use-findings-api', () => ({
   }),
 }))
 
+let mockSafeCheck: { kind: string; available: boolean; reason?: string } | undefined = {
+  kind: 'safe_check',
+  available: true,
+}
+vi.mock('../../../api/use-finding-verification', () => ({
+  useFindingVerificationPlan: () => ({
+    data: mockSafeCheck ? { methods: [mockSafeCheck] } : undefined,
+  }),
+  planMethod: (plan: { methods: { kind: string }[] } | undefined, kind: string) =>
+    plan?.methods.find((m) => m.kind === kind),
+}))
+
 vi.mock('@/context/permission-provider', () => ({
   usePermissions: () => ({ hasPermission: (p: string) => mockHasPermission(p) }),
 }))
@@ -37,6 +50,7 @@ describe('ValidationEvidencePanel', () => {
     mockRequestValidation.mockResolvedValue({ command_id: 'cmd-1', status: 'queued' })
     mockEvidence = []
     mockHasPermission = () => true
+    mockSafeCheck = { kind: 'safe_check', available: true }
   })
 
   it('shows the empty state when there is no evidence', () => {
@@ -79,16 +93,23 @@ describe('ValidationEvidencePanel', () => {
     expect(screen.getByText(/Detected \(still exploitable\)/)).toBeInTheDocument()
   })
 
-  it('triggers a validation request when "Validate now" is clicked', async () => {
+  it('triggers a validation request when "Check reachability" is clicked', async () => {
     const user = userEvent.setup()
     render(<ValidationEvidencePanel findingId="f-1" />)
-    await user.click(screen.getByRole('button', { name: /validate now/i }))
+    await user.click(screen.getByRole('button', { name: /check reachability/i }))
     expect(mockRequestValidation).toHaveBeenCalledTimes(1)
   })
 
-  it('hides the action without findings:write permission', () => {
-    mockHasPermission = () => false
+  it('needs findings:verify for the check', () => {
+    mockHasPermission = (p) => p !== 'findings:verify'
     render(<ValidationEvidencePanel findingId="f-1" />)
-    expect(screen.queryByRole('button', { name: /validate now/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /check reachability/i })).not.toBeInTheDocument()
+  })
+
+  it('offers no check where the plan says it cannot run, and shows nothing without evidence', () => {
+    mockSafeCheck = { kind: 'safe_check', available: false, reason: 'not_for_secrets' }
+    const { container } = render(<ValidationEvidencePanel findingId="f-1" />)
+    expect(screen.queryByRole('button', { name: /check reachability/i })).not.toBeInTheDocument()
+    expect(container).toBeEmptyDOMElement()
   })
 })
