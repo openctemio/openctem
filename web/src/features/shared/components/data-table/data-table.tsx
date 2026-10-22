@@ -196,6 +196,21 @@ interface DataTableProps<TData, TValue> {
    */
   initialColumnVisibility?: VisibilityState
   /**
+   * Controlled column visibility. With it the table shows exactly these
+   * columns and reports every change through `onColumnVisibilityChange`
+   * (a page that saves the columns with a view, or keeps them in the URL).
+   * Without it the table keeps its own state, started from
+   * `initialColumnVisibility`.
+   */
+  columnVisibility?: VisibilityState
+  onColumnVisibilityChange?: (next: VisibilityState) => void
+  /**
+   * Controlled row density: shown as given, and every pick goes to
+   * `onDensityChange` instead of the per-browser preference.
+   */
+  density?: TableDensity
+  onDensityChange?: (next: TableDensity) => void
+  /**
    * Grouped list: a full-width header row before each group's rows, in one
    * table (see "Grouped lists" in docs/ui-style-contract.md). Client groups
    * follow `order`, then first appearance, and a client-paginated table pages
@@ -395,6 +410,10 @@ export function DataTable<TData, TValue>({
   mobileCards = true,
   isLoading = false,
   initialColumnVisibility,
+  columnVisibility: columnVisibilityProp,
+  onColumnVisibilityChange,
+  density: densityProp,
+  onDensityChange,
   rowGroups,
   paginationNoun,
   pageSizeLabel,
@@ -406,7 +425,9 @@ export function DataTable<TData, TValue>({
   emptyMessage ??= t('common.table.noResults', 'No results found')
   paginationNoun ??= t('common.table.resultsNoun', 'results')
   pageSizeLabel ??= t('common.table.rowsPerPage', 'Rows per page')
-  const [density, setDensity] = useTableDensity(defaultDensity)
+  const [storedDensity, setStoredDensity] = useTableDensity(defaultDensity)
+  const density = densityProp ?? storedDensity
+  const setDensity = onDensityChange ?? setStoredDensity
   const compact = density === 'compact'
   // Cards replace the table on phones. Decided in JS rather than by hiding one
   // with CSS, so only one of the two is ever rendered.
@@ -430,8 +451,22 @@ export function DataTable<TData, TValue>({
   const serverSorting = manualPagination && !!onSortingChange
   const sorting = serverSorting ? (sortingProp ?? []) : internalSorting
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
-  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(
+  const [ownVisibility, setOwnVisibility] = React.useState<VisibilityState>(
     () => initialColumnVisibility ?? {}
+  )
+  const columnVisibility = columnVisibilityProp ?? ownVisibility
+  const columnVisibilityRef = React.useRef(columnVisibility)
+  columnVisibilityRef.current = columnVisibility
+  const setColumnVisibility = React.useCallback(
+    (updater: VisibilityState | ((old: VisibilityState) => VisibilityState)) => {
+      const next = typeof updater === 'function' ? updater(columnVisibilityRef.current) : updater
+      if (columnVisibilityProp !== undefined || onColumnVisibilityChange) {
+        onColumnVisibilityChange?.(next)
+      } else {
+        setOwnVisibility(next)
+      }
+    },
+    [columnVisibilityProp, onColumnVisibilityChange]
   )
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState('')

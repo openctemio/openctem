@@ -11,7 +11,7 @@ import {
 } from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
-import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import Link from '@/components/link'
 import {
   DEFAULT_FINDING_LENS,
@@ -46,7 +46,7 @@ import {
 } from '@/features/config/api/finding-source-api'
 import { useDebounce } from '@/hooks/use-debounce'
 import { toDisplayText } from '@/lib/untrusted-text'
-import type { ColumnDef, SortingState } from '@tanstack/react-table'
+import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
@@ -99,6 +99,7 @@ import {
 import {
   QUICK_VIEW_LABELS,
   knownQuickViews,
+  quickViewHref,
   quickViewIsActive,
   quickViewLabelKey,
   type QuickViewKey,
@@ -116,6 +117,18 @@ import {
 } from '@/features/findings/filters/contract'
 import { NON_FILTER_PARAMS, readFilters } from '@/features/findings/filters/model'
 import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
+import {
+  columnsToSave,
+  defaultColumns,
+  normalizeColumns,
+  parseColumnsParam,
+  sameColumns,
+  serializeColumns,
+  visibilityOf,
+  visibleFrom,
+} from '@/features/findings/lib/list-columns'
+import { viewChanges } from '@/features/saved-views/lib/view-changes'
+import { viewFilters } from '@/features/findings/filters/model'
 import { findingsEmptyKind } from '@/features/findings/lib/empty-kind'
 import { FindingsEmptyState } from '@/features/findings/components/findings-empty-state'
 import {
@@ -126,6 +139,8 @@ import {
   Flag,
   ExternalLink,
   Plus,
+  ListChecks,
+  ChevronDown,
   FileUp,
   Loader2,
   Route,
@@ -206,13 +221,6 @@ import { Textarea } from '@/components/ui/textarea'
 // ============================================
 // Transform API Finding to UI Finding
 // ============================================
-
-/**
- * Columns hidden until the user turns them on in View: the scanner already
- * shows under the title, and the first-seen date is in the detail. Without
- * them, location, status and SLA fit at 1280px instead of scrolling away.
- */
-const DEFAULT_HIDDEN_COLUMNS = { source: false, createdAt: false }
 
 function transformApiToUiFinding(api: ApiFinding): Finding {
   // Build location string — different sources have different location semantics:
@@ -613,12 +621,8 @@ function FindingsContent() {
     if (view.group_by) q.set('group', view.group_by)
     replaceUrlSearch(q)
   }, [])
-  // The view is "modified" when filters in the URL sit on top of it.
-  const savedViewModified =
-    !!savedId &&
-    Array.from(searchParams.keys()).some(
-      (k) => !['view', 'group', 'page', 'per_page', 'tab', 'density'].includes(k)
-    )
+  const { views: savedViewList } = useSavedViews('findings', !!savedId)
+  const openView = savedViewList.find((v) => v.id === savedId)
 
   // asset_id and scan_id (a scan run's "View all findings") are read above.
   // A CVE group's "View": the list narrowed to that CVE (search does not match
@@ -767,6 +771,52 @@ function FindingsContent() {
   // "All" who picks a filter with only 2 pages would sit on an empty page.
   // Keyed on the filter *values*, so the first render (reading a shared link
   // with ?page=3) is not reset — only a later filter change is.
+  // Columns and density are part of the view: the URL holds a choice only
+  // while it differs from what the open view (or the list's default) shows,
+  // and the saved view stores them.
+  const plainActive =
+    !savedId && quickViewIsActive(searchParams, { key: 'active', count: 0, params: 'state=open' })
+  const viewColumns = openView?.columns
+  const baselineColumns = useMemo(
+    () =>
+      viewColumns && viewColumns.length > 0
+        ? normalizeColumns(viewColumns)
+        : defaultColumns(plainActive),
+    [viewColumns, plainActive]
+  )
+  const columnsParam = useUrlParam('columns')
+  const shownColumns = useMemo(
+    () => parseColumnsParam(columnsParam) ?? baselineColumns,
+    [columnsParam, baselineColumns]
+  )
+  const columnVisibility = useMemo(() => visibilityOf(shownColumns), [shownColumns])
+  const onColumnVisibilityChange = useCallback(
+    (next: VisibilityState) => {
+      const list = visibleFrom(next)
+      const params = new URLSearchParams(window.location.search)
+      if (sameColumns(list, baselineColumns)) params.delete('columns')
+      else params.set('columns', serializeColumns(list))
+      replaceUrlSearch(params)
+    },
+    [baselineColumns]
+  )
+  const densityParam = useUrlParam('density')
+  const urlDensity =
+    densityParam === 'compact' || densityParam === 'comfortable' ? densityParam : undefined
+  const viewDensity =
+    openView?.density === 'compact' || openView?.density === 'comfortable'
+      ? openView.density
+      : undefined
+  const onDensityChange = useCallback(
+    (next: 'compact' | 'comfortable') => {
+      const params = new URLSearchParams(window.location.search)
+      if (next === viewDensity) params.delete('density')
+      else params.set('density', next)
+      replaceUrlSearch(params)
+    },
+    [viewDensity]
+  )
+
   // Filters in the URL that the page does not draw itself (an EPSS floor, a
   // port, a tag...). They go to the API as they are; the filter contract names
   // them, so it is loaded when the URL holds one, or when the picker opens.
@@ -1286,12 +1336,8 @@ function FindingsContent() {
     [handleRowClick, openRemediationFor, t]
   )
 
-  // Define columns for DataTable
-  // Priority is the RFC-004 P0–P3 class; it's only populated once the
-  // classifier has run. When nothing in view has one, we drop the column
-  // instead of rendering a full column of "—" (it returns once data exists).
-  const hasAnyPriority = useMemo(() => findings.some((f) => f.priorityClass), [findings])
-
+  // Define columns for DataTable. Finding and Priority are always shown (a
+  // list without its priority cannot be triaged); the rest follow the view.
   const columns: ColumnDef<Finding>[] = useMemo(() => {
     const cols: ColumnDef<Finding>[] = [
       {
@@ -1323,6 +1369,7 @@ function FindingsContent() {
         accessorKey: 'title',
         meta: { label: t('findings.columns.title', 'Title') },
         enableSorting: false,
+        enableHiding: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.title', 'Title')} />
         ),
@@ -1436,6 +1483,7 @@ function FindingsContent() {
       {
         accessorKey: 'priorityClass',
         meta: { label: t('findings.columns.priority', 'Priority') },
+        enableHiding: false,
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -1590,14 +1638,11 @@ function FindingsContent() {
     ]
     // No bulk action for this user: no selection checkboxes either.
     const shown = canSelect ? cols : cols.filter((c) => c.id !== 'select')
-    return hasAnyPriority
-      ? shown
-      : shown.filter((c) => !('accessorKey' in c) || c.accessorKey !== 'priorityClass')
+    return shown
   }, [
     handleRowAction,
     handleRowClick,
     hasPermission,
-    hasAnyPriority,
     canSelect,
     remediationEnabled,
     canCreateTicket,
@@ -1818,6 +1863,52 @@ function FindingsContent() {
         ? t('findings.view.all', 'All findings')
         : t('findings.view.custom', 'Custom view')
   const awaitingVerification = findingStats?.awaiting_verification ?? 0
+
+  // Triage: the findings still to be decided (status new). Until the focused
+  // triage mode lands, it opens the Needs triage view and then the first
+  // finding in the existing finding flow, with j / k to move on.
+  const needsTriageView = knownQuickViews(quickViewData?.views).find(
+    (v) => v.key === 'needs_triage'
+  )
+  const triageCount = needsTriageView?.count ?? 0
+  const [triagePending, setTriagePending] = useState(false)
+  const triageParams = needsTriageView?.params ?? 'status=new'
+  const openTriage = () => {
+    const href = quickViewHref(triageParams)
+    pushUrlSearch(new URLSearchParams(href.split('?')[1]))
+    setTriagePending(true)
+  }
+  // The key handler is installed once and calls the latest openTriage.
+  const openTriageRef = useRef(openTriage)
+  useEffect(() => {
+    openTriageRef.current = openTriage
+  })
+  const onTriageView = quickViewIsActive(searchParams, {
+    key: 'needs_triage',
+    count: triageCount,
+    params: triageParams,
+  })
+  useEffect(() => {
+    if (!triagePending || !onTriageView || findingsValidating || findingsLoading) return
+    setTriagePending(false)
+    if (findings.length > 0) handleRowClick(findings[0])
+  }, [triagePending, onTriageView, findingsValidating, findingsLoading, findings, handleRowClick])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 't' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
+      const el = e.target as HTMLElement | null
+      if (
+        el?.closest?.(
+          'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"]'
+        )
+      )
+        return
+      e.preventDefault()
+      openTriageRef.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
   // Which kind of empty this is: from the organization's total (scope-only
   // stats), the filters the person set, the search, and a refused read.
   const emptyKind = findingsEmptyKind({
@@ -1998,8 +2089,6 @@ function FindingsContent() {
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   ) : undefined
 
-  const { views: savedViewList } = useSavedViews('findings', !!savedId)
-  const openView = savedViewList.find((v) => v.id === savedId)
   const filterBar = (
     <FilterBar
       search={searchParams}
@@ -2016,6 +2105,22 @@ function FindingsContent() {
     />
   )
 
+  // What differs from the open view: the unsaved-changes dot and its menu.
+  const changeList = useMemo(
+    () =>
+      openView
+        ? viewChanges({
+            view: openView,
+            search: searchParams,
+            viewFilters: viewFilters(openView.filter, filterContract).filters,
+            baselineColumns,
+            columns: shownColumns,
+            density: urlDensity,
+          })
+        : undefined,
+    [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity]
+  )
+
   const toolbarStart = filterSearch
 
   // Second row (the table toolbar): which rows and how they show. Saved views
@@ -2026,8 +2131,12 @@ function FindingsContent() {
       <SavedViewsMenu
         page="findings"
         activeId={savedId}
-        modified={savedViewModified}
+        changes={changeList}
         groupBy={groupParam}
+        columns={columnsToSave(shownColumns)}
+        density={urlDensity ?? viewDensity}
+        canShareOrg={hasPermission(Permission.FindingsViewsShare)}
+        onDiscard={() => openSavedView(openView ?? null)}
         onSelect={openSavedView}
       />
       {groupBySelect}
@@ -2228,31 +2337,57 @@ function FindingsContent() {
               </span>
             </Link>
           </Button>
-          {canImport && (
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={t('findings.header.importResults', 'Import results')}
-              onClick={() => setImportDialogOpen(true)}
-            >
-              <FileUp className="h-4 w-4 sm:me-2" />
-              <span className="sr-only sm:not-sr-only">
-                {t('findings.header.importResults', 'Import results')}
-              </span>
-            </Button>
+          {(canImport || hasPermission('findings:write')) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Plus className="h-4 w-4 sm:me-2" aria-hidden />
+                  <span className="sr-only sm:not-sr-only">{t('findings.header.add', 'Add')}</span>
+                  <ChevronDown className="ms-1 hidden h-3.5 w-3.5 sm:block" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {hasPermission('findings:write') && (
+                  <DropdownMenuItem onSelect={() => setCreateDialogOpen(true)}>
+                    <Plus className="me-2 h-4 w-4" aria-hidden />
+                    {t('findings.header.addFinding', 'Add finding')}
+                  </DropdownMenuItem>
+                )}
+                {canImport && (
+                  <DropdownMenuItem onSelect={() => setImportDialogOpen(true)}>
+                    <FileUp className="me-2 h-4 w-4" aria-hidden />
+                    {t('findings.header.importResults', 'Import results')}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-          {hasPermission('findings:write') && (
-            <Button
-              size="sm"
-              aria-label={t('findings.header.addFinding', 'Add finding')}
-              onClick={() => setCreateDialogOpen(true)}
-            >
-              <Plus className="h-4 w-4 sm:me-2" />
-              <span className="sr-only sm:not-sr-only">
-                {t('findings.header.addFinding', 'Add finding')}
+          {/* The one primary action of the page: deciding. With nothing to
+              triage it stays, as a secondary button that opens the same view. */}
+          <Button
+            size="sm"
+            variant={triageCount > 0 ? 'default' : 'outline'}
+            onClick={openTriage}
+            aria-keyshortcuts="t"
+          >
+            <ListChecks className="h-4 w-4 sm:me-2" aria-hidden />
+            <span className="sr-only sm:not-sr-only">
+              {triageCount > 0
+                ? t('findings.header.triage', 'Triage')
+                : t('findings.header.triageView', 'Triage view')}
+            </span>
+            {triageCount > 0 && (
+              <span className="ms-2 font-mono text-xs tabular-nums" data-testid="triage-count">
+                {triageCount.toLocaleString()}
               </span>
-            </Button>
-          )}
+            )}
+            <kbd
+              className="ms-2 hidden rounded border border-current/30 px-1 font-mono text-[10px] opacity-70 sm:inline"
+              aria-hidden
+            >
+              t
+            </kbd>
+          </Button>
         </PageHeader>
 
         <>
@@ -2370,7 +2505,10 @@ function FindingsContent() {
                     resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
                     onRowClick={handleRowClick}
                     mobileRow={mobileRow}
-                    initialColumnVisibility={DEFAULT_HIDDEN_COLUMNS}
+                    columnVisibility={columnVisibility}
+                    onColumnVisibilityChange={onColumnVisibilityChange}
+                    density={savedId ? (urlDensity ?? viewDensity) : undefined}
+                    onDensityChange={savedId ? onDensityChange : undefined}
                     showSelectionCount={false}
                     emptyState={
                       <FindingsEmptyState

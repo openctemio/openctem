@@ -1644,5 +1644,8 @@
   "findings.filter.value.asset_criticality.medium": "Trung bình",
   "findings.filter.value.asset_criticality.low": "Thấp",
   "findings.filter.value.asset_criticality.none": "Chưa đánh giá",
-  "findings.filter.setByView": "Do chế độ xem đã lưu đặt"
+  "findings.filter.setByView": "Do chế độ xem đã lưu đặt",
+  "findings.header.add": "Thêm",
+  "findings.header.triage": "Phân loại",
+  "findings.header.triageView": "Chế độ xem phân loại"
 }

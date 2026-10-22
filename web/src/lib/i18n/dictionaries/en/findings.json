@@ -1644,5 +1644,8 @@
   "findings.filter.value.asset_criticality.medium": "Medium",
   "findings.filter.value.asset_criticality.low": "Low",
   "findings.filter.value.asset_criticality.none": "Not rated",
-  "findings.filter.setByView": "Set by the saved view"
+  "findings.filter.setByView": "Set by the saved view",
+  "findings.header.add": "Add",
+  "findings.header.triage": "Triage",
+  "findings.header.triageView": "Triage view"
 }
