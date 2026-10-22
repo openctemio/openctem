@@ -12,7 +12,13 @@ import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { DataTable, ErrorState, SeverityBadge, type DataTableRowGroups } from '@/features/shared'
+import {
+  DataTable,
+  ErrorState,
+  SeverityBadge,
+  type DataTableRowGroups,
+  type MobileRowSelection,
+} from '@/features/shared'
 import { formatEpssScore } from '@/lib/epss'
 import { cn } from '@/lib/utils'
 import { useLazyGroupRows } from '@/hooks/use-lazy-group-rows'
@@ -286,7 +292,7 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
   onRowClick?: (row: TRow) => void
   onSelectionChange?: (rows: TRow[]) => void
   resetSelectionKey?: string | number
-  mobileRow?: (row: TRow) => React.ReactNode
+  mobileRow?: (row: TRow, selection: MobileRowSelection) => React.ReactNode
   filterToggle?: FilterPanelToggleProps
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
