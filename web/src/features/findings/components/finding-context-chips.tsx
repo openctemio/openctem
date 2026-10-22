@@ -2,7 +2,17 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { useMemo } from 'react'
-import { Box, Boxes, FileCode, Layers, Radar, ShieldAlert, Tag, UserRound } from 'lucide-react'
+import {
+  Box,
+  Boxes,
+  Crown,
+  FileCode,
+  Layers,
+  Radar,
+  ShieldAlert,
+  Tag,
+  UserRound,
+} from 'lucide-react'
 import { ContextFilterChips, type ContextFilterChip } from '@/features/shared'
 import { useAsset } from '@/features/assets/hooks/use-assets'
 import { useComponentVersion } from '@/features/components/api/hooks'
@@ -40,6 +50,8 @@ export interface FindingContextChipsProps {
   ownerUnassigned?: boolean
   /** An asset group (`asset_group_id`; shown as an id). */
   assetGroupId?: string | null
+  /** Findings on crown jewels (`asset_crown_jewel=true`). */
+  crownJewel?: boolean
   /** Remove one URL parameter (its `param`); every other filter stays. */
   onRemove: (param: string) => void
   className?: string
@@ -57,7 +69,8 @@ export function hasFindingContextFilters(p: Omit<FindingContextChipsProps, 'onRe
     p.componentId ||
     p.ownerId ||
     p.ownerUnassigned ||
-    p.assetGroupId
+    p.assetGroupId ||
+    p.crownJewel
   )
 }
 
@@ -72,6 +85,7 @@ export function FindingContextChips({
   ownerId,
   ownerUnassigned,
   assetGroupId,
+  crownJewel,
   onRemove,
   className,
 }: FindingContextChipsProps) {
@@ -165,6 +179,14 @@ export function FindingContextChips({
         label: ownerId,
       })
     }
+    if (crownJewel) {
+      out.push({
+        param: 'asset_crown_jewel',
+        kind: t('findings.contextChips.asset', 'Asset'),
+        icon: Crown,
+        label: t('findings.contextChips.crownJewels', 'Crown jewels'),
+      })
+    }
     if (assetGroupId) {
       out.push({
         param: 'asset_group_id',
@@ -186,6 +208,7 @@ export function FindingContextChips({
     ownerId,
     ownerUnassigned,
     assetGroupId,
+    crownJewel,
     validAssetId,
     validComponentId,
     assetLoading,
