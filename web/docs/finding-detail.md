@@ -67,6 +67,10 @@ in the activity panel.
    `toFindingDetail`, `useFindingTriage` (including the approval rule),
    `FindingWhyItMatters`, `FindingFixCard`, `FindingProperties` and
    `FindingActivity` (the activity summary and panel, also in the pentest sheet).
+   Status, severity and assignee are locked by one helper, `isTriageLocked`, for
+   findings people wrote (pentest, bug bounty, red team, manual), in the rail and in
+   the drawer header. Undo of a status change asks for the note again when the
+   previous status needs one.
 7. **No extra round trips.** `GET /findings/{id}` embeds the CVE record, the
    package and the asset context (api PR "the finding detail embeds its CVE record
    and affected package"). The priority score breakdown is fetched only when "How

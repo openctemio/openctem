@@ -33,7 +33,7 @@ import { PriorityClassBadge } from '../priority-class-badge'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { userTags } from '../../lib/finding-display'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
-import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
+import { findingSourceLabel, isTriageLocked } from '../../lib/finding-detail'
 import { closureReasonLabel, verificationLabel } from '../../lib/closure'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
 
@@ -128,8 +128,7 @@ export function FindingProperties({
   const { t, locale } = useTranslation()
   const [more, setMore] = useState(false)
   const moreId = useId()
-  const isHuman = HUMAN_SOURCES.has(finding.source)
-  const locked = readOnly || isHuman
+  const locked = isTriageLocked(finding.source, readOnly)
   // Re-scoring needs findings:severity, which a remediation owner may lack.
   const canRescore = useCanMutate('PATCH /api/v1/findings/{id}/severity')
   const asset = finding.assets[0]
