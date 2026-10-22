@@ -156,6 +156,44 @@ describe('useFindingTriage — Undo', () => {
   })
 })
 
+describe('useFindingTriage — Undo to a status that needs a note', () => {
+  it('sends the old status on Undo when no note is needed', async () => {
+    const { toast } = await import('sonner')
+    const { result } = renderHook(() => useFindingTriage(target({ status: 'confirmed' })))
+    await act(async () => {
+      await result.current.changeStatus('in_progress')
+    })
+    const undo = (
+      vi.mocked(toast.success).mock.calls.at(-1)?.[1] as { action?: { onClick: () => void } }
+    ).action
+    await act(async () => {
+      undo!.onClick()
+    })
+    expect(updateStatus).toHaveBeenCalledTimes(2)
+    expect(updateStatus.mock.calls[1][0]).toMatchObject({ status: 'confirmed' })
+  })
+
+  it('opens the note dialog instead of sending the old status without a note', async () => {
+    const { toast } = await import('sonner')
+    const { result } = renderHook(() => useFindingTriage(target({ status: 'fix_applied' })))
+    await act(async () => {
+      await result.current.changeStatus('in_progress')
+    })
+    expect(updateStatus).toHaveBeenCalledTimes(1)
+    const undo = (
+      vi.mocked(toast.success).mock.calls.at(-1)?.[1] as { action?: { onClick: () => void } }
+    ).action
+    expect(undo).toBeTruthy()
+    await act(async () => {
+      undo!.onClick()
+    })
+    // Nothing more was sent; the note is asked for.
+    expect(updateStatus).toHaveBeenCalledTimes(1)
+    render(<>{result.current.dialogs}</>)
+    expect(document.querySelector('#status-note')).not.toBeNull()
+  })
+})
+
 describe('useFindingTriage — organization lifecycle moves', () => {
   function Harness({ f }: { f: FindingTriageTarget }) {
     const triage = useFindingTriage(f)

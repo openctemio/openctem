@@ -157,6 +157,13 @@ func (h *egressHarness) seed() {
 			VALUES ($1::uuid, $2, $3, $4, 'nuclei', 'exposed-panel', 'hit', 'high', $1::text, 'confirmed')`,
 			f.id.String(), f.tenant.String(), f.asset.String(), f.source)
 	}
+	// The member is on the pentest finding's campaign, so the campaign gate
+	// admits them and the egress rule itself is what refuses the ticket.
+	campaign := shared.NewID()
+	h.exec(`INSERT INTO pentest_campaigns (id, tenant_id, name) VALUES ($1, $2, 'engagement')`, campaign.String(), h.tenantA.String())
+	h.exec(`INSERT INTO pentest_campaign_members (tenant_id, campaign_id, user_id, role) VALUES ($1, $2, $3, 'lead')`,
+		h.tenantA.String(), campaign.String(), h.member.String())
+	h.exec(`UPDATE findings SET pentest_campaign_id = $1 WHERE id = $2`, campaign.String(), h.pentestFinding.String())
 	// The member's data scope is asset A1 only.
 	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
 		h.member.String(), h.tenantA.String(), h.assetA1.String())
