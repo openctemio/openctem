@@ -116,7 +116,7 @@ export function AddFilterPopover({
       const el = e.target as HTMLElement | null
       if (
         el?.closest?.(
-          'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="dialog"]'
+          'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"]'
         )
       )
         return
