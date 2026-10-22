@@ -716,7 +716,7 @@ function OverviewTab({
   return (
     <div className="space-y-6">
       {neverScanned && (
-        <div className="flex items-center gap-3 rounded-xl border border-primary/30 border-l-4 border-l-primary bg-primary/[0.03] p-4">
+        <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
           <div className="bg-primary/10 text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
             <Play className="h-4 w-4" />
           </div>
