@@ -108,8 +108,24 @@ starts are limited per organization:
 | `POST /api/v1/scans/{id}/trigger` | 20 per minute |
 | `POST /api/v1/scans/quick` | 10 per minute |
 
-A limited request gets `429` with `Retry-After`; the sign-in limiters also
-send `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`.
+A limited request gets `429` with `Retry-After` (whole seconds, at least 1).
+Every rate-limit middleware, including the per-key hourly limit of `oct_` API
+keys and the per-connection limit of the MCP endpoint, also sends the
+rate-limit state in two header families (the API-key and MCP limits only on the
+`429`):
+
+| Header | Meaning |
+|---|---|
+| `RateLimit-Limit` | requests the window allows (the bucket depth) |
+| `RateLimit-Remaining` | requests left; 0 on a 429 |
+| `RateLimit-Reset` | seconds until the allowance is full again |
+| `X-RateLimit-Limit`, `X-RateLimit-Remaining` | same values as above |
+| `X-RateLimit-Reset` | the reset moment as a Unix timestamp |
+
+The `X-RateLimit-*` names are kept for one deprecation window and then dropped;
+use the `RateLimit-*` names in new clients. A `429` from a cool-down or a
+one-at-a-time guard inside a route (a running export, a dashboard rebuild) has
+the error body only.
 
 ## Input validation for scan configuration
 
