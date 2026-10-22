@@ -1644,6 +1644,7 @@
   "admin.ssoEnforcementCard.required": "Bắt buộc",
   "admin.ssoEnforcementCard.notRequired": "Không bắt buộc",
   "admin.ssoEnforcementCard.configureSamlOrAnOidc": "Hãy cấu hình SAML hoặc nhà cung cấp OIDC trước.",
+  "admin.ssoEnforcementCard.needsVerifiedDomain": "Cần ít nhất một tên miền đã xác minh cho SSO. Nếu sau này một tên miền không qua được kiểm tra DNS, SSO vẫn bắt buộc và chủ sở hữu được cảnh báo.",
   "admin.ssoPostureBadges.notConfigured": "Chưa cấu hình",
   "admin.ssoPostureBadges.enforced": "Đã bắt buộc",
   "admin.targetMappingDialog.editTargetMapping": "Sửa ánh xạ mục tiêu",
