@@ -1678,6 +1678,8 @@
   "admin.samlConfigForm.pasteTheDetailsFromYour": "Dán thông tin từ ứng dụng SAML của IdP. Đăng nhập vẫn bị tắt cho đến khi bạn bật bên dưới.",
   "admin.samlConfigForm.idpEntityIdIssuer": "Entity ID của IdP (nhà phát hành)",
   "admin.samlConfigForm.idpSsoUrl": "URL SSO của IdP",
+  "admin.samlConfigForm.certificateExpired": "Chứng chỉ đã lưu đã hết hạn vào {date}.",
+  "admin.samlConfigForm.certificateExpires": "Chứng chỉ đã lưu hết hạn vào {date} (còn {days} ngày).",
   "admin.samlConfigForm.idpSigningCertificatePem": "Chứng chỉ ký của IdP (PEM)",
   "admin.samlConfigForm.provisioning": "Cấp phát tài khoản",
   "admin.samlConfigForm.howUsersAreMappedWhen": "Cách người dùng được ánh xạ khi đăng nhập qua SAML.",

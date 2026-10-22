@@ -747,12 +747,21 @@ widget kit's frame, with its own error boundary.
   while it still exists and they can still read it), else their own default,
   else the organization default, else the first organization dashboard, else
   their first own dashboard. A person with no dashboard at all (none of their
-  own, none from the organization) gets a personal copy of the Overview
+  own, none from the organization) gets a personal copy of the CTEM
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
+- **CTEM offer**: a personal dashboard that is a copy of the Overview template
+  (its `w_ov*` widget ids) without the CTEM loop shows a one-time hint: "Add
+  the CTEM loop" (inserts the loop after the leading row of figures and saves
+  the layout), "Switch to the CTEM template" (adds a CTEM dashboard and opens
+  it; the Overview copy is kept), or dismiss. Nothing changes until the viewer
+  chooses; the dismissal is kept in the browser. No request is made for the
+  hint.
 - **Templates** are typed widget configs in
-  `web/src/features/dashboards/templates.json`: Overview, Executive,
-  Vulnerability program, Triage. `/dashboards` copies one into a personal
+  `web/src/features/dashboards/templates.json`: CTEM (the first-visit
+  default: active exposure figures, the CTEM loop, fix next, attack paths to
+  crown jewels, priority over time), Overview (with the CTEM loop after its
+  figures), Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
   dashboard ("Use template"); the copy is a stored dashboard like any other.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
@@ -851,7 +860,7 @@ with the same rules as the shared error state.
 ### Result shapes and visualizations
 
 The kit draws the widget result shapes (`types.ts`): `scalar`, `ratio`,
-`duration`, `category`, `time_series`, `matrix`, `items`, `stages`. A null
+`duration`, `category`, `time_series`, `matrix`, `items`, `stages`, `paths`. A null
 figure means not measured and is never drawn as 0.
 
 | Visualization | Shapes | Notes |
@@ -863,7 +872,8 @@ figure means not measured and is never drawn as 0.
 | `AreaLineViz` | time_series (stocks) | stacked area or lines, markers for scoring changes |
 | `DivergingViz` | time_series with `opened` / `fixed` | opened up, fixed down, the net in words |
 | `HeatmapViz` | matrix | every value printed, shaded on the sequential ramp |
-| `FunnelViz` | stages | the stage strip; unmeasured stages are grey with their reason |
+| `LoopViz` | stages | the CTEM loop as an ordered list (`<ol>`); each stage's figure and second figure link to their lists, its state is an icon and words in a pill (never a coloured stripe; cards keep one neutral border), unmeasured stages show "—" with the reason; the focus stage is `aria-current="step"` and marked "Act here" with the brand accent (`--brand`, the only use of it) |
+| `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
 
 Rules every visualization follows:
