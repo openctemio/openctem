@@ -134,10 +134,13 @@ func (p OffboardPlan) Targets() []shared.ID {
 
 // DisableResult reports what a disable paused, so administrators can be told.
 type DisableResult struct {
-	SuspendedKeys  int            `json:"suspended_keys"`
-	PausedScans    []LifecycleRef `json:"paused_scans"`
-	PausedReports  []LifecycleRef `json:"paused_report_schedules"`
-	PausedWorkflow []LifecycleRef `json:"paused_workflows"`
+	SuspendedKeys int `json:"suspended_keys"`
+	// RevokedServiceAccountKeys counts the service-account keys the member
+	// minted, revoked with the suspension.
+	RevokedServiceAccountKeys int            `json:"revoked_service_account_keys"`
+	PausedScans               []LifecycleRef `json:"paused_scans"`
+	PausedReports             []LifecycleRef `json:"paused_report_schedules"`
+	PausedWorkflow            []LifecycleRef `json:"paused_workflows"`
 }
 
 // Paused reports whether anything was paused.
@@ -204,10 +207,10 @@ type LifecycleRepository interface {
 	// reassigns owned work, strips every access source and turns the
 	// membership into a tombstone.
 	Offboard(ctx context.Context, m *Membership, actor *shared.ID, plan OffboardPlan) (*OffboardResult, error)
-	// RevokeServiceAccountKeys revokes the active service-account keys the
-	// user minted in the tenant and returns how many it revoked. revokedBy is
-	// the acting administrator (nil for a system path).
-	RevokeServiceAccountKeys(ctx context.Context, tenantID, userID shared.ID, revokedBy *shared.ID) (int, error)
+	// ChangeRoleRevokingServiceAccountKeys persists the membership's new role
+	// and revokes the service-account keys the member minted in one
+	// transaction (an administrator demoted below administrator).
+	ChangeRoleRevokingServiceAccountKeys(ctx context.Context, m *Membership, revokedBy *shared.ID) (int, error)
 	// Rejoin re-activates an offboarded tombstone with a new role (from zero).
 	Rejoin(ctx context.Context, m *Membership) error
 	// ErasePersonalData anonymises the user's name and email and clears

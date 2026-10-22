@@ -28,7 +28,10 @@ func registerUserDashboardRoutes(
 		r.POST("/", h.Create)
 		// Static catalog of typed widget metrics; no organization data.
 		r.GET("/widget-catalog", h.WidgetCatalog)
+		// One typed widget computed for the caller's own scope.
+		r.POST("/widget-preview", h.PreviewWidget)
 		r.GET("/{id}", h.Get)
+		r.GET("/{id}/data", h.PersonalData)
 		r.PUT("/{id}", h.Update)
 		r.DELETE("/{id}", h.Delete)
 		r.POST("/{id}/default", h.SetDefault)
@@ -43,6 +46,7 @@ func registerUserDashboardRoutes(
 		r.POST("/", h.CreateOrg, manage)
 		r.PUT("/order", h.ReorderOrg, manage)
 		r.GET("/{id}", h.GetOrg, view)
+		r.GET("/{id}/data", h.OrgData, view)
 		r.PUT("/{id}", h.UpdateOrg, manage)
 		r.DELETE("/{id}", h.DeleteOrg, manage)
 		r.POST("/{id}/default", h.SetOrgDefault, manage)
