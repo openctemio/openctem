@@ -1,5 +1,6 @@
 'use client'
 
+import { toDisplayText } from '@/lib/untrusted-text'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -596,7 +597,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                   <div key={stackIndex} className="rounded-lg border">
                     {stack.message && (
                       <div className="border-b bg-muted/30 px-4 py-2">
-                        <p className="text-sm font-medium">{stack.message}</p>
+                        <p className="text-sm font-medium">{toDisplayText(stack.message)}</p>
                       </div>
                     )}
                     <div className="p-4">
@@ -612,7 +613,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                             <div className="flex-1 min-w-0">
                               {frame.location?.path && (
                                 <span className="text-blue-400 break-all">
-                                  {frame.location.path}
+                                  {toDisplayText(frame.location.path)}
                                   {frame.location.start_line && (
                                     <span className="text-muted-foreground">
                                       :{frame.location.start_line}
@@ -623,7 +624,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                                 </span>
                               )}
                               {frame.module && (
-                                <span className="text-muted-foreground ms-2">({frame.module})</span>
+                                <span className="text-muted-foreground ms-2">
+                                  ({toDisplayText(frame.module)})
+                                </span>
                               )}
                             </div>
                           </div>
@@ -684,7 +687,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                       <div className="flex-1 min-w-0">
                         {loc.path ? (
                           <p className="text-sm font-mono text-blue-400 break-all">
-                            {loc.path}
+                            {toDisplayText(loc.path)}
                             {loc.start_line && (
                               <span className="text-muted-foreground">
                                 :{loc.start_line}
@@ -698,7 +701,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                           </p>
                         )}
                         {loc.message && (
-                          <p className="text-muted-foreground text-sm mt-1">{loc.message}</p>
+                          <p className="text-muted-foreground text-sm mt-1">
+                            {toDisplayText(loc.message)}
+                          </p>
                         )}
                       </div>
                     </div>
