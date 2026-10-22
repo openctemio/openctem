@@ -212,7 +212,7 @@ var receiptListParams = map[string]bool{"source_kind": true, "source_ref": true,
 var receiptActionParams = map[string]bool{"action": true, "page": true, "per_page": true}
 
 // strictParams refuses a parameter the endpoint does not know with 400
-// INVALID_FILTER (a misspelt filter must not widen the result), and parses
+// INVALID_FILTER (a misspelled filter must not widen the result), and parses
 // page and per_page (per_page capped at 100).
 func strictParams(w http.ResponseWriter, r *http.Request, known map[string]bool) (pagination.Pagination, bool) {
 	q := r.URL.Query()

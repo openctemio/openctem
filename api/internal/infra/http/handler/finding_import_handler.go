@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -199,7 +200,7 @@ type ImportIngestSummary struct {
 // Import handles POST /api/v1/findings/imports.
 //
 // @Summary      Import results from another tool
-// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. A committed upload answers 201 with Location and its receipt (what it did to the organization's findings); with dry_run=true the files are only parsed and counted (200). The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is closed, and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part. An Idempotency-Key header (1-128 printable ASCII) makes a retry of the same files return the first answer (Idempotent-Replayed: true); the same key with other files is 422, while the first request runs 409, and when the key store is unavailable 503 (nothing imported).
+// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. A committed upload answers 201 with Location and its receipt (what it did to the organization's findings); with dry_run=true the files are only parsed and counted (200). The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is closed unless the upload declares coverage=full for explicit asset_id values (then the open findings of each file's tool on those assets that the upload did not report are closed, with the same guards as a covered scan), and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part. An Idempotency-Key header (1-128 printable ASCII) makes a retry of the same files return the first answer (Idempotent-Replayed: true); the same key with other files is 422, while the first request runs 409, and when the key store is unavailable 503 (nothing imported).
 // @Tags         Findings
 // @Accept       multipart/form-data
 // @Produce      json
@@ -208,6 +209,8 @@ type ImportIngestSummary struct {
 // @Param        dry_run          query     bool    false  "Parse and count only"
 // @Param        format           query     string  false  "Force the format of a single file"
 // @Param        min_severity     query     string  false  "Drop findings below: info, low, medium, high, critical"
+// @Param        coverage         query     string  false  "partial (default, closes nothing) or full: the upload is a complete scan of the asset_id assets by each file's tool, and their open findings of that tool it does not report are closed (needs findings:status)"
+// @Param        asset_id         query     []string  false  "With coverage=full: 1 to 100 asset ids in the uploader's data scope"  collectionFormat(multi)
 // @Param        Idempotency-Key  header    string  false  "Makes a retry of the same upload return the first answer"
 // @Success      200  {object}  FindingImportResponse  "Preview"
 // @Success      201  {object}  FindingImportResponse  "Committed, with the receipt"
@@ -219,7 +222,7 @@ type ImportIngestSummary struct {
 // @Failure      503  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /findings/imports [post]
-func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { //nolint:cyclop // one upload flow: params, key, parts, receipt
+func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { //nolint:cyclop,gocognit // one upload flow: params, key, parts, receipt
 	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
 		apierror.BadRequest("invalid tenant").WriteJSON(w)
@@ -264,50 +267,23 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 		req.MinSeverity = sev
 	}
 
+	if apiErr := h.parseCoverage(r, &req); apiErr != nil {
+		apiErr.WriteJSON(w)
+		return
+	}
+
 	maxBody := h.maxBody
 	if maxBody <= 0 {
 		maxBody = MaxFindingImportBody
 	}
 
 	// Idempotency-Key (a preview writes nothing and ignores it).
-	var claim *idempotency.Claim
-	var hasher *requestHasher
+	claim, hasher, handled := h.claimKey(w, r, tid, q, maxBody, req.DryRun)
+	if handled {
+		return
+	}
 	completed := false
-	if key := r.Header.Get(idempotency.Header); key != "" && !req.DryRun {
-		scope, err := idempotency.NewScope(tid, importPrincipal(r), findingImportRoute, key)
-		if err != nil {
-			apierror.BadRequest(err.Error()).WriteJSON(w)
-			return
-		}
-		if h.idem == nil {
-			h.logger.Error("finding import: Idempotency-Key sent but no key store is wired")
-			storeUnavailable(w)
-			return
-		}
-		c, existing, err := h.idem.Claim(r.Context(), scope, findingImportTimeout+5*time.Minute)
-		if err != nil {
-			h.logger.Error("finding import: idempotency store", "error", logger.SanitizeError(err))
-			storeUnavailable(w)
-			return
-		}
-		if existing != nil {
-			if existing.State != idempotency.StateDone {
-				writeIdempotencyRefusal(w, true)
-				return
-			}
-			fp, err := fingerprintRequest(r, maxBody, w)
-			if err != nil {
-				writeBodyError(w, err)
-				return
-			}
-			if fp != existing.RequestSHA256 {
-				writeIdempotencyRefusal(w, false)
-				return
-			}
-			replay(w, existing)
-			return
-		}
-		claim, hasher = c, newRequestHasher(q)
+	if claim != nil {
 		defer func() {
 			if !completed {
 				if err := h.idem.Release(context.WithoutCancel(r.Context()), claim); err != nil {
@@ -341,7 +317,7 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 	// refused halfway still says what its earlier files wrote.
 	defer func() {
 		if !req.ReceiptID.IsZero() && !finished {
-			h.svc.FinishUpload(context.WithoutCancel(ctx), req, results)
+			h.svc.FinishUpload(context.WithoutCancel(ctx), req, results, false)
 		}
 	}()
 	// hashed wraps a part for the request fingerprint when a key is used.
@@ -428,7 +404,7 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	h.svc.FinishUpload(context.WithoutCancel(ctx), req, results)
+	h.svc.FinishUpload(context.WithoutCancel(ctx), req, results, true)
 	finished = true
 	if h.receipts != nil {
 		if rec, err := h.receipts.Get(context.WithoutCancel(ctx), tid, req.ReceiptID); err == nil {
@@ -457,6 +433,92 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write(body)
+}
+
+// claimKey claims the request's Idempotency-Key. handled is true when the
+// answer was written: a bad key (400), the store down (503, fail closed), a
+// key in flight (409) or reused (422), or a replay of the stored answer.
+// Without a key (or in a preview) claim and hasher are nil.
+func (h *FindingImportHandler) claimKey(w http.ResponseWriter, r *http.Request, tid shared.ID, q url.Values, maxBody int64,
+	dryRun bool) (*idempotency.Claim, *requestHasher, bool) {
+	key := r.Header.Get(idempotency.Header)
+	if key == "" || dryRun {
+		return nil, nil, false
+	}
+	scope, err := idempotency.NewScope(tid, importPrincipal(r), findingImportRoute, key)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return nil, nil, true
+	}
+	if h.idem == nil {
+		h.logger.Error("finding import: Idempotency-Key sent but no key store is wired")
+		storeUnavailable(w)
+		return nil, nil, true
+	}
+	c, existing, err := h.idem.Claim(r.Context(), scope, findingImportTimeout+5*time.Minute)
+	if err != nil {
+		h.logger.Error("finding import: idempotency store", "error", logger.SanitizeError(err))
+		storeUnavailable(w)
+		return nil, nil, true
+	}
+	if existing == nil {
+		return c, newRequestHasher(q), false
+	}
+	if existing.State != idempotency.StateDone {
+		writeIdempotencyRefusal(w, true)
+		return nil, nil, true
+	}
+	fp, err := fingerprintRequest(r, maxBody, w)
+	switch {
+	case err != nil:
+		writeBodyError(w, err)
+	case fp != existing.RequestSHA256:
+		writeIdempotencyRefusal(w, false)
+	default:
+		replay(w, existing)
+	}
+	return nil, nil, true
+}
+
+// parseCoverage reads coverage=full and its asset_id values. Declaring full
+// coverage closes findings, so it needs findings:status, and every asset
+// must be the organization's and in the uploader's scope (one answer for a
+// missing and a hidden asset).
+func (h *FindingImportHandler) parseCoverage(r *http.Request, req *findingimport.Request) *apierror.Error {
+	q := r.URL.Query()
+	switch c := q.Get("coverage"); c {
+	case "", "partial":
+	case "full":
+		req.Coverage.Full = true
+	default:
+		return apierror.BadRequest("coverage must be partial or full")
+	}
+	raw := q["asset_id"]
+	if len(raw) > findingimport.MaxCoverageAssets {
+		return apierror.BadRequest(findingimport.ErrCoverageScope.Error())
+	}
+	for _, v := range raw {
+		id, err := shared.IDFromString(v)
+		if err != nil {
+			return apierror.BadRequest(findingimport.ErrCoverageScope.Error())
+		}
+		req.Coverage.AssetIDs = append(req.Coverage.AssetIDs, id)
+	}
+	if req.Coverage.Full && !middleware.HasPermission(r.Context(), permission.FindingsStatus.String()) {
+		return apierror.Forbidden("coverage=full closes findings and needs " + permission.FindingsStatus.String())
+	}
+	if err := h.svc.CheckCoverage(r.Context(), *req); err != nil {
+		switch {
+		case errors.Is(err, findingimport.ErrCoverageScope):
+			return apierror.BadRequest(err.Error())
+		case errors.Is(err, findingimport.ErrCoverageUnsupported):
+			return apierror.New(http.StatusNotImplemented, "NOT_IMPLEMENTED", err.Error())
+		default:
+			h.logger.Error("finding import: check coverage", "error", err)
+			return apierror.InternalServerError("import failed")
+		}
+	}
+	return nil
 }
 
 // importPrincipal is who an Idempotency-Key belongs to: the API key, or the

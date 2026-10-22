@@ -16,7 +16,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | Writer in ingest (every report), in coverage decisions, and for uploads (one receipt per request) | shipped |
 | Retention job (`ingest-receipt-retention`) | shipped |
 | Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003288_idempotency_keys`) | shipped |
-| Full-coverage uploads (`coverage=full` with an explicit scope) | planned (RFC-122 §5) |
+| Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
 | Web: import page, scan run page, finding "last seen in" | planned |
 
 ## Which receipt
@@ -85,8 +85,31 @@ and with the receipt id as report id (so `findings.scan_id`). The assets each
 file wrote are stamped with it (`assets.import_id`). `FinishUpload` adds the
 file-level counts (components, VEX statements, what the parsers skipped, the
 files that failed as `file_<kind>`), sets the format (`mixed` for several),
-and the status (`failed` when no file was imported). An upload always has
-partial coverage and closes nothing.
+and the status (`failed` when no file was imported). By default an upload
+has partial coverage and closes nothing.
+
+### Full-coverage uploads
+
+`?coverage=full&asset_id=<id>` (1 to 100 `asset_id` values) declares the
+upload a complete scan of those assets by the tool of each of its files.
+`findingimport.Service.CheckCoverage` refuses it before anything is read
+unless the caller holds `findings:status` (403) and every asset is an asset
+of the organization in the uploader's data scope (400, one answer for a
+missing and a hidden asset). When the request has read every part,
+`FinishUpload` (`closeUncovered`, `internal/app/findingimport/coverage.go`):
+
+- refuses to close anything (`coverage_note = incomplete`, coverage stays
+  `partial`) when a file failed, a finding could not be stored, a file named
+  no tool, or the request was cut short;
+- per tool: candidates are the open findings on the declared assets last
+  seen by that tool, not a branch occurrence, not from a human source (pentest,
+  manual, bug bounty, red team), not a leaked secret, and not reported by
+  this upload (their `scan_id` is not the receipt id);
+- the blinding guard holds a mass close (`held`, nothing closed);
+- otherwise closes them (`resolved`, verification `covered_scan`, timeline
+  "An upload that declared full coverage ... no longer reported it"),
+  records them as `closed` actions, and stores what is left open in the
+  scope as `untouched`.
 
 ## Reading receipts
 
@@ -151,5 +174,11 @@ receipts are kept.
 - `internal/infra/postgres/idempotency_key_repository_db_test.go`: claim,
   pending, done, takeover of an expired key, a lost claim cannot finish or
   release, purge.
+- `internal/infra/http/routes/finding_import_coverage_db_test.go`: refusals
+  (no `findings:status`, unknown asset, no scope, scope without full,
+  asset outside the uploader's scope) close nothing; a full-coverage subset
+  upload closes the finding it left out, with `closed 1`, `untouched 0`.
+- `internal/app/findingimport/coverage_test.go`: a failed file, a finding not
+  stored, the blinding guard and a request cut short close nothing.
 - `internal/app/ingest/receipt_test.go`: source mapping, delta contents,
   coverage decisions (enforce, dry run, ineligible).

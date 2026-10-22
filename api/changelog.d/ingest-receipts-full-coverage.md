@@ -1,0 +1,4 @@
+### Added: an upload can declare full coverage of explicit assets
+
+- `POST /api/v1/findings/imports?coverage=full&asset_id=<id>` (1 to 100 assets) declares the upload a complete scan of those assets by each file's tool. Then the open findings of that tool on those assets that the upload did not report are closed (verification `covered_scan`), with the guards of a covered scan: never a pentest, manual, bug-bounty or red-team finding, never a leaked secret, never a branch occurrence, and the blinding guard holds a mass close. The receipt shows `coverage: full`, the closed count and what was left untouched.
+- Declaring full coverage needs `findings:status`, and every asset must be an asset of the organization inside the uploader's data scope. A failed file, a finding that could not be stored or a request cut short closes nothing. Without `coverage=full` an upload still never closes anything.
