@@ -192,6 +192,20 @@ func (h *SCIMTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Rotate handles POST /api/v1/scim-tokens/{id}/rotate: mints the replacement
 // (plaintext shown once) and cuts the replaced token off within 24 hours.
+// @Summary      Rotate a SCIM token
+// @Description  Mints a replacement token with the same name, returned once in this response (Cache-Control: no-store), and brings the replaced token's expiry forward to at most 24 hours from now so the identity provider can switch without a provisioning gap. expires_in_days (1-365) sets the replacement's lifetime; omitted or 0 keeps the replaced token's. A revoked, expired or unknown token is 404. Owner only, requires step-up.
+// @Tags         SCIM
+// @Accept       json
+// @Produce      json
+// @Param        id       path  string                   true   "SCIM token ID"  format(uuid)
+// @Param        request  body  rotateSCIMTokenRequest   false  "Replacement lifetime"
+// @Success      201  {object}  map[string]any  "Replacement token (shown once) and the replaced token's new expiry"
+// @Failure      400  {object}  map[string]string  "expires_in_days outside 1-365"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden (owner or step-up)"
+// @Failure      404  {object}  map[string]string  "Not found"
+// @Security     BearerAuth
+// @Router       /scim-tokens/{id}/rotate [post]
 func (h *SCIMTokenHandler) Rotate(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
