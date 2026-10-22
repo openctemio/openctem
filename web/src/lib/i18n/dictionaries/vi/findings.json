@@ -813,8 +813,6 @@
   "findings.activity.loadFailedBody": "Lịch sử của phát hiện này không hiển thị vì yêu cầu bị lỗi. Hãy thử lại sau.",
   "findings.activity.startDiscussion": "Bắt đầu thảo luận bên dưới.",
   "findings.approvalDialog.title": "Yêu cầu phê duyệt trạng thái",
-  "findings.approvalDialog.descriptionBefore": "Chuyển trạng thái sang",
-  "findings.approvalDialog.descriptionAfter": "cần được phê duyệt. Vui lòng nêu lý do.",
   "findings.approvalDialog.justification": "Lý do",
   "findings.approvalDialog.justificationPlaceholder": "Giải thích vì sao cần thay đổi trạng thái này...",
   "findings.approvalDialog.justificationRequired": "Cần nhập lý do",
@@ -1397,6 +1395,10 @@
   "findings.verification.itemSecret.evidence_attached": "Đã đính kèm bằng chứng (nhật ký kiểm toán của nhà cung cấp, phiên bản vault, phiếu)",
   "findings.verification.itemSecret.register_updated": "Việc sử dụng thông tin xác thực kể từ khi bị lộ đã được kiểm tra và ghi nhận",
   "findings.validationEvidence.checkReachability": "Kiểm tra khả năng truy cập",
+  "findings.approvalDialog.titleDecide": "Đánh dấu là dương tính giả",
+  "findings.approvalDialog.descriptionDecide": "Tổ chức của bạn cho phép bạn tự quyết định việc này. Hãy chọn lý do và giải thích.",
+  "findings.approvalDialog.descriptionRequest": "Đổi trạng thái sang {status} cần được phê duyệt. Hãy nêu lý do.",
+  "findings.approvalDialog.confirmTitleDecide": "Xác nhận dương tính giả",
   "findings.bulk.status": "Trạng thái",
   "findings.bulk.assignTo": "Giao cho…"
 }
