@@ -45,7 +45,7 @@ func (h *AssetImportHandler) auditImport(r *http.Request, source string, result 
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	_ = h.auditService.LogEvent(r.Context(), actx, event)
 }

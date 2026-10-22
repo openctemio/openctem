@@ -14,10 +14,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// maxRelative bounds a relative time ("-P30D") to ten years.
+// maxRelative bounds a relative time ("-P30D", "P30D") to ten years.
 const maxRelative = 10 * 366 * 24 * time.Hour
 
-var durationRE = regexp.MustCompile(`^-P(?:(\d{1,4})W)?(?:(\d{1,5})D)?(?:T(?:(\d{1,6})H)?(?:(\d{1,7})M)?)?$`)
+// durationRE is an ISO 8601 duration relative to now: "-P30D" is thirty days
+// ago, "P30D" or "+P30D" thirty days ahead (an acceptance that expires
+// within a month: acceptance_expires_at_lte=P30D).
+var durationRE = regexp.MustCompile(`^([-+]?)P(?:(\d{1,4})W)?(?:(\d{1,5})D)?(?:T(?:(\d{1,6})H)?(?:(\d{1,7})M)?)?$`)
 
 // parseScalar converts one textual value to the field's type. endOfDay
 // makes a bare date mean the end of that day (for lte).
@@ -81,14 +84,14 @@ func parseTime(s string, now time.Time, endOfDay bool) (time.Time, error) {
 		}
 		return t.UTC(), nil
 	}
-	if m := durationRE.FindStringSubmatch(s); m != nil && s != "-P" && s != "-PT" {
+	if m := durationRE.FindStringSubmatch(s); m != nil {
 		units := []time.Duration{7 * 24 * time.Hour, 24 * time.Hour, time.Hour, time.Minute}
 		var d time.Duration
 		for i, u := range units {
-			if m[i+1] == "" {
+			if m[i+2] == "" {
 				continue
 			}
-			n, _ := strconv.ParseInt(m[i+1], 10, 64)
+			n, _ := strconv.ParseInt(m[i+2], 10, 64)
 			d += time.Duration(n) * u
 			if d > maxRelative {
 				return time.Time{}, errors.New("relative time is longer than ten years")
@@ -97,9 +100,12 @@ func parseTime(s string, now time.Time, endOfDay bool) (time.Time, error) {
 		if d == 0 {
 			return time.Time{}, errors.New("relative time must not be zero")
 		}
-		return now.Add(-d).UTC(), nil
+		if m[1] == "-" {
+			d = -d
+		}
+		return now.Add(d).UTC(), nil
 	}
-	return time.Time{}, errors.New("must be RFC 3339, YYYY-MM-DD or a negative ISO 8601 duration such as -P30D")
+	return time.Time{}, errors.New("must be RFC 3339, YYYY-MM-DD or an ISO 8601 duration from now such as -P30D (ago) or P30D (ahead)")
 }
 
 // checkText rejects values Postgres or the logs cannot take safely: invalid

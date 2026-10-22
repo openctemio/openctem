@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -179,15 +180,14 @@ func (s *FindingActionsService) ListFindingGroupsBySpec(
 	return s.findingRepo.ListFindingGroups(ctx, tid, groupBy, filter, page)
 }
 
-// MaxExportRows caps one findings export (RFC-048 §3.7). A larger set is
-// narrowed with the filter.
-const MaxExportRows = 100000
-
-// exportBatch is the number of rows read per export query.
-const exportBatch = 1000
+// MaxExportRows caps one findings export, streamed in the request. A larger
+// set is narrowed with the filter: exports past the cap are not offered yet
+// (they will run as a background operation with a download link).
+const MaxExportRows = 10000
 
 type findingExportRepo interface {
-	ExportBatchWhere(ctx context.Context, w *filterspec.Where, afterID string, limit int) ([]*vulnerability.Finding, error)
+	ExportSortedWhere(ctx context.Context, w *filterspec.Where, slotKey string, limit int,
+		emit func([]*vulnerability.Finding) error) (int, bool, error)
 }
 
 // ExportResult describes a finished export.
@@ -197,9 +197,11 @@ type ExportResult struct {
 }
 
 // ExportFindingsBySpec streams every finding a decoded filter selects, as
-// the caller, to emit in batches (id order), up to MaxExportRows. The export
-// is audit-logged with the filter's field and operator names (never its
-// values) and the row count, whether it completes or not.
+// the caller, to emit in batches, in the filter's sort (the list's order),
+// up to MaxExportRows. One export runs per tenant and user across replicas
+// (vulnerability.ErrExportInProgress otherwise). Every export that starts is
+// audit-logged with the filter's field and operator names and the sort
+// (never filter values) and the row count, whether it completes or not.
 func (s *VulnerabilityService) ExportFindingsBySpec(
 	ctx context.Context, c FilterCaller, spec *filterspec.Spec, format string, actx audit.AuditContext,
 	emit func([]*vulnerability.Finding) error,
@@ -217,39 +219,17 @@ func (s *VulnerabilityService) ExportFindingsBySpec(
 	if err != nil {
 		return res, err
 	}
-	defer func() { s.auditExport(ctx, actx, spec, format, res, err) }()
-
-	after := ""
-	for res.Rows < MaxExportRows {
-		batch, berr := repo.ExportBatchWhere(ctx, where, after, min(exportBatch, MaxExportRows-res.Rows))
-		if berr != nil {
-			err = berr
-			return res, err
-		}
-		if len(batch) == 0 {
-			return res, nil
-		}
-		if eerr := emit(batch); eerr != nil {
-			err = eerr
-			return res, err
-		}
-		res.Rows += len(batch)
-		after = batch[len(batch)-1].ID().String()
-		if len(batch) < min(exportBatch, MaxExportRows) {
-			return res, nil
-		}
+	res.Rows, res.Truncated, err = repo.ExportSortedWhere(ctx, where, c.TenantID+":"+c.UserID, MaxExportRows, emit)
+	if errors.Is(err, vulnerability.ErrExportInProgress) {
+		return res, err
 	}
-	// At the cap: is there more?
-	more, berr := repo.ExportBatchWhere(ctx, where, after, 1)
-	if berr == nil && len(more) > 0 {
-		res.Truncated = true
-	}
-	return res, nil
+	s.auditExport(ctx, actx, spec, format, res, err)
+	return res, err
 }
 
 // auditExport records a findings export: who, the filter shape (field and
 // operator names only, so no hostnames or free text land in the audit log),
-// the format and how many rows left the system.
+// the sort, the format and how many rows left the system.
 func (s *VulnerabilityService) auditExport(ctx context.Context, actx audit.AuditContext, spec *filterspec.Spec, format string, res ExportResult, err error) {
 	if s.auditService == nil {
 		return
@@ -258,12 +238,22 @@ func (s *VulnerabilityService) auditExport(ctx context.Context, actx audit.Audit
 	for _, l := range spec.Leaves() {
 		shape = append(shape, l.Field+":"+string(l.Op))
 	}
+	sortKeys := make([]string, 0, len(spec.Sort))
+	for _, k := range spec.Sort {
+		if k.Desc {
+			sortKeys = append(sortKeys, "-"+k.Field)
+		} else {
+			sortKeys = append(sortKeys, k.Field)
+		}
+	}
 	ev := audit.NewSuccessEvent(auditdom.ActionDataExported, auditdom.ResourceTypeFinding, "findings").
 		WithMessage(fmt.Sprintf("Exported %d findings (%s)", res.Rows, format)).
 		WithMetadata("rows", res.Rows).
 		WithMetadata("truncated", res.Truncated).
+		WithMetadata("max_rows", MaxExportRows).
 		WithMetadata("format", format).
 		WithMetadata("filter", shape).
+		WithMetadata("sort", sortKeys).
 		WithMetadata("search", spec.Q != "").
 		WithSeverity(auditdom.SeverityMedium)
 	if err != nil {
@@ -306,4 +296,56 @@ func (s *FindingActionsService) GetRelatedCVEsBySpec(
 	filter.Compiled = filterW
 	filter.CompiledVisibility = visW
 	return s.findingRepo.FindRelatedCVEs(ctx, tid, cveID, filter)
+}
+
+type findingFacetRepo interface {
+	CountFacetsWhere(ctx context.Context, w *filterspec.Where, preds []string) ([]int64, error)
+}
+
+// QuickViewCount is one quick view with its count for the caller.
+type QuickViewCount struct {
+	Key    string
+	Params string
+	Count  int64
+}
+
+// CountQuickViews counts every built-in quick view (vulnerability
+// FindingQuickViews) for the caller, in one statement: each view's params
+// are parsed with the strict findings registry and compiled as facets over
+// the caller's scoped WHERE (the list's own default branch rule), so a
+// count equals the total GET /findings?<params> returns to the same caller.
+// It fails closed like every filtered read.
+func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCaller) ([]QuickViewCount, error) {
+	repo, ok := s.findingRepo.(findingFacetRepo)
+	if !ok {
+		return nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	views := vulnerability.FindingQuickViews()
+	facets := make([]*filterspec.Spec, len(views))
+	for i, v := range views {
+		q, perr := url.ParseQuery(v.Params)
+		if perr != nil {
+			return nil, fmt.Errorf("quick view %s: %w", v.Key, perr)
+		}
+		if facets[i], perr = filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict}); perr != nil {
+			return nil, fmt.Errorf("quick view %s: %w", v.Key, perr)
+		}
+	}
+	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(&filterspec.Spec{}), facets, vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := repo.CountFacetsWhere(ctx, where, preds)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]QuickViewCount, len(views))
+	for i, v := range views {
+		out[i] = QuickViewCount{Key: v.Key, Params: v.Params, Count: counts[i]}
+	}
+	return out, nil
 }
