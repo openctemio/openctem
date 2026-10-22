@@ -432,13 +432,13 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 		return nil, nil, "", "", nil, err
 	}
 	if !retestdom.EligibleStatus(f.Status()) {
-		return nil, nil, "", "", nil, fmt.Errorf("%w: a %s finding is not retested", retestdom.ErrNotEligible, f.Status())
+		return nil, nil, "", "", nil, ineligible(ReasonStatusNotEligible, fmt.Errorf("%w: a %s finding is not retested", retestdom.ErrNotEligible, f.Status()))
 	}
 	var chk *CustomCheck
 	if s.checks != nil {
 		if chk, err = s.checks.RunnableCheck(ctx, tenantID, findingID); err != nil {
 			if errors.Is(err, shared.ErrValidation) {
-				return nil, nil, "", "", nil, fmt.Errorf("%w: the retest check cannot run: %w", retestdom.ErrNotEligible, err)
+				return nil, nil, "", "", nil, ineligible(ReasonCheckCannotRun, fmt.Errorf("%w: the retest check cannot run: %w", retestdom.ErrNotEligible, err))
 			}
 			return nil, nil, "", "", nil, fmt.Errorf("retest check: %w", err)
 		}
@@ -446,7 +446,7 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 	// A leaked secret is not fixed by a check that stops matching it: only
 	// rotation or revocation is, and a person verifies that.
 	if f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret {
-		return nil, nil, "", "", nil, fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible)
+		return nil, nil, "", "", nil, ineligible(ReasonSecretNeedsRotation, fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible))
 	}
 	templateID := strings.TrimSpace(f.RuleID())
 	tool := findingTool(f)
@@ -454,29 +454,29 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 	case chk != nil:
 		templateID = chk.NucleiID
 		if !validRuleID(templateID) {
-			return nil, nil, "", "", nil, fmt.Errorf("%w: the retest check's template id is not valid", retestdom.ErrNotEligible)
+			return nil, nil, "", "", nil, ineligible(ReasonCheckCannotRun, fmt.Errorf("%w: the retest check's template id is not valid", retestdom.ErrNotEligible))
 		}
 	case !validation.ValidRetestTool(tool) || !validRuleID(templateID):
-		return nil, nil, "", "", nil, fmt.Errorf("%w: only findings with a tool and a rule id can be retested", retestdom.ErrNotEligible)
+		return nil, nil, "", "", nil, ineligible(ReasonNoToolRule, fmt.Errorf("%w: only findings with a tool and a rule id can be retested", retestdom.ErrNotEligible))
 	case tool == nucleiTool && !validation.TemplateSignatureAllowed(templateID):
-		return nil, nil, "", "", nil, fmt.Errorf("%w: this nuclei template is not re-run by a retest", retestdom.ErrNotEligible)
+		return nil, nil, "", "", nil, ineligible(ReasonTemplateNotRerun, fmt.Errorf("%w: this nuclei template is not re-run by a retest", retestdom.ErrNotEligible))
 	}
 	if f.AssetID().IsZero() {
-		return nil, nil, "", "", nil, fmt.Errorf("%w: the finding has no asset", retestdom.ErrNotEligible)
+		return nil, nil, "", "", nil, ineligible(ReasonNoAsset, fmt.Errorf("%w: the finding has no asset", retestdom.ErrNotEligible))
 	}
 	a, err := s.assets.GetByID(ctx, tenantID, f.AssetID())
 	if err != nil {
 		return nil, nil, "", "", nil, fmt.Errorf("asset lookup: %w", err)
 	}
 	if a.Status() != asset.StatusActive {
-		return nil, nil, "", "", nil, fmt.Errorf("%w: the asset is %s", retestdom.ErrNotEligible, a.Status())
+		return nil, nil, "", "", nil, ineligible(ReasonAssetInactive, fmt.Errorf("%w: the asset is %s", retestdom.ErrNotEligible, a.Status()))
 	}
 	if !validation.IsNetworkAddressable(a.Type()) {
-		return nil, nil, "", "", nil, fmt.Errorf("%w: a %s asset has no network address to retest", retestdom.ErrNotEligible, a.Type())
+		return nil, nil, "", "", nil, ineligible(ReasonAssetNotNetworkAddressable, fmt.Errorf("%w: a %s asset has no network address to retest", retestdom.ErrNotEligible, a.Type()))
 	}
 	target := ResolveTarget(f.FilePath(), a.Name())
 	if target == "" {
-		return nil, nil, "", "", nil, fmt.Errorf("%w: the asset has no address", retestdom.ErrNotEligible)
+		return nil, nil, "", "", nil, ineligible(ReasonAssetNoAddress, fmt.Errorf("%w: the asset has no address", retestdom.ErrNotEligible))
 	}
 	// A gate refusal is policy, not ineligibility: it wraps
 	// validation.ErrTargetRefused (never ErrNotEligible), so proof-of-fix
@@ -493,21 +493,32 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 // re-check it (cooldown and in-flight caps aside). It records nothing. The
 // console shows "Retest now" from it, so no tool name is known there.
 func (s *Service) CanRetest(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	ok, _, err := s.Availability(ctx, tenantID, findingID)
+	return ok, err
+}
+
+// Availability is CanRetest with the reason code when a retest would be
+// refused (one of the Reason* constants). It records nothing.
+func (s *Service) Availability(ctx context.Context, tenantID, findingID shared.ID) (bool, string, error) {
 	f, _, _, _, chk, err := s.eligible(ctx, tenantID, findingID)
 	switch {
-	case errors.Is(err, retestdom.ErrNotEligible), errors.Is(err, validation.ErrTargetRefused):
-		return false, nil
+	case errors.Is(err, validation.ErrTargetRefused):
+		return false, ReasonTargetRefused, nil
+	case errors.Is(err, retestdom.ErrNotEligible):
+		return false, IneligibleReason(err), nil
 	case err != nil:
-		return false, err
+		return false, "", err
 	}
 	_, err = s.methodFor(ctx, tenantID, f, chk)
 	switch {
-	case errors.Is(err, retestdom.ErrNoSensor), errors.Is(err, retestdom.ErrNoCheckSensor):
-		return false, nil
+	case errors.Is(err, retestdom.ErrNoSensor):
+		return false, ReasonNoSensor, nil
+	case errors.Is(err, retestdom.ErrNoCheckSensor):
+		return false, ReasonNoCheckSensor, nil
 	case err != nil:
-		return false, err
+		return false, "", err
 	}
-	return true, nil
+	return true, "", nil
 }
 
 // checkLimits applies the per-finding cooldown and the in-flight caps.

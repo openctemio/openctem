@@ -198,7 +198,11 @@ endpoint and the bulk change mark their transaction
 `openctem.person_move` (`vulnerability.WithPersonMove`), and the trigger skips
 it (migration `002205`). The drawer offers Undo only for moves that do not
 close the finding; reopening a resolved finding is a deliberate move from the
-status control.
+status control. A finding closed as `mitigated` (a compensating control) is not
+reopened by detection: a scan that still sees the issue behind the control
+leaves it resolved, with no regression flag and no new deadline, and validation
+re-checks the control. Re-detection decides by status and closure reason, never
+by the free-text resolution note.
 
 Moving a finding out of an approved false positive or an accepted risk is a
 reversal of a decision, so the transition engine asks for `findings:approve`
@@ -277,6 +281,23 @@ findings, like verify by filter) so the write names the findings it moves.
 
 Bulk assign records one `assigned` activity per finding and sends the
 assignee one notification for the batch (none for a self-assignment).
+
+## Every move is in the audit log
+
+The timeline (`finding_activities`) is deleted with its finding; `audit_logs`
+are not. So every applied status move also writes an audit row
+(`finding.status_changed`: old and new status, closure reason and verification
+for a close, severity, asset, `actor_kind` user or system, the actor), from the
+one side-effect path (`afterStatusChange`, `internal/app/finding/status_audit.go`)
+that the status PATCH, bulk status, the fix claim / verify / reject actions,
+approvals, ticket webhooks and VEX all end in. A batch of more than one finding
+adds one `finding.bulk_updated` summary row. Closing or dispositioning a
+critical-tier finding is audited at high severity, other moves at medium.
+Assignments write `finding.assigned` / `finding.unassigned` with the previous
+and new assignee (single and bulk). The end of a risk acceptance writes its
+audit row in the same transaction as the reopen. Audit rows carry the
+finding's tenant. Writes are best effort (a failed audit never undoes a move)
+except the acceptance end, which is transactional.
 
 ## Automatic signals never reverse a decision
 

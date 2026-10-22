@@ -119,6 +119,14 @@ func TestAcceptanceExpiry_OneTransaction(t *testing.T) {
 	if f.activities(t, f.findingID, "acceptance_expired") != 1 || f.activities(t, f.findingID, "sla_restarted") != 1 {
 		t.Errorf("timeline: want one acceptance_expired and one sla_restarted entry")
 	}
+	// The end leaves an immutable audit row in the finding's tenant (the
+	// timeline is deleted with the finding).
+	var audits int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND resource_id = $2
+		AND action = 'finding.status_changed' AND metadata->>'new_status' = 'confirmed'`,
+		f.tenant.String(), f.findingID.String()).Scan(&audits); err != nil || audits != 1 {
+		t.Errorf("acceptance end audit rows = %d (%v), want 1", audits, err)
+	}
 
 	var otherStatus string
 	if err := f.db.QueryRow(`SELECT status FROM findings WHERE id = $1`, otherFinding.String()).Scan(&otherStatus); err != nil {

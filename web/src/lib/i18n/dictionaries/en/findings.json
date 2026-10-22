@@ -1398,5 +1398,7 @@
   "findings.approvalDialog.titleDecide": "Mark as false positive",
   "findings.approvalDialog.descriptionDecide": "Your organization lets you decide this alone. Choose a reason and explain it.",
   "findings.approvalDialog.descriptionRequest": "Changing the status to {status} needs approval. Give a justification.",
-  "findings.approvalDialog.confirmTitleDecide": "Confirm false positive"
+  "findings.approvalDialog.confirmTitleDecide": "Confirm false positive",
+  "findings.bulk.status": "Status",
+  "findings.bulk.assignTo": "Assign to…"
 }

@@ -4,14 +4,12 @@
  * loop tile that used to say "designate" with nine crown jewels designated.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
 import { readinessRows, readinessScore, visibleReadiness } from '../readiness'
 import type { ScopingSummary } from '../api'
 import { ScopingOverview } from '../components/scoping-overview'
-import { CtemLoop } from '@/features/dashboard/components/ctem/ctem-loop'
-import { AttackPathsCard } from '@/features/dashboard/components/ctem/attack-paths-card'
 
 const api = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
@@ -141,49 +139,5 @@ describe('ScopingOverview', () => {
     api.get.mockRejectedValue(new Error('boom'))
     wrap(<ScopingOverview />)
     expect(await screen.findByText(/Failed to load the scoping summary/)).toBeInTheDocument()
-  })
-})
-
-describe('dashboard Scoping tile', () => {
-  const tile = () => screen.getByText('Scoping').closest('a')!
-
-  it('opens the overview and shows readiness, not "designate", with crown jewels designated', () => {
-    render(
-      <CtemLoop
-        summary={{ crown_jewels_at_risk: 0 } as never}
-        scoping={{ ready: 3, total: 9, crownJewels: 9 }}
-      />
-    )
-    expect(tile()).toHaveAttribute('href', '/scoping')
-    expect(within(tile()).getByText(/\/9 ready/)).toBeInTheDocument()
-    expect(within(tile()).getByText('9 crown jewels · 0 with open findings')).toBeInTheDocument()
-    expect(within(tile()).queryByText(/designate/i)).toBeNull()
-  })
-
-  it('asks to designate only when none are designated', () => {
-    render(<CtemLoop scoping={{ ready: 1, total: 9, crownJewels: 0 }} />)
-    expect(within(tile()).getByText('designate crown jewels')).toBeInTheDocument()
-  })
-
-  it('without the summary it shows at-risk and never claims none are designated', () => {
-    render(<CtemLoop summary={{ crown_jewels_at_risk: 0 } as never} />)
-    expect(tile()).toHaveAttribute('href', '/scoping')
-    expect(within(tile()).queryByText(/designate/i)).toBeNull()
-  })
-})
-
-describe('AttackPathsCard', () => {
-  const paths = { summary: { reachable_assets: 4, critical_reachable: 2, crown_jewels_at_risk: 0 } }
-
-  it('none at risk with crown jewels designated is not "none designated"', () => {
-    render(<AttackPathsCard attackPaths={paths as never} chains={[]} crownJewelsTotal={9} />)
-    expect(screen.getByText('No crown jewels on an attack path')).toBeInTheDocument()
-    expect(screen.getByText(/9 crown jewels are designated/)).toBeInTheDocument()
-    expect(screen.queryByText(/No crown jewels designated/)).toBeNull()
-  })
-
-  it('asks to designate when none are', () => {
-    render(<AttackPathsCard attackPaths={paths as never} chains={[]} crownJewelsTotal={0} />)
-    expect(screen.getByText('No crown jewels designated')).toBeInTheDocument()
   })
 })
