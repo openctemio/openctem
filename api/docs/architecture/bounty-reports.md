@@ -43,9 +43,29 @@ triage ── GET /findings/{id}/duplicate-candidates (caller's data scope)
   assessed by the triager and priority comes from the normal pipeline;
 - `state` is the channel's state of the report and never moves the finding's
   status (human sources are never closed by automation);
-- `url` is an https back-link that the server never fetches;
+- `url` is an https back-link that the server never fetches, in printable
+  ASCII without user info (an internationalised host in its `xn--` form, so
+  a look-alike host shows as such);
+- single-line fields refuse control and invisible formatting characters
+  (bidirectional controls, zero-width characters); a stored object that no
+  longer validates, or one on a finding of another source, is never returned;
 - `reward` and `disclosure` are data; changing them needs `findings:triage`
   and writes an audit row with the old and new values.
+
+### Storage and identity
+
+- `vulnerability.BountyReport` validates and normalises the object
+  (`Normalized`, `Validate`); `Finding.SetBountyReport` stores it only on a
+  `bug_bounty` finding and refuses a change of `intake` or `ref`;
+  `Finding.BountyReport` reads it back.
+- The partial unique index `idx_findings_bounty_report_ref` on
+  `findings (tenant_id, metadata->'bounty_report'->>'intake',
+  metadata->'bounty_report'->>'ref') WHERE source = 'bug_bounty'` makes a
+  second finding for the same report a conflict
+  (`vulnerability.ErrBountyReportExists`, HTTP 409) on create and update.
+  Findings of other sources are outside it.
+- `FindingRepository.FindByBountyReport(tenant, intake, ref)` is the lookup a
+  re-import or a webhook delivery uses to update the same row.
 
 ## Authorization and isolation
 
@@ -64,7 +84,7 @@ automatically (RFC-121 D13).
 | Part | State |
 |---|---|
 | RFC and this page | Done |
-| Report value object and the unique index | Designed |
+| Report value object and the unique index | Done (`pkg/domain/vulnerability/bounty_report.go`, migration `findings_bounty_report_ref_unique`) |
 | Report fields on create and update (triage gate, audit) | Designed |
 | ctis `bounty_report` converter (JSON, CSV) | Designed |
 | Duplicate candidates endpoint | Designed |

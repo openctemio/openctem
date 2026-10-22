@@ -72,6 +72,7 @@ type Service struct {
 	dataScope *datascope.Enforcer
 	facts     dashboard.FactReader
 	limiter   *limiter
+	paths     AttackPathReader
 	previews  *previewLimiter
 	logger    *logger.Logger
 	now       func() time.Time
@@ -145,6 +146,8 @@ type WidgetValue struct {
 	Series   *SeriesValue   `json:"series,omitempty"`
 	Matrix   *MatrixValue   `json:"matrix,omitempty"`
 	Items    *ItemsValue    `json:"items,omitempty"`
+	Stages   *StagesValue   `json:"stages,omitempty"`
+	Paths    *PathsValue    `json:"paths,omitempty"`
 }
 
 // ScalarValue is one count, with the previous period and a sparkline when
@@ -431,6 +434,7 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 		s.logger.Warn("dashboard widget read failed", "metric", m.ID, "error", err.Error())
 		v.State, v.Reason = StateError, reason
 		v.Scalar, v.Ratio, v.Duration, v.Category, v.Series, v.Matrix, v.Items = nil, nil, nil, nil, nil, nil, nil
+		v.Stages, v.Paths = nil, nil
 	}
 	return v
 }
@@ -506,6 +510,12 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		lf.PriorityClass = []string{"P0", "P1", "P2"}
 		v.Drill = drillHref(lf)
 		return nil
+	case dashboard.MetricKindAssetCount:
+		return s.crownJewelsExposed(ctx, v, f, agg)
+	case dashboard.MetricKindStages:
+		return s.ctemLoop(ctx, v, agg)
+	case dashboard.MetricKindPaths:
+		return s.attackPaths(ctx, v, spec.Data.Limit, agg)
 	}
 	return fmt.Errorf("unknown metric kind %q", m.Kind)
 }
