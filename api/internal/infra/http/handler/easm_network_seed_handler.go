@@ -69,7 +69,7 @@ func (h *EASMNetworkSeedHandler) auditEvent(r *http.Request, action auditdom.Act
 	ev := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeEASMNetworkSeed, id).WithResourceName(name).WithMessage(msg)
 	_ = h.audit.LogEvent(ctx, auditapp.AuditContext{
 		TenantID: middleware.MustGetTenantID(ctx), ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}, ev)
 }
 

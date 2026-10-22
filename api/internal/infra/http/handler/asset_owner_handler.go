@@ -575,7 +575,7 @@ func (h *AssetOwnerHandler) auditOwnerAccess(r *http.Request, action auditdom.Ac
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	event := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeAsset, assetID.String()).
 		WithMessage(msg).

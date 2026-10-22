@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -483,37 +484,9 @@ func (h *BusinessServiceHandler) ListAssets(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	rows, err := h.db.QueryContext(r.Context(),
-		`SELECT bsa.asset_id, bsa.dependency_type, bsa.created_at,
-		        a.name, a.asset_type
-		   FROM business_service_assets bsa
-		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $1 AND a.deleted_at IS NULL
-		  WHERE bsa.tenant_id = $1 AND bsa.service_id = $2
-		  ORDER BY bsa.created_at DESC`,
-		tenantID, id,
-	)
+	items, err := listBusinessServiceAssets(r.Context(), h.db, tenantID, id, maxBusinessServiceAssets)
 	if err != nil {
 		h.logger.Error("business service list assets", "error", err)
-		apierror.InternalServerError("internal error").WriteJSON(w)
-		return
-	}
-	defer func() { _ = rows.Close() }()
-
-	items := make([]BusinessServiceAssetLink, 0)
-	for rows.Next() {
-		var link BusinessServiceAssetLink
-		if err := rows.Scan(
-			&link.AssetID, &link.DependencyType, &link.CreatedAt,
-			&link.AssetName, &link.AssetType,
-		); err != nil {
-			h.logger.Error("business service asset scan", "error", err)
-			apierror.InternalServerError("internal error").WriteJSON(w)
-			return
-		}
-		items = append(items, link)
-	}
-	if err := rows.Err(); err != nil {
-		h.logger.Error("business service asset rows", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
@@ -525,6 +498,41 @@ func (h *BusinessServiceHandler) ListAssets(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+// maxBusinessServiceAssets bounds the assets one business service lists.
+const maxBusinessServiceAssets = 1000
+
+// listBusinessServiceAssets reads at most limit asset links of one business
+// service of the tenant, newest first.
+func listBusinessServiceAssets(ctx context.Context, db *sql.DB, tenantID, serviceID string, limit int) ([]BusinessServiceAssetLink, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT bsa.asset_id, bsa.dependency_type, bsa.created_at,
+		        a.name, a.asset_type
+		   FROM business_service_assets bsa
+		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $1 AND a.deleted_at IS NULL
+		  WHERE bsa.tenant_id = $1 AND bsa.service_id = $2
+		  ORDER BY bsa.created_at DESC, bsa.id DESC
+		  LIMIT $3`,
+		tenantID, serviceID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]BusinessServiceAssetLink, 0)
+	for rows.Next() {
+		var link BusinessServiceAssetLink
+		if err := rows.Scan(
+			&link.AssetID, &link.DependencyType, &link.CreatedAt,
+			&link.AssetName, &link.AssetType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, link)
+	}
+	return items, rows.Err()
 }
 
 // ─── Request/Response Types ───
