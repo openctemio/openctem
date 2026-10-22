@@ -23,6 +23,7 @@ engineering docs (API architecture, RFCs, CI/CD) are in
 | [security-architecture.md](security-architecture.md)           | Sessions and cookies, permissions, route protection, CSP, safe links, WebSocket, CSRF |
 | [ui-style-contract.md](ui-style-contract.md)                   | The rules every screen follows: page anatomy, lists, drawers, empty states            |
 | [finding-detail.md](finding-detail.md)                         | Finding page and drawer layout                                                        |
+| [findings-list.md](findings-list.md)                           | Findings list: selection, empty and error states, quick views, filters, saved views   |
 | [ui/activity-panel.md](ui/activity-panel.md)                   | Activity and comments panel                                                           |
 | [ui/verification-code-input.md](ui/verification-code-input.md) | Verification-code field and step-up dialog                                            |
 | [nav-coverage.md](nav-coverage.md)                             | No scaffold pages in the sidebar, and the test that enforces it                       |

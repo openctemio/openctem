@@ -19,10 +19,13 @@ test('create a task from findings, then hold and resume it', async ({ page }) =>
 
   const rows = page.getByRole('row').filter({ hasText: 'E2E finding' })
   await expect(rows.nth(first + 1)).toBeVisible({ timeout: 30_000 })
-  await rows.nth(first).getByRole('checkbox', { name: 'Select row' }).check()
+  await rows
+    .nth(first)
+    .getByRole('checkbox', { name: /^select finding/i })
+    .check()
   await rows
     .nth(first + 1)
-    .getByRole('checkbox', { name: 'Select row' })
+    .getByRole('checkbox', { name: /^select finding/i })
     .check()
 
   // The bulk bar offers the remediation task; the dialog starts on "New task".

@@ -151,8 +151,7 @@ func (s *SSOService) BackChannelLogout(ctx context.Context, logoutToken string) 
 }
 
 // verifyLogoutToken verifies the token with the shared core (pkg/oidc:
-// signature against the resolved provider's JWKS, alg allowlist without HMAC
-// or none, iss, exp and nbf when present, iat not in the future) and that the
+// signature against the resolved provider's JWKS, RS256/PS256/ES256 only, iss, exp and nbf when present, iat not in the future) and that the
 // audience is one of the provider's client_ids. exp is optional for a logout
 // token.
 func (s *SSOService) verifyLogoutToken(ctx context.Context, token, iss string, res logoutIssuerResolution) (*logoutTokenClaims, error) {
@@ -163,6 +162,7 @@ func (s *SSOService) verifyLogoutToken(ctx context.Context, token, iss string, r
 		AudienceCheckedByCaller: true,
 		Leeway:                  logoutTokenFutureLeeway,
 		ExpOptional:             true,
+		Algorithms:              oidc.IdentityTokenAlgorithms,
 	}); err != nil {
 		return nil, err
 	}
