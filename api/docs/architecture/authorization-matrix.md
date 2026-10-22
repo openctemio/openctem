@@ -218,7 +218,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/organization/leave`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
-- `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT .../{id}/jira-webhook/secret`, `POST .../{id}/github-webhook/secret/rotate`
+- `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT .../{id}/jira-webhook/secret`, `POST .../{id}/github-webhook/secret/rotate`, `POST .../{id}/signing-secret/rotate` (outbound webhook signing secret, RFC-122)
 - `POST /api/v1/integrations`, `POST .../integrations/notifications`, `PUT`/`DELETE /api/v1/integrations/{id}`, `POST .../{id}/disable`, `PUT .../{id}/notification`
 - `PUT /api/v1/scim-tokens/group-mappings`
 - `PATCH /api/v1/attachments/storage-config`

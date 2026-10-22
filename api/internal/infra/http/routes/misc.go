@@ -398,6 +398,19 @@ func registerIntegrationRoutes(
 		// tenant, ignoring data scope: channel managers only, like the
 		// channel configuration that decides where those events go.
 		r.GET("/{id}/notification-events", h.GetNotificationEvents, middleware.Require(permission.IntegrationsManage))
+		// Send one archived delivery again to this channel (RFC-122). Same
+		// audience as the delivery history; the event must be the
+		// tenant's and must have gone to this integration. Rate limited per
+		// tenant: each call queues an outbound delivery.
+		r.POST("/{id}/deliveries/{delivery_id}/redeliver", h.RedeliverNotification, middleware.Require(permission.IntegrationsManage),
+			newRedeliverLimiter().TenantMiddleware())
+
+		// Signing secret of a generic webhook integration (RFC-122): its
+		// status (never the secret) and its rotation, which shows the new
+		// secret once. Whoever holds the secret can forge deliveries to the
+		// receiver, so rotation needs a fresh step-up.
+		r.GET("/{id}/signing-secret", h.GetWebhookSigning, middleware.Require(permission.IntegrationsManage))
+		r.POST("/{id}/signing-secret/rotate", h.RotateWebhookSigningSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// List repositories from SCM integration
 		r.GET("/{id}/repositories", h.ListRepositories, middleware.Require(permission.IntegrationsRead))
@@ -652,6 +665,16 @@ func includeProgramAssets(next http.Handler) http.Handler {
 
 // newTestCredentialsLimiter limits connection tests to 10 a minute per tenant
 // (burst 5): enough for a setup wizard, too slow to scan ports.
+// newRedeliverLimiter bounds redeliveries per tenant: 30 a minute, burst 10.
+func newRedeliverLimiter() *middleware.RateLimiter {
+	return middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled:         true,
+		RequestsPerSec:  30.0 / 60.0,
+		Burst:           10,
+		CleanupInterval: 5 * time.Minute,
+	}, nil)
+}
+
 func newTestCredentialsLimiter() *middleware.RateLimiter {
 	return middleware.NewRateLimiter(&config.RateLimitConfig{
 		Enabled:         true,
