@@ -58,6 +58,7 @@ import { SeveritySelect } from './severity-select'
 import { useCanMutate } from '@/lib/permissions'
 import { StatusSelect } from './status-select'
 import { FindingWhyItMatters } from './detail/finding-why-it-matters'
+import { FindingApprovalBand } from './detail/finding-approval-band'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
 import { FindingAssetName } from './detail/finding-asset-name'
@@ -151,10 +152,12 @@ export function FindingDetailDrawer({
   )
 
   const { data: approvals } = useFindingApprovals(
-    open && finding && ['false_positive', 'accepted'].includes(triage.status)
-      ? finding.id
-      : undefined
+    // Whatever the status: a pending request exists before the status moves.
+    open && finding ? finding.id : undefined
   )
+
+  // Pending requests are shown by the approval band, not repeated here.
+  const decided = (approvals ?? []).filter((a) => a.status !== 'pending')
 
   const openPage = useCallback(
     (tab?: string) => {
@@ -330,6 +333,7 @@ export function FindingDetailDrawer({
                 </Button>
               </nav>
             )}
+            <FindingApprovalBand findingId={detail.id} />
             <FindingWhyItMatters finding={detail} compact />
             {!taskNav && <FindingTaskBand findingId={detail.id} />}
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
@@ -352,14 +356,14 @@ export function FindingDetailDrawer({
                 </DetailSection>
               )}
 
-              {approvals && approvals.length > 0 && (
+              {decided.length > 0 && (
                 <DetailSection
                   title={t('findings.drawer.approvalHistory', 'Approval history')}
                   icon={ShieldCheck}
-                  count={approvals.length}
+                  count={decided.length}
                 >
                   <ul className="space-y-2">
-                    {approvals.map((a: ApiApproval) => (
+                    {decided.map((a: ApiApproval) => (
                       <li key={a.id} className="space-y-1 rounded-md border p-2.5 text-xs">
                         <div className="flex items-center justify-between">
                           <Badge variant="outline" className="text-[11px]">
