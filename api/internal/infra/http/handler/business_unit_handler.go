@@ -151,7 +151,7 @@ func (h *BusinessUnitHandler) RemoveAsset(w http.ResponseWriter, r *http.Request
 func (h *BusinessUnitHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
-		apierror.NotFound("business unit not found").WriteJSON(w)
+		apierror.NotFound("business unit").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
