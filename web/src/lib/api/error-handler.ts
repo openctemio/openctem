@@ -27,14 +27,18 @@ export class ApiClientError extends Error {
   code: string
   statusCode: number
   details?: Record<string, unknown>
+  /** The server's id for the failed request (`request_id`), to quote to support. */
+  requestId?: string
 
   constructor(
     message: string,
     code: string = 'UNKNOWN_ERROR',
     statusCode: number = 500,
-    details?: Record<string, unknown>
+    details?: Record<string, unknown>,
+    requestId?: string
   ) {
     super(message)
+    this.requestId = requestId
     this.name = 'ApiClientError'
     this.code = code
     this.statusCode = statusCode
@@ -55,6 +59,7 @@ export class ApiClientError extends Error {
       message: this.message,
       statusCode: this.statusCode,
       details: this.details,
+      requestId: this.requestId,
     }
   }
 
