@@ -7,6 +7,6 @@
 - The findings count, stats and SLA breakdown now have the 5 s statement timeout the list already had; a
   read that runs out of time answers `503 QUERY_TIMEOUT` instead of holding a connection. `GET /findings`
   is under the heavy-read rate limiter like its stats and groups.
-- Migrations `003280`–`003283` add trigram (GIN `gin_trgm_ops`) indexes on `findings.title`,
+- Migrations `003319`–`003322` add trigram (GIN `gin_trgm_ops`) indexes on `findings.title`,
   `findings.file_path`, `findings.rule_id` and `assets.name`. Each is built `CONCURRENTLY` (no write lock);
   on a large database the deploy's migrate step takes as long as the builds.
