@@ -87,6 +87,25 @@ describe('StatusSelect', () => {
     expect(onChange).not.toHaveBeenCalledWith('resolved', expect.anything())
   })
 
+  it('states why a move is blocked in the menu itself, not only on hover', async () => {
+    mockData = {
+      status: 'confirmed',
+      transitions: [
+        {
+          to: 'resolved',
+          allowed: false,
+          mode: 'direct',
+          blocked: [{ code: 'evidence_required' }],
+        },
+      ],
+    }
+    render(<StatusSelect findingId="f-1" value="confirmed" onChange={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button'))
+    const resolved = screen.getByRole('menuitem', { name: /resolved/i })
+    expect(resolved).toHaveTextContent(/Needs proof: a passing retest/)
+    expect(resolved.getAttribute('aria-describedby')).toBeTruthy()
+  })
+
   it('never offers Duplicate: it needs the finding it duplicates', async () => {
     mockData = {
       status: 'confirmed',

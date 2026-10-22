@@ -138,6 +138,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/sensors":                             {classConfig, "sensor management; host details, quarantined results and config reports are owner/admin only"},
 	"/api/v1/sensor-pairings":                     {classConfig, "sensor pairing (RFC-052): a pending request has no tenant until approved; the approver's tenant binds it"},
 	"/api/v1/scan-zones":                          {classConfig, "scan zones"},
+	"/api/v1/proxy-pools":                         {classConfig, "proxy pools for sensor scan traffic: tenant configuration, no asset data; credentials never returned"},
 	"/api/v1/scan-window-policies":                {classConfig, "scan window policies (RFC-067): tenant dispatch configuration"},
 	"/api/v1/lifecycle-sub-statuses":              {classConfig, "finding sub-status catalog (RFC-110): tenant configuration, no finding data"},
 	"/api/v1/lifecycles":                          {classConfig, "finding lifecycle schemes and versions (RFC-110): tenant configuration, no finding data"},

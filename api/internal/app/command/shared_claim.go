@@ -176,6 +176,11 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 		got = append(got, cmd)
 	}
 	observeClaimed(claimModeShared, got, time.Now())
+	// Shared sensors use no organization proxy pool: an egress member a
+	// command's creator put in the payload is removed.
+	if got, err = (egressDecision{}).stamp(got); err != nil {
+		return nil, err
+	}
 	delivered, err := s.deliver(ctx, sensorID.String(), got, rules, layers)
 	if err != nil {
 		return nil, err
