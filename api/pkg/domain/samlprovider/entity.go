@@ -98,3 +98,19 @@ type Repository interface {
 	Upsert(ctx context.Context, p *SAMLProvider) error
 	Delete(ctx context.Context, tenantID shared.ID) error
 }
+
+// CertificateRecord is an enabled SAML config's IdP certificate with the
+// tightest expiry notice already sent for it (nil: none yet). The notice state
+// resets whenever the certificate changes.
+type CertificateRecord struct {
+	TenantID    shared.ID
+	Certificate string // PEM
+	NoticeDays  *int
+}
+
+// CertificateExpiryStore is the certificate-expiry sweep's view of the store.
+// It reads across organizations (a system job); every write names its tenant.
+type CertificateExpiryStore interface {
+	ListEnabledCertificates(ctx context.Context, limit int) ([]CertificateRecord, error)
+	SetCertificateNotice(ctx context.Context, tenantID shared.ID, days int) error
+}

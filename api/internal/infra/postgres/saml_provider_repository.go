@@ -66,6 +66,9 @@ func upsertSAMLProvider(ctx context.Context, exec executor, p *samlprovider.SAML
 		    idp_entity_id   = EXCLUDED.idp_entity_id,
 		    idp_sso_url     = EXCLUDED.idp_sso_url,
 		    idp_certificate = EXCLUDED.idp_certificate,
+		    cert_expiry_notice_days = CASE
+		        WHEN saml_providers.idp_certificate IS DISTINCT FROM EXCLUDED.idp_certificate THEN NULL
+		        ELSE saml_providers.cert_expiry_notice_days END,
 		    allowed_domains = EXCLUDED.allowed_domains,
 		    default_role    = EXCLUDED.default_role,
 		    auto_provision  = EXCLUDED.auto_provision,
@@ -92,6 +95,57 @@ func (r *SAMLProviderRepository) Delete(ctx context.Context, tenantID shared.ID)
 	_, err := r.db.ExecContext(ctx, `DELETE FROM saml_providers WHERE tenant_id = $1`, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("delete saml provider: %w", err)
+	}
+	return nil
+}
+
+// ListEnabledCertificates returns the IdP certificate of every enabled SAML
+// config, for the certificate-expiry sweep (a system job across organizations).
+func (r *SAMLProviderRepository) ListEnabledCertificates(ctx context.Context, limit int) ([]samlprovider.CertificateRecord, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT tenant_id, idp_certificate, cert_expiry_notice_days
+		  FROM saml_providers
+		 WHERE enabled
+		 ORDER BY tenant_id
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list saml certificates: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []samlprovider.CertificateRecord
+	for rows.Next() {
+		var (
+			tid    string
+			cert   string
+			notice sql.NullInt32
+		)
+		if err := rows.Scan(&tid, &cert, &notice); err != nil {
+			return nil, fmt.Errorf("scan saml certificate: %w", err)
+		}
+		id, err := shared.IDFromString(tid)
+		if err != nil {
+			return nil, fmt.Errorf("parse saml tenant id: %w", err)
+		}
+		rec := samlprovider.CertificateRecord{TenantID: id, Certificate: cert}
+		if notice.Valid {
+			d := int(notice.Int32)
+			rec.NoticeDays = &d
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+// SetCertificateNotice records the tightest expiry notice sent for the
+// tenant's current certificate.
+func (r *SAMLProviderRepository) SetCertificateNotice(ctx context.Context, tenantID shared.ID, days int) error {
+	if _, err := r.db.ExecContext(ctx,
+		`UPDATE saml_providers SET cert_expiry_notice_days = $2 WHERE tenant_id = $1`,
+		tenantID.String(), days); err != nil {
+		return fmt.Errorf("set saml certificate notice: %w", err)
 	}
 	return nil
 }
