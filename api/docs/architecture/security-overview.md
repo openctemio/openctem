@@ -82,3 +82,15 @@ of 500, without loading the result in memory.
 
 A link carries the setting's anchor (`#two-factor`), so the web opens the page
 at that setting and outlines it.
+
+## Service accounts and the keys minted for them
+
+A service account is an organization-owned identity (a `users` row of kind `service`) that never signs in and acts only through `oct_` API keys. A key carries at most what the account holds, and the account never holds an owner or administrator role or full data access, directly or through a team.
+
+A service-account key also answers to the person who minted it (`api_keys.created_by`). On every request the key is refused (the same "not found" every other failure gives) unless that person is still an active member of the key's organization, with an active account, and holds `service_accounts:manage` now: as an owner or administrator, through a direct role, or through a role bound to an active team they belong to with an unexpired membership. The check reads the role tables directly, not the permission cache, because a team membership ends by the clock and no cache invalidation can signal that. Whatever took the permission away is covered: role removed, role permissions edited, removed from a team, role unbound from a team, team switched off, team membership expired, demotion, suspension, offboarding, removal.
+
+- It fails closed: any lookup error, or a key with no recorded creator, refuses the key. The log line `api key rejected: service-account key creator check failed` carries a distinct reason (`creator_missing`, `creator_not_active_member`, `creator_lost_service_accounts_manage`, `creator_lookup_failed`) and never a secret.
+- Role changes, demotion, suspension and offboarding also revoke the keys at once; a sweep (`service-key-creator`, exclusive lease, every five minutes) marks the rest revoked, so the member access report shows them. Keys of a person (not a service account) are not affected.
+- The triggers that refuse a full-data role for a service account lock the role row (`FOR SHARE`), so enabling full data on a role cannot race with granting that role to a service account.
+
+For the public docs site (openctemio/docs, service accounts page): a service-account key stops working as soon as the person who created it no longer holds Manage service accounts in the organization, by any route (role or team change, suspension, removal). Create keys with an account that will stay; recreate a key after the owner changes.
