@@ -533,12 +533,15 @@ export function buildFindingStatsUrl(filters?: FindingStatsFilters): string {
   return queryString ? `/api/v1/findings/stats?${queryString}` : '/api/v1/findings/stats'
 }
 
-/** `/api/v1/findings/export` for a filter set (RFC-048; needs findings:export). */
+/**
+ * `/api/v1/findings/export` for a filter set (RFC-048; needs findings:export).
+ * The export keeps the list's sort; paging does not apply.
+ */
 export function buildFindingsExportUrl(
   filters: FindingApiFilters,
   format: 'csv' | 'ndjson'
 ): string {
-  const { page: _page, per_page: _perPage, sort: _sort, ...rest } = filters
+  const { page: _page, per_page: _perPage, ...rest } = filters
   const params = buildFindingsQuery(rest)
   params.set('format', format)
   return `/api/v1/findings/export?${params.toString()}`

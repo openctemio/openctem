@@ -9,7 +9,6 @@ import {
   type BulkFindingResult,
   type BulkSummary,
 } from '@/features/findings/lib/bulk-result'
-import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
 import Link from '@/components/link'
@@ -117,6 +116,7 @@ import {
 import { NON_FILTER_PARAMS, readFilters } from '@/features/findings/filters/model'
 import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
 import { findingsEmptyKind } from '@/features/findings/lib/empty-kind'
+import { downloadFindingsExport, exportTruncated } from '@/features/findings/api/export-findings'
 import { FindingsEmptyState } from '@/features/findings/components/findings-empty-state'
 import {
   Download,
@@ -720,6 +720,10 @@ function FindingsContent() {
     hasPermission(Permission.FindingsRead)
   const [taskQuery, setTaskQuery] = useState<{ query: string; ignored: string[] } | null>(null)
   const canCreateTicket = useCanCreateTicket()
+  // The row menu offers a change only to someone the API lets make it (the
+  // gates of POST /findings/{id}/assign and PATCH /findings/{id}/status).
+  const canAssignOne = hasPermission(Permission.FindingsAssign)
+  const canChangeStatusOne = hasPermission(Permission.FindingsStatus)
 
   // Statuses hidden from default dashboard view (pentest WIP, not ready for visibility)
   const HIDDEN_STATUSES = useMemo(() => [...FINDINGS_LIST_HIDDEN_STATUSES], [])
@@ -1053,55 +1057,59 @@ function FindingsContent() {
       setTaskQuery({ query: '', ignored: [] })
     }
   }, [apiFilters])
-  const canServerExport = hasPermission(Permission.FindingsExport)
-  const handleExport = (format: string) => {
-    // With findings:export the server streams every matching finding (up to
-    // 100,000, scoped and audit-logged); without it, the current page only.
-    if (canServerExport) {
-      const a = document.createElement('a')
-      a.href = buildFindingsExportUrl(apiFilters, format === 'JSON' ? 'ndjson' : 'csv')
-      a.rel = 'noopener'
-      a.click()
-      toast.success(t('findings.toast.exportStarted', 'Export started'))
-      return
-    }
-    if (!findings.length) {
-      toast.error(t('findings.toast.nothingToExport', 'No findings to export'))
-      return
-    }
-
-    if (format === 'CSV') {
-      const headers = ['ID', 'Title', 'Severity', 'Status', 'Source', 'Scanner', 'Created At']
-      const rows = findings.map((f) => [
-        f.id,
-        f.title || '',
-        f.severity,
-        f.status,
-        f.source || '',
-        f.scanner || '',
-        f.createdAt,
-      ])
-      downloadCsv(buildCsv(headers, rows), `findings-${new Date().toISOString().split('T')[0]}.csv`)
-      toast.success(t('findings.toast.csvExported', 'CSV exported successfully'))
-    } else if (format === 'JSON') {
-      const data = findings.map((f) => ({
-        id: f.id,
-        title: f.title,
-        severity: f.severity,
-        status: f.status,
-        source: f.source,
-        scanner: f.scanner,
-        cve: f.cve,
-        createdAt: f.createdAt,
-      }))
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `findings-${new Date().toISOString().split('T')[0]}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.success(t('findings.toast.jsonExported', 'JSON exported successfully'))
+  // Export runs on the server only (findings:export): every finding the
+  // filter selects, in the list's sort, scoped and audit-logged, up to the
+  // cap the API states. Without the permission there is no Export control.
+  const canExport = hasPermission(Permission.FindingsExport)
+  const [exporting, setExporting] = useState(false)
+  const handleExport = async (format: 'csv' | 'ndjson') => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const { maxRows } = await downloadFindingsExport(
+        buildFindingsExportUrl(apiFilters, format),
+        format
+      )
+      const listTotal = findingsResponse?.total
+      if (exportTruncated(listTotal, maxRows)) {
+        toast.warning(
+          t('findings.export.truncated', 'Exported the first {max} of {total} findings', {
+            max: (maxRows ?? 0).toLocaleString(),
+            total: (listTotal ?? 0).toLocaleString(),
+          }),
+          {
+            description: t(
+              'findings.export.truncatedHint',
+              'One export holds at most {max} findings. Narrow the filters to export the rest.',
+              { max: (maxRows ?? 0).toLocaleString() }
+            ),
+          }
+        )
+      } else {
+        toast.success(t('findings.export.done', 'Export downloaded'))
+      }
+    } catch (error) {
+      const status = (error as { statusCode?: unknown }).statusCode
+      if (status === 403) {
+        toast.error(t('findings.export.forbidden', 'You cannot export findings'), {
+          description:
+            describePermissionDenied(errorDetails(error)) ??
+            t(
+              'findings.export.forbiddenHint',
+              'Exporting needs the Export findings permission. Ask an organization administrator.'
+            ),
+        })
+      } else if (status === 429) {
+        toast.error(t('findings.export.busy', 'An export of yours is still running'), {
+          description: t('findings.export.busyHint', 'Wait for it to finish, then try again.'),
+        })
+      } else {
+        toast.error(
+          getErrorMessage(error, t('findings.export.failed', 'The export failed. Try again.'))
+        )
+      }
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -1181,7 +1189,9 @@ function FindingsContent() {
       mutateStats()
       return true
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update findings'))
+      toast.error(
+        getErrorMessage(error, t('findings.bulk.statusFailed', 'Failed to update findings'))
+      )
       return false
     } finally {
       setBulkBusy(false)
@@ -1588,6 +1598,8 @@ function FindingsContent() {
             <FindingRowMenu
               title={finding.title}
               onAction={(action) => handleRowAction(action, finding)}
+              canAssign={canAssignOne}
+              canChangeStatus={canChangeStatusOne}
               canCreateTicket={canCreateTicket}
               canRemediate={hasPermission('findings:remediation:write') && remediationEnabled}
               canDelete={hasPermission('findings:delete')}
@@ -1609,6 +1621,8 @@ function FindingsContent() {
     canSelect,
     remediationEnabled,
     canCreateTicket,
+    canAssignOne,
+    canChangeStatusOne,
     t,
   ])
 
@@ -1924,25 +1938,29 @@ function FindingsContent() {
 
   const exportItems = (
     <>
-      <DropdownMenuItem onClick={() => handleExport('CSV')}>
+      <DropdownMenuItem disabled={exporting} onClick={() => void handleExport('csv')}>
         {t('findings.toolbar.exportCsv', 'Export as CSV')}
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => handleExport('JSON')}>
+      <DropdownMenuItem disabled={exporting} onClick={() => void handleExport('ndjson')}>
         {t('findings.toolbar.exportJson', 'Export as JSON')}
       </DropdownMenuItem>
     </>
   )
-  const exportMenu = (
+  const exportMenu = canExport ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9">
-          <Download className="me-2 h-4 w-4" aria-hidden />
+        <Button variant="outline" size="sm" className="h-9" disabled={exporting}>
+          {exporting ? (
+            <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />
+          ) : (
+            <Download className="me-2 h-4 w-4" aria-hidden />
+          )}
           {t('findings.toolbar.export', 'Export')}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">{exportItems}</DropdownMenuContent>
     </DropdownMenu>
-  )
+  ) : null
 
   const taskFromFiltersButton = canQueryTask ? (
     <Tooltip>
@@ -1982,15 +2000,13 @@ function FindingsContent() {
       </Tooltip>
       <DropdownMenuContent align="end">
         {canQueryTask && (
-          <>
-            <DropdownMenuItem onClick={() => void openTaskFromFilters()}>
-              <SquareCode className="me-2 h-4 w-4" aria-hidden />
-              {t('remediationQuery.findings.fromFiltersShort')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
+          <DropdownMenuItem onClick={() => void openTaskFromFilters()}>
+            <SquareCode className="me-2 h-4 w-4" aria-hidden />
+            {t('remediationQuery.findings.fromFiltersShort')}
+          </DropdownMenuItem>
         )}
-        {exportItems}
+        {canQueryTask && canExport && <DropdownMenuSeparator />}
+        {canExport && exportItems}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -2061,7 +2077,7 @@ function FindingsContent() {
         </h2>
         {!groupBy && (
           <span
-            className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground"
+            className="shrink-0 text-sm tabular-nums text-muted-foreground"
             aria-label={t(
               'findings.view.total',
               '{count, plural, one {# finding} other {# findings}}',
@@ -2081,7 +2097,7 @@ function FindingsContent() {
             onClick={() => setViewParam('verify')}
           >
             {t('findings.view.awaitingVerification', 'Awaiting verification')}
-            <span className="ms-2 font-mono tabular-nums text-muted-foreground">
+            <span className="ms-2 tabular-nums text-muted-foreground">
               {awaitingVerification.toLocaleString()}
             </span>
           </Button>
@@ -2108,7 +2124,9 @@ function FindingsContent() {
               {exportMenu}
               {taskFromFiltersButton}
             </div>
-            <div className="@2xl/actions:hidden">{moreActionsMenu}</div>
+            {(canQueryTask || canExport) && (
+              <div className="@2xl/actions:hidden">{moreActionsMenu}</div>
+            )}
           </>
         )}
       </div>
@@ -2126,6 +2144,8 @@ function FindingsContent() {
         <FindingRowMenu
           title={f.title}
           onAction={(action) => handleRowAction(action, f)}
+          canAssign={canAssignOne}
+          canChangeStatus={canChangeStatusOne}
           canCreateTicket={canCreateTicket}
           canRemediate={hasPermission('findings:remediation:write') && remediationEnabled}
           canDelete={hasPermission('findings:delete')}
@@ -2350,9 +2370,12 @@ function FindingsContent() {
               ) : (
                 <>
                   <div
-                    role="progressbar"
-                    aria-busy={findingsValidating}
-                    aria-label={t('findings.list.refreshing', 'Refreshing findings')}
+                    role={findingsValidating ? 'progressbar' : undefined}
+                    aria-label={
+                      findingsValidating
+                        ? t('findings.list.refreshing', 'Refreshing findings')
+                        : undefined
+                    }
                     className="-mb-1 h-0.5 overflow-hidden rounded-full"
                   >
                     {findingsValidating && (
@@ -2390,6 +2413,8 @@ function FindingsContent() {
                         filterCount={activeCount}
                         hasSearch={searchQuery.trim() !== ''}
                         canImport={canImport}
+                        canSetUpScan={hasPermission(Permission.ScansRead)}
+                        canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
                         onImport={() => setImportDialogOpen(true)}
                         onClearFilters={clearAllFilters}
                         onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
