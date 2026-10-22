@@ -1,4 +1,4 @@
--- Reverts 003284_ingest_receipts: drops the action log and the daily fact,
+-- Reverts the ingest_receipts migration: drops the action log and the daily fact,
 -- removes the run receipts and turns the upload receipts back into
 -- finding_imports rows.
 

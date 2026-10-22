@@ -499,6 +499,6 @@ func buildScanZoneAuditContext(r *http.Request) auditapp.AuditContext {
 		ActorEmail: middleware.GetUsername(r.Context()),
 		ActorIP:    clientIP,
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 }

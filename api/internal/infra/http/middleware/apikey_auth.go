@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -186,10 +188,10 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 	// Enforce the key's own stored rate limit (requests per hour). The
 	// limit is set at mint time and shown on the key, but was never
 	// applied, so a leaked key could be driven at line rate.
-	if !m.limiter.allow(key.ID().String(), key.RateLimit()) {
+	if d := m.limiter.decide(key.ID().String(), key.RateLimit()); !d.allowed {
 		m.log.Warn("api key rate limit exceeded",
 			"key_id", key.ID().String(), "rate_limit_per_hour", key.RateLimit())
-		apierror.TooManyRequests("API key rate limit exceeded").WriteJSON(w)
+		writeRateLimited(w, d, "API key rate limit exceeded")
 		return nil, false
 	}
 
@@ -301,8 +303,25 @@ func newAPIKeyRateLimiter() *apiKeyRateLimiter {
 // allow reports whether keyID may make another request. perHour <= 0 means
 // the key has no limit configured (unlimited, previous behavior).
 func (l *apiKeyRateLimiter) allow(keyID string, perHour int) bool {
+	return l.decide(keyID, perHour).allowed
+}
+
+// rateDecision is the outcome of one limiter check with the state a client
+// needs to back off: the bucket depth, what is left, when one request is
+// allowed again (denials) and when the bucket is full again.
+type rateDecision struct {
+	allowed    bool
+	limit      int
+	remaining  int
+	retryAfter time.Duration
+	resetAfter time.Duration
+}
+
+// decide is allow with the rate-limit state. A key without a limit is always
+// allowed and reports a zero decision.
+func (l *apiKeyRateLimiter) decide(keyID string, perHour int) rateDecision {
 	if perHour <= 0 {
-		return true
+		return rateDecision{allowed: true}
 	}
 	now := time.Now()
 	l.mu.Lock()
@@ -317,16 +336,36 @@ func (l *apiKeyRateLimiter) allow(keyID string, perHour int) bool {
 		l.sweepAt = now.Add(10 * time.Minute)
 	}
 
+	burst := min(perHour, apiKeyBurst)
 	b, ok := l.buckets[keyID]
 	if !ok || b.perHour != perHour {
 		b = &apiKeyBucket{
-			limiter: rate.NewLimiter(rate.Limit(float64(perHour)/3600.0), min(perHour, apiKeyBurst)),
+			limiter: rate.NewLimiter(rate.Limit(float64(perHour)/3600.0), burst),
 			perHour: perHour,
 		}
 		l.buckets[keyID] = b
 	}
 	b.lastSeen = now
-	return b.limiter.AllowN(now, 1)
+	allowed := b.limiter.AllowN(now, 1)
+
+	perSecond := float64(perHour) / 3600.0
+	tokens := b.limiter.TokensAt(now)
+	d := rateDecision{allowed: allowed, limit: burst, remaining: max(0, int(math.Floor(tokens)))}
+	if missing := float64(burst) - tokens; missing > 0 {
+		d.resetAfter = time.Duration(missing / perSecond * float64(time.Second))
+	}
+	if !allowed {
+		d.retryAfter = time.Duration(math.Max(0, 1-tokens) / perSecond * float64(time.Second))
+	}
+	return d
+}
+
+// writeRateLimited answers 429 for a refused decision, with Retry-After
+// (whole seconds, at least 1) and the rate-limit headers.
+func writeRateLimited(w http.ResponseWriter, d rateDecision, message string) {
+	setRateLimitHeaders(w, d.limit, d.remaining, time.Now().Add(d.resetAfter))
+	w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(d.retryAfter.Seconds())))))
+	apierror.TooManyRequests(message).WriteJSON(w)
 }
 
 // extractAPIKeyToken pulls an `oct_` key from the Authorization: Bearer header or

@@ -29,7 +29,7 @@ type WidgetCatalogMetric struct {
 
 // WidgetCatalogShapes is the result shape for one group-by count.
 type WidgetCatalogShapes struct {
-	Shape  dashboard.Shape     `json:"shape" enums:"scalar,ratio,duration,category,time_series,matrix,items"`
+	Shape  dashboard.Shape     `json:"shape" enums:"scalar,ratio,duration,category,time_series,matrix,items,stages,paths"`
 	Vizzes []dashboard.VizType `json:"vizzes"`
 }
 

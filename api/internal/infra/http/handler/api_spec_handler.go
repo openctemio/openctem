@@ -120,7 +120,7 @@ func (h *APISpecHandler) auditSpec(r *http.Request, tenantID shared.ID, action a
 		WithSeverity(auditdom.SeverityLow)
 	_ = h.audit.LogEvent(r.Context(), auditapp.AuditContext{
 		TenantID: tenantID.String(), ActorID: middleware.GetUserID(r.Context()), ActorEmail: auditActorEmail(r.Context()),
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}, event)
 }
 
