@@ -309,9 +309,13 @@ everything else is **Planned**. The decision numbers are RFC-041 §11 D1–D16.
 - **Sort (D8).** `sort=field,-field` only. An unknown field is
   `400 INVALID_SORT` listing the allowed fields. `sort_by`, `order_by` and
   `order` stay as aliases for the window, then go. **Planned**
-- **Order is deterministic.** Every sort ends in `id`. **Shipped**
+- **Order is deterministic.** Every sort ends in `id`. **Shipped** for lists
+  that sort through the shared `pagination.SortOption` helper; repositories
+  with a hand-written `ORDER BY` are audited and fixed as they are touched.
+  **Planned** for the rest.
 - **Bounded reads.** No endpoint returns an unbounded set; bulk routes take at
-  most 1,000 ids. **Shipped**
+  most 1,000 ids. **Shipped** for the reads and bulk routes the review found
+  unbounded; a sweep of the remaining reads is **Planned**.
 - **Field selection (D9).** There is no generic `fields=`: a projection would
   bypass per-field permission checks and complicate caching, and nobody
   asked for it. Resources with expansions use `include=` (allowlisted,
@@ -388,7 +392,9 @@ keeps RFC 9457):
 - `message` is English for logs and developers. The web app translates from
   `code` and `params` through the `errors.<CODE>` i18n keys (en and vi).
 - `request_id` is always present and equals the `X-Request-ID` header.
-  **Shipped**
+  **Shipped** for every error written through `pkg/apierror` after the
+  request-id middleware; the few answers written before it (the concurrency
+  limit) or outside the envelope are **Planned**.
 - Internal error text is never in `message`. `err.Error()` is allowed only
   for domain errors that are explicitly public.
 - Domain errors map to codes in **one** `handler.WriteError(w, r, err)`; new
@@ -403,10 +409,12 @@ keeps RFC 9457):
 
 ## 11. Headers
 
-Every response carries `X-Request-ID`. Every rate limiter, on its 200s and on
-its `429`, sends `RateLimit-Limit`, `RateLimit-Remaining` and
-`RateLimit-Reset` (seconds until the allowance is full), plus `Retry-After` on
-a `429`. The older `X-RateLimit-*` names (reset as a Unix time) are sent for
+Every response carries `X-Request-ID`. Every rate-limit middleware sends
+`RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (seconds until
+the allowance is full), plus `Retry-After`, on its `429`; the shared limiters
+also send them on the requests they allow. The per-key limit of API keys and
+the per-connection limit of MCP send them only on a `429`. A `429` from a
+cool-down or a one-at-a-time guard inside a route carries the error body only. The older `X-RateLimit-*` names (reset as a Unix time) are sent for
 one window and then dropped. **Shipped** for the limiters that exist today.
 Deprecated routes carry `Deprecation`, `Sunset` and
 `Link rel="successor-version"` (§7).
