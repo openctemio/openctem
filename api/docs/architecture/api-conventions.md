@@ -165,6 +165,11 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   - Do not add `limit`/`offset` or `page_size` to new routes.
 - **Sorting:** `sort=field,-other` (a leading `-` means descending). Do not
   add `sort_by`/`sort_order`/`order`/`order_by` to new routes.
+  Every sort ends in an `id` tie-breaker (`pkg/pagination`,
+  `SortOption.SQL`), in the direction of the last sort key, so rows that tie
+  on every requested key page deterministically. A query that aliases or joins
+  its main table passes the qualified expression to
+  `SQLWithTieBreaker`, and a default sort string ends in a unique column.
 - **Filtering** follows [RFC-048](../rfcs/RFC-048-list-query-contract.md)
   ([how to use it](list-query-contract.md)). It supersedes the older
   plural / `min_` / `search` style, which stays only as deprecated aliases on
