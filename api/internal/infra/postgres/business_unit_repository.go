@@ -146,6 +146,11 @@ func (r *BusinessUnitRepository) List(ctx context.Context, filter businessunit.F
 		args = append(args, pq.Array(ids))
 		argIdx++
 	}
+	if filter.ParentID != nil {
+		where += fmt.Sprintf(" AND parent_id = $%d", argIdx)
+		args = append(args, filter.ParentID.String())
+		argIdx++
+	}
 	// A restricted reader lists, counts and finds only the units visible to
 	// them (filterspec visibility.go); the total is over those units only.
 	if filter.DataScope.Restricted() {

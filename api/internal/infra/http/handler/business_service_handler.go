@@ -64,7 +64,7 @@ func (h *BusinessServiceHandler) requireActOnLinks(w http.ResponseWriter, r *htt
 	}
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		apierror.NotFound("business service not found").WriteJSON(w)
+		apierror.NotFound("business service").WriteJSON(w)
 		return false
 	}
 	if !h.requireWritable(w, r, tenantID, serviceID) {
@@ -129,7 +129,7 @@ func (h *BusinessServiceHandler) requireWritable(w http.ResponseWriter, r *http.
 		         WHERE e.tenant_id = $1 AND e.service_id = business_services.id)))`,
 		append([]any{tenantID, serviceID}, scopeArgs...)...,
 	).Scan(&ok); err != nil || !ok {
-		apierror.NotFound("business service not found").WriteJSON(w)
+		apierror.NotFound("business service").WriteJSON(w)
 		return false
 	}
 	return true
@@ -278,7 +278,7 @@ func (h *BusinessServiceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	bs, err := scanBusinessService(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			apierror.NotFound("business service not found").WriteJSON(w)
+			apierror.NotFound("business service").WriteJSON(w)
 			return
 		}
 		h.logger.Error("business service get", "error", err)
@@ -395,7 +395,7 @@ func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) 
 	bs, err := scanBusinessService(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			apierror.NotFound("business service not found").WriteJSON(w)
+			apierror.NotFound("business service").WriteJSON(w)
 			return
 		}
 		h.logger.Error("business service update", "error", err)
@@ -426,7 +426,7 @@ func (h *BusinessServiceHandler) Delete(w http.ResponseWriter, r *http.Request) 
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		apierror.NotFound("business service not found").WriteJSON(w)
+		apierror.NotFound("business service").WriteJSON(w)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -541,7 +541,7 @@ func (h *BusinessServiceHandler) ListAssets(w http.ResponseWriter, r *http.Reque
 		"SELECT EXISTS(SELECT 1 FROM business_services WHERE tenant_id = $1 AND id = $2 AND "+visible+")",
 		append([]any{tenantID, id}, scopeArgs...)...,
 	).Scan(&serviceExists); err != nil || !serviceExists {
-		apierror.NotFound("business service not found").WriteJSON(w)
+		apierror.NotFound("business service").WriteJSON(w)
 		return
 	}
 

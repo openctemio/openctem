@@ -229,9 +229,11 @@ func (s *BusinessUnitService) visible(ctx context.Context, tid, bid shared.ID, s
 }
 
 // writableUnit loads the unit for a change by the caller. A restricted
-// caller may change a unit visible to them, or one with no asset (a unit
-// they just created); any other unit answers businessunit.ErrNotFound, as a
-// read does.
+// caller may change a unit visible to them, or an empty one: no asset and no
+// unit below it (a unit they just created). A unit whose assets all sit in
+// the units below it is not empty: its name, criticality and placement
+// reach those assets (criticality is inherited down the hierarchy). Any
+// other unit answers businessunit.ErrNotFound, as a read does.
 func (s *BusinessUnitService) writableUnit(ctx context.Context, tid, bid shared.ID) (*businessunitdom.BusinessUnit, *shared.DataScope, error) {
 	bu, err := s.repo.GetByID(ctx, tid, bid)
 	if err != nil {
@@ -253,6 +255,13 @@ func (s *BusinessUnitService) writableUnit(ctx context.Context, tid, bid shared.
 		return nil, nil, err
 	}
 	if len(ids) > 0 {
+		return nil, nil, businessunitdom.ErrNotFound
+	}
+	children, err := s.repo.List(ctx, businessunitdom.Filter{TenantID: &tid, ParentID: &bid}, pagination.New(1, 1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if children.Total > 0 {
 		return nil, nil, businessunitdom.ErrNotFound
 	}
 	return bu, scope, nil

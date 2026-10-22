@@ -162,7 +162,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/control-tests":         {classConfig, "compensating control tests"},
 	"/api/v1/workflows":             {classConfig, "workflow definitions"},
 	"/api/v1/compliance":            {classConfig, "framework and control catalog, assessments"},
-	"/api/v1/scoping":               {classPartial, "asset, crown-jewel and business-unit asset counts follow the caller's scope; configuration totals (services, units, boundary, profiles, threat models, cycles) are organization-wide counts with no ids"},
+	"/api/v1/scoping":               {classPartial, "asset, crown-jewel and business-unit asset counts follow the caller's scope; service and unit totals count only those visible to the reader (research/233 D4); configuration totals (boundary, profiles, threat models, cycles) are organization-wide counts with no ids"},
 
 	// --- scoped ------------------------------------------------------------------
 	"/api/v1/assets":                                      {classScoped, "route guard on /assets/{id}/**, list, stats and facets scoped (RFC-042 F10)"},
