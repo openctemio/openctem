@@ -148,11 +148,40 @@ export interface Stage {
   drill?: string | null
   /** Why a stage is not measured. */
   reason_key?: string
+  /** A second figure under the main one (e.g. "4 breached"), with its list. */
+  detail?: { label_key: string; value: number; drill?: string | null }
+  /** A short call to action or note ("Designate crown jewels"). */
+  flag_key?: string
 }
 
 export interface StagesResult {
   shape: 'stages'
   stages: Stage[]
+  /** Index of the stage with the largest gap ("act here"); null when none. */
+  focus?: number | null
+  as_of?: string
+}
+
+export interface PathRow {
+  id: string
+  name: string
+  kind?: string | null
+  criticality?: string | null
+  /** Number of public entry points that reach it. */
+  reachable_from: number
+  /** The asset is a public entry point itself. */
+  entry_point: boolean
+  score: number
+  /** Same-origin path the row opens. */
+  href?: string | null
+}
+
+export interface PathsResult {
+  shape: 'paths'
+  /** Reachable crown jewels, and designated crown jewels, in scope. */
+  reachable: number
+  designated: number
+  rows: PathRow[]
   as_of?: string
 }
 
@@ -165,6 +194,7 @@ export type WidgetResult =
   | MatrixResult
   | ItemsResult
   | StagesResult
+  | PathsResult
 
 export type ResultShape = WidgetResult['shape']
 

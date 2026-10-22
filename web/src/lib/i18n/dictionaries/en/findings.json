@@ -1381,5 +1381,6 @@
   "findings.detail.section.uploadedFiles": "the uploaded files",
   "findings.detail.section.retestCheck": "the retest check",
   "findings.detail.loadFailed.title": "Could not load this finding",
-  "findings.detail.loadFailed.description": "Something went wrong on our side or the connection dropped. Try again."
+  "findings.detail.loadFailed.description": "Something went wrong on our side or the connection dropped. Try again.",
+  "findings.contextChips.crownJewels": "Crown jewels"
 }

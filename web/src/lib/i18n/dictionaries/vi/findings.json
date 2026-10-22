@@ -1381,5 +1381,6 @@
   "findings.detail.section.uploadedFiles": "các tệp đã tải lên",
   "findings.detail.section.retestCheck": "kiểm tra kiểm thử lại",
   "findings.detail.loadFailed.title": "Không thể tải phát hiện này",
-  "findings.detail.loadFailed.description": "Đã xảy ra lỗi phía máy chủ hoặc kết nối bị gián đoạn. Hãy thử lại."
+  "findings.detail.loadFailed.description": "Đã xảy ra lỗi phía máy chủ hoặc kết nối bị gián đoạn. Hãy thử lại.",
+  "findings.contextChips.crownJewels": "Tài sản trọng yếu"
 }
