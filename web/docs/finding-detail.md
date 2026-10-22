@@ -43,6 +43,12 @@ in the activity panel.
   always rendered when they exist; "No evidence" appears only when all of them are
   empty. The number on the tab counts all of them. Uploaded files are loaded through
   the API client; a failure shows a row with Retry instead of an empty section.
+- **A request waiting on someone is visible where you are.** While a
+  false-positive or accepted-risk request is pending, `FindingApprovalBand`
+  (page and drawer) shows the requested status, who asked, when and why, whatever
+  the finding's status is. The requester can cancel it there; approvers get a link
+  to the approvals inbox, where the decision is made; everyone else reads it. The
+  buttons are cosmetic: the API decides who may cancel or approve.
 - **AI triage is opt-in and permission-aware.** The header button shows only to a
   user who may run it (`ai_triage:trigger`) in an organization that turned AI triage
   on (Settings > AI). Without `ai_triage:read` the page sends no AI triage request

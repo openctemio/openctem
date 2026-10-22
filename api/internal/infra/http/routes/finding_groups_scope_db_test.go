@@ -103,9 +103,12 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	remediationSvc := appremediation.NewGroupService(postgres.NewFindingRemediationKeyRepository(db), vulnSvc, nil, log)
 	remediationSvc.SetDataScope(enforcer)
 
-	prevGuard := dataScopeGuardMiddleware
+	// Every session here signed in just now: these tests cover the finding
+	// rules behind the step-up gate (step_up_routes_test.go covers the gate).
+	prevGuard, prevStepUp := dataScopeGuardMiddleware, stepUpChecker
 	dataScopeGuardMiddleware = middleware.DataScopeGuard(enforcer)
-	t.Cleanup(func() { dataScopeGuardMiddleware = prevGuard })
+	stepUpChecker = alwaysSteppedUp{}
+	t.Cleanup(func() { dataScopeGuardMiddleware, stepUpChecker = prevGuard, prevStepUp })
 
 	// The verify / reject actions read the acting user from the synced local user.
 	auth := Middleware(func(next http.Handler) http.Handler {
@@ -114,6 +117,9 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 			if id, err := shared.IDFromString(r.Header.Get("X-Test-User")); err == nil {
 				if u, err := userdom.NewLocalUserWithID(id, id.String()+"@ds.test", "t"); err == nil {
 					ctx = context.WithValue(ctx, middleware.LocalUserKey, u)
+				}
+				if middleware.GetSessionID(ctx) == "" {
+					ctx = context.WithValue(ctx, middleware.SessionIDKey, "session-"+id.String())
 				}
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))

@@ -160,6 +160,15 @@ var stepUpRoutes = []string{
 	"POST /api/v1/priority-rules",
 	"PUT /api/v1/priority-rules/{id}",
 	"DELETE /api/v1/priority-rules/{id}",
+	// Decisions that close risk (research 225 S2): approving a false-positive
+	// or acceptance request (single and group), approving a severity change,
+	// deleting a finding, and a bulk move to a closing status. Reject and
+	// cancel stay without it.
+	"POST /api/v1/approvals/{id}/approve",
+	"POST /api/v1/approvals/batches/{id}/approve",
+	"POST /api/v1/findings/{id}/severity-requests/{id}/approve",
+	"DELETE /api/v1/findings/{id}",
+	"POST /api/v1/findings/bulk/status",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -227,6 +236,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
 			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())
+			registerVulnerabilityRoutes(router, &handler.VulnerabilityHandler{}, nil, nil, nil, auth, nil)
 			registerFindingRetestCheckRoutes(router, &handler.FindingRetestCheckHandler{}, auth, nil)
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
@@ -281,5 +291,59 @@ func chain(mws ...Middleware) Middleware {
 			next = mws[i](next)
 		}
 		return next
+	}
+}
+
+// The bulk status move needs step-up only when it closes findings; reject and
+// cancel of an approval never need it.
+func TestFindingDecisionStepUp_BulkAndRejectCancel(t *testing.T) {
+	stale := steppedUpAt(time.Now().Add(-11 * time.Minute))
+	call := func(t *testing.T, checker middleware.RecentAuthChecker, body string) (code int, reached bool) {
+		t.Helper()
+		withStepUpChecker(t, checker)
+		h := requireStepUpWhenClosing()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reached = true
+			b := make([]byte, len(body))
+			n, _ := r.Body.Read(b)
+			if string(b[:n]) != body {
+				t.Errorf("body not restored: %q", b[:n])
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req = req.WithContext(context.WithValue(context.WithValue(req.Context(), middleware.UserIDKey, "u1"), middleware.SessionIDKey, "s1"))
+		h.ServeHTTP(rec, req)
+		return rec.Code, reached
+	}
+	if _, reached := call(t, stale, `{"status":"in_progress"}`); !reached {
+		t.Error("an open-state bulk move must not need step-up")
+	}
+	// The service lower-cases and trims the status, and the handler's decoder
+	// stops after the first JSON value: neither spelling may skip the gate.
+	for _, body := range []string{`{"status":"RESOLVED"}`, `{"status":" resolved "}`, `{"status":"resolved"} trailing`,
+		`{"status":"in_progress"`, `{"status":5}`, `{"status":"no_such_status"}`} {
+		if code, reached := call(t, stale, body); reached || code != http.StatusForbidden {
+			t.Errorf("bulk body %s with a stale session: got %d reached=%v, want 403", body, code, reached)
+		}
+	}
+	if _, reached := call(t, stale, `{"status":" In_Progress "}`); !reached {
+		t.Error("an open-state bulk move in any spelling must not need step-up")
+	}
+	for _, st := range []string{"resolved", "false_positive", "accepted", ""} {
+		code, reached := call(t, stale, `{"status":"`+st+`"}`)
+		if reached || code != http.StatusForbidden {
+			t.Errorf("bulk to %q with a stale session: got %d reached=%v, want 403", st, code, reached)
+		}
+		if _, reached := call(t, alwaysSteppedUp{}, `{"status":"`+st+`"}`); !reached {
+			t.Errorf("bulk to %q with a fresh session must reach the handler", st)
+		}
+	}
+	for _, route := range stepUpRoutes {
+		if strings.HasSuffix(route, "/reject") || strings.HasSuffix(route, "/cancel") {
+			if strings.Contains(route, "/approvals") || strings.Contains(route, "severity-requests") {
+				t.Errorf("%s must not require step-up", route)
+			}
+		}
 	}
 }

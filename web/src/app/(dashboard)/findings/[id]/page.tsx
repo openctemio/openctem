@@ -47,6 +47,7 @@ import { isBreach, daysUntil } from '@/features/sla/lib/sla'
 import {
   DataFlowTab,
   EvidenceTab,
+  FindingApprovalBand,
   FindingFixCard,
   FindingHeader,
   FindingProperties,
@@ -282,6 +283,7 @@ export default function FindingDetailPage() {
         </aside>
 
         <div className="min-w-0 space-y-4 lg:col-start-1">
+          <FindingApprovalBand findingId={finding.id} />
           {slaLate && (
             <DetailCallout
               tone="destructive"

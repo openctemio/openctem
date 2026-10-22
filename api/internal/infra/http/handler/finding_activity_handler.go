@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -77,7 +78,9 @@ func toFindingActivityResponse(a *vulnerability.FindingActivity) FindingActivity
 // per activity type: the status move, and a client-visible comment's text.
 // Reasons, notes, assignees and source metadata are the team's.
 var clientActivityKeys = map[string][]string{
-	"comment_added": {"comment_id", "content", "preview", "visibility"},
+	"comment_added":   {"comment_id", "content", "preview", "visibility", "deleted"},
+	"comment_updated": {"comment_id", "content", "visibility", "deleted"},
+	"comment_deleted": {"comment_id", "visibility"},
 }
 
 var clientStatusKeys = []string{"old_status", "new_status", "status"}
@@ -158,8 +161,16 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 	}
 
 	data := make([]FindingActivityResponse, len(result.Data))
+	deleted, err := h.deletedComments(r.Context(), tenantID, findingID, result.Data)
+	if err != nil {
+		// Fail closed: without the list of deleted comments, a deleted
+		// comment's text would be served.
+		h.logger.Error("failed to look up deleted comments", "error", err)
+		apierror.InternalServerError("An unexpected error occurred").WriteJSON(w)
+		return
+	}
 	for i, a := range result.Data {
-		data[i] = toFindingActivityResponse(a)
+		data[i] = hideDeletedCommentText(toFindingActivityResponse(a), deleted)
 		if access.ClientOnly {
 			data[i] = clientSafeActivity(data[i])
 		}
@@ -197,4 +208,46 @@ func (h *FindingActivityHandler) handleServiceError(w http.ResponseWriter, err e
 		h.logger.Error("service error", "error", err, "resource", resource)
 		apierror.InternalServerError("An unexpected error occurred").WriteJSON(w)
 	}
+}
+
+// deletedComments returns the ids of the comments on this page of the feed
+// that were deleted. A lookup failure is an error: the caller refuses rather
+// than serve a deleted comment's text.
+func (h *FindingActivityHandler) deletedComments(ctx context.Context, tenantID, findingID string, acts []*vulnerability.FindingActivity) (map[string]bool, error) {
+	var ids []string
+	for _, a := range acts {
+		switch a.ActivityType() {
+		case vulnerability.ActivityCommentAdded, vulnerability.ActivityCommentUpdated:
+			if id, ok := a.Changes()["comment_id"].(string); ok && id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return h.activityService.DeletedCommentIDs(ctx, tenantID, findingID, ids)
+}
+
+// hideDeletedCommentText replaces the text of a deleted comment's original and
+// revision entries with a marker. The stored entries are not changed.
+func hideDeletedCommentText(a FindingActivityResponse, deleted map[string]bool) FindingActivityResponse {
+	if len(deleted) == 0 || (a.ActivityType != "comment_added" && a.ActivityType != "comment_updated") {
+		return a
+	}
+	id, _ := a.Changes["comment_id"].(string)
+	if !deleted[id] {
+		return a
+	}
+	changes := make(map[string]any, len(a.Changes))
+	for k, v := range a.Changes {
+		switch k {
+		case "content", "preview", "previous_content":
+		default:
+			changes[k] = v
+		}
+	}
+	changes["deleted"] = true
+	a.Changes = changes
+	return a
 }
