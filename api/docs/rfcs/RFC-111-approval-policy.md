@@ -220,7 +220,7 @@ A request always carries a structured code and a note:
 |---|---|
 | `GET /api/v1/findings/{id}/approvals/policy?status=` | adds the evaluation: tier, class, required approvals, reasons, security pool and fallback, step-up, longest end, decision deadline, eligible approver count, whether the caller may decide |
 | `POST /api/v1/findings/{id}/approvals` | evaluated; the request stores tier, class and required approvals |
-| `POST /api/v1/approvals/{id}/approve` | a sign-off; answers 200 with `approvals_collected` / `approvals_required`; applies on the last one |
+| `POST /api/v1/approvals/{id}/approve` | a sign-off (needs step-up: a recent sign-in, see step-up-reauth.md); answers 200 with `approvals_collected` / `approvals_required`; applies on the last one |
 | `GET /api/v1/approvals` | each request carries tier, required and collected approvals, and `batch_id` |
 | `GET, PUT /api/v1/organization/settings/finding-approvals/` | `policy`, `pending_policy`, `pending_policy_at`, and the floors and defaults for the editor; `PUT` with `cancel_pending: true` drops every waiting lowering (level, second look, policy) and keeps the values in force |
 | `POST /api/v1/suppressions/rules` | `reason_code` required; approval evaluated |
