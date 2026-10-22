@@ -112,7 +112,7 @@ describe('API proxy upload bodies', () => {
   })
 
   it('streams a 20 MiB finding import to the API', async () => {
-    const res = await post('findings/import', bodyOf(20 * MiB), {
+    const res = await post('findings/imports', bodyOf(20 * MiB), {
       'content-length': String(20 * MiB),
     })
     expect(res.status).toBe(200)
@@ -122,7 +122,7 @@ describe('API proxy upload bodies', () => {
   })
 
   it('refuses an import whose Content-Length is over the route limit before forwarding', async () => {
-    const res = await post('findings/import', bodyOf(1), {
+    const res = await post('findings/imports', bodyOf(1), {
       'content-length': String(110 * MiB + 1),
     })
     expect(res.status).toBe(413)
@@ -142,7 +142,7 @@ describe('API proxy upload bodies', () => {
 
   it('refreshes a token about to expire before streaming, since a 401 cannot be replayed', async () => {
     token = jwt(10)
-    const res = await post('findings/import', bodyOf(MiB))
+    const res = await post('findings/imports', bodyOf(MiB))
     expect(res.status).toBe(200)
     const urls = fetchMock.mock.calls.map(([u]) => String(u))
     expect(urls[0]).toMatch(/\/api\/v1\/auth\/refresh$/)

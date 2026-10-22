@@ -15,7 +15,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | Receipts table, per-finding action log, coverage decisions, daily ingest fact (migration `003276_ingest_receipts`) | shipped |
 | Writer in ingest (every report), in coverage decisions, and for uploads (one receipt per request) | shipped |
 | Retention job (`ingest-receipt-retention`) | shipped |
-| Receipts API, `POST /findings/imports`, durable `Idempotency-Key` | planned (RFC-122 §6, §7) |
+| Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003277_idempotency_keys`) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | planned (RFC-122 §5) |
 | Web: import page, scan run page, finding "last seen in" | planned |
 
@@ -23,7 +23,7 @@ organization's findings. The ingest service writes it; nothing else does.
 
 | Ingest | Receipt (`source_kind`, `source_ref`) |
 |---|---|
-| A file uploaded with `POST /findings/import` | `upload`, the receipt's own id; every file of the request shares it |
+| A file uploaded with `POST /findings/imports` | `upload`, the receipt's own id; every file of the request shares it |
 | A sensor report bound to a command of a scan run | `scan_run`, the run id: all commands of all steps add to one receipt |
 | A sensor report bound to a command outside a run | `command`, the command id |
 | A CI run's upload | `ci_run`, the run id |
@@ -88,6 +88,20 @@ files that failed as `file_<kind>`), sets the format (`mixed` for several),
 and the status (`failed` when no file was imported). An upload always has
 partial coverage and closes nothing.
 
+## Reading receipts
+
+| Route | Gate | Who sees what |
+|---|---|---|
+| `GET /api/v1/findings/imports` | `findings:read` | organization view (unrestricted data scope, or `dashboards:org:view`): every receipt; anyone else: only their own uploads. Filters `source_kind`, `source_ref`; unknown parameter 400 `INVALID_FILTER`; `per_page` ≤ 100 |
+| `GET /api/v1/findings/imports/{id}` | `findings:read` | as the list (else 404); `by_severity` counts the actions per action and severity over findings in the caller's scope |
+| `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | as the list; rows only for findings in the caller's data scope and pentest visibility; filter `action` |
+| `GET /api/v1/findings/{id}/imports` | `findings:read` | the finding must be in scope (404); the newest 20 receipts that acted on it: id, kind, ref, tool, action, time (no counts) |
+
+A non-organization caller is any member whose data scope is restricted, and
+also a full-data member who has hidden private-program assets: the stored
+counts may include findings they cannot see. Handler:
+`internal/infra/http/handler/ingest_receipt_handler.go`.
+
 ## Daily fact
 
 `dash_ingest_day(tenant_id, day, source_kind, tool)` with `source_kind` one of
@@ -97,7 +111,8 @@ organization-view rule.
 
 ## Retention
 
-The `ingest-receipt-retention` controller runs hourly on one replica:
+The `ingest-receipt-retention` controller runs hourly on one replica (it
+also deletes expired `idempotency_keys`):
 action rows older than 90 days, run receipts not updated for 400 days (their
 action and coverage rows go with them), facts older than 400 days, in
 batches of 5,000 and at most 100,000 rows of each kind per pass. Upload
@@ -111,6 +126,8 @@ receipts are kept.
 - `api/internal/app/ingest/receipt.go`, `coverage_autoresolve.go`
 - `api/internal/app/findingimport/service.go`
 - `api/internal/infra/controller/ingest_receipt_retention.go`
+- `api/internal/infra/http/handler/ingest_receipt_handler.go`, `finding_import_idempotency.go`
+- `api/internal/infra/postgres/ingest_receipt_read.go`, `idempotency_key_repository.go`
 
 ## Tests
 
@@ -123,5 +140,16 @@ receipts are kept.
   re-upload closes nothing and counts still detected.
 - `tests/integration/ingest_receipt_run_test.go`: a clean covered sensor run
   records still detected, closed and untouched.
+- `internal/infra/http/routes/ingest_receipt_read_db_test.go`: organization
+  view against restricted member, own uploads only, 404 for others' and
+  another tenant's receipts, scoped actions and severity counts, a finding's
+  receipts in scope only; unknown parameter 400, `per_page` capped.
+- `internal/infra/http/routes/finding_import_idempotency_db_test.go`: replay
+  with another boundary and file name (same receipt, nothing imported),
+  reuse 422, another member's key independent, store down 503 with nothing
+  imported.
+- `internal/infra/postgres/idempotency_key_repository_db_test.go`: claim,
+  pending, done, takeover of an expired key, a lost claim cannot finish or
+  release, purge.
 - `internal/app/ingest/receipt_test.go`: source mapping, delta contents,
   coverage decisions (enforce, dry run, ineligible).
