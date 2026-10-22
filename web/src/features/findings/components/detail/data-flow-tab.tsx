@@ -1,5 +1,6 @@
 'use client'
 
+import { toDisplayText } from '@/lib/untrusted-text'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -151,7 +152,7 @@ function DataFlowStepCard({
                   </Badge>
                   {step.label && (
                     <code className="break-all rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                      {step.label}
+                      {toDisplayText(step.label)}
                     </code>
                   )}
                 </div>
@@ -173,7 +174,9 @@ function DataFlowStepCard({
                     className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
                     aria-hidden
                   />
-                  <span className="truncate font-mono text-primary">{step.path}</span>
+                  <span className="truncate font-mono text-primary">
+                    {toDisplayText(step.path)}
+                  </span>
                   {step.line ? (
                     <span className="font-mono text-muted-foreground">:{step.line}</span>
                   ) : null}
@@ -270,7 +273,7 @@ function DataFlowStepCard({
                       <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
                         <span>{t('findings.dataFlow.function', 'Function')}</span>
                         <code className={cn('break-all rounded px-1.5 py-0.5', STYLE.fn)}>
-                          {step.functionName}
+                          {toDisplayText(step.functionName)}
                         </code>
                       </div>
                     )}

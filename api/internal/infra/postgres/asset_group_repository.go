@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -73,9 +74,9 @@ const (
 // the finding counts joined as fc (alias columns as assetGroupSelectQuery
 // reads them), and the args with the scope's appended.
 //
-// With a nil scope it is the stored row. With a scope (a restricted reader,
-// L-18) every count and the risk score are computed over the members in that
-// scope only, and finding_count over findings of those members: the stored
+// With a nil scope it is the stored row. A restricted reader gets only the
+// groups visible to them (filterspec.AssetGroupVisibleSQL). With a scope (L-18) every
+// count and the risk score are computed over the members in that scope only, and finding_count over findings of those members: the stored
 // counters cover every member, so they would tell a restricted reader how
 // many assets (and findings) lie outside their scope. Filters and sorts on
 // ag.asset_count / ag.risk_score / finding_count then see the scoped values.
@@ -94,6 +95,12 @@ func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
 	at := len(args) + 1
 	memberCond, scopeArgs := dataScopeCondAt("a.id", scope, at)
 	findingCond, _ := dataScopeCondAt("f.asset_id", scope, at)
+	// A restricted reader sees only the groups visible to them (D4 in
+	// filterspec visibility.go); a full-data reader sees every group.
+	visible := sqlTrue
+	if scope.Restricted() {
+		visible, _ = filterspec.AssetGroupVisibleSQL("g.id", scope, at) // same arguments as scopeArgs
+	}
 	//nolint:gosec // G202: fixed SQL fragments and numbered placeholders only
 	src := `(
 		SELECT g.id, g.tenant_id, g.name, g.description, g.environment, g.criticality,
@@ -120,6 +127,7 @@ func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
 			JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
 			WHERE agm.asset_group_id = g.id AND ` + memberCond + `
 		) sc ON TRUE
+		WHERE ` + visible + `
 	) ag
 	LEFT JOIN (
 		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
@@ -448,7 +456,7 @@ func (r *AssetGroupRepository) List(
 	// Build order clause
 	orderClause := " ORDER BY ag.created_at DESC"
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		sortSQL := opts.Sort.SQL()
+		sortSQL := opts.Sort.SQLWithTieBreaker("ag.id")
 		// finding_count is a computed column alias, don't prefix with ag.
 		if strings.HasPrefix(sortSQL, "finding_count") {
 			orderClause = " ORDER BY " + sortSQL
@@ -565,13 +573,15 @@ func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID,
 
 	// Get by environment
 	stats.ByEnvironment = make(map[assetgroup.Environment]int64)
+	// The breakdowns count the groups the reader sees, like the total.
+	//nolint:gosec // G202: source is built from fixed SQL and numbered placeholders
 	envQuery := `
-		SELECT environment, COUNT(*)
-		FROM asset_groups
-		WHERE tenant_id = $1
-		GROUP BY environment
+		SELECT ag.environment, COUNT(*)
+		FROM ` + source + `
+		WHERE ag.tenant_id = $1
+		GROUP BY ag.environment
 	`
-	rows, err := r.db.QueryContext(ctx, envQuery, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, envQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get stats by environment: %w", err)
 	}
@@ -594,13 +604,14 @@ func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID,
 
 	// Get by criticality
 	stats.ByCriticality = make(map[assetgroup.Criticality]int64)
+	//nolint:gosec // G202: source is built from fixed SQL and numbered placeholders
 	critQuery := `
-		SELECT criticality, COUNT(*)
-		FROM asset_groups
-		WHERE tenant_id = $1
-		GROUP BY criticality
+		SELECT ag.criticality, COUNT(*)
+		FROM ` + source + `
+		WHERE ag.tenant_id = $1
+		GROUP BY ag.criticality
 	`
-	rows2, err := r.db.QueryContext(ctx, critQuery, tenantID.String())
+	rows2, err := r.db.QueryContext(ctx, critQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get stats by criticality: %w", err)
 	}

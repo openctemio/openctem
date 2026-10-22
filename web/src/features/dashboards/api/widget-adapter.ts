@@ -34,6 +34,8 @@ export interface WidgetModel {
 export function reasonKeyOf(reason: string | undefined): string {
   switch (reason) {
     case 'no_denominator':
+    case 'no_crown_jewels':
+    case 'no_relationship_data':
     case 'too_few_fixed':
     case 'legacy_tile':
     case 'facts_building':
