@@ -19,7 +19,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { previewWidget, type WidgetValue } from '../api/widget-data'
@@ -220,19 +219,28 @@ export function WidgetGallery({
                 className="ps-8"
               />
             </div>
-            <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-              <TabsList className="flex h-auto flex-wrap justify-start">
-                <TabsTrigger value="all">{t('dashboards.gallery.all', 'All')}</TabsTrigger>
-                {METRIC_GROUPS.map((g) => (
-                  <TabsTrigger key={g} value={g}>
-                    {t(`dashboards.group.${g}`, g)}
-                  </TabsTrigger>
-                ))}
-                <TabsTrigger value="advanced">
-                  {t('dashboards.gallery.advanced', 'Advanced')}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div
+              role="group"
+              aria-label={t('dashboards.gallery.groups', 'Widget groups')}
+              className="flex flex-wrap gap-1.5"
+            >
+              {(['all', ...METRIC_GROUPS, 'advanced'] as Tab[]).map((g) => (
+                <Button
+                  key={g}
+                  type="button"
+                  size="sm"
+                  variant={tab === g ? 'secondary' : 'ghost'}
+                  aria-pressed={tab === g}
+                  onClick={() => setTab(g)}
+                >
+                  {g === 'all'
+                    ? t('dashboards.gallery.all', 'All')
+                    : g === 'advanced'
+                      ? t('dashboards.gallery.advanced', 'Advanced')
+                      : t(`dashboards.group.${g}`, g)}
+                </Button>
+              ))}
+            </div>
             {(tab === 'advanced' || (tab === 'all' && !q)) && (
               <button
                 type="button"
