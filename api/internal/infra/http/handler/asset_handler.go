@@ -157,7 +157,7 @@ func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext 
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    clientIP,
 		UserAgent:  r.UserAgent(),
-		RequestID:  r.Header.Get("X-Request-ID"),
+		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 }
 

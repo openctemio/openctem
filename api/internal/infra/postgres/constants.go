@@ -18,6 +18,13 @@ const (
 	sortFieldUpdatedAt = "updated_at"
 )
 
+// maxSubResourceRows bounds the collection reads that answer with every row of
+// one parent (attachments of an object, owners of an asset, role bindings of a
+// team). The parents are small in practice; the bound keeps one hostile or
+// runaway parent from loading an unbounded set into memory. A var so a test can
+// lower it.
+var maxSubResourceRows = 1000
+
 // Order by clause constants
 const orderByCreatedAtDesc = " ORDER BY created_at DESC"
 
