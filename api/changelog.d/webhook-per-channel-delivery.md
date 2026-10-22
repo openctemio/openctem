@@ -1,6 +1,6 @@
 ### Fixed: a failed notification channel is retried even when another one got the event
 
-- Every channel an event goes to now has its own delivery state, attempts and backoff (1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h; 8 attempts, then the channel is dead). Before, one channel's success marked the event done and the failed channels were never retried; a channel that got the event is never sent it again. Migration 003276 adds `notification_outbox.deliveries`.
+- Every channel an event goes to now has its own delivery state, attempts and backoff (1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h; 8 attempts, then the channel is dead). Before, one channel's success marked the event done and the failed channels were never retried; a channel that got the event is never sent it again. Migration 003287 adds `notification_outbox.deliveries`.
 - A refused delivery (a non-2xx answer or a transport error) is a failure and is retried. Before, the HTTP clients reported it in a way the outbox counted as a success.
 - The delivery history (`GET /api/v1/integrations/{id}/notification-events`) lists each channel's attempts.
 
