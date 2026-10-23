@@ -35,7 +35,8 @@ describe('HealthStatus', () => {
   it.each(HEALTH_STATES)('%s shows its text, an icon and no container or motion', (state) => {
     const { container } = render(<HealthStatus state={state} />)
     const el = container.querySelector('[data-slot="health-status"]') as HTMLElement
-    expect(el.getAttribute('data-state')).toBe(state)
+    expect(el.getAttribute('data-health')).toBe(state)
+    expect(el.getAttribute('data-state')).toBeNull()
     expect(screen.getByText(WORDS[state])).toBeTruthy()
     expect(el.querySelector('svg[aria-hidden="true"]')).toBeTruthy()
     expect(el.className).not.toMatch(/\bbg-|\bborder\b|rounded/)
@@ -48,6 +49,21 @@ describe('HealthStatus', () => {
     expect(screen.getByText('Running')).toBeTruthy()
     expect(screen.getByText('42%')).toBeTruthy()
     expect(container.textContent).not.toMatch(/[·•∙]/)
+  })
+
+  it('writes the domain value to data-state and renders several details apart', () => {
+    const { container } = render(
+      <HealthStatus
+        state="warn"
+        label="Partial"
+        value="partial"
+        detail={['42%', '3 unreachable']}
+      />
+    )
+    expect(container.querySelector('[data-state="partial"]')).toBeTruthy()
+    expect(screen.getByText('42%')).toBeTruthy()
+    expect(screen.getByText('3 unreachable')).toBeTruthy()
+    expect(container.textContent).not.toMatch(/[·•∙,]/)
   })
 
   it('colours only the icon: the text stays in the foreground', () => {

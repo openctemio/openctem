@@ -1,9 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
 import { ThreatIntelOverview } from '../threat-intel-stats'
-
-const push = vi.fn()
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
 const epss = { total_scores: 394588, high_risk_count: 12, critical_risk_count: 3 }
 const kev = {
@@ -17,8 +14,6 @@ const kev = {
 }
 
 describe('ThreatIntelOverview', () => {
-  beforeEach(() => push.mockClear())
-
   it('shows the organization figures with the thresholds the API counts at', () => {
     render(<ThreatIntelOverview epssStats={epss} kevStats={kev} />)
     expect(screen.getByText('EPSS 50% or more')).toBeInTheDocument()
@@ -40,11 +35,11 @@ describe('ThreatIntelOverview', () => {
 
   it('opens the findings list each number counts', () => {
     render(<ThreatIntelOverview epssStats={epss} kevStats={kev} />)
-    fireEvent.click(screen.getByRole('button', { name: /EPSS 50% or more/ }))
-    expect(push).toHaveBeenLastCalledWith('/findings?epss_score_gte=0.5')
-    fireEvent.click(screen.getByRole('button', { name: /EPSS 10% or more/ }))
-    expect(push).toHaveBeenLastCalledWith('/findings?epss_score_gte=0.1')
-    fireEvent.click(screen.getByRole('button', { name: /In CISA KEV/ }))
-    expect(push).toHaveBeenLastCalledWith('/findings?is_in_kev=true')
+    // Real links (open in a new tab, show the URL), not buttons that navigate.
+    const href = (name: RegExp) => screen.getByRole('link', { name }).getAttribute('href')
+    expect(href(/EPSS 50% or more/)).toBe('/findings?epss_score_gte=0.5')
+    expect(href(/EPSS 10% or more/)).toBe('/findings?epss_score_gte=0.1')
+    expect(href(/In CISA KEV/)).toBe('/findings?is_in_kev=true')
+    expect(screen.queryByRole('button', { name: /EPSS 50% or more/ })).toBeNull()
   })
 })
