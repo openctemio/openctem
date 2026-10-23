@@ -89,7 +89,7 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 				WithMetadata("decision_status", string(prev)).
 				WithMetadata("source", "ioc_correlator").
 				WithSeverity(audit.SeverityHigh)
-			_ = a.auditor.LogEvent(ctx, auditsvc.AuditContext{TenantID: tenantID.String()}, ev)
+			auditsvc.RecordOrWarn(ctx, nil, a.auditor, auditsvc.AuditContext{TenantID: tenantID.String()}, ev)
 		}
 		return false, nil
 	}
@@ -118,7 +118,7 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 			WithMetadata("new_status", string(vulnerability.FindingStatusConfirmed)).
 			WithMetadata("source", "ioc_correlator").
 			WithSeverity(audit.SeverityHigh)
-		_ = a.auditor.LogEvent(ctx, auditsvc.AuditContext{TenantID: tenantID.String()}, ev)
+		auditsvc.RecordOrWarn(ctx, nil, a.auditor, auditsvc.AuditContext{TenantID: tenantID.String()}, ev)
 	}
 	return true, nil
 }
