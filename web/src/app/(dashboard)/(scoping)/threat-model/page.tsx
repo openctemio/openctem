@@ -29,6 +29,7 @@ import {
 import type { ThreatFilters } from '@/features/threat-model'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { formatDateTime } from '@/features/threat-model/lib/format-date'
 
 const DEFAULT_FILTERS: ThreatFilters = {
   status: 'all',
@@ -38,7 +39,7 @@ const DEFAULT_FILTERS: ThreatFilters = {
 }
 
 export default function ThreatModelPage() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   // The open model and its tab live in the URL so a model can be linked to.
   const [modelParam, setModelParam] = useUrlFilter('model', '')
   const [tab, setTab] = useUrlFilter('tab', 'threats')
@@ -85,9 +86,9 @@ export default function ThreatModelPage() {
       await mutateModels()
       setSelectedModelId(generated.id)
       setFilters(DEFAULT_FILTERS)
-      toast.success('Threat model generated')
+      toast.success(t('threatModel.toast.generated', 'Threat model generated.'))
     } catch {
-      toast.error('Failed to generate threat model')
+      toast.error(t('threatModel.toast.generateFailed', 'Could not generate the threat model.'))
     } finally {
       setIsGenerating(false)
     }
@@ -100,9 +101,9 @@ export default function ThreatModelPage() {
       const generated = await generateThreatModel(model.scope_type, model.scope_ref_id)
       await mutateModels()
       setSelectedModelId(generated.id)
-      toast.success('Threat model refreshed')
+      toast.success(t('threatModel.toast.refreshed', 'Threat model refreshed.'))
     } catch {
-      toast.error('Failed to refresh threat model')
+      toast.error(t('threatModel.toast.refreshFailed', 'Could not refresh the threat model.'))
     } finally {
       setIsGenerating(false)
     }
@@ -118,21 +119,24 @@ export default function ThreatModelPage() {
     return (
       <Main>
         <PageHeader
-          title={model?.name ?? 'Threat model'}
+          title={model?.name ?? t('threatModel.title', 'Threat model')}
           description={
             model
-              ? `Generated ${formatDate(model.generated_at)} · ATT&CK ${model.technique_dataset_version}`
-              : 'Loading threat model…'
+              ? t('threatModel.detail.generated', 'Generated {date} · ATT&CK {version}', {
+                  date: formatDateTime(model.generated_at, locale),
+                  version: model.technique_dataset_version,
+                })
+              : t('threatModel.detail.loading', 'Loading threat model…')
           }
         >
           <Button variant="outline" size="sm" onClick={() => setSelectedModelId(null)}>
             <ArrowLeft className="me-2 h-4 w-4" />
-            All models
+            {t('threatModel.detail.allModels', 'All models')}
           </Button>
           <Can
             permission={Permission.AssetsWrite}
             mode="disable"
-            disabledTooltip="You need assets:write to refresh"
+            disabledTooltip={t('threatModel.detail.needWrite', 'You need assets:write to refresh')}
           >
             <Button size="sm" onClick={handleRefresh} disabled={isGenerating || !model}>
               {isGenerating ? (
@@ -140,13 +144,13 @@ export default function ThreatModelPage() {
               ) : (
                 <RefreshCw className="me-2 h-4 w-4" />
               )}
-              Refresh
+              {t('threatModel.detail.refresh', 'Refresh')}
             </Button>
           </Can>
         </PageHeader>
         <GatedSectionTabs
           tabs={THREAT_MODEL_SECTION_TABS}
-          label="Threat model sections"
+          label={t('threatModel.sections', 'Threat model sections')}
           className="mt-4 mb-0"
         />
 
@@ -168,8 +172,10 @@ export default function ThreatModelPage() {
             <CoverageStats model={model} />
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
-                <TabsTrigger value="threats">Threats</TabsTrigger>
-                <TabsTrigger value="coverage">Coverage matrix</TabsTrigger>
+                <TabsTrigger value="threats">{t('threatModel.tab.threats', 'Threats')}</TabsTrigger>
+                <TabsTrigger value="coverage">
+                  {t('threatModel.tab.coverage', 'Coverage matrix')}
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="threats" className="mt-4">
                 <ThreatModelTable
@@ -195,12 +201,15 @@ export default function ThreatModelPage() {
   return (
     <Main>
       <PageHeader
-        title="Threat model"
-        description="Attack techniques derived per crown jewel, mapped to MITRE ATT&CK and scored by coverage."
+        title={t('threatModel.title', 'Threat model')}
+        description={t(
+          'threatModel.description',
+          'Attack techniques derived per crown jewel, mapped to MITRE ATT&CK and scored by coverage.'
+        )}
       />
       <GatedSectionTabs
         tabs={THREAT_MODEL_SECTION_TABS}
-        label="Threat model sections"
+        label={t('threatModel.sections', 'Threat model sections')}
         className="mt-4 mb-0"
       />
       <div className="mt-5 space-y-5">
@@ -231,17 +240,4 @@ export default function ThreatModelPage() {
       </div>
     </Main>
   )
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
 }
