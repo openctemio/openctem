@@ -42,6 +42,11 @@ scanner findings that name a package) goes through one writer:
 5. replace the edges of the reported locations, then recompute `depth`
    breadth-first from the direct links (cycles are tolerated).
 
+A write that linked, removed or superseded packages queues the
+organization for the vulnerability matcher, so a new dependency report or
+SBOM is matched within minutes rather than at the daily sweep
+([vulnerability-matching.md](vulnerability-matching.md)).
+
 Each link belongs to the channel that listed it (`channel`), and a report
 prunes only its own channel's links: another producer's inventory of the
 same file is never its to remove.
