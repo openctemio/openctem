@@ -1,6 +1,10 @@
 'use client'
 
-import { AssetsSectionTabs } from '@/features/assets/components/assets-section-tabs'
+import {
+  AssetAttentionTabs,
+  AssetsSectionTabs,
+} from '@/features/assets/components/assets-section-tabs'
+import { useTranslation } from '@/context/i18n-provider'
 import { useState, useCallback, useMemo, useEffect, useEffectEvent } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -96,6 +100,7 @@ function AssetCell({ type, name, id }: { type: string; name: string; id: string 
 }
 
 export default function RelationshipSuggestionsPage() {
+  const { t } = useTranslation()
   // Search and page live in the URL so a review queue position can be linked to.
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
   const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
@@ -388,8 +393,11 @@ export default function RelationshipSuggestionsPage() {
   return (
     <Main>
       <PageHeader
-        title="Relationship suggestions"
-        description="Relationships detected between assets. Approve one to create the link."
+        title={t('assets.attention.title', 'Needs attention')}
+        description={t(
+          'assets.attention.relationshipsDescription',
+          'Relationships detected between assets. Approve one to create the link.'
+        )}
       >
         {canReview && (
           <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
@@ -426,6 +434,7 @@ export default function RelationshipSuggestionsPage() {
         )}
       </PageHeader>
       <AssetsSectionTabs />
+      <AssetAttentionTabs />
 
       <div className="mt-5">
         {error && !isLoading ? (
