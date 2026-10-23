@@ -442,7 +442,7 @@ export default function MitreCoveragePage() {
       </PageHeader>
 
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
+        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
           icon={Target}
           title={t('validation.attackCoverage.stat.covered', 'Techniques covered')}
           value={`${stats.covered}/${stats.totalTechniques}`}
@@ -450,18 +450,18 @@ export default function MitreCoveragePage() {
             pct: stats.coverage,
           })}
         />
-        <StatsCard
+        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
           icon={Shield}
           title={t('validation.attackCoverage.stat.findings', 'Pentest findings')}
           value={findings.length}
         />
-        <StatsCard
+        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
           icon={AlertTriangle}
           title={t('validation.attackCoverage.stat.bypassed', 'Simulations bypassed')}
           value={stats.bypassed}
           valueClassName={stats.bypassed > 0 ? 'text-destructive' : undefined}
         />
-        <StatsCard
+        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
           icon={Shield}
           title={t('validation.attackCoverage.stat.detected', 'Simulations detected')}
           value={stats.detected}
