@@ -87,6 +87,8 @@
   "common.cvss.value.CIA.N": "None",
   "common.failedToLoad": "Failed to load {title}",
   "common.unexpectedError": "An unexpected error occurred",
+  "common.rateLimited": "Too many requests in a short time. Wait a few seconds, then retry.",
+  "common.networkError": "The server could not be reached. Check your connection, then retry.",
   "common.moreTabs": "More",
   "common.openFullPage": "Open full page",
   "common.contextFilters.label": "Context filters",
@@ -134,5 +136,6 @@
   "common.table.expandGroup": "Expand {label}",
   "common.table.loading": "Loading",
   "common.yes": "Yes",
-  "common.no": "No"
+  "common.no": "No",
+  "common.showingFirstOf": "Showing the first {loaded} of {total}"
 }

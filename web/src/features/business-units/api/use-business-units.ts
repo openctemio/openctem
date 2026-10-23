@@ -1,8 +1,8 @@
 'use client'
 
-import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
-import { get, post, put, del } from '@/lib/api/client'
+import { post, put, del } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 
 export interface BusinessUnit {
   id: string
@@ -25,22 +25,13 @@ export interface BusinessUnit {
   updated_at: string
 }
 
-interface PaginatedResponse<T> {
-  data: T[]
-  total: number
-  page: number
-  per_page: number
-}
-
-/** Units (first 100). `enabled` false skips the request (e.g. a closed picker). */
+/** Every unit (up to the register row cap). `enabled` false skips the request (e.g. a closed picker). */
 export function useBusinessUnits(search?: string, enabled = true) {
   const params = new URLSearchParams()
   params.set('per_page', '100')
   if (search) params.set('search', search)
-  return useSWR<PaginatedResponse<BusinessUnit>>(
-    enabled ? `/api/v1/business-units?${params.toString()}` : null,
-    get,
-    { revalidateOnFocus: false }
+  return useRegisterPages<BusinessUnit>(
+    enabled ? `/api/v1/business-units?${params.toString()}` : null
   )
 }
 
