@@ -109,6 +109,46 @@ func (s *Service) Allowed(ctx context.Context, tenantID shared.ID, feature strin
 	return !denied, nil
 }
 
+// Usable reports whether the organization may keep using a named feature it
+// already runs: it is allowed, or it was taken away less than
+// limits.GracePeriod ago (read-only grace: what runs keeps running, nothing
+// new may be configured). A read error returns false with the error.
+func (s *Service) Usable(ctx context.Context, tenantID shared.ID, feature string) (bool, error) {
+	ok, err := s.Allowed(ctx, tenantID, feature)
+	if err != nil || ok {
+		return ok, err
+	}
+	grace, err := s.repo.ListGrace(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	until, inGrace := grace[feature]
+	return inGrace && s.now().Before(until), nil
+}
+
+// RequireFeature returns nil when the organization may configure the named
+// feature, and a *limits.ErrFeatureDenied otherwise (also when the
+// entitlement cannot be read: fail-closed). A nil service allows everything.
+func RequireFeature(ctx context.Context, gate FeatureChecker, tenantID shared.ID, feature string) error {
+	if gate == nil {
+		return nil
+	}
+	ok, err := gate.Allowed(ctx, tenantID, feature)
+	if err != nil {
+		return &limits.ErrFeatureDenied{Feature: feature, Unavailable: true}
+	}
+	if !ok {
+		return &limits.ErrFeatureDenied{Feature: feature}
+	}
+	return nil
+}
+
+// FeatureChecker is the slice of the service a seam needs to gate a named
+// feature.
+type FeatureChecker interface {
+	Allowed(ctx context.Context, tenantID shared.ID, feature string) (bool, error)
+}
+
 // ModuleEntitlement is one module's state for one organization.
 type ModuleEntitlement struct {
 	Module   string `json:"module"`
