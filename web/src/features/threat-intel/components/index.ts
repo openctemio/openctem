@@ -1,5 +1,5 @@
 // Stats Components
-export { ThreatIntelStrip, ThreatIntelOverview } from './threat-intel-stats'
+export { ThreatIntelOverview } from './threat-intel-stats'
 
 // Sync Status Components
 export { SyncStatusManager, CompactSyncStatus } from './sync-status-manager'

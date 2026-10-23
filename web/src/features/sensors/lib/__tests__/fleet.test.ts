@@ -266,6 +266,24 @@ describe('filterSensors', () => {
     expect(summarizeFleet(fleet(), NOW, undefined, channel).hasProtocolInfo).toBe(false)
   })
 
+  it('the protocol v1 tile counts what the v1 filter shows, disabled sensors included', () => {
+    const v1 = { version: 1, user_agent: 'sdk/0.6', seen_at: ago(5), deprecated: true }
+    const f = [
+      sensor({ name: 'on', protocol: v1 }),
+      sensor({ name: 'off', status: 'disabled', protocol: v1 }),
+      sensor({ name: 'gone', status: 'revoked', protocol: v1 }),
+    ]
+    const shown = filterSensors(
+      f,
+      { ...EMPTY_FLEET_FILTERS, protocols: ['v1'] },
+      NOW,
+      undefined,
+      channel
+    )
+    expect(shown).toHaveLength(3)
+    expect(summarizeFleet(f, NOW, undefined, channel).protocolV1).toBe(shown.length)
+  })
+
   it('SDK version: the exact normalized version, or "unknown" when not reported', () => {
     const f = fleet()
     f[0].sdk_version = '0.9.0'
