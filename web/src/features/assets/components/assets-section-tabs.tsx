@@ -14,13 +14,12 @@ const TAB_LABEL_KEYS: Record<string, string> = {
   '/assets': 'assets.tabs.inventory',
   '/assets/groups': 'assets.tabs.groups',
   '/assets/changes': 'assets.tabs.changes',
-  '/assets/timeline': 'assets.tabs.timeline',
-  '/assets/web-surface': 'assets.tabs.webSurface',
+  '/assets/web': 'assets.tabs.webSurface',
   [SUGGESTIONS_HREF]: 'assets.tabs.suggestions',
 }
 
 /**
- * Inventory · Groups · What changed · Suggestions, the route tabs of Discovery
+ * Inventory · Groups · Activity · Web surface · Suggestions, the route tabs of Discovery
  * > Assets. Placed directly under the page's `PageHeader` (see
  * docs/ui-style-contract.md); the next block carries `mt-5`. Suggestions shows
  * how many relationship suggestions wait for review, fetched only when that

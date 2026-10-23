@@ -145,7 +145,7 @@
   "attackSurface.overview.newInWindow": "{count} mới trong {days} ngày qua",
   "attackSurface.overview.internetFacing": "Tài sản hướng Internet",
   "attackSurface.overview.newlyExposed": "{count} mới lộ ra Internet trong {days} ngày qua",
-  "attackSurface.overview.internetFacingInfo": "Tài sản có mức phơi nhiễm công khai hoặc được một nguồn báo là truy cập được từ Internet. Số mới lộ ra đếm cùng các thay đổi như Tài sản › Thay đổi.",
+  "attackSurface.overview.internetFacingInfo": "Tài sản có mức phơi nhiễm công khai hoặc được một nguồn báo là truy cập được từ Internet. Số mới lộ ra đếm cùng các thay đổi như Tài sản › Hoạt động.",
   "attackSurface.overview.criticalInternetFacing": "Tài sản quan trọng hướng Internet",
   "attackSurface.overview.criticalInternetFacingInfo": "Tài sản hướng Internet có mức quan trọng nghiêm trọng hoặc cao. Đây là nhóm cần theo dõi, không phải rủi ro đang mở: các điểm phơi nhiễm đang mở được liệt kê bên dưới.",
   "attackSurface.overview.avgRisk": "Điểm rủi ro trung bình",
