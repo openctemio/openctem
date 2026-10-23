@@ -1,0 +1,75 @@
+name: Tool Pin Freshness
+
+# Weekly: compare the tool versions pinned inline (.github/tool-pins.tsv:
+# linters, scanners, signing and build tools that Dependabot does not read)
+# with their newest stable releases, and open or update ONE issue titled
+# "Tool pins to bump". The workflow only reads and writes issues; it opens no
+# pull request, so a bump is made by a person or an agent and CI runs on it.
+# When every pin is current the issue is closed.
+#
+# Scheduled runs use the default branch's copy of this file (main), so the
+# schedule starts once a release has brought it there; run it by hand any time.
+# Design and the manifest format: api/docs/development/ci-cd.md#tool-pin-freshness.
+
+on:
+  schedule:
+    - cron: "0 2 * * 1" # Mondays 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tool-pins
+  cancel-in-progress: false
+
+jobs:
+  pins:
+    name: Tool pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the pins with the newest releases
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          python3 .github/scripts/tool-pins.py --report "$RUNNER_TEMP/report.md"
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "outdated=false" >> "$GITHUB_OUTPUT" ;;
+            10) echo "outdated=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$rc" ;; # a pin that cannot be found or an API error fails the run
+          esac
+
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTDATED: ${{ steps.check.outputs.outdated }}
+          TITLE: Tool pins to bump
+          LABEL: tool-pins
+        run: |
+          gh label create "$LABEL" --description "Inline tool versions behind upstream" --color ededed >/dev/null 2>&1 || true
+          existing="$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')"
+          if [ "$OUTDATED" = true ]; then
+            body="$(cat "$RUNNER_TEMP/report.md")"$'\n\n'"_Updated by the Tool Pin Freshness workflow, $(date -u +%Y-%m-%d). Bump the versions in one pull request; the issue closes itself when every pin is current._"
+            if [ -n "$existing" ]; then
+              gh issue edit "$existing" --body "$body"
+              echo "Updated issue #$existing"
+            else
+              gh issue create --title "$TITLE" --label "$LABEL" --body "$body"
+            fi
+          elif [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "Every pinned tool is at its newest stable release."
+          else
+            echo "Every pin is current; no issue to open."
+          fi

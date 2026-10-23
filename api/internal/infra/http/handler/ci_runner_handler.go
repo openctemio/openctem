@@ -22,6 +22,7 @@ import (
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -51,6 +52,8 @@ type CIRunnerHandler struct {
 	// vex applies the VEX statements of an uploaded VEX document; nil
 	// refuses VEX documents.
 	vex CIVEXApplier
+	// mappings resolves format=mapping:<name> (nil: refused).
+	mappings ImportMappingResolver
 	// secretKeys derives the job's secret hashing key (nil: none).
 	secretKeys SecretKeys
 	// idem stores answers for Idempotency-Key (nil: the header is ignored).
@@ -280,6 +283,9 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 	})
 }
 
+// SetMappingResolver wires the organization's import mappings.
+func (h *CIRunnerHandler) SetMappingResolver(m ImportMappingResolver) { h.mappings = m }
+
 // UploadResults handles POST /api/v1/ci/runs/{id}/results
 // @Summary      Upload a CI run's results
 // @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict. For a CTIS report, known lists the report's results that carry a decision the gate honors (false positive, duplicate, accepted risk, approved suppression), by index, so the job can leave them out of its own output: at most 10,000 (lowest indexes first), with known_total counting them all and known_truncated set when some were left out.
@@ -288,6 +294,7 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 // @Produce      json
 // @Param        id   path string true "Run ID"
 // @Param        body body CTISIngestRequest true "CTIS report"
+// @Param        format query string false "mapping:<name>[@<version>]: convert the file through the organization's import mapping (always partial coverage)"
 // @Param        Idempotency-Key header string false "Retry key: the same key and body replays the first answer (stored one hour)"
 // @Success      201  {object}  CIUploadResponse
 // @Failure      400  {object}  apierror.Error
@@ -317,8 +324,24 @@ func (h *CIRunnerHandler) uploadResults(w http.ResponseWriter, r *http.Request, 
 		apierror.BadRequest("Failed to read request body").WriteJSON(w)
 		return
 	}
+	if f := strings.TrimSpace(r.URL.Query().Get("format")); f != "" {
+		// format=mapping:<name>[@<version>]: the file goes through the
+		// organization's import mapping (always partial coverage). The
+		// organization is the run's, from its token.
+		mp, ok, apiErr := resolveMappingFormat(r.Context(), h.mappings, run.TenantID, f)
+		if !ok {
+			apierror.BadRequest("format takes mapping:<name>[@<version>]; other formats are detected from the content").WriteJSON(w)
+			return
+		}
+		if apiErr != nil {
+			apiErr.WriteJSON(w)
+			return
+		}
+		h.uploadExport(w, r, run, body, mp)
+		return
+	}
 	if isToolExport(body, r.Header.Get("Content-Type")) {
-		h.uploadExport(w, r, run, body)
+		h.uploadExport(w, r, run, body, nil)
 		return
 	}
 	report, ok := decodeCTISReport(body)
@@ -570,7 +593,7 @@ func (o onlyAsset) AssetsInScope(_ context.Context, ids []shared.ID) ([]shared.I
 // uploadExport converts a run's tool export through findingimport.Convert
 // (the same content sniffing, limits and archive checks as the import
 // endpoint) and ingests each converted report for the run.
-func (h *CIRunnerHandler) uploadExport(w http.ResponseWriter, r *http.Request, run *cirun.Run, body []byte) {
+func (h *CIRunnerHandler) uploadExport(w http.ResponseWriter, r *http.Request, run *cirun.Run, body []byte, mp *appimportmapping.Resolved) {
 	resp := CIExportResponse{Files: []CIExportFile{}}
 	total := &ingest.Output{}
 	var firstErr error
@@ -580,6 +603,7 @@ func (h *CIRunnerHandler) uploadExport(w http.ResponseWriter, r *http.Request, r
 		// Code reports are filed on the run's repository, whatever the file
 		// names; ScopeImported then drops anything still elsewhere.
 		Repository: run.Repository, Branch: run.Branch, CommitSHA: run.CommitSHA,
+		Mapping: mp,
 	}, func(c findingimport.Converted) {
 		f := CIExportFile{Name: c.Name}
 		if c.Error != nil {

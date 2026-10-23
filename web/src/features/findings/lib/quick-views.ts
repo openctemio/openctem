@@ -66,6 +66,7 @@ const PRESENTATION_PARAMS = new Set([
   'sort',
   'group',
   'density',
+  'columns',
   'tab',
   'q',
   'view',

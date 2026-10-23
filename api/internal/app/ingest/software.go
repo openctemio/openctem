@@ -81,10 +81,14 @@ func (s *Service) SetSoftwareRepository(repo software.Repository) {
 	s.software = &softwareRecorder{repo: repo}
 }
 
-// SetSoftwareChangeSink wires the matcher's queue of changed assets.
+// SetSoftwareChangeSink wires the matcher's queue of changed assets, for
+// technology observations and for dependency (package) reports.
 func (s *Service) SetSoftwareChangeSink(sink SoftwareChangeSink) {
 	if s.software != nil {
 		s.software.sink = sink
+	}
+	if s.componentProcessor != nil {
+		s.componentProcessor.SetSoftwareChangeSink(sink)
 	}
 }
 
