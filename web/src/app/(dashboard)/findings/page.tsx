@@ -10,6 +10,7 @@ import {
   type BulkSummary,
 } from '@/features/findings/lib/bulk-result'
 import { formatEpssScore } from '@/lib/epss'
+import { formatCalendarDate } from '@/lib/format-metric'
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
 import Link from '@/components/link'
 import {
@@ -124,7 +125,6 @@ import {
   MoreHorizontal,
   UserPlus,
   Flag,
-  ExternalLink,
   Plus,
   FileUp,
   Loader2,
@@ -672,7 +672,7 @@ function FindingsContent() {
       return value
     })
   }, [])
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const severityLabel = useSeverityLabel()
   // "Hide informational": a saved per-browser view preference. It applies only
   // while no severity is picked; an explicit severity choice always wins.
@@ -744,11 +744,12 @@ function FindingsContent() {
     const grouped = groupFindingSourcesByCategory(sourceCatalog?.data ?? [])
     return Array.from(grouped.entries()).map(([code, group]) => ({
       code,
-      label: group.label,
+      // The catalog sends English category names; known codes are translated.
+      label: t(`findings.sourceCategory.${code}`, group.label),
       options: group.options,
       codes: group.options.map((o) => o.value),
     }))
-  }, [sourceCatalog?.data])
+  }, [sourceCatalog?.data, t])
 
   const toggleSource = useCallback(
     (code: string) => {
@@ -1044,8 +1045,8 @@ function FindingsContent() {
   const handleRefresh = async () => {
     // Each request once: the list, the stats and the sidebar counts. (A blanket
     // invalidation of every /findings key here sent all of them a second time.)
+    // The button spins while this runs; the list itself shows the result.
     await Promise.all([mutateFindings(), mutateStats()])
-    toast.success(t('findings.toast.refreshed', 'Findings refreshed'))
   }
 
   const openTaskFromFilters = useCallback(async () => {
@@ -1135,7 +1136,7 @@ function FindingsContent() {
         finding_ids: findingIds,
         user_id: userId.trim(),
       })
-      showBulkResult(summarizeBulkResult(result, findingIds.length, 'Assigned'))
+      showBulkResult(summarizeBulkResult(result, findingIds.length, 'assigned', t))
       clearSelection()
       mutateFindings()
     } catch (error) {
@@ -1183,7 +1184,7 @@ function FindingsContent() {
         status,
         resolution,
       })
-      showBulkResult(summarizeBulkResult(result, findingIds.length, 'Updated'))
+      showBulkResult(summarizeBulkResult(result, findingIds.length, 'updated', t))
       clearSelection()
       mutateFindings()
       mutateStats()
@@ -1278,12 +1279,20 @@ function FindingsContent() {
           openRemediationFor([finding])
           break
         case 'copy_id':
-          copyToClipboard(finding.id)
-          toast.success(t('findings.toast.idCopied', 'Finding ID copied to clipboard'))
+          // The menu closes, so a toast is the only place to say it worked;
+          // a refused clipboard says so instead of claiming success.
+          void copyToClipboard(finding.id).then((ok) =>
+            ok
+              ? toast.success(t('findings.toast.idCopied', 'Finding ID copied to clipboard'))
+              : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+          )
           break
         case 'copy_link':
-          copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
-          toast.success(t('findings.toast.linkCopied', 'Link copied to clipboard'))
+          void copyToClipboard(`${window.location.origin}/findings/${finding.id}`).then((ok) =>
+            ok
+              ? toast.success(t('findings.toast.linkCopied', 'Link copied to clipboard'))
+              : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+          )
           break
         case 'delete':
           handleDeleteClick(finding)
@@ -1358,7 +1367,9 @@ function FindingsContent() {
               // The title leads the name, so a screen reader announces which
               // finding the button opens (it used to read "View finding
               // details" on every row).
-              aria-label={`${toDisplayText(row.getValue('title'), 300)}, view details`}
+              aria-label={t('findings.list.openRow', '{title}, view details', {
+                title: toDisplayText(row.getValue('title'), 300),
+              })}
               onClick={() => handleRowClick(row.original)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1377,8 +1388,8 @@ function FindingsContent() {
                 {row.original.isInKev && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        <AlertOctagon className="h-2.5 w-2.5" />
+                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[11px] font-semibold text-destructive">
+                        <AlertOctagon className="h-3 w-3" aria-hidden />
                         {t('findings.list.kev', 'KEV')}
                       </span>
                     </TooltipTrigger>
@@ -1389,7 +1400,7 @@ function FindingsContent() {
                       {row.original.kevDueDate && (
                         <p>
                           {t('findings.list.kevDue', 'Remediate by {date}', {
-                            date: new Date(row.original.kevDueDate).toLocaleDateString(),
+                            date: formatCalendarDate(row.original.kevDueDate, locale),
                           })}
                         </p>
                       )}
@@ -1399,7 +1410,7 @@ function FindingsContent() {
                 {typeof row.original.epssScore === 'number' && row.original.epssScore > 0 && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning">
                         {t('findings.list.epss', 'EPSS {score}', {
                           score: formatEpssScore(row.original.epssScore),
                         })}
@@ -1408,7 +1419,7 @@ function FindingsContent() {
                     <TooltipContent side="top" className="max-w-xs text-xs">
                       {t(
                         'findings.list.epssHint',
-                        'Exploit Prediction Scoring System — estimated probability of exploitation in the next 30 days'
+                        'Exploit Prediction Scoring System. Estimated chance of exploitation in the next 30 days.'
                       )}
                     </TooltipContent>
                   </Tooltip>
@@ -1416,8 +1427,9 @@ function FindingsContent() {
                 {hasDataFlow && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400 shrink-0">
-                        <Route className="h-2.5 w-2.5" />
+                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        <Route className="h-3 w-3" aria-hidden />
+                        {t('findings.list.pathChip', 'Path')}
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
@@ -1520,17 +1532,17 @@ function FindingsContent() {
               </div>
             )
           }
-          // No asset name and no location: show a compact link to the asset
-          // instead of the bare UUID, which reads as broken data.
+          // No asset name and no location: a plain "Unnamed asset" link to
+          // the asset (an id fragment meant nothing to people, and the
+          // external-link icon suggested another site).
           if (asset?.id) {
             return (
               <Link
-                href={`/assets/${asset.id}`}
+                href={`/assets/${encodeURIComponent(asset.id)}`}
                 title={asset.id}
-                className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm hover:underline"
+                className="text-muted-foreground hover:text-foreground text-sm hover:underline"
               >
-                <ExternalLink className="h-3 w-3 shrink-0" />
-                <span className="font-mono">{asset.id.slice(0, 8)}…</span>
+                {t('findings.list.unnamedAsset', 'Unnamed asset')}
               </Link>
             )
           }
@@ -1585,7 +1597,7 @@ function FindingsContent() {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-sm">
-            {new Date(row.getValue('createdAt')).toLocaleDateString()}
+            {formatCalendarDate(row.getValue('createdAt'), locale)}
           </span>
         ),
       },
@@ -2303,7 +2315,7 @@ function FindingsContent() {
                 // A self-contained floating card, as tall as the viewport and
                 // pinned while the page scrolls: its length no longer depends
                 // on the table's, and long filter lists scroll inside it.
-                className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-xl border bg-card p-4 shadow-sm"
+                className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-lg border bg-card p-4"
               >
                 {facetPanelScrollable}
               </aside>
