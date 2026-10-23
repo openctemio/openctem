@@ -6,7 +6,7 @@ type Translate = (key: string, fallback?: string) => string
 
 function translateErrors(errors: unknown, t: Translate): unknown {
   if (!errors || typeof errors !== 'object') return errors
-  const out: Record<string, unknown> = Array.isArray(errors) ? [] : {}
+  const out = (Array.isArray(errors) ? [] : {}) as Record<string, unknown>
   for (const [name, value] of Object.entries(errors)) {
     if (name === 'message' && typeof value === 'string') {
       const key = AUTH_VALIDATION_KEYS[value]
@@ -29,8 +29,11 @@ export function translatingResolver<T extends FieldValues>(
   resolver: Resolver<T>,
   t: Translate
 ): Resolver<T> {
-  return async (values, context, options) => {
+  const wrapped: Resolver<T> = async (values, context, options) => {
     const result = await resolver(values, context, options)
-    return { ...result, errors: translateErrors(result.errors, t) as FieldErrors<T> }
+    return { ...result, errors: translateErrors(result.errors, t) as FieldErrors<T> } as Awaited<
+      ReturnType<Resolver<T>>
+    >
   }
+  return wrapped
 }
