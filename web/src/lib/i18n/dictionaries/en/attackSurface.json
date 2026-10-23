@@ -122,7 +122,6 @@
   "attackSurface.tab.label": "Attack surface sections",
   "attackSurface.tab.overview": "Overview",
   "attackSurface.tab.review": "Review",
-  "attackSurface.tab.suggestions": "Suggestions",
   "attackSurface.title": "Attack surface",
   "attackSurface.decide.addresses.value": "Add them to scan every port of these addresses. Today only the names are scanned, so a service that answers on the address without a name is missed.",
   "attackSurface.decide.addresses.caution": "A name never makes an address yours: it may be shared, or released and now used by someone else. Add only addresses you know are yours.",
@@ -151,5 +150,8 @@
   "attackSurface.overview.avgRisk": "Average risk score",
   "attackSurface.overview.of100": "of 100",
   "attackSurface.overview.noAssetsToScore": "No assets to score",
-  "attackSurface.overview.seeNewlyExposed": "See what became internet-facing this week"
+  "attackSurface.overview.seeNewlyExposed": "See what became internet-facing this week",
+  "attackSurface.tab.webSurface": "Web surface",
+  "attackSurface.web.description": "What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.",
+  "attackSurface.web.shortDescription": "Origins, endpoints and parameters."
 }
