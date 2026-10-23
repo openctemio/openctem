@@ -50,12 +50,9 @@ func NewSplunkClient(config Config) (*SplunkClient, error) {
 		}
 	}
 
-	hc := httpsec.SafeHTTPClient(30 * time.Second)
-	if config.AllowLoopback {
-		// Tests target httptest.NewServer (127.0.0.1); the SafeHTTPClient
-		// dialer would refuse that at connect time. Opt-in test path only.
-		hc = &http.Client{Timeout: 30 * time.Second}
-	}
+	// SSRF-guarded, redirects refused (newHTTPClient); AllowLoopback is
+	// the unit-test path against httptest servers only.
+	hc := newHTTPClient(30*time.Second, config.AllowLoopback)
 
 	sourcetype := config.Sourcetype
 	if sourcetype == "" {
@@ -159,14 +156,19 @@ func (c *SplunkClient) TestConnection(ctx context.Context) (*SendResult, error) 
 }
 
 // buildEvent maps a notification Message to a Splunk HEC envelope.
+// event_type is the event's catalog type, like the generic webhook's.
 func (c *SplunkClient) buildEvent(msg Message) splunkEvent {
+	eventType := msg.EventType
+	if eventType == "" {
+		eventType = TestEventType
+	}
 	return splunkEvent{
 		Time:       time.Now().UTC().Unix(),
 		Sourcetype: c.sourcetype,
 		Index:      c.index,
 		Source:     "openctem.io",
 		Event: splunkEventBody{
-			EventType: "notification",
+			EventType: eventType,
 			Title:     msg.Title,
 			Body:      msg.Body,
 			Severity:  msg.Severity,

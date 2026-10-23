@@ -1,7 +1,7 @@
 # OpenCTEM monorepo — thin root targets that delegate to api/ (make) and web/ (npm).
 # Component-specific targets stay in api/Makefile and web/package.json.
 
-.PHONY: help setup hooks generate generate-api generate-web generate-docker dev-api dev-web build test lint check api-types allinone api-% web-%
+.PHONY: help setup hooks generate generate-api generate-web generate-docker dev-api dev-web build test lint check api-types budgets-update allinone api-% web-%
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_%-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-14s %s\n",$$1,$$2}'
@@ -56,6 +56,9 @@ api-types: generate-web ## Regenerate the web wire types from the generated spec
 check: generate ## The contract checks CI runs on every PR
 	bash api/scripts/check-openapi.sh
 	cd web && npm run type-check
+
+budgets-update: ## Rewrite the ingest SQL statement budget (needs TEST_DATABASE_URL, a migrated *_test database)
+	$(MAKE) -C api budgets-update
 
 api-%: ## Run any api/Makefile target, e.g. make api-swagger
 	$(MAKE) -C api $*

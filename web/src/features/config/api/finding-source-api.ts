@@ -95,12 +95,17 @@ async function fetchFindingSources(url: string): Promise<ApiFindingSourceListRes
  * Fetch all active finding sources with their categories
  * Use this for dropdown/select options in forms
  */
-export function useFindingSourcesApi(config?: SWRConfiguration) {
+export function useFindingSourcesApi(
+  config?: SWRConfiguration,
+  /** Pass false to skip the request until the options are about to be shown. */
+  enabled = true
+) {
   const { currentTenant } = useTenant()
 
-  const key = currentTenant
-    ? '/api/v1/finding-sources?active_only=true&include_category=true'
-    : null
+  const key =
+    currentTenant && enabled
+      ? '/api/v1/finding-sources?active_only=true&include_category=true'
+      : null
 
   return useSWR<ApiFindingSourceListResponse>(key, fetchFindingSources, {
     ...defaultConfig,

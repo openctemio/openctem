@@ -257,6 +257,7 @@ type Handlers struct {
 
 	// Finding import (exports of other tools, VEX documents)
 	FindingImport *handler.FindingImportHandler // nil if not initialized
+	IngestReceipt *handler.IngestReceiptHandler // receipts of uploads and runs (RFC-122); nil if not initialized
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -614,8 +615,8 @@ func Register(
 	if h.AssetImport != nil {
 		registerAssetImportRoutes(router, h.AssetImport, authMiddleware, userSync)
 	}
-	if h.FindingImport != nil {
-		registerFindingImportRoutes(router, h.FindingImport, authMiddleware, userSync)
+	if h.FindingImport != nil || h.IngestReceipt != nil {
+		registerFindingImportRoutes(router, h.FindingImport, h.IngestReceipt, authMiddleware, userSync)
 	}
 
 	// Asset Owner routes (tenant from JWT token) - nested under assets

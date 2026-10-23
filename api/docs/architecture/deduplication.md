@@ -176,6 +176,38 @@ the `dast` / `container` recipes are unreachable from ingest.
 4. Post-insert hooks run on the in-memory `newFindings` (created callback `:495`,
    assignment, remediation keys, exposure bridge, suppression audit).
 
+### 1.2 Concurrent uploads
+
+Many pipelines, sensors and tools upload at once, often the same findings (CI
+re-runs, matrix jobs). The batched writes are deadlock-safe:
+
+- **One lock order.** Every batched write takes its row locks in a stable order:
+  assets by `(tenant, name)` (`UpsertBatch`), new findings by fingerprint
+  (`CreateBatchWithResult`), existing findings by id (`EnrichBatchByFingerprints`
+  reads them `ORDER BY id FOR NO KEY UPDATE`, `UpdateScanIDBatchByFingerprints`
+  locks them the same way in a CTE). Concurrent writers of the same rows queue
+  instead of deadlocking.
+- **Enrichment under the lock.** `EnrichBatchByFingerprints` locks the stored rows,
+  reads them, merges each sighting (`Finding.EnrichFrom`) and writes them in one
+  transaction, so no writer can change a row between the read and the write. The
+  `row_version` predicate stays as a guard. Before this, every concurrent writer
+  but one lost the optimistic race, ran out of retries and fell back to a
+  sighting-only update.
+- **Bounded retry on conflict.** A deadlock (`40P01`) or serialization failure
+  (`40001`) that still happens, for example through a trigger or another code path,
+  rolls back only that statement or transaction. It runs again, up to 5 times
+  with jittered exponential back-off from 20 ms (`write_retry.go`). It never drops
+  to the per-row fallback, which would meet the same conflict row by row.
+- **One sighting per report.** When enrichment fails partway, only the findings it
+  did not write get the sighting-only fallback (`vulnerability.EnrichIncompleteError`),
+  so no finding is counted or rewritten twice.
+
+Measured with the research/241 harness (20 concurrent uploads of the same 500
+findings to one repository, 3 rounds): before, 7–30 deadlocks per round, 9–17 of
+20 uploads with errors, and 3,000 of 10,000 sightings recorded in one round.
+After, 0 deadlocks, 0 uploads with errors, and every sighting recorded
+(`tests/integration/ingest_concurrent_resighting_test.go`).
+
 ## 2. Entity table
 
 Status: **OK** works as intended · **PARTIAL** works for the common case with a
@@ -226,7 +258,15 @@ Names are normalized by `pkg/domain/asset/normalize.go` at construction
 (`entity.go:117`). Ingest upserts with
 `INSERT … ON CONFLICT (tenant_id, name) DO UPDATE … RETURNING` (`asset_repository.go:1439-1482`),
 so concurrent ingests of one normalized name are safe (**P1:** 12 concurrent
-ingests → 1 asset). Strong identifiers (RFC-028) live in `asset_identifiers`
+ingests → 1 asset). Every row written after the upsert in the same transaction
+uses the id the upsert returned for the name, never the in-memory id of the
+asset the report built: when two uploads create the same new repository at once,
+the loser's in-memory id names no row. The repository extension
+(`asset_repositories`, `ensureRepositoryExtensions`) is keyed that way, so the
+losing upload attaches its findings to the stored repository instead of failing
+the foreign key and dropping the upload (research/241 L7: 20 concurrent uploads
+to one new repository, 2–7 failed before, 0 after;
+`tests/integration/ingest_repository_race_test.go`). Strong identifiers (RFC-028) live in `asset_identifiers`
 with `UNIQUE (tenant_id, kind, value) WHERE strong` (`000243:30-31`).
 
 | Asset type | Normalization | Status | Proven failure (P3 / P17) |
@@ -294,7 +334,7 @@ merge into the survivor and tombstone the loser (RFC-043 §5).
 | Nessus / DefectDojo converter fingerprints | `nessus:host:plugin:port/proto`, `defectdojo:<hash>` (`nessus/converter.go:242`, `defectdojo/converter.go:130`) | **BROKEN** | not hex → discarded by `isValidFingerprint` | DefectDojo's "stable across re-imports" key is never used; two jars with one CVE on a product merge via `netva::<cve>` (**code**) |
 | SARIF via `/ingest/scanner?scanner_type=sarif` | `matchBasedId/v1`, else the usable value under the **lowest key**, long values hashed (`resultFingerprint`, `internal/infra/adapters/sarif/adapter.go`) — the rule `ctis.FromSARIF` applies on `/ingest/sarif` | **OK** (RFC-043 item 12) | was the first map entry (random) | — |
 | SARIF parsers inside the API | one parser, `ctis.FromSARIF` through the ctis importer; it maps `codeFlows` to `data_flow`. The in-tree adapter and `pkg/parsers/sarif` are deleted, and so is the API's unused code-flow converter | **OK** | — | every entry point stores the same title, data flow and identity |
-| Nessus `.nessus` parsing | one parser, the ctis importer (`importer.FormatNessus`), behind `POST /findings/import`; the API's own parser, findings converter and host-only asset import are deleted | **OK** (RFC-043 item 12) | was three XML models | every plugin result, host-level ones included, keys on the network identity (host, CVE or plugin, port) |
+| Nessus `.nessus` parsing | one parser, the ctis importer (`importer.FormatNessus`), behind `POST /findings/imports`; the API's own parser, findings converter and host-only asset import are deleted | **OK** (RFC-043 item 12) | was three XML models | every plugin result, host-level ones included, keys on the network identity (host, CVE or plugin, port) |
 | In-tree adapters (`internal/infra/adapters/*`) vs sensor parsers | two implementations of trivy/semgrep/nuclei/betterleaks parsing with different fingerprints | **PARTIAL** — identity no longer depends on it | API nuclei adapter: `GenerateSAST(host, template, 0)` (`nuclei/adapter.go:164`); sensor: `template|host|matched-at|matcher` | with identity version 2 the sensor or adapter fingerprint is only a sighting key, so the same nuclei result through `/ingest/scanner` and through the sensor keys on the same server recipe; the parsers are still two copies in two repositories (follow-up: canonical converters in `ctis`, as `FromSARIF` and the recon converter already are) |
 | Threat models | `UNIQUE (tenant_id, scope_type, scope_ref_id)` with `scope_ref_id` NULL for tenant-wide (`000189:33`); unlocked select-then-insert (`threat_model_repository.go:125-170`) | **BROKEN** | NULLS DISTINCT | **P18:** two tenant-wide models inserted for one tenant |
 | Attack paths | not stored (the unused `attack_paths` tables were dropped by migration 001491); paths computed on read | n/a | — | — |
@@ -302,6 +342,28 @@ merge into the survivor and tombstone the loser (RFC-043 §5).
 | Suppression rules | no uniqueness on criteria; `finding_suppressions UNIQUE (finding_id, rule)` | **OK** (rules are user data) | rules match on tool/rule/asset/path, not fingerprint (`suppression/entity.go:320-350`), so they survive re-keying | — |
 | Asset dedup review pairs | partial unique on `keep_asset_id` | **BROKEN** | keep = most findings (`correlator.go:186-193`); reversed pending pairs not checked (`asset_dedup_repository.go:241-243`) | scan 1 proposes keep A/merge B, scan 2 keep B/merge A → two contradictory pending reviews (**code**) |
 | Comments / activities | append-only, cascade with the finding | **OK** | — | lost on a finding delete (§2.4) |
+
+### 2.6 Branch counters
+
+`repository_branches.findings_total` and `findings_critical/high/medium/low` count
+the open findings of a branch (`is_open_finding_status`). Statement triggers on
+`findings` keep them up to date (migration `branch_finding_counts_per_statement`):
+
+- `trg_findings_branch_counts_insert` / `_delete` collect the distinct `branch_id`
+  of the statement's rows from its transition table.
+- `trg_findings_branch_counts_update` collects the old and new branch of every row
+  whose `branch_id`, `status` or `severity` changed. A re-sighting that moves no
+  counted value recounts nothing.
+- `refresh_branch_finding_counts(uuid[])` locks the touched branch rows in id
+  order, then recounts each branch once in one aggregate pass. It skips a branch
+  whose repository is gone, as in the cascade of a tenant delete.
+
+The counts are a recount, not deltas, so they stay exact and heal a counter that
+drifted. The row trigger they replace recounted the whole branch five times for
+every inserted row. That was quadratic in the report size: 5,000 findings took
+37.6 s in research/241, against 7.3 s with the trigger off. It also held the
+branch row lock for the whole upload. Parity with the row trigger is tested by
+`tests/integration/branch_finding_counts_test.go`.
 
 ## 3. Open pull requests that change identity
 
