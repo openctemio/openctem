@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -15,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -173,5 +176,85 @@ func TestFindingImport_FullCoverageHiddenAsset_DB(t *testing.T) {
 	}
 	if rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+open, perms, receiptNessusSubset); rec.Code != http.StatusCreated {
 		t.Fatalf("a visible asset: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Absence is decided from the upload's receipt, not from scan_id: concurrent
+// full-coverage uploads of one scope that all report the same finding never
+// close it (each overwrote the others' scan_id), and a finding with an action
+// row on the receipt stays open whatever its scan_id says. A receipt past
+// its action cap closes nothing.
+func TestFindingImport_FullCoverageConcurrentUploads_DB(t *testing.T) {
+	ih := newImportHarness(t, ingest.SourceResolveDryRun)
+	pdb := &postgres.DB{DB: ih.db}
+	ih.h.SetReceiptStores(postgres.NewIngestReceiptRepository(pdb), postgres.NewIdempotencyKeyRepository(pdb))
+	perms := []string{permission.FindingsWrite.String(), permission.AssetsWrite.String(), permission.AssetsImport.String(),
+		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String()}
+
+	if rec, _ := ih.uploadAs(t, "", perms, receiptNessusFull); rec.Code != http.StatusCreated {
+		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
+	}
+	var assetID string
+	if err := ih.db.QueryRow(`SELECT asset_id::text FROM findings WHERE tenant_id = $1 LIMIT 1`, ih.tenantID).Scan(&assetID); err != nil {
+		t.Fatal(err)
+	}
+	full := "?coverage=full&asset_id=" + assetID
+
+	const uploads = 6
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	codes := make([]int, uploads)
+	for i := range uploads {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			rec, _ := ih.uploadAs(t, full, perms, receiptNessusSubset)
+			codes[i] = rec.Code
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	for i, c := range codes {
+		if c != http.StatusCreated {
+			t.Errorf("upload %d: %d", i, c)
+		}
+	}
+	// The subset reports plugin 1001 only: it must stay open; the other
+	// finding of the full report is closed.
+	if n := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND status = 'resolved' AND rule_id = '1001'`, ih.tenantID); n != 0 {
+		t.Fatalf("a finding every concurrent upload reported was closed (%d)", n)
+	}
+	if n := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND status = 'resolved'`, ih.tenantID); n != 1 {
+		t.Fatalf("%d findings closed, want the 1 no upload reported", n)
+	}
+
+	// Repository level: the action row decides, not scan_id.
+	ctx := context.Background()
+	repo := postgres.NewFindingRepository(pdb)
+	tenant, _ := shared.IDFromString(ih.tenantID)
+	asset, _ := shared.IDFromString(assetID)
+	var receiptStr, tool string
+	if err := ih.db.QueryRow(`SELECT a.receipt_id::text, f.tool_name FROM finding_ingest_actions a JOIN findings f ON f.id = a.finding_id
+		WHERE a.tenant_id = $1 AND f.rule_id = '1001' AND a.action = 'still_detected' LIMIT 1`, ih.tenantID).Scan(&receiptStr, &tool); err != nil {
+		t.Fatal(err)
+	}
+	receipt, _ := shared.IDFromString(receiptStr)
+	if _, err := ih.db.Exec(`UPDATE findings SET scan_id = 'another-upload' WHERE tenant_id = $1 AND rule_id = '1001'`, ih.tenantID); err != nil {
+		t.Fatal(err)
+	}
+	stale, open, err := repo.ImportCoverageCandidates(ctx, tenant, []shared.ID{asset}, tool, receipt)
+	if err != nil || len(stale) != 0 || open != 1 {
+		t.Fatalf("candidates = %v open %d err %v; want none (the finding has an action row) and 1 open", stale, open, err)
+	}
+	if _, err := ih.db.Exec(`UPDATE ingest_receipts SET actions_truncated = true WHERE id = $1`, receiptStr); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repo.ImportCoverageCandidates(ctx, tenant, []shared.ID{asset}, tool, receipt); !errors.Is(err, ingestreport.ErrReceiptIncomplete) {
+		t.Fatalf("truncated receipt: err %v, want ErrReceiptIncomplete", err)
+	}
+	// Another tenant cannot use this receipt.
+	if _, _, err := repo.ImportCoverageCandidates(ctx, shared.NewID(), []shared.ID{asset}, tool, receipt); !errors.Is(err, ingestreport.ErrReceiptIncomplete) {
+		t.Fatalf("cross-tenant receipt: err %v, want ErrReceiptIncomplete", err)
 	}
 }
