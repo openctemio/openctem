@@ -164,6 +164,30 @@ func (s *Service) crownJewelsExposed(ctx context.Context, v *WidgetValue, f dash
 	return nil
 }
 
+// discoveryCoverage is the coverage.discovery ratio: ledger-tracked assets
+// in scope with a successful run in the coverage window, over all tracked
+// assets in scope (the same read as the loop's Discovery stage). It opens the
+// uncovered assets, which are what to act on.
+func (s *Service) discoveryCoverage(ctx context.Context, v *WidgetValue, target *dashboard.WidgetTarget, compare bool, scope dashboard.ReadScope) error {
+	disc, err := s.facts.Discovery(ctx, scope, s.now().Add(-asset.CoverageWindow))
+	if err != nil {
+		return err
+	}
+	v.Ratio = &RatioValue{Num: disc.Covered, Den: disc.Tracked}
+	v.Drill = drillUncovered
+	if disc.Tracked == 0 {
+		v.State, v.Reason = StateNotMeasured, ReasonNoTrackedAssets
+		return nil
+	}
+	pct := round1(float64(disc.Covered) * 100 / float64(disc.Tracked))
+	v.Ratio.ValuePct = &pct
+	v.TargetMet = targetMet(target, pct)
+	if compare {
+		v.PreviousReason = ReasonNoHistoryForBy
+	}
+	return nil
+}
+
 //nolint:cyclop // one block per stage
 func (s *Service) ctemLoop(ctx context.Context, v *WidgetValue, scope dashboard.ReadScope) error {
 	now := s.now()
