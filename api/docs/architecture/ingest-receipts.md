@@ -15,11 +15,9 @@ organization's findings. The ingest service writes it; nothing else does.
 | Receipts table, per-finding action log, coverage decisions, daily ingest fact (migration `003308_ingest_receipts`) | shipped |
 | Writer in ingest (every report), in coverage decisions, and for uploads (one receipt per request) | shipped |
 | Retention job (`ingest-receipt-retention`) | shipped |
-| Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003320_idempotency_keys`) | shipped |
-| Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
 | Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003325_idempotency_keys`) | shipped |
-| Full-coverage uploads (`coverage=full` with an explicit scope) | planned (RFC-122 §5) |
-| Web: import page, scan run page, finding "last seen in" | planned |
+| Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
+| Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview (en, vi) | shipped |
 
 ## Which receipt
 
@@ -188,6 +186,25 @@ action rows older than 90 days, run receipts not updated for 400 days (their
 action and coverage rows go with them), facts older than 400 days, in
 batches of 5,000 and at most 100,000 rows of each kind per pass. Upload
 receipts are kept.
+
+## Web
+
+`web/src/features/findings/components/receipt-summary.tsx` (one component
+set, token classes only):
+
+- `ReceiptSummary`: the seven counts (untouched shows "—" under partial
+  coverage) and a line saying whether the coverage could close anything,
+  that a close was held, or that the action list was truncated;
+- `RecentImports`: the latest five upload receipts, at the bottom of the
+  import dialog before a file is chosen;
+- `RunReceiptSection`: the scan run's receipt in the run sheet; nothing when
+  the API returns none (a member without the organization view);
+- `FindingLastSeenIn`: the newest receipt that acted on the finding, linked
+  to the run page for a scan run.
+
+Data comes from `web/src/features/findings/api/receipts-api.ts` (SWR, keyed
+only inside an organization). Text is in the `findings.receipts.*` keys (en
+and vi).
 
 ## Key files
 
