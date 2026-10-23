@@ -15,6 +15,8 @@
  *   - sequential ramps: monotone lightness with visible steps, and the ink
  *     printed on each step reaching 4.5:1.
  *
+ *   - the accent band: no data colour at OKLCH hue 165-200 (the brand teal).
+ *
  * Usage: node scripts/check-palette.mjs   (exit 1 on any failure)
  */
 import { readFileSync } from 'node:fs'
@@ -69,7 +71,22 @@ function oklabFromLin([r, g, b]) {
 }
 export function oklch(h) {
   const [L, a, b] = oklabFromLin(lin(h))
-  return [L, Math.hypot(a, b)]
+  const hue = ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360
+  return [L, Math.hypot(a, b), hue]
+}
+
+/**
+ * The accent band: OKLCH hue 165-200 belongs to the brand teal (--signal),
+ * which marks the one place to act. No data colour may sit in it, or a chart
+ * series reads as a call to action. Near-grey colours (chroma < 0.04) have no
+ * meaningful hue and are exempt.
+ */
+export const ACCENT_BAND = [165, 200]
+export function accentBandHits(colors) {
+  return colors.filter((c) => {
+    const [, C, H] = oklch(c)
+    return C >= 0.04 && H >= ACCENT_BAND[0] && H <= ACCENT_BAND[1]
+  })
 }
 function simulate(h, kind) {
   const [r, g, b] = lin(h)
@@ -186,6 +203,19 @@ export function checkAll(palette, css) {
       `sequential/${mode}`,
       validateSequential(palette.sequential[mode], palette.sequential.ink[mode], { mode, surface })
     )
+    const data = [
+      ...palette.severity[mode],
+      palette.severity.info[mode],
+      ...palette.categorical[mode],
+      palette.categorical.other[mode],
+      ...palette.diverging[mode],
+      ...palette.sequential[mode],
+    ]
+    const teal = accentBandHits(data)
+    if (teal.length)
+      fails.push(
+        `accent band ${mode}: ${teal.join(' ')} sit at hue ${ACCENT_BAND.join('-')} (reserved for --signal)`
+      )
     if (css != null) {
       const have = cssBlockTokens(css, mode === 'light' ? ':root' : '.dark')
       for (const [name, value] of Object.entries(expectedTokens(palette, mode))) {
