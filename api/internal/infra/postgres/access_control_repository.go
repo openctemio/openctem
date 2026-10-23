@@ -151,6 +151,48 @@ func (r *AccessControlRepository) IsActiveTenantMember(ctx context.Context, tena
 	return exists, nil
 }
 
+// ActiveTenantMemberProfiles returns the display profile of every given user
+// that is an active member of the tenant (active membership and active
+// account), in ONE query. Users of other tenants, suspended members and
+// unknown ids are simply absent from the result, so a caller can label a
+// page of rows without a per-row lookup and without disclosing a profile
+// outside the tenant.
+func (r *AccessControlRepository) ActiveTenantMemberProfiles(ctx context.Context, tenantID shared.ID, userIDs []shared.ID) ([]accesscontrol.MemberProfile, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		ids[i] = id.String()
+	}
+	const query = `
+		SELECT u.id, u.name, u.email
+		  FROM tenant_members m
+		  JOIN users u ON u.id = m.user_id
+		 WHERE m.tenant_id = $1 AND m.user_id = ANY($2::uuid[])
+		   AND m.status = 'active' AND u.status = 'active'`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read active tenant member profiles: %w", err)
+	}
+	defer rows.Close()
+	var out []accesscontrol.MemberProfile
+	for rows.Next() {
+		var idStr string
+		var p accesscontrol.MemberProfile
+		if err := rows.Scan(&idStr, &p.Name, &p.Email); err != nil {
+			return nil, fmt.Errorf("failed to scan member profile: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		p.UserID = id
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // GetAssetOwner retrieves an asset ownership by asset and group ID.
 func (r *AccessControlRepository) GetAssetOwner(ctx context.Context, assetID, groupID shared.ID) (*accesscontrol.AssetOwner, error) {
 	query := `

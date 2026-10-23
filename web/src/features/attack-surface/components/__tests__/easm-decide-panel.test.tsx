@@ -25,6 +25,7 @@ vi.mock('@/context/tenant-provider', () => ({
 }))
 
 const { EASMDecidePanel } = await import('../easm-decide-panel')
+const { toast } = await import('sonner')
 
 const wrap = (ui: ReactNode) =>
   render(<SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{ui}</SWRConfig>)
@@ -220,5 +221,40 @@ describe('EASMDecidePanel', () => {
     expect(
       await screen.findByText('2 addresses your in-scope names resolve to')
     ).toBeInTheDocument()
+  })
+
+  it('on the overview, only name rules waiting is one line with a link, not a panel', async () => {
+    api.get.mockImplementation(byUrl({ can_add: true, total: 3, cards: [] }))
+    wrap(<EASMDecidePanel compact />)
+    const line = await screen.findByTestId('decide-rules-line')
+    expect(line).toHaveTextContent('3 name rules waiting')
+    expect(within(line).getByRole('link', { name: 'Review' })).toHaveAttribute(
+      'href',
+      '/attack-surface/review'
+    )
+  })
+
+  it('on the overview, nothing is rendered while loading and when nothing waits', async () => {
+    api.get.mockImplementation(() => new Promise(() => {}))
+    const { container } = wrap(<EASMDecidePanel compact />)
+    expect(container.querySelector('[class*="animate-pulse"]')).toBeNull()
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('a failed Undo of Not ours says so', async () => {
+    settings.mode = 'low_impact'
+    api.get.mockImplementation(byUrl(cards(true)))
+    api.post.mockResolvedValueOnce({ decided: [{ asset_id: 'a1' }], not_found: [] })
+    const user = userEvent.setup()
+    wrap(<EASMDecidePanel />)
+    await screen.findByText('1 address your in-scope names resolve to')
+    await user.click(screen.getByRole('button', { name: 'Not ours' }))
+    const dialog = await screen.findByRole('alertdialog').catch(() => screen.findByRole('dialog'))
+    await user.click(within(dialog).getByRole('button', { name: 'Not ours' }))
+    await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    const action = (toast.success as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].action
+    api.post.mockRejectedValueOnce(new Error('boom'))
+    action.onClick()
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
   })
 })
