@@ -1054,6 +1054,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.IngestQueue, err = initIngestQueue(cfg, repos); err != nil {
 		return nil, err
 	}
+	// Back-pressure at accept: 429 past the tenant's queue limit, refused
+	// when the depth cannot be read.
+	s.IngestQueue.SetBackpressure(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
@@ -3571,9 +3574,6 @@ func initIngestQueue(cfg *config.Config, repos *Repositories) (*ingestqueue.Queu
 		return nil, err
 	}
 	q := ingestqueue.New(repos.IngestJob, repos.IngestPayload, sealer)
-	// Back-pressure at accept: 429 past the tenant's queue limit, refused
-	// when the depth cannot be read.
-	q.SetBackpressure(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
 	repos.IngestJob.SetMaxRunningPerTenant(cfg.Ingest.MaxRunningPerTenant)
 	return q, nil
 }
