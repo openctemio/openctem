@@ -52,13 +52,8 @@ export function remediationTimeState(days: number | null): MetricStatus {
   return 'crit'
 }
 
-/** In-scope assets with an assigned owner. Higher is better; guide target 100%. */
-export function ownerCoverageState(pct: number | null | undefined): MetricStatus {
-  if (pct === null || pct === undefined || Number.isNaN(pct)) return 'pending'
-  if (pct >= 95) return 'good'
-  if (pct >= 75) return 'warn'
-  return 'crit'
-}
+/** Owner coverage has one definition (data-quality.ts), shared by both scorecards. */
+export { ownershipState as ownerCoverageState } from './data-quality'
 
 /** Remediation re-open (regression) rate. Lower is better; guide target < 20%. */
 export function reopenRateState(pct: number | null | undefined): MetricStatus {

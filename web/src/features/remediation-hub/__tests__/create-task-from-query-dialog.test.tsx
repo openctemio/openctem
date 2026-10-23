@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { CreateTaskFromQueryDialog } from '../components/create-task-from-query-dialog'
 import type { QueryTaskPreview } from '../api/use-task-query'
+import { ApiClientError } from '@/lib/api/error-handler'
 
 const api = vi.hoisted(() => ({
   preview: vi.fn(),
@@ -180,5 +181,26 @@ describe('CreateTaskFromQueryDialog', () => {
       screen.getByText('The query changed: preview again before creating.')
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
+  })
+
+  it('shows a placeholder for a finding without a title', async () => {
+    const p = preview()
+    p.stats!.sample[0].title = ''
+    const panel = await openAndPreview(p)
+    expect(panel).toHaveTextContent('Untitled finding')
+  })
+
+  it('shows translated wording, not the raw server text, when the preview fails with a server error', async () => {
+    api.preview.mockRejectedValue(new ApiClientError('internal error', 'INTERNAL_ERROR', 500))
+    render(
+      <CreateTaskFromQueryDialog
+        open
+        onOpenChange={vi.fn()}
+        initialQuery="findings where severity = critical"
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(await screen.findByText('The preview failed.')).toBeInTheDocument()
+    expect(screen.queryByText('internal error')).toBeNull()
   })
 })

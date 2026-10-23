@@ -160,6 +160,8 @@ type Repositories struct {
 	// command (RFC-040 §5.3).
 	SensorResult *postgres.SensorResultRepository
 	IngestJob    *postgres.IngestJobRepository
+	// IngestPayload holds the sealed raw reports of queued uploads.
+	IngestPayload *postgres.IngestPayloadRepository
 	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
 	IngestReport *postgres.IngestReportRepository
 
@@ -516,6 +518,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorContentPolicy:    postgres.NewSensorContentPolicyRepository(db),
 		SensorResult:           postgres.NewSensorResultRepository(db),
 		IngestJob:              postgres.NewIngestJobRepository(db),
+		IngestPayload:          postgres.NewIngestPayloadRepository(db),
 		IngestReport:           postgres.NewIngestReportRepository(db),
 
 		// Scan coverage rotation (RFC-007)
