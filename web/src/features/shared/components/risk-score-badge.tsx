@@ -124,9 +124,6 @@ export function RiskScoreMeter({
   const { color } = level
   const label = t(`riskScore.level.${level.key}`, level.label)
 
-  // Map color classes to progress bar colors
-  const progressColor = color.replace('bg-', '')
-
   const sizeConfig = {
     sm: { height: 'h-1.5', text: 'text-xs', width: 'w-16' },
     md: { height: 'h-2', text: 'text-sm', width: 'w-20' },
@@ -139,10 +136,7 @@ export function RiskScoreMeter({
     <div className={cn('flex items-center gap-2', className)}>
       <div className={cn('relative rounded-full bg-muted overflow-hidden', height, width)}>
         <div
-          className={cn(
-            'absolute left-0 top-0 h-full rounded-full transition-all',
-            `bg-${progressColor}`
-          )}
+          className={cn('absolute left-0 top-0 h-full rounded-full transition-all', color)}
           style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
         />
       </div>
@@ -189,7 +183,6 @@ export function RiskScoreGauge({
   const { t } = useTranslation()
   const thresholds = useRiskThresholds()
   const level = getRiskLevel(score, thresholds)
-  const { color } = level
   const label = t(`riskScore.level.${level.key}`, level.label)
 
   const sizeConfig = {
@@ -205,7 +198,7 @@ export function RiskScoreGauge({
   const strokeDashoffset = circumference * (1 - progress)
 
   // Extract color name for stroke
-  const strokeColor = color.replace('bg-', 'stroke-')
+  const strokeColor = level.stroke
 
   return (
     <div className={cn('relative inline-flex items-center justify-center', className)}>

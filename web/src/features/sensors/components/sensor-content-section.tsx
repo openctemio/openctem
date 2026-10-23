@@ -207,7 +207,7 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
             {c.source && (
               <>
                 <dt>{t('sensors.contentSection.source')}</dt>
-                <dd className="font-mono break-all">{c.source}</dd>
+                <dd className="font-mono break-all">{redactUrlQueries(c.source)}</dd>
               </>
             )}
             {c.error && (

@@ -6,6 +6,7 @@
 
 'use client'
 
+import { KevBadge } from '@/components/ui/kev-badge'
 import Link from '@/components/link'
 import { Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -176,7 +177,7 @@ export function AssetRiskExplanation({ assetId }: AssetRiskExplanationProps) {
                 >
                   {c.title}
                 </Link>
-                {c.in_kev && <Badge variant="destructive">{t('riskScore.why.kev', 'KEV')}</Badge>}
+                {c.in_kev && <KevBadge label={t('riskScore.why.kev', 'KEV')} />}
                 {c.exploit_available && (
                   <Badge variant="outline">{t('riskScore.why.exploit', 'Exploit')}</Badge>
                 )}
