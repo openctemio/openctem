@@ -1,10 +1,40 @@
 # Automations: how runs start and how many
 
-Automations are the event rules at `/api/v1/workflows` ("When → If → Then").
+Automations are the event rules at `/api/v1/workflows` ("When → If → Then"); design: [RFC-125](../rfcs/RFC-125-automation-simulate-and-go-live.md).
 This page covers how an event becomes runs and the limits on them. A
 redesign (a durable event journal, versions, retries) is **Planned**. Who a run acts as is covered in
 [authorization-matrix.md](authorization-matrix.md), "Automation runs act as
 one person".
+
+## The catalog: what the engine runs
+
+`GET /api/v1/workflows/catalog` (`findings:workflows:read`) lists every
+trigger, action and notification type the engine runs, in builder order,
+with the permission each needs and whether the caller holds it. The console
+builds its palette from this answer, and the API refuses a node of any other
+type. The lists live in `pkg/domain/automation/catalog.go`; `IsValid` on
+each type is built from them.
+
+| Kind | Types |
+|---|---|
+| Trigger | `manual`, `finding_created`, `finding_status_changed`, `asset_discovered`, `scan_completed`, `ai_triage_completed`, `ai_triage_failed` |
+| Action | `assign_user`, `update_status`, `add_tags`, `remove_tags`, `create_ticket`, `update_ticket`, `trigger_scan`, `trigger_ai_triage` |
+| Notification | `slack`, `teams`, `email`, `webhook` (a registered integration) |
+
+**Removed types.** The `schedule`, `finding_age`, `finding_updated` and
+`webhook` triggers, the `assign_team`, `update_priority`, `run_script`,
+`http_request` and `trigger_pipeline` actions and the `pagerduty`
+notification never ran (nothing fired them, or every run failed or was
+refused) and are no longer types. Migration `automations_removed_types`
+switched off every automation that still held one and set
+`automations.disabled_reason = uses_removed_type`; nothing was deleted, and
+the stored headers of `http_request` nodes were dropped (they were often
+credentials in plain config). Such an automation stays readable
+(`disabled_reason` and `unsupported_features` on `GET /workflows/{id}`), and
+cannot be switched on until the node is replaced; saving a graph of known
+types clears the reason. Scans keep their own schedules; a sweep schedule for
+rules (a saved filter evaluated on a schedule, for digests and periodic
+sweeps) is designed separately and is not a trigger yet.
 
 ## One run per subject
 

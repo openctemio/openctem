@@ -9,13 +9,23 @@
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { useTranslation } from '@/context/i18n-provider'
 
-export function proofStepText(activeProof: string | undefined): string {
+type Translate = (key: string, fallback?: string) => string
+
+export function proofStepText(activeProof: string | undefined, t?: Translate): string {
+  const tr: Translate = t ?? ((_key, fallback) => fallback ?? '')
   switch (activeProof) {
     case 'platform_sensors':
-      return "Required for scans on the platform's shared sensors; optional on your own sensors."
+      return tr(
+        'scope.onboarding.proofPlatform',
+        "Required for scans on the platform's shared sensors; optional on your own sensors."
+      )
     default:
-      return 'Optional: it shows your team the domain is proven yours.'
+      return tr(
+        'scope.onboarding.proofOptional',
+        'Optional: it shows your team the domain is proven yours.'
+      )
   }
 }
 
@@ -28,27 +38,41 @@ export function ScopeOnboarding({
   canAdd: boolean
   onAdd: () => void
 }) {
+  const { t } = useTranslation()
   const steps = [
     {
-      title: 'Add your domain',
-      body: 'Example.com covers example.com and every name below it.',
+      title: t('scope.onboarding.step1.title', 'Add your domain'),
+      body: t(
+        'scope.onboarding.step1.body',
+        'Example.com covers example.com and every name below it.'
+      ),
     },
     {
-      title: 'Prove you own it',
-      body: `A DNS TXT record, about two minutes. ${proofStepText(activeProof)}`,
+      title: t('scope.onboarding.step2.title', 'Prove you own it'),
+      body: t('scope.onboarding.step2.body', 'A DNS TXT record, about two minutes. {proof}', {
+        proof: proofStepText(activeProof, t),
+      }),
     },
     {
-      title: 'Discovery finds the rest',
-      body: 'Certificate logs and scans find names under it; they join your inventory automatically.',
+      title: t('scope.onboarding.step3.title', 'Discovery finds the rest'),
+      body: t(
+        'scope.onboarding.step3.body',
+        'Certificate logs and scans find names under it. They join your inventory automatically.'
+      ),
     },
   ]
   return (
     <Card>
       <CardContent className="space-y-5">
         <div className="space-y-1">
-          <h2 className="text-base font-semibold">Nothing is in scope yet</h2>
+          <h2 className="text-base font-semibold">
+            {t('scope.onboarding.title', 'Nothing is in scope yet')}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Scans refuse every internet target until a scope entry covers it.
+            {t(
+              'scope.onboarding.description',
+              'Scans refuse every internet target until a scope entry covers it.'
+            )}
           </p>
         </div>
         <ol className="grid gap-4 sm:grid-cols-3">
@@ -70,7 +94,7 @@ export function ScopeOnboarding({
         {canAdd && (
           <Button size="sm" onClick={onAdd}>
             <Plus className="h-4 w-4" />
-            Add your domain
+            {t('scope.onboarding.step1.title', 'Add your domain')}
           </Button>
         )}
       </CardContent>

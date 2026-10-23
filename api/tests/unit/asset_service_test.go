@@ -9,6 +9,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -236,11 +237,11 @@ func (m *MockAssetRepository) ListDistinctTags(_ context.Context, _ shared.ID, _
 	return asset.TagList{Tags: []string{}}, nil
 }
 
-func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID, _ *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
+func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID, _ *shared.DataScope, _ *attribution.StateFilter) (map[string]asset.AssetTypeStats, error) {
 	return make(map[string]asset.AssetTypeStats), nil
 }
 
-func (m *MockAssetRepository) GetAverageRiskScore(_ context.Context, _ shared.ID, _ *shared.DataScope) (float64, error) {
+func (m *MockAssetRepository) GetAverageRiskScore(_ context.Context, _ shared.ID, _ *shared.DataScope, _ *attribution.StateFilter) (float64, error) {
 	return 0, nil
 }
 

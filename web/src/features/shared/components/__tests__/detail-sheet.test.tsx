@@ -170,8 +170,10 @@ describe('DetailField / DetailFieldGrid', () => {
     )
     const label = screen.getByText('Owner reference')
     expect(label.tagName).toBe('DT')
-    expect(label).toHaveClass('text-xs', 'text-muted-foreground')
+    expect(label).toHaveClass('text-body', 'text-muted-foreground')
+    // Label and value share one size (research/244).
     expect(screen.getByText('team-a').tagName).toBe('DD')
+    expect(screen.getByText('team-a')).toHaveClass('text-body')
   })
 
   it('is one column on phones and two from sm', () => {

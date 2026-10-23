@@ -79,7 +79,7 @@ function day(iso?: string): string | undefined {
 }
 
 function Mono({ children }: { children: React.ReactNode }) {
-  return <span className="font-mono text-[13px] break-all">{children}</span>
+  return <span className="font-mono text-body break-all">{children}</span>
 }
 
 /** The value of a score as people read it: EPSS as a percentage. */

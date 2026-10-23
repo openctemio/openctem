@@ -41,6 +41,9 @@ must_fail 'severity map by palette' "critical: 'bg-red-500/10 text-red-500',"
 must_fail 'severity hex' "high: '#f97316',"
 must_fail 'sev token class by hand' '<span className="bg-sev-high/10" />'
 must_fail 'prio token var by hand' "fill: 'var(--prio-0)'"
+must_fail 'status token class by hand' '<span className="bg-st-progress-bg" />'
+must_fail 'status token var by hand' "fill: 'var(--st-open-fg)'"
+must_pass 'shared lozenge use' '<StatusLozenge tone="open" label="x" />'
 must_pass 'shared badge use' '<PriorityBadge priorityClass="P1" />'
 must_pass 'annotated colour exception' "critical: '#ff0000', // label-colour-ok: exported PDF palette"
 
