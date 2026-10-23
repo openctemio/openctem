@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -148,11 +150,21 @@ func (h *AdminDedupHandler) MergeLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional: narrow the log to the merges that involve one asset (the asset
+	// drawer's identity history). Validated before any query runs.
+	assetID := r.URL.Query().Get("asset_id")
+	if assetID != "" {
+		if _, err := uuid.Parse(assetID); err != nil {
+			apierror.BadRequest("asset_id must be a valid UUID").WriteJSON(w)
+			return
+		}
+	}
+
 	scope, ok := h.scope(w, r, tenantID)
 	if !ok {
 		return
 	}
-	log, err := h.repo.GetMergeLog(r.Context(), tenantID, limit, scope)
+	log, total, err := h.repo.GetMergeLog(r.Context(), tenantID, assetID, limit, scope)
 	if err != nil {
 		h.logger.Error("failed to get merge log", "error", err)
 		apierror.InternalServerError("failed to get merge log").WriteJSON(w)
@@ -162,6 +174,6 @@ func (h *AdminDedupHandler) MergeLog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data":  log,
-		"total": len(log),
+		"total": total,
 	})
 }
