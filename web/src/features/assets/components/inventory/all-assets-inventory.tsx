@@ -589,17 +589,13 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                   onChange={setFilters}
                   onClearAll={clearAll}
                   onPickerOpenChange={(open) => open && setFacetsWanted(true)}
-                  resultLabel={
-                    isFirstLoad
-                      ? undefined
-                      : t(
-                          'assets.filters.results',
-                          '{count, plural, one {# asset} other {# assets}}',
-                          {
-                            count: total,
-                          }
-                        )
-                  }
+                  // The table (and this bar) only renders after the first load,
+                  // so the count is always known here.
+                  resultLabel={t(
+                    'assets.filters.results',
+                    '{count, plural, one {# asset} other {# assets}}',
+                    { count: total }
+                  )}
                 />
               }
               hasFilters={!isInventoryFilterEmpty(filters)}
