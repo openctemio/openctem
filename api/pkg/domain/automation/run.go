@@ -69,6 +69,12 @@ type Run struct {
 	// IdempotencyKey makes the same event start an automation at most once
 	// (unique per automation; "" when the event has no stable identity).
 	IdempotencyKey string
+
+	// Mode is the mode the run executes in (fixed when it is created).
+	Mode Mode
+	// VersionID is the published version a live run executes; nil for a
+	// run of the draft (simulate).
+	VersionID *shared.ID
 }
 
 // NewRun creates a new workflow run.
@@ -93,6 +99,7 @@ func NewRun(
 		TriggerType: triggerType,
 		TriggerData: triggerData,
 		Status:      RunStatusPending,
+		Mode:        ModeLive,
 		Context:     make(map[string]any),
 		NodeRuns:    []*NodeRun{},
 		CreatedAt:   now,

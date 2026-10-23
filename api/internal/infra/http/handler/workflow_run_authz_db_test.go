@@ -9,7 +9,8 @@ package handler
 //     refused (the confused deputy: before, any holder of workflows:write
 //     could point an admin's automation at any finding).
 //   - Rewiring (edges, deleting a node, trigger edits) needs the
-//     permission of every step, like adding one; the editor becomes owner.
+//     permission of every step, like adding one. Editing the draft does not
+//     change the owner; publishing does (live runs act as the publisher).
 //   - An event run acts as the owner, re-checked on every run: out of their
 //     scope, a lost permission or a suspended membership refuses the step
 //     and nothing changes.
@@ -160,14 +161,16 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 
 	wfRepo, nodeRepo := postgres.NewAutomationRepository(db), postgres.NewAutomationNodeRepository(db)
 	runRepo, nodeRunRepo := postgres.NewAutomationRunRepository(db), postgres.NewAutomationRunStepRepository(db)
+	versionRepo := postgres.NewAutomationVersionRepository(db)
 	executor := automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, logger.NewNop(),
-		automationsvc.WithExecutorStepAuthorizer(authorizer))
+		automationsvc.WithExecutorStepAuthorizer(authorizer), automationsvc.WithExecutorVersions(versionRepo))
 	executor.RegisterActionHandler(automationdom.ActionTypeAddTags, automationsvc.NewFindingActionHandler(vuln, logger.NewNop()))
 	// No executor on the service: the test runs each run synchronously.
 	svc := automationsvc.NewWorkflowService(wfRepo, nodeRepo, postgres.NewAutomationEdgeRepository(db), runRepo, nodeRunRepo,
 		logger.NewNop(),
 		automationsvc.WithWorkflowStepAuthorizer(authorizer),
-		automationsvc.WithWorkflowSubjectReaders(postgres.NewFindingRepository(db), postgres.NewAssetRepository(db)))
+		automationsvc.WithWorkflowSubjectReaders(postgres.NewFindingRepository(db), postgres.NewAssetRepository(db)),
+		automationsvc.WithWorkflowVersions(versionRepo))
 	h := NewWorkflowHandler(svc, validator.New(), logger.NewNop())
 
 	as := func(user, method, body string, params map[string]string) *http.Request {
@@ -248,6 +251,10 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 		}
 	}
 	wfParam := map[string]string{"id": wf}
+	// New automations start in simulate: the admin publishes it so its runs act.
+	if s, b := call(h.Publish, as(admin, http.MethodPost, `{}`, wfParam)); s != http.StatusOK {
+		t.Fatalf("publish = %d %s", s, b)
+	}
 
 	t.Run("manual run needs every step's permission", func(t *testing.T) {
 		status, body := call(h.TriggerWorkflow, as(editor, http.MethodPost, `{"finding_id":"`+fIn+`"}`, wfParam))
@@ -334,13 +341,24 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 		if ownerOf(wf) != admin {
 			t.Fatalf("owner = %s after refused edits, want the admin", ownerOf(wf))
 		}
-		// The operator may: and becomes the owner the event runs act as.
+		if s, b := call(h.Publish, as(editor, http.MethodPost, `{}`, wfParam)); s != http.StatusForbidden {
+			t.Errorf("editor publish = %d %s, want 403", s, b)
+		}
+		// The operator may edit the draft; that does not make them the
+		// owner: the draft acts only once published.
 		if s, b := call(h.UpdateNode, as(operator, http.MethodPut,
 			`{"config":{"trigger_type":"manual","trigger_config":{}}}`, map[string]string{"id": wf, "nodeId": triggerNode})); s != http.StatusOK {
 			t.Fatalf("operator trigger edit = %d %s", s, b)
 		}
+		if ownerOf(wf) != admin {
+			t.Fatalf("owner = %s after the operator's draft edit, want the admin", ownerOf(wf))
+		}
+		// Publishing makes the operator the owner the event runs act as.
+		if s, b := call(h.Publish, as(operator, http.MethodPost, `{}`, wfParam)); s != http.StatusOK {
+			t.Fatalf("operator publish = %d %s", s, b)
+		}
 		if ownerOf(wf) != operator {
-			t.Fatalf("owner = %s after the operator's edit, want the operator", ownerOf(wf))
+			t.Fatalf("owner = %s after the operator's publish, want the operator", ownerOf(wf))
 		}
 	})
 
