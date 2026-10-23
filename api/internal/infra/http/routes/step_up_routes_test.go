@@ -122,6 +122,7 @@ var stepUpRoutes = []string{
 	"POST /api/v1/integrations/{id}/jira-webhook/secret/rotate",
 	"PUT /api/v1/integrations/{id}/jira-webhook/secret",
 	"POST /api/v1/integrations/{id}/github-webhook/secret/rotate",
+	"POST /api/v1/integrations/{id}/signing-secret/rotate",
 	// A published ticket mapping decides what leaves for the tracker.
 	"POST /api/v1/integrations/ticket-mappings/{id}/publish",
 	"POST /api/v1/integrations/ticket-mappings/{id}/dry-run",

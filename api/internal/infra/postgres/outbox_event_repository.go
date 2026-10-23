@@ -115,6 +115,21 @@ func (r *OutboxEventRepository) GetByID(ctx context.Context, id outbox.ID) (*out
 	return r.scanEvent(row)
 }
 
+// GetByTenantAndID retrieves one of the tenant's events.
+func (r *OutboxEventRepository) GetByTenantAndID(ctx context.Context, tenantID shared.ID, id outbox.ID) (*outbox.Event, error) {
+	query := `
+		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
+			   title, body, severity, url, metadata,
+			   status, integrations_total, integrations_matched,
+			   integrations_succeeded, integrations_failed,
+			   send_results, last_error, retry_count,
+			   created_at, processed_at
+		FROM notification_events
+		WHERE tenant_id = $1 AND id = $2
+	`
+	return r.scanEvent(r.db.QueryRowContext(ctx, query, tenantID.String(), id.String()))
+}
+
 // Delete removes an event.
 func (r *OutboxEventRepository) Delete(ctx context.Context, id outbox.ID) error {
 	query := `DELETE FROM notification_events WHERE id = $1`

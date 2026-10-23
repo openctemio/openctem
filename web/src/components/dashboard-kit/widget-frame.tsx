@@ -172,7 +172,14 @@ function Freshness({ asOf, stale }: { asOf: string; stale: boolean }) {
   const { t, locale } = useTranslation()
   const age = ageMs(asOf)
   return (
-    <p className="mt-auto flex flex-wrap items-center gap-2 pt-2 text-xs text-muted-foreground">
+    // On a phone the dashboard's own meta line carries the time; a widget
+    // repeats it only when its figures are stale.
+    <p
+      className={cn(
+        'mt-auto flex flex-wrap items-center gap-2 pt-2 text-xs text-muted-foreground',
+        !stale && 'max-sm:hidden'
+      )}
+    >
       <span title={formatAbsoluteTime(asOf, locale)}>
         {t('dashboardKit.freshness.updated', 'Updated {time}', {
           time: formatRelativeTime(asOf, locale),
@@ -348,12 +355,15 @@ export function WidgetFrame(props: WidgetFrameProps) {
       aria-busy={state === 'loading' || state === 'scope_changed'}
       data-state={state}
       className={cn(
-        'flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-card p-4 text-card-foreground shadow-sm',
+        'flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-card p-4 text-card-foreground',
         className
       )}
     >
       <header className="mb-2 flex items-start gap-2">
-        <h3 id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">
+        <h3
+          id={titleId}
+          className="min-w-0 flex-1 text-sm font-medium line-clamp-2 sm:line-clamp-1"
+        >
           {title}
         </h3>
         {definition && (

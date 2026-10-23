@@ -2,6 +2,7 @@ package ingestreport
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -42,6 +43,11 @@ type CoverageQuery struct {
 	// SeenScanIDs are this run's report ids: a finding whose scan_id is one of
 	// them was reported by this run and stays open.
 	SeenScanIDs []string
+	// CommandID is the command whose run is evaluated. Its receipt decides
+	// what the run did not report: a finding with an action row on the
+	// receipt was reported, whatever its scan_id says now. Without a
+	// complete receipt nothing is a candidate (ErrReceiptIncomplete).
+	CommandID shared.ID
 	// TemplatesDigest is the template release digest every report of the
 	// run scanned with (tool.properties.content, nuclei-templates); "" when
 	// none was reported or the reports disagree. A candidate whose last
@@ -49,3 +55,8 @@ type CoverageQuery struct {
 	// O6): it becomes stale (observation) instead.
 	TemplatesDigest string
 }
+
+// ErrReceiptIncomplete means the receipt that decides absence is missing or
+// does not list every finding the source reported (past its action cap): it
+// cannot prove that anything was not reported, so nothing is closed.
+var ErrReceiptIncomplete = errors.New("ingest receipt missing or incomplete: absence cannot be decided")

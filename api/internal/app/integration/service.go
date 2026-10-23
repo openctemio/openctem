@@ -1254,7 +1254,16 @@ func (s *IntegrationService) buildNotificationConfig(intg *integrationdom.Integr
 	}
 
 	switch provider {
-	case integrationdom.ProviderSlack, integrationdom.ProviderTeams, integrationdom.ProviderWebhook:
+	case integrationdom.ProviderWebhook:
+		config.WebhookURL = credentials
+		// A test delivery is signed like a real one, so the receiver's
+		// verification can be checked with it.
+		secrets, err := integrationdom.SigningSecrets(intg.Metadata(), s.encryptor.DecryptString, time.Now())
+		if err != nil {
+			return config, err
+		}
+		config.SigningSecrets = secrets
+	case integrationdom.ProviderSlack, integrationdom.ProviderTeams:
 		config.WebhookURL = credentials
 	case integrationdom.ProviderTelegram:
 		config.BotToken = credentials

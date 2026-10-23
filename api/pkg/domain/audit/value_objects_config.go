@@ -21,6 +21,9 @@ const (
 	ActionIntegrationCredentialsChanged   Action = "integration.credentials_changed"
 	ActionIntegrationWebhookSecretRead    Action = "integration.webhook_secret_read"
 	ActionIntegrationWebhookSecretRotated Action = "integration.webhook_secret_rotated"
+	// ActionIntegrationDeliveryRedelivered: an archived notification event
+	// was queued again for one channel (RFC-124).
+	ActionIntegrationDeliveryRedelivered Action = "integration.delivery_redelivered"
 
 	ActionNotificationOutboxRetried Action = "notification_outbox.retried"
 	ActionNotificationOutboxDeleted Action = "notification_outbox.deleted"
@@ -74,6 +77,7 @@ var configActions = map[Action]struct{}{
 	ActionIntegrationCredentialsChanged:   {},
 	ActionIntegrationWebhookSecretRead:    {},
 	ActionIntegrationWebhookSecretRotated: {},
+	ActionIntegrationDeliveryRedelivered:  {},
 	ActionNotificationOutboxRetried:       {},
 	ActionNotificationOutboxDeleted:       {},
 	ActionPriorityRuleCreated:             {},

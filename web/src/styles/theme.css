@@ -1,34 +1,87 @@
+/*
+ * OpenCTEM brand tokens (light: `:root`, dark: `.dark`).
+ *
+ * Brand: ink #0A1628 (text, dark ground), paper #FAFAF9 (light ground), one
+ * teal accent that marks the place to act (`--signal`: the focus ring, a
+ * page's one primary call to action, links), muted #525252. Dark surfaces sit
+ * on the ink hue (about 258deg), never on teal. No gradients.
+ *
+ * The shadcn names (--background, --primary, ...) are aliases of these
+ * values, so every kit component follows the brand. Contrast pairs are
+ * asserted by src/styles/__tests__/contrast.test.ts; the --viz-* chart
+ * palette by scripts/check-palette.mjs (source src/lib/chart-palette.json).
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --success: oklch(0.527 0.154 150.069);
-  --warning: oklch(0.666 0.179 58.318);
-  --info: oklch(0.546 0.245 262.881);
-  /* Brand accent (docs/brand): used only to mark where to act. */
-  --brand: #0d9488;
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Radius by role: 4 chips, 6 buttons and inputs, 8 cards and dialogs. */
+  --radius: 0.5rem;
+
+  /* Surfaces and text */
+  --background: #fafaf9; /* brand paper */
+  --foreground: #0a1628; /* brand ink */
+  --surface-raised: #f5f6f8; /* hover, selected row */
+  --surface-sunken: #eef0f3; /* wells, canvas */
+  --border-subtle: #e7e9ee; /* inner dividers */
+  --border-strong: #7d8799; /* inputs, edges (3:1 on white) */
+  --fg-dim: #5e6673; /* low-priority rows: a colour, never opacity */
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: #0a1628;
+  --primary-foreground: #fafaf9;
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-raised);
+  --muted-foreground: #525252; /* brand muted */
+  --accent: var(--surface-raised); /* the kit's hover surface, not the brand accent */
+  --accent-foreground: var(--foreground);
+  --border: #d8dce3;
+  --input: var(--border-strong);
+
+  /* The one accent: where to act. */
+  --signal: #0f766e; /* AA step of brand teal; white text 5.5:1 */
+  --signal-text: #0f766e; /* links on paper and white */
+  --signal-ink: #ffffff; /* text on a --signal fill */
+  --brand: #0d9488; /* the logo marker dot only */
+  --ring: var(--signal);
+
+  /* State */
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --success: #15803d;
+  --warning: #b45309;
+  --info: #1d5fd1;
+
+  /* Severity: marks (>= 3:1 except medium, which always carries its label),
+     text (>= 4.5:1 on card, paper and raised), ink on a solid mark. */
+  --sev-critical: var(--viz-sev-critical);
+  --sev-high: var(--viz-sev-high);
+  --sev-medium: var(--viz-sev-medium);
+  --sev-low: var(--viz-sev-low);
+  --sev-info: var(--viz-sev-info);
+  --sev-critical-text: #a3123a;
+  --sev-high-text: #b0420a;
+  --sev-medium-text: #85600a;
+  --sev-low-text: #1d5fd1;
+  --sev-info-text: #4b5563;
+  --sev-critical-ink: #ffffff;
+  --sev-high-ink: #0a1628;
+  --sev-medium-ink: #0a1628;
+  --sev-low-ink: #0a1628;
+  --sev-info-ink: #ffffff;
+
+  /* Elevation: overlays only. Motion. */
+  --shadow-overlay: 0 8px 24px rgb(10 22 40 / 0.12), 0 1px 2px rgb(10 22 40 / 0.08);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Older chart names follow the validated palette. */
+  --chart-1: var(--viz-cat-1);
+  --chart-2: var(--viz-cat-2);
+  --chart-3: var(--viz-cat-3);
+  --chart-4: var(--viz-cat-4);
+  --chart-5: var(--viz-cat-5);
 
   /* Dashboard chart palette (validated: scripts/check-palette.mjs, source src/lib/chart-palette.json). */
   --viz-sev-critical: #a3123a;
@@ -38,11 +91,11 @@
   --viz-sev-info: #6b7280;
   --viz-cat-1: #2a78d6;
   --viz-cat-2: #eb6834;
-  --viz-cat-3: #1baf7a;
-  --viz-cat-4: #eda100;
-  --viz-cat-5: #e87ba4;
-  --viz-cat-6: #008300;
-  --viz-cat-7: #4a3aa7;
+  --viz-cat-3: #7a4fd0;
+  --viz-cat-4: #2e9a45;
+  --viz-cat-5: #e0609a;
+  --viz-cat-6: #8a8a00;
+  --viz-cat-7: #1a8fd0;
   --viz-cat-8: #e34948;
   --viz-cat-other: #9ca3af;
   --viz-div-opened: #eb6834;
@@ -69,34 +122,43 @@
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.14 0.04 259.21);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --success: oklch(0.792 0.209 151.711);
-  --warning: oklch(0.828 0.189 84.429);
-  --info: oklch(0.707 0.165 254.624);
+  --background: #0a1628; /* brand ink */
+  --foreground: #fafaf9; /* brand paper */
+  --surface-raised: #15253f;
+  --surface-sunken: #0b182c;
+  --border-subtle: #1b2a43;
+  --border-strong: #63728a; /* 3.4:1 on a card */
+  --fg-dim: #97a2b3;
+  --card: #0f1d33; /* ink, lighter, same hue */
+  --popover: #15253f;
+  --primary: #fafaf9;
+  --primary-foreground: #0a1628;
+  --muted-foreground: #a9b4c4;
+  --border: #24354f;
+
+  --signal: #14b8a6; /* brand teal-bright; ink text 7.3:1 */
+  --signal-text: #14b8a6;
+  --signal-ink: #0a1628;
   --brand: #14b8a6;
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+
+  --destructive: #f2685c;
+  --destructive-foreground: #0a1628;
+  --success: #4ade80;
+  --warning: #f5b451;
+  --info: #7fb0f5;
+
+  --sev-critical-text: #f27493;
+  --sev-high-text: #f59a5c;
+  --sev-medium-text: #e8c14a;
+  --sev-low-text: #7fb0f5;
+  --sev-info-text: #a9b4c4;
+  --sev-critical-ink: #ffffff;
+  --sev-high-ink: #0a1628;
+  --sev-medium-ink: #0a1628;
+  --sev-low-ink: #0a1628;
+  --sev-info-ink: #0a1628;
+
+  --shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
 
   /* Dashboard chart palette (validated: scripts/check-palette.mjs, source src/lib/chart-palette.json). */
   --viz-sev-critical: #d9365e;
@@ -106,20 +168,20 @@
   --viz-sev-info: #94a3b8;
   --viz-cat-1: #3987e5;
   --viz-cat-2: #d95926;
-  --viz-cat-3: #199e70;
-  --viz-cat-4: #c98500;
-  --viz-cat-5: #d55181;
-  --viz-cat-6: #008300;
-  --viz-cat-7: #9085e9;
+  --viz-cat-3: #9085e9;
+  --viz-cat-4: #2c9442;
+  --viz-cat-5: #dc6497;
+  --viz-cat-6: #9a9400;
+  --viz-cat-7: #2a9fd8;
   --viz-cat-8: #e66767;
   --viz-cat-other: #64748b;
   --viz-div-opened: #d95926;
   --viz-div-fixed: #3987e5;
-  --viz-seq-1: #0d366b;
-  --viz-seq-2: #184f95;
-  --viz-seq-3: #256abf;
-  --viz-seq-4: #5598e7;
-  --viz-seq-5: #86b6ef;
+  --viz-seq-1: #1a4a91;
+  --viz-seq-2: #225db0;
+  --viz-seq-3: #2f72cc;
+  --viz-seq-4: #6aa3ec;
+  --viz-seq-5: #9fc4f4;
   --viz-seq-ink-1: #ffffff;
   --viz-seq-ink-2: #ffffff;
   --viz-seq-ink-3: #ffffff;
@@ -146,8 +208,13 @@
       transform: scale(1);
     }
   }
-  --font-inter: 'Inter', 'sans-serif';
-  --font-manrope: 'Manrope', 'sans-serif';
+  /* One text face and one mono, self-hosted (src/styles/fonts.css). */
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -173,6 +240,29 @@
   --color-warning: var(--warning);
   --color-info: var(--info);
   --color-brand: var(--brand);
+  --color-signal: var(--signal);
+  --color-signal-text: var(--signal-text);
+  --color-signal-ink: var(--signal-ink);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-fg-dim: var(--fg-dim);
+  --color-sev-critical: var(--sev-critical);
+  --color-sev-high: var(--sev-high);
+  --color-sev-medium: var(--sev-medium);
+  --color-sev-low: var(--sev-low);
+  --color-sev-info: var(--sev-info);
+  --color-sev-critical-text: var(--sev-critical-text);
+  --color-sev-high-text: var(--sev-high-text);
+  --color-sev-medium-text: var(--sev-medium-text);
+  --color-sev-low-text: var(--sev-low-text);
+  --color-sev-info-text: var(--sev-info-text);
+  --color-sev-critical-ink: var(--sev-critical-ink);
+  --color-sev-high-ink: var(--sev-high-ink);
+  --color-sev-medium-ink: var(--sev-medium-ink);
+  --color-sev-low-ink: var(--sev-low-ink);
+  --color-sev-info-ink: var(--sev-info-ink);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
