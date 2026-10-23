@@ -453,7 +453,8 @@ export function certificateStandingText(
           'Low-impact checks only: an endpoint serves it, and no scope entry covers that endpoint.'
         ),
         ok: false,
-        endpointId: c.endpoints[0]?.asset_id,
+        // The first endpoint with no state: one that carries a state is held, not the one a scope entry would cover.
+        endpointId: c.endpoints.find((e) => !e.state)?.asset_id,
         ownership,
       }
     case 'held': {

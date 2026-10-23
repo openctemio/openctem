@@ -17,6 +17,35 @@ const base: CertificateStanding = {
 }
 
 describe('certificateStandingText', () => {
+  it('opens the first endpoint that is not held when low-impact', () => {
+    const r = certificateStandingText(t, {
+      ...base,
+      standing: 'low_impact',
+      endpoints: [
+        { asset_id: 'ep-held', name: 'h.example.com:443', state: 'rejected' },
+        { asset_id: 'ep-open', name: 'o.example.com:443' },
+      ],
+    })
+    expect(r.endpointId).toBe('ep-open')
+  })
+
+  it('opens no endpoint when every one carries a state', () => {
+    const r = certificateStandingText(t, {
+      ...base,
+      standing: 'low_impact',
+      endpoints: [{ asset_id: 'ep-held', name: 'h.example.com:443', state: 'rejected' }],
+    })
+    expect(r.endpointId).toBeUndefined()
+  })
+
+  it('has no vi held reason that starts with a negation or adverb, and no dangling "đang"', () => {
+    const vi = viAssets as Record<string, string>
+    expect(vi['assets.certificate.held']).not.toContain('đang')
+    for (const [k, v] of Object.entries(vi)) {
+      if (k.startsWith('assets.certificate.held.')) expect(v).not.toMatch(/^(không|chưa|chỉ)\b/)
+    }
+  })
+
   it('says which endpoint puts the certificate in scope, and links it', () => {
     const r = certificateStandingText(t, {
       ...base,
