@@ -107,17 +107,18 @@ func (s *VulnerabilityService) requireApproverStepUp(ctx context.Context, approv
 	return s.stepUpGate.RequireRecentAuth(ctx, approver.String())
 }
 
-// orgPolicy is the organization's policy in force and its false-positive
-// level and second-look share.
+// orgPolicy is the organization's policy in force, its false-positive and
+// risk acceptance levels and second-look share.
 type orgPolicy struct {
 	policy            approvalpolicy.Policy
 	fpLevel           string
+	acceptLevel       string
 	secondLookPercent int
 	poolConfigured    bool
 }
 
 func (s *VulnerabilityService) orgApprovalPolicy(ctx context.Context, tid shared.ID) (orgPolicy, error) {
-	out := orgPolicy{fpLevel: approvalpolicy.FPLevelAll}
+	out := orgPolicy{fpLevel: approvalpolicy.FPLevelAll, acceptLevel: approvalpolicy.FPLevelAll}
 	if s.approvalSettings == nil {
 		return out, nil
 	}
@@ -128,6 +129,7 @@ func (s *VulnerabilityService) orgApprovalPolicy(ctx context.Context, tid shared
 	now := time.Now()
 	out.policy = settings.EffectivePolicy(now)
 	out.fpLevel = settings.EffectiveFPApproval(now)
+	out.acceptLevel = settings.EffectiveAcceptApproval(now)
 	out.secondLookPercent = settings.EffectiveSecondLookPercent(now)
 	out.poolConfigured = out.policy.SecurityPoolGroupID != ""
 	return out, nil
@@ -247,7 +249,7 @@ func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vu
 	}
 	res := approvalpolicy.Evaluate(op.policy, approvalpolicy.Request{
 		Kind: kind, Facts: pf.Facts, RequesterID: requester, ActorMade: actorMade, RequesterCanApprove: requesterCanApprove,
-		FPLevel: op.fpLevel, AssetOwners: pf.AssetOwners, AssigneeID: pf.AssigneeID,
+		FPLevel: op.fpLevel, AcceptLevel: op.acceptLevel, AssetOwners: pf.AssetOwners, AssigneeID: pf.AssigneeID,
 		Approvers: cands, SecurityPoolConfigured: op.poolConfigured,
 	})
 	return policyEvaluation{result: res, facts: pf.Facts, org: op}, nil
@@ -480,14 +482,14 @@ func (s *VulnerabilityService) signOffApproval(ctx context.Context, approval *vu
 	return applied, nil
 }
 
-// EffectiveApprovalPolicy is the organization's approval policy in force
-// (the material-change controller's policy source).
-func (s *VulnerabilityService) EffectiveApprovalPolicy(ctx context.Context, tenantID shared.ID) (approvalpolicy.Policy, error) {
+// EffectiveApprovalPolicy is the organization's approval policy and risk
+// acceptance level in force (the material-change controller's source).
+func (s *VulnerabilityService) EffectiveApprovalPolicy(ctx context.Context, tenantID shared.ID) (approvalpolicy.Policy, string, error) {
 	op, err := s.orgApprovalPolicy(ctx, tenantID)
 	if err != nil {
-		return approvalpolicy.Policy{}, err
+		return approvalpolicy.Policy{}, "", err
 	}
-	return op.policy, nil
+	return op.policy, op.acceptLevel, nil
 }
 
 // NotifyMaterialChange tells the requester and the approvers of a decision
