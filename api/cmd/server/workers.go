@@ -1350,6 +1350,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				BatchSize:    5,
 				MaxPerTick:   50,
 				LeaseTimeout: 5 * time.Minute,
+				Workers:      cfg.Ingest.Workers,
 				Logger:       log.With("controller", "ingest-worker"),
 			},
 		))

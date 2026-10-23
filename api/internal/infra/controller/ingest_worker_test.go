@@ -28,6 +28,7 @@ type stubQueue struct {
 	fails         []failCall
 	releaseStale  int
 	releaseStaleN int
+	staleDead     []*ingestjob.Job
 }
 
 func (q *stubQueue) ClaimBatch(_ context.Context, _ string, _ int) ([]*ingestjob.Job, error) {
@@ -46,9 +47,9 @@ func (q *stubQueue) Fail(_ context.Context, id ingestjob.ID, msg, public string,
 	q.fails = append(q.fails, failCall{id, msg, public, dead})
 	return nil
 }
-func (q *stubQueue) ReleaseStale(_ context.Context, _ time.Duration) (int, error) {
+func (q *stubQueue) ReleaseStale(_ context.Context, _ time.Duration) (int, []*ingestjob.Job, error) {
 	q.releaseStale++
-	return q.releaseStaleN, nil
+	return q.releaseStaleN, q.staleDead, nil
 }
 func (q *stubQueue) CountPending(_ context.Context) (int, error) { return 0, nil }
 
@@ -186,6 +187,19 @@ func TestIngestWorker_ExhaustedRetriesAreApplyFailed(t *testing.T) {
 		t.Fatalf("fails = %+v", q.fails)
 	}
 	if len(p.dead) != 1 {
+		t.Fatalf("dead letters = %v", p.dead)
+	}
+}
+
+// A job whose lease expired on its last attempt is dead-lettered once.
+func TestIngestWorker_StaleDeadJobsAreDeadLettered(t *testing.T) {
+	q := &stubQueue{staleDead: []*ingestjob.Job{newJob(t)}}
+	p := &deadLetterProcessor{}
+	c := NewIngestWorkerController(q, p, &IngestWorkerControllerConfig{})
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.dead) != 1 || p.dead[0] != ingestjob.ErrorApplyFailed {
 		t.Fatalf("dead letters = %v", p.dead)
 	}
 }
