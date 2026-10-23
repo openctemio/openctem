@@ -242,9 +242,8 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
           'assets.overview.description',
           'Everything your organization owns that can be attacked, by area.'
         )}
-      >
-        {viewSwitcher}
-      </PageHeader>
+        viewSwitcher={viewSwitcher}
+      />
       <AssetsSectionTabs />
 
       {dedupCount > 0 && (
