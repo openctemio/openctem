@@ -30,6 +30,28 @@ export function formatRelative(
   }
 }
 
+/**
+ * A date (or, with `time`, a date and time) in the console language, safe
+ * against missing/invalid input. `locale` is the i18n locale from
+ * `useTranslation()`; the browser's own language is not used.
+ */
+export function formatLocalized(
+  value: string | number | Date | null | undefined,
+  locale: string,
+  opts: { time?: boolean; fallback?: string } = {}
+): string {
+  const d = toDate(value)
+  if (!d) return opts.fallback ?? '—'
+  try {
+    return d.toLocaleString(locale, {
+      dateStyle: 'medium',
+      ...(opts.time ? { timeStyle: 'short' } : {}),
+    })
+  } catch {
+    return d.toISOString()
+  }
+}
+
 /** Absolute date format, safe against missing/invalid input. Default: "PP". */
 export function formatDateSafe(
   value: string | number | Date | null | undefined,
