@@ -133,10 +133,15 @@ describe('ScanRunsTab', () => {
     expect(within(table).getByText('7')).toBeInTheDocument()
   })
 
-  it('shows the real run counts; failed includes timed out and does not filter', () => {
+  it('shows five status tiles, each a filter of the list (research/244)', () => {
     render(<ScanRunsTab />)
-    expect(screen.getByText('Failed or timed out')).toBeInTheDocument()
-    expect(screen.getByText('33')).toBeInTheDocument()
+    const strip = document.querySelector('[data-slot=metric-strip]') as HTMLElement
+    const tiles = Array.from(strip.children)
+    expect(tiles).toHaveLength(5)
+    expect(tiles.every((t) => t.matches('button[aria-pressed]'))).toBe(true)
+    // Failed and timed out are counted together by the API, so they have no
+    // tile (it could not equal its list); the Status filter has both.
+    expect(screen.queryByText('Failed or timed out')).not.toBeInTheDocument()
   })
 
   it('counts partial runs and filters on them', async () => {
