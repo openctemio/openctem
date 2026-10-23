@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type { CtemCycleStatus } from '../types'
 
 // Status meaning uses the theme's status tokens (dark-mode safe): planning is
@@ -11,6 +12,12 @@ const STATUS_CLASS: Record<CtemCycleStatus, string> = {
   closed: 'bg-muted text-muted-foreground',
 }
 
+/** The cycle status in words, in the console language. */
+export function useCycleStatusLabel() {
+  const { t } = useTranslation()
+  return (status: string) => t(`scoping.cycleStatus.${status}`, status)
+}
+
 export function CycleStatusBadge({
   status,
   className,
@@ -18,9 +25,10 @@ export function CycleStatusBadge({
   status: CtemCycleStatus
   className?: string
 }) {
+  const label = useCycleStatusLabel()
   return (
-    <Badge variant="outline" className={cn('capitalize', STATUS_CLASS[status], className)}>
-      {status}
+    <Badge variant="outline" className={cn(STATUS_CLASS[status], className)}>
+      {label(status)}
     </Badge>
   )
 }

@@ -107,11 +107,7 @@ const COLUMNS: ColumnDef<ActiveCVE>[] = [
             {c.title}
           </span>
           {c.worst_finding_status && c.worst_finding_status !== 'unknown' && (
-            <FindingStatusBadge
-              status={c.worst_finding_status as FindingStatus}
-              variant="outline"
-              className="text-xs"
-            />
+            <FindingStatusBadge status={c.worst_finding_status as FindingStatus} />
           )}
         </div>
       )

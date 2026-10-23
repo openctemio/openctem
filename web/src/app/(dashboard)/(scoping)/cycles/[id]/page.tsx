@@ -13,9 +13,9 @@ import { ErrorState, MetricStrip, PageHeader, type MetricStripItem } from '@/fea
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { formatDateOnly, parseDateOnly } from '@/lib/date-only'
 import { useTranslation } from '@/context/i18n-provider'
 import { CharterEditorSheet, summarizeEvaluation } from '@/features/cycles'
+import { cycleTimeline } from '@/features/cycles/cycle-format'
 import { useCycle, useCycleProfiles, useCycleScope } from '@/features/cycles/api'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
 import { CycleLifecycleAction } from '@/features/cycles/components/cycle-lifecycle-actions'
@@ -25,27 +25,9 @@ import {
   CycleProfilesTab,
   CycleScopeTab,
 } from '@/features/cycles/components/cycle-detail-tabs'
-import type { CtemCycle } from '@/features/cycles'
 
 const TABS = ['charter', 'scope', 'profiles', 'outcome'] as const
 type CycleTab = (typeof TABS)[number]
-
-function formatDate(d?: string): string {
-  return formatDateOnly(d)
-}
-
-/** "Day 23 of 90" while running, the date range otherwise. */
-function timeline(cycle: CtemCycle): { value: string; hint?: string } {
-  const start = cycle.start_date ? parseDateOnly(cycle.start_date) : null
-  const end = cycle.end_date ? parseDateOnly(cycle.end_date) : null
-  if (!start || !end) return { value: 'No dates' }
-  const range = `${formatDate(cycle.start_date)} – ${formatDate(cycle.end_date)}`
-  if (cycle.status !== 'active') return { value: range }
-  const day = 86_400_000
-  const total = Math.max(1, Math.round((end.getTime() - start.getTime()) / day))
-  const elapsed = Math.min(total, Math.max(0, Math.round((Date.now() - start.getTime()) / day)))
-  return { value: `Day ${elapsed} of ${total}`, hint: range }
-}
 
 function CycleDetail() {
   const params = useParams<{ id: string }>()
@@ -53,7 +35,7 @@ function CycleDetail() {
   const { data: cycle, error, isLoading, mutate } = useCycle(id)
   useBreadcrumbTitle(cycle?.name)
   const frozen = cycle && cycle.status !== 'planning'
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { data: scope, error: scopeError } = useCycleScope(frozen ? (id ?? null) : null)
   const { data: profiles, error: profilesError } = useCycleProfiles(id)
   const [tabParam, setTab] = useUrlFilter('tab', 'charter')
@@ -65,9 +47,13 @@ function CycleDetail() {
   if (error) {
     return (
       <Main>
-        <PageHeader title="Cycle" />
+        <PageHeader title={t('scoping.cycleDetail.title', 'Cycle')} />
         <div className="mt-5">
-          <ErrorState title="this cycle" error={error} onRetry={() => mutate()} />
+          <ErrorState
+            title={t('scoping.cycleDetail.loadError', 'this cycle')}
+            error={error}
+            onRetry={() => mutate()}
+          />
         </div>
       </Main>
     )
@@ -83,27 +69,36 @@ function CycleDetail() {
   }
 
   const charter = cycle.charter ?? {}
-  const when = timeline(cycle)
+  const when = cycleTimeline(cycle, t, locale)
   const profileCount = profiles?.data?.length
   const criteria = charter.success_criteria?.length ?? 0
   const metrics: MetricStripItem[] = [
-    { key: 'timeline', label: 'Timeline', value: when.value, hint: when.hint },
+    {
+      key: 'timeline',
+      label: t('scoping.cycleDetail.timeline', 'Timeline'),
+      value: when.value,
+      hint: when.hint,
+    },
     {
       key: 'scope',
-      label: 'Assets in scope',
+      label: t('scoping.cycleDetail.assetsInScope', 'Assets in scope'),
       value: frozen ? (scope?.length ?? (scopeError ? '—' : '…')) : '—',
       hint:
         frozen && scopeError
           ? t('scope.cycles.scopeLoadFailed', 'Scope could not be loaded.')
           : frozen
-            ? 'frozen on Activate'
-            : `${charter.in_scope_services?.length ?? 0} in-scope services`,
+            ? t('scoping.cycleDetail.frozenOnActivate', 'Frozen on Activate')
+            : t(
+                'scoping.cycleDetail.inScopeServices',
+                '{n, plural, one {# in-scope service} other {# in-scope services}}',
+                { n: charter.in_scope_services?.length ?? 0 }
+              ),
       onClick: () => setTab('scope'),
       active: tab === 'scope',
     },
     {
       key: 'profiles',
-      label: 'Attacker profiles',
+      label: t('scoping.cycleDetail.attackerProfiles', 'Attacker profiles'),
       value: profileCount ?? (profilesError ? '—' : '…'),
       hint: profilesError
         ? t('scope.cycles.profilesLoadFailed', 'Attacker profiles could not be loaded.')
@@ -113,9 +108,11 @@ function CycleDetail() {
     },
     {
       key: 'criteria',
-      label: 'Success criteria',
-      value: summarizeEvaluation(cycle.charter_evaluation) ?? criteria,
-      hint: cycle.charter_evaluation ? undefined : 'evaluated at close',
+      label: t('scoping.cycleDetail.successCriteria', 'Success criteria'),
+      value: summarizeEvaluation(cycle.charter_evaluation, t) ?? criteria,
+      hint: cycle.charter_evaluation
+        ? undefined
+        : t('scoping.cycleDetail.evaluatedAtClose', 'Evaluated at close'),
       onClick: () => setTab('outcome'),
       active: tab === 'outcome',
     },
@@ -126,7 +123,10 @@ function CycleDetail() {
       <Main>
         <PageHeader
           title={cycle.name}
-          description={cycle.description || 'A CTEM cycle: its charter, scope and outcome.'}
+          description={
+            cycle.description ||
+            t('scoping.cycleDetail.description', 'A CTEM cycle: its charter, scope and outcome.')
+          }
         >
           <CycleStatusBadge status={cycle.status} />
           <CycleLifecycleAction
@@ -143,14 +143,20 @@ function CycleDetail() {
 
         <Tabs value={tab} onValueChange={setTab} className="mt-5">
           <TabsList>
-            <TabsTrigger value="charter">Charter</TabsTrigger>
+            <TabsTrigger value="charter">
+              {t('scoping.cycleDetail.tab.charter', 'Charter')}
+            </TabsTrigger>
             <TabsTrigger value="scope">
-              Scope {frozen && <TabsCount value={scope?.length} />}
+              {t('scoping.cycleDetail.tab.scope', 'Scope')}{' '}
+              {frozen && <TabsCount value={scope?.length} />}
             </TabsTrigger>
             <TabsTrigger value="profiles">
-              Attacker profiles <TabsCount value={profileCount} />
+              {t('scoping.cycleDetail.tab.profiles', 'Attacker profiles')}{' '}
+              <TabsCount value={profileCount} />
             </TabsTrigger>
-            <TabsTrigger value="outcome">Outcome</TabsTrigger>
+            <TabsTrigger value="outcome">
+              {t('scoping.cycleDetail.tab.outcome', 'Outcome')}
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="charter" className="mt-5">
             <CycleCharterTab cycle={cycle} onEdit={() => setCharterOpen(true)} />
