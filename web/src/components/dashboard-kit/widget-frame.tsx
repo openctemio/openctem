@@ -348,7 +348,7 @@ export function WidgetFrame(props: WidgetFrameProps) {
       aria-busy={state === 'loading' || state === 'scope_changed'}
       data-state={state}
       className={cn(
-        'flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-card p-4 text-card-foreground shadow-sm',
+        'flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-card p-4 text-card-foreground',
         className
       )}
     >
