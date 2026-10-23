@@ -1563,7 +1563,8 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
 	if svc.ActiveGate != nil {
 		h.SetActiveGate(svc.ActiveGate)
-		h.SetScopeReader(svc.ActiveGate) // scope_status, covered_by (RFC-054 §6.6)
+		h.SetScopeReader(svc.ActiveGate)       // scope_status, covered_by (RFC-054 §6.6)
+		h.SetCertificateReader(svc.ActiveGate) // certificate standing (RFC-054 §19)
 	}
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)

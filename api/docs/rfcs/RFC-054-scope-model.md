@@ -1355,7 +1355,9 @@ low-impact profile, and the shared-network guardrail still holds edges.
 A guardrailed asset stays in the inventory, gets passive enrichment, and the
 asset page shows the reason. "Allow scanning" creates the asset's exact
 scope entry through the scope service (scope write, step-up, approvals in
-Strict, audit); that is the only way past a guardrail.
+Strict, audit); that is the only way past a guardrail. The action applies
+to probe targets (domain, subdomain, IP address, service, URL, host). On a
+certificate it moves to the endpoint that served it (§19).
 
 ### 16.3 The low-impact profile
 
@@ -1500,3 +1502,55 @@ Migrations `002193_ci_trust_managed_scope` (renumbered at merge as needed) add:
 | An entry a person deleted comes back | Recorded on the link; runs and trust changes never create it again |
 | Another organization's public namespace trusted | The entry is labelled with no verified run; opt-in proof keeps it inactive; no clone credential, no network authority |
 | Cross-tenant links or evidence | Tenant-filtered queries, composite foreign keys, evidence only from the tenant's own verified exchange |
+
+## 19. Amendment 2026-10-23: a certificate is judged by its endpoints
+
+### 19.1 Problem
+
+A certificate asset is named by its SHA-256 fingerprint and no scan stage takes it as input: it is evidence
+that a probe of an endpoint produced. The gate judged it by its own name, which no scope entry can match, so
+the foreign-domain and unplaceable guardrails always fired ("Held by a platform guardrail"), and the only
+action offered was an "Add to scope" prefilled with the fingerprint.
+
+### 19.2 Rules
+
+1. **Judged by its endpoints.** A certificate passes the active-probe gate when an endpoint that served it
+   (an asset with a `serves_certificate` relationship to it, both ends the tenant's) passes the full gate on
+   its own: deny list, rejections, exclusions, record state, scope entries, guardrails. It is never judged by
+   fingerprint. If no endpoint passes it shows the strongest refusal among them (platform_denied, rejected,
+   dependency, monitor_only, wildcard_only, guardrailed, then the rest). With no known endpoint it is not
+   applicable and nothing is dispatched. A person's own decision on the certificate (rejected, dependency,
+   monitor only, sent back to review) still refuses.
+2. **Standing.** `in_scope` when an endpoint is covered by a scope entry (the explanation names the endpoint
+   and the entry: `served_by`), `low_impact` when an endpoint passes with no entry (unclassified checks, §16),
+   `held` when every endpoint is refused, `not_applicable` when none is known.
+3. **Ownership is a separate signal.** A name in the certificate (the subject CN or a SAN, a leading `*.`
+   read as its root) under a domain, subdomain or host entry of the tenant, or under a verified domain, marks
+   it `yours`. Bug-bounty program entries are another organization's domains and never count; a name under a
+   rejected parent, or on the deny list, never counts. A certificate on an endpoint of ours whose names are
+   all foreign is a `third_party` certificate; its findings still count.
+4. **One-way inheritance.** Scope flows from the endpoint to the certificate it served and never back. A
+   certificate never brings its endpoint, address or any name into scope, and a name in it never lends scope
+   to another name: anyone can mint a certificate with any names. Ownership authorizes nothing.
+5. **Order unchanged.** The deny list, exclusions, rejections and guardrails run first, per endpoint, so a
+   derived standing never relaxes a platform control.
+6. **Fail closed.** A failed endpoint lookup fails the check (nothing is dispatched). A relationship whose
+   source is itself a certificate is no endpoint. At most 200 endpoints per certificate are judged and 100
+   names read.
+
+### 19.3 Surfaces
+
+`GET /assets/{id}/attribution` returns `certificate` on a certificate asset: the standing, `served_by`, the
+strongest refusal (`held_by`), up to ten endpoints with their state, the endpoint count, and the ownership
+with the matching name and entry. Endpoints outside the caller's data scope are not named. `scope_status` and
+`covered_by` follow the same standing (`covered_by.kind` is `served_by`).
+
+### 19.4 Threats
+
+| Threat | Control |
+|---|---|
+| An attacker-made certificate with the tenant's names on a foreign address pulls the address into scope | One-way inheritance: the endpoint is judged on its own and stays out; ownership authorizes nothing |
+| A shared certificate drags foreign names into ownership | Only names under the tenant's own roots mark ownership; foreign names make it third-party |
+| Another tenant's names or verified domains count | The authority and every lookup are loaded per tenant; the relationship read filters both ends by tenant |
+| A certificate hides an endpoint refusal | The strongest refusal among its endpoints is the certificate's; the deny list is evaluated per endpoint |
+| An endpoint outside the caller's data scope is revealed | The response names only endpoints the caller may read |
