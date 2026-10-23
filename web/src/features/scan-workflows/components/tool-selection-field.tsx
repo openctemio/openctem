@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ScanWorkflowStep } from '@/lib/api'
 import type { Capability } from '../lib/capability-graph'
 import { withSelection, type ToolSelection } from '../lib/step-settings'
@@ -35,10 +36,13 @@ export function ToolSelectionField({
   readOnly?: boolean
   onChange: (step: ScanWorkflowStep) => void
 }) {
+  const { t } = useTranslation()
   const prefer = step.prefer_tools ?? []
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tool</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('workflowStages.toolSelect.title')}
+      </h3>
       <RadioGroup
         value={mode}
         disabled={readOnly}
@@ -55,28 +59,46 @@ export function ToolSelectionField({
         className="gap-2"
       >
         <label className="flex items-start gap-2 text-sm">
-          <RadioGroupItem value="auto" aria-label="Any tool" className="mt-0.5" />
+          <RadioGroupItem
+            value="auto"
+            aria-label={t('workflowStages.toolSelect.anyTool')}
+            className="mt-0.5"
+          />
           <span>
-            Any tool
+            {t('workflowStages.toolSelect.anyTool')}
             <span className="block text-xs text-muted-foreground">
-              The platform picks an available tool, {capability.defaultTool || 'the default'} first.
+              {t(
+                'workflowStages.toolSelect.anyToolHint',
+                'The platform picks an available tool, {tool} first.',
+                { tool: capability.defaultTool || t('workflowStages.toolSelect.defaultTool') }
+              )}
             </span>
           </span>
         </label>
         <label className="flex items-start gap-2 text-sm">
-          <RadioGroupItem value="prefer" aria-label="Preferred tools" className="mt-0.5" />
+          <RadioGroupItem
+            value="prefer"
+            aria-label={t('workflowStages.toolSelect.preferAria')}
+            className="mt-0.5"
+          />
           <span>
-            Preferred tools, in order
+            {t('workflowStages.toolSelect.prefer')}
             <span className="block text-xs text-muted-foreground">
-              Only these, tried in this order.
+              {t('workflowStages.toolSelect.preferHint')}
             </span>
           </span>
         </label>
         <label className="flex items-start gap-2 text-sm">
-          <RadioGroupItem value="pin" aria-label="One tool" className="mt-0.5" />
+          <RadioGroupItem
+            value="pin"
+            aria-label={t('workflowStages.toolSelect.oneTool')}
+            className="mt-0.5"
+          />
           <span>
-            One tool
-            <span className="block text-xs text-muted-foreground">Always this tool.</span>
+            {t('workflowStages.toolSelect.oneTool')}
+            <span className="block text-xs text-muted-foreground">
+              {t('workflowStages.toolSelect.oneToolHint')}
+            </span>
           </span>
         </label>
       </RadioGroup>
@@ -87,8 +109,8 @@ export function ToolSelectionField({
           disabled={readOnly}
           onValueChange={(t) => onChange(withSelection(step, capability, 'pin', [t]))}
         >
-          <SelectTrigger aria-label="Pinned tool" className="h-8 text-xs">
-            <SelectValue placeholder="Choose a tool" />
+          <SelectTrigger aria-label={t('workflowStages.toolSelect.pinned')} className="h-8 text-xs">
+            <SelectValue placeholder={t('workflowStages.toolSelect.choose')} />
           </SelectTrigger>
           <SelectContent>
             {capability.tools.map((t) => (
@@ -135,8 +157,11 @@ export function ToolSelectionField({
         <p key={tool} className="flex items-start gap-1.5 text-xs text-warning">
           <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
           <span>
-            {tool} does not take {params.join(', ')}, so it cannot run this step with these
-            settings.
+            {t(
+              'workflowStages.toolSelect.missing',
+              '{tool} does not take {params}, so it cannot run this step with these settings.',
+              { tool, params: params.join(', ') }
+            )}
           </span>
         </p>
       ))}

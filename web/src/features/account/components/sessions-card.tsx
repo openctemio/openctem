@@ -54,22 +54,29 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
     if (!toRevoke) return
     try {
       await revokeSession(toRevoke.id)
-      toast.success('Session signed out')
+      toast.success(t('account.sessions.revoked', 'Session signed out'))
       setToRevoke(null)
       onChanged()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to sign out the session'))
+      toast.error(
+        getErrorMessage(error, t('account.sessions.revokeFailed', 'Could not sign out the session'))
+      )
     }
   }
 
   async function revokeOthers() {
     try {
       await revokeAllSessions()
-      toast.success('Signed out of all other sessions')
+      toast.success(t('account.sessions.revokedOthers', 'Signed out of all other sessions'))
       setConfirmAll(false)
       onChanged()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to sign out other sessions'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('account.sessions.revokeOthersFailed', 'Could not sign out the other sessions')
+        )
+      )
     }
   }
 
@@ -79,14 +86,16 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
         <div className="space-y-1.5">
           <CardTitle className="flex items-center gap-2">
             <Monitor className="h-5 w-5" />
-            Sessions
+            {t('account.sessions.title', 'Sessions')}
           </CardTitle>
-          <CardDescription>Devices signed in to your account.</CardDescription>
+          <CardDescription>
+            {t('account.sessions.description', 'Devices signed in to your account.')}
+          </CardDescription>
         </div>
         {others.length > 0 && (
           <Button variant="outline" size="sm" onClick={() => setConfirmAll(true)}>
             <LogOut className="h-4 w-4" />
-            Sign out all others
+            {t('account.sessions.signOutOthers', 'Sign out all others')}
           </Button>
         )}
       </CardHeader>
@@ -97,7 +106,11 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
             <Skeleton className="h-16 w-full" />
           </div>
         ) : sessions.length === 0 ? (
-          <EmptyState icon={Monitor} title="No active sessions" card={false} />
+          <EmptyState
+            icon={Monitor}
+            title={t('account.sessions.empty', 'No active sessions')}
+            card={false}
+          />
         ) : (
           <ul className="divide-y rounded-md border">
             {ordered.map((s) => {
@@ -110,18 +123,37 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
                     <div className="min-w-0 space-y-0.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">
-                          {d.browser} on {d.os}
+                          {t('account.sessions.browserOn', '{browser} on {os}', {
+                            browser:
+                              d.browser === 'Unknown browser'
+                                ? t('account.sessions.unknownBrowser', 'Unknown browser')
+                                : d.browser,
+                            os:
+                              d.os === 'unknown device'
+                                ? t('account.sessions.unknownDevice', 'unknown device')
+                                : d.os,
+                          })}
                         </span>
-                        {s.is_current && <Badge variant="secondary">This device</Badge>}
+                        {s.is_current && (
+                          <Badge variant="secondary">
+                            {t('account.sessions.thisDevice', 'This device')}
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {s.ip_address ? (
                           <span className="font-mono">{s.ip_address}</span>
                         ) : (
-                          'Unknown IP'
+                          t('account.sessions.unknownIp', 'Unknown IP')
                         )}
-                        {' · '}Signed in {formatDateSafe(s.created_at)}
-                        {' · '}Last active {formatRelative(s.last_activity_at)}
+                        {' · '}
+                        {t('account.sessions.signedIn', 'Signed in {date}', {
+                          date: formatDateSafe(s.created_at),
+                        })}
+                        {' · '}
+                        {t('account.sessions.lastActive', 'Last active {when}', {
+                          when: formatRelative(s.last_activity_at),
+                        })}
                       </p>
                     </div>
                   </div>
@@ -132,7 +164,7 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
                       className="shrink-0 text-destructive hover:text-destructive"
                       onClick={() => setToRevoke(s)}
                     >
-                      Sign out
+                      {t('account.sessions.signOut', 'Sign out')}
                     </Button>
                   )}
                 </li>
