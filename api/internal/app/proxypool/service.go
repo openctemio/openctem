@@ -127,6 +127,11 @@ func (s *Service) CreatePool(ctx context.Context, in CreatePoolInput, actx audit
 			return nil, err
 		}
 	}
+	// A sensor on an enabled pool with no proxy gets no scan jobs (scans
+	// never fall back to a direct connection), so refuse that state.
+	if enabled && len(entries) == 0 {
+		return nil, pooldom.ErrEnabledNeedsEndpoint
+	}
 	n, err := s.repo.CountPools(ctx, tid)
 	if err != nil {
 		return nil, err
@@ -172,6 +177,9 @@ func (s *Service) UpdatePool(ctx context.Context, in UpdatePoolInput, actx audit
 	before := *p
 	if err := p.Update(in.Name, in.Description, in.Strategy, in.Enabled, in.IsDefault); err != nil {
 		return nil, err
+	}
+	if p.Enabled && !before.Enabled && len(p.Endpoints) == 0 {
+		return nil, pooldom.ErrEnabledNeedsEndpoint
 	}
 	if err := s.repo.UpdatePool(ctx, p); err != nil {
 		return nil, err
@@ -223,6 +231,10 @@ func (s *Service) ReplaceEndpoints(ctx context.Context, tenantID, poolID, text s
 	entries, err := pooldom.ParseList(text)
 	if err != nil {
 		return nil, err
+	}
+	// Emptying an enabled pool would leave its sensors without scan jobs.
+	if p.Enabled && len(entries) == 0 && len(p.Endpoints) > 0 {
+		return nil, pooldom.ErrEnabledNeedsEndpoint
 	}
 	if err := s.replace(ctx, p, entries, actx); err != nil {
 		return nil, err

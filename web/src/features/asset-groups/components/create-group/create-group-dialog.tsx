@@ -36,6 +36,10 @@ interface CreateGroupDialogProps {
   onOpenChange: (open: boolean) => void
   /** Available ungrouped assets to select from */
   ungroupedAssets: Asset[]
+  /** Called with the search text when the list is searched on the server; the list is then not filtered again here. */
+  onAssetSearchChange?: (search: string) => void
+  /** Every asset the review step may need to name (the picks of earlier searches); defaults to ungroupedAssets. */
+  reviewAssets?: Asset[]
   /** Called when group is created */
   onSubmit?: (input: CreateAssetGroupInput) => void | Promise<void>
 }
@@ -46,6 +50,8 @@ export function CreateGroupDialog({
   open,
   onOpenChange,
   ungroupedAssets,
+  onAssetSearchChange,
+  reviewAssets,
   onSubmit,
 }: CreateGroupDialogProps) {
   const [currentStep, setCurrentStep] = useState<GroupWizardStep>('basic')
@@ -176,10 +182,11 @@ export function CreateGroupDialog({
             data={formData}
             onChange={handleDataChange}
             ungroupedAssets={ungroupedAssets}
+            onSearchChange={onAssetSearchChange}
           />
         )
       case 'review':
-        return <ReviewStep data={formData} ungroupedAssets={ungroupedAssets} />
+        return <ReviewStep data={formData} ungroupedAssets={reviewAssets ?? ungroupedAssets} />
       default:
         return null
     }

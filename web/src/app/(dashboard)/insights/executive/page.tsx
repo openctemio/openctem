@@ -1,5 +1,6 @@
 'use client'
 
+import { KevBadge } from '@/components/ui/kev-badge'
 import { formatEpssScore } from '@/lib/epss'
 import { useState } from 'react'
 import useSWR from 'swr'
@@ -221,7 +222,7 @@ const TOP_RISK_COLUMNS: ColumnDef<TopRisk>[] = [
     header: 'KEV',
     cell: ({ row }) =>
       row.original.is_in_kev ? (
-        <Badge variant="destructive">KEV</Badge>
+        <KevBadge />
       ) : (
         <span className="text-xs text-muted-foreground">—</span>
       ),

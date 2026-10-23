@@ -28,6 +28,7 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <div
+      data-slot="page-header"
       className={cn(
         'flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-3',
         className
