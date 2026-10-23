@@ -1298,6 +1298,12 @@ vars:
     type: int
     default: "2"
     description: "Ingest jobs of one organization processing at once, across servers, so one organization cannot hold every worker. Keep it below `INGEST_WORKERS` times the number of servers."
+  - name: INGEST_MAX_JOB_DURATION
+    component: api
+    group: "Ingest"
+    type: duration
+    default: "30m"
+    description: "Hard cap on how long one ingest job may run. The worker renews a running job's five-minute lease, so a long import succeeds; a job past this cap is cancelled and retried."
   - name: INGEST_MODE
     component: api
     group: "Ingest"

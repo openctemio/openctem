@@ -15,8 +15,9 @@ import (
 // IngestJobQueue is the slice of the ingest-job repository the worker needs.
 type IngestJobQueue interface {
 	ClaimBatch(ctx context.Context, workerID string, limit int) ([]*ingestjob.Job, error)
-	Complete(ctx context.Context, id ingestjob.ID, result []byte) error
-	Fail(ctx context.Context, id ingestjob.ID, errMsg, publicErr string, availableAt time.Time, dead bool) error
+	Complete(ctx context.Context, id ingestjob.ID, attempts int, result []byte) error
+	Fail(ctx context.Context, id ingestjob.ID, attempts int, errMsg, publicErr string, availableAt time.Time, dead bool) error
+	Renew(ctx context.Context, id ingestjob.ID, attempts int) error
 	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, []*ingestjob.Job, error)
 	CountPending(ctx context.Context) (int, error)
 }
@@ -45,6 +46,12 @@ type IngestWorkerControllerConfig struct {
 	// LeaseTimeout: processing jobs whose lock is older than this are reclaimed
 	// (worker crash recovery). Default: 5m.
 	LeaseTimeout time.Duration
+	// RenewEvery is how often a processing job's lease is renewed while it
+	// runs. Default: LeaseTimeout/3.
+	RenewEvery time.Duration
+	// MaxJobDuration is the hard cap on one job's processing, however
+	// often its lease is renewed. Default: 30m.
+	MaxJobDuration time.Duration
 	// WorkerID identifies this replica's worker in locked_by. Default: "ingest-worker".
 	WorkerID string
 	// Workers is how many jobs this replica processes at once (each claims
@@ -82,6 +89,12 @@ func NewIngestWorkerController(queue IngestJobQueue, processor IngestJobProcesso
 	if cfg.LeaseTimeout <= 0 {
 		cfg.LeaseTimeout = 5 * time.Minute
 	}
+	if cfg.RenewEvery <= 0 {
+		cfg.RenewEvery = cfg.LeaseTimeout / 3
+	}
+	if cfg.MaxJobDuration <= 0 {
+		cfg.MaxJobDuration = 30 * time.Minute
+	}
 	if cfg.WorkerID == "" {
 		cfg.WorkerID = "ingest-worker"
 	}
@@ -102,13 +115,14 @@ func (c *IngestWorkerController) Name() string { return "ingest-worker" }
 func (c *IngestWorkerController) Interval() time.Duration { return c.cfg.Interval }
 
 // ReconcileTimeout implements controller.ReconcileTimeouter. The short poll
-// Interval is only how often we LOOK for work; a drain cycle then runs a claimed
-// batch (up to MaxPerTick jobs) through the full ingest pipeline — parsing a
-// report and persisting its findings — which routinely takes far longer than the
-// interval. Bounding the reconcile at the interval would cancel every non-trivial
-// batch mid-flight ("context deadline exceeded") and leave jobs to be reclaimed
-// as stale. Grant the batch the lease window it already holds exclusively.
-func (c *IngestWorkerController) ReconcileTimeout() time.Duration { return c.cfg.LeaseTimeout }
+// Interval is only how often we LOOK for work; a drain cycle then runs claimed
+// jobs through the full ingest pipeline, which routinely takes far longer than
+// the interval. A cycle claims new jobs for one lease window; each job holds
+// its lease by renewing it while it runs and is capped by MaxJobDuration, so
+// the cycle ends at most that long after the window closes.
+func (c *IngestWorkerController) ReconcileTimeout() time.Duration {
+	return c.cfg.LeaseTimeout + c.cfg.MaxJobDuration
+}
 
 // Reconcile reclaims stale jobs, then drains pending jobs with Workers
 // goroutines, at most MaxPerTick jobs in all. Each goroutine claims one job
@@ -142,6 +156,7 @@ func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 		metrics.IngestQueueDepth.Set(float64(depth))
 	}
 
+	start := time.Now()
 	var (
 		processed atomic.Int64
 		mu        sync.Mutex
@@ -152,7 +167,7 @@ func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for processed.Load() < int64(c.cfg.MaxPerTick) && ctx.Err() == nil {
+			for processed.Load() < int64(c.cfg.MaxPerTick) && ctx.Err() == nil && time.Since(start) < c.cfg.LeaseTimeout {
 				jobs, err := c.queue.ClaimBatch(ctx, c.cfg.WorkerID, 1)
 				if err != nil {
 					mu.Lock()
@@ -179,9 +194,26 @@ func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 	return int(processed.Load()), firstErr
 }
 
-// processOne runs a single job and records the outcome.
+// processOne runs a single job and records the outcome. While the job runs
+// its lease is renewed; a lost lease cancels the work and nothing is written.
 func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.Job) {
-	result, err := c.processor.Process(ctx, job)
+	jobCtx, cancel := context.WithTimeoutCause(ctx, c.cfg.MaxJobDuration,
+		errors.New("ingest job exceeded its maximum duration"))
+	jobCtx, cancelCause := context.WithCancelCause(jobCtx)
+	renewDone := make(chan struct{})
+	go func() {
+		defer close(renewDone)
+		c.renewLoop(jobCtx, cancelCause, job)
+	}()
+	result, err := c.processor.Process(jobCtx, job)
+	lost := errors.Is(context.Cause(jobCtx), ingestjob.ErrLeaseLost)
+	cancelCause(nil)
+	cancel()
+	<-renewDone
+	if lost {
+		c.leaseLost(job)
+		return
+	}
 	if err != nil {
 		// attempts was already incremented by ClaimBatch; dead once it reaches
 		// the ceiling. A permanent error (an unreadable upload, a report
@@ -196,7 +228,12 @@ func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.
 			publicErr = ingestjob.ErrorApplyFailed
 		}
 		retryAt := time.Now().Add(ingestjob.BackoffFor(job.Kind(), job.Attempts()))
-		if failErr := c.queue.Fail(ctx, job.ID(), err.Error(), publicErr, retryAt, dead); failErr != nil {
+		failErr := c.queue.Fail(ctx, job.ID(), job.Attempts(), err.Error(), publicErr, retryAt, dead)
+		if errors.Is(failErr, ingestjob.ErrLeaseLost) {
+			c.leaseLost(job)
+			return
+		}
+		if failErr != nil {
 			c.logger.Error("ingest: failed to mark job failed", "job_id", job.ID().String(), "error", failErr)
 		} else {
 			c.logger.Warn("ingest: job processing failed",
@@ -212,11 +249,45 @@ func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.
 		metrics.IngestJobsProcessedTotal.WithLabelValues(outcome).Inc()
 		return
 	}
-	if err := c.queue.Complete(ctx, job.ID(), result); err != nil {
+	if err := c.queue.Complete(ctx, job.ID(), job.Attempts(), result); err != nil {
+		if errors.Is(err, ingestjob.ErrLeaseLost) {
+			c.leaseLost(job)
+			return
+		}
 		c.logger.Error("ingest: failed to mark job complete", "job_id", job.ID().String(), "error", err)
 		return
 	}
 	metrics.IngestJobsProcessedTotal.WithLabelValues("completed").Inc()
 	// End-to-end latency: enqueue (created_at) to completion.
 	metrics.IngestJobDurationSeconds.Observe(time.Since(job.CreatedAt()).Seconds())
+}
+
+// renewLoop keeps the job's lease while it runs. When the lease is lost it
+// cancels the job's context with ErrLeaseLost; a failed renewal for any
+// other reason is retried at the next tick (the lease still has time).
+func (c *IngestWorkerController) renewLoop(ctx context.Context, cancel context.CancelCauseFunc, job *ingestjob.Job) {
+	t := time.NewTicker(c.cfg.RenewEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			err := c.queue.Renew(ctx, job.ID(), job.Attempts())
+			switch {
+			case err == nil:
+			case errors.Is(err, ingestjob.ErrLeaseLost):
+				cancel(ingestjob.ErrLeaseLost)
+				return
+			case ctx.Err() == nil:
+				c.logger.Warn("ingest: renew lease failed", "job_id", job.ID().String(), "error", err)
+			}
+		}
+	}
+}
+
+func (c *IngestWorkerController) leaseLost(job *ingestjob.Job) {
+	c.logger.Warn("ingest: lease lost; the job is not written by this attempt",
+		"job_id", job.ID().String(), "attempts", job.Attempts())
+	metrics.IngestJobsProcessedTotal.WithLabelValues("lease_lost").Inc()
 }

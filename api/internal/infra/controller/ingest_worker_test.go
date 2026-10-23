@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +30,11 @@ type stubQueue struct {
 	releaseStale  int
 	releaseStaleN int
 	staleDead     []*ingestjob.Job
+
+	mu          sync.Mutex
+	renews      int
+	renewErr    error
+	completeErr error
 }
 
 func (q *stubQueue) ClaimBatch(_ context.Context, _ string, _ int) ([]*ingestjob.Job, error) {
@@ -39,13 +45,23 @@ func (q *stubQueue) ClaimBatch(_ context.Context, _ string, _ int) ([]*ingestjob
 	q.claimIdx++
 	return b, nil
 }
-func (q *stubQueue) Complete(_ context.Context, id ingestjob.ID, result []byte) error {
+func (q *stubQueue) Complete(_ context.Context, id ingestjob.ID, _ int, result []byte) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.completes = append(q.completes, completeCall{id, result})
-	return nil
+	return q.completeErr
 }
-func (q *stubQueue) Fail(_ context.Context, id ingestjob.ID, msg, public string, _ time.Time, dead bool) error {
+func (q *stubQueue) Fail(_ context.Context, id ingestjob.ID, _ int, msg, public string, _ time.Time, dead bool) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.fails = append(q.fails, failCall{id, msg, public, dead})
 	return nil
+}
+func (q *stubQueue) Renew(_ context.Context, _ ingestjob.ID, _ int) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.renews++
+	return q.renewErr
 }
 func (q *stubQueue) ReleaseStale(_ context.Context, _ time.Duration) (int, []*ingestjob.Job, error) {
 	q.releaseStale++
@@ -201,5 +217,103 @@ func TestIngestWorker_StaleDeadJobsAreDeadLettered(t *testing.T) {
 	}
 	if len(p.dead) != 1 || p.dead[0] != ingestjob.ErrorApplyFailed {
 		t.Fatalf("dead letters = %v", p.dead)
+	}
+}
+
+// funcProcessor runs fn as the job's processing.
+type funcProcessor func(ctx context.Context, job *ingestjob.Job) ([]byte, error)
+
+func (f funcProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte, error) {
+	return f(ctx, job)
+}
+
+// A job that runs longer than the lease keeps it by renewing, and completes:
+// the worker's own timeout tracks the renewed lease, not the first one.
+func TestIngestWorker_LongJobRenewsItsLeaseAndCompletes(t *testing.T) {
+	q := &stubQueue{batches: [][]*ingestjob.Job{{newJob(t)}}}
+	p := funcProcessor(func(ctx context.Context, _ *ingestjob.Job) ([]byte, error) {
+		select {
+		case <-time.After(400 * time.Millisecond): // > 4x the lease
+			return []byte(`{}`), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})
+	c := NewIngestWorkerController(q, p, &IngestWorkerControllerConfig{
+		LeaseTimeout: 90 * time.Millisecond, RenewEvery: 30 * time.Millisecond, MaxJobDuration: time.Minute})
+	if got, want := c.ReconcileTimeout(), 90*time.Millisecond+time.Minute; got != want {
+		t.Fatalf("ReconcileTimeout = %v, want %v", got, want)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.ReconcileTimeout())
+	defer cancel()
+	if _, err := c.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.completes) != 1 || len(q.fails) != 0 {
+		t.Fatalf("completes=%d fails=%d (want 1/0)", len(q.completes), len(q.fails))
+	}
+	if q.renews < 3 {
+		t.Fatalf("renewed %d times, want several", q.renews)
+	}
+}
+
+// A worker that lost its lease stops the work and writes nothing: neither
+// Complete nor Fail, and no dead letter.
+func TestIngestWorker_LostLeaseStopsAndWritesNothing(t *testing.T) {
+	q := &stubQueue{batches: [][]*ingestjob.Job{{newJob(t)}}, renewErr: ingestjob.ErrLeaseLost}
+	stopped := false
+	p := funcProcessor(func(ctx context.Context, _ *ingestjob.Job) ([]byte, error) {
+		select {
+		case <-ctx.Done():
+			stopped = true
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Second):
+			return []byte(`{}`), nil
+		}
+	})
+	c := NewIngestWorkerController(q, p, &IngestWorkerControllerConfig{
+		LeaseTimeout: 90 * time.Millisecond, RenewEvery: 20 * time.Millisecond})
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !stopped {
+		t.Fatal("the work was not cancelled")
+	}
+	if len(q.completes) != 0 || len(q.fails) != 0 {
+		t.Fatalf("a worker without the lease wrote: completes=%d fails=%d", len(q.completes), len(q.fails))
+	}
+}
+
+// A Complete refused for a lost lease is not retried or reported as done.
+func TestIngestWorker_CompleteRefusedForLostLease(t *testing.T) {
+	q := &stubQueue{batches: [][]*ingestjob.Job{{newJob(t)}}, completeErr: ingestjob.ErrLeaseLost}
+	c := NewIngestWorkerController(q, &stubProcessor{result: []byte(`{}`)}, &IngestWorkerControllerConfig{})
+	if n, err := c.Reconcile(context.Background()); err != nil || n != 1 {
+		t.Fatalf("Reconcile = %d, %v", n, err)
+	}
+	if len(q.fails) != 0 {
+		t.Fatalf("fails = %d", len(q.fails))
+	}
+}
+
+// The hard cap ends a job however often its lease is renewed.
+func TestIngestWorker_HardCapCancelsTheJob(t *testing.T) {
+	q := &stubQueue{batches: [][]*ingestjob.Job{{newJob(t)}}}
+	p := funcProcessor(func(ctx context.Context, _ *ingestjob.Job) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	c := NewIngestWorkerController(q, p, &IngestWorkerControllerConfig{
+		LeaseTimeout: time.Minute, RenewEvery: 10 * time.Millisecond, MaxJobDuration: 80 * time.Millisecond})
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(q.fails) != 1 || len(q.completes) != 0 {
+		t.Fatalf("fails=%d completes=%d (want 1/0)", len(q.fails), len(q.completes))
+	}
+	if q.renews == 0 {
+		t.Fatal("the lease was not renewed while the job ran")
 	}
 }

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"testing"
 	"time"
@@ -60,7 +61,7 @@ func TestIngestClaim_OneRunningJobPerScope_DB(t *testing.T) {
 	if n := len(mine(got, tenant)); n != 0 {
 		t.Fatalf("claimed %d jobs of a scope that has one running", n)
 	}
-	if err := repo.Complete(ctx, first[0].ID(), []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, first[0].ID(), processing(t, db, first[0].ID()), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = repo.ClaimBatch(ctx, "w3", 100)
@@ -233,7 +234,7 @@ func TestIngestClaim_TenantDepth_DB(t *testing.T) {
 	repo := NewIngestJobRepository(&DB{DB: db})
 	j1 := enqueueRouted(t, repo, tenant, "d1", ingestjob.LaneBulk, "")
 	enqueueRouted(t, repo, tenant, "d2", ingestjob.LaneBulk, "")
-	if err := repo.Complete(ctx, j1.ID(), []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, j1.ID(), processing(t, db, j1.ID()), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	unfinished, finished, err := repo.TenantDepth(ctx, tenant, time.Now().Add(-time.Minute))
@@ -243,4 +244,17 @@ func TestIngestClaim_TenantDepth_DB(t *testing.T) {
 	if u, _, _ := repo.TenantDepth(ctx, shared.NewID(), time.Now().Add(-time.Minute)); u != 0 {
 		t.Fatalf("another tenant sees %d", u)
 	}
+}
+
+// processing puts a job in the processing state as a claim would (a new
+// attempt) and returns that attempt, for tests of Complete and Fail.
+func processing(t *testing.T, db *sql.DB, id ingestjob.ID) int {
+	t.Helper()
+	var attempts int
+	if err := db.QueryRowContext(context.Background(), `UPDATE ingest_jobs
+		SET status = 'processing', attempts = attempts + 1, locked_by = 'test', locked_at = NOW()
+		WHERE id = $1 RETURNING attempts`, id.String()).Scan(&attempts); err != nil {
+		t.Fatalf("mark processing: %v", err)
+	}
+	return attempts
 }
