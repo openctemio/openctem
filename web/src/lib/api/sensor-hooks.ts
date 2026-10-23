@@ -38,6 +38,13 @@ import type {
 // SWR CONFIGURATION
 // ============================================
 
+/**
+ * For reads whose failure is shown in place (an ErrorState or inline text),
+ * or that poll: no toast. A no-op, not `undefined`: SWR keeps the key and
+ * calls `onError` unconditionally, so `undefined` throws inside its retry path.
+ */
+const silentOnError = () => {}
+
 const defaultConfig: SWRConfiguration = {
   revalidateOnFocus: false,
   revalidateOnReconnect: true,
@@ -140,6 +147,8 @@ export function useAllSensors(config?: SWRConfiguration, enabled = true) {
       ),
     {
       ...defaultConfig,
+      // Polled every 15 s: the page shows an ErrorState, never a toast per poll.
+      onError: silentOnError,
       refreshInterval: SENSOR_REFRESH_MS,
       ...config,
     }
@@ -203,6 +212,7 @@ export function useTenantSensorStats(config?: SWRConfiguration) {
   const key = currentTenant ? sensorEndpoints.tenantStats() : null
   return useSWR<TenantSensorStats>(key, (url: string) => get<TenantSensorStats>(url), {
     ...defaultConfig,
+    onError: silentOnError,
     dedupingInterval: 5000,
     refreshInterval: SENSOR_REFRESH_MS,
     ...config,
@@ -219,7 +229,7 @@ export function useSensorCommands(sensorId: string | null, enabled = true) {
   return useSWR<SensorCommandListResponse>(
     key,
     (url: string) => get<SensorCommandListResponse>(url),
-    { ...defaultConfig, refreshInterval: SENSOR_REFRESH_MS }
+    { ...defaultConfig, onError: silentOnError, refreshInterval: SENSOR_REFRESH_MS }
   )
 }
 
@@ -236,7 +246,7 @@ export function useSensorManifests(sensorId: string | null, enabled = true) {
     (url: string) => get<SensorManifestListResponse>(url),
     {
       ...defaultConfig,
-      onError: undefined,
+      onError: silentOnError,
       refreshInterval: SENSOR_REFRESH_MS * 2,
     }
   )
@@ -252,7 +262,7 @@ export function useSensorConfigReport(sensorId: string | null, enabled = true) {
   const key = currentTenant && sensorId && enabled ? sensorEndpoints.configReport(sensorId) : null
   return useSWR<SensorConfigReport>(key, (url: string) => get<SensorConfigReport>(url), {
     ...defaultConfig,
-    onError: undefined,
+    onError: silentOnError,
     refreshInterval: SENSOR_REFRESH_MS * 2,
   })
 }
@@ -271,7 +281,7 @@ export function useSensorHeartbeatHistory(sensorId: string | null, enabled = tru
     (url: string) => get<SensorHeartbeatHistoryResponse>(url),
     {
       ...defaultConfig,
-      onError: undefined,
+      onError: silentOnError,
       // A bucket is 15 minutes: a minute is fresh enough.
       refreshInterval: 60_000,
     }
@@ -530,11 +540,11 @@ export function useRevokeSensor() {
 // ============================================
 
 /**
- * Invalidate sensors cache
+ * Revalidate every sensors request (list, stats, drawer, commands). The data
+ * on screen stays until the fresh response arrives, so the table does not
+ * flash a skeleton.
  */
 export async function invalidateSensorsCache() {
   const { mutate } = await import('swr')
-  await mutate((key) => typeof key === 'string' && key.includes('/api/v1/sensors'), undefined, {
-    revalidate: true,
-  })
+  await mutate((key) => typeof key === 'string' && key.includes('/api/v1/sensors'))
 }
