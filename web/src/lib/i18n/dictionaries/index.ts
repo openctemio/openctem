@@ -19,6 +19,7 @@ import en_assets from './en/assets.json'
 import en_assetTimeline from './en/assetTimeline.json'
 import en_attackSurface from './en/attackSurface.json'
 import en_brand from './en/brand.json'
+import en_businessContext from './en/businessContext.json'
 import en_easmReview from './en/easmReview.json'
 import en_threatIntel from './en/threatIntel.json'
 import en_emergingThreats from './en/emergingThreats.json'
@@ -98,6 +99,7 @@ import vi_assets from './vi/assets.json'
 import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_attackSurface from './vi/attackSurface.json'
 import vi_brand from './vi/brand.json'
+import vi_businessContext from './vi/businessContext.json'
 import vi_easmReview from './vi/easmReview.json'
 import vi_threatIntel from './vi/threatIntel.json'
 import vi_emergingThreats from './vi/emergingThreats.json'
@@ -182,6 +184,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   assetTimeline: en_assetTimeline,
   attackSurface: en_attackSurface,
   brand: en_brand,
+  businessContext: en_businessContext,
   easmReview: en_easmReview,
   threatIntel: en_threatIntel,
   emergingThreats: en_emergingThreats,
@@ -264,6 +267,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   assetTimeline: vi_assetTimeline,
   attackSurface: vi_attackSurface,
   brand: vi_brand,
+  businessContext: vi_businessContext,
   easmReview: vi_easmReview,
   threatIntel: vi_threatIntel,
   emergingThreats: vi_emergingThreats,

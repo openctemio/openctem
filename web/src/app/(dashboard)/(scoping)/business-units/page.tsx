@@ -88,22 +88,25 @@ import { useTranslation } from '@/context/i18n-provider'
 
 const criticalityColors: Record<Criticality, string> = CRITICALITY_BADGE_SOFT
 
-const riskToleranceLabels: Record<RiskTolerance, string> = {
-  very_low: 'Very Low',
+/** English fallbacks; the display text comes from businessContext.tolerance.* keys. */
+const RISK_TOLERANCE_FALLBACK: Record<RiskTolerance, string> = {
+  very_low: 'Very low',
   low: 'Low',
   medium: 'Medium',
   high: 'High',
-  very_high: 'Very High',
+  very_high: 'Very high',
 }
 
-const riskToleranceColors: Record<RiskTolerance, string> = {
-  very_low:
-    'bg-green-500/10 text-green-500 border-green-500/20 dark:bg-green-900/30 dark:text-green-400',
-  low: 'bg-blue-500/10 text-blue-500 border-blue-500/20 dark:bg-blue-900/30 dark:text-blue-400',
-  medium:
-    'bg-yellow-500/10 text-yellow-500 border-yellow-500/20 dark:bg-yellow-900/30 dark:text-yellow-400',
-  high: 'bg-orange-500/10 text-orange-500 border-orange-500/20 dark:bg-orange-900/30 dark:text-orange-400',
-  very_high: 'bg-red-500/10 text-red-500 border-red-500/20 dark:bg-red-900/30 dark:text-red-400',
+/**
+ * Risk tolerance is an appetite, not a severity: it uses neutral Badge
+ * variants (more appetite = heavier badge), not the red-to-green scale.
+ */
+const riskToleranceVariant: Record<RiskTolerance, 'secondary' | 'outline' | 'default'> = {
+  very_low: 'secondary',
+  low: 'secondary',
+  medium: 'outline',
+  high: 'default',
+  very_high: 'default',
 }
 
 /** Filter children of a given parent from the full list */
@@ -148,6 +151,7 @@ function ParentUnitSelect({
   onChange: (id: string) => void
   excludeId?: string
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -180,16 +184,22 @@ function ParentUnitSelect({
           className="w-full justify-between font-normal"
         >
           <span className={selected ? '' : 'text-muted-foreground'}>
-            {selected ? selected.name : 'None (top-level)'}
+            {selected ? selected.name : t('businessContext.units.parent.none', 'None (top-level)')}
           </span>
           <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
         <Command shouldFilter={false}>
-          <CommandInput placeholder="Filter units..." value={search} onValueChange={setSearch} />
+          <CommandInput
+            placeholder={t('businessContext.units.parent.filter', 'Filter units...')}
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
-            <CommandEmpty>No business units found.</CommandEmpty>
+            <CommandEmpty>
+              {t('businessContext.units.parent.empty', 'No business units found.')}
+            </CommandEmpty>
             <CommandGroup>
               <CommandItem
                 value="__none__"
@@ -200,7 +210,7 @@ function ParentUnitSelect({
                 }}
               >
                 <Check className={cn('me-2 h-4 w-4', !value ? 'opacity-100' : 'opacity-0')} />
-                None (top-level)
+                {t('businessContext.units.parent.none', 'None (top-level)')}
               </CommandItem>
               {candidates.map((u) => (
                 <CommandItem
@@ -226,19 +236,13 @@ function ParentUnitSelect({
   )
 }
 
-const BUSINESS_UNIT_EXPORT_FIELDS: ExportFieldConfig<BusinessUnit>[] = [
-  { header: 'Name', accessor: (bu) => bu.name },
-  { header: 'Description', accessor: (bu) => bu.description ?? '' },
-  { header: 'Owner', accessor: (bu) => bu.owner },
-  { header: 'Owner Email', accessor: (bu) => bu.ownerEmail },
-  { header: 'Assets', accessor: (bu) => bu.assetCount },
-  { header: 'Risk Score', accessor: (bu) => bu.riskScore ?? '' },
-  { header: 'Criticality', accessor: (bu) => bu.criticality },
-  { header: 'Tags', accessor: (bu) => (bu.tags ?? []).join('; ') },
-]
-
 export default function BusinessUnitsPage() {
   const { t } = useTranslation()
+  const criticalityLabel = (level: Criticality) =>
+    t(`criticality.${level}`, CRITICALITY_LABELS[level])
+  const toleranceLabel = (level: RiskTolerance) =>
+    t(`businessContext.tolerance.${level}`, RISK_TOLERANCE_FALLBACK[level])
+  const unassigned = t('businessContext.unassigned', 'Unassigned')
   // Fetch from API, fallback to mock data if API returns empty
   const { data: apiData, error: loadError, isLoading, mutate: refreshList } = useBusinessUnits()
   const { trigger: createBU } = useCreateBusinessUnit()
@@ -251,7 +255,7 @@ export default function BusinessUnitsPage() {
           id: bu.id,
           name: bu.name,
           description: bu.description || '',
-          owner: bu.owner_name || 'Unassigned',
+          owner: bu.owner_name || '',
           ownerEmail: bu.owner_email || '',
           criticality: (bu.criticality || 'medium') as Criticality,
           riskTolerance: (bu.risk_tolerance || 'medium') as RiskTolerance,
@@ -272,11 +276,32 @@ export default function BusinessUnitsPage() {
   useEffect(() => {
     setBusinessUnits(apiBUs)
   }, [apiBUs])
-  const { handleExport } = useCsvExport(
-    businessUnits,
-    BUSINESS_UNIT_EXPORT_FIELDS,
-    'business-units'
-  )
+  const exportFields: ExportFieldConfig<BusinessUnit>[] = [
+    { header: t('businessContext.units.export.name', 'Name'), accessor: (bu) => bu.name },
+    {
+      header: t('businessContext.units.export.description', 'Description'),
+      accessor: (bu) => bu.description ?? '',
+    },
+    { header: t('businessContext.units.export.owner', 'Owner'), accessor: (bu) => bu.owner },
+    {
+      header: t('businessContext.units.export.ownerEmail', 'Owner email'),
+      accessor: (bu) => bu.ownerEmail,
+    },
+    { header: t('businessContext.units.export.assets', 'Assets'), accessor: (bu) => bu.assetCount },
+    {
+      header: t('businessContext.units.export.risk', 'Risk score'),
+      accessor: (bu) => bu.riskScore ?? '',
+    },
+    {
+      header: t('businessContext.units.export.criticality', 'Criticality'),
+      accessor: (bu) => criticalityLabel(bu.criticality),
+    },
+    {
+      header: t('businessContext.units.export.tags', 'Tags'),
+      accessor: (bu) => (bu.tags ?? []).join('; '),
+    },
+  ]
+  const { handleExport } = useCsvExport(businessUnits, exportFields, 'business-units')
   const [viewUnit, setViewUnit] = useState<BusinessUnit | null>(null)
   // Which tab the detail sheet opens on: "Manage assets" opens it on Assets.
   const [viewTab, setViewTab] = useState<'overview' | 'assets' | 'hierarchy'>('overview')
@@ -292,7 +317,10 @@ export default function BusinessUnitsPage() {
   const canDeleteUnit = isAdmin()
   const deleteUnitReason = canDeleteUnit
     ? undefined
-    : 'Only an owner or administrator can delete a business unit'
+    : t(
+        'businessContext.units.deleteReason',
+        'Only an owner or administrator can delete a business unit.'
+      )
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   // Filters and search live in the URL so a filtered view can be linked to.
   const [filterCriticality, setFilterCriticality] = useUrlFilter('criticality', 'all')
@@ -352,7 +380,7 @@ export default function BusinessUnitsPage() {
 
   const handleCreate = async () => {
     if (!formData.name || !formData.owner || !formData.ownerEmail) {
-      toast.error('Please fill in all required fields')
+      toast.error(t('businessContext.units.toast.required', 'Fill in all required fields.'))
       return
     }
     try {
@@ -367,22 +395,24 @@ export default function BusinessUnitsPage() {
         tags: formData.tags
           ? formData.tags
               .split(',')
-              .map((t) => t.trim())
+              .map((tag) => tag.trim())
               .filter(Boolean)
           : [],
       })
       await refreshList()
-      toast.success('Business unit created successfully')
+      toast.success(t('businessContext.units.toast.created', 'Business unit created.'))
       setIsCreateOpen(false)
       resetForm()
     } catch {
-      toast.error('Failed to create business unit')
+      toast.error(
+        t('businessContext.units.toast.createFailed', 'Could not create the business unit.')
+      )
     }
   }
 
   const handleEdit = async () => {
     if (!editUnit || !formData.name || !formData.owner || !formData.ownerEmail) {
-      toast.error('Please fill in all required fields')
+      toast.error(t('businessContext.units.toast.required', 'Fill in all required fields.'))
       return
     }
     try {
@@ -398,16 +428,18 @@ export default function BusinessUnitsPage() {
         tags: formData.tags
           ? formData.tags
               .split(',')
-              .map((t) => t.trim())
+              .map((tag) => tag.trim())
               .filter(Boolean)
           : [],
       })
       await refreshList()
-      toast.success('Business unit updated successfully')
+      toast.success(t('businessContext.units.toast.updated', 'Business unit updated.'))
       setEditUnit(null)
       resetForm()
     } catch {
-      toast.error('Failed to update business unit')
+      toast.error(
+        t('businessContext.units.toast.updateFailed', 'Could not update the business unit.')
+      )
     }
   }
 
@@ -416,10 +448,12 @@ export default function BusinessUnitsPage() {
     try {
       await del(`/api/v1/business-units/${deleteUnit.id}`)
       await refreshList()
-      toast.success('Business unit deleted successfully')
+      toast.success(t('businessContext.units.toast.deleted', 'Business unit deleted.'))
       setDeleteUnit(null)
     } catch {
-      toast.error('Failed to delete business unit')
+      toast.error(
+        t('businessContext.units.toast.deleteFailed', 'Could not delete the business unit.')
+      )
     }
   }
 
@@ -440,14 +474,29 @@ export default function BusinessUnitsPage() {
   const columns: ColumnDef<BusinessUnit>[] = [
     {
       accessorKey: 'name',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Business unit" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('businessContext.units.col.unit', 'Business unit')}
+        />
+      ),
       cell: ({ row }) => {
         const unit = row.original
         const children = getChildUnits(businessUnits, unit.id)
         const parent = unit.parentId ? businessUnits.find((u) => u.id === unit.parentId) : undefined
         const context = [
-          parent ? `in ${parent.name}` : unit.parentId ? 'Sub-unit' : '',
-          children.length > 0 ? `${children.length} sub-units` : '',
+          parent
+            ? t('businessContext.units.context.inParent', 'in {name}', { name: parent.name })
+            : unit.parentId
+              ? t('businessContext.units.context.subUnit', 'Sub-unit')
+              : '',
+          children.length > 0
+            ? t(
+                'businessContext.units.context.subUnits',
+                '{count, plural, one {# sub-unit} other {# sub-units}}',
+                { count: children.length }
+              )
+            : '',
         ]
           .filter(Boolean)
           .join(' · ')
@@ -464,39 +513,64 @@ export default function BusinessUnitsPage() {
     },
     {
       accessorKey: 'criticality',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Criticality" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('businessContext.units.col.criticality', 'Criticality')}
+        />
+      ),
       cell: ({ row }) => (
         <Badge variant="outline" className={criticalityColors[row.original.criticality]}>
-          {CRITICALITY_LABELS[row.original.criticality]}
+          {criticalityLabel(row.original.criticality)}
         </Badge>
       ),
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
     {
       accessorKey: 'riskTolerance',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Risk tolerance" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('businessContext.units.col.tolerance', 'Risk tolerance')}
+        />
+      ),
       cell: ({ row }) => (
-        <Badge variant="outline" className={riskToleranceColors[row.original.riskTolerance]}>
-          {riskToleranceLabels[row.original.riskTolerance]}
+        <Badge variant={riskToleranceVariant[row.original.riskTolerance]}>
+          {toleranceLabel(row.original.riskTolerance)}
         </Badge>
       ),
     },
     {
       accessorKey: 'assetCount',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Assets" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('businessContext.units.col.assets', 'Assets')}
+        />
+      ),
       cell: ({ row }) => <span className="tabular-nums">{row.original.assetCount}</span>,
     },
     {
       accessorKey: 'riskScore',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Risk score" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('businessContext.units.col.risk', 'Risk score')}
+        />
+      ),
       cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} />,
     },
     {
       accessorKey: 'owner',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Owner" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('businessContext.units.col.owner', 'Owner')}
+        />
+      ),
       cell: ({ row }) => (
         <div className="text-sm">
-          <div className="font-medium">{row.original.owner}</div>
+          <div className="font-medium">{row.original.owner || unassigned}</div>
           <div className="text-muted-foreground text-xs">{row.original.ownerEmail}</div>
         </div>
       ),
@@ -509,21 +583,25 @@ export default function BusinessUnitsPage() {
           <Can permission={Permission.AssetsWrite}>
             <DataTableRowActions
               actions={[
-                { label: 'View details', icon: Eye, onClick: () => openView(unit) },
                 {
-                  label: 'Manage assets',
+                  label: t('businessContext.units.action.view', 'View details'),
+                  icon: Eye,
+                  onClick: () => openView(unit),
+                },
+                {
+                  label: t('businessContext.units.action.manage', 'Manage assets'),
                   icon: Link2,
                   onClick: () => openView(unit, 'assets'),
                   permission: Permission.AssetsWrite,
                 },
                 {
-                  label: 'Edit',
+                  label: t('businessContext.units.action.edit', 'Edit'),
                   icon: Pencil,
                   onClick: () => openEdit(unit),
                   permission: Permission.AssetsWrite,
                 },
                 {
-                  label: 'Delete',
+                  label: t('businessContext.units.action.delete', 'Delete'),
                   icon: Trash2,
                   onClick: () => setDeleteUnit(unit),
                   disabled: !canDeleteUnit,
@@ -544,7 +622,7 @@ export default function BusinessUnitsPage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: 'Business units',
+      label: t('businessContext.units.metric.total', 'Business units'),
       value: stats.total,
       onClick: () => {
         setFilterCriticality('all')
@@ -554,47 +632,58 @@ export default function BusinessUnitsPage() {
     },
     {
       key: 'critical',
-      label: 'Critical units',
+      label: t('businessContext.units.metric.critical', 'Critical units'),
       value: stats.critical,
       tone: 'danger',
       onClick: () => setFilterCriticality(criticalOnly ? 'all' : 'critical'),
       active: criticalOnly,
     },
-    { key: 'assets', label: 'Assets', value: stats.totalAssets },
+    {
+      key: 'assets',
+      label: t('businessContext.units.metric.assets', 'Assets'),
+      value: stats.totalAssets,
+    },
     {
       key: 'risk',
-      label: 'Average risk score',
+      label: t('businessContext.units.metric.risk', 'Average risk score'),
       value: stats.averageRiskScore,
-      hint: 'of 100',
+      hint: t('businessContext.units.metric.riskHint', 'of 100'),
     },
   ]
 
   const formFields = (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="name">Name *</Label>
+        <Label htmlFor="name">{t('businessContext.units.form.name', 'Name *')}</Label>
         <Input
           id="name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="e.g., Technology & Engineering"
+          placeholder={t('businessContext.units.form.namePh', 'e.g., Technology & Engineering')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
+        <Label htmlFor="description">
+          {t('businessContext.units.form.description', 'Description')}
+        </Label>
         <Textarea
           id="description"
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          placeholder="Brief description of this business unit..."
+          placeholder={t(
+            'businessContext.units.form.descriptionPh',
+            'Brief description of this business unit...'
+          )}
           rows={3}
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="criticality">Criticality</Label>
+          <Label htmlFor="criticality">
+            {t('businessContext.units.form.criticality', 'Criticality')}
+          </Label>
           <Select
             value={formData.criticality}
             onValueChange={(v) => setFormData({ ...formData, criticality: v as Criticality })}
@@ -607,7 +696,7 @@ export default function BusinessUnitsPage() {
                 <SelectItem key={level} value={level}>
                   <span className="flex items-center gap-2">
                     <span className={cn('h-2 w-2 rounded-full', CRITICALITY_DOT_COLORS[level])} />
-                    {CRITICALITY_LABELS[level]}
+                    {criticalityLabel(level)}
                   </span>
                 </SelectItem>
               ))}
@@ -615,7 +704,9 @@ export default function BusinessUnitsPage() {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="riskTolerance">Risk tolerance</Label>
+          <Label htmlFor="riskTolerance">
+            {t('businessContext.units.form.tolerance', 'Risk tolerance')}
+          </Label>
           <Select
             value={formData.riskTolerance}
             onValueChange={(v) => setFormData({ ...formData, riskTolerance: v as RiskTolerance })}
@@ -626,7 +717,7 @@ export default function BusinessUnitsPage() {
             <SelectContent>
               {RISK_TOLERANCE_OPTIONS.map((level) => (
                 <SelectItem key={level} value={level}>
-                  {riskToleranceLabels[level]}
+                  {toleranceLabel(level)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -635,7 +726,7 @@ export default function BusinessUnitsPage() {
       </div>
 
       <div className="space-y-2">
-        <Label>Parent unit</Label>
+        <Label>{t('businessContext.units.form.parent', 'Parent unit')}</Label>
         <ParentUnitSelect
           units={businessUnits}
           value={formData.parentId}
@@ -643,39 +734,47 @@ export default function BusinessUnitsPage() {
           excludeId={editUnit?.id}
         />
         <p className="text-xs text-muted-foreground">
-          Optional. Nest this unit under a parent to build your org hierarchy.
+          {t(
+            'businessContext.units.form.parentHelp',
+            'Optional. Nest this unit under a parent to build your org hierarchy.'
+          )}
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="owner">Owner *</Label>
+          <Label htmlFor="owner">{t('businessContext.units.form.owner', 'Owner *')}</Label>
           <Input
             id="owner"
             value={formData.owner}
             onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
-            placeholder="e.g., John Doe"
+            placeholder={t('businessContext.units.form.ownerPh', 'e.g., John Doe')}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ownerEmail">Owner email *</Label>
+          <Label htmlFor="ownerEmail">
+            {t('businessContext.units.form.ownerEmail', 'Owner email *')}
+          </Label>
           <Input
             id="ownerEmail"
             type="email"
             value={formData.ownerEmail}
             onChange={(e) => setFormData({ ...formData, ownerEmail: e.target.value })}
-            placeholder="e.g., john@company.com"
+            placeholder={t('businessContext.units.form.ownerEmailPh', 'e.g., john@company.com')}
           />
         </div>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="tags">Tags</Label>
+        <Label htmlFor="tags">{t('businessContext.units.form.tags', 'Tags')}</Label>
         <Input
           id="tags"
           value={formData.tags}
           onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-          placeholder="Comma-separated tags, e.g., core, technology"
+          placeholder={t(
+            'businessContext.units.form.tagsPh',
+            'Comma-separated tags, e.g., core, technology'
+          )}
         />
       </div>
     </div>
@@ -685,19 +784,22 @@ export default function BusinessUnitsPage() {
     <>
       <Main>
         <PageHeader
-          title="Business units"
-          description="Your organizational structure, so security priorities follow the business."
+          title={t('businessContext.units.title', 'Business units')}
+          description={t(
+            'businessContext.units.description',
+            'Your organizational structure, so security priorities follow the business.'
+          )}
         >
           <Can permission={Permission.AssetsWrite}>
             <Button size="sm" onClick={() => setIsCreateOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
-              New business unit
+              {t('businessContext.units.new', 'New business unit')}
             </Button>
           </Can>
         </PageHeader>
         <GatedSectionTabs
           tabs={BUSINESS_CONTEXT_SECTION_TABS}
-          label="Business context sections"
+          label={t('businessContext.sectionsLabel', 'Business context sections')}
           className="mt-4 mb-0"
         />
 
@@ -725,20 +827,31 @@ export default function BusinessUnitsPage() {
                   <Input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search name or owner…"
-                    aria-label="Search business units"
+                    placeholder={t(
+                      'businessContext.units.search.placeholder',
+                      'Search name or owner…'
+                    )}
+                    aria-label={t('businessContext.units.search.aria', 'Search business units')}
                     className="h-9 ps-9"
                   />
                 </div>
                 <Select value={filterCriticality} onValueChange={setFilterCriticality}>
-                  <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter by criticality">
+                  <SelectTrigger
+                    className="h-9 w-auto min-w-36"
+                    aria-label={t(
+                      'businessContext.units.filter.criticality.aria',
+                      'Filter by criticality'
+                    )}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All criticalities</SelectItem>
+                    <SelectItem value="all">
+                      {t('businessContext.units.filter.criticality.all', 'All criticalities')}
+                    </SelectItem>
                     {CRITICALITY_OPTIONS.map((level) => (
                       <SelectItem key={level} value={level}>
-                        {CRITICALITY_LABELS[level]}
+                        {criticalityLabel(level)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -746,15 +859,22 @@ export default function BusinessUnitsPage() {
                 <Select value={filterRiskTolerance} onValueChange={setFilterRiskTolerance}>
                   <SelectTrigger
                     className="h-9 w-auto min-w-36"
-                    aria-label="Filter by risk tolerance"
+                    aria-label={t(
+                      'businessContext.units.filter.tolerance.aria',
+                      'Filter by risk tolerance'
+                    )}
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All risk tolerances</SelectItem>
+                    <SelectItem value="all">
+                      {t('businessContext.units.filter.tolerance.all', 'All risk tolerances')}
+                    </SelectItem>
                     {RISK_TOLERANCE_OPTIONS.map((level) => (
                       <SelectItem key={level} value={level}>
-                        {riskToleranceLabels[level]} tolerance
+                        {t('businessContext.tolerance.option', '{level} tolerance', {
+                          level: toleranceLabel(level),
+                        })}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -770,16 +890,24 @@ export default function BusinessUnitsPage() {
                 disabled={businessUnits.length === 0}
               >
                 <Download className="h-4 w-4 md:me-2" />
-                <span className="hidden md:inline">Export</span>
+                <span className="sr-only md:not-sr-only">{t('common.export', 'Export')}</span>
               </Button>
             }
             emptyMessage={
-              businessUnits.length === 0 ? 'No business units yet' : 'No business units match'
+              businessUnits.length === 0
+                ? t('businessContext.units.empty.none', 'No business units yet')
+                : t('businessContext.units.empty.noMatch', 'No business units match')
             }
             emptyDescription={
               businessUnits.length === 0
-                ? 'Create a business unit to map assets to the organization.'
-                : 'Try adjusting your search or filters.'
+                ? t(
+                    'businessContext.units.empty.noneDesc',
+                    'Create a business unit to map assets to the organization.'
+                  )
+                : t(
+                    'businessContext.units.empty.noMatchDesc',
+                    'Try adjusting your search or filters.'
+                  )
             }
             onRowClick={(unit) => openView(unit)}
           />
@@ -791,17 +919,24 @@ export default function BusinessUnitsPage() {
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>New business unit</DialogTitle>
+            <DialogTitle>
+              {t('businessContext.units.dialog.createTitle', 'New business unit')}
+            </DialogTitle>
             <DialogDescription>
-              Add a new business unit to organize your security scope
+              {t(
+                'businessContext.units.dialog.createDesc',
+                'Add a business unit to organize your security scope.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>{formFields}</DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleCreate}>Create</Button>
+            <Button onClick={handleCreate}>
+              {t('businessContext.units.dialog.create', 'Create')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -810,15 +945,21 @@ export default function BusinessUnitsPage() {
       <Dialog open={!!editUnit} onOpenChange={(open) => !open && setEditUnit(null)}>
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Edit business unit</DialogTitle>
-            <DialogDescription>Update business unit details</DialogDescription>
+            <DialogTitle>
+              {t('businessContext.units.dialog.editTitle', 'Edit business unit')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('businessContext.units.dialog.editDesc', 'Update the business unit details.')}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody>{formFields}</DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditUnit(null)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleEdit}>Save changes</Button>
+            <Button onClick={handleEdit}>
+              {t('businessContext.units.dialog.save', 'Save changes')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -835,19 +976,21 @@ export default function BusinessUnitsPage() {
               badges={
                 <>
                   <Badge variant="outline" className={criticalityColors[viewUnit.criticality]}>
-                    {CRITICALITY_LABELS[viewUnit.criticality]}
+                    {criticalityLabel(viewUnit.criticality)}
                   </Badge>
-                  <Badge variant="outline" className={riskToleranceColors[viewUnit.riskTolerance]}>
-                    {riskToleranceLabels[viewUnit.riskTolerance]} risk tolerance
+                  <Badge variant={riskToleranceVariant[viewUnit.riskTolerance]}>
+                    {t('businessContext.tolerance.badge', '{level} risk tolerance', {
+                      level: toleranceLabel(viewUnit.riskTolerance),
+                    })}
                   </Badge>
                 </>
               }
-              meta={[viewUnit.description, viewUnit.owner]}
+              meta={[viewUnit.description, viewUnit.owner || unassigned]}
               actions={
                 canWriteAssets ? (
                   <Button size="sm" variant="outline" onClick={() => openEdit(viewUnit)}>
                     <Pencil className="h-4 w-4" />
-                    Edit
+                    {t('businessContext.units.sheet.edit', 'Edit')}
                   </Button>
                 ) : undefined
               }
@@ -855,7 +998,7 @@ export default function BusinessUnitsPage() {
                 canDeleteUnit
                   ? [
                       {
-                        label: 'Delete business unit',
+                        label: t('businessContext.units.sheet.delete', 'Delete business unit'),
                         icon: Trash2,
                         destructive: true,
                         onSelect: () => {
@@ -872,12 +1015,15 @@ export default function BusinessUnitsPage() {
           tabs={
             <DetailTabs
               tabs={[
-                { value: 'overview', label: 'Overview' },
+                {
+                  value: 'overview',
+                  label: t('businessContext.units.sheet.tab.overview', 'Overview'),
+                },
                 {
                   value: 'assets',
                   label: (
                     <>
-                      Assets
+                      {t('businessContext.units.sheet.tab.assets', 'Assets')}
                       <TabsCount
                         value={
                           // The drawer holds a snapshot; the list refreshes after a link.
@@ -888,7 +1034,10 @@ export default function BusinessUnitsPage() {
                     </>
                   ),
                 },
-                { value: 'hierarchy', label: 'Hierarchy' },
+                {
+                  value: 'hierarchy',
+                  label: t('businessContext.units.sheet.tab.hierarchy', 'Hierarchy'),
+                },
               ]}
               value={viewTab}
               onValueChange={setViewTab}
@@ -901,23 +1050,32 @@ export default function BusinessUnitsPage() {
 
           {viewTab === 'overview' && (
             <div className="space-y-5">
-              <DetailStatGrid aria-label="Key numbers">
-                <DetailStat label="Assets" value={viewUnit.assetCount} />
+              <DetailStatGrid aria-label={t('businessContext.keyNumbers', 'Key numbers')}>
                 <DetailStat
-                  label="Risk score"
+                  label={t('businessContext.units.sheet.assets', 'Assets')}
+                  value={viewUnit.assetCount}
+                />
+                <DetailStat
+                  label={t('businessContext.units.sheet.risk', 'Risk score')}
                   value={viewUnit.riskScore ?? 0}
-                  meter={{ value: viewUnit.riskScore ?? 0, max: 100, label: 'Risk score' }}
+                  meter={{
+                    value: viewUnit.riskScore ?? 0,
+                    max: 100,
+                    label: t('businessContext.units.sheet.risk', 'Risk score'),
+                  }}
                 />
               </DetailStatGrid>
 
               <DetailSections>
                 {viewUnit.description && (
-                  <DetailSection title="Description">
+                  <DetailSection
+                    title={t('businessContext.units.sheet.description', 'Description')}
+                  >
                     <p className="text-sm text-muted-foreground">{viewUnit.description}</p>
                   </DetailSection>
                 )}
-                <DetailSection title="Owner">
-                  <p className="text-sm font-medium">{viewUnit.owner}</p>
+                <DetailSection title={t('businessContext.units.sheet.owner', 'Owner')}>
+                  <p className="text-sm font-medium">{viewUnit.owner || unassigned}</p>
                   {viewUnit.ownerEmail && (
                     <p className="flex items-center gap-1 text-xs break-all text-muted-foreground">
                       <Mail className="h-3 w-3 shrink-0" />
@@ -927,7 +1085,10 @@ export default function BusinessUnitsPage() {
                 </DetailSection>
 
                 {viewUnit.tags.length > 0 && (
-                  <DetailSection title="Tags" count={viewUnit.tags.length}>
+                  <DetailSection
+                    title={t('businessContext.units.sheet.tags', 'Tags')}
+                    count={viewUnit.tags.length}
+                  >
                     <div className="flex flex-wrap gap-1.5">
                       {viewUnit.tags.map((tag) => (
                         <Badge key={tag} variant="secondary">
@@ -947,7 +1108,7 @@ export default function BusinessUnitsPage() {
                 (() => {
                   const parent = businessUnits.find((u) => u.id === viewUnit.parentId)
                   return (
-                    <DetailSection title="Parent unit">
+                    <DetailSection title={t('businessContext.units.sheet.parent', 'Parent unit')}>
                       <button
                         type="button"
                         disabled={!parent}
@@ -956,7 +1117,8 @@ export default function BusinessUnitsPage() {
                       >
                         <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium break-words">
-                          {parent?.name ?? 'Unknown unit'}
+                          {parent?.name ??
+                            t('businessContext.units.sheet.unknownUnit', 'Unknown unit')}
                         </span>
                       </button>
                     </DetailSection>
@@ -964,7 +1126,7 @@ export default function BusinessUnitsPage() {
                 })()}
 
               <DetailSection
-                title="Sub-units"
+                title={t('businessContext.units.sheet.subUnits', 'Sub-units')}
                 count={getChildUnits(businessUnits, viewUnit.id).length}
               >
                 {getChildUnits(businessUnits, viewUnit.id).length > 0 ? (
@@ -981,14 +1143,16 @@ export default function BusinessUnitsPage() {
                             <span className="font-medium break-words">{child.name}</span>
                           </span>
                           <Badge variant="outline" className={criticalityColors[child.criticality]}>
-                            {CRITICALITY_LABELS[child.criticality]}
+                            {criticalityLabel(child.criticality)}
                           </Badge>
                         </button>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No sub-units</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t('businessContext.units.sheet.noSubUnits', 'No sub-units')}
+                  </p>
                 )}
               </DetailSection>
             </DetailSections>
