@@ -34,7 +34,7 @@ func TestCIReportHygiene(t *testing.T) {
 	leak := ciFinding("AWS key", "aws-access-key", "high", ctis.FindingTypeSecret, "config.go", 3)
 	leak.Secret = &ctis.SecretDetails{SecretType: "aws_access_key", MaskedValue: raw}
 	leak.Location.Snippet = `aws_key = "` + raw + `"`
-	if resp, out := r.post("/api/v1/ci/runs/"+runID+"/results", token, ciReport(repoName, leak)); resp.StatusCode != http.StatusCreated {
+	if resp, out := r.upload(runID, token, ciReport(repoName, leak)); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
 	var stored int
@@ -60,7 +60,7 @@ func TestCIReportHygiene(t *testing.T) {
 		t.Fatal(err)
 	}
 	medium := ciFinding("Weak hash", "go.weak-hash", "medium", ctis.FindingTypeVulnerability, "hash.go", 10)
-	if resp, _ := r.post("/api/v1/ci/runs/"+runID+"/results", token, ciReport(repoName, medium)); resp.StatusCode != http.StatusConflict {
+	if resp, _ := r.upload(runID, token, ciReport(repoName, medium)); resp.StatusCode != http.StatusConflict {
 		t.Fatalf("report beyond the cap: %d", resp.StatusCode)
 	}
 

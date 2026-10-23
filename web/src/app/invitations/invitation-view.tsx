@@ -140,7 +140,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
 
         if (response.ok) {
           toast.success(t('org.acceptInvite.joined'))
-          navigateWithFreshSession('/dashboard')
+          navigateWithFreshSession('/')
           return
         }
 
@@ -150,7 +150,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
 
           if (refreshResponse.ok) {
             toast.success(t('org.acceptInvite.joined'))
-            navigateWithFreshSession('/dashboard')
+            navigateWithFreshSession('/')
             return
           }
 

@@ -9,11 +9,9 @@ import (
 	"context"
 	"net/http"
 	"testing"
-
-	"github.com/openctemio/ctis"
+	"time"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -37,14 +35,11 @@ func (s *stubCIRuns) Authenticate(_ context.Context, token string) (*cirun.Run, 
 	return nil, cirun.ErrRunNotFound
 }
 
-func (s *stubCIRuns) UploadReport(context.Context, *cirun.Run, *ctis.Report) (*ingest.Output, error) {
-	return &ingest.Output{}, nil
+func (s *stubCIRuns) AcceptUpload(context.Context, *cirun.Run, []byte, bool, *cirunapp.MappingPin) (*cirunapp.UploadReceipt, error) {
+	return &cirunapp.UploadReceipt{UploadID: shared.NewID(), Status: "queued"}, nil
 }
-func (s *stubCIRuns) KnownFindings(context.Context, *cirun.Run, *ingest.Output) ([]cirun.KnownFinding, int) {
-	return nil, 0
-}
-func (s *stubCIRuns) UploadImported(context.Context, *cirun.Run, *ctis.Report) (*ingest.Output, int, error) {
-	return &ingest.Output{}, 0, nil
+func (s *stubCIRuns) UploadStatus(context.Context, *cirun.Run, shared.ID, time.Duration) (*cirunapp.UploadReceipt, error) {
+	return &cirunapp.UploadReceipt{Status: "queued"}, nil
 }
 
 func (s *stubCIRuns) BaselineDiff(context.Context, *cirun.Run, []string) (*cirunapp.BaselineDiffOutput, error) {
@@ -112,5 +107,9 @@ func TestCIRunTokenLeastPrivilege_DB(t *testing.T) {
 		if code, _ := h.do(keyReq{method: http.MethodPost, path: other + p, headers: bearer(token)}); code != http.StatusNotFound {
 			t.Errorf("run token on another run%s: %d, want 404", p, code)
 		}
+	}
+	// The state of another run's upload: not found either.
+	if code, _ := h.do(keyReq{method: http.MethodGet, path: other + "/results/" + shared.NewID().String(), headers: bearer(token)}); code != http.StatusNotFound {
+		t.Errorf("run token on another run's upload: %d, want 404", code)
 	}
 }

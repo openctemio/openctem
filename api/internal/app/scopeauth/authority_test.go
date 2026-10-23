@@ -174,3 +174,40 @@ func TestCoversAt(t *testing.T) {
 		t.Error("another tenant's entry covered a name")
 	}
 }
+
+// Rows of a type with no matcher (or a wildcard URL host) that exist in the
+// database from before validation refused them cover nothing: no probe of an
+// arbitrary host or address is authorized by them. The deny list is not
+// involved here; the gate evaluates it first.
+func TestStoredWildcardRowsAuthorizeNothing(t *testing.T) {
+	tenant := shared.NewID()
+	f := &fakeSources{tenant: tenant}
+	now := time.Now()
+	for i, r := range []struct {
+		typ     scopedom.TargetType
+		pattern string
+	}{
+		{scopedom.TargetTypeCertificate, "*"}, {scopedom.TargetTypeContainer, "*"},
+		{scopedom.TargetTypeDatabase, "*"}, {scopedom.TargetTypeMobileApp, "*"},
+		{scopedom.TargetTypeCloudResource, "*"}, {scopedom.TargetTypeNetwork, "*"},
+		{scopedom.TargetTypeURL, "*"}, {scopedom.TargetTypeURL, "https://*"},
+		{scopedom.TargetTypeWebsite, "*"}, {scopedom.TargetTypeAPI, "*"},
+		{scopedom.TargetTypeHost, "*"}, {scopedom.TargetTypeProject, "*"},
+	} {
+		_ = i
+		f.targets = append(f.targets, scopedom.ReconstituteTarget(shared.NewID(), tenant, r.typ, r.pattern, "", 0,
+			scopedom.StatusActive, nil, "", now, now))
+	}
+	a, err := Load(context.Background(), tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"victim.example", "203.0.113.9", "203.0.113.9:443", "https://victim.example/x", "198.51.100.0/24", "github.com/victim/repo"} {
+		if v, ok := a.Covers(name); ok {
+			t.Errorf("Covers(%q) = %+v", name, v)
+		}
+		if _, ok := a.CoversAt(name, scopedom.TierActive); ok {
+			t.Errorf("CoversAt(%q) is covered", name)
+		}
+	}
+}

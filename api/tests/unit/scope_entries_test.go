@@ -368,3 +368,73 @@ func TestScopeEntry_PlatformGuardrails(t *testing.T) {
 		t.Fatalf("a registrable domain: %v", err)
 	}
 }
+
+// A wildcard entry of a type with no matcher, and every entry of a type that
+// names no network location, is refused with a code the web translates; the
+// preview refuses the same, and nothing is saved.
+func TestScopeEntry_RefusesWildcardAndRetiredTypes(t *testing.T) {
+	svc, tr, _ := entryService(t, 1, tenant.ScopeSettings{})
+	tenantID := shared.NewID()
+	for _, c := range []struct {
+		typ, pattern string
+		want         error
+	}{
+		{"certificate", "*", scopedom.ErrTargetTypeRetired},
+		{"certificate", "0123456789abcdef", scopedom.ErrTargetTypeRetired},
+		{"network", "*", scopedom.ErrTargetTypeRetired},
+		{"container", "*", scopedom.ErrTargetTypeRetired},
+		{"database", "*", scopedom.ErrTargetTypeRetired},
+		{"mobile_app", "*", scopedom.ErrTargetTypeRetired},
+		{"cloud_resource", "*", scopedom.ErrTargetTypeRetired},
+		{"url", "*", scopedom.ErrInvalidPattern},
+		{"website", "https://*", scopedom.ErrWildcardNotAllowed},
+		{"api", "https://*.example.com/v1/*", scopedom.ErrWildcardNotAllowed},
+		{"host", "*", scopedom.ErrWildcardNotAllowed},
+		{"domain", "*", scopedom.ErrInvalidPattern},
+	} {
+		in := scope.CreateTargetInput{TenantID: tenantID.String(), TargetType: c.typ, Pattern: c.pattern, Actor: approverA}
+		if _, err := svc.CreateTarget(context.Background(), in); !errors.Is(err, c.want) {
+			t.Errorf("create %s %q: %v, want %v", c.typ, c.pattern, err, c.want)
+		}
+		if _, err := svc.PreviewTarget(context.Background(), in); !errors.Is(err, c.want) {
+			t.Errorf("preview %s %q: %v, want %v", c.typ, c.pattern, err, c.want)
+		}
+	}
+	if len(tr.targets) != 0 {
+		t.Fatal("a refused entry was saved")
+	}
+	var de *shared.DomainError
+	if _, err := svc.CreateTarget(context.Background(), scope.CreateTargetInput{TenantID: tenantID.String(), TargetType: "certificate", Pattern: "*", Actor: approverA}); !errors.As(err, &de) || de.Code != "SCOPE_TARGET_TYPE_RETIRED" {
+		t.Fatalf("retired type code: %v", err)
+	}
+	if _, err := svc.CreateTarget(context.Background(), scope.CreateTargetInput{TenantID: tenantID.String(), TargetType: "url", Pattern: "https://app.example.com", Actor: approverA}); err != nil {
+		t.Fatalf("a URL with a host: %v", err)
+	}
+}
+
+// A legacy row the platform no longer accepts cannot be put back into effect.
+func TestScopeEntry_ActivateRefusesLegacyRows(t *testing.T) {
+	svc, tr, _ := entryService(t, 1, tenant.ScopeSettings{})
+	tenantID := shared.NewID()
+	now := time.Now()
+	for _, r := range []struct {
+		typ     scopedom.TargetType
+		pattern string
+		want    error
+	}{
+		{scopedom.TargetTypeCertificate, "abc", scopedom.ErrTargetTypeRetired},
+		{scopedom.TargetTypeNetwork, "*", scopedom.ErrTargetTypeRetired},
+		{scopedom.TargetTypeURL, "https://*", scopedom.ErrWildcardNotAllowed},
+		{scopedom.TargetTypeHost, "0.0.0.0/0", scopedom.ErrInvalidPattern},
+		{scopedom.TargetTypeDomain, "*.co.uk", scopedom.ErrPublicSuffix},
+	} {
+		row := scopedom.ReconstituteTarget(shared.NewID(), tenantID, r.typ, r.pattern, "", 0, scopedom.StatusInactive, nil, "", now, now)
+		tr.targets[row.ID().String()] = row
+		if _, err := svc.ActivateTarget(context.Background(), row.ID().String(), tenantID.String(), approverA); !errors.Is(err, r.want) {
+			t.Errorf("activate %s %q: %v, want %v", r.typ, r.pattern, err, r.want)
+		}
+		if row.Status() != scopedom.StatusInactive {
+			t.Errorf("%s %q changed status to %s", r.typ, r.pattern, row.Status())
+		}
+	}
+}
