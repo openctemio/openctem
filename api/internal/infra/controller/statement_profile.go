@@ -51,6 +51,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"ScannerOutputRetentionController":    SQLBatched,
 	"CommandLogRetentionController":       SQLBatched,
 	"IngestReceiptRetentionController":    SQLBatched, // action rows, run receipts, daily facts in LIMIT batches
+	"IngestQueueRetentionController":      SQLBatched, // finished jobs, reports and stored upload parts in LIMIT batches
 	"HeartbeatHistoryRetentionController": SQLBatched,
 	"WebSurfaceRetentionController":       SQLBatched,
 	"AccessRequestRetentionController":    SQLBatched,
