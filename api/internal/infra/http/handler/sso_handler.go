@@ -613,6 +613,9 @@ func (h *SSOHandler) toProviderResponse(ip *identityprovider.IdentityProvider) P
 
 // handleAdminError handles errors for admin SSO endpoints.
 func (h *SSOHandler) handleAdminError(w http.ResponseWriter, err error) {
+	if WriteFeatureDenied(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, identityprovider.ErrNotFound):
 		apierror.NotFound("Identity provider not found").WriteJSON(w)
