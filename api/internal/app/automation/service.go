@@ -43,6 +43,8 @@ type WorkflowService struct {
 	sampler      SubjectSampler
 	evaluator    StepEvaluator
 	integrations IntegrationLookup
+	stepUp       shared.RecentAuthGate
+	users        UserDirectory
 	executor     *WorkflowExecutor
 	auditService *auditapp.AuditService
 	logger       *logger.Logger

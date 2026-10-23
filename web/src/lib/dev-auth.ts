@@ -51,8 +51,9 @@ export const DEV_USER: AuthUser & {
     'findings:credentials:reveal',
     'findings:remediation:read',
     'findings:remediation:write',
-    'findings:workflows:read',
-    'findings:workflows:write',
+    'automations:read',
+    'automations:write',
+    'automations:publish',
     // Scans
     'scans:read',
     'scans:write',

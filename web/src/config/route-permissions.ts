@@ -454,11 +454,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.Remediation,
   },
   '/automations': {
-    permission: Permission.WorkflowsRead,
+    permission: Permission.AutomationsRead,
     module: Module.Workflows,
   },
   '/automations/**': {
-    permission: Permission.WorkflowsRead,
+    permission: Permission.AutomationsRead,
     module: Module.Workflows,
   },
   '/sla': {

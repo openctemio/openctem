@@ -22,6 +22,8 @@ type CatalogEntry struct {
 	Kind       CatalogKind
 	Type       string
 	Permission permission.Permission
+	// RiskClass is what the type asks of the go-live gate ("" for triggers).
+	RiskClass automationdom.RiskClass
 }
 
 // Catalog lists every type the engine runs (automationdom.TriggerTypes,
@@ -37,11 +39,11 @@ func Catalog() []CatalogEntry {
 	}
 	for _, a := range actions {
 		perm, _ := NodePermission(automationdom.NodeConfig{ActionType: a})
-		out = append(out, CatalogEntry{Kind: CatalogKindAction, Type: string(a), Permission: perm})
+		out = append(out, CatalogEntry{Kind: CatalogKindAction, Type: string(a), Permission: perm, RiskClass: automationdom.ActionRisk(a)})
 	}
 	for _, n := range notifications {
 		perm, _ := NodePermission(automationdom.NodeConfig{NotificationType: n})
-		out = append(out, CatalogEntry{Kind: CatalogKindNotification, Type: string(n), Permission: perm})
+		out = append(out, CatalogEntry{Kind: CatalogKindNotification, Type: string(n), Permission: perm, RiskClass: automationdom.NotificationRisk(n)})
 	}
 	return out
 }

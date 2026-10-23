@@ -7,7 +7,7 @@
   category: mobilization
   order: 43
   user_facing: true
-  permission: "findings:workflows:read"
+  permission: "automations:read"
   depends:
     - {id: findings, kind: soft, reason: "finding-lifecycle triggers are a subset of workflow triggers"}
     - {id: integrations, kind: soft, reason: "most workflow actions route through integrations (Jira, Slack)"}

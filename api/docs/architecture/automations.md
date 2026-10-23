@@ -131,10 +131,30 @@ draft; both read only and need `findings:workflows:write`.
   publish it) and `NO_SIMULATION_SINCE_EDIT` (warning). Ten calls per 10
   seconds per user.
 
+### The go-live gate
+
 Risk classes (`pkg/domain/automation/risk.go`): low (tags), elevated
 (status, assignment, tickets, notifications, AI triage), high (scans, and
-any automation that lets automation-caused events start it). The go-live
-gate built on them is described in RFC-125 §2 D6.
+any automation that lets automation-caused events start it). A version's
+class is the highest of its steps.
+
+| Highest risk | `POST /workflows/{id}/publish` needs |
+|---|---|
+| low | `automations:publish` and the permission of every step |
+| elevated | the same, plus a recent re-authentication (403 `STEP_UP_REQUIRED`; `step_up_at` is stored on the version) |
+| high | the same, and the version waits (`202`, `pending_approval`) until a second person with `automations:publish`, who re-authenticated and is not the publisher, approves it: `POST /workflows/{id}/versions/{versionId}/approve {"digest"}` |
+
+- A draft with blocking validate problems is refused (400 `WORKFLOW_INVALID`,
+  the problems in `details.problems`).
+- The approval binds the version's digest: a wrong digest, or a version a
+  newer publish request replaced (`retired`), is 409 `VERSION_CHANGED`; the
+  publisher approving is 403 `SELF_APPROVAL`. On approval the version goes
+  live and its publisher becomes the owner live runs act as.
+- Rollback takes the same gate as the older version's class.
+- Narrowing needs no step-up: pausing, switching to simulate.
+- Audit: `workflow.published`, `workflow.publish_requested`,
+  `workflow.version_approved`, `workflow.rolled_back`, `workflow.mode_changed`
+  with the version, digest and risk class.
 
 ## One run per subject
 
