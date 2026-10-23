@@ -42,6 +42,7 @@ import {
   severityCounts,
   vexModeText,
 } from '../lib/import-results'
+import { ReceiptSummary, RecentImports } from './receipt-summary'
 
 const ACCEPT = '.nessus,.xml,.json,.zip,application/xml,text/xml,application/json,application/zip'
 
@@ -197,11 +198,13 @@ export function ImportResultsDialog({
                   : ''}
                 {vexModeText(t, shown.vex_mode, shown.vex_can_close)}
               </p>
+              {!shown.dry_run && shown.receipt && <ReceiptSummary receipt={shown.receipt} />}
               {(shown.files ?? []).map((f, i) => (
                 <FileSummary key={`${f.name}-${i}`} file={f} dryRun={shown.dry_run ?? false} />
               ))}
             </div>
           )}
+          {!shown && <RecentImports />}
         </DialogBody>
 
         <DialogFooter>

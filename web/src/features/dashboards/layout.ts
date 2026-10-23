@@ -30,7 +30,9 @@ export function columnsClass(columns: number | undefined): string {
     case 3:
       return 'grid-cols-1 md:grid-cols-3'
     case 4:
-      return 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
+      // Two columns from the smallest phone: single-figure tiles sit two
+      // abreast (`--span-xs` 1), everything else takes the full row.
+      return 'grid-cols-2 xl:grid-cols-4'
     default:
       return 'grid-cols-1 md:grid-cols-2'
   }
@@ -56,6 +58,15 @@ export function gridColumnSpan(span: number): string {
   return `span ${s} / span ${s}`
 }
 
+/**
+ * A compact widget (one column wide and one row tall in a four-column
+ * dashboard: a single figure) shares a phone row with its neighbour; any
+ * other widget spans the phone's two columns.
+ */
+export function phoneSpan(w: number, h: number, columns: number | undefined): string {
+  return colSpanFor(w, columns) === 1 && (h || 1) === 1 ? gridColumnSpan(1) : gridColumnSpan(2)
+}
+
 /** CSS `grid-row` value for a widget of height `h` (in row units). */
 export function widgetRowSpan(h: number): string {
   const span = Math.max(1, Math.min(8, h || 1))
@@ -73,7 +84,7 @@ export function widgetSpanClass(columns: number | undefined): string {
     case 1:
       return ''
     case 4:
-      return 'sm:[grid-column:var(--span-sm)] xl:[grid-column:var(--span)]'
+      return '[grid-column:var(--span-xs)] sm:[grid-column:var(--span-sm)] xl:[grid-column:var(--span)]'
     default:
       return 'md:[grid-column:var(--span)]'
   }
