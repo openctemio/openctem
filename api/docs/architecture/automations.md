@@ -56,9 +56,9 @@ published version becomes `superseded`.
   matches a live automation on its published trigger).
 - `draft_changed` on `GET /workflows/{id}` says the draft differs from the
   published version (digest of the steps, ignoring node positions).
-- `POST /workflows/{id}/versions/{versionId}/rollback` publishes an older
+- `POST /workflows/{id}/versions/{version_id}/rollback` publishes an older
   definition again as a new version; history keeps every version
-  (`GET /workflows/{id}/versions`, `GET /workflows/{id}/versions/{versionId}`).
+  (`GET /workflows/{id}/versions`, `GET /workflows/{id}/versions/{version_id}`).
 - `PUT /workflows/{id}/mode {"mode":"simulate"}` switches back in one call
   and keeps the published version. Live is reached only by publishing.
 - **Owner.** Publishing (and switching on) makes the caller the owner live

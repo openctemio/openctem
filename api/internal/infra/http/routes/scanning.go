@@ -827,9 +827,9 @@ func registerWorkflowRoutes(
 		// Versions and mode: publishing makes the draft a version and the
 		// automation live; simulate is one call back.
 		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.WorkflowsRead))
-		r.GET("/{id}/versions/{versionId}", h.GetVersion, middleware.Require(permission.WorkflowsRead))
+		r.GET("/{id}/versions/{version_id}", h.GetVersion, middleware.Require(permission.WorkflowsRead))
 		r.POST("/{id}/publish", h.Publish, middleware.Require(permission.WorkflowsWrite))
-		r.POST("/{id}/versions/{versionId}/rollback", h.Rollback, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/{id}/versions/{version_id}/rollback", h.Rollback, middleware.Require(permission.WorkflowsWrite))
 		r.PUT("/{id}/mode", h.SetMode, middleware.Require(permission.WorkflowsWrite))
 	}, tenantMiddlewares...)
 

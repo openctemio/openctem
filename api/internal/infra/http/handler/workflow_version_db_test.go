@@ -132,7 +132,7 @@ func TestWorkflowVersions_DB(t *testing.T) {
 	})
 
 	t.Run("rollback publishes the old definition as a new version", func(t *testing.T) {
-		if s, b := f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf, "versionId": v1})); s != http.StatusOK {
+		if s, b := f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf, "version_id": v1})); s != http.StatusOK {
 			t.Fatalf("rollback = %d %s", s, b)
 		}
 		d := detail()
@@ -171,19 +171,19 @@ func TestWorkflowVersions_DB(t *testing.T) {
 	})
 
 	t.Run("versions of another tenant or automation are not found", func(t *testing.T) {
-		if s, _ := f.call(f.h.GetVersion, f.as(f.admin, http.MethodGet, "", map[string]string{"id": wf, "versionId": v1})); s != http.StatusOK {
+		if s, _ := f.call(f.h.GetVersion, f.as(f.admin, http.MethodGet, "", map[string]string{"id": wf, "version_id": v1})); s != http.StatusOK {
 			t.Fatalf("own version = %d", s)
 		}
 		other := f.create(tagFlow("x"))
-		if s, _ := f.call(f.h.GetVersion, f.as(f.admin, http.MethodGet, "", map[string]string{"id": other, "versionId": v1})); s != http.StatusNotFound {
+		if s, _ := f.call(f.h.GetVersion, f.as(f.admin, http.MethodGet, "", map[string]string{"id": other, "version_id": v1})); s != http.StatusNotFound {
 			t.Errorf("version through another automation = %d, want 404", s)
 		}
-		if s, _ := f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": other, "versionId": v1})); s != http.StatusNotFound {
+		if s, _ := f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": other, "version_id": v1})); s != http.StatusNotFound {
 			t.Errorf("rollback to another automation's version = %d, want 404", s)
 		}
 		f.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'admin')`, f.admin, f.tenantB)
 		for _, call := range []http.HandlerFunc{f.h.GetVersion, f.h.ListVersions} {
-			if s, _ := f.call(call, f.as(f.admin, http.MethodGet, "", map[string]string{"id": wf, "versionId": v1}, f.tenantB)); s != http.StatusNotFound {
+			if s, _ := f.call(call, f.as(f.admin, http.MethodGet, "", map[string]string{"id": wf, "version_id": v1}, f.tenantB)); s != http.StatusNotFound {
 				t.Errorf("cross-tenant read = %d, want 404", s)
 			}
 		}

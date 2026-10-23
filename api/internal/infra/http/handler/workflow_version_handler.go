@@ -27,7 +27,7 @@ type WorkflowVersionResponse struct {
 	ApprovedAt  *string `json:"approved_at,omitempty"`
 	StepUpAt    *string `json:"step_up_at,omitempty"`
 	CreatedAt   string  `json:"created_at"`
-	// Definition is set only on GET /workflows/{id}/versions/{versionId}.
+	// Definition is set only on GET /workflows/{id}/versions/{version_id}.
 	Definition *automation.Definition `json:"definition,omitempty"`
 }
 
@@ -112,23 +112,23 @@ func (h *WorkflowHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
 }
 
-// GetVersion handles GET /api/v1/workflows/{id}/versions/{versionId}.
+// GetVersion handles GET /api/v1/workflows/{id}/versions/{version_id}.
 // @Summary      Get an automation version
 // @Description  One version with its stored definition (nodes and edges).
 // @Tags         Automations
 // @Produce      json
 // @Param        id         path      string  true  "Automation ID"
-// @Param        versionId  path      string  true  "Version ID"
+// @Param        version_id  path      string  true  "Version ID"
 // @Success      200  {object}  WorkflowVersionResponse
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /workflows/{id}/versions/{versionId} [get]
+// @Router       /workflows/{id}/versions/{version_id} [get]
 func (h *WorkflowHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, _, ok := workflowPathIDs(w, r)
 	if !ok {
 		return
 	}
-	versionID, err := shared.IDFromString(chi.URLParam(r, "versionId"))
+	versionID, err := shared.IDFromString(chi.URLParam(r, "version_id"))
 	if err != nil {
 		apierror.BadRequest("Invalid version ID").WriteJSON(w)
 		return
@@ -171,25 +171,25 @@ func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	h.writeWorkflowDetail(w, r, tenantID, workflowID, http.StatusOK)
 }
 
-// Rollback handles POST /api/v1/workflows/{id}/versions/{versionId}/rollback:
+// Rollback handles POST /api/v1/workflows/{id}/versions/{version_id}/rollback:
 // the older version's definition is published again as a new version.
 // @Summary      Roll an automation back to a version
 // @Description  Publishes the older version's definition again as a new version.
 // @Tags         Automations
 // @Produce      json
 // @Param        id         path      string  true  "Automation ID"
-// @Param        versionId  path      string  true  "Version ID"
+// @Param        version_id  path      string  true  "Version ID"
 // @Success      200  {object}  WorkflowResponse
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /workflows/{id}/versions/{versionId}/rollback [post]
+// @Router       /workflows/{id}/versions/{version_id}/rollback [post]
 func (h *WorkflowHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, userID, ok := workflowPathIDs(w, r)
 	if !ok {
 		return
 	}
-	versionID, err := shared.IDFromString(chi.URLParam(r, "versionId"))
+	versionID, err := shared.IDFromString(chi.URLParam(r, "version_id"))
 	if err != nil {
 		apierror.BadRequest("Invalid version ID").WriteJSON(w)
 		return
