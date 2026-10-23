@@ -83,6 +83,7 @@ vi.mock('../../api/use-remediation-campaigns', async (orig) => ({
 
 import { CampaignList } from '../campaign-list'
 import { CampaignDetail } from '../campaign-detail'
+import { useBreadcrumbTitles } from '@/components/layout/breadcrumb-title'
 
 beforeEach(() => {
   state.perms = new Set(['findings:remediation:read', 'findings:remediation:write'])
@@ -238,4 +239,15 @@ describe('CampaignDetail', () => {
       within(list).getByRole('button', { name: 'Actions for Upgrade openssl' })
     ).toBeInTheDocument()
   })
+
+  it('names itself in the breadcrumb', () => {
+    renderDetail(campaign({ name: 'Network segmentation' }))
+    render(<CrumbProbe />)
+    expect(screen.getByTestId('crumb')).toHaveTextContent('Network segmentation')
+  })
 })
+
+function CrumbProbe() {
+  const titles = useBreadcrumbTitles()
+  return <span data-testid="crumb">{titles.get('/remediation/campaigns')}</span>
+}
