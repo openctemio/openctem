@@ -100,6 +100,10 @@ describe('widgetModel', () => {
     expect(m.result).toMatchObject({
       rows: [{ href: '/findings/f%2F1', kev: true, priority: 'P0' }],
     })
+    // The row count is not the list total: no total until the server sends one.
+    expect((m.result as { total?: number | null }).total).toBeNull()
+    const sent = widgetModel({ ...v, items: { ...v.items!, total: 340 } }, spec('fix.next'), false)
+    expect((sent.result as { total?: number | null }).total).toBe(340)
     const empty = widgetModel({ ...v, items: { rows: [] } }, spec('fix.next'), false)
     expect(empty.state).toBe('no_data_yet')
     expect(empty.reasonKey).toBe('dashboards.reason.empty')
