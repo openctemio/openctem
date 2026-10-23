@@ -16,6 +16,7 @@ import en_assetFreshness from './en/assetFreshness.json'
 import en_assetCoverage from './en/assetCoverage.json'
 import en_assetSources from './en/assetSources.json'
 import en_assets from './en/assets.json'
+import en_assetDetail from './en/assetDetail.json'
 import en_assetTimeline from './en/assetTimeline.json'
 import en_attackSurface from './en/attackSurface.json'
 import en_brand from './en/brand.json'
@@ -91,6 +92,7 @@ import vi_assetFreshness from './vi/assetFreshness.json'
 import vi_assetCoverage from './vi/assetCoverage.json'
 import vi_assetSources from './vi/assetSources.json'
 import vi_assets from './vi/assets.json'
+import vi_assetDetail from './vi/assetDetail.json'
 import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_attackSurface from './vi/attackSurface.json'
 import vi_brand from './vi/brand.json'
@@ -171,6 +173,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   assetCoverage: en_assetCoverage,
   assetSources: en_assetSources,
   assets: en_assets,
+  assetDetail: en_assetDetail,
   assetTimeline: en_assetTimeline,
   attackSurface: en_attackSurface,
   brand: en_brand,
@@ -249,6 +252,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   assetCoverage: vi_assetCoverage,
   assetSources: vi_assetSources,
   assets: vi_assets,
+  assetDetail: vi_assetDetail,
   assetTimeline: vi_assetTimeline,
   attackSurface: vi_attackSurface,
   brand: vi_brand,
