@@ -61,5 +61,12 @@
   "riskScore.impact.apply": "Áp dụng thay đổi",
   "riskScore.impact.applied": "Đã áp dụng cấu hình. Điểm đang được tính lại ở chế độ nền.",
   "riskScore.impact.recalculateQueued": "Đã xếp {count} tài sản vào hàng đợi tính lại điểm rủi ro.",
-  "riskScore.impact.reviewAndSave": "Xem trước và lưu"
+  "riskScore.impact.reviewAndSave": "Xem trước và lưu",
+  "riskScore.model.label": "Cách tổng hợp điểm",
+  "riskScore.model.likelihoodImpact": "Khả năng × tác động (mặc định)",
+  "riskScore.model.likelihoodImpactHint": "Rủi ro = điểm phát hiện × % phơi nhiễm × % mức quan trọng × (1 − mức giảm nhờ biện pháp kiểm soát).",
+  "riskScore.model.noticeTitle": "Mô hình khả năng × tác động",
+  "riskScore.model.notice": "Rủi ro bằng điểm phát hiện nhân với hệ số phơi nhiễm và hệ số mức quan trọng bên dưới, rồi giảm theo biện pháp kiểm soát bù trừ. Trọng số thành phần, hệ số nhân phơi nhiễm, tác động của phát hiện và điểm CTEM chỉ áp dụng cho các cách tổng hợp có trọng số; chọn một cách như vậy ở mục Cách tổng hợp điểm để chỉnh sửa chúng.",
+  "riskScore.model.howLikelihood": "Rủi ro = điểm phát hiện × hệ số phơi nhiễm × hệ số mức quan trọng × (1 − mức giảm nhờ biện pháp kiểm soát). Điểm phát hiện tăng theo từng phát hiện đang mở tùy mức độ nghiêm trọng, với mức tăng giảm dần; tín hiệu khai thác được tính cao hơn một bậc.",
+  "riskScore.model.howLikelihoodZero": "Tài sản không có phát hiện đang mở có rủi ro bằng 0. Phơi nhiễm và mức quan trọng làm tăng hoặc giảm rủi ro; bản thân chúng không phải là rủi ro."
 }
