@@ -45,7 +45,11 @@ describe('PriorityBadge', () => {
 
   it('adds the class name with showWord', () => {
     render(<PriorityBadge priorityClass="P0" showWord />)
-    expect(screen.getByText('P0 · Immediate')).toBeTruthy()
+    const code = screen.getByText('P0')
+    expect(code.tagName).toBe('STRONG')
+    expect(code.parentElement?.textContent).toBe('P0 Immediate')
+    expect(screen.getByText('Immediate').className).toContain('font-normal')
+    expect(code.parentElement?.textContent).not.toMatch(/[·•∙]/)
   })
 
   it('shows a dashed dash for a finding that is not prioritised', () => {
@@ -171,15 +175,16 @@ describe('KevBadge', () => {
   it('reads "past due" and turns the text red', () => {
     render(<KevBadge pastDue />)
     const el = screen.getByText(/KEV/).closest('[data-slot="kev-badge"]') as HTMLElement
-    expect(el.textContent).toContain('KEV past due')
+    expect(el.getAttribute('aria-label')).toBe('KEV, past due')
+    expect(el.querySelector('[data-slot="signal-chip-qualifier"]')?.textContent).toBe('Past due')
     expect(el.className).toContain('text-destructive')
   })
 
   it('reads "ransomware" for known ransomware use', () => {
     render(<KevBadge ransomware />)
     expect(
-      screen.getByText(/ransomware/).closest('[data-slot="kev-badge"]')?.textContent
-    ).toContain('KEV ransomware')
+      screen.getByText('Ransomware').closest('[data-slot="kev-badge"]')?.getAttribute('aria-label')
+    ).toBe('KEV, ransomware')
   })
 })
 

@@ -15,6 +15,12 @@ export type SignalChipProps = Omit<React.ComponentProps<'span'>, 'children'> & {
   tone?: SignalTone
   /** Red text too (past due, overdue). Only with the alert tone. */
   alertText?: boolean
+  /**
+   * Qualifiers of the fact ("Past due", "Ransomware"): a second segment of the
+   * chip, divided by a CSS border (no glyph). The accessible name joins them:
+   * "KEV, past due".
+   */
+  qualifiers?: string[]
   /** data-slot of the element; presets pass their own. */
   slot?: string
   children: React.ReactNode
@@ -27,31 +33,62 @@ export type SignalChipProps = Omit<React.ComponentProps<'span'>, 'children'> & {
  * of chips never out-shouts the priority box. The text is always present.
  */
 export const SignalChip = React.forwardRef<HTMLSpanElement, SignalChipProps>(function SignalChip(
-  { icon: Icon, tone = 'neutral', alertText, slot = 'signal-chip', className, children, ...props },
+  {
+    icon: Icon,
+    tone = 'neutral',
+    alertText,
+    qualifiers,
+    slot = 'signal-chip',
+    className,
+    children,
+    ...props
+  },
   ref
 ) {
+  const quals = (qualifiers ?? []).filter(Boolean)
+  const segmented = quals.length > 0
+  const aria =
+    props['aria-label'] ??
+    (segmented && typeof children === 'string'
+      ? [children, ...quals.map((q) => q.toLowerCase())].join(', ')
+      : undefined)
   return (
     <span
       ref={ref}
       data-tone={tone}
+      data-segmented={segmented ? 'true' : undefined}
       className={cn(
-        'inline-flex h-[22px] w-fit max-w-[200px] shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-border bg-transparent px-1.5 text-xs font-semibold leading-none text-foreground',
+        'inline-flex h-[22px] w-fit max-w-[200px] shrink-0 items-center whitespace-nowrap rounded-sm border border-border bg-transparent text-xs font-semibold leading-none text-foreground',
+        !segmented && 'gap-1 px-1.5',
         tone === 'alert' && alertText && 'text-destructive',
         className
       )}
       {...props}
+      aria-label={aria}
       data-slot={slot}
     >
-      {Icon && (
-        <Icon
-          className={cn(
-            'size-3 shrink-0',
-            tone === 'alert' ? 'text-sig-icon' : 'text-muted-foreground'
-          )}
-          aria-hidden
-        />
+      <span className={cn('inline-flex items-center gap-1', segmented && 'h-full pl-1.5 pr-1.5')}>
+        {Icon && (
+          <Icon
+            className={cn(
+              'size-3 shrink-0',
+              tone === 'alert' ? 'text-sig-icon' : 'text-muted-foreground'
+            )}
+            aria-hidden
+          />
+        )}
+        {children}
+      </span>
+      {segmented && (
+        <span
+          data-slot="signal-chip-qualifier"
+          className="inline-flex h-full items-center gap-1 border-l border-border px-1.5"
+        >
+          {quals.map((q) => (
+            <span key={q}>{q}</span>
+          ))}
+        </span>
       )}
-      {children}
     </span>
   )
 })
