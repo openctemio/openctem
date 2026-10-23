@@ -1,5 +1,6 @@
 'use client'
 
+import { SEVERITY_DOT_COLORS, SEVERITY_SOLID_TEXT, severityStyleParts } from '@/lib/severity-colors'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -29,35 +30,35 @@ function getEPSSLevel(score: number): {
   if (score > 0.7) {
     return {
       label: 'Critical',
-      color: 'bg-red-500',
-      textColor: 'text-white',
-      bgColor: 'bg-red-500/10',
+      color: SEVERITY_DOT_COLORS.critical,
+      textColor: SEVERITY_SOLID_TEXT.critical,
+      bgColor: severityStyleParts('critical').bgColor,
       description: 'Very high exploitation probability. Prioritize immediately.',
     }
   }
   if (score > 0.4) {
     return {
       label: 'High',
-      color: 'bg-orange-500',
-      textColor: 'text-white',
-      bgColor: 'bg-orange-500/10',
+      color: SEVERITY_DOT_COLORS.high,
+      textColor: SEVERITY_SOLID_TEXT.high,
+      bgColor: severityStyleParts('high').bgColor,
       description: 'High exploitation probability. Address soon.',
     }
   }
   if (score > 0.1) {
     return {
       label: 'Medium',
-      color: 'bg-yellow-500',
-      textColor: 'text-black',
-      bgColor: 'bg-yellow-500/10',
+      color: SEVERITY_DOT_COLORS.medium,
+      textColor: SEVERITY_SOLID_TEXT.medium,
+      bgColor: severityStyleParts('medium').bgColor,
       description: 'Moderate exploitation probability.',
     }
   }
   return {
     label: 'Low',
-    color: 'bg-green-500',
-    textColor: 'text-white',
-    bgColor: 'bg-green-500/10',
+    color: 'bg-success',
+    textColor: 'text-primary-foreground',
+    bgColor: 'bg-success/10',
     description: 'Lower exploitation probability.',
   }
 }

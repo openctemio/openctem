@@ -5,24 +5,28 @@ import type { ComponentListResponse, ComponentPackage } from '../../api/types'
 
 const listCalls: Record<string, unknown>[] = []
 let listResponse: ComponentListResponse | undefined
+const summaryCalls: Record<string, unknown>[] = []
 vi.mock('../../api/hooks', () => ({
   useComponentsList: (params: Record<string, unknown>) => {
     listCalls.push(params)
     return { data: listResponse, error: undefined, isLoading: false, mutate: vi.fn() }
   },
-  useComponentsSummary: () => ({
-    data: {
-      packages: 2,
-      versions: 3,
-      assets: 4,
-      vulnerable_packages: 1,
-      kev_packages: 1,
-      fixable_packages: 1,
-      outdated: null,
-      license_violations: null,
-    },
-    isLoading: false,
-  }),
+  useComponentsSummary: (params: Record<string, unknown>) => {
+    summaryCalls.push(params)
+    return {
+      data: {
+        packages: 2,
+        versions: 3,
+        assets: 4,
+        vulnerable_packages: 1,
+        kev_packages: 1,
+        fixable_packages: 1,
+        outdated: null,
+        license_violations: null,
+      },
+      isLoading: false,
+    }
+  },
   importSbom: vi.fn(),
 }))
 vi.mock('@/components/layout', () => ({
@@ -123,5 +127,12 @@ describe('components list', () => {
     render(<ComponentsListView />)
     expect(screen.queryByText('No components yet')).toBeNull()
     expect(screen.getByText('No packages match these filters')).toBeTruthy()
+  })
+
+  it('computes the tiles unfiltered and hides Outdated when there is no health data', async () => {
+    window.history.replaceState(null, '', '/components?q=lodash&ecosystem=npm')
+    render(<ComponentsListView />)
+    expect(summaryCalls.at(-1)).toEqual({})
+    expect(screen.queryByText('Outdated')).not.toBeInTheDocument()
   })
 })

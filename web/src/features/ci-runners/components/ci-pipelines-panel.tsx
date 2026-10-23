@@ -11,7 +11,7 @@
  * gate settings.
  */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search, Workflow } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Input } from '@/components/ui/input'
@@ -30,6 +30,7 @@ import {
 import { ProviderIcon } from '@/features/scm-connections'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
+import { useDebounce } from '@/hooks/use-debounce'
 import { cn } from '@/lib/utils'
 
 import { useCIPipelines } from '../api/use-ci'
@@ -52,6 +53,7 @@ import { useTranslation } from '@/context/i18n-provider'
 type RunnerView = 'pipelines' | 'runs' | 'coverage'
 
 const QUICK = {
+  fresh: ['fresh', 'running'] as CIPipelineStatus[],
   failing: ['failing'] as CIPipelineStatus[],
   attention: ['degraded', 'stale'] as CIPipelineStatus[],
 }
@@ -137,6 +139,10 @@ export function CIPipelinesPanel() {
   const view: RunnerView =
     viewParam === 'runs' || viewParam === 'coverage' ? viewParam : 'pipelines'
   const [q, setQ] = useUrlFilter('q', '')
+  // The box types at once; the request and the URL follow 300 ms later (each
+  // request makes the server assess every pipeline of the tenant).
+  const [searchText, setSearchText] = useState(q)
+  const debouncedSearch = useDebounce(searchText, 300)
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
   const [inactiveParam, setInactiveParam] = useUrlFilter('inactive', '')
   const [overridesParam, setOverridesParam] = useUrlFilter('overrides', '')
@@ -144,6 +150,16 @@ export function CIPipelinesPanel() {
   const [openId, setOpenId] = useUrlFilter('pipeline', '')
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
 
+  useEffect(() => {
+    if (debouncedSearch !== q) {
+      setQ(debouncedSearch)
+      setPage(1)
+    }
+    // Only a settled search writes the URL; q itself must not re-trigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch])
+
+  const columns = useMemo(() => pipelineColumns(t), [t])
   const statuses = useMemo(() => statusParam.filter(isPipelineStatus), [statusParam])
   const includeInactive = inactiveParam === '1'
   const { data, error, isLoading, mutate } = useCIPipelines(
@@ -166,6 +182,19 @@ export function CIPipelinesPanel() {
     setStatusParam(sameSet(statuses, next) ? [] : next)
     setPage(1)
   }
+  // Inactive pipelines are listed with the active ones; a status list would
+  // narrow the answer first, so turning Inactive on drops it.
+  const setInactive = (on: boolean) => {
+    setInactiveParam(on ? '1' : '')
+    if (on) setStatusParam([])
+    setPage(1)
+  }
+  const clearFilters = () => {
+    setStatusParam([])
+    setInactiveParam('')
+    setOverridesParam('')
+    setPage(1)
+  }
   const metrics: MetricStripItem[] = [
     {
       key: 'pipelines',
@@ -173,11 +202,15 @@ export function CIPipelinesPanel() {
       value: active,
       hint: t('scans.ci.metric.active', 'active'),
       detail: t('scans.ci.metric.pipelinesDetail', 'one per workflow file of each repository'),
+      onClick: clearFilters,
+      active: statuses.length === 0 && !includeInactive && !hasOverrides,
     },
     {
       key: 'fresh',
       label: t('scans.ci.metric.fresh', 'Fresh'),
       value: n('fresh') + n('running'),
+      onClick: () => toggleStatuses(QUICK.fresh),
+      active: sameSet(statuses, QUICK.fresh),
       hint: t('scans.ci.metric.ofTotal', 'of {total}', { total: active }),
       detail:
         n('running') > 0
@@ -213,10 +246,7 @@ export function CIPipelinesPanel() {
         'scans.ci.metric.inactiveDetail',
         'archived, retired, revoked or never ran; hidden, not deleted'
       ),
-      onClick: () => {
-        setInactiveParam(includeInactive ? '' : '1')
-        setPage(1)
-      },
+      onClick: () => setInactive(!includeInactive),
       active: includeInactive,
     },
   ]
@@ -300,7 +330,7 @@ export function CIPipelinesPanel() {
         </>
       ) : (
         <DataTable
-          columns={pipelineColumns(t)}
+          columns={columns}
           data={data?.data ?? []}
           isLoading={isLoading}
           manualPagination
@@ -334,11 +364,8 @@ export function CIPipelinesPanel() {
                 <Input
                   placeholder={t('scans.ci.searchPipelines', 'Search repository or workflow…')}
                   aria-label={t('scans.ci.searchPipelinesLabel', 'Search CI pipelines')}
-                  value={q}
-                  onChange={(e) => {
-                    setQ(e.target.value)
-                    setPage(1)
-                  }}
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
                   className="h-9 ps-9"
                 />
               </div>
@@ -363,10 +390,7 @@ export function CIPipelinesPanel() {
                 <Switch
                   id="pipelines-inactive"
                   checked={includeInactive}
-                  onCheckedChange={(on) => {
-                    setInactiveParam(on ? '1' : '')
-                    setPage(1)
-                  }}
+                  onCheckedChange={setInactive}
                 />
                 <Label htmlFor="pipelines-inactive" className="text-sm font-normal">
                   {t('scans.ci.showInactive', 'Show inactive')}

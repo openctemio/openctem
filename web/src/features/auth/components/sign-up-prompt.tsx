@@ -2,6 +2,7 @@
 
 import Link from '@/components/link'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useCanSelfRegister } from '../hooks/use-can-self-register'
 import { registerHref } from '../lib/self-register'
 
@@ -18,16 +19,17 @@ interface SignUpPromptProps {
  */
 export function SignUpPrompt({ returnTo, email }: SignUpPromptProps) {
   const { canRegister } = useCanSelfRegister(returnTo)
+  const { t } = useTranslation()
   if (!canRegister) return null
   return (
     <>
       {' '}
-      Don&apos;t have an account?{' '}
+      {t('auth.signUp.prompt', "Don't have an account?")}{' '}
       <Link
         href={registerHref({ returnTo, email })}
         className="hover:text-primary underline underline-offset-4"
       >
-        Sign up
+        {t('auth.signUp.link', 'Sign up')}
       </Link>
     </>
   )
