@@ -75,7 +75,9 @@ func TestComponentRepository_SearchByPackageURL(t *testing.T) {
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, user.String()) })
 	mustExec(t, db, `INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($1,$2,$3)`,
 		user.String(), tenant.String(), inScope.String())
-	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM user_accessible_assets WHERE user_id=$1`, user.String()) })
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, `DELETE FROM user_accessible_assets WHERE user_id=$1`, user.String())
+	})
 	scope := &shared.DataScope{TenantID: tenant, UserID: user}
 	if got := search(tenant, scope, base+"@2.0.0"); len(got) != 0 {
 		t.Fatalf("out-of-scope version leaked: %+v", got)
