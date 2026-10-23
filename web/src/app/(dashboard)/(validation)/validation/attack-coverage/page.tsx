@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Shield, Target, AlertTriangle, RefreshCw } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { useAllPentestFindings } from '@/features/pentest/api/use-pentest-api'
 import type { ApiFinding } from '@/features/pentest/api/adapters'
 import { useSimulations, type Simulation } from '@/features/simulation/api/use-simulation-api'
@@ -202,6 +203,7 @@ function LegendItem({ color, label }: { color: string; label: string }) {
 }
 
 function HeatmapCell({ cell }: { cell: TechniqueCell | undefined; tacticId: string }) {
+  const { t } = useTranslation()
   const bgColor = getCellColor(cell)
   const textColor = getCellTextColor(cell)
   const total = cell ? cell.findingCount + cell.simulationCount : 0
@@ -231,14 +233,31 @@ function HeatmapCell({ cell }: { cell: TechniqueCell | undefined; tacticId: stri
             <div className="flex flex-wrap gap-2 pt-1">
               {cell.findingCount > 0 && (
                 <span className="text-xs">
-                  {cell.findingCount} pentest finding{cell.findingCount !== 1 ? 's' : ''}
+                  {cell.findingCount === 1
+                    ? t('validation.attackCoverage.findingCount', '{count} pentest finding', {
+                        count: cell.findingCount,
+                      })
+                    : t(
+                        'validation.attackCoverage.findingCount_other',
+                        '{count} pentest findings',
+                        {
+                          count: cell.findingCount,
+                        }
+                      )}
                 </span>
               )}
               {cell.simulationCount > 0 && (
                 <>
                   <span className="text-muted-foreground text-xs">|</span>
                   <span className="text-xs">
-                    {cell.detected} detected, {cell.bypassed} bypassed
+                    {t(
+                      'validation.attackCoverage.detectedBypassed',
+                      '{detected} detected, {bypassed} bypassed',
+                      {
+                        detected: cell.detected,
+                        bypassed: cell.bypassed,
+                      }
+                    )}
                   </span>
                 </>
               )}
@@ -247,7 +266,7 @@ function HeatmapCell({ cell }: { cell: TechniqueCell | undefined; tacticId: stri
               <div className="flex flex-wrap gap-1 pt-1">
                 {[...new Set(cell.severities)].map((sev) => (
                   <Badge key={sev} variant="outline" className="text-xs capitalize">
-                    {sev}
+                    {t(`severity.${sev}`, sev)}
                   </Badge>
                 ))}
               </div>
@@ -300,6 +319,7 @@ function LoadingSkeleton() {
 }
 
 export default function MitreCoveragePage() {
+  const { t } = useTranslation()
   // The source filter lives in the URL so a view can be linked.
   const [sourceParam, setSourceParam] = useUrlFilter('source', 'all')
   const source: CoverageSource =
@@ -400,65 +420,113 @@ export default function MitreCoveragePage() {
   return (
     <Main>
       <PageHeader
-        title="ATT&CK coverage"
+        title={t('validation.attackCoverage.title', 'ATT&CK coverage')}
         description={
           simulationEnabled
-            ? 'Which ATT&CK techniques your pentest findings and attack simulations have exercised.'
-            : 'Which ATT&CK techniques your pentest findings have exercised.'
+            ? t(
+                'validation.attackCoverage.descSim',
+                'Which ATT&CK techniques your pentest findings and attack simulations have exercised.'
+              )
+            : t(
+                'validation.attackCoverage.descPentest',
+                'Which ATT&CK techniques your pentest findings have exercised.'
+              )
         }
       >
         <Button variant="outline" size="sm" onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4 sm:me-2" />
-          <span className="sr-only sm:not-sr-only">Refresh</span>
+          <span className="sr-only sm:not-sr-only">
+            {t('validation.attackCoverage.refresh', 'Refresh')}
+          </span>
         </Button>
       </PageHeader>
 
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           icon={Target}
-          title="Techniques covered"
+          title={t('validation.attackCoverage.stat.covered', 'Techniques covered')}
           value={`${stats.covered}/${stats.totalTechniques}`}
-          description={`${stats.coverage}% coverage`}
+          description={t('validation.attackCoverage.stat.coverage', '{pct}% coverage', {
+            pct: stats.coverage,
+          })}
         />
-        <StatsCard icon={Shield} title="Pentest findings" value={findings.length} />
+        <StatsCard
+          icon={Shield}
+          title={t('validation.attackCoverage.stat.findings', 'Pentest findings')}
+          value={findings.length}
+        />
         <StatsCard
           icon={AlertTriangle}
-          title="Simulations bypassed"
+          title={t('validation.attackCoverage.stat.bypassed', 'Simulations bypassed')}
           value={stats.bypassed}
           valueClassName={stats.bypassed > 0 ? 'text-destructive' : undefined}
         />
-        <StatsCard icon={Shield} title="Simulations detected" value={stats.detected} />
+        <StatsCard
+          icon={Shield}
+          title={t('validation.attackCoverage.stat.detected', 'Simulations detected')}
+          value={stats.detected}
+        />
       </div>
 
       <Card className="mt-5">
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
           <div className="min-w-0 space-y-1.5">
-            <CardTitle>ATT&CK matrix</CardTitle>
+            <CardTitle>{t('validation.attackCoverage.matrixTitle', 'ATT&CK matrix')}</CardTitle>
             <CardDescription>
-              Each cell is a technique; its colour shows coverage and severity.
+              {t(
+                'validation.attackCoverage.matrixDesc',
+                'Each cell is a technique; its colour shows coverage and severity.'
+              )}
             </CardDescription>
           </div>
           {simulationEnabled && (
             <Select value={source} onValueChange={setSourceParam}>
-              <SelectTrigger className="h-9 w-40" aria-label="Coverage source">
+              <SelectTrigger
+                className="h-9 w-40"
+                aria-label={t('validation.attackCoverage.sourceAria', 'Coverage source')}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All sources</SelectItem>
-                <SelectItem value="pentest">Pentest only</SelectItem>
-                <SelectItem value="simulation">Simulation only</SelectItem>
+                <SelectItem value="all">
+                  {t('validation.attackCoverage.source.all', 'All sources')}
+                </SelectItem>
+                <SelectItem value="pentest">
+                  {t('validation.attackCoverage.source.pentest', 'Pentest only')}
+                </SelectItem>
+                <SelectItem value="simulation">
+                  {t('validation.attackCoverage.source.simulation', 'Simulation only')}
+                </SelectItem>
               </SelectContent>
             </Select>
           )}
           <div className="flex w-full flex-wrap gap-x-4 gap-y-2">
-            <LegendItem color={HEAT.none} label="No coverage" />
-            <LegendItem color={HEAT.lowMed} label="Pentest finding (low/med)" />
-            <LegendItem color={HEAT.high} label="Pentest finding (high)" />
-            <LegendItem color={HEAT.critical} label="Critical / bypassed" />
+            <LegendItem
+              color={HEAT.none}
+              label={t('validation.attackCoverage.legend.none', 'No coverage')}
+            />
+            <LegendItem
+              color={HEAT.lowMed}
+              label={t('validation.attackCoverage.legend.lowMed', 'Pentest finding (low/med)')}
+            />
+            <LegendItem
+              color={HEAT.high}
+              label={t('validation.attackCoverage.legend.high', 'Pentest finding (high)')}
+            />
+            <LegendItem
+              color={HEAT.critical}
+              label={t('validation.attackCoverage.legend.critical', 'Critical / bypassed')}
+            />
             {simulationEnabled && (
               <>
-                <LegendItem color={HEAT.partial} label="Partially detected" />
-                <LegendItem color={HEAT.detected} label="Detected / prevented" />
+                <LegendItem
+                  color={HEAT.partial}
+                  label={t('validation.attackCoverage.legend.partial', 'Partially detected')}
+                />
+                <LegendItem
+                  color={HEAT.detected}
+                  label={t('validation.attackCoverage.legend.detected', 'Detected / prevented')}
+                />
               </>
             )}
           </div>
@@ -489,9 +557,14 @@ export default function MitreCoveragePage() {
       {coverageMap.size > 0 && (
         <Card className="mt-5">
           <CardHeader>
-            <CardTitle>Covered techniques</CardTitle>
+            <CardTitle>
+              {t('validation.attackCoverage.coveredTitle', 'Covered techniques')}
+            </CardTitle>
             <CardDescription>
-              Techniques with at least one finding or simulation result.
+              {t(
+                'validation.attackCoverage.coveredDesc',
+                'Techniques with at least one finding or simulation result.'
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -521,19 +594,33 @@ export default function MitreCoveragePage() {
                       <div className="flex flex-wrap items-center gap-2">
                         {cell.findingCount > 0 && (
                           <Badge variant="outline" className="text-xs">
-                            {cell.findingCount} finding{cell.findingCount !== 1 ? 's' : ''}
+                            {cell.findingCount === 1
+                              ? t('validation.attackCoverage.badgeFinding', '{count} finding', {
+                                  count: cell.findingCount,
+                                })
+                              : t(
+                                  'validation.attackCoverage.badgeFinding_other',
+                                  '{count} findings',
+                                  {
+                                    count: cell.findingCount,
+                                  }
+                                )}
                           </Badge>
                         )}
                         {cell.simulationCount > 0 && (
                           <>
                             {cell.detected > 0 && (
                               <Badge variant="secondary" className="tabular-nums">
-                                {cell.detected} detected
+                                {t('validation.attackCoverage.badgeDetected', '{count} detected', {
+                                  count: cell.detected,
+                                })}
                               </Badge>
                             )}
                             {cell.bypassed > 0 && (
                               <Badge variant="outline" className="text-destructive tabular-nums">
-                                {cell.bypassed} bypassed
+                                {t('validation.attackCoverage.badgeBypassed', '{count} bypassed', {
+                                  count: cell.bypassed,
+                                })}
                               </Badge>
                             )}
                           </>
@@ -542,7 +629,7 @@ export default function MitreCoveragePage() {
                           <div className="flex gap-1">
                             {[...new Set(cell.severities)].map((sev) => (
                               <Badge key={sev} variant="outline" className="text-xs capitalize">
-                                {sev}
+                                {t(`severity.${sev}`, sev)}
                               </Badge>
                             ))}
                           </div>
