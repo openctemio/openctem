@@ -31,6 +31,10 @@ type gateFixture struct {
 	// resolveErr fails those lookups.
 	resolves   map[string][]string
 	resolveErr error
+	// serving: certificate name -> names of the endpoints that served it;
+	// servingErr fails that lookup.
+	serving    map[string][]string
+	servingErr error
 }
 
 func (f *gateFixture) NamesResolvingTo(_ context.Context, t shared.ID, ids []string) (map[string][]string, error) {
@@ -1042,4 +1046,29 @@ func TestActiveGate_PendingNeedsAnEntryInEffect(t *testing.T) {
 	if b, _ := g.ActiveCheckBlocked(context.Background(), f.tenant, []string{monitored.ID().String()}); b[monitored.ID().String()] != attribution.StateMonitorOnly {
 		t.Fatalf("monitor only under a one-off entry: %v", b)
 	}
+}
+
+// ServingEndpoints is the fixture's serves_certificate edges: certificate
+// name -> the names of the endpoints that served it. Another tenant sees none.
+func (f *gateFixture) ServingEndpoints(_ context.Context, t shared.ID, certs []shared.ID) (map[string][]shared.ID, error) {
+	out := map[string][]shared.ID{}
+	if f.servingErr != nil {
+		return nil, f.servingErr
+	}
+	if !f.mine(t) {
+		return out, nil
+	}
+	for _, c := range certs {
+		for _, a := range f.assets {
+			if !a.ID().Equals(c) {
+				continue
+			}
+			for _, endpoint := range f.serving[a.Name()] {
+				if e, ok := f.assets[endpoint]; ok {
+					out[c.String()] = append(out[c.String()], e.ID())
+				}
+			}
+		}
+	}
+	return out, nil
 }

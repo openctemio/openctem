@@ -46,7 +46,8 @@ function AssetsQuickViewList() {
     () => lensCounts(registry, stats.byTypeSubType),
     [registry, stats.byTypeSubType]
   )
-  if (isLoading || error) return null
+  // Without the registry every type would land in "Other": wait for it.
+  if (isLoading || error || !registry) return null
   const active = activeQuickView(search, counts)
   const views = assetQuickViews(registry, stats.total, counts)
   return (

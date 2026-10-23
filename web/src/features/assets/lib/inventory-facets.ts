@@ -178,11 +178,16 @@ export function buildFacetGroups(
   t: FacetT = englishT,
   typeOptions?: TypeFacetOptions
 ): FacetGroup[] {
+  // A value's label: its translation, else the English constant, else the raw value.
+  const valueLabel =
+    (key: string, labels: Record<string, string>) =>
+    (v: string): string =>
+      t(`assets.facets.value.${key}.${v}`, labels[v] ?? v)
   return [
     scopingFacetGroup(t),
     {
       id: 'kind',
-      label: 'Kind',
+      label: t('assets.facets.group.kind', 'Kind'),
       facets: [
         ...(typeOptions
           ? [
@@ -204,22 +209,22 @@ export function buildFacetGroups(
         {
           kind: 'multi',
           filterKey: 'criticalities',
-          label: 'Criticality',
+          label: t('assets.facets.criticalities', 'Criticality'),
           source: 'static',
           values: [...ASSET_CRITICALITY_LEVELS],
-          labelFor: (v) => CRITICALITY_LABELS[v as keyof typeof CRITICALITY_LABELS] ?? v,
+          labelFor: valueLabel('criticalities', CRITICALITY_LABELS),
           counts: (s) => s.byCriticality,
         },
       ],
     },
     {
       id: 'business',
-      label: 'Business',
+      label: t('assets.facets.group.business', 'Business'),
       facets: [
         {
           kind: 'multi',
           filterKey: 'businessUnitIds',
-          label: 'Business unit',
+          label: t('assets.facets.businessUnitIds', 'Business unit'),
           source: 'dynamic',
           labelFor: (v) => businessUnitLabels[v] ?? v,
           counts: (s) => s.byBusinessUnit,
@@ -228,98 +233,98 @@ export function buildFacetGroups(
         {
           kind: 'bool',
           filterKey: 'hasOwner',
-          label: 'Ownership',
-          trueLabel: 'Has owner',
-          falseLabel: 'Unowned',
+          label: t('assets.facets.hasOwner', 'Ownership'),
+          trueLabel: t('assets.facets.hasOwnerTrue', 'Has owner'),
+          falseLabel: t('assets.facets.hasOwnerFalse', 'Unowned'),
           counts: (s) => s.byHasOwner,
         },
         {
           kind: 'multi',
           filterKey: 'attribution',
-          label: 'Attribution',
+          label: t('assets.facets.attribution', 'Attribution'),
           source: 'static',
           values: [...ATTRIBUTION_FILTER_VALUES],
-          labelFor: (v) => ATTRIBUTION_FILTER_LABELS[v] ?? v,
+          labelFor: valueLabel('attribution', ATTRIBUTION_FILTER_LABELS),
           // The stats endpoint has no attribution breakdown.
           counts: () => ({}),
         },
         {
           kind: 'multi',
           filterKey: 'dataClassifications',
-          label: 'Data classification',
+          label: t('assets.facets.dataClassifications', 'Data classification'),
           source: 'static',
           values: ['public', 'internal', 'confidential', 'restricted', 'secret'],
-          labelFor: (v) => DATA_CLASSIFICATION_LABELS[v] ?? v,
+          labelFor: valueLabel('dataClassifications', DATA_CLASSIFICATION_LABELS),
           counts: (s) => s.byDataClassification,
         },
       ],
     },
     {
       id: 'exposure',
-      label: 'Exposure',
+      label: t('assets.facets.group.exposure', 'Exposure'),
       facets: [
         {
           kind: 'multi',
           filterKey: 'exposures',
-          label: 'Exposure level',
+          label: t('assets.facets.exposures', 'Exposure level'),
           source: 'static',
           values: ['public', 'restricted', 'private', 'isolated', 'unknown'],
-          labelFor: (v) => EXPOSURE_LEVEL_LABELS[v as keyof typeof EXPOSURE_LEVEL_LABELS] ?? v,
+          labelFor: valueLabel('exposures', EXPOSURE_LEVEL_LABELS),
           counts: (s) => s.byExposure,
         },
         {
           kind: 'bool',
           filterKey: 'isInternetFacing',
-          label: 'Internet-facing',
-          trueLabel: 'Internet-facing',
-          falseLabel: 'Not internet-facing',
+          label: t('assets.facets.isInternetFacing', 'Internet-facing'),
+          trueLabel: t('assets.facets.isInternetFacingTrue', 'Internet-facing'),
+          falseLabel: t('assets.facets.isInternetFacingFalse', 'Not internet-facing'),
           counts: (s) => s.byInternetFacing,
         },
         {
           kind: 'bool',
           filterKey: 'isControlPlane',
-          label: 'Control plane',
-          trueLabel: 'Control plane',
-          falseLabel: 'Not a control plane',
+          label: t('assets.facets.isControlPlane', 'Control plane'),
+          trueLabel: t('assets.facets.isControlPlaneTrue', 'Control plane'),
+          falseLabel: t('assets.facets.isControlPlaneFalse', 'Not a control plane'),
           counts: (s) => s.byControlPlane,
         },
         {
           kind: 'multi',
           filterKey: 'scopes',
-          label: 'Scope',
+          label: t('assets.facets.scopes', 'Scope'),
           source: 'static',
           values: ['internal', 'external', 'cloud', 'partner', 'vendor', 'shadow'],
-          labelFor: (v) => ASSET_SCOPE_LABELS[v as keyof typeof ASSET_SCOPE_LABELS] ?? v,
+          labelFor: valueLabel('scopes', ASSET_SCOPE_LABELS),
           counts: (s) => s.byScope,
         },
       ],
     },
     {
       id: 'lifecycle',
-      label: 'Lifecycle',
+      label: t('assets.facets.group.lifecycle', 'Lifecycle'),
       facets: [
         {
           kind: 'multi',
           filterKey: 'statuses',
-          label: 'Status',
+          label: t('assets.facets.statuses', 'Status'),
           source: 'static',
           values: ['active', 'inactive', 'archived'],
-          labelFor: (v) => STATUS_LABELS[v] ?? v,
+          labelFor: valueLabel('statuses', STATUS_LABELS),
           counts: (s) => s.byStatus,
         },
         {
           kind: 'multi',
           filterKey: 'environments',
-          label: 'Environment',
+          label: t('assets.facets.environments', 'Environment'),
           source: 'static',
           values: ['production', 'staging', 'development', 'testing', 'dr'],
-          labelFor: (v) => ENVIRONMENT_LABELS[v] ?? v,
+          labelFor: valueLabel('environments', ENVIRONMENT_LABELS),
           counts: (s) => s.byEnvironment,
         },
         {
           kind: 'multi',
           filterKey: 'providers',
-          label: 'Provider / source',
+          label: t('assets.facets.providers', 'Provider or source'),
           source: 'dynamic',
           labelFor: identity,
           counts: (s) => s.byProvider,

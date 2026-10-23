@@ -102,7 +102,10 @@ func (s *SecretStoreService) CreateCredential(ctx context.Context, input CreateC
 		ActorID:  input.UserID.String(),
 		// IP/UA would need to be passed in input or context
 	}
-	_ = s.auditService.LogCredentialCreated(ctx, actx, cred.ID.String(), cred.Name, string(cred.CredentialType))
+	if err := s.auditService.LogCredentialCreated(ctx, actx, cred.ID.String(), cred.Name, string(cred.CredentialType)); err != nil {
+		s.logger.Warn("audit event was not recorded", "action", "credential.created",
+			"resource_id", logger.SanitizeValue(cred.ID.String()), "error", logger.SanitizeError(err))
+	}
 
 	return cred, nil
 }
