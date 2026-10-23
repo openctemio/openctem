@@ -1,6 +1,7 @@
 package automation
 
 import (
+	"slices"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -74,15 +75,13 @@ type NodeConfig struct {
 // TriggerType represents the type of trigger.
 type TriggerType string
 
+// Every trigger type here is fired by the platform (catalog.go lists them). There is no schedule trigger: scans keep their
+// own schedules, and a sweep schedule for rules is designed separately.
 const (
 	TriggerTypeManual          TriggerType = "manual"
-	TriggerTypeSchedule        TriggerType = "schedule"
 	TriggerTypeFindingCreated  TriggerType = "finding_created"
-	TriggerTypeFindingUpdated  TriggerType = "finding_updated"
-	TriggerTypeFindingAge      TriggerType = "finding_age"
 	TriggerTypeAssetDiscovered TriggerType = "asset_discovered"
 	TriggerTypeScanCompleted   TriggerType = "scan_completed"
-	TriggerTypeWebhook         TriggerType = "webhook"
 	// AI Triage triggers
 	TriggerTypeAITriageCompleted TriggerType = "ai_triage_completed"
 	TriggerTypeAITriageFailed    TriggerType = "ai_triage_failed"
@@ -90,72 +89,42 @@ const (
 	TriggerTypeFindingStatusChanged TriggerType = "finding_status_changed"
 )
 
-// IsValid checks if the trigger type is valid.
-func (t TriggerType) IsValid() bool {
-	switch t {
-	case TriggerTypeManual, TriggerTypeSchedule, TriggerTypeFindingCreated,
-		TriggerTypeFindingUpdated, TriggerTypeFindingAge, TriggerTypeAssetDiscovered,
-		TriggerTypeScanCompleted, TriggerTypeWebhook,
-		TriggerTypeAITriageCompleted, TriggerTypeAITriageFailed,
-		TriggerTypeFindingStatusChanged:
-		return true
-	}
-	return false
-}
+// IsValid reports whether the platform fires this trigger type.
+func (t TriggerType) IsValid() bool { return slices.Contains(TriggerTypes(), t) }
 
 // ActionType represents the type of action.
 type ActionType string
 
+// Every action type here has a handler that does what it says.
 const (
-	ActionTypeAssignUser      ActionType = "assign_user"
-	ActionTypeAssignTeam      ActionType = "assign_team"
-	ActionTypeUpdatePriority  ActionType = "update_priority"
-	ActionTypeUpdateStatus    ActionType = "update_status"
-	ActionTypeAddTags         ActionType = "add_tags"
-	ActionTypeRemoveTags      ActionType = "remove_tags"
-	ActionTypeCreateTicket    ActionType = "create_ticket"
-	ActionTypeUpdateTicket    ActionType = "update_ticket"
-	ActionTypeTriggerPipeline ActionType = "trigger_pipeline"
-	ActionTypeTriggerScan     ActionType = "trigger_scan"
-	ActionTypeHTTPRequest     ActionType = "http_request"
-	ActionTypeRunScript       ActionType = "run_script"
+	ActionTypeAssignUser   ActionType = "assign_user"
+	ActionTypeUpdateStatus ActionType = "update_status"
+	ActionTypeAddTags      ActionType = "add_tags"
+	ActionTypeRemoveTags   ActionType = "remove_tags"
+	ActionTypeCreateTicket ActionType = "create_ticket"
+	ActionTypeUpdateTicket ActionType = "update_ticket"
+	ActionTypeTriggerScan  ActionType = "trigger_scan"
 	// AI Triage action
 	ActionTypeTriggerAITriage ActionType = "trigger_ai_triage"
 )
 
-// IsValid checks if the action type is valid.
-func (t ActionType) IsValid() bool {
-	switch t {
-	case ActionTypeAssignUser, ActionTypeAssignTeam, ActionTypeUpdatePriority,
-		ActionTypeUpdateStatus, ActionTypeAddTags, ActionTypeRemoveTags,
-		ActionTypeCreateTicket, ActionTypeUpdateTicket, ActionTypeTriggerPipeline,
-		ActionTypeTriggerScan, ActionTypeHTTPRequest, ActionTypeRunScript,
-		ActionTypeTriggerAITriage:
-		return true
-	}
-	return false
-}
+// IsValid reports whether the platform executes this action type.
+func (t ActionType) IsValid() bool { return slices.Contains(ActionTypes(), t) }
 
 // NotificationType represents the type of notification.
 type NotificationType string
 
+// Every notification type here has a delivery channel. There is no paging
+// type until a paging integration exists.
 const (
-	NotificationTypeSlack     NotificationType = "slack"
-	NotificationTypeEmail     NotificationType = "email"
-	NotificationTypeTeams     NotificationType = "teams"
-	NotificationTypeWebhook   NotificationType = "webhook"
-	NotificationTypePagerDuty NotificationType = "pagerduty"
+	NotificationTypeSlack   NotificationType = "slack"
+	NotificationTypeEmail   NotificationType = "email"
+	NotificationTypeTeams   NotificationType = "teams"
+	NotificationTypeWebhook NotificationType = "webhook"
 )
 
-// IsValid checks if the notification type is valid.
-func (t NotificationType) IsValid() bool {
-	switch t {
-	case NotificationTypeSlack, NotificationTypeEmail, NotificationTypeTeams,
-		NotificationTypeWebhook, NotificationTypePagerDuty:
-		return true
-	}
-	return false
-}
+// IsValid reports whether the platform delivers this notification type.
+func (t NotificationType) IsValid() bool { return slices.Contains(NotificationTypes(), t) }
 
 // NewNode creates a new workflow node.
 func NewNode(

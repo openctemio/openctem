@@ -133,3 +133,11 @@ always in the WHERE, for the list and the stats alike.
 - The parsers live in the platform for now: YAML needs a dependency the ctis
   schema module does not take. A sensor-side `import.api_spec` can move the
   JSON formats to `ctis/importer` later without changing this API.
+
+## Console
+
+The web surface is a tab of Discovery › Attack surface (`/attack-surface/web`):
+origins, endpoints, the same path across origins, and the endpoint events. It
+reads the endpoints above, so it needs `assets:read` and the `assets` module
+(the route guard says so), not the attack surface module.
+
