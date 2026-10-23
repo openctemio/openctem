@@ -257,9 +257,10 @@ func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, att
 }
 
 // Renew extends the lease of the attempt the worker is processing.
-func (r *IngestJobRepository) Renew(ctx context.Context, id ingestjob.ID, attempts int) error {
+func (r *IngestJobRepository) Renew(ctx context.Context, tenantID shared.ID, id ingestjob.ID, attempts int) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ingest_jobs SET locked_at = $3
-		WHERE id = $1 AND status = 'processing' AND attempts = $2`, id.String(), attempts, time.Now())
+		WHERE id = $1 AND tenant_id = $4 AND status = 'processing' AND attempts = $2`,
+		id.String(), attempts, time.Now(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("renew ingest job lease: %w", err)
 	}
