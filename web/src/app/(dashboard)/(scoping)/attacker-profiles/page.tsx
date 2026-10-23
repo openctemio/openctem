@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import useSWR from 'swr'
 import { Main } from '@/components/layout'
 import {
   DataTable,
@@ -11,6 +10,7 @@ import {
   EmptyState,
   GatedSectionTabs,
   PageHeader,
+  CappedNotice,
 } from '@/features/shared'
 import { THREAT_MODEL_SECTION_TABS } from '@/config/section-tabs'
 import { Button } from '@/components/ui/button'
@@ -38,7 +38,8 @@ import {
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, Trash2, Lock, Target } from 'lucide-react'
-import { get, post, del } from '@/lib/api/client'
+import { post, del } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 import { Can, Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
@@ -58,13 +59,6 @@ interface AttackerProfile {
   is_default: boolean
   created_at: string
   updated_at: string
-}
-
-interface PaginatedResponse {
-  data: AttackerProfile[]
-  total: number
-  page: number
-  per_page: number
 }
 
 // Profile-type values mirror the backend's attacker-profile taxonomy
@@ -96,9 +90,7 @@ export default function AttackerProfilesPage() {
     data: response,
     isLoading,
     mutate,
-  } = useSWR<PaginatedResponse>('/api/v1/attacker-profiles?per_page=100', get, {
-    revalidateOnFocus: false,
-  })
+  } = useRegisterPages<AttackerProfile>('/api/v1/attacker-profiles?per_page=100')
 
   const profiles = response?.data ?? []
 
@@ -306,6 +298,7 @@ export default function AttackerProfilesPage() {
             <DataTable columns={columns} data={profiles} searchPlaceholder="Search profiles..." />
           )}
         </div>
+        <CappedNotice loaded={profiles.length} total={response?.total ?? 0} />
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

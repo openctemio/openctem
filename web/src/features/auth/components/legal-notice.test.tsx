@@ -7,9 +7,7 @@ describe('LegalNotice', () => {
   it('renders nothing when no legal documents are configured', () => {
     // The app has no /terms or /privacy page: linking there sent every
     // visitor who clicked to the 404 page.
-    const { container } = render(
-      <LegalNotice action="clicking sign in" termsUrl="" privacyUrl="" />
-    )
+    const { container } = render(<LegalNotice kind="signIn" termsUrl="" privacyUrl="" />)
     expect(container).toBeEmptyDOMElement()
     expect(screen.queryByRole('link')).toBeNull()
   })
@@ -17,7 +15,7 @@ describe('LegalNotice', () => {
   it('links to the configured documents', () => {
     render(
       <LegalNotice
-        action="clicking sign in"
+        kind="signIn"
         termsUrl="https://example.com/terms"
         privacyUrl="https://example.com/privacy"
       />
@@ -34,9 +32,7 @@ describe('LegalNotice', () => {
   })
 
   it('shows only the document that is configured', () => {
-    render(
-      <LegalNotice action="creating an account" privacyUrl="https://example.com/p" termsUrl="" />
-    )
+    render(<LegalNotice kind="register" privacyUrl="https://example.com/p" termsUrl="" />)
     expect(screen.queryByRole('link', { name: 'Terms of Service' })).toBeNull()
     expect(screen.getByRole('link', { name: 'Privacy Policy' })).toBeInTheDocument()
   })
