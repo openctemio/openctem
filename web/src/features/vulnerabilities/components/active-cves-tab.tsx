@@ -11,7 +11,8 @@
 import { formatEpssScore } from '@/lib/epss'
 import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { AlertCircle, RefreshCw, Server, ShieldAlert, Zap } from 'lucide-react'
+import { AlertCircle, RefreshCw, Server, Zap } from 'lucide-react'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -72,14 +73,7 @@ const COLUMNS: ColumnDef<ActiveCVE>[] = [
       return (
         <div className="flex items-center gap-1.5 whitespace-nowrap">
           <span className="font-mono text-sm font-medium">{c.cve_id}</span>
-          {c.in_cisa_kev && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <ShieldAlert className="h-3.5 w-3.5 text-destructive" aria-label="CISA KEV" />
-              </TooltipTrigger>
-              <TooltipContent>CISA KEV</TooltipContent>
-            </Tooltip>
-          )}
+          {c.in_cisa_kev && <KevBadge />}
           {c.exploit_available && (
             <Tooltip>
               <TooltipTrigger asChild>

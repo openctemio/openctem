@@ -133,11 +133,11 @@ type Repository interface {
 	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query,
 	// over the assets in scope (nil scope: the whole tenant).
 	// This replaces the N+1 pattern of calling Count() per type.
-	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[string]AssetTypeStats, error)
+	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (map[string]AssetTypeStats, error)
 
 	// GetAverageRiskScore returns the average risk_score of the assets in scope (nil scope: the whole tenant).
 	// This replaces loading all assets into memory to compute the average.
-	GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (float64, error)
+	GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (float64, error)
 
 	// BatchUpdateRiskScores updates risk scores for multiple assets in a single query.
 	// Uses PostgreSQL unnest() for efficient bulk updates.

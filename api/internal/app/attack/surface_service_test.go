@@ -21,22 +21,24 @@ type fakeSurfaceAssets struct {
 	list             []*asset.Asset
 	breakdown        map[string]asset.AssetTypeStats
 	listOpts         []asset.ListOptions
+	listFilters      []asset.Filter
 }
 
 func (f *fakeSurfaceAssets) Count(_ context.Context, filter asset.Filter) (int64, error) {
 	return f.count(filter), nil
 }
 
-func (f *fakeSurfaceAssets) List(_ context.Context, _ asset.Filter, opts asset.ListOptions, _ pagination.Pagination) (pagination.Result[*asset.Asset], error) {
+func (f *fakeSurfaceAssets) List(_ context.Context, flt asset.Filter, opts asset.ListOptions, _ pagination.Pagination) (pagination.Result[*asset.Asset], error) {
 	f.listOpts = append(f.listOpts, opts)
+	f.listFilters = append(f.listFilters, flt)
 	return pagination.Result[*asset.Asset]{Data: f.list, Total: int64(len(f.list))}, nil
 }
 
-func (f *fakeSurfaceAssets) GetAssetTypeBreakdown(context.Context, shared.ID, *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
+func (f *fakeSurfaceAssets) GetAssetTypeBreakdown(context.Context, shared.ID, *shared.DataScope, *attribution.StateFilter) (map[string]asset.AssetTypeStats, error) {
 	return f.breakdown, nil
 }
 
-func (f *fakeSurfaceAssets) GetAverageRiskScore(context.Context, shared.ID, *shared.DataScope) (float64, error) {
+func (f *fakeSurfaceAssets) GetAverageRiskScore(context.Context, shared.ID, *shared.DataScope, *attribution.StateFilter) (float64, error) {
 	return 42, nil
 }
 
@@ -191,7 +193,7 @@ func TestGetRecentChanges_MergesHistory(t *testing.T) {
 		},
 	})
 
-	got := svc.getRecentChanges(context.Background(), tenant, nil, 5)
+	got := svc.getRecentChanges(context.Background(), tenant, nil, approvedFilter(), 5)
 	var kinds []string
 	for _, c := range got {
 		kinds = append(kinds, c.Type+":"+c.AssetName)
@@ -201,7 +203,7 @@ func TestGetRecentChanges_MergesHistory(t *testing.T) {
 		t.Fatalf("recent changes = %v, want %v", kinds, want)
 	}
 
-	scoped := svc.getRecentChanges(context.Background(), tenant, &shared.DataScope{TenantID: tenant, UserID: shared.NewID()}, 5)
+	scoped := svc.getRecentChanges(context.Background(), tenant, &shared.DataScope{TenantID: tenant, UserID: shared.NewID()}, approvedFilter(), 5)
 	if len(scoped) != 1 || scoped[0].Type != "added" {
 		t.Fatalf("restricted member must see only in-scope additions, got %+v", scoped)
 	}
@@ -225,27 +227,38 @@ func (f fakeRecords) Records(_ context.Context, tenantID shared.ID, ids []string
 	return out, nil
 }
 
-// A name the scan found that waits for review is listed as added, with its
-// state and outside the inventory (RFC-054 §4.4: "Added · needs review").
-func TestGetRecentChanges_AttributionState(t *testing.T) {
+func approvedFilter() attribution.StateFilter {
+	f, _, _ := attribution.ParseFilter([]string{attribution.FilterAttributed})
+	return f
+}
+
+// The overview's recent changes cover the same population as its stat tiles:
+// the "added" query carries the attribution filter, and a rejected or
+// needs-review name never appears, as an addition or as a history change.
+func TestGetRecentChanges_ExcludesRejectedAndNeedsReview(t *testing.T) {
 	tenant := shared.NewID()
 	review := mustAsset(t, tenant, "a.example.co.uk")
+	rejected := mustAsset(t, tenant, "no.example.com")
 	legacy := mustAsset(t, tenant, "legacy.example.com")
-	repo := &fakeSurfaceAssets{list: []*asset.Asset{review, legacy}}
+	histRejected := shared.NewID()
+	now := time.Now().UTC()
+	repo := &fakeSurfaceAssets{list: []*asset.Asset{review, rejected, legacy}}
 	svc := NewSurfaceService(repo, nil, logger.NewNop())
+	svc.SetStateHistory(&fakeHistory{
+		rows: []*asset.AssetStateChange{change(t, tenant, histRejected, asset.StateChangeDisappeared, now)},
+		refs: map[shared.ID]asset.StateChangeAssetRef{histRejected: {Name: "hist.example.com", Type: "domain"}},
+	})
 	svc.SetAttributionRecords(fakeRecords{tenant: tenant, recs: map[string]attribution.Record{
-		review.ID().String(): {State: attribution.StateNeedsReview},
+		review.ID().String():   {State: attribution.StateNeedsReview},
+		rejected.ID().String(): {State: attribution.StateRejected},
+		histRejected.String():  {State: attribution.StateRejected},
 	}})
-	got := svc.getRecentChanges(context.Background(), tenant, nil, 5)
-	by := map[string]AssetChange{}
-	for _, c := range got {
-		by[c.AssetName] = c
+	got := svc.getRecentChanges(context.Background(), tenant, nil, approvedFilter(), 5)
+	if len(got) != 1 || got[0].AssetName != "legacy.example.com" || got[0].AssetID != legacy.ID().String() {
+		t.Fatalf("recent changes = %+v, want only the legacy asset", got)
 	}
-	if c := by["a.example.co.uk"]; c.Type != "added" || c.AttributionState != "needs_review" || c.InInventory || c.AssetID != review.ID().String() {
-		t.Errorf("review asset change = %+v", c)
-	}
-	if c := by["legacy.example.com"]; c.AttributionState != "" || !c.InInventory {
-		t.Errorf("legacy asset change = %+v", c)
+	if len(repo.listFilters) == 0 || repo.listFilters[0].Attribution == nil {
+		t.Fatalf("the added query must carry the attribution filter, got %+v", repo.listFilters)
 	}
 }
 

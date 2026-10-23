@@ -149,9 +149,11 @@
   "attackSurface.overview.of100": "trên 100",
   "attackSurface.overview.noAssetsToScore": "Chưa có tài sản để chấm điểm",
   "attackSurface.overview.seeNewlyExposed": "Xem những gì mới hướng Internet trong tuần này",
-  "attackSurface.tab.webSurface": "Bề mặt web",
-  "attackSurface.web.description": "Những gì các origin web của bạn phục vụ: điểm cuối, tham số (chỉ tên), cùng một đường dẫn trên nhiều origin và những gì đã thay đổi.",
-  "attackSurface.web.shortDescription": "Origin, điểm cuối và tham số.",
+  "attackSurface.overview.infoLabel": "Cách tính \"{title}\"",
+  "attackSurface.decide.rulesWaiting.one": "1 quy tắc tên đang chờ",
+  "attackSurface.decide.rulesWaiting.other": "{count} quy tắc tên đang chờ",
+  "attackSurface.decide.review": "Xem xét",
+  "attackSurface.decide.undoFailed": "Hoàn tác thất bại",
   "attackSurface.external.title": "Bề mặt tấn công bên ngoài",
   "attackSurface.external.description": "Mọi tài sản hướng ra Internet, rủi ro cao nhất trước.",
   "attackSurface.external.scanPage": "Quét trang này",
@@ -307,5 +309,8 @@
   "attackSurface.monitoring.lastRun": "Lần chạy gần nhất",
   "attackSurface.monitoring.dns": "Kiểm tra DNS",
   "attackSurface.monitoring.dnsDescription": "Bản ghi CNAME và NS bị treo, ủy quyền lỗi và bảo mật email (SPF, DMARC), chỉ tra cứu qua DNS.",
-  "attackSurface.monitoring.howOften": "Tần suất"
+  "attackSurface.monitoring.howOften": "Tần suất",
+  "attackSurface.tab.webSurface": "Bề mặt web",
+  "attackSurface.web.description": "Những gì các origin web của bạn phục vụ: điểm cuối, tham số (chỉ tên), cùng một đường dẫn trên nhiều origin và những gì đã thay đổi.",
+  "attackSurface.web.shortDescription": "Origin, điểm cuối và tham số."
 }
