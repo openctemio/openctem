@@ -4,6 +4,7 @@
  * turn its numbers into readable text.
  */
 
+import type { useTranslation } from '@/context/i18n-provider'
 import type { CharterEvaluation, CriterionEvaluation, CriterionOutcome } from './types'
 
 export const OUTCOME_LABEL: Record<CriterionOutcome, string> = {
@@ -69,15 +70,26 @@ export function describeCriterion(c: CriterionEvaluation): string {
   return target ? `Measured ${actual}, target ${target}` : `Measured ${actual}`
 }
 
-/** "2 of 3 measurable criteria met" — the table cell / toast summary. */
-export function summarizeEvaluation(ev: CharterEvaluation | undefined | null): string | null {
+type Translate = ReturnType<typeof useTranslation>['t']
+
+/**
+ * "2 of 3 measurable criteria met": the table cell / toast summary. With `t`
+ * the text comes from the catalog; without it, English.
+ */
+export function summarizeEvaluation(
+  ev: CharterEvaluation | undefined | null,
+  t?: Translate
+): string | null {
   if (!ev) return null
   const met = ev.met ?? 0
   const measurable = met + (ev.unmet ?? 0)
   if (measurable === 0) {
-    return (ev.criteria?.length ?? 0) > 0 ? 'No measurable criteria' : null
+    if ((ev.criteria?.length ?? 0) === 0) return null
+    return t ? t('scoping.cycle.noMeasurable', 'No measurable criteria') : 'No measurable criteria'
   }
-  return `${met} of ${measurable} met`
+  return t
+    ? t('scoping.cycle.metOf', '{met} of {measurable} met', { met, measurable })
+    : `${met} of ${measurable} met`
 }
 
 function capitalize(s: string): string {

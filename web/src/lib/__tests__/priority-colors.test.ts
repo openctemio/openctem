@@ -9,6 +9,7 @@ import {
 import { seriesVar } from '../chart-palette'
 import { SEVERITY_CHART_COLORS } from '../severity-colors'
 import { CRITICALITY_BADGE_SOFT } from '../criticality-colors'
+import { STATUS_TONES, STATUS_TONE_CLASS } from '../status-colors'
 import { FINDING_STATUS_CONFIG } from '@/features/findings/types/finding.types'
 
 describe('priority colours', () => {
@@ -47,9 +48,10 @@ describe('other scales share the one set of tokens', () => {
     expect(CRITICALITY_BADGE_SOFT.medium).toContain('sev-medium')
   })
 
-  it('finding status pills carry no severity or palette hue', () => {
+  it('finding statuses take a workflow tone, never a severity or priority class', () => {
     for (const cfg of Object.values(FINDING_STATUS_CONFIG)) {
-      expect(`${cfg.color} ${cfg.bgColor} ${cfg.textColor}`).not.toMatch(
+      expect(STATUS_TONES).toContain(cfg.tone)
+      expect(STATUS_TONE_CLASS[cfg.tone]).not.toMatch(
         /red-|orange-|yellow-|amber-|blue-|sev-|prio-|signal/
       )
     }

@@ -27,9 +27,11 @@ import { DynamicListInput } from '@/components/ui/dynamic-list-input'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { put } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 import type { CtemCycle } from '../types'
 import { CharterOutcome } from './charter-outcome'
+import { useCycleStatusLabel } from './cycle-status-badge'
 import { InScopeServicesField } from './in-scope-services-field'
 import { CharterAttackerProfilesField } from './charter-attacker-profiles-field'
 import { CharterExclusionsField } from './charter-exclusions-field'
@@ -51,10 +53,15 @@ interface CharterEditorSheetProps {
 }
 
 /** Read-only rendering of a string list (used when the charter is frozen). */
+function NotSet() {
+  const { t } = useTranslation()
+  return <p className="text-sm text-muted-foreground">{t('scoping.charter.notSet', 'Not set')}</p>
+}
+
 function ReadOnlyList({ items }: { items: string[] }) {
   const filled = items.filter((s) => s.trim().length > 0)
   if (filled.length === 0) {
-    return <p className="text-sm text-muted-foreground">Not set</p>
+    return <NotSet />
   }
   return (
     <ul className="list-disc space-y-1 ps-5 text-sm">
@@ -66,7 +73,7 @@ function ReadOnlyList({ items }: { items: string[] }) {
 }
 
 function ReadOnlyText({ value }: { value: string }) {
-  if (!value.trim()) return <p className="text-sm text-muted-foreground">Not set</p>
+  if (!value.trim()) return <NotSet />
   return <p className="whitespace-pre-wrap text-sm">{value}</p>
 }
 
@@ -84,6 +91,8 @@ export function CharterEditorSheet({
   onOpenChange,
   onSaved,
 }: CharterEditorSheetProps) {
+  const { t } = useTranslation()
+  const statusLabel = useCycleStatusLabel()
   const { can } = usePermissions()
   const isPlanning = cycle?.status === 'planning'
   const canWrite = can(Permission.CTEMCyclesWrite)
@@ -138,11 +147,11 @@ export function CharterEditorSheet({
       })
       await syncCycleProfiles(cycle.id, savedProfileIds, profileIds)
       await mutateCache(`${cycleKey(cycle.id)}/profiles`)
-      toast.success('Charter saved')
+      toast.success(t('scoping.charter.saved', 'Charter saved.'))
       onSaved?.()
       onOpenChange(false)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to save charter'))
+      toast.error(getErrorMessage(err, t('scoping.charter.saveFailed', 'Failed to save charter')))
     }
   }
 
@@ -157,17 +166,17 @@ export function CharterEditorSheet({
       >
         <SheetHeader>
           <div className="flex items-center gap-2">
-            <SheetTitle>Cycle charter</SheetTitle>
-            {cycle && (
-              <Badge variant="outline" className="capitalize">
-                {cycle.status}
-              </Badge>
-            )}
+            <SheetTitle>{t('scoping.charter.title', 'Cycle charter')}</SheetTitle>
+            {cycle && <Badge variant="outline">{statusLabel(cycle.status)}</Badge>}
           </div>
           <SheetDescription>
             {cycle?.name
-              ? `Scope charter for "${cycle.name}": attacker profiles, measurable success criteria, reasoned exclusions, escalation and roles.`
-              : 'Scope charter for this cycle.'}
+              ? t(
+                  'scoping.charter.descriptionNamed',
+                  'Scope charter for "{name}": attacker profiles, measurable success criteria, reasoned exclusions, escalation and roles.',
+                  { name: cycle.name }
+                )
+              : t('scoping.charter.description', 'Scope charter for this cycle.')}
           </SheetDescription>
         </SheetHeader>
 
@@ -178,8 +187,14 @@ export function CharterEditorSheet({
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <span className="text-muted-foreground">
                   {isPlanning
-                    ? 'You do not have permission to edit this charter.'
-                    : 'The charter is frozen. It can only be edited while the cycle is in planning; activating the cycle locks it in.'}
+                    ? t(
+                        'scoping.charter.noPermission',
+                        'You do not have permission to edit this charter.'
+                      )
+                    : t(
+                        'scoping.charter.frozen',
+                        'The charter is frozen. It can only be edited while the cycle is in planning, and activating the cycle locks it.'
+                      )}
                 </span>
               </div>
             )}
@@ -189,14 +204,21 @@ export function CharterEditorSheet({
             {/* Scope & objectives */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Scope &amp; objectives</CardTitle>
-                <CardDescription>Frame scope by what the cycle defends against.</CardDescription>
+                <CardTitle className="text-base">
+                  {t('scoping.charter.scopeObjectives', 'Scope and objectives')}
+                </CardTitle>
+                <CardDescription>
+                  {t('scoping.charter.scopeHint', 'Frame scope by what the cycle defends against.')}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Attacker profiles</Label>
+                  <Label>{t('scoping.charter.profiles', 'Attacker profiles')}</Label>
                   <p className="text-xs text-muted-foreground">
-                    Who this cycle defends against. The threat model reasons over the same profiles.
+                    {t(
+                      'scoping.charter.profilesHint',
+                      'Who this cycle defends against. The threat model reasons over the same profiles.'
+                    )}
                   </p>
                   <CharterAttackerProfilesField
                     value={profileIds}
@@ -208,18 +230,24 @@ export function CharterEditorSheet({
                 <ListField
                   control={control}
                   name="objectives"
-                  label="Objectives"
-                  placeholder="e.g. Reduce KEV exposure on internet-facing assets"
-                  addLabel="Add objective"
+                  label={t('scoping.charter.objectives', 'Objectives')}
+                  placeholder={t(
+                    'scoping.charter.objectivesPlaceholder',
+                    'e.g. Reduce KEV exposure on internet-facing assets'
+                  )}
+                  addLabel={t('scoping.charter.addObjective', 'Add objective')}
                   editable={editable}
                   numbered
                 />
                 <ListField
                   control={control}
                   name="business_priorities"
-                  label="Business priorities"
-                  placeholder="e.g. Protect the customer payment platform"
-                  addLabel="Add business priority"
+                  label={t('scoping.charter.priorities', 'Business priorities')}
+                  placeholder={t(
+                    'scoping.charter.prioritiesPlaceholder',
+                    'e.g. Protect the customer payment platform'
+                  )}
+                  addLabel={t('scoping.charter.addPriority', 'Add business priority')}
                   editable={editable}
                 />
                 <Controller
@@ -239,14 +267,21 @@ export function CharterEditorSheet({
             {/* Risk & success */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Risk &amp; success</CardTitle>
+                <CardTitle className="text-base">
+                  {t('scoping.charter.riskSuccess', 'Risk and success')}
+                </CardTitle>
                 <CardDescription>
-                  How much risk is acceptable and how success is measured.
+                  {t(
+                    'scoping.charter.riskSuccessHint',
+                    'How much risk is acceptable and how success is measured.'
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="risk_appetite">Risk appetite</Label>
+                  <Label htmlFor="risk_appetite">
+                    {t('scoping.charter.riskAppetite', 'Risk appetite')}
+                  </Label>
                   {editable ? (
                     <Controller
                       control={control}
@@ -254,7 +289,10 @@ export function CharterEditorSheet({
                       render={({ field }) => (
                         <Textarea
                           id="risk_appetite"
-                          placeholder="e.g. No critical KEV exposures tolerated on internet-facing assets; medium risk accepted internally."
+                          placeholder={t(
+                            'scoping.charter.riskAppetitePlaceholder',
+                            'e.g. No critical KEV exposures tolerated on internet-facing assets. Medium risk accepted internally.'
+                          )}
                           className="min-h-16"
                           {...field}
                         />
@@ -267,9 +305,12 @@ export function CharterEditorSheet({
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Success criteria</Label>
+                    <Label>{t('scoping.charter.criteria', 'Success criteria')}</Label>
                     <span className="text-xs text-muted-foreground">
-                      Checked at close: name + metric + target
+                      {t(
+                        'scoping.charter.criteriaHint',
+                        'Checked at close: name, metric and target'
+                      )}
                     </span>
                   </div>
                   {editable ? (
@@ -283,21 +324,39 @@ export function CharterEditorSheet({
                             control={control}
                             name={`success_criteria.${index}.name`}
                             render={({ field }) => (
-                              <Input placeholder="Name (e.g. KEV remediation)" {...field} />
+                              <Input
+                                placeholder={t(
+                                  'scoping.charter.criterionName',
+                                  'Name (e.g. KEV remediation)'
+                                )}
+                                {...field}
+                              />
                             )}
                           />
                           <Controller
                             control={control}
                             name={`success_criteria.${index}.metric`}
                             render={({ field }) => (
-                              <Input placeholder="Metric (e.g. MTTR, P0 resolved)" {...field} />
+                              <Input
+                                placeholder={t(
+                                  'scoping.charter.criterionMetric',
+                                  'Metric (e.g. MTTR, P0 resolved)'
+                                )}
+                                {...field}
+                              />
                             )}
                           />
                           <Controller
                             control={control}
                             name={`success_criteria.${index}.target`}
                             render={({ field }) => (
-                              <Input placeholder="Target (e.g. < 14 days)" {...field} />
+                              <Input
+                                placeholder={t(
+                                  'scoping.charter.criterionTarget',
+                                  'Target (e.g. < 14 days)'
+                                )}
+                                {...field}
+                              />
                             )}
                           />
                           <Button
@@ -306,6 +365,10 @@ export function CharterEditorSheet({
                             size="icon"
                             className="h-8 w-8 shrink-0"
                             onClick={() => successCriteria.remove(index)}
+                            aria-label={t(
+                              'scoping.charter.removeCriterion',
+                              'Remove success criterion'
+                            )}
                           >
                             <X className="h-4 w-4" />
                           </Button>
@@ -319,29 +382,35 @@ export function CharterEditorSheet({
                         onClick={() => successCriteria.append({ name: '', metric: '', target: '' })}
                       >
                         <Plus className="h-4 w-4" />
-                        Add success criterion
+                        {t('scoping.charter.addCriterion', 'Add success criterion')}
                       </Button>
                       <p className="text-xs text-muted-foreground">
-                        Metrics checked automatically when the cycle closes: MTTR, P0/P1 resolved,
-                        P0/P1 open, findings resolved/opened, validation coverage, risk reduction,
-                        risk after. Targets like &ldquo;&lt; 14 days&rdquo;, &ldquo;&gt;= 90%&rdquo;
-                        or &ldquo;0&rdquo;. Anything else is recorded as not measurable.
+                        {t(
+                          'scoping.charter.metricsHelp',
+                          'Metrics checked automatically when the cycle closes: MTTR, P0/P1 resolved, P0/P1 open, findings resolved/opened, validation coverage, risk reduction, risk after. Targets like "< 14 days", ">= 90%" or "0". Anything else is recorded as not measurable.'
+                        )}
                       </p>
                     </div>
                   ) : watched.success_criteria.filter((c) => c.name || c.metric || c.target)
                       .length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Not set</p>
+                    <NotSet />
                   ) : (
                     <ul className="space-y-1 text-sm">
                       {watched.success_criteria
                         .filter((c) => c.name || c.metric || c.target)
                         .map((c, i) => (
                           <li key={i}>
-                            <span className="font-medium">{c.name || 'Untitled'}</span>
+                            <span className="font-medium">
+                              {c.name || t('scoping.charter.untitled', 'Untitled')}
+                            </span>
                             {(c.metric || c.target) && (
                               <span className="text-muted-foreground">
                                 {' '}
-                                — {c.metric || 'no metric'}: {c.target || 'no target'}
+                                ·{' '}
+                                {t('scoping.charter.metricTarget', '{metric}: {target}', {
+                                  metric: c.metric || t('scoping.charter.noMetric', 'no metric'),
+                                  target: c.target || t('scoping.charter.noTarget', 'no target'),
+                                })}
                               </span>
                             )}
                           </li>
@@ -366,10 +435,14 @@ export function CharterEditorSheet({
             {/* Exclusions */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Exclusions</CardTitle>
+                <CardTitle className="text-base">
+                  {t('scoping.charter.exclusions', 'Exclusions')}
+                </CardTitle>
                 <CardDescription>
-                  What is deliberately out of scope, picked from the exclusions scans enforce, and
-                  the reason, so a deferral is a decision, not a silent gap.
+                  {t(
+                    'scoping.charter.exclusionsHint',
+                    'What is deliberately out of scope, picked from the exclusions scans enforce, and the reason, so a deferral is a decision and not a silent gap.'
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -390,12 +463,21 @@ export function CharterEditorSheet({
             {/* Governance */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Escalation, Roles &amp; Timeline</CardTitle>
-                <CardDescription>Who owns the cycle and where blockers escalate.</CardDescription>
+                <CardTitle className="text-base">
+                  {t('scoping.charter.governance', 'Escalation, roles and timeline')}
+                </CardTitle>
+                <CardDescription>
+                  {t(
+                    'scoping.charter.governanceHint',
+                    'Who owns the cycle and where blockers escalate.'
+                  )}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="escalation_path">Escalation path</Label>
+                  <Label htmlFor="escalation_path">
+                    {t('scoping.charter.escalation', 'Escalation path')}
+                  </Label>
                   {editable ? (
                     <Controller
                       control={control}
@@ -403,7 +485,10 @@ export function CharterEditorSheet({
                       render={({ field }) => (
                         <Textarea
                           id="escalation_path"
-                          placeholder="Who blockers escalate to (person, role or channel)."
+                          placeholder={t(
+                            'scoping.charter.escalationPlaceholder',
+                            'Who blockers escalate to (person, role or channel).'
+                          )}
                           className="min-h-16"
                           {...field}
                         />
@@ -418,28 +503,28 @@ export function CharterEditorSheet({
                   <RoleField
                     control={control}
                     name="roles.sponsor"
-                    label="Sponsor"
+                    label={t('scoping.charter.sponsor', 'Sponsor')}
                     value={watched.roles.sponsor}
                     editable={editable}
                   />
                   <RoleField
                     control={control}
                     name="roles.operator"
-                    label="Operator"
+                    label={t('scoping.charter.operator', 'Operator')}
                     value={watched.roles.operator}
                     editable={editable}
                   />
                   <RoleField
                     control={control}
                     name="roles.engineering_partner"
-                    label="Engineering partner"
+                    label={t('scoping.charter.engineeringPartner', 'Engineering partner')}
                     value={watched.roles.engineering_partner}
                     editable={editable}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="timeline">Timeline</Label>
+                  <Label htmlFor="timeline">{t('scoping.charter.timeline', 'Timeline')}</Label>
                   {editable ? (
                     <Controller
                       control={control}
@@ -447,7 +532,10 @@ export function CharterEditorSheet({
                       render={({ field }) => (
                         <Input
                           id="timeline"
-                          placeholder="e.g. 90-day cycle, weekly triage"
+                          placeholder={t(
+                            'scoping.charter.timelinePlaceholder',
+                            'e.g. 90-day cycle, weekly triage'
+                          )}
                           {...field}
                         />
                       )}
@@ -462,13 +550,13 @@ export function CharterEditorSheet({
 
           <SheetFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {editable ? 'Cancel' : 'Close'}
+              {editable ? t('common.cancel', 'Cancel') : t('scoping.charter.close', 'Close')}
             </Button>
             {isPlanning && (
               <Can permission={Permission.CTEMCyclesWrite} mode="disable">
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                  Save Charter
+                  {t('scoping.charter.save', 'Save charter')}
                 </Button>
               </Can>
             )}
@@ -491,6 +579,7 @@ function LegacyThreatScenarios({
   control: ReturnType<typeof useForm<CharterFormData>>['control']
   editable: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <Controller
       control={control}
@@ -500,7 +589,9 @@ function LegacyThreatScenarios({
         if (items.length === 0) return <></>
         return (
           <div className="space-y-1 rounded-md border bg-muted/40 p-2 text-sm">
-            <p className="text-muted-foreground">Earlier free-text scenarios</p>
+            <p className="text-muted-foreground">
+              {t('scoping.charter.legacyScenarios', 'Earlier free-text scenarios')}
+            </p>
             <ul className="space-y-1">
               {items.map((item) => (
                 <li key={item} className="flex items-center justify-between gap-2">
@@ -511,7 +602,7 @@ function LegacyThreatScenarios({
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6"
-                      aria-label={`Remove ${item}`}
+                      aria-label={t('scoping.charter.removeItem', 'Remove {item}', { item })}
                       onClick={() => field.onChange(field.value.filter((v) => v !== item))}
                     >
                       <X className="h-3.5 w-3.5" />

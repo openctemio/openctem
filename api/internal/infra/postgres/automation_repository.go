@@ -134,7 +134,7 @@ func (r *AutomationRepository) Update(ctx context.Context, w *automation.Workflo
 		SET name = $2, description = $3, is_active = $4, tags = $5,
 		    total_runs = $6, successful_runs = $7, failed_runs = $8,
 		    last_run_id = $9, last_run_at = $10, last_run_status = $11,
-		    updated_at = $12
+		    updated_at = $12, disabled_reason = $13
 		WHERE id = $1
 	`
 
@@ -151,6 +151,7 @@ func (r *AutomationRepository) Update(ctx context.Context, w *automation.Workflo
 		w.LastRunAt,
 		w.LastRunStatus,
 		w.UpdatedAt,
+		nullString(w.DisabledReason),
 	)
 
 	if err != nil {
@@ -238,10 +239,7 @@ func (r *AutomationRepository) GetWithGraph(ctx context.Context, id shared.ID) (
 
 func (r *AutomationRepository) selectQuery() string {
 	return `
-		SELECT id, tenant_id, name, description, is_active, tags,
-		       total_runs, successful_runs, failed_runs,
-		       last_run_id, last_run_at, last_run_status,
-		       created_by, created_at, updated_at
+		SELECT ` + automationColumns + `
 		FROM automations
 	`
 }
@@ -272,73 +270,51 @@ func (r *AutomationRepository) buildWhereClause(filter automation.WorkflowFilter
 	return strings.Join(conditions, " AND "), args
 }
 
+// automationColumns is the column list every automation read selects, in
+// the order scanAutomation reads it (prefix "w." where a join needs it).
+const automationColumns = `id, tenant_id, name, description, is_active, tags,
+		       total_runs, successful_runs, failed_runs,
+		       last_run_id, last_run_at, last_run_status,
+		       created_by, created_at, updated_at, disabled_reason`
+
+// automationColumnsW is automationColumns qualified with the alias w.
+const automationColumnsW = `w.id, w.tenant_id, w.name, w.description, w.is_active, w.tags,
+		       w.total_runs, w.successful_runs, w.failed_runs,
+		       w.last_run_id, w.last_run_at, w.last_run_status,
+		       w.created_by, w.created_at, w.updated_at, w.disabled_reason`
+
 func (r *AutomationRepository) scanWorkflow(row *sql.Row) (*automation.Workflow, error) {
-	w := &automation.Workflow{}
-	var (
-		id            string
-		tenantID      string
-		tags          pq.StringArray
-		lastRunID     sql.NullString
-		lastRunStatus sql.NullString
-		createdBy     sql.NullString
-	)
-
-	err := row.Scan(
-		&id,
-		&tenantID,
-		&w.Name,
-		&w.Description,
-		&w.IsActive,
-		&tags,
-		&w.TotalRuns,
-		&w.SuccessfulRuns,
-		&w.FailedRuns,
-		&lastRunID,
-		&w.LastRunAt,
-		&lastRunStatus,
-		&createdBy,
-		&w.CreatedAt,
-		&w.UpdatedAt,
-	)
-
+	w, err := scanAutomation(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, shared.ErrNotFound
-		}
 		return nil, fmt.Errorf("failed to scan workflow: %w", err)
 	}
-
-	w.ID, _ = shared.IDFromString(id)
-	w.TenantID, _ = shared.IDFromString(tenantID)
-	w.Tags = tags
-
-	if lastRunID.Valid {
-		runID, _ := shared.IDFromString(lastRunID.String)
-		w.LastRunID = &runID
-	}
-	if lastRunStatus.Valid {
-		w.LastRunStatus = lastRunStatus.String
-	}
-	if createdBy.Valid {
-		createdByID, _ := shared.IDFromString(createdBy.String)
-		w.CreatedBy = &createdByID
-	}
-
 	return w, nil
 }
 
 func (r *AutomationRepository) scanWorkflowFromRows(rows *sql.Rows) (*automation.Workflow, error) {
+	w, err := scanAutomation(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan workflow from rows: %w", err)
+	}
+	return w, nil
+}
+
+// scanAutomation reads one row selected with automationColumns.
+func scanAutomation(row interface{ Scan(dest ...any) error }) (*automation.Workflow, error) {
 	w := &automation.Workflow{}
 	var (
-		id            string
-		tenantID      string
-		tags          pq.StringArray
-		lastRunID     sql.NullString
-		lastRunStatus sql.NullString
-		createdBy     sql.NullString
+		id             string
+		tenantID       string
+		tags           pq.StringArray
+		lastRunID      sql.NullString
+		lastRunStatus  sql.NullString
+		createdBy      sql.NullString
+		disabledReason sql.NullString
 	)
-
-	err := rows.Scan(
+	if err := row.Scan(
 		&id,
 		&tenantID,
 		&w.Name,
@@ -354,15 +330,15 @@ func (r *AutomationRepository) scanWorkflowFromRows(rows *sql.Rows) (*automation
 		&createdBy,
 		&w.CreatedAt,
 		&w.UpdatedAt,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan workflow from rows: %w", err)
+		&disabledReason,
+	); err != nil {
+		return nil, err
 	}
 
 	w.ID, _ = shared.IDFromString(id)
 	w.TenantID, _ = shared.IDFromString(tenantID)
 	w.Tags = tags
+	w.DisabledReason = disabledReason.String
 
 	if lastRunID.Valid {
 		runID, _ := shared.IDFromString(lastRunID.String)
@@ -375,7 +351,6 @@ func (r *AutomationRepository) scanWorkflowFromRows(rows *sql.Rows) (*automation
 		createdByID, _ := shared.IDFromString(createdBy.String)
 		w.CreatedBy = &createdByID
 	}
-
 	return w, nil
 }
 
@@ -461,10 +436,7 @@ func (r *AutomationRepository) ListActiveWithTriggerType(ctx context.Context, te
 	// Query to find workflows with matching trigger type in their nodes
 	// Uses subquery to filter workflows, then loads full graph
 	query := `
-		SELECT DISTINCT w.id, w.tenant_id, w.name, w.description, w.is_active, w.tags,
-		       w.total_runs, w.successful_runs, w.failed_runs,
-		       w.last_run_id, w.last_run_at, w.last_run_status,
-		       w.created_by, w.created_at, w.updated_at
+		SELECT DISTINCT ` + automationColumnsW + `
 		FROM automations w
 		INNER JOIN automation_nodes n ON w.id = n.automation_id
 		WHERE w.tenant_id = $1

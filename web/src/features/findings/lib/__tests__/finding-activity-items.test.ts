@@ -73,7 +73,7 @@ describe('toFindingActivityItems', () => {
       summary: 'recorded this finding',
     })
     expect(byId['a-status']).toMatchObject({
-      summary: 'changed status Confirmed → In Progress',
+      summary: 'changed status Confirmed → In progress',
       detail: 'Picked up in sprint 12',
     })
     expect(byId['a-sla']).toMatchObject({ summary: 'recorded an SLA breach', tone: 'destructive' })

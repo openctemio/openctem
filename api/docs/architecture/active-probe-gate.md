@@ -304,7 +304,7 @@ any lookup error returns an error, and the caller dispatches nothing.
 |---|---|
 | Scan create, clone, import (`CreateScan`), quick scan, `POST /commands` | the request is refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, the targets named with the generic reason) and audited (`scan.target_refused`). Exception: a create with `start_when_scope_approved` whose refused targets are all covered by pending entries is saved and started once they are approved, as the requester, with every gate checked again (RFC-054 §12.8, `internal/app/scan/scope_wait.go`) |
 | Scan run: manual trigger, schedule, retry controller, workflow trigger | the target (direct or group member) is skipped with a run warning; a run left with nothing is refused (`ALL_TARGETS_UNCONFIRMED`) |
-| `POST /scan-workflows/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
+| `POST /scan-workflows/runs`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
 
 `GET /api/v1/assets/{id}/attribution` answers `active_checks_allowed` with the
 same gate and names the reason in `active_checks_blocked_by`.
@@ -512,7 +512,7 @@ system, which is unrestricted.
 | Scan create, quick scan | refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, with each target and its reason) |
 | Scan update | refused when the editor may not scan every direct target of the scan |
 | Scan run (manual, scheduled, workflow) | out-of-scope direct targets and group members are skipped, with a run warning; a run left with nothing is refused |
-| `POST /scan-workflows/runs`, `trigger_pipeline` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
+| `POST /scan-workflows/runs` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
 | `POST /commands` | refused as a whole |
 
 Every lookup error refuses (fail closed). A dispatch that asks for the check

@@ -16,6 +16,8 @@ import {
 } from '@/features/shared'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
+import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
+import type { FindingStatus } from '@/features/findings/types'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatCount } from '@/lib/format-metric'
 import { MY_WORK_METRIC_FILTERS, findingsDrillUrl } from '@/features/findings/lib/my-work-metrics'
@@ -38,11 +40,6 @@ const QUEUE_SIZE = 15
 
 function findingName(f: ApiFinding): string | undefined {
   return f.title || f.rule_name || f.message || undefined
-}
-
-function prettyStatus(s: string): string {
-  const text = s.replace(/_/g, ' ')
-  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 type MyWorkTab = 'findings' | 'tasks'
@@ -127,15 +124,13 @@ function MyWorkContent() {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('myWork.columns.priority')} />
         ),
-        cell: ({ row }) =>
-          row.original.priority_class ? (
-            <PriorityClassBadge
-              priorityClass={row.original.priority_class}
-              assetId={row.original.asset?.id}
-            />
-          ) : (
-            <span className="text-sm text-muted-foreground">—</span>
-          ),
+        cell: ({ row }) => (
+          <PriorityClassBadge
+            priorityClass={row.original.priority_class}
+            assetId={row.original.asset?.id}
+            showWord
+          />
+        ),
       },
       {
         accessorKey: 'title',
@@ -178,11 +173,7 @@ function MyWorkContent() {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('myWork.columns.status')} />
         ),
-        cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
-            {t(`findings.status.${row.original.status}`, prettyStatus(row.original.status))}
-          </span>
-        ),
+        cell: ({ row }) => <FindingStatusBadge status={row.original.status as FindingStatus} />,
       },
       {
         id: 'sla',
