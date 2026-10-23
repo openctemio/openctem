@@ -14,6 +14,10 @@ vi.mock('@/context/permission-provider', () => ({
   usePermissionsSafe: () => ({ hasPermission: (p: string) => perms.includes(p) }),
 }))
 // The identity section has its own test; here it reads nothing.
+vi.mock('../../../api/use-finding-issue-group', () => ({
+  useFindingIssueGroup: () => ({ members: [], mutate: vi.fn() }),
+  unlinkIssue: vi.fn(),
+}))
 vi.mock('../../../api/use-finding-identity', () => ({
   useFindingIdentity: () => ({
     identity: null,

@@ -219,6 +219,8 @@ type Repositories struct {
 	Suppression *postgres.SuppressionRepository
 	// FindingCorrelation stores cross-rule finding correlations.
 	FindingCorrelation *postgres.FindingCorrelationRepository
+	// FindingIssueLinks stores same-issue links between findings.
+	FindingIssueLinks *postgres.FindingIssueLinkRepository
 
 	// Access Control
 	Group *postgres.GroupRepository
@@ -569,6 +571,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Suppressions
 		Suppression:        postgres.NewSuppressionRepository(db),
 		FindingCorrelation: postgres.NewFindingCorrelationRepository(db),
+		FindingIssueLinks:  postgres.NewFindingIssueLinkRepository(db),
 
 		// Access Control
 		Group:             postgres.NewGroupRepository(db),
