@@ -476,3 +476,27 @@ func (s *TenantService) LeaveOrganization(ctx context.Context, tenantID, userID 
 		fmt.Sprintf("%s left the organization.", actx.ActorEmail), notificationdom.SeverityInfo)
 	return nil
 }
+
+// SSODomainVerificationLost alerts the organization's owners and
+// administrators that one of its SSO domains failed DNS re-verification. The
+// domain no longer admits new people through SSO, but SSO enforcement is
+// deliberately left on: lifting it would reopen password sign-in to whoever
+// removed the DNS record. The owners decide.
+func (s *TenantService) SSODomainVerificationLost(ctx context.Context, tenantID shared.ID, domain string) {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil || t == nil {
+		s.logger.Warn("load tenant for lapsed SSO domain alert", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	enforced := t.TypedSettings().Security.SSOEnforced
+	s.logger.Warn("SSO domain failed re-verification",
+		"tenant_id", tenantID.String(), "domain", domain, "sso_enforced", enforced)
+	body := fmt.Sprintf("The DNS TXT record that proves %s belongs to the organization is gone, so the domain "+
+		"no longer admits new people through single sign-on. Restore the record, or remove the domain.", domain)
+	if enforced {
+		body += " Single sign-on stays required for members: it is not lifted when a domain check fails."
+	}
+	s.notifyAdminsAbout(ctx, tenantID, adminNotice{
+		Type: notificationdom.TypeSystemAlert, ResourceType: "verified_domain", URL: "/settings/domains",
+	}, "A verified domain failed its DNS check", body, notificationdom.SeverityHigh)
+}
