@@ -731,7 +731,9 @@ the status, closure reason (and, for an accepted risk, its end within the
 organization's cap) and timeline entry in one transaction
 (`FindingApprovalRepository.CreateApplied`, which re-reads the level and the
 facts with the finding locked), audited `finding_approval.single_person_decided`.
-A member without `findings:approve` still files a pending request. Only a
+A member without `findings:approve` still files a pending request, and so does
+a delegated credential (an API key or an MCP access token) whatever its
+permissions: the one person who decides is a person in their own session. Only a
 person's own request on one finding decides alone: suppression rules, group
 exceptions on remediation tasks, bulk status moves, imports and requests made
 by automation (AI triage, VEX, ticket integrations) keep a second person
@@ -755,14 +757,22 @@ is audited at high severity with before/after,
 and the approvers (every owner and administrator is one) are told; a lower level
 takes effect 24 hours later (`pending_fp_approval_at`,
 `pending_accept_approval_at`), a higher one at once, and `cancel_pending` drops
-a waiting lowering. `GET /api/v1/findings/{id}/approvals/policy?status=accepted`
+a waiting lowering. Raising a level also puts under review every standing
+decision one person made (under a level or as the sole member) that the new
+level gives to a second person: all of them under `all`, the material ones under
+`high_and_above` (`VulnerabilityService.ReviewDecidedAlone`,
+`flag_single_person_decision_review` with change `level_raised`). The decisions
+stand; the flag and a timeline entry ask an approver to look again. `GET /api/v1/findings/{id}/approvals/policy?status=accepted`
 (or the default `false_positive`) tells the request dialog how such a request on
 that finding is decided now (`accept_approval`, `can_decide_alone`).
 
 The sole member's own approval works for false positives and, under a risk
 acceptance level of `high_and_above` or `off`, for accepted risks (the end is
 cut to `vulnerability.SoloAcceptanceLimit`); under `all` an accepted risk waits
-for a second member.
+for a second member. The rule is checked again inside the write transaction
+(`recheckSoloApproval`: still the only active person and an owner, and for an
+accepted risk the level still `high_and_above` or `off`), so a member who joined
+or a level raised after the service's check refuses it.
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix

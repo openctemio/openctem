@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -17,7 +18,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -364,25 +364,60 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 		h.handleServiceError(w, err, "finding approval settings")
 		return
 	}
-	body := "An administrator changed how this organization approves finding decisions. Review the change in Settings."
 	resp := toFindingApprovalSettingsResponse(after)
-	if resp.PendingFPApproval != "" && resp.PendingFPApproval != toFindingApprovalSettingsResponse(before).PendingFPApproval {
-		body = fmt.Sprintf("An administrator lowered the false-positive approval level to %q. It takes effect at %s unless it is raised again before then.",
-			resp.PendingFPApproval, *resp.PendingFPApprovalAt)
-	}
-	if resp.PendingAcceptApproval != "" && resp.PendingAcceptApproval != toFindingApprovalSettingsResponse(before).PendingAcceptApproval {
-		body = fmt.Sprintf("An administrator lowered the risk acceptance approval level to %q. It takes effect at %s unless it is raised again before then.",
-			resp.PendingAcceptApproval, *resp.PendingAcceptApprovalAt)
-	}
-	if resp.PendingPolicyAt != nil && (toFindingApprovalSettingsResponse(before).PendingPolicyAt == nil ||
-		*toFindingApprovalSettingsResponse(before).PendingPolicyAt != *resp.PendingPolicyAt) {
-		body = fmt.Sprintf("An administrator relaxed the approval policy. The change takes effect at %s unless it is reverted before then; until then the stricter rules apply.",
-			*resp.PendingPolicyAt)
-	}
 	h.service.NotifyApprovalSettingsChanged(r.Context(), tenantID, middleware.GetUserID(r.Context()),
-		"Finding approval settings changed", body)
+		"Finding approval settings changed", approvalSettingsChangeNotice(toFindingApprovalSettingsResponse(before), resp))
+	// A level raised now: the standing decisions one person made that the
+	// new level would send to a second person are flagged for review (they
+	// stand until a person with the approve permission looks again).
+	now := time.Now()
+	h.reviewDecidedAloneAfterRaise(r, tenantID, vulnerability.FindingStatusFalsePositive,
+		before.EffectiveFPApproval(now), after.EffectiveFPApproval(now))
+	h.reviewDecidedAloneAfterRaise(r, tenantID, vulnerability.FindingStatusAccepted,
+		before.EffectiveAcceptApproval(now), after.EffectiveAcceptApproval(now))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// approvalSettingsChangeNotice is the body of the notice the approvers get
+// for a settings change: every lowering or relaxation that now waits is
+// named (one change never hides another), else a general line.
+func approvalSettingsChangeNotice(before, after FindingApprovalSettingsResponse) string {
+	var lines []string
+	if after.PendingFPApproval != "" && after.PendingFPApproval != before.PendingFPApproval {
+		lines = append(lines, fmt.Sprintf("An administrator lowered the false-positive approval level to %q. It takes effect at %s unless it is raised again before then.",
+			after.PendingFPApproval, *after.PendingFPApprovalAt))
+	}
+	if after.PendingAcceptApproval != "" && after.PendingAcceptApproval != before.PendingAcceptApproval {
+		lines = append(lines, fmt.Sprintf("An administrator lowered the risk acceptance approval level to %q. It takes effect at %s unless it is raised again before then.",
+			after.PendingAcceptApproval, *after.PendingAcceptApprovalAt))
+	}
+	if after.PendingPolicyAt != nil && (before.PendingPolicyAt == nil || *before.PendingPolicyAt != *after.PendingPolicyAt) {
+		lines = append(lines, fmt.Sprintf("An administrator relaxed the approval policy. The change takes effect at %s unless it is reverted before then; until then the stricter rules apply.",
+			*after.PendingPolicyAt))
+	}
+	if len(lines) == 0 {
+		return "An administrator changed how this organization approves finding decisions. Review the change in Settings."
+	}
+	return strings.Join(lines, " ")
+}
+
+// reviewDecidedAloneAfterRaise flags, when the level of status was raised
+// from before to after, the standing decisions one person made that the new
+// level gives to a second person. The settings change is saved already; a
+// failure here is logged at error level and does not undo it.
+func (h *VulnerabilityHandler) reviewDecidedAloneAfterRaise(r *http.Request, tenantID string, status vulnerability.FindingStatus, before, after string) {
+	if tenantdom.FPApprovalLevelRank(after) <= tenantdom.FPApprovalLevelRank(before) {
+		return
+	}
+	n, err := h.service.ReviewDecidedAlone(r.Context(), tenantID, status, after)
+	if err != nil {
+		h.logger.Error("approval level raised: flag decisions made alone", "tenant_id", tenantID, "status", string(status), "error", err)
+		return
+	}
+	if n > 0 {
+		h.logger.Info("approval level raised: decisions made alone flagged for review", "tenant_id", tenantID, "status", string(status), "flagged", n)
+	}
 }
 
 // FalsePositivePolicyResponse is how a false positive on one finding is
@@ -452,7 +487,7 @@ func (h *VulnerabilityHandler) GetFalsePositivePolicy(w http.ResponseWriter, r *
 	out := FalsePositivePolicyResponse{
 		FPApproval:     d.Level,
 		SinglePerson:   d.SinglePerson,
-		CanDecideAlone: d.SinglePerson && middleware.HasPermission(r.Context(), permission.FindingsApprove.String()),
+		CanDecideAlone: d.SinglePerson && requesterMayDecideAlone(r.Context()),
 		// CanDecideAlone is refined below from the evaluation (an asset owner
 		// never decides alone).
 		Material:          d.Material,
@@ -466,7 +501,7 @@ func (h *VulnerabilityHandler) GetFalsePositivePolicy(w http.ResponseWriter, r *
 	if status == "" {
 		status = string(vulnerability.FindingStatusFalsePositive)
 	}
-	canApprove := middleware.HasPermission(r.Context(), permission.FindingsApprove.String())
+	canApprove := requesterMayDecideAlone(r.Context())
 	v, err := h.service.FindingApprovalPolicy(r.Context(), middleware.GetTenantID(r.Context()), r.PathValue("id"),
 		middleware.GetUserID(r.Context()), status, canApprove)
 	if err != nil {
