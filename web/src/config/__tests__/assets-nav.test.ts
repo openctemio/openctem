@@ -1,16 +1,16 @@
 /**
- * Discovery > Assets is one row with route tabs Inventory | Groups | What
- * changed | Suggestions (docs/ui/scoping-ia-2026-10.md, C8). The retired
+ * Discovery > Assets is one row with route tabs Inventory | Needs attention |
+ * Groups | Activity | Web surface (docs/ui/scoping-ia-2026-10.md, C8). The retired
  * /attack-surface/internal and /cloud pages redirect to the inventory with the
  * filter they applied (D5). Every tab lives under /assets (/assets/groups,
  * /assets/suggestions): a URL mirrors its place in the nav (RFC-042 §6.3.6,
  * §6.19). The APIs stay /api/v1/asset-groups and /api/v1/relationships.
  */
 import { describe, expect, it } from 'vitest'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
-import { ASSETS_SECTION_TABS } from '../section-tabs'
+import { ASSETS_SECTION_TABS, ASSET_ATTENTION_TABS } from '../section-tabs'
 import { matchRoutePermission, routePermissions } from '../route-permissions'
 import { Permission } from '@/lib/permissions/constants'
 import { resolveLegacyRoute } from '../legacy-routes'
@@ -35,12 +35,29 @@ describe('Discovery > Assets', () => {
   it('lists the approved tabs, in order, each under its row url', () => {
     expect(ASSETS_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
       ['Inventory', '/assets', 'assets'],
+      ['Needs attention', '/assets/attention', 'assets'],
       ['Groups', '/assets/groups', 'assets'],
-      ['What changed', '/assets/changes', 'assets'],
-      ['Timeline', '/assets/timeline', 'assets'],
+      ['Activity', '/assets/changes', 'assets'],
       ['Web surface', '/assets/web', 'assets'],
-      ['Suggestions', '/assets/suggestions', 'relationships'],
     ])
+  })
+
+  it('Needs attention holds the data-quality reasons, relationships and duplicates at their own URLs', () => {
+    expect(ASSET_ATTENTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
+      ['No owner', '/assets/attention', 'assets'],
+      ['Criticality not set', '/assets/attention/context', 'assets'],
+      ['Not scanned', '/assets/attention/unscanned', 'assets'],
+      ['Relationships', '/assets/suggestions', 'relationships'],
+      ['Possible duplicates', '/assets/duplicates', 'assets'],
+    ])
+    const attention = ASSETS_SECTION_TABS.find((t) => t.href === '/assets/attention')!
+    expect(attention.matchPrefix).toEqual(['/assets/suggestions', '/assets/duplicates'])
+  })
+
+  it.each([...ASSET_ATTENTION_TABS])('$label reason binds its route guard', (tab) => {
+    const guard = matchRoutePermission(tab.href)
+    expect(guard?.module).toBe(tab.module)
+    expect(guard?.permission).toBe(tab.permission)
   })
 
   it.each([...ASSETS_SECTION_TABS])('$label tab binds its route guard', (tab) => {
@@ -162,7 +179,7 @@ describe('Asset groups live under /assets/groups', () => {
 
   // Reserved /assets/* page segments: no asset type, class or lens may take
   // these names (api/cmd/gen-asset-types rejects them; RFC-042 §6.3.6).
-  it.each(['changes', 'duplicates', 'groups', 'suggestions', 'web'])(
+  it.each(['attention', 'changes', 'duplicates', 'groups', 'suggestions', 'web'])(
     '/assets/%s is a reserved static page',
     (segment) => {
       expect(existsSync(join(ASSETS_DIR, segment, 'page.tsx'))).toBe(true)
@@ -199,5 +216,29 @@ describe('Relationship suggestions live under /assets/suggestions', () => {
     expect(existsSync(join(ASSETS_DIR, '..', 'relationships'))).toBe(false)
     expect(existsSync(join(ASSETS_DIR, 'suggestions', 'page.tsx'))).toBe(true)
     expect(resolveLegacyRoute('/relationships/suggestions')).toBeNull()
+  })
+})
+
+describe('Retired asset routes', () => {
+  it('Timeline is part of Activity: no page and no link reaches /assets/timeline', () => {
+    const appDir = join(__dirname, '../../app/(dashboard)/(discovery)/assets/timeline')
+    expect(existsSync(appDir)).toBe(false)
+    const srcDir = join(__dirname, '../..')
+    const offenders: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const name = entry.name
+        const full = join(dir, name)
+        if (entry.isDirectory()) {
+          if (name !== 'node_modules' && name !== '__tests__') walk(full)
+        } else if (entry.isFile() && /\.(tsx?|json)$/.test(name)) {
+          const text = readFileSync(full, 'utf8')
+          if (text.includes("'/assets/timeline") || text.includes('"/assets/timeline'))
+            offenders.push(full)
+        }
+      }
+    }
+    walk(srcDir)
+    expect(offenders).toEqual([])
   })
 })

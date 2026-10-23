@@ -506,7 +506,7 @@ const NavSubLeaf = memo(function NavSubLeaf({
   /**
    * Whether this row is the current page. Siblings are resolved together by the
    * parent (longest matching url wins), so "Assets" at `/assets` does
-   * not light up alongside "What changed" at `/assets/changes`.
+   * not light up alongside "Activity" at `/assets/changes`.
    */
   active?: boolean
 }) {
