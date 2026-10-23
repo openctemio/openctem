@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { RelativeTime } from '../relative-time'
 import {
   KeyValueList,
+  LabelSegments,
   ListItem,
   MetaItem,
   MetaLine,
@@ -28,7 +29,7 @@ describe('type scale', () => {
 })
 
 describe('MetaLine', () => {
-  it('renders the items in one size, dot-separated, skipping empty ones', () => {
+  it('renders the items in one size, spaced not dotted, skipping empty ones', () => {
     render(
       <MetaLine
         items={[
@@ -42,13 +43,56 @@ describe('MetaLine', () => {
     )
     const line = document.querySelector('[data-slot=meta-line]') as HTMLElement
     expect(line).toHaveClass('text-meta')
-    expect(line.textContent).toMatch(/^Source: httpx·First seen .*ago$/)
+    // No glyph: a 12px gap separates, and a hidden ", " is what a screen reader
+    // hears and what a copy carries.
+    expect(line).toHaveClass('gap-x-3')
+    expect(line.textContent).toMatch(/^Source: httpx, First seen .*ago$/)
+    expect(line.textContent).not.toMatch(/[·•∙⋅]/) // separator-ok: asserts absence
+    const hidden = line.querySelectorAll('.sr-only')
+    expect(hidden).toHaveLength(1)
+    expect(hidden[0].textContent).toBe(', ')
     // Nothing inside sets its own size.
     expect(line.querySelectorAll('[class*="text-xs"],[class*="text-sm"]')).toHaveLength(0)
   })
 
   it('renders nothing when every item is empty', () => {
     const { container } = render(<MetaLine items={[null, false, '']} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('MetaLine separators', () => {
+  it('puts a hidden comma between every pair, none before the first or after the last', () => {
+    render(<MetaLine items={['a', 'b', 'c']} />)
+    const line = document.querySelector('[data-slot=meta-line]') as HTMLElement
+    expect(line.textContent).toBe('a, b, c')
+    expect(line.querySelectorAll('.sr-only')).toHaveLength(2)
+    expect(line.querySelector('[aria-hidden]')).toBeNull()
+  })
+
+  it('shows a single item with no separator', () => {
+    render(<MetaLine items={['only', null]} />)
+    expect(document.querySelector('[data-slot=meta-line]')?.textContent).toBe('only')
+  })
+})
+
+describe('LabelSegments', () => {
+  it('divides parts with a rule and reads as "key: value"', () => {
+    render(<LabelSegments segments={['env', 'production']} />)
+    const el = document.querySelector('[data-slot=label-segments]') as HTMLElement
+    expect(el.textContent).toBe('env: production')
+    expect(el.textContent).not.toMatch(/[·•∙⋅|]/) // separator-ok: asserts absence
+    expect(screen.getByText('production')).toHaveClass('border-l')
+    expect(screen.getByText('env')).not.toHaveClass('border-l')
+  })
+
+  it('uses the given hidden separator and skips empty segments', () => {
+    render(<LabelSegments segments={['KEV', null, 'Past due']} srSeparator=", " />)
+    expect(document.querySelector('[data-slot=label-segments]')?.textContent).toBe('KEV, Past due')
+  })
+
+  it('renders nothing without segments', () => {
+    const { container } = render(<LabelSegments segments={[null, false]} />)
     expect(container).toBeEmptyDOMElement()
   })
 })
