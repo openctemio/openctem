@@ -6,6 +6,9 @@
  * SLA due). The CTEM loop is loop-viz.tsx.
  */
 
+import { KevBadge } from '@/components/ui/kev-badge'
+import { PriorityBadge } from '@/components/ui/priority-badge'
+import { isPriorityClass } from '@/lib/priority-colors'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { SEQUENTIAL_STEPS, sequentialStep } from '@/lib/chart-palette'
@@ -147,19 +150,15 @@ export function ItemsViz({
           const due = r.due_at ? formatRelativeTime(r.due_at, locale) : null
           const body = (
             <div className="flex items-center gap-2 py-1.5 text-sm">
-              {r.priority && (
-                <Badge variant="outline" className="shrink-0 tabular-nums">
-                  {r.priority}
-                </Badge>
-              )}
-              {r.kev && (
-                <Badge
-                  variant="outline"
-                  className="shrink-0 border-destructive/40 text-destructive"
-                >
-                  {t('dashboardKit.items.kev', 'KEV')}
-                </Badge>
-              )}
+              {r.priority &&
+                (isPriorityClass(r.priority) ? (
+                  <PriorityBadge priorityClass={r.priority} />
+                ) : (
+                  <Badge variant="outline" className="shrink-0 tabular-nums">
+                    {r.priority}
+                  </Badge>
+                ))}
+              {r.kev && <KevBadge label={t('dashboardKit.items.kev', 'KEV')} />}
               {r.title?.trim() ? (
                 <span className="min-w-0 flex-1 truncate">{r.title}</span>
               ) : (
