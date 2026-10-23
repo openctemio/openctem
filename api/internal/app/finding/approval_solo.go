@@ -181,6 +181,11 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 	if !f.CanTransitionTo(status) {
 		return nil, fmt.Errorf("%w: cannot transition from %s to %s", shared.ErrValidation, f.Status(), status)
 	}
+	if status == vulnerability.FindingStatusAccepted && a.ExpiresAt == nil {
+		// A request made before an end was required: the self-approval limit.
+		limit := now.Add(vulnerability.SoloAcceptanceLimit(f))
+		a.ExpiresAt = &limit
+	}
 	if err := a.SelfApprove(uid, reason, acceptAlone); err != nil {
 		return nil, err
 	}

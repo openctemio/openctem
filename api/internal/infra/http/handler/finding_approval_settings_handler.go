@@ -486,7 +486,13 @@ func (h *VulnerabilityHandler) GetFalsePositivePolicy(w http.ResponseWriter, r *
 	// One rule for the dialog and the request path: the evaluation.
 	out.CanDecideAlone = res.SinglePerson()
 	if status == string(vulnerability.FindingStatusAccepted) {
-		out.SinglePerson = res.Floor == approvalpolicy.TierSingle
+		// The level lets a holder of findings:approve accept it alone: the
+		// tier is single, or was single before the requester checks raised
+		// it (an explicit organization cell keeps it above single).
+		out.SinglePerson = hasReason(res.Reasons, approvalpolicy.ReasonAcceptLevel) &&
+			(res.Tier == approvalpolicy.TierSingle ||
+				hasReason(res.Reasons, approvalpolicy.ReasonRequesterCannotSelf) ||
+				hasReason(res.Reasons, approvalpolicy.ReasonRequesterOwnsAsset))
 	}
 	if acc, err := h.acceptLevel(r); err == nil {
 		out.AcceptApproval = acc
@@ -509,4 +515,14 @@ func (h *VulnerabilityHandler) acceptLevel(r *http.Request) (string, error) {
 		return "", err
 	}
 	return s.EffectiveAcceptApproval(time.Now()), nil
+}
+
+// hasReason reports whether an evaluation carries the reason code.
+func hasReason(reasons []string, code string) bool {
+	for _, r := range reasons {
+		if r == code {
+			return true
+		}
+	}
+	return false
 }
