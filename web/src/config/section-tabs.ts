@@ -22,7 +22,6 @@ import {
   GitBranch,
   Globe,
   History,
-  ListTree,
   Link2,
   ListChecks,
   Radar,
@@ -195,6 +194,17 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
+    // The data-quality queue (research/233 D8, 242 D3): assets missing an
+    // owner, a criticality or a recent scan, relationship suggestions and
+    // possible duplicates. Relationships and duplicates keep their own URLs.
+    label: 'Needs attention',
+    href: '/assets/attention',
+    matchPrefix: ['/assets/suggestions', '/assets/duplicates'],
+    icon: ListChecks,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
     label: 'Groups',
     href: '/assets/groups',
     icon: FolderKanban,
@@ -202,33 +212,56 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetGroupsRead,
   },
   {
-    label: 'What changed',
+    // One feed of what changed on assets: new, gone and newly exposed assets,
+    // exposure changes, shadow IT, and value changes (RFC-069, `?view=values`).
+    // It keeps the URL the change digest links to.
+    label: 'Activity',
     href: '/assets/changes',
     icon: History,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
+]
+
+/**
+ * The reasons of Assets › Needs attention, as route tabs under it. The asset
+ * reasons are filters of the inventory; Relationships is its own module.
+ */
+export const ASSET_ATTENTION_TABS: readonly SectionTab[] = [
   {
-    // Changes of asset values and of the sources that decide them (RFC-069).
-    label: 'Timeline',
-    href: '/assets/timeline',
-    icon: ListTree,
+    label: 'No owner',
+    labelKey: 'assets.attention.tab.noOwner',
+    href: '/assets/attention',
     module: 'assets',
     permission: Permission.AssetsRead,
   },
   {
-    // Origins, endpoints, path patterns and their changes (RFC-056).
-    label: 'Web surface',
-    href: '/assets/web',
-    icon: Globe,
+    label: 'Criticality not set',
+    labelKey: 'assets.attention.tab.context',
+    href: '/assets/attention/context',
     module: 'assets',
     permission: Permission.AssetsRead,
   },
   {
-    label: 'Suggestions',
+    label: 'Not scanned',
+    labelKey: 'assets.attention.tab.unscanned',
+    href: '/assets/attention/unscanned',
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    label: 'Relationships',
+    labelKey: 'assets.attention.tab.relationships',
     href: '/assets/suggestions',
     icon: Link2,
     module: 'relationships',
+    permission: Permission.AssetsRead,
+  },
+  {
+    label: 'Possible duplicates',
+    labelKey: 'assets.attention.tab.duplicates',
+    href: '/assets/duplicates',
+    module: 'assets',
     permission: Permission.AssetsRead,
   },
 ]
@@ -247,7 +280,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
-    label: 'Suggestions',
+    label: 'Review',
     href: '/attack-surface/review',
     icon: ClipboardCheck,
     module: 'attack_surface',
@@ -265,6 +298,17 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     href: '/attack-surface/changes',
     icon: History,
     module: 'attack_surface',
+    permission: Permission.AssetsRead,
+  },
+  {
+    // What the web origins serve: endpoints, parameters, the same path across
+    // origins and their changes (RFC-056). Its rows are endpoints, not assets,
+    // so it sits with the external surface work rather than as an asset lens
+    // (research/242 D4). The data is the assets module's.
+    label: 'Web surface',
+    href: '/attack-surface/web',
+    icon: Globe,
+    module: 'assets',
     permission: Permission.AssetsRead,
   },
 ]

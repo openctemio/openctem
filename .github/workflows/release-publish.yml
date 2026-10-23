@@ -85,6 +85,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          # The steps below push (tag, merge-back branch) with this token, so it stays
+          # in the git config on purpose. No artifact is uploaded from this job.
+          persist-credentials: true
 
       - name: Tag ${{ steps.pr.outputs.version }}
         env:
@@ -140,6 +143,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          # The steps below push (tag, merge-back branch) with this token, so it stays
+          # in the git config on purpose. No artifact is uploaded from this job.
+          persist-credentials: true
 
       - name: Helm chart PR (openctemio/helm-charts)
         id: helm

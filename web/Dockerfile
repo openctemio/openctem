@@ -147,6 +147,10 @@ RUN addgroup -S -g 1001 nodejs && \
 # (and /tmp), as for the tenant image.
 COPY --from=console-builder /app/console/.next/standalone ./
 COPY --from=console-builder /app/console/.next/static ./console/.next/static
+# The self-hosted fonts (src/styles/fonts.css loads /fonts/*.woff2). The console
+# app has no public/ of its own, so without these the browser got 404 and fell
+# back to a system font, unlike the tenant console.
+COPY --from=console-builder /app/public/fonts ./console/public/fonts
 RUN mkdir -p console/.next/cache && chown nextjs:nodejs console/.next/cache
 
 LABEL org.opencontainers.image.title="OpenCTEM platform console" \

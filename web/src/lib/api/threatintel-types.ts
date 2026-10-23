@@ -26,10 +26,15 @@ export interface EPSSScore {
 /**
  * EPSS Statistics (from backend)
  */
+/**
+ * EPSS figures of GET /threat-intel/stats. `total_scores` is the size of the
+ * global EPSS catalog; the two counts are the organization's OPEN findings (in
+ * the reader's data scope) whose CVE scores at or above 10% / 50%.
+ */
 export interface EPSSStats {
   total_scores: number
-  high_risk_count: number // EPSS > 0.1 (10%)
-  critical_risk_count: number // EPSS > 0.3 (30%)
+  high_risk_count: number // open findings, EPSS >= 0.1
+  critical_risk_count: number // open findings, EPSS >= 0.5
 }
 
 // ============================================
@@ -57,11 +62,20 @@ export interface KEVEntry {
 /**
  * KEV Statistics (from backend)
  */
+/**
+ * KEV figures of GET /threat-intel/stats. Catalog: `total_entries`,
+ * `recently_added_last_30_days`, `ransomware_related_count`. The organization's
+ * open findings in the reader's data scope: the `tenant_*` counts and
+ * `past_due_count`.
+ */
 export interface KEVStats {
   total_entries: number
   past_due_count: number
   recently_added_last_30_days: number
   ransomware_related_count: number
+  tenant_open_count?: number
+  tenant_ransomware_open_count?: number
+  tenant_new_kev_matches_30d?: number
 }
 
 /**

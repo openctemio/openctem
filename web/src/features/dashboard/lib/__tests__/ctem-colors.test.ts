@@ -10,11 +10,11 @@ import {
 import { SEVERITY_CHART_COLORS } from '@/lib/severity-colors'
 
 describe('ctem-colors', () => {
-  it('maps priority classes onto the severity hue ramp (single source of truth)', () => {
-    expect(PRIORITY_CHART_COLORS.P0).toBe(SEVERITY_CHART_COLORS.critical)
-    expect(PRIORITY_CHART_COLORS.P1).toBe(SEVERITY_CHART_COLORS.high)
-    expect(PRIORITY_CHART_COLORS.P2).toBe(SEVERITY_CHART_COLORS.medium)
-    expect(PRIORITY_CHART_COLORS.P3).toBe(SEVERITY_CHART_COLORS.low)
+  it('takes priority colours from the priority tokens, never the severity ones', () => {
+    for (const pc of PRIORITY_ORDER) {
+      expect(PRIORITY_CHART_COLORS[pc]).toMatch(/^var\(--prio-\d\)$/)
+      expect(Object.values(SEVERITY_CHART_COLORS)).not.toContain(PRIORITY_CHART_COLORS[pc])
+    }
   })
 
   it('orders priorities P0..P3', () => {

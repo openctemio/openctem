@@ -29,6 +29,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { unitOf } from '../api/widget-adapter'
 import { previewWidget, type WidgetValue } from '../api/widget-data'
 import {
   useWidgetCatalog,
@@ -44,6 +45,7 @@ import {
   NOTE_MAX_LENGTH,
   TITLE_MAX_LENGTH,
   newMetricSpec,
+  specShape,
   takesTarget,
   takesTime,
   withFilter,
@@ -60,6 +62,11 @@ export const PREVIEW_DEBOUNCE_MS = 500
 export interface WidgetConfigPanelProps {
   /** The spec being edited; null closes the panel. */
   spec: WidgetSpec | null
+  /**
+   * The figures already known for `spec` (a gallery preview or the stored
+   * value). While the draft is unchanged they stand in for a preview request.
+   */
+  initialValue?: WidgetValue
   onCancel: () => void
   onApply: (spec: WidgetSpec, preview?: WidgetValue) => void
 }
@@ -67,9 +74,7 @@ export interface WidgetConfigPanelProps {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <fieldset className="flex flex-col gap-3 border-t pt-3 first:border-t-0 first:pt-0">
-      <legend className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        {title}
-      </legend>
+      <legend className="text-sm font-medium">{title}</legend>
       {children}
     </fieldset>
   )
@@ -115,34 +120,60 @@ function ChipFilter({
   )
 }
 
-export function WidgetConfigPanel({ spec, onCancel, onApply }: WidgetConfigPanelProps) {
+function previewKeyOf(spec: WidgetSpec | null): string {
+  return spec && spec.data.kind !== 'note' ? JSON.stringify({ ...spec, title: undefined }) : ''
+}
+
+export function WidgetConfigPanel({
+  spec,
+  initialValue,
+  onCancel,
+  onApply,
+}: WidgetConfigPanelProps) {
   const { t } = useTranslation()
   const catalog = useWidgetCatalog()
   const [draft, setDraft] = useState<WidgetSpec | null>(spec)
-  const [preview, setPreview] = useState<WidgetValue | undefined>()
+  // The figures, with the draft (preview key) they were computed for.
+  const [previewed, setPreviewed] = useState<{ key: string; value: WidgetValue } | undefined>()
+  // The target text while it is being edited; null shows the draft's value.
+  const [targetText, setTargetText] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewFailed, setPreviewFailed] = useState(false)
 
   useEffect(() => {
     setDraft(spec)
-    setPreview(undefined)
+    setTargetText(null)
+    setPreviewed(initialValue ? { key: previewKeyOf(spec), value: initialValue } : undefined)
+    // initialValue belongs to spec: it is read when a new spec is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec])
+  const initialKey = initialValue ? previewKeyOf(spec) : ''
 
   const metrics = useMemo(() => catalog.data?.metrics ?? [], [catalog.data])
   const metric: CatalogMetric | undefined = metrics.find((m) => m.id === draft?.data.metric)
   const isNote = draft?.data.kind === 'note'
 
   // Live preview of a metric widget, debounced; a stale answer is dropped.
-  const previewKey = draft && !isNote ? JSON.stringify({ ...draft, title: undefined }) : ''
+  const previewKey = previewKeyOf(draft)
+  // Only a preview computed for the current draft is shown or applied.
+  const preview = previewed?.value
+  const freshPreview = previewed?.key === previewKey ? previewed.value : undefined
   useEffect(() => {
     if (!previewKey) return
+    // The draft still matches a value we already hold: no request.
+    if (previewKey === initialKey && initialValue) {
+      setPreviewed({ key: previewKey, value: initialValue })
+      setPreviewing(false)
+      setPreviewFailed(false)
+      return
+    }
     let live = true
     setPreviewing(true)
     const timer = setTimeout(() => {
       previewWidget('metric', JSON.parse(previewKey))
         .then((v) => {
           if (!live) return
-          setPreview(v)
+          setPreviewed({ key: previewKey, value: v })
           setPreviewFailed(false)
         })
         .catch(() => live && setPreviewFailed(true))
@@ -152,13 +183,29 @@ export function WidgetConfigPanel({ spec, onCancel, onApply }: WidgetConfigPanel
       live = false
       clearTimeout(timer)
     }
+    // initialValue and initialKey change only with a new spec.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewKey])
 
   const open = spec !== null && draft !== null
   const groupBy = draft?.data.group_by ?? []
   const noteText = draft?.data.text ?? ''
+  const unit = draft
+    ? unitOf({ shape: specShape(draft, metric), metric: draft.data.metric } as WidgetValue)
+    : 'count'
+  const targetMax = unit === 'percent' ? 100 : undefined
+  // An empty target value is "no value": it is never stored as 0.
+  const targetNumber = targetText === null ? undefined : Number(targetText)
+  const targetEmpty =
+    !!draft?.target &&
+    targetText !== null &&
+    (targetText.trim() === '' ||
+      !Number.isFinite(targetNumber) ||
+      (targetNumber as number) < 0 ||
+      (targetMax !== undefined && (targetNumber as number) > targetMax))
   const canApply =
     !!draft &&
+    !targetEmpty &&
     (isNote ? noteText.trim().length > 0 && noteText.length <= NOTE_MAX_LENGTH : !!metric)
 
   return (
@@ -434,7 +481,8 @@ export function WidgetConfigPanel({ spec, onCancel, onApply }: WidgetConfigPanel
                           </Label>
                           <Select
                             value={draft.target?.op ?? NONE}
-                            onValueChange={(op) =>
+                            onValueChange={(op) => {
+                              setTargetText(null)
                               setDraft(
                                 op === NONE
                                   ? { ...draft, target: undefined }
@@ -446,7 +494,7 @@ export function WidgetConfigPanel({ spec, onCancel, onApply }: WidgetConfigPanel
                                       },
                                     }
                               )
-                            }
+                            }}
                           >
                             <SelectTrigger id="widget-target-op">
                               <SelectValue />
@@ -468,18 +516,33 @@ export function WidgetConfigPanel({ spec, onCancel, onApply }: WidgetConfigPanel
                           <Label htmlFor="widget-target-value">
                             {t('dashboards.config.targetValue', 'Value')}
                           </Label>
-                          <Input
-                            id="widget-target-value"
-                            type="number"
-                            min={0}
-                            disabled={!draft.target}
-                            value={draft.target?.value ?? ''}
-                            onChange={(e) => {
-                              const n = Number(e.target.value)
-                              if (draft.target && Number.isFinite(n) && n >= 0)
-                                setDraft({ ...draft, target: { ...draft.target, value: n } })
-                            }}
-                          />
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id="widget-target-value"
+                              type="number"
+                              min={0}
+                              max={targetMax}
+                              disabled={!draft.target}
+                              aria-invalid={targetEmpty || undefined}
+                              value={targetText ?? draft.target?.value ?? ''}
+                              onChange={(e) => {
+                                const raw = e.target.value
+                                setTargetText(raw)
+                                const n = Number(raw)
+                                if (
+                                  draft.target &&
+                                  raw.trim() !== '' &&
+                                  Number.isFinite(n) &&
+                                  n >= 0 &&
+                                  (targetMax === undefined || n <= targetMax)
+                                )
+                                  setDraft({ ...draft, target: { ...draft.target, value: n } })
+                              }}
+                            />
+                            <span className="text-sm text-muted-foreground">
+                              {t(`dashboards.config.unit.${unit}`, unit)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </Section>
@@ -516,7 +579,10 @@ export function WidgetConfigPanel({ spec, onCancel, onApply }: WidgetConfigPanel
             <Button
               variant="ghost"
               className="me-auto"
-              onClick={() => setDraft({ ...newMetricSpec(metric, new Set()), id: draft.id })}
+              onClick={() => {
+                setTargetText(null)
+                setDraft({ ...newMetricSpec(metric, new Set()), id: draft.id })
+              }}
             >
               {t('dashboards.config.reset', 'Reset to default')}
             </Button>
@@ -524,7 +590,7 @@ export function WidgetConfigPanel({ spec, onCancel, onApply }: WidgetConfigPanel
           <Button variant="outline" onClick={onCancel}>
             {t('dashboards.config.cancel', 'Cancel')}
           </Button>
-          <Button onClick={() => draft && onApply(draft, preview)} disabled={!canApply}>
+          <Button onClick={() => draft && onApply(draft, freshPreview)} disabled={!canApply}>
             {t('dashboards.config.apply', 'Apply')}
           </Button>
         </SheetFooter>

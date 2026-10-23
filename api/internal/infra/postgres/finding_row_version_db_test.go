@@ -172,10 +172,11 @@ func TestFindingUpdate_OtherTenantIsNotFoundNotConflict(t *testing.T) {
 	}
 }
 
-// Ingest enrichment reads the stored rows, merges a sighting and writes the
-// merged rows back. It must not write columns other writers own (an analyst's
-// priority override, the SLA deadline), and a row another writer changed
-// between the read and the write is read and merged again.
+// Ingest enrichment locks and reads the stored rows, merges a sighting and
+// writes the merged rows back. It must not write columns other writers own
+// (an analyst's priority override, the SLA deadline), and it merges into what
+// another writer committed just before it: under the row lock nothing can
+// change between its read and its write, so one attempt lands.
 func TestEnrichBatch_KeepsConcurrentWrites(t *testing.T) {
 	db := openSLADB(t)
 	ctx := context.Background()
@@ -199,8 +200,8 @@ func TestEnrichBatch_KeepsConcurrentWrites(t *testing.T) {
 		if attempt != 0 {
 			return
 		}
-		// Between the enrichment's read and its write: an analyst pins the
-		// priority and the SLA applier moves the deadline, and someone tags it.
+		// Just before the enrichment reads: an analyst pins the priority
+		// and the SLA applier moves the deadline, and someone tags it.
 		if _, err := db.ExecContext(ctx, `UPDATE findings SET priority_class = 'P1', priority_class_override = TRUE,
 			priority_class_overridden_by = $2, priority_class_overridden_at = NOW(),
 			sla_deadline = NOW() + INTERVAL '3 days', tags = ARRAY['by-analyst'] WHERE id = $1`,
@@ -237,7 +238,7 @@ func TestEnrichBatch_KeepsConcurrentWrites(t *testing.T) {
 	if got.Severity() != vulnerability.SeverityCritical {
 		t.Errorf("severity = %q, want the sighting's critical", got.Severity())
 	}
-	if calls < 2 {
-		t.Errorf("the lost row was not read again (reads: %d)", calls)
+	if calls != 1 {
+		t.Errorf("enrichment attempts = %d, want 1 (nothing can be lost under the row lock)", calls)
 	}
 }

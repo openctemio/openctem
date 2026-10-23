@@ -116,14 +116,22 @@ func isCheckViolation(err error) bool {
 }
 
 // isForeignKeyViolation checks if the error is a PostgreSQL foreign-key violation
-// (SQLSTATE 23503) — e.g. referencing an asset/row that does not exist. Callers
-// should map this to a 400/404 rather than a 500.
+// (SQLSTATE 23503) — e.g. referencing an asset/row that does not exist — or the
+// restrict violation (23001) that PostgreSQL 18 reports when a RESTRICT foreign
+// key refuses a delete (16 and 17 report 23503 for both). Callers should map
+// this to a 400/404/409 rather than a 500.
 func isForeignKeyViolation(err error) bool {
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) {
-		return pqErr.Code == "23503"
+		return isForeignKeyCode(string(pqErr.Code))
 	}
 	return false
+}
+
+// isForeignKeyCode is the SQLSTATE test behind isForeignKeyViolation, for the
+// callers that also read the constraint name from the same pq.Error.
+func isForeignKeyCode(code string) bool {
+	return code == "23503" || code == "23001"
 }
 
 // invalidInput reports a database rejection of caller-supplied values as

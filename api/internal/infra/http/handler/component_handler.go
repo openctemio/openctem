@@ -89,7 +89,7 @@ func listInputFromRequest(r *http.Request) asset.ListComponentsInput {
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
-// @Param        q                    query  string  false  "Search name or namespace"
+// @Param        q                    query  string  false  "Search name or namespace; a package URL (pkg:type/namespace/name[@version]) matches that package exactly, and its version keeps only the links of that version"
 // @Param        ecosystem            query  string  false  "Ecosystems (comma list)"
 // @Param        license              query  string  false  "Licenses (comma list)"
 // @Param        severity             query  string  false  "Has open findings of severity (comma list: critical,high,medium,low)"

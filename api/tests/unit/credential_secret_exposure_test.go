@@ -288,3 +288,62 @@ func TestCredentialsReveal_OnlyOwnerAndAdminByDefault(t *testing.T) {
 		t.Error("member and viewer must not hold findings:credentials:reveal")
 	}
 }
+
+func TestRedactDetails_MasksToolReportedSecretKeys(t *testing.T) {
+	in := map[string]any{
+		"password":                         "p4ss",
+		"API_KEY":                          "k",
+		"credential_type":                  "password",
+		"secret_value":                     "raw",
+		credential.DetailSecretMasked:      "ab****",
+		credential.DetailSecretFingerprint: "fp",
+		"nested":                           map[string]any{"token": "t0k", "host": "h", "list": []any{map[string]any{"client_secret": "cs"}}},
+		"items":                            []any{map[string]any{"private_key": "pk", "name": "n"}},
+		"secret_extra":                     "x",
+	}
+	out := credential.RedactDetails(in)
+	b, _ := json.Marshal(out)
+	s := string(b)
+	for _, raw := range []string{"p4ss", `"k"`, "raw", "t0k", `"cs"`, `"pk"`, `"x"`} {
+		if strings.Contains(s, raw) {
+			t.Fatalf("raw value %s leaked: %s", raw, s)
+		}
+	}
+	if out["password"] != credential.RedactedValue || out["secret_extra"] != credential.RedactedValue {
+		t.Fatalf("sensitive keys must be masked: %v", out)
+	}
+	if _, has := out["secret_value"]; has {
+		t.Fatal("secret_value must be removed")
+	}
+	if out[credential.DetailSecretMasked] != "ab****" || out[credential.DetailSecretFingerprint] != "fp" {
+		t.Fatalf("safe keys must be kept: %v", out)
+	}
+	if out["credential_type"] != "password" || out["nested"].(map[string]any)["host"] != "h" {
+		t.Fatalf("non-sensitive keys must be kept: %v", out)
+	}
+	if in["password"] != "p4ss" || in["nested"].(map[string]any)["token"] != "t0k" {
+		t.Fatal("input must not be modified")
+	}
+}
+
+func TestRedactDetails_SecretKeyTables(t *testing.T) {
+	metadata := []string{"secret_type", "secret_valid", "secret_revoked", "secret_entropy",
+		"secret_needs_rotation", "secret_expires_at", "secret_masked_value", "secret_fingerprint_prefix",
+		"secret_id", "secret_set", "secret_changed", "secret_service", "secret_pre_existing",
+		"secret_not_observed", "secret_detection", "secret_scan", "secret_source", "secret_provider",
+		"secret_kind", "secret_status", "secret_name", "secret_length", "secret_count"}
+	for _, k := range metadata {
+		out := credential.RedactDetails(map[string]any{k: "meta"})
+		if out[k] != "meta" {
+			t.Errorf("%s is metadata and must be kept, got %v", k, out[k])
+		}
+	}
+	secrets := []string{"secret_key", "secret_access_key", "aws_secret_access_key", "secret_blob",
+		"connection_string", "dsn", "db_password", "slack_token", "client_secret"}
+	for _, k := range secrets {
+		out := credential.RedactDetails(map[string]any{k: "hunter2"})
+		if out[k] != credential.RedactedValue {
+			t.Errorf("%s must be masked, got %v", k, out[k])
+		}
+	}
+}
