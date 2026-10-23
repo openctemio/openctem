@@ -27,6 +27,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { ListToolbar } from '../list-toolbar'
 import { FilterPanelToggle, type FilterPanelToggleProps } from '../filter-button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -664,138 +665,135 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-4">
-      {/* Toolbar: one row where it fits. The start group (filters, search)
-          asks for at least 12rem; when that and the end group do not fit on one
-          line, the whole end group moves to its own line, so the search box is
-          never squeezed until it drops under a lone filter button. The row is a
-          size container: controls inside switch labels to icons by the
-          toolbar's own width (`@xl/toolbar:`), which tracks an open filter
-          panel or a collapsed sidebar, not only the viewport. */}
-      <div
-        data-testid="data-table-toolbar"
-        className="@container/toolbar flex flex-wrap items-center gap-2"
-      >
-        {toolbarStart ? (
-          // No min-w-0: the group must not shrink below its widest control, or a
-          // button spills over the search box beside it. It wraps instead.
-          <div className="flex flex-[1_1_12rem] flex-wrap items-center gap-2 [&>.relative:has(input)]:min-w-36">
-            {filterToggle && <FilterPanelToggle {...filterToggle} />}
-            {toolbarStart}
-          </div>
-        ) : (
-          filterToggle && <FilterPanelToggle {...filterToggle} />
-        )}
-        {/* Search */}
-        {showSearch && (
-          <div className="relative min-w-36 flex-1 sm:max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder={searchPlaceholder}
-              value={
-                searchKey
-                  ? ((table.getColumn(searchKey)?.getFilterValue() as string) ?? '')
-                  : globalFilter
-              }
-              onChange={(event) => {
-                if (searchKey) {
-                  table.getColumn(searchKey)?.setFilterValue(event.target.value)
-                } else {
-                  setGlobalFilter(event.target.value)
-                }
-              }}
-              className="ps-9 pe-9"
-            />
-            {Boolean(searchKey ? table.getColumn(searchKey)?.getFilterValue() : globalFilter) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 p-0"
-                onClick={() => {
-                  if (searchKey) {
-                    table.getColumn(searchKey)?.setFilterValue('')
-                  } else {
-                    setGlobalFilter('')
+      {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
+          there). */}
+      <ListToolbar
+        start={
+          toolbarStart ? (
+            <>
+              {filterToggle && <FilterPanelToggle {...filterToggle} />}
+              {toolbarStart}
+            </>
+          ) : undefined
+        }
+        search={
+          <>
+            {!toolbarStart && filterToggle && <FilterPanelToggle {...filterToggle} />}
+            {/* Search */}
+            {showSearch && (
+              <div className="relative min-w-36 flex-1 sm:max-w-sm">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder={searchPlaceholder}
+                  value={
+                    searchKey
+                      ? ((table.getColumn(searchKey)?.getFilterValue() as string) ?? '')
+                      : globalFilter
                   }
-                }}
-              >
-                <X className="h-3 w-3" />
-              </Button>
+                  onChange={(event) => {
+                    if (searchKey) {
+                      table.getColumn(searchKey)?.setFilterValue(event.target.value)
+                    } else {
+                      setGlobalFilter(event.target.value)
+                    }
+                  }}
+                  className="ps-9 pe-9"
+                />
+                {Boolean(
+                  searchKey ? table.getColumn(searchKey)?.getFilterValue() : globalFilter
+                ) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 p-0"
+                    onClick={() => {
+                      if (searchKey) {
+                        table.getColumn(searchKey)?.setFilterValue('')
+                      } else {
+                        setGlobalFilter('')
+                      }
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
             )}
-          </div>
-        )}
+          </>
+        }
+        end={
+          <>
+            {toolbarEnd}
+            {/* Selection info - hidden on mobile when no selection */}
+            {showSelectionCount && selectedCount > 0 && (
+              <span className="text-sm text-muted-foreground hidden sm:inline">
+                {t('common.table.selectedOf', '{selected} of {total} selected', {
+                  selected: selectedCount,
+                  total: totalCount,
+                })}
+              </span>
+            )}
 
-        {/* Right side actions */}
-        <div className="ms-auto flex items-center gap-2 shrink-0">
-          {toolbarEnd}
-          {/* Selection info - hidden on mobile when no selection */}
-          {showSelectionCount && selectedCount > 0 && (
-            <span className="text-sm text-muted-foreground hidden sm:inline">
-              {t('common.table.selectedOf', '{selected} of {total} selected', {
-                selected: selectedCount,
-                total: totalCount,
-              })}
-            </span>
-          )}
-
-          {/* View menu: row density (every table, D14) and, when the table
+            {/* View menu: row density (every table, D14) and, when the table
               allows it, which columns show. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn('h-9', phoneCards && 'hidden')}
-                aria-label={t('common.table.viewMenu', 'Table view: density and columns')}
-              >
-                <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
-                <span className="sr-only @xl/toolbar:not-sr-only">
-                  {t('common.table.view', 'View')}
-                </span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[200px]">
-              <DropdownMenuLabel className="text-xs text-muted-foreground">
-                {t('common.table.density', 'Density')}
-              </DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={density}
-                onValueChange={(v) => setDensity(v as TableDensity)}
-              >
-                {(['compact', 'comfortable'] as const).map((d) => (
-                  <DropdownMenuRadioItem key={d} value={d}>
-                    {t(DENSITY_LABEL_KEYS[d][0], DENSITY_LABEL_KEYS[d][1])}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-              {showColumnToggle && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    {t('common.table.columns', 'Columns')}
-                  </DropdownMenuLabel>
-                </>
-              )}
-              {showColumnToggle &&
-                table
-                  .getAllColumns()
-                  .filter((column) => column.getCanHide())
-                  .map((column) => {
-                    return (
-                      <DropdownMenuCheckboxItem
-                        key={column.id}
-                        className="capitalize"
-                        checked={column.getIsVisible()}
-                        onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                      >
-                        {(column.columnDef.meta as { label?: string } | undefined)?.label ??
-                          column.id.replace(/_/g, ' ')}
-                      </DropdownMenuCheckboxItem>
-                    )
-                  })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn('h-9', phoneCards && 'hidden')}
+                  aria-label={t('common.table.viewMenu', 'Table view: density and columns')}
+                >
+                  <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
+                  <span className="sr-only @xl/toolbar:not-sr-only">
+                    {t('common.table.view', 'View')}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[200px]">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  {t('common.table.density', 'Density')}
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={density}
+                  onValueChange={(v) => setDensity(v as TableDensity)}
+                >
+                  {(['compact', 'comfortable'] as const).map((d) => (
+                    <DropdownMenuRadioItem key={d} value={d}>
+                      {t(DENSITY_LABEL_KEYS[d][0], DENSITY_LABEL_KEYS[d][1])}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                {showColumnToggle && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      {t('common.table.columns', 'Columns')}
+                    </DropdownMenuLabel>
+                  </>
+                )}
+                {showColumnToggle &&
+                  table
+                    .getAllColumns()
+                    .filter((column) => column.getCanHide())
+                    .map((column) => {
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={column.id}
+                          className="capitalize"
+                          checked={column.getIsVisible()}
+                          onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                        >
+                          {(column.columnDef.meta as { label?: string } | undefined)?.label ??
+                            column.id.replace(/_/g, ' ')}
+                        </DropdownMenuCheckboxItem>
+                      )
+                    })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
 
       {/* Active context filters: their own full-width row under the toolbar
           (8px below it), so the toolbar row keeps one height and its end
