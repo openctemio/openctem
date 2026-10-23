@@ -7,10 +7,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
@@ -90,6 +92,9 @@ func (h *VulnerabilityHandler) FindingFilterMeta(w http.ResponseWriter, r *http.
 func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec) {
 	result, err := h.service.ListFindingsBySpec(r.Context(), filterCaller(r), spec)
 	if err != nil {
+		if writeFindingQueryTimeout(w, err) {
+			return
+		}
 		if _, isFilter := filterspec.AsError(err); isFilter {
 			filterquery.WriteError(w, err)
 			return
@@ -116,4 +121,14 @@ func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// writeFindingQueryTimeout answers a findings read that ran past its
+// statement timeout with 503 QUERY_TIMEOUT and reports whether it did.
+func writeFindingQueryTimeout(w http.ResponseWriter, err error) bool {
+	if !errors.Is(err, vulnerability.ErrFindingQueryTimeout) {
+		return false
+	}
+	apierror.QueryTimeout("The findings query took too long; narrow the search or the filters").WriteJSON(w)
+	return true
 }

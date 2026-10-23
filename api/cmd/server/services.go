@@ -1286,6 +1286,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
 	s.Vulnerability.SetAssetRefChecker(s.DataScope)        // POST /findings asset_id: tenant + caller scope
 	s.Vulnerability.SetBranchLookup(repos.Branch)          // a finding branch must belong to its asset
+	// Bulk changes by filter run as operations the caller reads back.
+	s.Vulnerability.SetOperationStore(postgres.NewOperationRepository(&postgres.DB{DB: deps.DB}))
 	s.FindingActivity = activity.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized

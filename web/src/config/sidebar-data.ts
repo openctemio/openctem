@@ -114,6 +114,7 @@ export const sidebarData: SidebarData = {
           // Badge is dynamically fetched from dashboard stats - see useDynamicBadges hook
           permission: Permission.FindingsRead,
           module: 'findings',
+          quickViews: true,
         },
         {
           // The four-eyes inbox: false-positive and risk-acceptance requests
