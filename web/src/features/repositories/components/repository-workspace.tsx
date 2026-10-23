@@ -107,7 +107,8 @@ import {
   SLA_STATUS_LABELS,
   SCANNER_TYPE_LABELS,
 } from '@/features/repositories'
-import { FINDING_STATUS_CONFIG, type FindingStatus } from '@/features/findings/types/finding.types'
+import { type FindingStatus } from '@/features/findings/types/finding.types'
+import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 
 // Additional types for detail page
 type Repository = RepositoryView
@@ -616,18 +617,9 @@ function BranchStatusBadge({ status }: { status: BranchStatus }) {
 
 function SeverityCountBadge({ severity, count }: { severity: Severity; count?: number }) {
   return (
-    <SeverityBadge severity={severity}>
+    <SeverityBadge severity={severity} variant="soft">
       {count !== undefined ? `${count} ${SEVERITY_LABELS[severity]}` : undefined}
     </SeverityBadge>
-  )
-}
-
-function FindingStatusBadge({ status }: { status: FindingStatus }) {
-  const cfg = FINDING_STATUS_CONFIG[status]
-  return (
-    <Badge variant="outline" className={cn('gap-1 text-xs', cfg?.bgColor, cfg?.textColor)}>
-      {cfg?.label ?? status}
-    </Badge>
   )
 }
 

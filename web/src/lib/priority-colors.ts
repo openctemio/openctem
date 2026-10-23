@@ -1,17 +1,19 @@
 /**
  * The one colour source for priority classes (P0-P3).
  *
- * Priority is not severity. Severity (critical..info) is a soft badge in the
- * CVSS hues (severity-colors.ts); priority is a filled class box on the brand
- * ink ramp, P0 strongest, so "P1" can never be read as "High". Teal is the
- * act-here accent and is never used for either scale.
+ * Priority is not severity. Severity (critical..info) is a shaped mark with
+ * coloured text in the CVSS hues (severity-colors.ts); priority is CTEM's
+ * decision and the only filled label in a row: a box on its own violet ramp,
+ * P0 solid, P1 tint, P2 outline, P3 neutral and faint. Fill weight, the count
+ * of filled bars and the text all carry the order, so "P1" can never be read
+ * as "High" and colour is never the only cue. Teal is the act-here accent and
+ * is never used for either scale.
  *
  * Every priority surface (badge, chip, chart series, legend, row marker) takes
  * its colour from here, which reads the --prio-* tokens in src/styles/theme.css
  * (checked at AA in both themes by src/styles/__tests__/contrast.test.ts). The
  * palette-drift gate refuses a hand-written priority colour outside this file.
  */
-
 export const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'] as const
 export type PriorityClass = (typeof PRIORITY_ORDER)[number]
 

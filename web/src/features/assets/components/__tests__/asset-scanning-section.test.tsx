@@ -4,6 +4,7 @@ import type { AssetAttribution } from '../../lib/attribution'
 
 const state = vi.hoisted(() => ({
   attribution: undefined as AssetAttribution | undefined,
+  error: undefined as Error | undefined,
   decide: vi.fn(),
   mutate: vi.fn(),
   perms: [] as string[],
@@ -12,6 +13,7 @@ const state = vi.hoisted(() => ({
 vi.mock('../../hooks/use-asset-attribution', () => ({
   useAssetAttribution: () => ({
     attribution: state.attribution,
+    error: state.error,
     isLoading: false,
     mutate: state.mutate,
   }),
@@ -64,6 +66,7 @@ function attribution(overrides: Partial<AssetAttribution>): AssetAttribution {
 
 beforeEach(() => {
   state.attribution = undefined
+  state.error = undefined
   state.perms = []
   state.decide.mockReset()
   state.mutate.mockReset()
@@ -177,5 +180,12 @@ describe('AssetScanningSection', () => {
   it('renders nothing without an answer', () => {
     const { container } = render(<AssetScanningSection asset={SUBDOMAIN} />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('a failed request shows an error with retry instead of vanishing', () => {
+    state.error = new Error('boom')
+    render(<AssetScanningSection asset={SUBDOMAIN} />)
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }))
+    expect(state.mutate).toHaveBeenCalled()
   })
 })
