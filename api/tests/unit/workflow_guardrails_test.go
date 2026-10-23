@@ -135,3 +135,17 @@ func TestWorkflowGuardrails_RaisedCapIsHighRisk(t *testing.T) {
 		t.Fatal("cap bounds")
 	}
 }
+
+// Case and whitespace variants of a status are not the allowed target: the
+// allow-list matches exactly, on save and when a stored step runs.
+func TestUpdateStatusAllowList_Variants(t *testing.T) {
+	for _, v := range []string{"Resolved", "RESOLVED", " resolved", "resolved ", "false_positive\n", "Confirmed", " confirmed", "IN_PROGRESS", "in-progress"} {
+		cfg := automation.NodeConfig{ActionType: automation.ActionTypeUpdateStatus, ActionConfig: map[string]any{"status": v}}
+		if err := automation.ValidateStatusTargets(cfg); err == nil {
+			t.Errorf("status %q accepted on save", v)
+		}
+		if automation.StatusTargetAllowed(v) {
+			t.Errorf("status %q allowed at run time", v)
+		}
+	}
+}
