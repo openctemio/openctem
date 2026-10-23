@@ -33,7 +33,6 @@ export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/auth/sso/callback',
   '/ci-cd/github-app',
   '/insights',
-  '/insights/reports',
   '/mcp',
   '/mcp/confirm',
   '/oauth',
