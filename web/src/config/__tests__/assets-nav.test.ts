@@ -208,11 +208,12 @@ describe('Retired asset routes', () => {
     const srcDir = join(__dirname, '../..')
     const offenders: string[] = []
     const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const name = entry.name
         const full = join(dir, name)
-        if (statSync(full).isDirectory()) {
+        if (entry.isDirectory()) {
           if (name !== 'node_modules' && name !== '__tests__') walk(full)
-        } else if (/\.(tsx?|json)$/.test(name)) {
+        } else if (entry.isFile() && /\.(tsx?|json)$/.test(name)) {
           const text = readFileSync(full, 'utf8')
           if (text.includes("'/assets/timeline") || text.includes('"/assets/timeline'))
             offenders.push(full)
