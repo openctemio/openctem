@@ -115,5 +115,12 @@
   "nav.item.fix-plan": "Kế hoạch khắc phục",
   "nav.item.suggestions": "Đề xuất",
   "nav.item.tasks": "Công việc",
-  "nav.item.emerging-threats": "Mối đe dọa mới nổi"
+  "nav.item.emerging-threats": "Mối đe dọa mới nổi",
+  "nav.item.assets": "Tài sản",
+  "nav.item.data-quality": "Chất lượng dữ liệu",
+  "nav.item.detections": "Phát hiện xâm nhập",
+  "nav.item.exceptions": "Ngoại lệ",
+  "nav.item.indicators-iocs-": "Chỉ báo xâm phạm (IOC)",
+  "nav.item.my-work": "Việc của tôi",
+  "nav.item.program-health": "Sức khỏe chương trình"
 }

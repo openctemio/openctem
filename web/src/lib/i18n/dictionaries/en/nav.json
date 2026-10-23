@@ -115,5 +115,12 @@
   "nav.item.fix-plan": "Fix plan",
   "nav.item.suggestions": "Suggestions",
   "nav.item.tasks": "Tasks",
-  "nav.item.emerging-threats": "Emerging Threats"
+  "nav.item.emerging-threats": "Emerging Threats",
+  "nav.item.assets": "Assets",
+  "nav.item.data-quality": "Data quality",
+  "nav.item.detections": "Detections",
+  "nav.item.exceptions": "Exceptions",
+  "nav.item.indicators-iocs-": "Indicators (IOCs)",
+  "nav.item.my-work": "My work",
+  "nav.item.program-health": "Program health"
 }
