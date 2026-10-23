@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { useRoles } from '@/features/access-control/api/use-roles'
 import { SetupLinkResult } from '@/features/shared/components/one-time-setup-link'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { createTenantUser } from '../api/use-members'
 import { MAX_ROLES_PER_USER, type CreatedTenantUser } from '../types/member.types'
@@ -48,6 +49,7 @@ export function AddUserDialog({
   onCreated,
   canGrantAdmin = false,
 }: AddUserDialogProps) {
+  const { t } = useTranslation()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
@@ -79,7 +81,7 @@ export function AddUserDialog({
     e.preventDefault()
     if (!tenantSlug) return
     if (roleIds.length === 0) {
-      setError('Select at least one role.')
+      setError(t('org.addUser.needRole', 'Select at least one role.'))
       return
     }
     setBusy(true)
@@ -91,13 +93,17 @@ export function AddUserDialog({
         role_ids: roleIds,
       })
       setCreated(res)
-      toast.success(`Account created for ${res.user?.email ?? email.trim()}`)
+      toast.success(
+        t('org.addUser.created', 'Account created for {email}', {
+          email: res.user?.email ?? email.trim(),
+        })
+      )
       onCreated?.()
     } catch (err) {
       // 400 (validation, e.g. email domain not allowed), 403 (granting a role
       // you do not hold), 409 (account exists — invite instead): show the
       // server's message where the admin is looking.
-      setError(getErrorMessage(err, 'Could not create the user'))
+      setError(getErrorMessage(err, t('org.addUser.createFailed', 'Could not create the user')))
     } finally {
       setBusy(false)
     }
@@ -109,9 +115,11 @@ export function AddUserDialog({
         {created ? (
           <>
             <DialogHeader>
-              <DialogTitle>User added</DialogTitle>
+              <DialogTitle>{t('org.addUser.addedTitle', 'User added')}</DialogTitle>
               <DialogDescription>
-                {created.user?.name || created.user?.email} can sign in after setting a password.
+                {t('org.addUser.addedBody', '{who} can sign in after setting a password.', {
+                  who: created.user?.name || created.user?.email || '',
+                })}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -120,16 +128,18 @@ export function AddUserDialog({
               </div>
             </DialogBody>
             <DialogFooter>
-              <Button onClick={close}>Done</Button>
+              <Button onClick={close}>{t('org.addUser.done', 'Done')}</Button>
             </DialogFooter>
           </>
         ) : (
           <DialogForm onSubmit={submit}>
             <DialogHeader>
-              <DialogTitle>Add user</DialogTitle>
+              <DialogTitle>{t('org.addUser.title', 'Add user')}</DialogTitle>
               <DialogDescription>
-                Create an account for someone in your organization. They get a link to set their
-                password.
+                {t(
+                  'org.addUser.desc',
+                  'Create an account for someone in your organization. They get a link to set their password.'
+                )}
               </DialogDescription>
             </DialogHeader>
 
@@ -137,7 +147,7 @@ export function AddUserDialog({
               <div className="space-y-5 py-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="add-user-name">Name</Label>
+                    <Label htmlFor="add-user-name">{t('org.addUser.name', 'Name')}</Label>
                     <Input
                       id="add-user-name"
                       required
@@ -148,13 +158,13 @@ export function AddUserDialog({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-user-email">Email</Label>
+                    <Label htmlFor="add-user-email">{t('org.addUser.email', 'Email')}</Label>
                     <Input
                       id="add-user-email"
                       type="email"
                       required
                       autoComplete="off"
-                      placeholder="colleague@company.com"
+                      placeholder={t('org.addUser.emailPlaceholder', 'colleague@company.com')}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                     />
@@ -164,14 +174,18 @@ export function AddUserDialog({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label>Assign roles</Label>
+                      <Label>{t('org.addUser.assignRoles', 'Assign roles')}</Label>
                       <p className="text-xs text-muted-foreground">
-                        Roles define what this user can do (up to {MAX_ROLES_PER_USER}).
+                        {t(
+                          'org.addUser.rolesHint',
+                          'Roles define what this user can do (up to {max}).',
+                          { max: MAX_ROLES_PER_USER }
+                        )}
                       </p>
                     </div>
                     {roleIds.length > 0 && (
                       <Badge variant="secondary" className="text-xs">
-                        {roleIds.length} selected
+                        {t('org.addUser.selected', '{count} selected', { count: roleIds.length })}
                       </Badge>
                     )}
                   </div>
@@ -197,7 +211,7 @@ export function AddUserDialog({
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={close}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={busy || !tenantSlug}>
                 {busy ? (
@@ -205,7 +219,7 @@ export function AddUserDialog({
                 ) : (
                   <UserPlus className="me-2 h-4 w-4" />
                 )}
-                Add user
+                {t('org.addUser.title', 'Add user')}
               </Button>
             </DialogFooter>
           </DialogForm>
