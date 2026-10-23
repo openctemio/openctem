@@ -208,7 +208,7 @@ When the data migration detects existing duplicates, they go into a review queue
 GET  /api/v1/assets/dedup/reviews              — list pending
 POST /api/v1/assets/dedup/reviews/{id}/approve  — merge assets
 POST /api/v1/assets/dedup/reviews/{id}/reject   — keep separate
-GET  /api/v1/assets/dedup/merge-log             — audit trail
+GET  /api/v1/assets/dedup/merge-log             — audit trail (optional ?asset_id= narrows it to one asset)
 ```
 
 A merge moves every row that references the merged assets to the kept asset, then deletes the merged assets. The full list is in `internal/infra/postgres/asset_merge_plan.go`:

@@ -91,5 +91,16 @@
   "exposures.secrets.statusDescription": "Mỗi bí mật bị lộ đang ở giai đoạn khắc phục nào",
   "exposures.type.viewFindings": "Xem phát hiện",
   "exposures.type.viewOne": "Xem 1 phát hiện",
-  "exposures.type.viewMany": "Xem {count} phát hiện"
+  "exposures.type.viewMany": "Xem {count} phát hiện",
+  "exposures.metrics.closed": "Đã đóng",
+  "exposures.export.truncated": "Chỉ xuất {count} phơi nhiễm đầu tiên. Hãy thu hẹp bộ lọc để xuất phần còn lại.",
+  "exposures.page.description": "Các thay đổi trên bề mặt tấn công cần được quyết định. Hãy xử lý, chấp nhận hoặc bỏ qua chúng.",
+  "exposures.stats.errorTitle": "thống kê phơi nhiễm",
+  "exposures.bulk.resolved": "Đã xử lý {count} phơi nhiễm.",
+  "exposures.bulk.accepted": "Đã chấp nhận {count} phơi nhiễm.",
+  "exposures.bulk.falsePositive": "Đã đánh dấu {count} phơi nhiễm là dương tính giả.",
+  "exposures.bulk.partialFailed": "{failed} trên {total} thất bại.",
+  "exposures.bulk.resolveFailed": "Không thể xử lý các phơi nhiễm.",
+  "exposures.bulk.updateFailed": "Không thể cập nhật các phơi nhiễm.",
+  "exposures.bulk.reasonRequired": "Nhập lý do."
 }

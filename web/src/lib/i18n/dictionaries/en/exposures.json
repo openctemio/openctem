@@ -91,5 +91,16 @@
   "exposures.secrets.statusDescription": "Where each exposed secret is in remediation",
   "exposures.type.viewFindings": "View findings",
   "exposures.type.viewOne": "View 1 finding",
-  "exposures.type.viewMany": "View {count} findings"
+  "exposures.type.viewMany": "View {count} findings",
+  "exposures.metrics.closed": "Closed",
+  "exposures.export.truncated": "Export limited to the first {count} exposures. Refine the filters to export the rest.",
+  "exposures.page.description": "Changes to your attack surface that need a decision. Resolve, accept or dismiss them.",
+  "exposures.stats.errorTitle": "exposure statistics",
+  "exposures.bulk.resolved": "{count} exposures resolved.",
+  "exposures.bulk.accepted": "{count} exposures accepted.",
+  "exposures.bulk.falsePositive": "{count} exposures marked as false positive.",
+  "exposures.bulk.partialFailed": "{failed} of {total} failed.",
+  "exposures.bulk.resolveFailed": "Could not resolve the exposures.",
+  "exposures.bulk.updateFailed": "Could not update the exposures.",
+  "exposures.bulk.reasonRequired": "Enter a reason."
 }
