@@ -32,11 +32,11 @@ export const KevBadge = React.forwardRef<HTMLSpanElement, KevBadgeProps>(functio
   return (
     <span
       ref={ref}
-      data-slot="kev-badge"
       data-past-due={pastDue ? 'true' : undefined}
       data-ransomware={ransomware ? 'true' : undefined}
       className={cn(KEV_BADGE_CLASS, pastDue && 'text-destructive', className)}
       {...props}
+      data-slot="kev-badge"
     >
       <Zap className="size-3 shrink-0 text-sig-icon" aria-hidden />
       {label ?? t('findings.list.kev', 'KEV')}

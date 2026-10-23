@@ -12,6 +12,8 @@ export interface EpssChipProps {
   score: number | null | undefined
   /** Show only from this probability; the detail page passes 0 to always show it. */
   threshold?: number
+  /** Decimals of the percentage (default 0; the detail page uses 1 or 2). */
+  digits?: number
   className?: string
 }
 
@@ -20,10 +22,15 @@ export interface EpssChipProps {
  * hue (EPSS is a probability, not a severity). Renders nothing below the
  * threshold, so a row only carries it when it matters.
  */
-export function EpssChip({ score, threshold = EPSS_CHIP_THRESHOLD, className }: EpssChipProps) {
+export function EpssChip({
+  score,
+  threshold = EPSS_CHIP_THRESHOLD,
+  digits = 0,
+  className,
+}: EpssChipProps) {
   const { t } = useTranslation()
   if (typeof score !== 'number' || !Number.isFinite(score) || score < threshold) return null
-  const pct = formatEpssScore(score, 0)
+  const pct = formatEpssScore(score, digits)
   const text = t('findings.list.epss', 'EPSS {score}', { score: pct })
   return (
     <span
