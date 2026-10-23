@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * Faceted filters for list pages (the left panel on Findings). Filters apply as
@@ -27,10 +28,11 @@ export function FacetPanel({
   children: ReactNode
   className?: string
 }) {
+  const { t } = useTranslation()
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
       <div className="flex h-9 shrink-0 items-center justify-between">
-        <p className="text-sm font-semibold">Filters</p>
+        <p className="text-sm font-semibold">{t('common.filters', 'Filters')}</p>
         <Button
           variant="ghost"
           size="sm"
@@ -38,7 +40,7 @@ export function FacetPanel({
           onClick={onClearAll}
           disabled={activeCount === 0}
         >
-          Clear all
+          {t('common.clearAll', 'Clear all')}
         </Button>
       </div>
       {/* The sections scroll on their own, so the panel can be given a fixed
@@ -116,6 +118,7 @@ export function FacetGroupLabel({
   children: ReactNode
   onSelectAll?: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center justify-between pt-2 pb-0.5 first:pt-0">
       <span className="text-xs text-muted-foreground">{children}</span>
@@ -125,7 +128,7 @@ export function FacetGroupLabel({
           onClick={onSelectAll}
           className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
-          Select all
+          {t('common.selectAll', 'Select all')}
         </button>
       )}
     </div>

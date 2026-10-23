@@ -116,6 +116,11 @@ vi.mock('@/features/components/api/hooks', () => ({
   }),
 }))
 
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
+
 import FindingsPage from '../page'
 
 function openAt(search: string) {
