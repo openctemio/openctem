@@ -116,6 +116,8 @@ const emptyForm: FormState = {
 
 export default function BusinessServicesPage() {
   const { t } = useTranslation()
+  const criticalityLabel = (level: Criticality) =>
+    t(`criticality.${level}`, CRITICALITY_LABELS[level])
   // Every service (up to the row cap), so the strip counts equal the list.
   const { data, mutate, isLoading, error } = useRegisterPages<BusinessService>(
     '/api/v1/business-services?per_page=100'
@@ -152,14 +154,14 @@ export default function BusinessServicesPage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: 'Services',
+      label: t('businessContext.services.metric.total', 'Services'),
       value: stats.total,
       onClick: () => setQuick(''),
       active: !quick,
     },
     {
       key: 'critical',
-      label: 'Critical',
+      label: t('businessContext.services.metric.critical', 'Critical'),
       value: stats.critical,
       tone: 'danger',
       onClick: () => toggleQuick('critical'),
@@ -167,14 +169,14 @@ export default function BusinessServicesPage() {
     },
     {
       key: 'pii',
-      label: 'Handle PII',
+      label: t('businessContext.services.metric.pii', 'Handle PII'),
       value: stats.pii,
       onClick: () => toggleQuick('pii'),
       active: quick === 'pii',
     },
     {
       key: 'financial',
-      label: 'Handle financial data',
+      label: t('businessContext.services.metric.financial', 'Handle financial data'),
       value: stats.financial,
       onClick: () => toggleQuick('financial'),
       active: quick === 'financial',
@@ -211,7 +213,12 @@ export default function BusinessServicesPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('businessContext.services.col.name', 'Name')}
+          />
+        ),
         cell: ({ row }) => {
           const service = row.original
           return (
@@ -230,19 +237,21 @@ export default function BusinessServicesPage() {
       },
       {
         accessorKey: 'criticality',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Criticality" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('businessContext.services.col.criticality', 'Criticality')}
+          />
+        ),
         cell: ({ row }) => (
-          <Badge
-            variant="outline"
-            className={`capitalize ${criticalityColors[row.original.criticality]}`}
-          >
-            {row.original.criticality}
+          <Badge variant="outline" className={criticalityColors[row.original.criticality]}>
+            {criticalityLabel(row.original.criticality)}
           </Badge>
         ),
       },
       {
         id: 'data_handling',
-        header: 'Data handling',
+        header: t('businessContext.services.col.dataHandling', 'Data handling'),
         enableSorting: false,
         cell: ({ row }) => {
           const service = row.original
@@ -250,17 +259,17 @@ export default function BusinessServicesPage() {
             <div className="flex flex-wrap gap-1">
               {service.handles_pii && (
                 <Badge variant="secondary" className="text-xs">
-                  PII
+                  {t('businessContext.services.badge.pii', 'PII')}
                 </Badge>
               )}
               {service.handles_phi && (
                 <Badge variant="secondary" className="text-xs">
-                  PHI
+                  {t('businessContext.services.badge.phi', 'PHI')}
                 </Badge>
               )}
               {service.handles_financial && (
                 <Badge variant="secondary" className="text-xs">
-                  Financial
+                  {t('businessContext.services.badge.financial', 'Financial')}
                 </Badge>
               )}
             </div>
@@ -269,7 +278,7 @@ export default function BusinessServicesPage() {
       },
       {
         id: 'compliance_scope',
-        header: 'Compliance scope',
+        header: t('businessContext.services.col.compliance', 'Compliance scope'),
         enableSorting: false,
         cell: ({ row }) => (
           <div className="flex flex-wrap gap-1">
@@ -283,7 +292,12 @@ export default function BusinessServicesPage() {
       },
       {
         accessorKey: 'owner_name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Owner" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('businessContext.services.col.owner', 'Owner')}
+          />
+        ),
         cell: ({ row }) => (
           <StackedCell
             primary={row.original.owner_name || '—'}
@@ -293,7 +307,12 @@ export default function BusinessServicesPage() {
       },
       {
         accessorKey: 'asset_count',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Assets" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('businessContext.services.col.assets', 'Assets')}
+          />
+        ),
         cell: ({ row }) =>
           row.original.asset_count === undefined ? (
             '—'
@@ -309,7 +328,12 @@ export default function BusinessServicesPage() {
       },
       {
         accessorKey: 'availability_target',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Availability" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('businessContext.services.col.availability', 'Availability')}
+          />
+        ),
         cell: ({ row }) =>
           row.original.availability_target != null
             ? `${row.original.availability_target.toFixed(2)}%`
@@ -325,19 +349,19 @@ export default function BusinessServicesPage() {
             <DataTableRowActions
               actions={[
                 {
-                  label: 'Linked assets',
+                  label: t('businessContext.services.action.linked', 'Linked assets'),
                   icon: Link2,
                   onClick: () => setAssetsService(row.original),
                 },
                 {
-                  label: 'Edit',
+                  label: t('businessContext.services.action.edit', 'Edit'),
                   icon: Pencil,
                   onClick: () => openEdit(row.original),
                   permission: Permission.BusinessServicesWrite,
                   separatorBefore: true,
                 },
                 {
-                  label: 'Delete',
+                  label: t('businessContext.services.action.delete', 'Delete'),
                   icon: Trash2,
                   onClick: () => setDeletingService(row.original),
                   destructive: true,
@@ -349,7 +373,8 @@ export default function BusinessServicesPage() {
         ),
       },
     ],
-    []
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable per locale; openEdit only sets state
+    [t]
   )
 
   function toggleCompliance(framework: string) {
@@ -366,7 +391,7 @@ export default function BusinessServicesPage() {
 
   async function handleSave() {
     if (!form.name.trim()) {
-      toast.error('Name is required')
+      toast.error(t('businessContext.services.toast.nameRequired', 'Name is required.'))
       return
     }
 
@@ -399,17 +424,20 @@ export default function BusinessServicesPage() {
     try {
       if (editingService) {
         await put(`/api/v1/business-services/${editingService.id}`, payload)
-        toast.success('Business service updated')
+        toast.success(t('businessContext.services.toast.updated', 'Business service updated.'))
       } else {
         await post('/api/v1/business-services', payload)
-        toast.success('Business service created')
+        toast.success(t('businessContext.services.toast.created', 'Business service created.'))
       }
       setIsDialogOpen(false)
       setEditingService(null)
       setForm(emptyForm)
       await mutate()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save business service'
+      const message =
+        err instanceof Error
+          ? err.message
+          : t('businessContext.services.toast.saveFailed', 'Could not save the business service.')
       toast.error(message)
     } finally {
       setIsSaving(false)
@@ -420,11 +448,17 @@ export default function BusinessServicesPage() {
     if (!deletingService) return
     try {
       await del(`/api/v1/business-services/${deletingService.id}`)
-      toast.success('Business service deleted')
+      toast.success(t('businessContext.services.toast.deleted', 'Business service deleted.'))
       setDeletingService(null)
       await mutate()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete business service'
+      const message =
+        err instanceof Error
+          ? err.message
+          : t(
+              'businessContext.services.toast.deleteFailed',
+              'Could not delete the business service.'
+            )
       toast.error(message)
     }
   }
@@ -432,19 +466,22 @@ export default function BusinessServicesPage() {
   return (
     <Main>
       <PageHeader
-        title="Business services"
-        description="Business services and their compliance, data handling and availability requirements."
+        title={t('businessContext.services.title', 'Business services')}
+        description={t(
+          'businessContext.services.description',
+          'Business services and their compliance, data handling and availability requirements.'
+        )}
       >
         <Can permission={Permission.BusinessServicesWrite}>
           <Button size="sm" onClick={openCreate}>
             <Plus className="me-2 h-4 w-4" />
-            New service
+            {t('businessContext.services.new', 'New service')}
           </Button>
         </Can>
       </PageHeader>
       <GatedSectionTabs
         tabs={BUSINESS_CONTEXT_SECTION_TABS}
-        label="Business context sections"
+        label={t('businessContext.sectionsLabel', 'Business context sections')}
         className="mt-4 mb-0"
       />
 
@@ -469,11 +506,23 @@ export default function BusinessServicesPage() {
           <DataTable
             columns={columns}
             data={services}
-            searchPlaceholder="Search services..."
+            searchPlaceholder={t(
+              'businessContext.services.search.placeholder',
+              'Search services...'
+            )}
             onRowClick={(service) => setAssetsService(service)}
-            emptyMessage={quick ? 'No services match this filter' : 'No business services yet'}
+            emptyMessage={
+              quick
+                ? t('businessContext.services.empty.noMatch', 'No services match this filter')
+                : t('businessContext.services.empty.none', 'No business services yet')
+            }
             emptyDescription={
-              quick ? 'Clear the filter to see every service.' : 'Create a service to get started.'
+              quick
+                ? t(
+                    'businessContext.services.empty.noMatchDesc',
+                    'Clear the filter to see every service.'
+                  )
+                : t('businessContext.services.empty.noneDesc', 'Create a service to get started.')
             }
           />
         </div>
@@ -483,39 +532,53 @@ export default function BusinessServicesPage() {
         <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
-              {editingService ? 'Edit business service' : 'New business service'}
+              {editingService
+                ? t('businessContext.services.dialog.editTitle', 'Edit business service')
+                : t('businessContext.services.dialog.createTitle', 'New business service')}
             </DialogTitle>
             <DialogDescription>
-              Define the business service and its associated compliance and data handling
-              properties.
+              {t(
+                'businessContext.services.dialog.desc',
+                'Define the business service and its compliance and data handling properties.'
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <DialogBody>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="name">Name *</Label>
+                <Label htmlFor="name">{t('businessContext.services.form.name', 'Name *')}</Label>
                 <Input
                   id="name"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g. Customer Payment Service"
+                  placeholder={t(
+                    'businessContext.services.form.namePh',
+                    'e.g. Customer Payment Service'
+                  )}
                 />
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">
+                  {t('businessContext.services.form.description', 'Description')}
+                </Label>
                 <Textarea
                   id="description"
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Briefly describe what this service does"
+                  placeholder={t(
+                    'businessContext.services.form.descriptionPh',
+                    'Briefly describe what this service does'
+                  )}
                   rows={3}
                 />
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="criticality">Criticality</Label>
+                <Label htmlFor="criticality">
+                  {t('businessContext.services.form.criticality', 'Criticality')}
+                </Label>
                 <Select
                   value={form.criticality}
                   onValueChange={(value) => setForm({ ...form, criticality: value as Criticality })}
@@ -526,7 +589,7 @@ export default function BusinessServicesPage() {
                   <SelectContent>
                     {RATED_CRITICALITY_LEVELS.map((c) => (
                       <SelectItem key={c} value={c}>
-                        {CRITICALITY_LABELS[c]}
+                        {criticalityLabel(c)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -534,7 +597,7 @@ export default function BusinessServicesPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label>Compliance scope</Label>
+                <Label>{t('businessContext.services.form.compliance', 'Compliance scope')}</Label>
                 <div className="flex flex-wrap gap-2">
                   {COMPLIANCE_FRAMEWORKS.map((framework) => {
                     const selected = form.compliance_scope.includes(framework)
@@ -553,10 +616,12 @@ export default function BusinessServicesPage() {
               </div>
 
               <div className="grid gap-3 rounded-md border p-3">
-                <Label className="text-sm font-semibold">Data handling</Label>
+                <Label className="text-sm font-semibold">
+                  {t('businessContext.services.form.dataHandling', 'Data handling')}
+                </Label>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="handles_pii" className="font-normal">
-                    Handles PII
+                    {t('businessContext.services.form.handlesPii', 'Handles PII')}
                   </Label>
                   <Switch
                     id="handles_pii"
@@ -566,7 +631,7 @@ export default function BusinessServicesPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="handles_phi" className="font-normal">
-                    Handles PHI
+                    {t('businessContext.services.form.handlesPhi', 'Handles PHI')}
                   </Label>
                   <Switch
                     id="handles_phi"
@@ -576,7 +641,7 @@ export default function BusinessServicesPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="handles_financial" className="font-normal">
-                    Handles Financial Data
+                    {t('businessContext.services.form.handlesFinancial', 'Handles financial data')}
                   </Label>
                   <Switch
                     id="handles_financial"
@@ -588,7 +653,9 @@ export default function BusinessServicesPage() {
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="availability_target">Availability (%)</Label>
+                  <Label htmlFor="availability_target">
+                    {t('businessContext.services.form.availability', 'Availability (%)')}
+                  </Label>
                   <Input
                     id="availability_target"
                     type="number"
@@ -599,7 +666,9 @@ export default function BusinessServicesPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="rpo_minutes">RPO (min)</Label>
+                  <Label htmlFor="rpo_minutes">
+                    {t('businessContext.services.form.rpo', 'RPO (min)')}
+                  </Label>
                   <Input
                     id="rpo_minutes"
                     type="number"
@@ -609,7 +678,9 @@ export default function BusinessServicesPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="rto_minutes">RTO (min)</Label>
+                  <Label htmlFor="rto_minutes">
+                    {t('businessContext.services.form.rto', 'RTO (min)')}
+                  </Label>
                   <Input
                     id="rto_minutes"
                     type="number"
@@ -622,22 +693,29 @@ export default function BusinessServicesPage() {
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="owner_name">Owner name</Label>
+                  <Label htmlFor="owner_name">
+                    {t('businessContext.services.form.ownerName', 'Owner name')}
+                  </Label>
                   <Input
                     id="owner_name"
                     value={form.owner_name}
                     onChange={(e) => setForm({ ...form, owner_name: e.target.value })}
-                    placeholder="Jane Doe"
+                    placeholder={t('businessContext.services.form.ownerNamePh', 'Jane Doe')}
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="owner_email">Owner email</Label>
+                  <Label htmlFor="owner_email">
+                    {t('businessContext.services.form.ownerEmail', 'Owner email')}
+                  </Label>
                   <Input
                     id="owner_email"
                     type="email"
                     value={form.owner_email}
                     onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
-                    placeholder="jane@example.com"
+                    placeholder={t(
+                      'businessContext.services.form.ownerEmailPh',
+                      'jane@example.com'
+                    )}
                   />
                 </div>
               </div>
@@ -646,10 +724,14 @@ export default function BusinessServicesPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? 'Saving...' : editingService ? 'Update' : 'Create'}
+              {isSaving
+                ? t('businessContext.services.form.saving', 'Saving...')
+                : editingService
+                  ? t('businessContext.services.form.update', 'Update')
+                  : t('businessContext.services.form.create', 'Create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -663,7 +745,12 @@ export default function BusinessServicesPage() {
           header={
             <DetailHeader
               title={assetsService.name}
-              meta={['The assets this service runs on. A cycle scoped to the service covers them.']}
+              meta={[
+                t(
+                  'businessContext.services.sheet.meta',
+                  'The assets this service runs on. A cycle scoped to the service covers them.'
+                ),
+              ]}
               onClose={() => setAssetsService(null)}
             />
           }
