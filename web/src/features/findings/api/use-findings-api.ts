@@ -10,7 +10,7 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
-import { get, post, patch, put } from '@/lib/api/client'
+import { get, post, patch } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import type {
@@ -611,7 +611,8 @@ export function useRequestApproval(findingId: string) {
       }
     ) => {
       // Usually a pending request; an approved one (single_person) when the
-      // organization lets the requester decide this false positive alone.
+      // organization's level lets the requester decide this false positive
+      // or accepted risk alone.
       const response = await post<ApiApproval>(url, arg)
       return response
     }
@@ -621,6 +622,8 @@ export function useRequestApproval(findingId: string) {
 /** How a request of one status on one finding is decided now. */
 export interface FalsePositivePolicy {
   fp_approval: FPApprovalLevel
+  /** The organization's risk acceptance level in force. */
+  accept_approval?: FPApprovalLevel
   /** One person holding findings:approve may decide it alone. */
   single_person: boolean
   /** ...and the caller is such a person: it applies at once. */
@@ -716,7 +719,11 @@ export function selfApproveFindingApproval(id: string, input: { reason: string; 
 }
 
 /** The organization's finding approval settings. */
-/** Who decides a false positive (accepted risk always needs a second person). */
+/**
+ * An approval level: who decides a false positive (fp_approval) or an
+ * accepted risk (accept_approval). all: a second person always;
+ * high_and_above: only for a material finding; off: one person.
+ */
 export type FPApprovalLevel = 'all' | 'high_and_above' | 'off'
 
 export interface FindingApprovalSettings {
@@ -727,6 +734,11 @@ export interface FindingApprovalSettings {
   /** A lower level chosen less than 24 hours ago, in force at pending_fp_approval_at. */
   pending_fp_approval?: FPApprovalLevel
   pending_fp_approval_at?: string
+  /** The risk acceptance approval level in force. */
+  accept_approval?: FPApprovalLevel
+  /** A lower level chosen less than 24 hours ago, in force at pending_accept_approval_at. */
+  pending_accept_approval?: FPApprovalLevel
+  pending_accept_approval_at?: string
   /** Share (0-10 %) of single-person false positives flagged for a second look. */
   second_look_percent?: number
   /** A lower share chosen less than 24 hours ago, in force at pending_second_look_at. */
@@ -744,12 +756,15 @@ export interface FindingApprovalSettings {
 }
 
 /**
- * PUT body: any of the plain fields, or the whole approval policy.
- * `cancel_pending` drops every waiting lowering (level, second-look share,
+ * PATCH body: any of the plain fields, or the whole approval policy.
+ * `cancel_pending` drops every waiting lowering (levels, second-look share,
  * relaxing policy) and keeps the values in force.
  */
 export type FindingApprovalSettingsUpdate = Partial<
-  Pick<FindingApprovalSettings, 'backup_contact_email' | 'fp_approval' | 'second_look_percent'>
+  Pick<
+    FindingApprovalSettings,
+    'backup_contact_email' | 'fp_approval' | 'accept_approval' | 'second_look_percent'
+  >
 > & { policy?: ApprovalPolicy; cancel_pending?: boolean }
 
 const FINDING_APPROVAL_SETTINGS_URL = '/api/v1/organization/settings/finding-approvals'
@@ -770,7 +785,7 @@ export function useFindingApprovalSettings() {
  * Fields left out keep their value.
  */
 export function updateFindingApprovalSettings(input: FindingApprovalSettingsUpdate) {
-  return put<FindingApprovalSettings>(FINDING_APPROVAL_SETTINGS_URL, input)
+  return patch<FindingApprovalSettings>(FINDING_APPROVAL_SETTINGS_URL, input)
 }
 
 /**

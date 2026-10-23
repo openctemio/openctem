@@ -1630,6 +1630,8 @@
   "findings.export.busyHint": "Wait for it to finish, then try again.",
   "findings.export.failed": "The export failed. Try again.",
   "findings.bulk.statusFailed": "Failed to update findings",
+  "findings.approvalDialog.titleDecideAccept": "Accept the risk",
+  "findings.approvalDialog.confirmTitleDecideAccept": "Confirm risk acceptance",
   "findings.receipts.created": "New",
   "findings.receipts.updated": "Still detected",
   "findings.receipts.reactivated": "Reopened",
