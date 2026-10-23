@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
+import { MetaItem, MetaLine } from '@/features/shared/components/text-layout'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
@@ -19,10 +19,10 @@ interface ThreatIntelStripProps {
 }
 
 /**
- * The exploitation headline numbers as one strip. Each tile opens the findings
- * list it filters: EPSS above 30%, EPSS above 10%, and findings on the CISA
- * KEV catalogue. Figures with no list behind them (catalogue size, rates) are
- * not tiles.
+ * The catalogue's headline numbers as one line of facts (research/244). They
+ * count the EPSS and KEV catalogues, not this organization's findings, so they
+ * are not metric tiles: a tile opens the list it counts, and no list here
+ * matches these numbers.
  */
 export function ThreatIntelStrip({
   epssStats,
@@ -31,33 +31,29 @@ export function ThreatIntelStrip({
   className,
 }: ThreatIntelStripProps) {
   const { t } = useTranslation()
-  const items: MetricStripItem[] = [
-    {
-      key: 'epss-critical',
-      label: t('threatIntel.stats.criticalRisk'),
-      hint: t('threatIntel.stats.epssAbove30'),
-      value: epssStats?.critical_risk_count ?? 0,
-      href: '/findings?epss_score_gte=0.3',
-    },
-    {
-      key: 'epss-high',
-      label: t('threatIntel.stats.highRisk'),
-      hint: t('threatIntel.stats.epssAbove10'),
-      value: epssStats?.high_risk_count ?? 0,
-      href: '/findings?epss_score_gte=0.1',
-    },
-    {
-      key: 'kev',
-      label: t('threatIntel.stats.kevEntries'),
-      value: kevStats?.total_entries ?? 0,
-      href: '/findings?is_in_kev=true',
-    },
-  ]
+  if (isLoading || !epssStats || !kevStats) {
+    return <Skeleton className={cn('h-4 w-80', className)} />
+  }
   return (
-    <MetricStrip
-      items={items}
-      loading={Boolean(isLoading) || !epssStats || !kevStats}
+    <MetaLine
       className={className}
+      items={[
+        <MetaItem
+          key="crit"
+          label={`${t('threatIntel.stats.criticalRisk')} (${t('threatIntel.stats.epssAbove30')})`}
+        >
+          {(epssStats.critical_risk_count ?? 0).toLocaleString()}
+        </MetaItem>,
+        <MetaItem
+          key="high"
+          label={`${t('threatIntel.stats.highRisk')} (${t('threatIntel.stats.epssAbove10')})`}
+        >
+          {(epssStats.high_risk_count ?? 0).toLocaleString()}
+        </MetaItem>,
+        <MetaItem key="kev" label={t('threatIntel.stats.kevEntries')}>
+          {(kevStats.total_entries ?? 0).toLocaleString()}
+        </MetaItem>,
+      ]}
     />
   )
 }

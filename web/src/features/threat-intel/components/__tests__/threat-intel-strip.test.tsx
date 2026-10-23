@@ -1,6 +1,6 @@
 /**
- * The threat intelligence strip: at most five tiles, each a link to the
- * findings list it filters, with the catalogue counts and no corner icons.
+ * The threat intelligence headline: catalogue facts on one line, not metric
+ * tiles (they count the EPSS and KEV catalogues, which no list here shows).
  */
 
 import { describe, expect, it } from 'vitest'
@@ -13,22 +13,17 @@ const epss = { total_scores: 250000, critical_risk_count: 4200, high_risk_count:
 const kev = { total_entries: 1500, past_due_count: 3 } as KEVStats
 
 describe('ThreatIntelStrip', () => {
-  it('shows one linked tile per list, with its count', () => {
+  it('shows the catalogue counts as one metadata line with no links or tiles', () => {
     render(<ThreatIntelStrip epssStats={epss} kevStats={kev} />)
-    const links = screen.getAllByRole('link')
-    expect(links.length).toBeLessThanOrEqual(5)
-    expect(links.map((a) => a.getAttribute('href'))).toEqual([
-      '/findings?epss_score_gte=0.3',
-      '/findings?epss_score_gte=0.1',
-      '/findings?is_in_kev=true',
-    ])
     expect(screen.getByText('4,200')).toBeTruthy()
     expect(screen.getByText('9,100')).toBeTruthy()
     expect(screen.getByText('1,500')).toBeTruthy()
-    expect(document.querySelectorAll('svg').length).toBe(0)
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
+    expect(document.querySelector('[data-slot=metric-strip]')).toBeNull()
+    expect(document.querySelector('[data-slot=meta-line]')).not.toBeNull()
   })
 
-  it('shows skeletons, not zeros, until the stats arrive', () => {
+  it('shows a skeleton, not zeros, until the stats arrive', () => {
     render(<ThreatIntelStrip isLoading />)
     expect(screen.queryByText('0')).toBeNull()
   })
