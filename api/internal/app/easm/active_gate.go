@@ -98,6 +98,9 @@ type ActiveGate struct {
 	unclassified UnclassifiedPolicy
 	// resolving reads the names behind addresses (shared hosting).
 	resolving GuardrailNames
+	// certs reads the endpoints that served a certificate; a certificate
+	// is judged by them (cert_standing.go). Nil: none is known.
+	certs ActiveGateCertificates
 }
 
 // SetWildcardDNS makes names that resolve only through a wildcard record
@@ -239,6 +242,9 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 	}
 	if a.Type() == asset.AssetTypeRepository {
 		return g.repositoryScope(ctx, tenantID, a.Name())
+	}
+	if a.Type() == asset.AssetTypeCertificate {
+		return g.certificateScope(ctx, tenantID, a)
 	}
 	if isInternalName(a.Name()) {
 		return ScopeStatusInternal, nil, nil
@@ -839,10 +845,22 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 	// rejected or held, with the state they get while they stay passive.
 	unclassified := map[string]attribution.State{}
 	unclassifiedIDs := make([]string, 0, len(ids))
+	var certs []*asset.Asset
 	for _, id := range ids {
 		a := assets[id]
 		if a == nil {
 			out[id] = attribution.StateUnattributed
+			continue
+		}
+		if a.Type() == asset.AssetTypeCertificate {
+			// Never judged by its own name (a fingerprint): by the
+			// endpoints that served it, below. A decision that is not
+			// an automatic pending one still refuses.
+			if rec, ok := records[id]; ok && rec.State != attribution.StateConfirmed && !automaticPending(rec) {
+				out[id] = rec.State
+				continue
+			}
+			certs = append(certs, a)
 			continue
 		}
 		if g.denied(a.Name()) {
@@ -907,6 +925,17 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			unclassified[id] = attribution.StateUnattributed
 		}
 		unclassifiedIDs = append(unclassifiedIDs, id)
+	}
+	if len(certs) > 0 {
+		judged, err := g.judgeCertificates(ctx, tenantID, certs)
+		if err != nil {
+			return nil, err
+		}
+		for id, j := range judged {
+			if j.state != "" {
+				out[id] = j.state
+			}
+		}
 	}
 	if len(unclassifiedIDs) == 0 {
 		return out, nil
