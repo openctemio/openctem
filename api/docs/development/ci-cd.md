@@ -302,6 +302,9 @@ the queue (no required check; the PR and the push scan the change).
 `api-upgrade-test.yml` runs `.github/scripts/upgrade-test.sh`, which does what an operator does on upgrade day,
 on a scratch PostgreSQL 17 database:
 
+0. before any database work, refuses a migration of this tree numbered at or below the previous release's highest
+   version that the release does not have: `migrate up` applies only versions above the current one, so an upgraded
+   install would skip it silently (`--check-order` runs only this step, without a database);
 1. bootstraps the roles and applies the **previous release's** migrations (read from its git tag with `git archive`)
    as the non-superuser migrator, then checks `schema_migrations` says that release's highest version and not dirty;
 2. loads representative rows, `api/scripts/upgrade-test/seed.sql`: three tenants with members and a role grant,
