@@ -597,7 +597,9 @@ weakening identity.
   only the `vuln` field of its stored tuple changes (lossless, like the asset
   merge rewrites `asset`). A free key re-keys the finding in place, its old
   key stays an alias; a key another live finding holds links the two as the
-  same issue instead of merging them.
+  same issue instead of merging them. The advisory finding then takes each
+  sighting its tool's report gives the CVE finding (never a status), so it is
+  not auto-resolved as fixed while the vulnerability is still reported.
 - **CWE** (`CWE-89`, `cwe-089`, `89`) is normalised for linking; it is never
   an identity input.
 
