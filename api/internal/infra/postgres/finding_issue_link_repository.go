@@ -393,11 +393,18 @@ func makeIssueLink(ctx context.Context, tx *sql.Tx, tenant string, l issuelink.L
 	if n == 0 {
 		return false, nil
 	}
+	// The member's timeline names the primary only when both are on one
+	// asset. Anyone who can read the member reads its timeline, and a
+	// cross-asset link (one secret in two repositories) must not tell a
+	// viewer of one repository that the other holds the same secret, nor
+	// that finding's id: the group view lists it only to viewers of both.
 	changes, _ := json.Marshal(map[string]any{"primary_id": l.PrimaryID, "rule": l.Rule, "basis": issuelink.Basis(l.Rule)})
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, changes, source, message)
-		VALUES ($1, $2, 'issue_linked', 'system', $3, 'issue_link', $4)`,
-		tenant, l.MemberID, changes, "Linked as the same issue as finding "+l.PrimaryID); err != nil {
+		SELECT $1, m.id, 'issue_linked', 'system', $3, 'issue_link', $4
+		FROM findings m JOIN findings p ON p.tenant_id = m.tenant_id AND p.id = $5::uuid
+		WHERE m.tenant_id = $1 AND m.id = $2::uuid AND m.asset_id IS NOT DISTINCT FROM p.asset_id`,
+		tenant, l.MemberID, changes, "Linked as the same issue as finding "+l.PrimaryID, l.PrimaryID); err != nil {
 		return false, fmt.Errorf("record issue link activity: %w", err)
 	}
 	return true, nil
@@ -497,8 +504,22 @@ func (r *FindingIssueLinkRepository) Unlink(ctx context.Context, tenantID, findi
 		WHERE tenant_id = $1 AND id = $2`, tenant, id, actor); err != nil {
 		return "", "", fmt.Errorf("unlink: %w", err)
 	}
-	pc, _ := json.Marshal(map[string]string{"member_id": memberID})
-	mc, _ := json.Marshal(map[string]string{"primary_id": primaryID})
+	// Each timeline names the other finding only when both are on one asset
+	// (see makeIssueLink): a later viewer of one asset may not see the other.
+	var sameAsset bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT p.asset_id IS NOT DISTINCT FROM m.asset_id FROM findings p, findings m
+		WHERE p.tenant_id = $1 AND p.id = $2 AND m.tenant_id = $1 AND m.id = $3`,
+		tenant, primaryID, memberID).Scan(&sameAsset); err != nil {
+		return "", "", fmt.Errorf("read unlinked findings: %w", err)
+	}
+	pc, mc := []byte(`{}`), []byte(`{}`)
+	pMsg, mMsg := "Unlinked a finding on another asset from this issue", "Unlinked from the issue of a finding on another asset"
+	if sameAsset {
+		pc, _ = json.Marshal(map[string]string{"member_id": memberID})
+		mc, _ = json.Marshal(map[string]string{"primary_id": primaryID})
+		pMsg, mMsg = "Unlinked finding "+memberID+" from this issue", "Unlinked from the issue of finding "+primaryID
+	}
 	actorType := actorTypeUser
 	if actor == nil {
 		actorType = "system"
@@ -507,8 +528,7 @@ func (r *FindingIssueLinkRepository) Unlink(ctx context.Context, tenantID, findi
 		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_id, changes, source, message)
 		VALUES ($1, $2, 'issue_unlinked', $6, $7, $3, 'issue_link', $8),
 		       ($1, $5, 'issue_unlinked', $6, $7, $4, 'issue_link', $9)`,
-		tenant, primaryID, pc, mc, memberID, actorType, actor,
-		"Unlinked finding "+memberID+" from this issue", "Unlinked from the issue of finding "+primaryID); err != nil {
+		tenant, primaryID, pc, mc, memberID, actorType, actor, pMsg, mMsg); err != nil {
 		return "", "", fmt.Errorf("record unlink activity: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
