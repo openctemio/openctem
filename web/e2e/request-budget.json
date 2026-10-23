@@ -4,7 +4,6 @@
   "routes": {
     "/": 5,
     "/compliance": 14,
-    "/insights/reports/compliance": 14,
     "/scope": 10,
     "/sensors": 10,
     "/assets": 10,
