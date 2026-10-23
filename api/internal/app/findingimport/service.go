@@ -170,7 +170,22 @@ type Service struct {
 	receipts ReceiptStore
 	vexMode  ingest.VEXMode
 	logger   *logger.Logger
+
+	// queue, resolveScope and audit carry committed uploads to the ingest
+	// worker (queued.go); tempDir is where an archive is spooled.
+	queue        Queue
+	resolveScope ScopeResolver
+	audit        Auditor
+	tempDir      string
+	// members re-reads the uploader's membership when the worker imports.
+	members MemberReader
+	// mappings resolves the import mapping version a committed upload pinned.
+	mappings MappingResolver
 }
+
+// SetTempDir sets where the worker spools an uploaded archive ("" is the
+// system default).
+func (s *Service) SetTempDir(dir string) { s.tempDir = dir }
 
 // NewService creates the import service. vexMode is INGEST_VEX.
 func NewService(ing Ingester, repo Repository, receipts ReceiptStore, vexMode ingest.VEXMode, log *logger.Logger) *Service {

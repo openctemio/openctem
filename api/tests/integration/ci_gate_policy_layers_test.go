@@ -41,7 +41,7 @@ func TestCIGatePolicyLayers(t *testing.T) {
 			"id_token": r.idp.token(t, cfg.Audience, "acme/layers", "feature/x", sha, map[string]any{"job_id": strings.Repeat("j", job)})})
 		id, tok := ex["run_id"].(string), ex["token"].(string)
 		runID = id
-		if resp, out := r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, medium)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(id, tok, ciReport(repoName, medium)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 		body := map[string]any{}
@@ -248,7 +248,7 @@ func TestCIGatePolicyLayers_BaselineSettings(t *testing.T) {
 			"id_token": r.idp.token(t, cfg.Audience, "acme/graced", "main", sha, map[string]any{"job_id": strings.Repeat("g", job)})})
 		id, tok := ex["run_id"].(string), ex["token"].(string)
 		lastRun = id
-		if resp, out := r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(id, tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 		_, v := r.post("/api/v1/ci/runs/"+id+"/evaluate", tok, map[string]any{})
@@ -329,7 +329,7 @@ func TestCIGateBaseline_FirstRunIsAnnounced(t *testing.T) {
 		_, ex := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
 			"id_token": r.idp.token(t, cfg.Audience, "acme/announced", "main", sha, map[string]any{"job_id": job})})
 		id, tok := ex["run_id"].(string), ex["token"].(string)
-		r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, ciFinding("SQLi", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 7)))
+		r.upload(id, tok, ciReport(repoName, ciFinding("SQLi", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 7)))
 		_, v := r.post("/api/v1/ci/runs/"+id+"/evaluate", tok, map[string]any{})
 		return v
 	}

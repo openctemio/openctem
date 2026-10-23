@@ -94,6 +94,8 @@ const (
 
 // Status values.
 const (
+	// StatusQueued: an upload accepted and waiting for the ingest worker.
+	StatusQueued     = "queued"
 	StatusProcessing = "processing"
 	StatusCompleted  = "completed"
 	StatusFailed     = "failed"
@@ -232,6 +234,9 @@ type Upload struct {
 	ActorUserID    *shared.ID
 	Format         string
 	FilenameSHA256 string
+	// Status is the receipt's first state: queued for an upload the ingest
+	// worker applies, processing (the default) otherwise.
+	Status string
 }
 
 // UploadResult is what an upload adds when it finishes, beyond what its

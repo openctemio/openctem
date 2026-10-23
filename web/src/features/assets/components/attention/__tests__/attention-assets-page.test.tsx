@@ -32,9 +32,13 @@ vi.mock('../../../hooks/use-assets', () => ({
     return { assets: [], total: state.total, isLoading: false, mutate: vi.fn() }
   },
 }))
-vi.mock('../../assets-section-tabs', () => ({
-  AssetsSectionTabs: () => null,
-  AssetAttentionTabs: () => <nav aria-label="Needs attention reasons" />,
+vi.mock('../../assets-section-tabs', () => ({ AssetsSectionTabs: () => null }))
+vi.mock('../attention-queue-header', () => ({
+  AttentionQueueHeader: (p: { reason: string; count?: number; inventoryHref?: string }) => (
+    <div data-testid="queue-header" data-reason={p.reason} data-count={p.count}>
+      <a href={p.inventoryHref}>Open in the inventory</a>
+    </div>
+  ),
 }))
 vi.mock('../../inventory/inventory-table', () => ({
   InventoryTable: ({ total }: { total: number }) => <div data-testid="table">{total}</div>,
@@ -51,43 +55,26 @@ beforeEach(() => {
 
 describe('AttentionAssetsPage', () => {
   it.each([
-    ['no_owner', { hasOwner: false }, 'has_owner=false', '468 assets have no owner'],
-    [
-      'context',
-      { criticalities: ['none'] },
-      'criticalities=none',
-      '468 assets have no criticality',
-    ],
-    [
-      'unscanned',
-      { coverage: 'uncovered' },
-      'coverage=uncovered',
-      '468 assets had no successful scan',
-    ],
-  ] as const)(
-    '%s lists the inventory under its filter and links to it',
-    (reason, filter, qs, text) => {
-      render(<AttentionAssetsPage reason={reason} />)
-      const q = state.queries.at(-1)!
-      expect(q).toMatchObject(filter)
-      // The default inventory: names awaiting review and not ours stay out.
-      expect(q.attribution).not.toContain('needs_review')
-      expect(q.attribution).not.toContain('rejected')
-      expect(screen.getByTestId('attention-summary')).toHaveTextContent(text)
-      expect(screen.getByRole('link', { name: /open in the inventory/i })).toHaveAttribute(
-        'href',
-        `/assets?${qs}`
-      )
-      expect(
-        screen.getByRole('navigation', { name: 'Needs attention reasons' })
-      ).toBeInTheDocument()
-    }
-  )
-
-  it('one asset reads in the singular', () => {
-    state.total = 1
-    render(<AttentionAssetsPage reason="no_owner" />)
-    expect(screen.getByTestId('attention-summary')).toHaveTextContent('1 asset has no owner')
+    ['no_owner', { hasOwner: false }, 'has_owner=false'],
+    ['context', { criticalities: ['none'] }, 'criticalities=none'],
+    ['unscanned', { coverage: 'uncovered' }, 'coverage=uncovered'],
+  ] as const)('%s lists the inventory under its filter and links to it', (reason, filter, qs) => {
+    render(<AttentionAssetsPage reason={reason} />)
+    const q = state.queries.at(-1)!
+    expect(q).toMatchObject(filter)
+    // The default inventory: names awaiting review and not ours stay out.
+    expect(q.attribution).not.toContain('needs_review')
+    expect(q.attribution).not.toContain('rejected')
+    const header = screen.getByTestId('queue-header')
+    expect(header).toHaveAttribute('data-reason', reason)
+    expect(header).toHaveAttribute('data-count', '468')
+    expect(screen.getByRole('link', { name: /open in the inventory/i })).toHaveAttribute(
+      'href',
+      `/assets?${qs}`
+    )
+    // One tab row only: the reasons are no longer a second tablist.
+    expect(screen.queryByRole('navigation', { name: 'Needs attention reasons' })).toBeNull()
+    expect(screen.queryByTestId('attention-summary')).toBeNull()
   })
 
   it('shows only the access message without assets:read, and asks for nothing it shows', () => {

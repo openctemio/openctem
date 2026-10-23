@@ -8,6 +8,9 @@
  */
 
 import { Crown } from 'lucide-react'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
+import { safeInternalHref } from '@/lib/safe-href'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatCount } from '@/lib/format-metric'
 import { cn } from '@/lib/utils'
@@ -39,13 +42,11 @@ export function PathsViz({
             'Mark your high-value assets as crown jewels to see which ones an attacker can reach.'
           )}
         </p>
-        <DrillLink
-          to={designateHref}
-          className="inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
-        >
-          <span className="size-2 rounded-full bg-brand" aria-hidden />
-          {t('dashboardKit.paths.designate', 'Designate crown jewels')}
-        </DrillLink>
+        <Button asChild variant="outline" size="sm">
+          <Link href={safeInternalHref(designateHref) ?? '/crown-jewels'}>
+            {t('dashboardKit.paths.designate', 'Designate crown jewels')}
+          </Link>
+        </Button>
       </div>
     )
   }
@@ -92,11 +93,19 @@ export function PathsViz({
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {r.entry_point
                     ? t('dashboardKit.paths.isEntryPoint', 'Entry point itself')
-                    : t('dashboardKit.paths.reachedFrom', 'from {n} entry points', {
-                        n: formatCount(r.reachable_from, locale),
-                      })}
+                    : t(
+                        'dashboardKit.paths.reachedFrom',
+                        'from {n, plural, one {# entry point} other {# entry points}}',
+                        { n: r.reachable_from }
+                      )}
                 </span>
-                <span className="w-10 shrink-0 text-end text-xs font-semibold tabular-nums">
+                <span
+                  className="w-10 shrink-0 text-end text-xs font-semibold tabular-nums"
+                  title={t('dashboardKit.paths.scoreLabel', 'Exposure score')}
+                >
+                  <span className="sr-only">
+                    {t('dashboardKit.paths.scoreLabel', 'Exposure score')}:{' '}
+                  </span>
                   {formatCount(Math.round(r.score), locale)}
                 </span>
               </DrillLink>

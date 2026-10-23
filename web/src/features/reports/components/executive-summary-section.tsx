@@ -11,39 +11,48 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { MetricStrip } from '@/features/shared'
+import { useRouter } from 'next/navigation'
+import { MetricStrip, formatRiskScore } from '@/features/shared'
+import { Can, Permission } from '@/lib/permissions'
+import { WidgetError } from '@/features/dashboard/components/widget-error'
+import { DRILL } from '@/features/dashboard/lib/drill'
+import {
+  PERIOD_OPTIONS,
+  formatPct,
+  formatCount,
+  type Period,
+} from '@/features/dashboard/lib/format'
 import { useExecutiveSummary, downloadExecutiveSummaryCsv } from '../hooks/use-report-schedules'
 import { useTranslation } from '@/context/i18n-provider'
 
-const RANGES = [
-  { value: '7', label: 'Last 7 days' },
-  { value: '30', label: 'Last 30 days' },
-  { value: '90', label: 'Last 90 days' },
-]
-
 export function ExecutiveSummarySection() {
-  const { t } = useTranslation()
-  const [days, setDays] = useState('30')
+  const { t, locale } = useTranslation()
+  const router = useRouter()
+  const [days, setDays] = useState<Period>('30')
   const [downloading, setDownloading] = useState(false)
-  const { summary, isLoading } = useExecutiveSummary(parseInt(days, 10))
+  const { summary, error, isLoading, retry } = useExecutiveSummary(parseInt(days, 10))
 
   const handleDownload = useCallback(async () => {
     setDownloading(true)
     try {
       await downloadExecutiveSummaryCsv(parseInt(days, 10))
-      toast.success('Executive summary exported')
+      toast.success(t('reports.executive.exported', 'Executive summary exported'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Export failed')
+      toast.error(
+        err instanceof Error ? err.message : t('reports.executive.exportFailed', 'Export failed')
+      )
     } finally {
       setDownloading(false)
     }
-  }, [days])
+  }, [days, t])
 
   return (
     <section className="space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold">Executive summary</h2>
+          <h2 className="text-base font-semibold">
+            {t('reports.executive.title', 'Executive summary')}
+          </h2>
           <p className="text-sm text-muted-foreground">
             {t(
               'reports.executiveHint',
@@ -52,55 +61,71 @@ export function ExecutiveSummarySection() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Select value={days} onValueChange={setDays}>
-            <SelectTrigger className="h-9 w-[150px]" aria-label="Period">
+          <Select value={days} onValueChange={(v) => setDays(v as Period)}>
+            <SelectTrigger
+              className="h-9 w-[150px]"
+              aria-label={t('insights.period.label', 'Period')}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {RANGES.map((r) => (
+              {PERIOD_OPTIONS.map((r) => (
                 <SelectItem key={r.value} value={r.value}>
-                  {r.label}
+                  {t(r.labelKey, r.fallback)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9"
-            onClick={handleDownload}
-            disabled={downloading}
-          >
-            <Download className="me-2 h-4 w-4" />
-            {downloading ? 'Preparing…' : 'Download CSV'}
-          </Button>
+          {/* The export route is gated on the same grant as the summary itself. */}
+          <Can permission={Permission.DashboardRead}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={handleDownload}
+              disabled={downloading}
+            >
+              <Download className="me-2 h-4 w-4" />
+              {downloading
+                ? t('reports.executive.preparing', 'Preparing…')
+                : t('reports.executive.download', 'Download CSV')}
+            </Button>
+          </Can>
         </div>
       </div>
-      <MetricStrip
-        loading={isLoading}
-        items={[
-          {
-            key: 'risk',
-            label: 'Risk score',
-            value: summary ? summary.risk_score_current.toFixed(1) : '—',
-          },
-          { key: 'open', label: 'Open findings', value: summary ? summary.findings_total : '—' },
-          {
-            key: 'p0',
-            label: 'P0 open',
-            value: summary ? summary.p0_open : '—',
-            tone: 'danger',
-          },
-          {
-            key: 'sla',
-            label: t('dashboardMetrics.executive.sla'),
-            value:
-              summary && summary.sla_compliance_pct != null
-                ? `${summary.sla_compliance_pct.toFixed(0)}%`
+      {!summary && error ? (
+        <WidgetError onRetry={() => void retry()} className="rounded-lg border py-6" />
+      ) : (
+        <MetricStrip
+          loading={isLoading}
+          items={[
+            {
+              key: 'risk',
+              label: t('reports.executive.risk', 'Risk score'),
+              value: summary ? formatRiskScore(summary.risk_score_current) : '—',
+            },
+            {
+              key: 'open',
+              label: t('reports.executive.open', 'Open findings'),
+              value: summary ? formatCount(summary.findings_total, locale) : '—',
+            },
+            {
+              key: 'p0',
+              label: t('reports.executive.p0', 'P0 open'),
+              value: summary ? summary.p0_open : '—',
+              tone: 'danger',
+              onClick: () => router.push(DRILL.p0Open),
+            },
+            {
+              key: 'sla',
+              label: t('dashboardMetrics.executive.sla'),
+              value: summary
+                ? formatPct(summary.sla_compliance_pct, { n: summary.findings_total, locale })
                 : '—',
-          },
-        ]}
-      />
+            },
+          ]}
+        />
+      )}
     </section>
   )
 }

@@ -43,6 +43,7 @@ func newMappingHarness(t *testing.T) *mappingHarness {
 	repo := postgres.NewImportMappingRepository(&postgres.DB{DB: ih.db})
 	svc := appimportmapping.NewService(repo)
 	ih.h.SetMappingResolver(svc)
+	ih.svc.SetMappingResolver(svc)
 	other := shared.NewID()
 	if _, err := ih.db.ExecContext(context.Background(), `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`,
 		other.String(), "mapping-other-"+other.String()); err != nil {
@@ -152,7 +153,7 @@ func TestImportMappings_DB(t *testing.T) {
 
 	// The import lands the findings in the owner organization.
 	rec, resp := m.upload(t, m.tenant, "?format=mapping:legacy-vm", "export.csv", csv, true)
-	if rec.Code != http.StatusCreated {
+	if rec.Code != http.StatusAccepted {
 		t.Fatalf("import: %d %s", rec.Code, rec.Body)
 	}
 	if len(resp.Files) != 1 || resp.Files[0].Format != "mapping:legacy-vm@3" {

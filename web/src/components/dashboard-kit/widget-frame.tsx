@@ -26,6 +26,8 @@ export interface WidgetFrameProps {
   definition?: ReactNode
   /** When the figures were computed (ISO). Shown as "Updated …" with the absolute time on hover. */
   asOf?: string | null
+  /** The page's own "Updated" time: a widget repeats its time only when stale or when it differs. */
+  pageAsOf?: string | null
   state: WidgetState
   /** Skeleton shape while loading (default: chart). */
   skeleton?: SkeletonKind
@@ -172,14 +174,7 @@ function Freshness({ asOf, stale }: { asOf: string; stale: boolean }) {
   const { t, locale } = useTranslation()
   const age = ageMs(asOf)
   return (
-    // On a phone the dashboard's own meta line carries the time; a widget
-    // repeats it only when its figures are stale.
-    <p
-      className={cn(
-        'mt-auto flex flex-wrap items-center gap-2 pt-2 text-xs text-muted-foreground',
-        !stale && 'max-sm:hidden'
-      )}
-    >
+    <p className="mt-auto flex flex-wrap items-center gap-2 pt-2 text-xs text-muted-foreground">
       <span title={formatAbsoluteTime(asOf, locale)}>
         {t('dashboardKit.freshness.updated', 'Updated {time}', {
           time: formatRelativeTime(asOf, locale),
@@ -403,14 +398,8 @@ export function WidgetFrame(props: WidgetFrameProps) {
           <FrameBody {...props} />
         </div>
       </WidgetErrorBoundary>
-      {showsFigures && asOf && <Freshness asOf={asOf} stale={state === 'stale'} />}
-      {state === 'stale' && onRetry && (
-        <div className="pt-1">
-          <Button variant="ghost" size="sm" onClick={onRetry}>
-            <RefreshCw aria-hidden />
-            {t('dashboardKit.action.refresh', 'Refresh')}
-          </Button>
-        </div>
+      {showsFigures && asOf && (state === 'stale' || asOf !== props.pageAsOf) && (
+        <Freshness asOf={asOf} stale={state === 'stale'} />
       )}
     </section>
   )
