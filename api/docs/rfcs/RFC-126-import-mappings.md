@@ -33,7 +33,7 @@ format uses.
 | D7 | Preview: a sample of at most 5 MiB is mapped and nothing is stored. The answer has at most 50 CTIS records, each finding's identity key, warnings, issues, the sample's fields and the unmapped ones. The identity key is the key ingest would compute, on a stand-in asset per asset type and value. The warnings are `identity_collision`, `no_records`, `unmapped_fields` and `truncated`. Preview is rate-limited per organization (20 per minute, burst 5). |
 | D8 | Permissions: reading mappings needs `integrations:read` or `assets:import`, because an uploader picks one. Writing, validating and previewing need `integrations:manage`, and deleting also needs step-up. Every write is audited (`import_mapping.*`). Importing keeps the import route's own permissions. No new permission. |
 | D9 | Starter templates are built in: generic findings CSV, generic findings JSON, and JUnit-style XML. They are the ctis samples, checked by the same goldens. |
-| D10 | CI: `POST /ci/runs/{id}/results?format=mapping:<name>[@<version>]` resolves the mapping in the run's organization (from its token). The run's repository is the asset of every record that names none, and the usual run scoping applies. `openctem-ci upload --format mapping:<name>` sends it. |
+| D10 | CI: `POST /ci/runs/{id}/results?format=mapping:<name>[@<version>]` resolves the mapping in the run's organization (from its token). The run's repository is the asset of every record that names none, and the usual run scoping applies. `openctem-ci upload --format mapping:<name>` sends it. The upload is applied by the ingest worker with the version pinned at accept; if that version is gone when the worker runs, the upload fails with `mapping_unavailable`. |
 
 ## 3. Threat model
 

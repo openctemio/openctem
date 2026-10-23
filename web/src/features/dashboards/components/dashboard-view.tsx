@@ -95,6 +95,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
                     : valueAt(data, i)
                 }
                 asOf={data?.computed_at}
+                pageAsOf={data?.computed_at}
                 stale={data?.stale}
                 loading={loading && !data && !failed}
                 onRetry={onRetry}

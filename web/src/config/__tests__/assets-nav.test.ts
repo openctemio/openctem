@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
 import {
   ASSETS_SECTION_TABS,
-  ASSET_ATTENTION_TABS,
+  ASSET_ATTENTION_REASONS,
   ATTACK_SURFACE_SECTION_TABS,
 } from '../section-tabs'
 import { matchRoutePermission, routePermissions } from '../route-permissions'
@@ -46,10 +46,10 @@ describe('Discovery > Assets', () => {
   })
 
   it('Needs attention holds the data-quality reasons, relationships and duplicates at their own URLs', () => {
-    expect(ASSET_ATTENTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
-      ['No owner', '/assets/attention', 'assets'],
+    expect(ASSET_ATTENTION_REASONS.map((t) => [t.label, t.href, t.module])).toEqual([
+      ['No owner', '/assets/attention/no-owner', 'assets'],
       ['Criticality not set', '/assets/attention/context', 'assets'],
-      ['Not scanned', '/assets/attention/unscanned', 'assets'],
+      ['Not scanned in 30 days', '/assets/attention/unscanned', 'assets'],
       ['Relationships', '/assets/suggestions', 'relationships'],
       ['Possible duplicates', '/assets/duplicates', 'assets'],
     ])
@@ -57,7 +57,7 @@ describe('Discovery > Assets', () => {
     expect(attention.matchPrefix).toEqual(['/assets/suggestions', '/assets/duplicates'])
   })
 
-  it.each([...ASSET_ATTENTION_TABS])('$label reason binds its route guard', (tab) => {
+  it.each([...ASSET_ATTENTION_REASONS])('$label reason binds its route guard', (tab) => {
     const guard = matchRoutePermission(tab.href)
     expect(guard?.module).toBe(tab.module)
     expect(guard?.permission).toBe(tab.permission)
@@ -182,7 +182,7 @@ describe('Asset groups live under /assets/groups', () => {
 
   // Reserved /assets/* page segments: no asset type, class or lens may take
   // these names (api/cmd/gen-asset-types rejects them; RFC-042 §6.3.6).
-  it.each(['attention', 'changes', 'duplicates', 'groups', 'suggestions'])(
+  it.each(['attention', 'attention/no-owner', 'changes', 'duplicates', 'groups', 'suggestions'])(
     '/assets/%s is a reserved static page',
     (segment) => {
       expect(existsSync(join(ASSETS_DIR, segment, 'page.tsx'))).toBe(true)

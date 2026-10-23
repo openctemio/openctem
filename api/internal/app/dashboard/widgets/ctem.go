@@ -129,7 +129,6 @@ func (s *Service) SetAttackPaths(r AttackPathReader) { s.paths = r }
 const (
 	drillCrownJewels = "/assets?is_crown_jewel=true&program_assets=exclude"
 	drillUncovered   = "/assets?coverage=uncovered&program_assets=exclude"
-	drillValidation  = "/validation"
 	drillAttackPaths = "/attack-paths"
 )
 
@@ -254,7 +253,7 @@ func (s *Service) ctemLoop(ctx context.Context, v *WidgetValue, scope dashboard.
 
 	// Validate: share of open findings with validation evidence; retests
 	// completed in the window.
-	validate := StageValue{Key: StageValidate, Unit: UnitPercent, Drill: drillValidation,
+	validate := StageValue{Key: StageValidate, Unit: UnitPercent,
 		Detail: &StageDetail{Key: "retests", Value: val.RetestsRun}}
 	if val.Open == 0 {
 		validate.State, validate.Reason = StageNotMeasured, ReasonNothingToValidate
@@ -269,7 +268,7 @@ func (s *Service) ctemLoop(ctx context.Context, v *WidgetValue, scope dashboard.
 
 	// Mobilize: share of open findings with an SLA that is not breached.
 	breachedDrill := drillHref(breachedF)
-	mobilize := StageValue{Key: StageMobilize, Unit: UnitPercent, Drill: breachedDrill,
+	mobilize := StageValue{Key: StageMobilize, Unit: UnitPercent,
 		Detail: &StageDetail{Key: "breached", Value: breached, Drill: breachedDrill}}
 	if den == 0 {
 		mobilize.State, mobilize.Reason = StageNotMeasured, ReasonNoDenominator
