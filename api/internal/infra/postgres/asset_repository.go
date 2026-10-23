@@ -17,6 +17,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -1479,25 +1480,10 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// an asset with no row is a legacy asset, matched only when the filter
 	// admits unrecorded assets. The join is pinned to the asset's tenant.
 	if af := filter.Attribution; af != nil {
-		var parts []string
-		if len(af.States) > 0 {
-			states := make([]string, len(af.States))
-			for i, st := range af.States {
-				states[i] = string(st)
-			}
-			parts = append(parts, fmt.Sprintf(
-				"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
-				argIndex))
-			args = append(args, pq.Array(states))
-			argIndex++
-		}
-		if af.Unrecorded {
-			parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
-		}
-		if len(parts) == 0 {
-			parts = append(parts, "FALSE")
-		}
-		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+		cond, afArgs := attributionCond(af, argIndex)
+		conditions = append(conditions, cond)
+		args = append(args, afArgs...)
+		argIndex += len(afArgs)
 	}
 
 	// Assets the scope join confirmed through one scope entry (RFC-054
@@ -2373,15 +2359,55 @@ func (r *AssetRepository) BulkUpdateStatus(ctx context.Context, tenantID shared.
 	return result.RowsAffected()
 }
 
-// GetAssetTypeBreakdown returns total and exposed counts per asset_type in a single query.
-func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
+// attributionCond is the SQL predicate for an attribution filter on alias "a"
+// (RFC-036 §6.4) with its bind args, numbered from argIndex. An asset with no
+// attribution row is a legacy asset, matched only when the filter admits
+// unrecorded assets. The join is pinned to the asset's tenant.
+func attributionCond(af *attribution.StateFilter, argIndex int) (string, []any) {
+	var parts []string
+	var args []any
+	if len(af.States) > 0 {
+		states := make([]string, len(af.States))
+		for i, st := range af.States {
+			states[i] = string(st)
+		}
+		parts = append(parts, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
+			argIndex))
+		args = append(args, pq.Array(states))
+	}
+	if af.Unrecorded {
+		parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "FALSE")
+	}
+	return "(" + strings.Join(parts, " OR ") + ")", args
+}
+
+// scopeAndAttributionSQL builds the extra WHERE terms of the overview
+// aggregates: the caller's data scope and the attribution population, so the
+// aggregates count the same assets as the stat tiles.
+func scopeAndAttributionSQL(tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (string, []any) {
 	args := []any{tenantID.String()}
-	scopeSQL := ""
+	sqlText := ""
 	if scope != nil {
 		cond, scopeArgs := dataScopeCondAt("a.id", scope, 2)
-		scopeSQL = " AND " + cond
+		sqlText += " AND " + cond
 		args = append(args, scopeArgs...)
 	}
+	if af != nil {
+		cond, afArgs := attributionCond(af, len(args)+1)
+		sqlText += " AND " + cond
+		args = append(args, afArgs...)
+	}
+	return sqlText, args
+}
+
+// GetAssetTypeBreakdown returns total and exposed counts per asset_type in a
+// single query, limited to the attribution population when one is given.
+func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (map[string]asset.AssetTypeStats, error) {
+	scopeSQL, args := scopeAndAttributionSQL(tenantID, scope, af)
 	query := `
 		SELECT
 			a.asset_type,
@@ -2415,15 +2441,9 @@ func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID sh
 }
 
 // GetAverageRiskScore returns the average risk_score for all assets in a tenant.
-func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (float64, error) {
+func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (float64, error) {
 	var avg float64
-	args := []any{tenantID.String()}
-	scopeSQL := ""
-	if scope != nil {
-		cond, scopeArgs := dataScopeCondAt("a.id", scope, 2)
-		scopeSQL = " AND " + cond
-		args = append(args, scopeArgs...)
-	}
+	scopeSQL, args := scopeAndAttributionSQL(tenantID, scope, af)
 	err := r.db.QueryRowContext(ctx,
 		`SELECT COALESCE(AVG(a.risk_score), 0) FROM assets a WHERE a.deleted_at IS NULL AND a.tenant_id = $1`+scopeSQL,
 		args...,

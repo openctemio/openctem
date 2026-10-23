@@ -42,9 +42,13 @@ import {
   severityCounts,
   vexModeText,
 } from '../lib/import-results'
+import { MappingFormatField } from './mapping-format-field'
 import { ReceiptSummary, RecentImports } from './receipt-summary'
 
 const ACCEPT = '.nessus,.xml,.json,.zip,application/xml,text/xml,application/json,application/zip'
+/** A saved import mapping reads CSV, JSON, JSON Lines or XML. */
+const ACCEPT_MAPPED =
+  '.csv,.tsv,.json,.jsonl,.ndjson,.xml,.txt,text/csv,application/json,application/xml,text/xml'
 
 interface ImportResultsDialogProps {
   open: boolean
@@ -64,6 +68,8 @@ export function ImportResultsDialog({
   const { t } = useTranslation()
   const [file, setFile] = useState<File | null>(null)
   const [kb, setKb] = useState<File | null>(null)
+  // A saved import mapping as the format; empty: detect it from the file.
+  const [format, setFormat] = useState('')
   const [busy, setBusy] = useState<'preview' | 'import' | null>(null)
   const [preview, setPreview] = useState<FindingImportResponse | null>(null)
   const [result, setResult] = useState<FindingImportResponse | null>(null)
@@ -72,6 +78,7 @@ export function ImportResultsDialog({
   function reset() {
     setFile(null)
     setKb(null)
+    setFormat('')
     setPreview(null)
     setResult(null)
     setError(null)
@@ -82,7 +89,13 @@ export function ImportResultsDialog({
     setBusy(dryRun ? 'preview' : 'import')
     setError(null)
     try {
-      const resp = await importFindings({ file, knowledgeBase: kb, dryRun, minSeverity })
+      const resp = await importFindings({
+        file,
+        knowledgeBase: format ? null : kb,
+        dryRun,
+        minSeverity,
+        format: format || undefined,
+      })
       if (dryRun) {
         setPreview(resp)
       } else {
@@ -143,12 +156,20 @@ export function ImportResultsDialog({
         <DialogBody className="grid gap-4">
           {!result && (
             <div className="space-y-3">
+              <MappingFormatField
+                value={format}
+                onChange={(v) => {
+                  setFormat(v)
+                  setPreview(null)
+                  setError(null)
+                }}
+              />
               <div className="space-y-1">
                 <Label htmlFor="import-file">{t('findings.importResults.file', 'File')}</Label>
                 <Input
                   id="import-file"
                   type="file"
-                  accept={ACCEPT}
+                  accept={format ? ACCEPT_MAPPED : ACCEPT}
                   onChange={(e) => {
                     setFile(e.target.files?.[0] ?? null)
                     setPreview(null)
@@ -156,31 +177,33 @@ export function ImportResultsDialog({
                   }}
                 />
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="import-kb">
-                  {t('findings.importResults.qualysKb', 'Qualys KnowledgeBase')}{' '}
-                  <span className="text-muted-foreground">
-                    ({t('findings.importResults.optional', 'optional')})
-                  </span>
-                </Label>
-                <Input
-                  id="import-kb"
-                  type="file"
-                  accept=".xml,application/xml,text/xml"
-                  onChange={(e) => {
-                    setKb(e.target.files?.[0] ?? null)
-                    setPreview(null)
-                  }}
-                />
-                {needsKb && !kb && (
-                  <p className="text-muted-foreground text-xs">
-                    {t(
-                      'findings.importResults.noKbHint',
-                      'Without the KnowledgeBase, Qualys detections keep their QID but have no title, CVEs or CVSS.'
-                    )}
-                  </p>
-                )}
-              </div>
+              {!format && (
+                <div className="space-y-1">
+                  <Label htmlFor="import-kb">
+                    {t('findings.importResults.qualysKb', 'Qualys KnowledgeBase')}{' '}
+                    <span className="text-muted-foreground">
+                      ({t('findings.importResults.optional', 'optional')})
+                    </span>
+                  </Label>
+                  <Input
+                    id="import-kb"
+                    type="file"
+                    accept=".xml,application/xml,text/xml"
+                    onChange={(e) => {
+                      setKb(e.target.files?.[0] ?? null)
+                      setPreview(null)
+                    }}
+                  />
+                  {needsKb && !kb && (
+                    <p className="text-muted-foreground text-xs">
+                      {t(
+                        'findings.importResults.noKbHint',
+                        'Without the KnowledgeBase, Qualys detections keep their QID but have no title, CVEs or CVSS.'
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

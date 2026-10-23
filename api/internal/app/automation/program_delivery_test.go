@@ -78,15 +78,15 @@ func TestDispatcherSuppressesPrivateProgramEvents(t *testing.T) {
 
 	t.Run("finding event", func(t *testing.T) {
 		repo := &fakeWorkflowRepo{byTenant: map[shared.ID][]*automationdom.Workflow{
-			tenant: {newWorkflow(tenant, automationdom.TriggerTypeFindingUpdated, nil)}}}
+			tenant: {newWorkflow(tenant, automationdom.TriggerTypeFindingStatusChanged, nil)}}}
 		rec := &triggerRecorder{}
 		d := newTestDispatcher(repo, rec)
 		d.SetDeliveryResolver(fd)
-		_ = d.DispatchFindingEvent(ctx, FindingEvent{TenantID: tenant, Finding: hiddenF, EventType: automationdom.TriggerTypeFindingUpdated})
+		_ = d.DispatchFindingEvent(ctx, FindingEvent{TenantID: tenant, Finding: hiddenF, EventType: automationdom.TriggerTypeFindingStatusChanged})
 		if len(rec.calls) != 0 {
 			t.Fatal("private program finding update started an automation")
 		}
-		_ = d.DispatchFindingEvent(ctx, FindingEvent{TenantID: tenant, Finding: ownF, EventType: automationdom.TriggerTypeFindingUpdated})
+		_ = d.DispatchFindingEvent(ctx, FindingEvent{TenantID: tenant, Finding: ownF, EventType: automationdom.TriggerTypeFindingStatusChanged})
 		if len(rec.calls) != 1 {
 			t.Fatalf("own finding update runs = %d", len(rec.calls))
 		}

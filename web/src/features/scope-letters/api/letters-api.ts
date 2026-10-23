@@ -87,6 +87,19 @@ export function revokeLetter(id: string) {
   return post<AuthorizationLetter>(`${BASE}/${encodeURIComponent(id)}/revoke`, {})
 }
 
+// The file types the API serves a letter as (scope LetterContentTypes).
+const LETTER_EXTENSIONS: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+}
+
+/** File extension for a letter's Content-Type ('' when unknown). */
+export function letterFileExtension(contentType: string | null | undefined): string {
+  const type = (contentType ?? '').split(';')[0].trim().toLowerCase()
+  return LETTER_EXTENSIONS[type] ?? ''
+}
+
 /** Saves the letter's file as uploaded. */
 export async function downloadLetter(letter: AuthorizationLetter): Promise<void> {
   const res = await fetch(`${getApiBaseUrl()}${BASE}/${encodeURIComponent(letter.id)}/file`, {
@@ -99,7 +112,9 @@ export async function downloadLetter(letter: AuthorizationLetter): Promise<void>
     objectUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = objectUrl
-    a.download = letter.title.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'authorization-letter'
+    const base = letter.title.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'authorization-letter'
+    // The stored file's type decides the extension, so a PDF saves as a .pdf.
+    a.download = base + letterFileExtension(res.headers.get('Content-Type') || blob.type)
     a.click()
   } finally {
     if (objectUrl) URL.revokeObjectURL(objectUrl)
