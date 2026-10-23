@@ -27,7 +27,9 @@ vi.mock('@/context/permission-provider', () => ({
 vi.mock('@/features/remediation-hub/api/use-remediation-hub', () => ({
   useTasks: (f: unknown, enabled?: boolean) => useTasks(f, enabled),
 }))
-vi.mock('@/features/findings/api/use-findings-api', () => ({
+vi.mock('@/features/findings/api/use-findings-api', async (importOriginal) => ({
+  // The drill links are built with the real query builder.
+  ...(await importOriginal<typeof import('@/features/findings/api/use-findings-api')>()),
   useFindingsApi: (f: unknown, c?: unknown) => useFindingsApi(f, c),
 }))
 

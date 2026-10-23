@@ -104,11 +104,13 @@ const PHASE_GROUPS: { key: string; label: string; categories: string[] }[] = [
   { key: 'settings', label: 'Settings & Integrations', categories: ['settings', 'platform'] },
 ]
 
-const PAGE_DESCRIPTION =
-  'Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.'
-
 export default function ModuleManagementPage() {
   const { t } = useTranslation()
+  const pageDescription = t(
+    'settings.modules.pageDescription',
+    'Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.'
+  )
+  const pageTitle = t('settings.item.modules', 'Modules')
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id
 
@@ -206,12 +208,13 @@ export default function ModuleManagementPage() {
     }
     const groups = PHASE_GROUPS.filter((g) => byKey[g.key]?.length).map((g) => ({
       key: g.key,
-      label: g.label,
+      label: t(`settings.modules.phase.${g.key}`, g.label),
       mods: byKey[g.key],
     }))
-    if (other.length) groups.push({ key: 'other', label: 'Other', mods: other })
+    if (other.length)
+      groups.push({ key: 'other', label: t('settings.modules.phase.other', 'Other'), mods: other })
     return groups
-  }, [featureModules])
+  }, [featureModules, t])
 
   // Build a lookup for server state of all modules + sub-modules
   const serverStateMap = useMemo(() => {
@@ -263,10 +266,16 @@ export default function ModuleManagementPage() {
         }
         setPendingChanges({})
         await refreshModules()
-        toast.success('Modules updated successfully')
+        toast.success(t('settings.modules.updated', 'Modules updated'))
 
         for (const w of result?.warnings ?? []) {
-          toast.warning(`${w.name} will degrade`, { description: w.reason, duration: 6000 })
+          toast.warning(
+            t('settings.modules.willDegrade', '{name} will degrade', { name: w.name }),
+            {
+              description: w.reason,
+              duration: 6000,
+            }
+          )
         }
       } catch (err) {
         if (
@@ -280,7 +289,7 @@ export default function ModuleManagementPage() {
         toast.error(getErrorMessage(err))
       }
     },
-    [updateModules, mutate, refreshModules]
+    [updateModules, mutate, refreshModules, t]
   )
 
   const handleSave = useCallback(async () => {
@@ -336,11 +345,11 @@ export default function ModuleManagementPage() {
       setShowResetDialog(false)
       // Invalidate sidebar module cache so changes reflect immediately
       await refreshModules()
-      toast.success('Modules reset to defaults (all enabled)')
+      toast.success(t('settings.modules.resetDone', 'Modules reset to the defaults: all enabled'))
     } catch (err) {
       toast.error(getErrorMessage(err))
     }
-  }, [resetModules, mutate, refreshModules])
+  }, [resetModules, mutate, refreshModules, t])
 
   const pendingEnabled = Object.values(pendingChanges).filter(Boolean).length
   const pendingDisabled = Object.values(pendingChanges).filter((v) => !v).length
@@ -348,14 +357,19 @@ export default function ModuleManagementPage() {
   if (error && !modules.length) {
     return (
       <Main>
-        <PageHeader title="Modules" description={PAGE_DESCRIPTION} />
+        <PageHeader title={pageTitle} description={pageDescription} />
         <Alert variant="destructive" className="mt-5">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Failed to load modules</AlertTitle>
+          <AlertTitle>{t('settings.modules.loadFailed', 'Failed to load modules')}</AlertTitle>
           <AlertDescription>
-            <p>{getErrorMessage(error, 'The modules request failed.')}</p>
+            <p>
+              {getErrorMessage(
+                error,
+                t('settings.modules.requestFailed', 'The modules request failed.')
+              )}
+            </p>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-              Retry
+              {t('common.retry', 'Retry')}
             </Button>
           </AlertDescription>
         </Alert>
@@ -366,7 +380,7 @@ export default function ModuleManagementPage() {
   if (isLoading) {
     return (
       <Main>
-        <PageHeader title="Modules" description={PAGE_DESCRIPTION} />
+        <PageHeader title={pageTitle} description={pageDescription} />
         <Skeleton className="mt-5 h-[68px] w-full rounded-xl" />
         <div className="mt-5 space-y-5">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -379,7 +393,7 @@ export default function ModuleManagementPage() {
 
   return (
     <Main>
-      <PageHeader title="Modules" description={PAGE_DESCRIPTION}>
+      <PageHeader title={pageTitle} description={pageDescription}>
         <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
           <Button
             variant="outline"
@@ -388,7 +402,7 @@ export default function ModuleManagementPage() {
             disabled={isResetting}
           >
             <RotateCcw className="h-4 w-4" />
-            Remove my changes
+            {t('settings.modules.removeMine', 'Remove my changes')}
           </Button>
         </Can>
       </PageHeader>
@@ -397,18 +411,26 @@ export default function ModuleManagementPage() {
         <MetricStrip
           className="mt-5"
           items={[
-            { key: 'total', label: 'Total modules', value: summary.total },
+            {
+              key: 'total',
+              label: t('settings.modules.total', 'Total modules'),
+              value: summary.total,
+            },
             {
               key: 'enabled',
-              label: 'Enabled',
+              label: t('settings.modules.enabled', 'Enabled'),
               value: summary.enabled + pendingEnabled - pendingDisabled,
             },
             {
               key: 'disabled',
-              label: 'Disabled',
+              label: t('settings.modules.disabled', 'Disabled'),
               value: summary.disabled - pendingEnabled + pendingDisabled,
             },
-            { key: 'core', label: 'Core (always on)', value: summary.core },
+            {
+              key: 'core',
+              label: t('settings.modules.coreAlwaysOn', 'Core (always on)'),
+              value: summary.core,
+            },
           ]}
         />
       )}
@@ -428,10 +450,12 @@ export default function ModuleManagementPage() {
                   ) : (
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   )}
-                  <CardTitle className="text-base">Core modules</CardTitle>
+                  <CardTitle className="text-base">
+                    {t('settings.modules.core', 'Core modules')}
+                  </CardTitle>
                   <Badge variant="secondary" className="text-xs gap-1">
                     <Lock className="h-3 w-3" />
-                    Always on
+                    {t('settings.modules.alwaysOn', 'Always on')}
                   </Badge>
                   <Badge variant="outline" className="text-xs">
                     {coreModules.length}
@@ -469,14 +493,18 @@ export default function ModuleManagementPage() {
           <Card>
             <CardHeader className="py-3">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-base">Fine-tune features</CardTitle>
+                <CardTitle className="text-base">
+                  {t('settings.modules.fineTune', 'Fine-tune features')}
+                </CardTitle>
                 <Badge variant="outline" className="text-xs">
                   {featureModules.length}
                 </Badge>
               </div>
               <CardDescription>
-                Individual feature toggles, grouped by CTEM phase and layered on top of your
-                products. Turn anything on or off — dependencies are checked when you save.
+                {t(
+                  'settings.modules.fineTuneHint',
+                  'Individual feature toggles, grouped by CTEM phase and layered on top of your products. Turn anything on or off; dependencies are checked when you save.'
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0 space-y-2.5">
@@ -498,7 +526,10 @@ export default function ModuleManagementPage() {
                       )}
                       <span className="text-sm font-semibold">{group.label}</span>
                       <span className="ms-auto text-xs tabular-nums text-muted-foreground">
-                        {enabledCount}/{group.mods.length} on
+                        {t('settings.modules.phaseOn', '{enabled}/{total} on', {
+                          enabled: enabledCount,
+                          total: group.mods.length,
+                        })}
                       </span>
                     </button>
                     {!collapsed && (
@@ -558,16 +589,31 @@ export default function ModuleManagementPage() {
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-muted-foreground" />
               {depConflict?.action === 'disable'
-                ? `Cannot disable "${depConflict.module_name}"`
-                : `Cannot enable "${depConflict?.module_name ?? ''}"`}
+                ? t('settings.modules.cannotDisable', 'Cannot disable "{name}"', {
+                    name: depConflict.module_name,
+                  })
+                : t('settings.modules.cannotEnable', 'Cannot enable "{name}"', {
+                    name: depConflict?.module_name ?? '',
+                  })}
             </AlertDialogTitle>
             {/* Short plain-text description for screen readers only —
                 the rich block-level content below renders outside the
                 <p> element to avoid invalid nested <p> hydration errors. */}
             <AlertDialogDescription className="sr-only">
               {depConflict?.action === 'disable'
-                ? `${depConflict.blockers?.length ?? 0} dependent module(s) block disabling ${depConflict.module_name}`
-                : `${depConflict?.required?.length ?? 0} module(s) must be enabled before ${depConflict?.module_name ?? ''}`}
+                ? t(
+                    'settings.modules.blockedSr',
+                    '{count} dependent modules block disabling {name}',
+                    { count: depConflict.blockers?.length ?? 0, name: depConflict.module_name }
+                  )
+                : t(
+                    'settings.modules.requiredSr',
+                    '{count} modules must be enabled before {name}',
+                    {
+                      count: depConflict?.required?.length ?? 0,
+                      name: depConflict?.module_name ?? '',
+                    }
+                  )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogBody>
@@ -575,10 +621,11 @@ export default function ModuleManagementPage() {
               {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-muted-foreground">
-                    The following{' '}
-                    <span className="font-semibold">{depConflict.blockers?.length}</span> module(s)
-                    depend on <span className="font-medium">{depConflict.module_name}</span>. You
-                    can disable them all together, or cancel and handle them manually:
+                    {t(
+                      'settings.modules.blockedBody',
+                      '{count} modules depend on {name}. You can disable them all together, or cancel and handle them manually:',
+                      { count: depConflict.blockers?.length ?? 0, name: depConflict.module_name }
+                    )}
                   </div>
                   <ul className="mt-2 space-y-1.5">
                     {depConflict.blockers?.map((b) => (
@@ -596,10 +643,11 @@ export default function ModuleManagementPage() {
               {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-muted-foreground">
-                    <span className="font-medium">{depConflict.module_name}</span> requires{' '}
-                    <span className="font-semibold">{depConflict.required?.length}</span> other
-                    module(s) that are currently disabled. You can enable them all together, or
-                    cancel and handle them manually:
+                    {t(
+                      'settings.modules.requiredBody',
+                      '{name} requires {count} other modules that are currently disabled. You can enable them all together, or cancel and handle them manually:',
+                      { count: depConflict.required?.length ?? 0, name: depConflict.module_name }
+                    )}
                   </div>
                   <ul className="mt-2 space-y-1.5">
                     {depConflict.required?.map((r) => (
@@ -617,11 +665,25 @@ export default function ModuleManagementPage() {
             </div>
           </AlertDialogBody>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDepConflict(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setDepConflict(null)}>
+              {t('common.cancel', 'Cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction onClick={handleCascadeResolve} disabled={isUpdating}>
               {depConflict?.action === 'disable'
-                ? `Disable ${depConflict.blockers?.length ?? 0} dependent module(s) & retry`
-                : `Enable ${depConflict?.required?.length ?? 0} required module(s) & retry`}
+                ? t(
+                    'settings.modules.disableAndRetry',
+                    'Disable {count} dependent modules and retry',
+                    {
+                      count: depConflict.blockers?.length ?? 0,
+                    }
+                  )
+                : t(
+                    'settings.modules.enableAndRetry',
+                    'Enable {count} required modules and retry',
+                    {
+                      count: depConflict?.required?.length ?? 0,
+                    }
+                  )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -675,7 +737,9 @@ function ModuleRow({
 }) {
   const { t } = useTranslation()
   const hasSubModules = mod.sub_modules && mod.sub_modules.length > 0
-  const categoryLabel = CATEGORY_LABELS[mod.category] || mod.category
+  const categoryLabel = CATEGORY_LABELS[mod.category]
+    ? t(`settings.modules.category.${mod.category}`, CATEGORY_LABELS[mod.category])
+    : mod.category
 
   // Deprecated and not-yet-built sub-modules are not shown.
   const visibleSubModules = hasSubModules
@@ -707,7 +771,7 @@ function ModuleRow({
             )}
             {mod.release_status === 'beta' && (
               <Badge variant="outline" className="text-xs">
-                Beta
+                {t('settings.modules.beta', 'Beta')}
               </Badge>
             )}
             {notEntitled && readOnlyUntil && (
@@ -740,7 +804,7 @@ function ModuleRow({
             )}
             {hasPendingChange && (
               <Badge variant="secondary" className="text-xs">
-                Modified
+                {t('settings.modules.modified', 'Modified')}
               </Badge>
             )}
             {/* Dependency badges — click to see the full list in a tooltip-like
@@ -749,27 +813,31 @@ function ModuleRow({
               <Badge
                 variant="outline"
                 className="gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground"
-                title={`Requires: ${hardRequires.map((e) => moduleNames[e.to] ?? e.to).join(', ')}`}
+                title={t('settings.modules.requires', 'Requires: {names}', {
+                  names: hardRequires.map((e) => moduleNames[e.to] ?? e.to).join(', '),
+                })}
               >
                 <ArrowUpRight className="h-2.5 w-2.5" />
-                Needs {hardRequires.length}
+                {t('settings.modules.needs', 'Needs {count}', { count: hardRequires.length })}
               </Badge>
             )}
             {hardRequiredBy.length > 0 && (
               <Badge
                 variant="outline"
                 className="gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground"
-                title={`Required by: ${hardRequiredBy
-                  .map((e) => moduleNames[e.from] ?? e.from)
-                  .join(', ')}`}
+                title={t('settings.modules.requiredBy', 'Required by: {names}', {
+                  names: hardRequiredBy.map((e) => moduleNames[e.from] ?? e.from).join(', '),
+                })}
               >
                 <ArrowDownRight className="h-2.5 w-2.5" />
-                Used by {hardRequiredBy.length}
+                {t('settings.modules.usedBy', 'Used by {count}', { count: hardRequiredBy.length })}
               </Badge>
             )}
             {visibleSubModules.length > 0 && (
               <span className="text-xs text-muted-foreground">
-                ({visibleSubModules.length} sub-modules)
+                {t('settings.modules.subModules', '({count} sub-modules)', {
+                  count: visibleSubModules.length,
+                })}
               </span>
             )}
           </div>
@@ -782,7 +850,7 @@ function ModuleRow({
             checked={isEnabled}
             onCheckedChange={() => onToggle(mod.id, isEnabled)}
             disabled={mod.is_core || notEntitled || isUpdating}
-            aria-label={`Toggle ${mod.name}`}
+            aria-label={t('settings.modules.toggle', 'Turn {name} on or off', { name: mod.name })}
           />
         </div>
       </div>
@@ -819,6 +887,7 @@ function SubModuleRow({
   isUpdating: boolean
   onToggle: (moduleId: string, currentEnabled: boolean) => void
 }) {
+  const { t } = useTranslation()
   const isComingSoon = sub.release_status === 'coming_soon'
   const hasPendingChange = sub.id in pendingChanges
   const effectiveEnabled = isComingSoon
@@ -838,17 +907,17 @@ function SubModuleRow({
         <span className={!effectiveEnabled ? 'line-through opacity-60' : ''}>{sub.name}</span>
         {sub.release_status === 'beta' && (
           <Badge variant="outline" className="px-1 py-0 text-[10px]">
-            Beta
+            {t('settings.modules.beta', 'Beta')}
           </Badge>
         )}
         {isComingSoon && (
           <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">
-            Soon
+            {t('settings.modules.soon', 'Soon')}
           </Badge>
         )}
         {hasPendingChange && !isComingSoon && (
           <Badge variant="secondary" className="px-1 py-0 text-[10px]">
-            Modified
+            {t('settings.modules.modified', 'Modified')}
           </Badge>
         )}
       </div>
@@ -857,7 +926,7 @@ function SubModuleRow({
         onCheckedChange={() => onToggle(sub.id, effectiveEnabled)}
         disabled={!parentEnabled || isUpdating || isComingSoon}
         className="scale-75"
-        aria-label={`Toggle ${sub.name}`}
+        aria-label={t('settings.modules.toggle', 'Turn {name} on or off', { name: sub.name })}
       />
     </div>
   )
