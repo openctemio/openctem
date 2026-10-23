@@ -1141,5 +1141,11 @@
   "assets.facets.value.scopes.cloud": "Đám mây",
   "assets.facets.value.scopes.partner": "Đối tác",
   "assets.facets.value.scopes.vendor": "Nhà cung cấp",
-  "assets.facets.value.scopes.shadow": "Shadow IT"
+  "assets.facets.value.scopes.shadow": "Shadow IT",
+  "assets.nameCell.issuer": "Cấp bởi {issuer}",
+  "assets.nameCell.expired": "đã hết hạn",
+  "assets.nameCell.expiresIn": "hết hạn sau {count, plural, other {# ngày}}",
+  "assets.nameCell.sans": "Các tên khác: {names}",
+  "assets.nameCell.copy": "Sao chép {name}",
+  "assets.nameCell.copied": "Đã sao chép"
 }
