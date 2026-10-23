@@ -29,7 +29,6 @@ import {
   Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import {
@@ -56,8 +55,10 @@ import { getAsset, updateAsset } from '../../hooks'
 import { useAssetTags } from '../../hooks/use-asset-tags'
 import { isPlainLeftClick } from '../../lib/plain-click'
 import { AssetTypeIcon } from '../../lib/asset-type-icon'
+import { AssetNameCell } from './asset-name-cell'
+import { typeKeyOf } from '../../lib/inventory-lenses'
 import { Permission, usePermissions } from '@/lib/permissions'
-import { ASSET_TYPE_LABELS, type Asset } from '../../types/asset.types'
+import type { Asset } from '../../types/asset.types'
 import { SORT_FIELDS, sortToSorting, sortingToSort } from '../../lib/inventory-url'
 import {
   IssuesChip,
@@ -167,7 +168,7 @@ export function InventoryTable({
   const { tags: tagSuggestions } = useAssetTags(undefined, canWriteAssets)
   const sorting = useMemo(() => sortToSorting(sort), [sort])
   // RFC-042 class and lens of each row ("Code repository · Code").
-  const { classAndLens } = useAssetTypeRegistry()
+  const { registry, classAndLens } = useAssetTypeRegistry()
 
   // "+ Add label" on a row: one PUT of that asset's tags, then a refetch.
   const saveRowLabels = useCallback(
@@ -225,32 +226,20 @@ export function InventoryTable({
             title={t('assets.properties.columns.name', 'Name')}
           />
         ),
+        // Name cut in the middle with a copy button; a certificate shows its
+        // subject name with the asset name below (research/242 D9). The
+        // description moved to the drawer, so a row stays one line.
         cell: ({ row }) => (
-          <div className="flex min-w-0 items-center gap-2">
-            <AssetTypeIcon
-              type={row.original.type}
-              className="h-4 w-4 shrink-0 text-muted-foreground"
-            />
-            <div className="min-w-0">
-              <Link
-                href={assetDetailHref(row.original.id)}
-                onClick={(e) => {
-                  // Plain click opens the drawer; ctrl/cmd/middle-click follow the link.
-                  if (!isPlainLeftClick(e)) return
-                  e.preventDefault()
-                  setSelectedAsset(row.original)
-                }}
-                className="block truncate font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {row.original.name}
-              </Link>
-              {row.original.description && (
-                <p className="line-clamp-1 text-xs text-muted-foreground">
-                  {row.original.description}
-                </p>
-              )}
-            </div>
-          </div>
+          <AssetNameCell
+            asset={row.original}
+            href={assetDetailHref(row.original.id)}
+            onOpen={(e) => {
+              // Plain click opens the drawer; ctrl/cmd/middle-click follow the link.
+              if (!isPlainLeftClick(e)) return
+              e.preventDefault()
+              setSelectedAsset(row.original)
+            }}
+          />
         ),
       },
       ...(typeView?.columns ?? []).map((attribute): ColumnDef<Asset> => ({
@@ -271,16 +260,20 @@ export function InventoryTable({
             title={t('assets.properties.columns.type', 'Type')}
           />
         ),
-        cell: ({ row }) => (
-          <div className="flex min-w-0 flex-col items-start gap-0.5">
-            <Badge variant="outline" className="font-normal">
-              {ASSET_TYPE_LABELS[row.original.type] ?? row.original.type}
-            </Badge>
-            <span className="truncate text-xs text-muted-foreground">
-              {classAndLens(row.original.type, row.original.subType)}
+        // One line: the registry's name for the row's type (an alias such as
+        // "HTTP Service" when the sub-type has one); class and lens are in
+        // the tooltip, since the open view already names the lens.
+        cell: ({ row }) => {
+          const key = typeKeyOf(registry, row.original.type, row.original.subType)
+          return (
+            <span
+              className="block truncate text-sm text-muted-foreground"
+              title={classAndLens(row.original.type, row.original.subType)}
+            >
+              {t(`assets.typeLabel.${key.type}`, key.label)}
             </span>
-          </div>
-        ),
+          )
+        },
       },
       // The scope standing from each row's triage, when the typed scope
       // check column below is not shown (research/124).
@@ -516,6 +509,7 @@ export function InventoryTable({
     )
   }, [
     classAndLens,
+    registry,
     canWriteAssets,
     canDeleteAssets,
     can,
@@ -553,8 +547,13 @@ export function InventoryTable({
         resetSelectionKey={resetSelectionKey}
         showSelectionCount={false}
         onRowClick={setSelectedAsset}
+        // Single-line rows (research/242 D9) until the viewer picks a density.
+        defaultDensity="compact"
+        // Labels are a working column, not a reading one: on under Columns.
+        initialColumnVisibility={{ tags: false }}
         mobileRow={(a) => {
-          const typeLabel = ASSET_TYPE_LABELS[a.type] ?? a.type
+          const typeKey = typeKeyOf(registry, a.type, a.subType)
+          const typeLabel = t(`assets.typeLabel.${typeKey.type}`, typeKey.label)
           const context = a.groupName || a.description
           // A card shows the facts row only when it has something known in it.
           const hasFacts = a.findingCount > 0 || hasSurfaceFacts(a)
