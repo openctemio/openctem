@@ -41,6 +41,7 @@
   "remediationQuery.mode.snapshotHelp": "The task keeps the findings that match now. Re-run the query later to add new matches after you confirm.",
   "remediationQuery.preview.byAsset": "Top assets",
   "remediationQuery.preview.byOwner": "Top owners",
+  "remediationQuery.preview.untitled": "Untitled finding",
   "remediationQuery.preview.bySeverity": "Severity",
   "remediationQuery.preview.claimable": "{count} can join; {held} already belong to other tasks",
   "remediationQuery.preview.colAsset": "Asset",
