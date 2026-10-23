@@ -67,6 +67,7 @@ import en_siemIntegration from './en/siemIntegration.json'
 import en_sla from './en/sla.json'
 import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
+import en_importMappings from './en/importMappings.json'
 import en_ticketPolicy from './en/ticketPolicy.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
 import en_proxyPools from './en/proxyPools.json'
@@ -153,6 +154,7 @@ import vi_siemIntegration from './vi/siemIntegration.json'
 import vi_sla from './vi/sla.json'
 import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
+import vi_importMappings from './vi/importMappings.json'
 import vi_ticketPolicy from './vi/ticketPolicy.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
 import vi_proxyPools from './vi/proxyPools.json'
@@ -245,6 +247,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   sla: en_sla,
   integrationsHub: en_integrationsHub,
   ticketMapping: en_ticketMapping,
+  importMappings: en_importMappings,
   ticketPolicy: en_ticketPolicy,
   ticketingIntegration: en_ticketingIntegration,
   proxyPools: en_proxyPools,
@@ -334,6 +337,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   sla: vi_sla,
   integrationsHub: vi_integrationsHub,
   ticketMapping: vi_ticketMapping,
+  importMappings: vi_importMappings,
   ticketPolicy: vi_ticketPolicy,
   ticketingIntegration: vi_ticketingIntegration,
   proxyPools: vi_proxyPools,
