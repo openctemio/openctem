@@ -22,7 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
+import { SEVERITY_TEXT_COLORS, severityStyleParts } from '@/lib/severity-colors'
 import {
   useNotificationsApi,
   useUnreadCountApi,
@@ -39,10 +39,10 @@ import { safeHref } from '@/lib/safe-href'
 const severityColors: Record<string, string> = { ...SEVERITY_TEXT_COLORS }
 
 const severityBgColors: Record<string, string> = {
-  critical: 'bg-red-500/10',
-  high: 'bg-orange-500/10',
-  medium: 'bg-yellow-500/10',
-  low: 'bg-blue-500/10',
+  critical: severityStyleParts('critical').bgColor,
+  high: severityStyleParts('high').bgColor,
+  medium: severityStyleParts('medium').bgColor,
+  low: severityStyleParts('low').bgColor,
   info: 'bg-muted',
 }
 

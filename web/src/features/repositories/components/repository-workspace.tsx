@@ -1,5 +1,7 @@
 'use client'
 
+import { slaStateClass } from '@/lib/sla-colors'
+import { SeverityBadge } from '@/components/ui/severity-badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
 import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
@@ -100,11 +102,9 @@ import {
   type ScannerType,
   SCM_PROVIDER_LABELS,
   SEVERITY_LABELS,
-  SEVERITY_COLORS,
   BRANCH_STATUS_LABELS,
   BRANCH_STATUS_COLORS,
   SLA_STATUS_LABELS,
-  SLA_STATUS_COLORS,
   SCANNER_TYPE_LABELS,
 } from '@/features/repositories'
 import { FINDING_STATUS_CONFIG, type FindingStatus } from '@/features/findings/types/finding.types'
@@ -614,12 +614,11 @@ function BranchStatusBadge({ status }: { status: BranchStatus }) {
   )
 }
 
-function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {
-  const colors = SEVERITY_COLORS[severity]
+function SeverityCountBadge({ severity, count }: { severity: Severity; count?: number }) {
   return (
-    <Badge className={cn('gap-1 border-0 font-medium', colors?.bg, colors?.text)}>
-      {count !== undefined ? `${count} ${SEVERITY_LABELS[severity]}` : SEVERITY_LABELS[severity]}
-    </Badge>
+    <SeverityBadge severity={severity}>
+      {count !== undefined ? `${count} ${SEVERITY_LABELS[severity]}` : undefined}
+    </SeverityBadge>
   )
 }
 
@@ -643,7 +642,12 @@ function TriageStatusBadge({ status }: { status: TriageStatus }) {
 function SLAStatusBadge({ status, daysRemaining }: { status: SLAStatus; daysRemaining?: number }) {
   if (status === 'not_applicable') return null
   return (
-    <span className={cn('flex items-center gap-1 text-xs font-medium', SLA_STATUS_COLORS[status])}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium',
+        slaStateClass(status)
+      )}
+    >
       <Timer className="h-3 w-3" />
       {daysRemaining !== undefined && daysRemaining >= 0
         ? `${daysRemaining}d left`
@@ -1045,7 +1049,7 @@ function OverviewTab({
                   className="flex items-center gap-4 p-3 rounded-lg border hover:bg-muted/50 cursor-pointer"
                   onClick={() => router.push(`/findings/${finding.id}`)}
                 >
-                  <SeverityBadge severity={finding.severity} />
+                  <SeverityCountBadge severity={finding.severity} />
                   <div className="flex-1 min-w-0">
                     <span className="block truncate text-sm font-medium">{finding.title}</span>
                     {finding.file_path && (
@@ -1620,7 +1624,7 @@ function FindingsTab({
               >
                 <div className="flex items-start gap-4">
                   <div className="shrink-0 mt-1">
-                    <SeverityBadge severity={finding.severity} />
+                    <SeverityCountBadge severity={finding.severity} />
                   </div>
                   <div className="flex-1 min-w-0">
                     {/* Title leads; the raw UUID is dropped from the row (it's

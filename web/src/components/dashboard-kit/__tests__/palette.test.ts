@@ -36,7 +36,7 @@ describe('chart palettes', () => {
 
   it('assigns colours by entity, never cycling', () => {
     expect(seriesVar('critical', 5)).toBe('var(--viz-sev-critical)')
-    expect(seriesVar('P0', 0)).toBe('var(--viz-sev-critical)')
+    expect(seriesVar('P0', 0)).toBe('var(--prio-0)')
     expect(seriesVar('fixed', 0)).toBe('var(--viz-div-fixed)')
     expect(categoricalVar(0)).toBe('var(--viz-cat-1)')
     expect(categoricalVar(8)).toBe('var(--viz-cat-other)')

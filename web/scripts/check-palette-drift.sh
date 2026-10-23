@@ -117,6 +117,45 @@ surface (bg-muted/40) plus a check or bold label. A neutral indent rule such as
 EOF
 fi
 
+# --- priority and severity colours live in one place -----------------------------
+# Priority (P0-P3) and severity (critical..info) each have one token set: the
+# --prio-* / --sev-* tokens in src/styles/theme.css, read through
+# src/lib/priority-colors.ts and src/lib/severity-colors.ts and rendered by
+# <PriorityBadge> and <SeverityBadge>. Outside those modules an added line may
+# not (1) name a --prio/--sev token or its Tailwind class, (2) colour a priority
+# class with a palette class or hex, or (3) key a palette class or hex by a
+# severity name. Annotate a real exception with `label-colour-ok: <reason>`.
+LABEL_ALLOW='^(web/)?src/(lib/(priority-colors|severity-colors|chart-palette)\.ts|styles/theme\.css)$|(__tests__/|\.test\.tsx?$)'
+LABEL_TOKEN='\b(bg|text|border|ring|fill|stroke|from|via|to|divide|outline|shadow)-(prio|sev)-[a-z0-9-]+|var\(--(prio|sev|viz-sev)-'
+LABEL_COLOUR="(\\b${PROPS}-${PALETTE}-[0-9]{2,3}\\b|#[0-9a-fA-F]{6}\\b)"
+label_lines="$(git diff --unified=0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' \
+  | awk -v allow="$LABEL_ALLOW" '
+      /^\+\+\+ /{ f=substr($0,7); skip=(f ~ allow); next }
+      /^\+/ && !skip { sub(/^\+/,""); print f ": " $0 }' \
+  | grep -v 'label-colour-ok:' \
+  | grep -E "${LABEL_TOKEN}|(['\"]P[0-3]['\"]|\\bP[0-3]['\"]?[[:space:]]*:|[Pp]riority).*${LABEL_COLOUR}|\\b(critical|high|medium|low|info)['\"]?[[:space:]]*:.*${LABEL_COLOUR}" \
+  | cut -c1-170 || true)"
+label_fail=0
+if [[ -n "$label_lines" ]]; then
+  label_fail=1
+  cat >&2 <<EOF
+
+This branch hand-writes a priority or severity colour outside the shared module:
+
+$label_lines
+
+Priority and severity each have ONE colour source, so a P0 or a Critical looks the
+same in a list, a chart and a drawer:
+  priority  <PriorityBadge priorityClass="P1" />   src/lib/priority-colors.ts
+  severity  <SeverityBadge severity="high" />      src/lib/severity-colors.ts
+Charts take PRIORITY_CHART_COLORS / SEVERITY_CHART_COLORS. Teal is the act-here
+accent and is never a priority or severity colour. If this really is neither,
+say so on the line:  // label-colour-ok: <reason>
+
+EOF
+fi
+stripe_fail=$((stripe_fail || label_fail))
+
 violations="$(printf '%s\n' "$added" \
   | grep -v 'palette-ok:' \
   | grep -oE "\b${PROPS}-${PALETTE}-[0-9]{2,3}\b" \
