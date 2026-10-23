@@ -391,130 +391,9 @@ func TestWfActionFinding_AssignUser_ServiceError(t *testing.T) {
 // FindingActionHandler — assignTeam
 // =============================================================================
 
-// assign_team is not wired to a real service; it must fail loudly rather than
-// report a false success (was {"assigned": true}).
-func TestWfActionFinding_AssignTeam_NotImplemented(t *testing.T) {
-	vulnSvc, findingRepo := newWfActionVulnService()
-	log := logger.NewNop()
-	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
-
-	tenantID := shared.NewID()
-	teamID := shared.NewID()
-	f := newWfActionTestFinding(tenantID, nil)
-	findingRepo.addFinding(f)
-
-	input := newWfActionInput(tenantID, automation.ActionTypeAssignTeam, map[string]any{
-		"finding_id": f.ID().String(),
-		"team_id":    teamID.String(),
-	}, nil)
-
-	out, err := h.Execute(context.Background(), input)
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("expected 'not implemented' error, got err=%v out=%v", err, out)
-	}
-	if out != nil {
-		t.Errorf("expected nil result alongside error, got %v", out)
-	}
-}
-
-func TestWfActionFinding_AssignTeam_MissingFindingID(t *testing.T) {
-	vulnSvc, _ := newWfActionVulnService()
-	log := logger.NewNop()
-	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
-
-	tenantID := shared.NewID()
-
-	input := newWfActionInput(tenantID, automation.ActionTypeAssignTeam, map[string]any{
-		"team_id": shared.NewID().String(),
-	}, nil)
-
-	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing finding_id, got nil")
-	}
-}
-
-func TestWfActionFinding_AssignTeam_MissingTeamID(t *testing.T) {
-	vulnSvc, findingRepo := newWfActionVulnService()
-	log := logger.NewNop()
-	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
-
-	tenantID := shared.NewID()
-	f := newWfActionTestFinding(tenantID, nil)
-	findingRepo.addFinding(f)
-
-	input := newWfActionInput(tenantID, automation.ActionTypeAssignTeam, map[string]any{
-		"finding_id": f.ID().String(),
-	}, nil)
-
-	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing team_id, got nil")
-	}
-}
-
 // =============================================================================
 // FindingActionHandler — updatePriority
 // =============================================================================
-
-// update_priority is not wired to a real service; it must fail loudly.
-func TestWfActionFinding_UpdatePriority_NotImplemented(t *testing.T) {
-	vulnSvc, findingRepo := newWfActionVulnService()
-	log := logger.NewNop()
-	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
-
-	tenantID := shared.NewID()
-	f := newWfActionTestFinding(tenantID, nil)
-	findingRepo.addFinding(f)
-
-	input := newWfActionInput(tenantID, automation.ActionTypeUpdatePriority, map[string]any{
-		"finding_id": f.ID().String(),
-		"priority":   "high",
-	}, nil)
-
-	out, err := h.Execute(context.Background(), input)
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("expected 'not implemented' error, got err=%v out=%v", err, out)
-	}
-	if out != nil {
-		t.Errorf("expected nil result alongside error, got %v", out)
-	}
-}
-
-func TestWfActionFinding_UpdatePriority_MissingFindingID(t *testing.T) {
-	vulnSvc, _ := newWfActionVulnService()
-	log := logger.NewNop()
-	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
-
-	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, automation.ActionTypeUpdatePriority, map[string]any{
-		"priority": "high",
-	}, nil)
-
-	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing finding_id, got nil")
-	}
-}
-
-func TestWfActionFinding_UpdatePriority_MissingPriority(t *testing.T) {
-	vulnSvc, findingRepo := newWfActionVulnService()
-	log := logger.NewNop()
-	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
-
-	tenantID := shared.NewID()
-	f := newWfActionTestFinding(tenantID, nil)
-	findingRepo.addFinding(f)
-
-	input := newWfActionInput(tenantID, automation.ActionTypeUpdatePriority, map[string]any{
-		"finding_id": f.ID().String(),
-	}, nil)
-
-	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing priority, got nil")
-	}
-}
 
 // =============================================================================
 // FindingActionHandler — updateStatus
@@ -857,62 +736,11 @@ func TestWfActionFinding_UnsupportedAction(t *testing.T) {
 	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, automation.ActionTypeRunScript, nil, nil)
+	input := newWfActionInput(tenantID, automation.ActionType("removed_type"), nil, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error for unsupported action type, got nil")
-	}
-}
-
-// =============================================================================
-// PipelineTriggerHandler — triggerPipeline
-// =============================================================================
-
-func TestWfActionPipeline_TriggerPipeline_NilService(t *testing.T) {
-	// No backing service: the step fails. A {"triggered": false} success
-	// would show a green run that started nothing.
-	log := logger.NewNop()
-	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
-
-	input := newWfActionInput(shared.NewID(), automation.ActionTypeTriggerPipeline, map[string]any{
-		"pipeline_id": shared.NewID().String(),
-	}, nil)
-
-	out, err := h.Execute(context.Background(), input)
-	if err == nil || !strings.Contains(err.Error(), "pipeline service not available") {
-		t.Fatalf("err = %v, want a %q failure", err, "pipeline service not available")
-	}
-	if out != nil {
-		t.Errorf("a failed step reported output %v", out)
-	}
-}
-
-func TestWfActionPipeline_TriggerPipeline_MissingPipelineID(t *testing.T) {
-	log := logger.NewNop()
-	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
-
-	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, automation.ActionTypeTriggerPipeline, map[string]any{}, nil)
-
-	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing pipeline_id, got nil")
-	}
-}
-
-func TestWfActionPipeline_TriggerPipeline_InvalidPipelineIDFormat(t *testing.T) {
-	log := logger.NewNop()
-	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
-
-	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, automation.ActionTypeTriggerPipeline, map[string]any{
-		"pipeline_id": "not-a-uuid",
-	}, nil)
-
-	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for invalid pipeline_id format, got nil")
 	}
 }
 
@@ -1063,7 +891,7 @@ func TestWfActionTicket_UnsupportedAction(t *testing.T) {
 	h := automationsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, automation.ActionTypeRunScript, nil, nil)
+	input := newWfActionInput(tenantID, automation.ActionType("removed_type"), nil, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
@@ -1155,28 +983,6 @@ func TestWfActionAITriage_UnsupportedAction(t *testing.T) {
 // ScriptRunnerHandler — Execute (always returns error)
 // =============================================================================
 
-func TestWfActionScriptRunner_Execute_AlwaysDisabled(t *testing.T) {
-	log := logger.NewNop()
-	h := automationsvc.NewScriptRunnerHandler(log)
-
-	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, automation.ActionTypeRunScript, map[string]any{
-		"script": "echo hello",
-	}, nil)
-
-	out, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error (script execution disabled), got nil")
-	}
-	// The handler also returns a partial output map
-	if out == nil {
-		t.Fatal("expected non-nil output map even on error")
-	}
-	if out["executed"] != false {
-		t.Errorf("expected executed=false, got %v", out["executed"])
-	}
-}
-
 // =============================================================================
 // RegisterAllActionHandlers
 // =============================================================================
@@ -1242,10 +1048,8 @@ func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
 	log := logger.NewNop()
 
 	executor := automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
-	automationsvc.
-
-		// All nil services — only ScriptRunnerHandler should be registered (no panic)
-		RegisterAllActionHandlersWithAI(executor, nil, nil, nil, nil, nil, nil, nil, log)
+	// All nil services: nothing is registered, and nothing panics.
+	automationsvc.RegisterAllActionHandlersWithAI(executor, nil, nil, nil, nil, nil, nil, nil, log)
 }
 
 // =============================================================================

@@ -133,6 +133,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-122](RFC-122-ingest-receipts.md) | Import and run receipts | Accepted (2026-10-22). |
 | [RFC-123](RFC-123-identity-providers-and-sign-in-policy.md) | Identity provider catalogue and sign-in policy | Accepted (2026-10-22). |
 | [RFC-124](RFC-124-outbound-webhooks.md) | Outbound webhooks: delivery per channel, typed events, signing and redelivery | Implemented (2026-10-22): delivery per channel, typed payload, refused redirects, signing and redelivery |
+| [RFC-125](RFC-125-automation-simulate-and-go-live.md) | Automations: catalog, versions, simulate and the go-live gate | Accepted (2026-10-23). |
 | [RFC-126](RFC-126-import-mappings.md) | Import mappings | Accepted (2026-10-23). |
 <!-- END RFC INDEX -->
 

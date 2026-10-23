@@ -75,16 +75,19 @@ function settingsOf(t: OrgTrust): OrgTrustSettingsInput {
 }
 
 function StatusBadge({ trust }: { trust: OrgTrust }) {
+  const { t } = useTranslation()
   if (trust.status === 'active') {
     return (
       <Badge variant="outline" className="border-success/40 text-success">
-        Active
+        {t('settings.trust.status.active', 'Active')}
       </Badge>
     )
   }
   return (
     <Badge variant="outline" className="border-warning/40 text-warning">
-      {trust.direction === 'outgoing' ? 'Waiting for their owner' : 'Waiting for your approval'}
+      {trust.direction === 'outgoing'
+        ? t('settings.trust.status.waitingTheirs', 'Waiting for their owner')
+        : t('settings.trust.status.waitingYours', 'Waiting for your approval')}
     </Badge>
   )
 }
@@ -99,10 +102,11 @@ function TrustSettingsFields({
   onChange: (v: OrgTrustSettingsInput) => void
   disabled?: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="trust-max-role">Highest role</Label>
+        <Label htmlFor="trust-max-role">{t('settings.trust.maxRole', 'Highest role')}</Label>
         <Select
           value={value.max_role}
           onValueChange={(v) => onChange({ ...value, max_role: v as OrgTrustMaxRole })}
@@ -112,20 +116,27 @@ function TrustSettingsFields({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="viewer">Viewer</SelectItem>
-            <SelectItem value="member">Member</SelectItem>
+            <SelectItem value="viewer">{t('settings.trust.role.viewerTitle', 'Viewer')}</SelectItem>
+            <SelectItem value="member">{t('settings.trust.role.memberTitle', 'Member')}</SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          People from a partner never become admin or owner here. They join as viewers with no data
-          until you add them to a team.
+          {t(
+            'settings.trust.maxRoleHint',
+            'People from a partner never become admin or owner here. They join as viewers with no data until you add them to a team.'
+          )}
         </p>
       </div>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Label htmlFor="trust-home-sso">Accept their company&apos;s SSO</Label>
+          <Label htmlFor="trust-home-sso">
+            {t('settings.trust.homeSso', "Accept their company's SSO")}
+          </Label>
           <p className="text-xs text-muted-foreground">
-            A sign-in at their identity provider counts as SSO here.
+            {t(
+              'settings.trust.homeSsoHint',
+              'A sign-in at their identity provider counts as SSO here.'
+            )}
           </p>
         </div>
         <Switch
@@ -137,9 +148,14 @@ function TrustSettingsFields({
       </div>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Label htmlFor="trust-mfa-evidence">Require proof of MFA</Label>
+          <Label htmlFor="trust-mfa-evidence">
+            {t('settings.trust.mfaEvidence', 'Require proof of MFA')}
+          </Label>
           <p className="text-xs text-muted-foreground">
-            Accept their SSO only when their identity provider reports a second factor.
+            {t(
+              'settings.trust.mfaEvidenceHint',
+              'Accept their SSO only when their identity provider reports a second factor.'
+            )}
           </p>
         </div>
         <Switch
@@ -151,9 +167,14 @@ function TrustSettingsFields({
       </div>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Label htmlFor="trust-api-keys">Allow API keys</Label>
+          <Label htmlFor="trust-api-keys">
+            {t('settings.trust.allowApiKeys', 'Allow API keys')}
+          </Label>
           <p className="text-xs text-muted-foreground">
-            Their people may create API keys in this organization.
+            {t(
+              'settings.trust.allowApiKeysHint',
+              'Their people may create API keys in this organization.'
+            )}
           </p>
         </div>
         <Switch
@@ -164,7 +185,9 @@ function TrustSettingsFields({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="trust-expiry">Proposed end of access (days, optional)</Label>
+        <Label htmlFor="trust-expiry">
+          {t('settings.trust.expiry', 'Proposed end of access (days, optional)')}
+        </Label>
         <Input
           id="trust-expiry"
           type="number"
@@ -193,6 +216,7 @@ function CreateTrustDialog({
   onOpenChange: (open: boolean) => void
   onCreated: () => void
 }) {
+  const { t } = useTranslation()
   const [domain, setDomain] = useState('')
   const [settings, setSettings] = useState<OrgTrustSettingsInput>(DEFAULT_SETTINGS)
   const [busy, setBusy] = useState(false)
@@ -211,11 +235,13 @@ function CreateTrustDialog({
     setError(null)
     try {
       await createOrgTrust({ home_domain: domain.trim().toLowerCase(), ...settings })
-      toast.success('Trust requested. Their owner must approve it.')
+      toast.success(t('settings.trust.requested', 'Trust requested. Their owner must approve it.'))
       onCreated()
       close()
     } catch (err) {
-      setError(getErrorMessage(err, 'Could not request the trust'))
+      setError(
+        getErrorMessage(err, t('settings.trust.requestFailed', 'Could not request the trust'))
+      )
     } finally {
       setBusy(false)
     }
@@ -226,20 +252,24 @@ function CreateTrustDialog({
       <DialogContent>
         <DialogForm onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Trust an organization</DialogTitle>
+            <DialogTitle>{t('settings.trust.create.title', 'Trust an organization')}</DialogTitle>
             <DialogDescription>
-              Enter an email domain the partner organization verified for SSO. Their owner approves
-              the trust before it applies.
+              {t(
+                'settings.trust.create.description',
+                'Enter an email domain the partner organization verified for SSO. Their owner approves the trust before it applies.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-5 py-4">
               <div className="space-y-2">
-                <Label htmlFor="trust-domain">Their email domain</Label>
+                <Label htmlFor="trust-domain">
+                  {t('settings.trust.create.domain', 'Their email domain')}
+                </Label>
                 <Input
                   id="trust-domain"
                   required
-                  placeholder="partner.com"
+                  placeholder={t('settings.trust.create.domainPlaceholder', 'partner.com')}
                   value={domain}
                   onChange={(e) => setDomain(e.target.value)}
                   disabled={busy}
@@ -256,11 +286,11 @@ function CreateTrustDialog({
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={close}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={busy || !domain.trim()}>
               {busy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Request trust
+              {t('settings.trust.create.submit', 'Request trust')}
             </Button>
           </DialogFooter>
         </DialogForm>
@@ -278,6 +308,7 @@ function EditTrustDialog({
   onOpenChange: (open: boolean) => void
   onSaved: () => void
 }) {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState<OrgTrustSettingsInput>(DEFAULT_SETTINGS)
   const [busy, setBusy] = useState(false)
   const [loadedFor, setLoadedFor] = useState<string | null>(null)
@@ -291,11 +322,13 @@ function EditTrustDialog({
     setBusy(true)
     try {
       await updateOrgTrust(trust.id, settings)
-      toast.success('Trust updated')
+      toast.success(t('settings.trust.updated', 'Trust updated'))
       onSaved()
       onOpenChange(false)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not update the trust'))
+      toast.error(
+        getErrorMessage(err, t('settings.trust.updateFailed', 'Could not update the trust'))
+      )
     } finally {
       setBusy(false)
     }
@@ -311,9 +344,16 @@ function EditTrustDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Trust settings: {trust?.organization}</DialogTitle>
+          <DialogTitle>
+            {t('settings.trust.edit.title', 'Trust settings: {org}', {
+              org: trust?.organization ?? '',
+            })}
+          </DialogTitle>
           <DialogDescription>
-            Changes apply to new sign-ins and invitations of people from this organization.
+            {t(
+              'settings.trust.edit.description',
+              'Changes apply to new sign-ins and invitations of people from this organization.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -323,11 +363,11 @@ function EditTrustDialog({
         </DialogBody>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Save
+            {t('common.save', 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -344,6 +384,7 @@ function ApproveTrustDialog({
   onOpenChange: (open: boolean) => void
   onApproved: () => void
 }) {
+  const { t } = useTranslation()
   const [attest, setAttest] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -352,12 +393,18 @@ function ApproveTrustDialog({
     setBusy(true)
     try {
       await approveOrgTrust(trust.id, attest)
-      toast.success(`${trust.organization} now trusts your organization`)
+      toast.success(
+        t('settings.trust.approved', '{org} now trusts your organization', {
+          org: trust.organization,
+        })
+      )
       onApproved()
       onOpenChange(false)
       setAttest(false)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not approve the trust'))
+      toast.error(
+        getErrorMessage(err, t('settings.trust.approveFailed', 'Could not approve the trust'))
+      )
     } finally {
       setBusy(false)
     }
@@ -367,12 +414,23 @@ function ApproveTrustDialog({
     <Dialog open={!!trust} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Approve trust from {trust?.organization}</DialogTitle>
+          <DialogTitle>
+            {t('settings.trust.approve.title', 'Approve trust from {org}', {
+              org: trust?.organization ?? '',
+            })}
+          </DialogTitle>
           <DialogDescription>
-            Your people can then be invited to {trust?.organization} as{' '}
-            {trust?.max_role === 'viewer' ? 'viewers' : 'members at most'} and sign in there with
-            this organization&apos;s SSO. When someone leaves your organization, their access there
-            ends too.
+            {trust?.max_role === 'viewer'
+              ? t(
+                  'settings.trust.approve.descriptionViewer',
+                  "Your people can then be invited to {org} as viewers and sign in there with this organization's SSO. When someone leaves your organization, their access there ends too.",
+                  { org: trust?.organization ?? '' }
+                )
+              : t(
+                  'settings.trust.approve.descriptionMember',
+                  "Your people can then be invited to {org} as members at most and sign in there with this organization's SSO. When someone leaves your organization, their access there ends too.",
+                  { org: trust?.organization ?? '' }
+                )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -384,13 +442,16 @@ function ApproveTrustDialog({
               disabled={busy}
             />
             <Label htmlFor="trust-attest-mfa" className="text-sm leading-snug font-normal">
-              Our identity provider requires a second factor for everyone.
+              {t(
+                'settings.trust.approve.attest',
+                'Our identity provider requires a second factor for everyone.'
+              )}
             </Label>
           </div>
         </DialogBody>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={approve} disabled={busy}>
             {busy ? (
@@ -398,7 +459,7 @@ function ApproveTrustDialog({
             ) : (
               <Check className="me-2 h-4 w-4" />
             )}
-            Approve
+            {t('settings.trust.approve.submit', 'Approve')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -419,12 +480,17 @@ function TrustRow({
   onApprove: (t: OrgTrust) => void
   onEnd: (t: OrgTrust) => void
 }) {
+  const { t } = useTranslation()
   const facts = [
-    `Up to ${trust.max_role}`,
-    trust.accept_home_sso ? 'their SSO accepted' : 'their SSO not accepted',
-    trust.require_mfa_evidence ? 'MFA proof required' : null,
-    trust.home_attests_mfa ? 'MFA attested' : null,
-    trust.allow_api_keys ? 'API keys allowed' : null,
+    trust.max_role === 'viewer'
+      ? t('settings.trust.fact.upToViewer', 'Up to viewer')
+      : t('settings.trust.fact.upToMember', 'Up to member'),
+    trust.accept_home_sso
+      ? t('settings.trust.fact.ssoAccepted', 'their SSO accepted')
+      : t('settings.trust.fact.ssoNotAccepted', 'their SSO not accepted'),
+    trust.require_mfa_evidence ? t('settings.trust.fact.mfaRequired', 'MFA proof required') : null,
+    trust.home_attests_mfa ? t('settings.trust.fact.mfaAttested', 'MFA attested') : null,
+    trust.allow_api_keys ? t('settings.trust.fact.apiKeys', 'API keys allowed') : null,
   ].filter(Boolean)
   return (
     <li
@@ -440,7 +506,11 @@ function TrustRow({
           </div>
           <p className="text-xs text-muted-foreground">
             {facts.join(' · ')}
-            {trust.accepted_at ? ` · since ${formatShortDate(trust.accepted_at)}` : ''}
+            {trust.accepted_at
+              ? ` · ${t('settings.trust.fact.since', 'since {date}', {
+                  date: formatShortDate(trust.accepted_at),
+                })}`
+              : ''}
           </p>
         </div>
       </div>
@@ -448,12 +518,12 @@ function TrustRow({
         <div className="flex shrink-0 gap-2">
           {trust.direction === 'incoming' && trust.status === 'requested' && (
             <Button size="sm" onClick={() => onApprove(trust)}>
-              Approve
+              {t('settings.trust.approve.submit', 'Approve')}
             </Button>
           )}
           {trust.direction === 'outgoing' && (
             <Button size="sm" variant="outline" onClick={() => onEdit(trust)}>
-              Settings
+              {t('settings.trust.settings', 'Settings')}
             </Button>
           )}
           <Button
@@ -461,7 +531,9 @@ function TrustRow({
             variant="ghost"
             className="text-destructive"
             onClick={() => onEnd(trust)}
-            aria-label={`End trust with ${trust.organization}`}
+            aria-label={t('settings.trust.endLabel', 'End trust with {org}', {
+              org: trust.organization,
+            })}
           >
             <Trash2 className="size-4" />
           </Button>
@@ -490,11 +562,13 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
     setEndBusy(true)
     try {
       await deleteOrgTrust(ending.id)
-      toast.success(`Trust with ${ending.organization} ended`)
+      toast.success(
+        t('settings.trust.ended', 'Trust with {org} ended', { org: ending.organization })
+      )
       setEnding(null)
       refresh()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not end the trust'))
+      toast.error(getErrorMessage(err, t('settings.trust.endFailed', 'Could not end the trust')))
     } finally {
       setEndBusy(false)
     }
@@ -503,7 +577,9 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
   if (!canRead) {
     return (
       <Alert>
-        <AlertDescription>Only owners and admins can see trusted organizations.</AlertDescription>
+        <AlertDescription>
+          {t('settings.trust.readDenied', 'Only owners and admins can see trusted organizations.')}
+        </AlertDescription>
       </Alert>
     )
   }
@@ -537,44 +613,61 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            {getErrorMessage(error, 'Could not load trusted organizations')}
+            {getErrorMessage(
+              error,
+              t('settings.trust.loadFailed', 'Could not load trusted organizations')
+            )}
           </AlertDescription>
         </Alert>
       )}
       {!isOwner && (
         <Alert>
-          <AlertDescription>Only an owner can request, approve or end a trust.</AlertDescription>
+          <AlertDescription>
+            {t('settings.trust.ownerOnly', 'Only an owner can request, approve or end a trust.')}
+          </AlertDescription>
         </Alert>
       )}
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
           <div>
-            <CardTitle className="text-base">Organizations you trust</CardTitle>
+            <CardTitle className="text-base">
+              {t('settings.trust.outgoing.title', 'Organizations you trust')}
+            </CardTitle>
             <CardDescription>
-              People from these organizations can be invited here and sign in with their own
-              company&apos;s SSO.
+              {t(
+                'settings.trust.outgoing.description',
+                "People from these organizations can be invited here and sign in with their own company's SSO."
+              )}
             </CardDescription>
           </div>
           {isOwner && (
             <Button size="sm" onClick={() => setCreateOpen(true)} className="shrink-0">
               <Plus className="me-2 size-4" />
-              Trust an organization
+              {t('settings.trust.create.title', 'Trust an organization')}
             </Button>
           )}
         </CardHeader>
-        <CardContent>{list(outgoing, 'You trust no organization yet.')}</CardContent>
+        <CardContent>
+          {list(outgoing, t('settings.trust.outgoing.empty', 'You trust no organization yet.'))}
+        </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Organizations that trust you</CardTitle>
+          <CardTitle className="text-base">
+            {t('settings.trust.incoming.title', 'Organizations that trust you')}
+          </CardTitle>
           <CardDescription>
-            Your people work in these organizations. When someone leaves your organization, their
-            access there ends too.
+            {t(
+              'settings.trust.incoming.description',
+              'Your people work in these organizations. When someone leaves your organization, their access there ends too.'
+            )}
           </CardDescription>
         </CardHeader>
-        <CardContent>{list(incoming, 'No organization trusts yours.')}</CardContent>
+        <CardContent>
+          {list(incoming, t('settings.trust.incoming.empty', 'No organization trusts yours.'))}
+        </CardContent>
       </Card>
 
       <CreateTrustDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={refresh} />

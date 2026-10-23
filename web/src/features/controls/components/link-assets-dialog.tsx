@@ -1,6 +1,7 @@
 'use client'
 
 import { post } from '@/lib/api/client'
+import { useTranslation } from '@/context/i18n-provider'
 import { LinkAssetsDialog as AssetPickerDialog } from '@/features/assets/components/link-assets-dialog'
 
 interface LinkAssetsDialogProps {
@@ -13,18 +14,19 @@ interface LinkAssetsDialogProps {
 
 /** Link assets to a compensating control (the shared asset picker). */
 export function LinkAssetsDialog({ control, onOpenChange, onLinked }: LinkAssetsDialogProps) {
+  const { t } = useTranslation()
+  const targetName = control?.name ?? t('validation.controls.link.thisControl', 'this control')
   return (
     <AssetPickerDialog
       open={!!control}
       onOpenChange={onOpenChange}
       resetKey={control?.id}
-      targetName={control?.name ?? 'this control'}
-      description={
-        <>
-          Linking an asset is what makes {control?.name ?? 'this control'} reduce the priority of
-          that asset&apos;s findings.
-        </>
-      }
+      targetName={targetName}
+      description={t(
+        'validation.controls.link.description',
+        "Linking an asset is what makes {name} reduce the priority of that asset's findings.",
+        { name: targetName }
+      )}
       onLink={async (assetIds) => {
         if (!control) return assetIds.length
         // One call for the whole selection; it answers 204, so not throwing is
