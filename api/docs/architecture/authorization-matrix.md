@@ -345,7 +345,7 @@ and SBOM import write it.
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
 | `POST /api/v1/findings/{id}/approvals` (false-positive or accepted-risk request) | `findings:write`, the finding in the caller's data scope; decided at once (`single_person`) only when the organization's false-positive or risk acceptance level allows it **and** the caller holds `findings:approve` and does not own the asset; bulk, group, import and automation paths never decide alone |
 | `GET /api/v1/organization/settings/finding-approvals` | `findings:read` |
-| `PATCH` (and, until the web moves, `PUT`) `/api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; audited `finding_approval.settings_changed` (high), approvers told |
+| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; audited `finding_approval.settings_changed` (high), approvers told |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
 
 > The finding **action** routes (status, triage, assign, bulk, verify) are gated on
@@ -477,7 +477,7 @@ closed):
 | Path | Effect of a match |
 |------|-------------------|
 | Scan trigger (direct targets and asset-group members) | Target dropped from the run; a run whose every target is excluded is refused (`ALL_TARGETS_EXCLUDED`) |
-| `POST /api/v1/scan-workflows/runs`, the `trigger_pipeline` workflow action | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
+| `POST /api/v1/scan-workflows/runs` | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
 | Tenable rolling coverage dispatcher | Asset skipped this rotation (its cursor still moves, so it does not hold the top of every batch); same for a target the validator or zone routing refuses. A batch stays in one zone and the command is stamped with it |
 | Certificate Transparency discovery | An excluded watched domain is not queried; an excluded host gets no exposure |
 | Ingest | A NEW asset matching by name, repository URL or address (and a root domain or resolved IP derived from one) is not added: counted as `assets_skipped_excluded`, named in the warnings, its findings skipped and never attached to another asset. An asset already in the inventory is not changed or deleted |
@@ -1945,6 +1945,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/imports` | new | runs with the uploader's rights (it replaced `POST /assets/import/nessus` and `/nessus-findings`, removed): ingest `Actor` (in-scope assets only, none created by a restricted uploader), partial coverage (closes nothing) unless `coverage=full` names explicit assets visible to the uploader and they hold `findings:status` and `findings:bulk_update` with step-up (then the uncovered findings of each file's tool on them close, with the covered-scan guards); VEX documents touch only in-scope findings and close only under `INGEST_VEX=enforce` with `findings:approve`. Rate limited per organization; audited `asset.imported` ([finding-import.md](finding-import.md)) |
 | `GET /findings/imports`, `GET /findings/imports/{id}`, `GET /findings/imports/{id}/actions` | new | `findings:read`. Receipt counts are organization-wide: a caller with the organization view (unrestricted data scope, or `dashboards:org:view`) reads every receipt; any other caller reads only the uploads they made, and any other receipt is 404. `by_severity` and the action rows are limited to findings in the caller's data scope and the pentest visibility rule ([ingest-receipts.md](ingest-receipts.md)) |
 | `GET /findings/{id}/imports` | new | `findings:read`; the finding must be in the caller's data scope (404 otherwise); lists receipt ids, kinds, tools and actions, never counts |
+| `GET/POST/PATCH/DELETE /import-mappings...` | new | organization configuration (RFC-126): reads need `integrations:read` or `assets:import`, writes, verify and preview `integrations:manage` (delete with step-up); preview maps an uploaded sample and reads no stored finding or asset; a mapping of another organization is 404 by id or name, and `format=mapping:` on `POST /findings/imports` or a CI upload resolves only in the caller's organization ([import-mappings.md](import-mappings.md)) |
 | `GET /components/{id}/assets` (reverse lookup), `GET /components` (incl. `?asset_id=`, export), `POST/PUT/DELETE /components[/{id}]`, `POST /components/import?asset_id=`, `GET /vulnerabilities/...` dependency detail | **bypass**: names, criticality and risk of every asset using a package; writes on any asset of the tenant | the reverse lookup and list only show in-scope assets (`dataScopeCond` in SQL); an out-of-scope asset id or dependency id answers 404 (`ComponentService`, `SBOMImportService`; L-10) |
 | `/repositories/{id}/branches/**` (list, get, default, compare, create, update, delete) | **bypass** (tenant only) | the repository must be in scope (`AssetService.GetAssetInCallerScope`): 404 otherwise (L-10) |
 | `GET /threat-models` (+ `/{id}`, `/{id}/coverage`), `POST /threat-models/generate` | **bypass** (crown-jewel model names, threat paths through any asset) | crown-jewel models of out-of-scope assets are hidden (404 by id, also on generate, which names the asset); a threat is listed and counted in coverage only when its entry point, target, hop and evidence finding are all in scope. Model rollup counters stay graph-wide (L-10) |
@@ -2067,17 +2068,18 @@ person, its principal, and never as the system:
   entity by forging the event that names it. The caller must hold the
   permission of every step, and the subject must be in their data scope (a
   subject outside it answers 404, like one that does not exist);
-- an event run acts as the automation's owner (`workflows.created_by`, the
-  column the member lifecycle pauses and reassigns). Whoever creates,
-  switches on, or changes what an automation does (graph, node, edge)
-  becomes its owner.
+- an event run acts as the automation's owner (`automations.created_by`,
+  the column the member lifecycle pauses and reassigns). Whoever creates,
+  publishes or switches on an automation becomes its owner. Editing the
+  draft (graph, node, edge) does not: a draft only runs in simulate, and a
+  live automation runs its published version until someone publishes again
+  ([automations.md](automations.md), "Versions and mode").
 
 Before every action and notification step the principal is checked again,
 live (`workflow.PrincipalAuthorizer`): an active member with an active
 account, holding the step's permission (`workflow.NodePermission`: the
 direct route's permission, e.g. `findings:write` for a status change,
-`scans:write` to start a scan, `integrations:manage` for outbound HTTP,
-`integrations:read` for a notification), with the run's subject and any
+`scans:write` to start a scan, `integrations:read` for a notification), with the run's subject and any
 finding the step names in its config inside their data scope. A failed check
 fails the step with `AUTOMATION_RUN_NOT_AUTHORIZED` and changes nothing. The
 step then runs with the principal in its context, so the services it calls
@@ -2095,10 +2097,12 @@ own schedule.
 Editing needs the same permissions: building a node needs its permission,
 and any change to what an existing automation does (an edge, deleting a
 node, a node edit, switching it on) needs the permission of every step it
-has. The `http_request` action is retired: new nodes are refused, a stored
-one no longer runs (its step fails), its header values are never returned by
-the API, and no response body or header is stored with a run. Building one
-needed `integrations:manage`.
+has. There is no free-form outbound HTTP action: the `http_request` action
+is removed (migration `automations_removed_types` switched off every
+automation that held one and dropped its stored headers), and outbound calls
+go through a registered notification integration. A stored node of any
+removed type runs nothing; a step naming an unknown type needs
+`integrations:manage` (administrators) and is refused before it runs.
 
 ### Tenant-wide aggregates still to scope (counts only, no row data)
 

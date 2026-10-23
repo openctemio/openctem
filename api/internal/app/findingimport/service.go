@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/importer"
 
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
@@ -91,6 +92,10 @@ type Request struct {
 	CanApprove bool
 	// Format forces the format of a single file (empty: detected).
 	Format importer.Format
+	// Mapping converts the file through an organization's import mapping
+	// (Format is then "mapping:<name>@<n>"). Such an upload is always
+	// partial coverage.
+	Mapping *appimportmapping.Resolved
 	// MinSeverity drops findings below it (empty keeps all).
 	MinSeverity ctis.Severity
 	// SessionID names the import; report ids derive from it.
@@ -165,7 +170,22 @@ type Service struct {
 	receipts ReceiptStore
 	vexMode  ingest.VEXMode
 	logger   *logger.Logger
+
+	// queue, resolveScope and audit carry committed uploads to the ingest
+	// worker (queued.go); tempDir is where an archive is spooled.
+	queue        Queue
+	resolveScope ScopeResolver
+	audit        Auditor
+	tempDir      string
+	// members re-reads the uploader's membership when the worker imports.
+	members MemberReader
+	// mappings resolves the import mapping version a committed upload pinned.
+	mappings MappingResolver
 }
+
+// SetTempDir sets where the worker spools an uploaded archive ("" is the
+// system default).
+func (s *Service) SetTempDir(dir string) { s.tempDir = dir }
 
 // NewService creates the import service. vexMode is INGEST_VEX.
 func NewService(ing Ingester, repo Repository, receipts ReceiptStore, vexMode ingest.VEXMode, log *logger.Logger) *Service {
@@ -272,6 +292,7 @@ func (s *Service) VEXMode() ingest.VEXMode { return s.vexMode }
 // cannot be read; archive tells a ZIP from a single file.
 func (s *Service) ImportUpload(ctx context.Context, req Request, up Upload) (results []FileResult, archive bool, refused *FileError) {
 	up.Format = req.Format
+	up.Mapping = req.Mapping
 	up.MinSeverity = req.MinSeverity
 	if up.ReportIDPrefix == "" {
 		up.ReportIDPrefix = req.SessionID
@@ -422,6 +443,9 @@ func (s *Service) ingestReport(ctx context.Context, req Request, report *ctis.Re
 	in.Options.Receipt = &ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: req.ReceiptID.String()}
 	// A person's file: an import for attribute reconciliation (RFC-069).
 	in.Options.SourceKind, in.Options.SourceName = asset.SourceKindImport, importSourceName(req.Format)
+	if req.Mapping != nil {
+		in.Options.SourceName = req.Mapping.SourceName()
+	}
 	// The ingest service takes its tenant from a sensor record; this one
 	// carries only the tenant. The uploader's rights come from Actor.
 	tid := req.TenantID

@@ -44,6 +44,9 @@ vi.mock('@/features/relationships/api/use-relationship-suggestions', () => ({
 vi.mock('@/features/assets/components/assets-section-tabs', () => ({
   AssetsSectionTabs: () => null,
 }))
+vi.mock('@/features/assets/components/attention/attention-queue-header', () => ({
+  AttentionQueueHeader: () => null,
+}))
 vi.mock('@/hooks/use-url-param', () => ({ useUrlFilter: () => ['', vi.fn()] }))
 vi.mock('@/hooks/use-list-params', () => ({
   useListParams: () => ({ page: 1, setPage: vi.fn(), perPage: 20, setPagination: vi.fn() }),

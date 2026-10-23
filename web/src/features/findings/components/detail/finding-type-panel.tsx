@@ -77,7 +77,7 @@ function TracePanel({
               <span
                 aria-hidden
                 className={cn(
-                  'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
+                  'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-meta font-semibold',
                   cfg.bgColor,
                   cfg.color
                 )}

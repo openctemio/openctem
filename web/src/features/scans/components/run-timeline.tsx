@@ -14,6 +14,7 @@ import { enTranslate, type Translate } from '../lib/translate'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RelativeTime } from '@/features/shared/components/relative-time'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunEvent, RunEventsResponse } from '@/lib/api/generated'
@@ -106,8 +107,7 @@ export function RunTimeline({ runId, refreshInterval }: RunTimelineProps) {
         {events.map((e) => {
           const actor = eventActor(e, t)
           return (
-            <li key={e.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
-              <RelativeTime date={e.at ?? ''} className="w-24 shrink-0 text-xs" />
+            <li key={e.id} className="min-w-0 space-y-0.5">
               <Badge
                 variant="secondary"
                 className={cn(
@@ -117,18 +117,23 @@ export function RunTimeline({ runId, refreshInterval }: RunTimelineProps) {
               >
                 {eventLabel(e.event, t)}
               </Badge>
-              <span className="font-mono text-xs text-muted-foreground">
-                {t('scans.timeline.task', undefined, { id: e.task_id?.slice(0, 8) ?? '' })}
-                {(e.attempt ?? 0) > 1
-                  ? t('scans.timeline.attempt', undefined, { count: e.attempt ?? 0 })
-                  : ''}
-              </span>
-              {actor && <span className="text-xs text-muted-foreground">{actor}</span>}
+              <MetaLine
+                items={[
+                  <RelativeTime key="at" date={e.at ?? ''} />,
+                  <span key="task" className="font-mono">
+                    {t('scans.timeline.task', undefined, { id: e.task_id?.slice(0, 8) ?? '' })}
+                    {(e.attempt ?? 0) > 1
+                      ? t('scans.timeline.attempt', undefined, { count: e.attempt ?? 0 })
+                      : ''}
+                  </span>,
+                  actor,
+                ]}
+              />
               {(e.code || e.message) && (
-                <span className="basis-full ps-26 text-xs text-muted-foreground [unicode-bidi:isolate]">
+                <p className="min-w-0 break-words text-meta text-muted-foreground [unicode-bidi:isolate]">
                   {e.code && <span className="font-mono">{toDisplayText(e.code, 100)} </span>}
                   {e.message && toDisplayText(e.message, 400)}
-                </span>
+                </p>
               )}
             </li>
           )

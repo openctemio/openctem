@@ -34,7 +34,7 @@
   "easmReview.overview.openTotal": "{n} open in total",
   "easmReview.overview.risks": "Top external risks",
   "easmReview.overview.risksHint": "Open external exposures, most severe first",
-  "easmReview.overview.suggestions": "Suggestions",
+  "easmReview.overview.suggestions": "Review",
   "easmReview.overview.surface": "External surface",
   "easmReview.overview.surfaceHint": "Who it belongs to, what is new, how fresh the watch is",
   "easmReview.overview.total": "Domains, subdomains, IPs, certificates",
@@ -87,5 +87,8 @@
   "easmReview.suggestions.weak": "Weak",
   "easmReview.suggestions.weakHint": "Only the names themselves point to it.",
   "easmReview.overview.includeDiscovered": "Include discovered assets",
-  "easmReview.overview.discovered": "Discovered, passive only until in scope"
+  "easmReview.overview.discovered": "Discovered, passive only until in scope",
+  "easmReview.suggestions.errorTitle": "suggested rules",
+  "easmReview.suggestions.namesOne": "{n} name fits no rule; decide it one by one ({names}).",
+  "easmReview.suggestions.namesMany": "{n} names fit no rule; decide them one by one ({names})."
 }

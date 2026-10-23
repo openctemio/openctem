@@ -21,6 +21,7 @@ import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { DetailSection } from '@/features/shared/components/detail-sheet'
 import { SeverityBadge } from '@/features/shared'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import type { Severity } from '@/features/shared/types'
 import { FindingStatusBadge } from '../finding-status-badge'
 import type { FindingStatus } from '../../types'
@@ -92,10 +93,13 @@ export function FindingIssueGroupSection({ findingId }: { findingId: string }) {
           const self = m.id === findingId
           const location = [
             m.asset_name,
-            m.file_path && `${m.file_path}${m.start_line ? `:${m.start_line}` : ''}`,
+            m.file_path && (
+              <span key="path" className="break-all font-mono">
+                {m.file_path}
+                {m.start_line ? `:${m.start_line}` : ''}
+              </span>
+            ),
           ]
-            .filter(Boolean)
-            .join(' · ')
           return (
             <li
               key={m.id}
@@ -121,12 +125,8 @@ export function FindingIssueGroupSection({ findingId }: { findingId: string }) {
                     </Badge>
                   )}
                 </div>
-                <p className="break-words text-xs text-muted-foreground">
-                  {[m.tool_name, m.rule_id].filter(Boolean).join(' · ')}
-                </p>
-                {location && (
-                  <p className="break-all font-mono text-xs text-muted-foreground">{location}</p>
-                )}
+                <MetaLine items={[m.tool_name, m.rule_id]} />
+                <MetaLine items={location} />
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <SeverityBadge severity={m.severity as Severity} />

@@ -11,7 +11,7 @@
  *   actions menu on a phone) for those who may change the schedule.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle, Building2, Clock, RefreshCw, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -105,8 +105,19 @@ export interface DashboardFreshnessProps {
  * truncates first on a narrow screen (the full times are in the hover text), and a
  * status line under it only when the figures are stale or still being built.
  */
+/** Re-renders its component every minute so relative times keep ticking. */
+export function useMinuteTick(): number {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  return tick
+}
+
 export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
   const { t, locale } = useTranslation()
+  useMinuteTick()
   const computed = data?.computed_at
   const rel = (d: string) => formatRelativeTime(d, locale, new Date(), 'narrow')
   const sep = (
@@ -188,8 +199,8 @@ export function RefreshButton({
   const refresh = async () => {
     setRefreshing(true)
     try {
+      // The Updated line changes: no toast for a change the viewer sees.
       await onRefresh()
-      toast.success(t('dashboards.refresh.done', 'Figures refreshed'))
     } catch (e) {
       if (e instanceof ApiClientError && e.statusCode === 429) {
         toast.info(
@@ -225,13 +236,12 @@ export function RefreshButton({
 }
 
 function useScheduleChange(onSchedule: (s: DashboardRefreshSchedule) => Promise<unknown>) {
-  const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const change = async (value: string) => {
     setSaving(true)
     try {
+      // The select shows the saved value: no success toast.
       await onSchedule(fromValue(value))
-      toast.success(t('dashboards.schedule.saved', 'Refresh schedule saved'))
     } catch (e) {
       toast.error(getErrorMessage(e))
     } finally {

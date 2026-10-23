@@ -41,9 +41,10 @@ func (r *AutomationRunRepository) Create(ctx context.Context, run *automation.Ru
 			id, automation_id, tenant_id, trigger_type, trigger_data,
 			status, error_message, context,
 			total_nodes, completed_nodes, failed_nodes,
-			started_at, completed_at, triggered_by, created_at
+			started_at, completed_at, triggered_by, created_at,
+			subject_id, mode, version_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -62,6 +63,9 @@ func (r *AutomationRunRepository) Create(ctx context.Context, run *automation.Ru
 		run.CompletedAt,
 		nullID(run.TriggeredBy),
 		run.CreatedAt,
+		nullID(run.SubjectID),
+		string(runModeOrLive(run.Mode)),
+		nullID(run.VersionID),
 	)
 
 	if err != nil {
@@ -473,9 +477,9 @@ func (r *AutomationRunRepository) insertRun(ctx context.Context, tx *sql.Tx, run
 			status, error_message, context,
 			total_nodes, completed_nodes, failed_nodes,
 			started_at, completed_at, triggered_by, created_at,
-			subject_id, idempotency_key
+			subject_id, idempotency_key, mode, version_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 		run.ID.String(),
 		run.WorkflowID.String(),
 		run.TenantID.String(),
@@ -493,6 +497,8 @@ func (r *AutomationRunRepository) insertRun(ctx context.Context, tx *sql.Tx, run
 		run.CreatedAt,
 		nullID(run.SubjectID),
 		idemKey,
+		string(runModeOrLive(run.Mode)),
+		nullID(run.VersionID),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -503,12 +509,30 @@ func (r *AutomationRunRepository) insertRun(ctx context.Context, tx *sql.Tx, run
 	return nil
 }
 
+// CountActiveDraftRuns implements automation.DraftRunCounter.
+func (r *AutomationRunRepository) CountActiveDraftRuns(ctx context.Context, tenantID, workflowID shared.ID) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM automation_runs
+		WHERE tenant_id = $1 AND automation_id = $2 AND mode = 'simulate' AND status IN ('pending', 'running')`,
+		tenantID.String(), workflowID.String()).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count active draft runs: %w", err)
+	}
+	return n, nil
+}
+
+// runModeOrLive is the stored mode of a run: a run built without one (an
+// older caller) acts, so it is live.
+func runModeOrLive(m automation.Mode) automation.Mode {
+	if m.IsValid() {
+		return m
+	}
+	return automation.ModeLive
+}
+
 func (r *AutomationRunRepository) selectQuery() string {
 	return `
-		SELECT id, automation_id, tenant_id, trigger_type, trigger_data,
-		       status, error_message, context,
-		       total_nodes, completed_nodes, failed_nodes,
-		       started_at, completed_at, triggered_by, created_at
+		SELECT ` + automationRunColumns + `
 		FROM automation_runs
 	`
 }
@@ -560,119 +584,65 @@ func (r *AutomationRunRepository) buildWhereClause(filter automation.RunFilter) 
 }
 
 func (r *AutomationRunRepository) scanRun(row *sql.Row) (*automation.Run, error) {
-	run := &automation.Run{}
-	var (
-		id          string
-		workflowID  string
-		tenantID    string
-		triggerType string
-		triggerData []byte
-		status      string
-		context     []byte
-		triggeredBy sql.NullString
-	)
-
-	var errorMessage sql.NullString
-	err := row.Scan(
-		&id,
-		&workflowID,
-		&tenantID,
-		&triggerType,
-		&triggerData,
-		&status,
-		&errorMessage,
-		&context,
-		&run.TotalNodes,
-		&run.CompletedNodes,
-		&run.FailedNodes,
-		&run.StartedAt,
-		&run.CompletedAt,
-		&triggeredBy,
-		&run.CreatedAt,
-	)
-
+	run, err := scanAutomationRun(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, shared.ErrNotFound
-		}
 		return nil, fmt.Errorf("failed to scan workflow run: %w", err)
 	}
-
-	run.ID, _ = shared.IDFromString(id)
-	run.WorkflowID, _ = shared.IDFromString(workflowID)
-	run.TenantID, _ = shared.IDFromString(tenantID)
-	run.TriggerType = automation.TriggerType(triggerType)
-	run.Status = automation.RunStatus(status)
-	run.ErrorMessage = errorMessage.String
-
-	if len(triggerData) > 0 {
-		_ = json.Unmarshal(triggerData, &run.TriggerData)
-	}
-	if len(context) > 0 {
-		_ = json.Unmarshal(context, &run.Context)
-	}
-	if triggeredBy.Valid {
-		triggeredByID, _ := shared.IDFromString(triggeredBy.String)
-		run.TriggeredBy = &triggeredByID
-	}
-
 	return run, nil
 }
 
 func (r *AutomationRunRepository) scanRunFromRows(rows *sql.Rows) (*automation.Run, error) {
-	run := &automation.Run{}
-	var (
-		id          string
-		workflowID  string
-		tenantID    string
-		triggerType string
-		triggerData []byte
-		status      string
-		context     []byte
-		triggeredBy sql.NullString
-	)
-
-	var errorMessage sql.NullString
-	err := rows.Scan(
-		&id,
-		&workflowID,
-		&tenantID,
-		&triggerType,
-		&triggerData,
-		&status,
-		&errorMessage,
-		&context,
-		&run.TotalNodes,
-		&run.CompletedNodes,
-		&run.FailedNodes,
-		&run.StartedAt,
-		&run.CompletedAt,
-		&triggeredBy,
-		&run.CreatedAt,
-	)
-
+	run, err := scanAutomationRun(rows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan workflow run from rows: %w", err)
 	}
+	return run, nil
+}
 
+// automationRunColumns is the column list every run read selects, in the
+// order scanAutomationRun reads it.
+const automationRunColumns = `id, automation_id, tenant_id, trigger_type, trigger_data,
+		       status, error_message, context,
+		       total_nodes, completed_nodes, failed_nodes,
+		       started_at, completed_at, triggered_by, created_at,
+		       subject_id, mode, version_id`
+
+// scanAutomationRun reads one row selected with automationRunColumns.
+func scanAutomationRun(row interface{ Scan(dest ...any) error }) (*automation.Run, error) {
+	run := &automation.Run{}
+	var (
+		id, workflowID, tenantID, triggerType, status, mode string
+		triggerData, runContext                             []byte
+		errorMessage, triggeredBy, subjectID, versionID     sql.NullString
+	)
+	if err := row.Scan(
+		&id, &workflowID, &tenantID, &triggerType, &triggerData,
+		&status, &errorMessage, &runContext,
+		&run.TotalNodes, &run.CompletedNodes, &run.FailedNodes,
+		&run.StartedAt, &run.CompletedAt, &triggeredBy, &run.CreatedAt,
+		&subjectID, &mode, &versionID,
+	); err != nil {
+		return nil, err
+	}
 	run.ID, _ = shared.IDFromString(id)
 	run.WorkflowID, _ = shared.IDFromString(workflowID)
 	run.TenantID, _ = shared.IDFromString(tenantID)
 	run.TriggerType = automation.TriggerType(triggerType)
 	run.Status = automation.RunStatus(status)
 	run.ErrorMessage = errorMessage.String
-
+	run.Mode = automation.Mode(mode)
 	if len(triggerData) > 0 {
 		_ = json.Unmarshal(triggerData, &run.TriggerData)
 	}
-	if len(context) > 0 {
-		_ = json.Unmarshal(context, &run.Context)
+	if len(runContext) > 0 {
+		_ = json.Unmarshal(runContext, &run.Context)
 	}
-	if triggeredBy.Valid {
-		triggeredByID, _ := shared.IDFromString(triggeredBy.String)
-		run.TriggeredBy = &triggeredByID
-	}
-
+	run.TriggeredBy = parseNullID(triggeredBy)
+	run.SubjectID = parseNullID(subjectID)
+	run.VersionID = parseNullID(versionID)
 	return run, nil
 }
 
