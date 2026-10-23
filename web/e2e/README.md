@@ -48,6 +48,7 @@ tests that cover the console's most user-visible flows.
 | `24-findings-states.spec.ts`                | Findings list: inline error, no access, nothing yet, no match |
 | `25-findings-quick-views.spec.ts`           | Sidebar quick views under Findings, counts, links             |
 | `26-findings-filters.spec.ts`               | Add filter, chips, unknown filter, pass-through filters       |
+| `27-dashboard-header-phone.spec.ts`         | Dashboard header: one toolbar row at 390px and at 1440px      |
 
 Each spec is designed to:
 
@@ -116,6 +117,12 @@ npm run e2e:headed        # show the browser as it runs
 npm run e2e:ui            # interactive Playwright UI runner
 npm run e2e:report        # open the most recent HTML report
 ```
+
+The request budget spec (`16-request-budget.spec.ts`, budgets in
+`request-budget.json`) loads every dashboard page. While changing one page,
+check only that page with `E2E_BUDGET_ROUTES=/ npx playwright test
+e2e/specs/16-request-budget.spec.ts` (comma-separated routes); CI always
+checks every page.
 
 By default the suite uses Chromium only. To add Firefox / WebKit,
 uncomment the relevant `projects:` entries in `playwright.config.ts`.

@@ -263,6 +263,33 @@ describe('DashboardHome', () => {
     await waitFor(() => expect(toast.info).toHaveBeenCalled())
   })
 
+  it('the actions menu carries Customize and the schedule for the phone toolbar', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = snapshot('personal', 5)
+    renderHome()
+    // One toolbar row: the switcher, Refresh (named even when icon-only) and More.
+    const toolbar = screen.getByTestId('dashboard-toolbar')
+    expect(within(toolbar).getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
+    expect(within(toolbar).getByRole('button', { name: 'Refresh now' })).toBeInTheDocument()
+    await userEvent.click(within(toolbar).getByRole('button', { name: 'More dashboard actions' }))
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByRole('menuitem', { name: 'Customize' })).toBeInTheDocument()
+    const radios = within(menu).getAllByRole('menuitemradio')
+    expect(radios.map((r) => r.textContent)).toContain('Organization default')
+    await userEvent.click(within(menu).getByRole('menuitemradio', { name: 'Every 6 hours' }))
+    const { setDashboardSchedule } = await import('../api/use-dashboards-api')
+    await waitFor(() => expect(setDashboardSchedule).toHaveBeenCalledWith('personal', 'p1', '6h'))
+  })
+
+  it('the meta line names the scope, the last and the next refresh on one line', () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = snapshot('personal', 5)
+    renderHome()
+    const meta = screen.getByTestId('dashboard-meta')
+    expect(meta).toHaveTextContent('Your scope')
+    expect(meta).toHaveTextContent(/Updated/)
+  })
+
   it('renders in Vietnamese', () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = snapshot('personal', 5)
