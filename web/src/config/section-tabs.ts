@@ -194,6 +194,17 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
+    // The data-quality queue (research/233 D8, 242 D3): assets missing an
+    // owner, a criticality or a recent scan, relationship suggestions and
+    // possible duplicates. Relationships and duplicates keep their own URLs.
+    label: 'Needs attention',
+    href: '/assets/attention',
+    matchPrefix: ['/assets/suggestions', '/assets/duplicates'],
+    icon: ListChecks,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
     label: 'Groups',
     href: '/assets/groups',
     icon: FolderKanban,
@@ -218,11 +229,47 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     module: 'assets',
     permission: Permission.AssetsRead,
   },
+]
+
+/**
+ * The reasons of Assets › Needs attention, as route tabs under it. The asset
+ * reasons are filters of the inventory; Relationships is its own module.
+ */
+export const ASSET_ATTENTION_TABS: readonly SectionTab[] = [
   {
-    label: 'Suggestions',
+    label: 'No owner',
+    labelKey: 'assets.attention.tab.noOwner',
+    href: '/assets/attention',
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    label: 'Criticality not set',
+    labelKey: 'assets.attention.tab.context',
+    href: '/assets/attention/context',
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    label: 'Not scanned',
+    labelKey: 'assets.attention.tab.unscanned',
+    href: '/assets/attention/unscanned',
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    label: 'Relationships',
+    labelKey: 'assets.attention.tab.relationships',
     href: '/assets/suggestions',
     icon: Link2,
     module: 'relationships',
+    permission: Permission.AssetsRead,
+  },
+  {
+    label: 'Possible duplicates',
+    labelKey: 'assets.attention.tab.duplicates',
+    href: '/assets/duplicates',
+    module: 'assets',
     permission: Permission.AssetsRead,
   },
 ]

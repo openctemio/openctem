@@ -7,6 +7,7 @@
 // not imported, a key in the wrong file, a key in two files, or en and vi
 // key sets that differ.
 
+import en_account from './en/account.json'
 import en_activity from './en/activity.json'
 import en_auditLog from './en/auditLog.json'
 import en_actor from './en/actor.json'
@@ -30,6 +31,7 @@ import en_dashboardMetrics from './en/dashboardMetrics.json'
 import en_dashboardKit from './en/dashboardKit.json'
 import en_dashboards from './en/dashboards.json'
 import en_components from './en/components.json'
+import en_credentials from './en/credentials.json'
 import en_confirm from './en/confirm.json'
 import en_contentCatalog from './en/contentCatalog.json'
 import en_criticality from './en/criticality.json'
@@ -42,6 +44,7 @@ import en_help from './en/help.json'
 import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_notificationTypes from './en/notificationTypes.json'
+import en_notifications from './en/notifications.json'
 import en_notificationChannels from './en/notificationChannels.json'
 import en_scmIntegration from './en/scmIntegration.json'
 import en_notificationPresets from './en/notificationPresets.json'
@@ -66,7 +69,9 @@ import en_ticketMapping from './en/ticketMapping.json'
 import en_ticketPolicy from './en/ticketPolicy.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
 import en_proxyPools from './en/proxyPools.json'
+import en_scanApprovals from './en/scanApprovals.json'
 import en_scans from './en/scans.json'
+import en_scanDetail from './en/scanDetail.json'
 import en_scope from './en/scope.json'
 import en_sensors from './en/sensors.json'
 import en_settings from './en/settings.json'
@@ -83,6 +88,7 @@ import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
+import vi_account from './vi/account.json'
 import en_crownJewels from './en/crownJewels.json'
 import vi_activity from './vi/activity.json'
 import vi_auditLog from './vi/auditLog.json'
@@ -107,6 +113,7 @@ import vi_dashboardMetrics from './vi/dashboardMetrics.json'
 import vi_dashboardKit from './vi/dashboardKit.json'
 import vi_dashboards from './vi/dashboards.json'
 import vi_components from './vi/components.json'
+import vi_credentials from './vi/credentials.json'
 import vi_confirm from './vi/confirm.json'
 import vi_contentCatalog from './vi/contentCatalog.json'
 import vi_criticality from './vi/criticality.json'
@@ -119,6 +126,7 @@ import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_notificationTypes from './vi/notificationTypes.json'
+import vi_notifications from './vi/notifications.json'
 import vi_notificationChannels from './vi/notificationChannels.json'
 import vi_scmIntegration from './vi/scmIntegration.json'
 import vi_notificationPresets from './vi/notificationPresets.json'
@@ -143,7 +151,9 @@ import vi_ticketMapping from './vi/ticketMapping.json'
 import vi_ticketPolicy from './vi/ticketPolicy.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
 import vi_proxyPools from './vi/proxyPools.json'
+import vi_scanApprovals from './vi/scanApprovals.json'
 import vi_scans from './vi/scans.json'
+import vi_scanDetail from './vi/scanDetail.json'
 import vi_scope from './vi/scope.json'
 import vi_sensors from './vi/sensors.json'
 import vi_settings from './vi/settings.json'
@@ -166,6 +176,7 @@ export type Dictionary = Record<string, string>
 
 /** Namespace name -> that namespace's catalog file, per locale. */
 export const enNamespaces: Record<string, Dictionary> = {
+  account: en_account,
   activity: en_activity,
   auditLog: en_auditLog,
   actor: en_actor,
@@ -189,6 +200,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   dashboardKit: en_dashboardKit,
   dashboards: en_dashboards,
   components: en_components,
+  credentials: en_credentials,
   confirm: en_confirm,
   contentCatalog: en_contentCatalog,
   criticality: en_criticality,
@@ -201,6 +213,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   insights: en_insights,
   licensePolicy: en_licensePolicy,
   notificationTypes: en_notificationTypes,
+  notifications: en_notifications,
   notificationChannels: en_notificationChannels,
   scmIntegration: en_scmIntegration,
   notificationPresets: en_notificationPresets,
@@ -226,7 +239,9 @@ export const enNamespaces: Record<string, Dictionary> = {
   ticketPolicy: en_ticketPolicy,
   ticketingIntegration: en_ticketingIntegration,
   proxyPools: en_proxyPools,
+  scanApprovals: en_scanApprovals,
   scans: en_scans,
+  scanDetail: en_scanDetail,
   scope: en_scope,
   sensors: en_sensors,
   settings: en_settings,
@@ -246,6 +261,7 @@ export const enNamespaces: Record<string, Dictionary> = {
 }
 
 export const viNamespaces: Record<string, Dictionary> = {
+  account: vi_account,
   activity: vi_activity,
   auditLog: vi_auditLog,
   actor: vi_actor,
@@ -269,6 +285,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   dashboardKit: vi_dashboardKit,
   dashboards: vi_dashboards,
   components: vi_components,
+  credentials: vi_credentials,
   confirm: vi_confirm,
   contentCatalog: vi_contentCatalog,
   criticality: vi_criticality,
@@ -281,6 +298,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   insights: vi_insights,
   licensePolicy: vi_licensePolicy,
   notificationTypes: vi_notificationTypes,
+  notifications: vi_notifications,
   notificationChannels: vi_notificationChannels,
   scmIntegration: vi_scmIntegration,
   notificationPresets: vi_notificationPresets,
@@ -306,7 +324,9 @@ export const viNamespaces: Record<string, Dictionary> = {
   ticketPolicy: vi_ticketPolicy,
   ticketingIntegration: vi_ticketingIntegration,
   proxyPools: vi_proxyPools,
+  scanApprovals: vi_scanApprovals,
   scans: vi_scans,
+  scanDetail: vi_scanDetail,
   scope: vi_scope,
   sensors: vi_sensors,
   settings: vi_settings,

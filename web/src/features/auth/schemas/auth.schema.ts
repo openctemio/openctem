@@ -8,6 +8,32 @@
 import { z } from 'zod'
 
 // ============================================
+// MESSAGE KEYS
+// ============================================
+
+/**
+ * Catalog key of each validation message in this file, keyed by its English
+ * text. The schemas keep English (server actions return them as is); the forms
+ * translate what they display with `translatingResolver`
+ * (lib/translating-resolver.ts).
+ */
+export const AUTH_VALIDATION_KEYS: Readonly<Record<string, string>> = {
+  'Please enter your email': 'auth.validation.emailRequired',
+  'Please enter a valid email address': 'auth.validation.emailInvalid',
+  'Please enter a password': 'auth.validation.passwordRequired',
+  'Please enter your password': 'auth.validation.loginPasswordRequired',
+  'Please confirm your password': 'auth.validation.confirmRequired',
+  'Please enter your first name': 'auth.validation.firstNameRequired',
+  'First name must be less than 50 characters': 'auth.validation.firstNameMax',
+  'Please enter your last name': 'auth.validation.lastNameRequired',
+  'Last name must be less than 50 characters': 'auth.validation.lastNameMax',
+  "Passwords don't match": 'auth.validation.mismatch',
+  'Reset token is required': 'auth.validation.tokenRequired',
+  'Please enter your current password': 'auth.validation.currentRequired',
+  'New password must be different from current password': 'auth.validation.sameAsCurrent',
+}
+
+// ============================================
 // FIELD VALIDATORS (Reusable)
 // ============================================
 
