@@ -201,6 +201,7 @@ func (s *Service) RevokeGrant(ctx context.Context, tenantID, id, by shared.ID, b
 	if err != nil {
 		return nil, err
 	}
+	// Revoking must proceed even if the audit write fails; tenantEvent logs it.
 	_ = s.tenantEvent(ctx, tenantID, by.String(), byEmail, client, auditdom.ActionSupportGrantRevoked, g,
 		"Support access of "+g.AdminEmail+" revoked", nil)
 	s.emailOwners(ctx, tenantID, "Support access was revoked",
@@ -278,6 +279,8 @@ func (s *Service) EndSession(ctx context.Context, a *admin.AdminUser, sessionID 
 		g = &dom.Grant{ID: sess.GrantID, TenantID: sess.TenantID, AdminEmail: a.Email()}
 	}
 	name := s.tenantName(ctx, sess.TenantID)
+	// Ending a session must proceed even if the audit write fails; tenantEvent
+	// and adminEvent log the failure themselves.
 	_ = s.tenantEvent(ctx, sess.TenantID, "", supportActor(a.Email()), client, auditdom.ActionSupportSessionEnded, g,
 		"Support session ended by "+a.Email(), map[string]any{"support_session_id": sess.ID.String()})
 	_ = s.adminEvent(ctx, a, AdminActionSessionEnded, &sess.TenantID, name, client, http.MethodDelete, "end support session", "")
