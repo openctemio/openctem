@@ -92,20 +92,21 @@ export function AssetNameCell({
             {title}
           </p>
           {isCert && issuer && (
-            <p className="text-xs opacity-80">
-              {t('assets.nameCell.issuer', 'Issuer {issuer}', { issuer: toDisplayText(issuer) })}
-              {days !== null &&
-                ` · ${
-                  days < 0
+            <p className="flex flex-wrap gap-x-2 text-xs opacity-80">
+              <span>
+                {t('assets.nameCell.issuer', 'Issuer {issuer}', { issuer: toDisplayText(issuer) })}
+              </span>
+              {days !== null && (
+                <span>
+                  {days < 0
                     ? t('assets.nameCell.expired', 'expired')
                     : t(
                         'assets.nameCell.expiresIn',
                         'expires in {count, plural, one {# day} other {# days}}',
-                        {
-                          count: days,
-                        }
-                      )
-                }`}
+                        { count: days }
+                      )}
+                </span>
+              )}
             </p>
           )}
           {sans.length > 0 && (
