@@ -25,7 +25,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DetailSection } from '@/features/shared'
+import { DetailSection, ErrorState } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
@@ -64,7 +64,7 @@ export interface AssetScanningSectionProps {
 export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSectionProps) {
   const { t } = useTranslation()
   const { can } = usePermissions()
-  const { attribution, isLoading, mutate } = useAssetAttribution(asset.id)
+  const { attribution, error, isLoading, mutate } = useAssetAttribution(asset.id)
   const { decide, saving } = useDecideAttribution(asset.id)
   const [draft, setDraft] = useState<ScopeEntryDraft | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
@@ -76,8 +76,20 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
       </DetailSection>
     )
   }
-  // No answer (no assets:read, or an error the Details tab reports): say
-  // nothing rather than guess.
+  // A failed request says so, with a retry: the answer to "may scans reach
+  // it" must not vanish silently.
+  if (error && !attribution) {
+    return (
+      <DetailSection title={t('assets.scanning.title', 'Scope and scanning')} icon={Radar}>
+        <ErrorState
+          title={t('assetDetail.scanningErrorTitle', 'scope and scanning')}
+          error={error}
+          onRetry={() => mutate()}
+        />
+      </DetailSection>
+    )
+  }
+  // No answer without assets:read: say nothing rather than guess.
   if (!attribution) return null
 
   const scope = scopeStandingText(t, attribution)

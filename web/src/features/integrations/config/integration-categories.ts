@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  FileSpreadsheet,
   GitBranch,
   MessageSquare,
   Shield,
@@ -57,6 +58,13 @@ export const INTEGRATION_CATEGORIES: IntegrationCategoryCard[] = [
     description: 'Which fields and statuses sync with Jira',
     icon: ArrowLeftRight,
     href: '/settings/integrations/ticketing/mappings',
+  },
+  {
+    id: 'import-mappings',
+    title: 'Import mappings',
+    description: 'Turn CSV, JSON or XML exports into findings and assets',
+    icon: FileSpreadsheet,
+    href: '/settings/integrations/import-mappings',
   },
   {
     id: 'notifications',
