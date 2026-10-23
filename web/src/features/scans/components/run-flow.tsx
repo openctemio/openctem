@@ -417,7 +417,7 @@ function FlowGraph({
             <span
               key={p.id}
               aria-hidden
-              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border bg-background px-1.5 py-px text-[11px] whitespace-nowrap text-muted-foreground tabular-nums"
+              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border bg-background px-1.5 py-px text-meta whitespace-nowrap text-muted-foreground tabular-nums"
               style={{ left: p.lx, top: p.ly }}
             >
               {p.label}
@@ -524,7 +524,7 @@ function StepCard({
         </span>
       </span>
       <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
-        <span className={cn('rounded px-1.5 py-px text-[10px] font-medium', style.badge)}>
+        <span className={cn('rounded px-1.5 py-px text-meta font-medium', style.badge)}>
           {state}
         </span>
         {node.tool ? <span className="font-mono">{node.tool}</span> : null}

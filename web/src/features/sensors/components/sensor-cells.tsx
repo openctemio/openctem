@@ -50,7 +50,7 @@ export function SensorTag({
     <span
       title={title}
       className={cn(
-        'inline-flex shrink-0 items-center whitespace-nowrap rounded px-1.5 py-px text-[11px] font-medium',
+        'inline-flex shrink-0 items-center whitespace-nowrap rounded px-1.5 py-px text-meta font-medium',
         tones[tone]
       )}
     >

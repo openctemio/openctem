@@ -106,9 +106,15 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     setSeverity((prev) => (prev === finding.severity ? prev : finding.severity))
   }, [finding.id, finding.severity])
   useEffect(() => {
-    setAssignee((prev) =>
-      (prev?.id ?? null) === (finding.assignee?.id ?? null) ? prev : finding.assignee
-    )
+    setAssignee((prev) => {
+      if ((prev?.id ?? null) !== (finding.assignee?.id ?? null)) return finding.assignee
+      // Same person: take the name once the enriched record arrives (the list
+      // row seeds an assignee without one), never replace a name with none.
+      if (prev && finding.assignee?.name && prev.name !== finding.assignee.name) {
+        return finding.assignee
+      }
+      return prev
+    })
   }, [finding.id, finding.assignee])
 
   // The version the person decided on: sent as If-Match so a write never
