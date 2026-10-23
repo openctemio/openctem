@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
+import { useTranslation } from '@/context/i18n-provider'
 import { DataTable, DataTableColumnHeader } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -46,23 +47,24 @@ export function ThreatModelTable({
   profileMap,
   nameFor,
 }: ThreatModelTableProps) {
+  const { t } = useTranslation()
   // Filter option lists derived from the full (unfiltered) threat set.
   const { tactics, attackers, techniques, statuses } = useMemo(() => {
     const tacticSet = new Set<string>()
     const attackerSet = new Map<string, string>()
     const techniqueSet = new Map<string, string>()
     const statusSet = new Set<string>()
-    for (const t of threats) {
-      tacticSet.add(t.tactic)
-      statusSet.add(t.status)
+    for (const th of threats) {
+      tacticSet.add(th.tactic)
+      statusSet.add(th.status)
       attackerSet.set(
-        t.attacker_profile_id,
-        profileMap.get(t.attacker_profile_id)?.name ?? 'Unknown'
+        th.attacker_profile_id,
+        profileMap.get(th.attacker_profile_id)?.name ?? t('threatModel.table.unknown', 'Unknown')
       )
-      const techName = t.technique_name ?? getMitreTechnique(t.technique_id)?.name
+      const techName = th.technique_name ?? getMitreTechnique(th.technique_id)?.name
       techniqueSet.set(
-        t.technique_id,
-        techName ? `${t.technique_id} · ${techName}` : t.technique_id
+        th.technique_id,
+        techName ? `${th.technique_id} · ${techName}` : th.technique_id
       )
     }
     return {
@@ -71,15 +73,15 @@ export function ThreatModelTable({
       techniques: Array.from(techniqueSet.entries()).sort((a, b) => a[0].localeCompare(b[0])),
       statuses: Array.from(statusSet).sort(),
     }
-  }, [threats, profileMap])
+  }, [threats, profileMap, t])
 
   const filtered = useMemo(
     () =>
-      threats.filter((t) => {
-        if (filters.status !== ALL && t.status !== filters.status) return false
-        if (filters.tactic !== ALL && t.tactic !== filters.tactic) return false
-        if (filters.attacker !== ALL && t.attacker_profile_id !== filters.attacker) return false
-        if (filters.technique !== ALL && t.technique_id !== filters.technique) return false
+      threats.filter((th) => {
+        if (filters.status !== ALL && th.status !== filters.status) return false
+        if (filters.tactic !== ALL && th.tactic !== filters.tactic) return false
+        if (filters.attacker !== ALL && th.attacker_profile_id !== filters.attacker) return false
+        if (filters.technique !== ALL && th.technique_id !== filters.technique) return false
         return true
       }),
     [threats, filters]
@@ -89,15 +91,24 @@ export function ThreatModelTable({
     () => [
       {
         accessorKey: 'attacker_profile_id',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Attacker" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('threatModel.table.attacker', 'Attacker')}
+          />
+        ),
         cell: ({ row }) => {
           const profile = profileMap.get(row.original.attacker_profile_id)
-          return <span className="font-medium">{profile?.name ?? 'Unknown attacker'}</span>
+          return (
+            <span className="font-medium">
+              {profile?.name ?? t('threatModel.table.unknownAttacker', 'Unknown attacker')}
+            </span>
+          )
         },
       },
       {
         id: 'path',
-        header: 'Attack path',
+        header: t('threatModel.table.attackPath', 'Attack path'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">{pathLabel(row.original, nameFor)}</span>
@@ -105,7 +116,12 @@ export function ThreatModelTable({
       },
       {
         accessorKey: 'technique_id',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Technique" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('threatModel.table.technique', 'Technique')}
+          />
+        ),
         cell: ({ row }) => {
           const id = row.original.technique_id
           const name = row.original.technique_name ?? getMitreTechnique(id)?.name
@@ -125,7 +141,9 @@ export function ThreatModelTable({
       },
       {
         accessorKey: 'tactic',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Tactic" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('threatModel.table.tactic', 'Tactic')} />
+        ),
         cell: ({ row }) => (
           <Badge variant="outline" className="font-normal">
             {row.original.tactic}
@@ -134,7 +152,7 @@ export function ThreatModelTable({
       },
       {
         accessorKey: 'mitigation_id',
-        header: 'Mitigation',
+        header: t('threatModel.table.mitigation', 'Mitigation'),
         enableSorting: false,
         cell: ({ row }) => {
           const id = row.original.mitigation_id
@@ -169,22 +187,24 @@ export function ThreatModelTable({
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('threatModel.table.status', 'Status')} />
+        ),
         cell: ({ row }) => {
-          const t = row.original
-          const style = getThreatStatusStyle(t.status)
+          const threat = row.original
+          const style = getThreatStatusStyle(threat.status)
           return (
             <div className="flex items-center gap-1.5">
               <Badge variant="outline" className={cn('font-medium', style.badgeClass)}>
-                {style.label}
+                {t(style.labelKey, threat.status)}
               </Badge>
-              {t.status_reason && (
+              {threat.status_reason && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Info className="text-muted-foreground h-3.5 w-3.5 cursor-help" />
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">{t.status_reason}</TooltipContent>
+                    <TooltipContent className="max-w-xs">{threat.status_reason}</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
@@ -194,21 +214,23 @@ export function ThreatModelTable({
       },
       {
         accessorKey: 'score',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Score" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('threatModel.table.score', 'Score')} />
+        ),
         cell: ({ row }) => (
           <span className="text-sm tabular-nums">{row.original.score.toFixed(1)}</span>
         ),
       },
       {
         id: 'evidence',
-        header: 'Evidence',
+        header: t('threatModel.table.evidence', 'Evidence'),
         enableSorting: false,
         cell: ({ row }) =>
           row.original.evidence_finding_id ? (
             <Button variant="ghost" size="sm" asChild className="h-7 px-2">
               <Link href={`/findings/${row.original.evidence_finding_id}`}>
                 <FileWarning className="me-1 h-3.5 w-3.5" />
-                Finding
+                {t('threatModel.table.finding', 'Finding')}
               </Link>
             </Button>
           ) : (
@@ -216,7 +238,7 @@ export function ThreatModelTable({
           ),
       },
     ],
-    [profileMap, nameFor]
+    [profileMap, nameFor, t]
   )
 
   const setFilter = (patch: Partial<ThreatFilters>) => onFiltersChange({ ...filters, ...patch })
@@ -234,39 +256,50 @@ export function ThreatModelTable({
         value={filters.status}
         onValueChange={(v) => setFilter({ status: v as ThreatFilters['status'] })}
       >
-        <SelectTrigger className="h-9 w-auto max-w-52" aria-label="Filter by status">
-          <SelectValue placeholder="Status" />
+        <SelectTrigger
+          className="h-9 w-auto max-w-52"
+          aria-label={t('threatModel.filter.byStatus', 'Filter by status')}
+        >
+          <SelectValue placeholder={t('threatModel.table.status', 'Status')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>All statuses</SelectItem>
+          <SelectItem value={ALL}>{t('threatModel.filter.allStatuses', 'All statuses')}</SelectItem>
           {statuses.map((s) => (
-            <SelectItem key={s} value={s} className="capitalize">
-              {getThreatStatusStyle(s as Threat['status']).label}
+            <SelectItem key={s} value={s}>
+              {t(getThreatStatusStyle(s as Threat['status']).labelKey, s)}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
       <Select value={filters.tactic} onValueChange={(v) => setFilter({ tactic: v })}>
-        <SelectTrigger className="h-9 w-auto max-w-52" aria-label="Filter by tactic">
-          <SelectValue placeholder="Tactic" />
+        <SelectTrigger
+          className="h-9 w-auto max-w-52"
+          aria-label={t('threatModel.filter.byTactic', 'Filter by tactic')}
+        >
+          <SelectValue placeholder={t('threatModel.table.tactic', 'Tactic')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>All tactics</SelectItem>
-          {tactics.map((t) => (
-            <SelectItem key={t} value={t}>
-              {t}
+          <SelectItem value={ALL}>{t('threatModel.filter.allTactics', 'All tactics')}</SelectItem>
+          {tactics.map((tactic) => (
+            <SelectItem key={tactic} value={tactic}>
+              {tactic}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
       <Select value={filters.attacker} onValueChange={(v) => setFilter({ attacker: v })}>
-        <SelectTrigger className="h-9 w-auto max-w-52" aria-label="Filter by attacker">
-          <SelectValue placeholder="Attacker" />
+        <SelectTrigger
+          className="h-9 w-auto max-w-52"
+          aria-label={t('threatModel.filter.byAttacker', 'Filter by attacker')}
+        >
+          <SelectValue placeholder={t('threatModel.table.attacker', 'Attacker')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>All attackers</SelectItem>
+          <SelectItem value={ALL}>
+            {t('threatModel.filter.allAttackers', 'All attackers')}
+          </SelectItem>
           {attackers.map(([id, name]) => (
             <SelectItem key={id} value={id}>
               {name}
@@ -276,11 +309,16 @@ export function ThreatModelTable({
       </Select>
 
       <Select value={filters.technique} onValueChange={(v) => setFilter({ technique: v })}>
-        <SelectTrigger className="h-9 w-auto max-w-52" aria-label="Filter by technique">
-          <SelectValue placeholder="Technique" />
+        <SelectTrigger
+          className="h-9 w-auto max-w-52"
+          aria-label={t('threatModel.filter.byTechnique', 'Filter by technique')}
+        >
+          <SelectValue placeholder={t('threatModel.table.technique', 'Technique')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>All techniques</SelectItem>
+          <SelectItem value={ALL}>
+            {t('threatModel.filter.allTechniques', 'All techniques')}
+          </SelectItem>
           {techniques.map(([id, label]) => (
             <SelectItem key={id} value={id}>
               {label}
@@ -298,7 +336,7 @@ export function ThreatModelTable({
             onFiltersChange({ status: ALL, tactic: ALL, attacker: ALL, technique: ALL })
           }
         >
-          Clear filters
+          {t('threatModel.filter.clear', 'Clear filters')}
         </Button>
       )}
     </div>
@@ -310,8 +348,11 @@ export function ThreatModelTable({
       data={filtered}
       showSearch={false}
       toolbarStart={toolbarStart}
-      emptyMessage="No threats match these filters"
-      emptyDescription="Clear the filters to see every threat."
+      emptyMessage={t('threatModel.table.emptyTitle', 'No threats match these filters')}
+      emptyDescription={t(
+        'threatModel.table.emptyDescription',
+        'Clear the filters to see every threat.'
+      )}
     />
   )
 }

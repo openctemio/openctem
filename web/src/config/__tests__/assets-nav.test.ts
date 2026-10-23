@@ -1,6 +1,6 @@
 /**
  * Discovery > Assets is one row with route tabs Inventory | Needs attention |
- * Groups | Activity | Web surface (docs/ui/scoping-ia-2026-10.md, C8). The retired
+ * Groups | Activity. Web surface is a tab of Attack surface. (docs/ui/scoping-ia-2026-10.md, C8). The retired
  * /attack-surface/internal and /cloud pages redirect to the inventory with the
  * filter they applied (D5). Every tab lives under /assets (/assets/groups,
  * /assets/suggestions): a URL mirrors its place in the nav (RFC-042 §6.3.6,
@@ -10,7 +10,11 @@ import { describe, expect, it } from 'vitest'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
-import { ASSETS_SECTION_TABS, ASSET_ATTENTION_TABS } from '../section-tabs'
+import {
+  ASSETS_SECTION_TABS,
+  ASSET_ATTENTION_TABS,
+  ATTACK_SURFACE_SECTION_TABS,
+} from '../section-tabs'
 import { matchRoutePermission, routePermissions } from '../route-permissions'
 import { Permission } from '@/lib/permissions/constants'
 import { resolveLegacyRoute } from '../legacy-routes'
@@ -38,7 +42,6 @@ describe('Discovery > Assets', () => {
       ['Needs attention', '/assets/attention', 'assets'],
       ['Groups', '/assets/groups', 'assets'],
       ['Activity', '/assets/changes', 'assets'],
-      ['Web surface', '/assets/web', 'assets'],
     ])
   })
 
@@ -179,7 +182,7 @@ describe('Asset groups live under /assets/groups', () => {
 
   // Reserved /assets/* page segments: no asset type, class or lens may take
   // these names (api/cmd/gen-asset-types rejects them; RFC-042 §6.3.6).
-  it.each(['attention', 'changes', 'duplicates', 'groups', 'suggestions', 'web'])(
+  it.each(['attention', 'changes', 'duplicates', 'groups', 'suggestions'])(
     '/assets/%s is a reserved static page',
     (segment) => {
       expect(existsSync(join(ASSETS_DIR, segment, 'page.tsx'))).toBe(true)
@@ -219,9 +222,29 @@ describe('Relationship suggestions live under /assets/suggestions', () => {
   })
 })
 
+describe('Attack surface tabs', () => {
+  it('Review (not Suggestions) and Web surface, each bound to its route guard', () => {
+    expect(ATTACK_SURFACE_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
+      ['Overview', '/attack-surface', 'attack_surface'],
+      ['Review', '/attack-surface/review', 'attack_surface'],
+      ['Lookalikes', '/attack-surface/lookalikes', 'attack_surface'],
+      ['Changes', '/attack-surface/changes', 'attack_surface'],
+      ['Web surface', '/attack-surface/web', 'assets'],
+    ])
+    for (const tab of ATTACK_SURFACE_SECTION_TABS) {
+      const guard = matchRoutePermission(tab.href)
+      expect(guard?.module).toBe(tab.module)
+      expect(guard?.permission).toBe(tab.permission)
+    }
+  })
+})
+
 describe('Retired asset routes', () => {
-  it('Timeline is part of Activity: no page and no link reaches /assets/timeline', () => {
-    const appDir = join(__dirname, '../../app/(dashboard)/(discovery)/assets/timeline')
+  it.each([
+    ['timeline', '/assets/timeline'],
+    ['web', '/assets/web'],
+  ])('/assets/%s has no page and no link', (folder, route) => {
+    const appDir = join(__dirname, '../../app/(dashboard)/(discovery)/assets', folder)
     expect(existsSync(appDir)).toBe(false)
     const srcDir = join(__dirname, '../..')
     const offenders: string[] = []
@@ -233,8 +256,7 @@ describe('Retired asset routes', () => {
           if (name !== 'node_modules' && name !== '__tests__') walk(full)
         } else if (entry.isFile() && /\.(tsx?|json)$/.test(name)) {
           const text = readFileSync(full, 'utf8')
-          if (text.includes("'/assets/timeline") || text.includes('"/assets/timeline'))
-            offenders.push(full)
+          if (new RegExp(`['"\`]${route}(['"\`?/])`).test(text)) offenders.push(full)
         }
       }
     }

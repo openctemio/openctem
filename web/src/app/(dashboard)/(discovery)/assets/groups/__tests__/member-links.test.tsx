@@ -27,6 +27,12 @@ vi.mock('next/navigation', () => ({
 // The detail page's own data sections (identity, attribution, ...) fetch on
 // their own; stub every `*Section(s)` export so a section added later does not
 // need this test to change. The page shell under test stays real.
+// The page waits for the team and needs assets:read before it renders an asset.
+vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ isLoading: false }) }))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: () => true }),
+}))
 // The repository workspace fetches its own data; a stub shows it rendered.
 vi.mock('@/features/repositories/components/repository-workspace', () => ({
   RepositoryWorkspace: ({ repositoryId }: { repositoryId: string }) => (
