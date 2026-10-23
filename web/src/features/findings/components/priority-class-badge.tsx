@@ -10,7 +10,7 @@ import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
 interface PriorityClassBadgeProps {
   /** The finding's class; null or missing renders the "not prioritised" dash. */
   priorityClass: PriorityClass | null | undefined
-  /** Add the class name ("P0 · Immediate"). */
+  /** Add the class name ("P0 Immediate"). */
   showWord?: boolean
   showTooltip?: boolean
   /** The finding's asset, so the tooltip states that asset's SLA window. */

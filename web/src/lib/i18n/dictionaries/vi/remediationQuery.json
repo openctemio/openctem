@@ -41,6 +41,7 @@
   "remediationQuery.mode.snapshotHelp": "Nhiệm vụ giữ các phát hiện khớp lúc này. Chạy lại truy vấn sau để thêm kết quả mới khi bạn xác nhận.",
   "remediationQuery.preview.byAsset": "Tài sản nhiều nhất",
   "remediationQuery.preview.byOwner": "Người phụ trách nhiều nhất",
+  "remediationQuery.preview.untitled": "Phát hiện chưa có tiêu đề",
   "remediationQuery.preview.bySeverity": "Mức độ",
   "remediationQuery.preview.claimable": "{count} có thể thêm; {held} đã thuộc nhiệm vụ khác",
   "remediationQuery.preview.colAsset": "Tài sản",

@@ -8,4 +8,4 @@
 
 - Ingest applies the tenant's suppression rules from a snapshot versioned by every write to suppression rules and scope exclusions; when the snapshot cannot load, the ingest fails and is retried. A failed lookup used to turn suppression off for the batch silently.
 - The automations a new finding starts run from a durable `side_effects` ingest job after the batch is committed, batched, instead of a goroutine a restart lost.
-- Migration `003365_ingest_dispositions`.
+- Migration `003380_ingest_dispositions`.

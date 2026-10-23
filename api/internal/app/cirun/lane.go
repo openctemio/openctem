@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 )
 
-// KEVChecker reports whether any of the CVE ids is in the KEV catalogue
+// KEVChecker reports whether any of the CVE ids is in the KEV catalog
 // (postgres.KEVLookup).
 type KEVChecker interface {
 	AnyKEV(ctx context.Context, cveIDs []string) (bool, error)
@@ -23,7 +23,7 @@ const maxLaneCVEs = 1000
 
 // uploadLane is the lane of a CI upload, decided by the server from the
 // decoded report (never from a field the job sets): urgent when a finding is
-// critical or names a CVE in the KEV catalogue, interactive otherwise (a
+// critical or names a CVE in the KEV catalog, interactive otherwise (a
 // gate waits on every CI upload). A lookup error keeps the interactive lane:
 // the lane orders work, it never decides what is applied.
 func (s *Service) uploadLane(ctx context.Context, report *ctis.Report) ingestjob.Lane {

@@ -50,17 +50,9 @@ import { useOwnerNames } from '../api/use-owner-names'
 import { CreateTaskFromQueryDialog } from './create-task-from-query-dialog'
 import { apiMessage } from './suggestions-inbox'
 import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
+import { VIEW_FILTERS, type TaskView } from './task-views'
 
-export type TaskView = 'open' | 'mine' | 'verifying' | 'on_hold' | 'closed' | 'all'
-
-const VIEW_FILTERS: Record<TaskView, Pick<TaskListFilters, 'states' | 'mine'>> = {
-  open: { states: ['open', 'in_progress', 'verifying'] },
-  mine: { states: ['open', 'in_progress', 'verifying', 'on_hold'], mine: true },
-  verifying: { states: ['verifying'] },
-  on_hold: { states: ['on_hold'] },
-  closed: { states: ['done', 'closed_unverified', 'canceled', 'archived'] },
-  all: {},
-}
+export type { TaskView }
 
 const BOARD_COLUMNS: TaskState[] = ['open', 'in_progress', 'verifying', 'on_hold', 'done']
 

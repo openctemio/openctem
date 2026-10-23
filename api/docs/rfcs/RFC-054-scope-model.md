@@ -1500,3 +1500,42 @@ Migrations `002193_ci_trust_managed_scope` (renumbered at merge as needed) add:
 | An entry a person deleted comes back | Recorded on the link; runs and trust changes never create it again |
 | Another organization's public namespace trusted | The entry is labelled with no verified run; opt-in proof keeps it inactive; no clone credential, no network authority |
 | Cross-tenant links or evidence | Tenant-filtered queries, composite foreign keys, evidence only from the tenant's own verified exchange |
+
+## 18. Amendment 2026-10-23: only network entries authorize probes
+
+### 18.1 Problem
+
+A scope entry whose type had no matcher (`certificate`, `container`, `database`, `mobile_app`,
+`cloud_resource`, `network`; and `host`) was compared as wildcard text, and `ValidatePattern` accepted any
+text for it. The pattern `*` then covered every host and every address for active probes. It passed the
+platform guardrails (public suffix, CIDR size), which look only at domain, address and URL entries. A URL
+entry could also start with `*`. The deny list still held.
+
+### 18.2 Rules
+
+1. **Which types authorize probes.** `domain`, `subdomain`, `email_domain`, `ip_address`, `ip_range`, `cidr`,
+   `host`, `url`, `api`, `website` and `repository` (repositories through their own judging, §17). Every other
+   type covers nothing, whatever its pattern says: the coverage test (`EntryMatches`, used by the dispatch
+   gate, the claim re-check, the explain view and the signer ledger) returns false for it.
+2. **No wildcard where there is no matcher.** `ValidatePattern` refuses `*` in every type that has no wildcard
+   matcher (`SCOPE_WILDCARD_NOT_ALLOWED`). A URL entry needs `http://` or `https://` and a concrete host or
+   address; only the path may end in `*`. A `host` entry is a name, `*.name` or one address, and gets the same
+   guardrail checks as a domain or address entry (public suffix, deny list, CIDR size).
+3. **Retired types.** Creating (or previewing) an entry of `certificate`, `container`, `database`, `mobile_app`,
+   `cloud_resource` or `network` is refused with `SCOPE_TARGET_TYPE_RETIRED`. The thing to scope is the
+   domain, address or network that serves the asset. The web console never offered these kinds.
+4. **Existing rows.** Migration `scope_wildcard_entries` takes the active or pending rows that rule 2 would
+   refuse out of effect (active becomes inactive, pending becomes rejected) and writes one `scope_target.deactivated`
+   audit event per entry, in the entry's own tenant, with the old and new status. Patterns stay readable. The
+   down migration restores the status from those events.
+5. **Order unchanged.** Deny list, exclusions, rejection, wildcard-only, record state, authority, then
+   guardrails (§16). Nothing here relaxes a platform control.
+
+### 18.3 Threats
+
+| Threat | Control |
+|---|---|
+| A `*` entry of an unmatched type authorizes every host and address | Type-aware coverage; `*` refused for every type; migration |
+| A wildcard host in a URL entry covers every origin | Concrete host required; coverage ignores a wildcard-host row |
+| A stale row reactivated later | Coverage ignores it regardless of status |
+| Migration touches another tenant | Rows are selected per row; each audit event carries the row's `tenant_id` |
