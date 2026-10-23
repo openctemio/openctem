@@ -31,13 +31,25 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { KeyRound, Plus, Ban, Copy, Check, ShieldCheck } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { KeyRound, Plus, Ban, Copy, Check, ShieldCheck, RefreshCw } from 'lucide-react'
 import {
   useScimTokens,
   useCreateScimToken,
   useRevokeScimToken,
+  useRotateScimToken,
 } from '@/features/scim-tokens/api/use-scim-tokens'
-import type { ScimToken } from '@/features/scim-tokens/types/scim-token.types'
+import {
+  SCIM_TOKEN_DEFAULT_LIFETIME_DAYS,
+  SCIM_TOKEN_LIFETIME_DAYS,
+  type ScimToken,
+} from '@/features/scim-tokens/types/scim-token.types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { toast } from 'sonner'
@@ -49,10 +61,14 @@ function isActive(t: ScimToken): boolean {
 }
 
 function StatusBadge({ t }: { t: ScimToken }) {
-  if (!isActive(t)) {
-    return <Badge variant="secondary">Revoked</Badge>
+  const { t: tr } = useTranslation()
+  if (t.status === 'expired') {
+    return <Badge variant="outline">{tr('settings.scim.status.expired', 'Expired')}</Badge>
   }
-  return <Badge variant="default">Active</Badge>
+  if (!isActive(t)) {
+    return <Badge variant="secondary">{tr('settings.scim.status.revoked', 'Revoked')}</Badge>
+  }
+  return <Badge variant="default">{tr('settings.scim.status.active', 'Active')}</Badge>
 }
 
 // ─────────────────────────────────────────────────────────
@@ -69,16 +85,19 @@ function GenerateTokenDialog({
   onCreated: (plaintext: string) => void
 }) {
   const [name, setName] = useState('')
+  const [days, setDays] = useState<number>(SCIM_TOKEN_DEFAULT_LIFETIME_DAYS)
   const { trigger, isMutating } = useCreateScimToken()
+  const { t: tr } = useTranslation()
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) return toast.error('Name is required')
     try {
-      const res = await trigger({ name: name.trim() })
+      const res = await trigger({ name: name.trim(), expires_in_days: days })
       onCreated(res?.token ?? '')
       onOpenChange(false)
       setName('')
+      setDays(SCIM_TOKEN_DEFAULT_LIFETIME_DAYS)
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to create SCIM token'))
     }
@@ -105,6 +124,29 @@ function GenerateTokenDialog({
                 placeholder="Okta production"
                 required
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="scim-token-expiry">
+                {tr('settings.scim.expiry.label', 'Expires after')}
+              </Label>
+              <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
+                <SelectTrigger id="scim-token-expiry">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SCIM_TOKEN_LIFETIME_DAYS.map((d) => (
+                    <SelectItem key={d} value={String(d)}>
+                      {tr('settings.scim.expiry.days', '{days} days', { days: d })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                {tr(
+                  'settings.scim.expiry.hint',
+                  'The token stops working after this time. Rotate it before then; the old token keeps working for 24 hours after a rotation.'
+                )}
+              </p>
             </div>
           </DialogBody>
           <DialogFooter>
@@ -210,16 +252,36 @@ const SCIM_OWNER_ONLY_REASON =
 function TokenActionsCell({
   t,
   onChanged,
+  onRotated,
   canRevoke,
 }: {
   t: ScimToken
   onChanged: () => void
+  onRotated: (plaintext: string) => void
   canRevoke: boolean
 }) {
   const [revokeOpen, setRevokeOpen] = useState(false)
+  const [rotateOpen, setRotateOpen] = useState(false)
   // `t` is the token here, so the translator is `tr`.
   const { t: tr } = useTranslation()
   const { trigger: revoke, isMutating: revoking } = useRevokeScimToken()
+  const { trigger: rotate, isMutating: rotating } = useRotateScimToken()
+
+  async function handleRotate() {
+    try {
+      const res = await rotate(t.id)
+      toast.success(
+        tr('settings.scim.rotate.done', 'Token rotated. The old token stops working in 24 hours.')
+      )
+      setRotateOpen(false)
+      onRotated(res?.token ?? '')
+      onChanged()
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, tr('settings.scim.rotate.failed', 'Failed to rotate the token'))
+      )
+    }
+  }
 
   async function handleRevoke() {
     try {
@@ -234,6 +296,19 @@ function TokenActionsCell({
 
   return (
     <div className="text-right">
+      {isActive(t) && (
+        <GatedButton
+          variant="ghost"
+          size="icon"
+          allowed={canRevoke}
+          reason={SCIM_OWNER_ONLY_REASON}
+          onClick={() => setRotateOpen(true)}
+          title={canRevoke ? tr('settings.scim.rotate.confirm', 'Rotate') : undefined}
+          aria-label={tr('settings.scim.rotate.label', 'Rotate {name}', { name: t.name })}
+        >
+          <RefreshCw className="h-4 w-4" />
+        </GatedButton>
+      )}
       {isActive(t) && (
         <GatedButton
           variant="ghost"
@@ -265,6 +340,22 @@ function TokenActionsCell({
         isLoading={revoking}
         typeToConfirm={t.name}
         handleConfirm={() => void handleRevoke()}
+      />
+      <ConfirmDialog
+        open={rotateOpen}
+        onOpenChange={setRotateOpen}
+        title={tr('settings.scim.rotate.title', 'Rotate the SCIM token {name}?', { name: t.name })}
+        desc={tr(
+          'settings.scim.rotate.desc',
+          'A new token is generated and shown once. The current token keeps working for 24 hours so you can update your identity provider, then it stops.'
+        )}
+        confirmText={
+          rotating
+            ? tr('settings.scim.rotate.rotating', 'Rotating…')
+            : tr('settings.scim.rotate.confirm', 'Rotate')
+        }
+        isLoading={rotating}
+        handleConfirm={() => void handleRotate()}
       />
     </div>
   )
@@ -303,13 +394,15 @@ export default function ScimTokensPage() {
   // Minting and revoking a token is the owner's (the API refuses admins).
   const canMint = isOwner()
   const { data, error, isLoading, mutate } = useScimTokens({ enabled: canManage })
+  const { t: tr } = useTranslation()
   const [genOpen, setGenOpen] = useState(false)
   const [newToken, setNewToken] = useState('')
 
   const tokens = useMemo(() => data?.tokens ?? [], [data])
   const stats = useMemo(() => {
     const active = tokens.filter(isActive).length
-    return { total: tokens.length, active, revoked: tokens.length - active }
+    const expired = tokens.filter((t) => t.status === 'expired').length
+    return { total: tokens.length, active, expired, revoked: tokens.length - active - expired }
   }, [tokens])
 
   const columns = useMemo<ColumnDef<ScimToken>[]>(
@@ -348,21 +441,45 @@ export default function ScimTokensPage() {
         ),
       },
       {
+        accessorKey: 'expires_at',
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={tr('settings.scim.column.expires', 'Expires')}
+          />
+        ),
+        cell: ({ row }) => (
+          <span className="text-muted-foreground text-xs">
+            {row.original.expires_at ? new Date(row.original.expires_at).toLocaleDateString() : ''}
+          </span>
+        ),
+      },
+      {
         id: 'actions',
         header: '',
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
-          <TokenActionsCell t={row.original} onChanged={() => mutate()} canRevoke={canMint} />
+          <TokenActionsCell
+            t={row.original}
+            onChanged={() => mutate()}
+            onRotated={setNewToken}
+            canRevoke={canMint}
+          />
         ),
       },
     ],
-    [mutate, canMint]
+    [mutate, canMint, tr]
   )
 
   const metrics: MetricStripItem[] = [
     { key: 'total', label: 'Total tokens', value: stats.total },
     { key: 'active', label: 'Active tokens', value: stats.active },
+    {
+      key: 'expired',
+      label: tr('settings.scim.metric.expired', 'Expired tokens'),
+      value: stats.expired,
+    },
     { key: 'revoked', label: 'Revoked tokens', value: stats.revoked },
   ]
 

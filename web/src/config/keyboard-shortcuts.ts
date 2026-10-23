@@ -76,6 +76,27 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     shells: ['app'],
   },
   {
+    id: 'next-finding',
+    label: 'Open the next finding in the list',
+    keys: ['J'],
+    group: 'findings',
+    shells: ['app'],
+  },
+  {
+    id: 'previous-finding',
+    label: 'Open the previous finding in the list',
+    keys: ['K'],
+    group: 'findings',
+    shells: ['app'],
+  },
+  {
+    id: 'add-filter',
+    label: 'Add a filter (findings list)',
+    keys: ['F'],
+    group: 'lists',
+    shells: ['app'],
+  },
+  {
     id: 'clear-selection',
     label: 'Clear the selected rows',
     keys: ['esc'],
