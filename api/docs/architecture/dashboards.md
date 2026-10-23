@@ -798,6 +798,14 @@ widget kit's frame, with its own error boundary.
     Undo). Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo within the session;
     every change is announced to screen readers. Save stores the layout;
     Cancel drops the session.
+  - Each widget's header holds only the drag handle, the title (truncated,
+    full name on hover), Configure and a More menu with Move earlier / later,
+    Narrower / Wider, Shorter / Taller, Duplicate and, after a separator,
+    Remove (each with its key shown). Duplicate and Remove also show inline
+    when the widget itself is at least 22rem wide (a container query on the
+    widget, not the viewport). The header never outgrows its widget.
+  - On a phone (below 640px) the editor is a single-column list of those
+    headers (44px targets), without previews.
   - Moved widgets keep their stored figures; new or changed widgets show
     their preview, or "Figures appear after you save".
 - Widget states map from the server: `building` → no data yet, `not_measured`
