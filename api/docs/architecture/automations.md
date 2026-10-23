@@ -64,7 +64,15 @@ published version becomes `superseded`.
 - **Owner.** Publishing (and switching on) makes the caller the owner live
   runs act as. Editing the draft does not change the owner any more: a draft
   only simulates, and nothing an editor changes acts before someone publishes
-  it. Publishing needs the permission of every step, like switching on.
+  it. Publishing needs the permission of every step of the definition it
+  stores: the service runs the check on that exact definition (a concurrent
+  draft edit cannot slip an unchecked step in), and stores the version and
+  switches the automation live in one transaction. Rollback checks the old
+  definition the same way and validates its graph like a publish does.
+- **Permissions of a live automation.** Switching a live automation on, and
+  a manual run of it, need the permissions of the steps that run: its
+  published version (switching on also needs the draft's, as any change to
+  the draft does).
 - The draft cannot be replaced while a simulate run of it waits or runs;
   live runs do not block an edit. Run steps keep the node id of the
   definition they ran (the foreign key to the draft's nodes is gone, so
@@ -72,6 +80,10 @@ published version becomes `superseded`.
 - **Upgrade.** Migration `automation_versions` makes every automation that
   is switched on version 1, published by its owner, live, so working rules
   keep acting. Automations that are off stay in simulate without a version.
+  The migration cannot compute the Go canonical digest, so those rows carry
+  the placeholder `backfill` until the API stores `Definition.Digest()` for
+  them at startup (idempotent). The mode checks are added `NOT VALID` and
+  validated by the next migration.
 
 Risk classes (`pkg/domain/automation/risk.go`): low (tags), elevated
 (status, assignment, tickets, notifications, AI triage), high (scans, and

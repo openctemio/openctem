@@ -46,6 +46,7 @@ audit_log_chain
 audit_logs
 authorization_letters
 automation_runs
+automation_versions
 automations
 bounty_program_attestations
 bounty_program_channels
@@ -142,10 +143,10 @@ group_asset_scope_rules
 group_role_bindings
 groups
 idempotency_keys
-ingest_jobs
-ingest_receipt_coverage
 import_mapping_versions
 import_mappings
+ingest_jobs
+ingest_receipt_coverage
 ingest_receipts
 ingest_reports
 instance_scan_zone_tenants

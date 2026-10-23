@@ -2678,6 +2678,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		workflowPrincipalContext,
 	)
 
+	// Versions the migration backfilled carry a placeholder digest; store the
+	// canonical one (idempotent, a no-op once repaired).
+	if n, err := repos.WorkflowVersion.RepairBackfilledDigests(context.Background()); err != nil {
+		return nil, fmt.Errorf("repair automation version digests: %w", err)
+	} else if n > 0 {
+		log.Info("repaired automation version digests", "versions", n)
+	}
+
 	// Initialize workflow executor
 	workflowExecutor := automation.NewWorkflowExecutor(
 		repos.Workflow,
