@@ -18,15 +18,19 @@
 --                           an ingest batch (automations on new findings),
 --                           durable and batched instead of a goroutine.
 --
--- Live impact: a check constraint swap on finding_ingest_actions validated
--- against its rows (all are in the old set), three nullable columns, one
+-- Live impact: check constraint swaps added NOT VALID (supersets of the
+-- old sets; no scan of finding_ingest_actions under its lock), three nullable columns, one
 -- new empty table, one small table filled per tenant on first policy write,
 -- two row triggers on two small configuration tables. No backfill.
 
 ALTER TABLE finding_ingest_actions DROP CONSTRAINT IF EXISTS chk_finding_ingest_actions_action;
+-- NOT VALID: the new set is a superset of the old, validated one, so every
+-- existing row satisfies it. finding_ingest_actions holds a row per finding
+-- per receipt; validating would scan it under the ACCESS EXCLUSIVE lock and
+-- block ingest for the duration. New rows are checked.
 ALTER TABLE finding_ingest_actions
     ADD CONSTRAINT chk_finding_ingest_actions_action
-        CHECK (action IN ('created', 'still_detected', 'reopened', 'closed', 'suppressed', 'held'));
+        CHECK (action IN ('created', 'still_detected', 'reopened', 'closed', 'suppressed', 'held')) NOT VALID;
 ALTER TABLE finding_ingest_actions
     ADD COLUMN IF NOT EXISTS policy         varchar(32),
     ADD COLUMN IF NOT EXISTS policy_id      uuid,
@@ -97,8 +101,9 @@ CREATE TRIGGER trg_scope_exclusions_policy_version
     FOR EACH ROW EXECUTE FUNCTION bump_ingest_policy_version();
 
 ALTER TABLE ingest_jobs DROP CONSTRAINT IF EXISTS chk_ingest_jobs_kind;
+-- NOT VALID: a superset of the previous set (no scan under the lock).
 ALTER TABLE ingest_jobs
-    ADD CONSTRAINT chk_ingest_jobs_kind CHECK (kind IN ('sensor', 'ci_results', 'finding_import', 'side_effects'));
+    ADD CONSTRAINT chk_ingest_jobs_kind CHECK (kind IN ('sensor', 'ci_results', 'finding_import', 'side_effects')) NOT VALID;
 
 -- Row-level security policies in shadow mode, like the other tenant tables.
 DO $$

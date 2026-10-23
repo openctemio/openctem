@@ -278,8 +278,11 @@ stored as one `side_effects` ingest job per batch (at most 1,000 finding ids)
 after the batch's findings are committed, and the worker runs them from the
 job (retried; a finding starts an automation once, by its run key). They used
 to run in a goroutine that a restart lost. If the job cannot be stored, they
-run directly as before. (The automation event journal will replace this
-outbox; it is not on develop yet.)
+run directly as before. The job is stored after the commit, not in the
+same transaction: a crash between the two still loses that batch's
+automations (a re-applied upload finds the findings existing, not new).
+The automation event journal, written in the merge transaction, will close
+that window and replace this outbox; it is not on develop yet.
 
 ## 7. API
 
