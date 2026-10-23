@@ -14,6 +14,7 @@ const FILES = [
   'features/findings/components/finding-row-menu.tsx',
   'features/findings/components/finding-phone-card.tsx',
   'features/findings/components/findings-empty-state.tsx',
+  'components/layout/findings-quick-views.tsx',
   'features/shared/components/data-table/data-table.tsx',
   'features/shared/components/data-table/data-table-column-header.tsx',
   'features/shared/components/data-table/data-table-groups.tsx',

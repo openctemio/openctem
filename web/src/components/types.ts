@@ -94,6 +94,11 @@ type NavLink = BaseNavItem & {
    * section so they stay searchable. The page renders the same list as tabs.
    */
   sections?: readonly NavSectionLink[]
+  /**
+   * Lists the Findings quick views (with counts) under this row while the
+   * findings list is open.
+   */
+  quickViews?: boolean
 }
 
 // ✅ Nav item dạng collapsible có danh sách con
