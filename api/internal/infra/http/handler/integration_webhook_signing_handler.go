@@ -14,7 +14,7 @@ import (
 )
 
 // Outbound webhook signing secret and redelivery
-// (docs/rfcs/RFC-122-outbound-webhooks.md).
+// (docs/rfcs/RFC-124-outbound-webhooks.md).
 
 // DeliveryRedeliverer queues an archived notification event again for one
 // integration (internal/app/outbox.Service).

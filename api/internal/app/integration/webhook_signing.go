@@ -12,7 +12,7 @@ import (
 )
 
 // Signing secret of a generic webhook integration
-// (docs/rfcs/RFC-122-outbound-webhooks.md, pkg/webhooksig).
+// (docs/rfcs/RFC-124-outbound-webhooks.md, pkg/webhooksig).
 
 // ErrNoWebhookIntegration: the tenant has no generic webhook integration with
 // this id (another tenant's, or another provider's, is not found either).

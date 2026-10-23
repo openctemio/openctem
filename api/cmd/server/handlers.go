@@ -855,7 +855,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Tool.SetAuditService(svc.Audit)
 	// Configuration changes audited with a before/after diff.
 	handlers.Integration.SetAuditService(svc.Audit)
-	// Redelivery of an archived notification event to one channel (RFC-122).
+	// Redelivery of an archived notification event to one channel (RFC-124).
 	handlers.Integration.SetDeliveryRedeliverer(svc.Outbox)
 	handlers.TemplateSource.SetAuditService(svc.Audit)
 	handlers.SLA.SetAuditService(svc.Audit)
