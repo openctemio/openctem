@@ -20,7 +20,7 @@ describe('StatViz', () => {
     expect(link).toHaveAttribute('href', '/findings?state=open&priority_class=P0,P1')
     const delta = screen.getByText('−12').closest('p')!
     expect(delta).toHaveAttribute('data-tone', 'better')
-    expect(within(delta).getByText('vs previous period')).toBeInTheDocument()
+    expect(within(delta).getByText('vs 43 previous period')).toBeInTheDocument()
     expect(within(delta).getByText('(better)')).toBeInTheDocument()
     const chip = screen.getByText('target <= 0').closest('span[data-status]')!
     expect(chip).toHaveAttribute('data-status', 'missed')
