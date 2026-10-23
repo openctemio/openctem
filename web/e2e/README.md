@@ -55,6 +55,7 @@ tests that cover the console's most user-visible flows.
 | `30-finding-detail-requests.spec.ts`        | Finding page: one read per resource, no connector list for other tools             |
 | `30-findings-triage-and-views.spec.ts`      | Triage button, always-on Priority, columns in the URL                              |
 | `31-assets-quick-views.spec.ts`             | Sidebar quick views under Assets (lenses), no lens/type pills                      |
+| `31-page-rhythm.spec.ts`                    | Page block gaps are the spacing tokens; metric strip rules                         |
 
 Each spec is designed to:
 
