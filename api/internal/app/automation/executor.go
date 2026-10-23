@@ -169,9 +169,6 @@ func NewWorkflowExecutor(
 
 // registerDefaultHandlers registers the built-in action handlers.
 func (e *WorkflowExecutor) registerDefaultHandlers() {
-	// HTTP Request handler (with SSRF protection)
-	e.RegisterActionHandler(automationdom.ActionTypeHTTPRequest, NewHTTPRequestHandler(e.logger))
-
 	// Notification-based actions will use the notification service
 	if e.notificationService != nil {
 		e.notificationHandler = &DefaultNotificationHandler{
@@ -187,6 +184,14 @@ func (e *WorkflowExecutor) RegisterActionHandler(actionType automationdom.Action
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.actionHandlers[actionType] = handler
+}
+
+// HasActionHandler reports whether a handler is registered for the action type.
+func (e *WorkflowExecutor) HasActionHandler(actionType automationdom.ActionType) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	_, ok := e.actionHandlers[actionType]
+	return ok
 }
 
 // Execute executes a workflow run.
@@ -640,9 +645,9 @@ func (e *WorkflowExecutor) executeConditionNode(ctx context.Context, execCtx *Ex
 func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node) (map[string]any, error) {
 	actionType := node.Config.ActionType
 
-	// A stored workflow may still hold an action type that new writes refuse
+	// A stored workflow may still hold a removed action type
 	// (automationdom.ValidateSupported). Such a node never runs.
-	if !actionType.IsSupported() {
+	if !actionType.IsValid() {
 		return nil, fmt.Errorf("action type %s is not supported; edit the automation to remove it", actionType)
 	}
 

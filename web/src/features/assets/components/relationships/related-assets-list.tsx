@@ -488,13 +488,13 @@ function RelatedRow({
         <div className="flex flex-wrap items-center gap-1.5">
           {showCrit && <CriticalityBadge criticality={crit} size="sm" />}
           {a.exposure === 'public' && (
-            <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal">
+            <Badge variant="outline" className="h-5 px-1.5 text-meta font-normal">
               {t('assets.related.internet', 'Internet-facing')}
             </Badge>
           )}
-          {lifecycle && <AssetStatusBadge status={lifecycle} className="h-5 px-1.5 text-[11px]" />}
+          {lifecycle && <AssetStatusBadge status={lifecycle} className="h-5 px-1.5 text-meta" />}
           {item.is_control_plane && (
-            <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal">
+            <Badge variant="outline" className="h-5 px-1.5 text-meta font-normal">
               {t('assets.related.controlPlane', 'Control plane')}
             </Badge>
           )}
@@ -558,7 +558,7 @@ function EdgeFacts({ item }: { item: RelatedAssetItem }) {
         <span
           tabIndex={0}
           className={cn(
-            'inline-flex items-center gap-1 rounded text-[11px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'inline-flex items-center gap-1 rounded text-meta text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             stale && 'text-warning'
           )}
         >

@@ -48,7 +48,8 @@ import {
   remindApprovers,
 } from '@/features/findings/api/use-findings-api'
 import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
-import { FINDING_STATUS_CONFIG } from '@/features/findings/types'
+import { FINDING_STATUS_CONFIG, type FindingStatus } from '@/features/findings/types'
+import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
 import { ApprovalFindingSummary } from '@/features/findings/components/approval-finding-summary'
 import { useListParams } from '@/hooks/use-list-params'
@@ -596,11 +597,10 @@ export default function ApprovalsPage() {
         cell: ({ row }) => {
           const status = row.getValue('requested_status') as string
           const config = FINDING_STATUS_CONFIG[status as keyof typeof FINDING_STATUS_CONFIG]
-          return (
-            <Badge
-              variant="outline"
-              className={cn('text-xs', config?.bgColor, config?.textColor, config?.color)}
-            >
+          return config ? (
+            <FindingStatusBadge status={status as FindingStatus} />
+          ) : (
+            <Badge variant="outline" className="text-xs">
               {getRequestedStatusLabel(t, status)}
             </Badge>
           )
