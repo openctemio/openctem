@@ -5,7 +5,8 @@
  * open findings by severity, KEV, fix, licenses, relationship and scope.
  */
 
-import { CheckCircle2, ShieldAlert } from 'lucide-react'
+import { KevBadge } from '@/components/ui/kev-badge'
+import { CheckCircle2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { SEVERITY_LEVELS } from '@/lib/severity'
@@ -85,16 +86,14 @@ export function KevPill({ count }: { count: number }) {
   const { t } = useTranslation()
   if (!count) return null
   return (
-    <Badge
-      variant="outline"
-      className="gap-1 border-destructive/40 bg-destructive/10 text-[11px] text-destructive"
+    <KevBadge
       title={t('components.kev.hint', 'Known exploited vulnerabilities (CISA KEV)')}
-    >
-      <ShieldAlert className="h-3 w-3" aria-hidden />
-      {count > 1
-        ? t('components.kev.count', 'KEV {count}', { count })
-        : t('components.kev.one', 'KEV')}
-    </Badge>
+      label={
+        count > 1
+          ? t('components.kev.count', 'KEV {count}', { count })
+          : t('components.kev.one', 'KEV')
+      }
+    />
   )
 }
 
