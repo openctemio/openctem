@@ -398,14 +398,14 @@ func registerIntegrationRoutes(
 		// tenant, ignoring data scope: channel managers only, like the
 		// channel configuration that decides where those events go.
 		r.GET("/{id}/notification-events", h.GetNotificationEvents, middleware.Require(permission.IntegrationsManage))
-		// Send one archived delivery again to this channel (RFC-122). Same
+		// Send one archived delivery again to this channel (RFC-124). Same
 		// audience as the delivery history; the event must be the
 		// tenant's and must have gone to this integration. Rate limited per
 		// tenant: each call queues an outbound delivery.
 		r.POST("/{id}/deliveries/{delivery_id}/redeliver", h.RedeliverNotification, middleware.Require(permission.IntegrationsManage),
 			newRedeliverLimiter().TenantMiddleware())
 
-		// Signing secret of a generic webhook integration (RFC-122): its
+		// Signing secret of a generic webhook integration (RFC-124): its
 		// status (never the secret) and its rotation, which shows the new
 		// secret once. Whoever holds the secret can forge deliveries to the
 		// receiver, so rotation needs a fresh step-up.

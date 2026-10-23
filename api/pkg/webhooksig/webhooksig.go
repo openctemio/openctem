@@ -1,5 +1,5 @@
 // Package webhooksig signs and verifies outbound webhook deliveries in the
-// Standard Webhooks format (docs/rfcs/RFC-122-outbound-webhooks.md):
+// Standard Webhooks format (docs/rfcs/RFC-124-outbound-webhooks.md):
 //
 //	webhook-id:        <message id, stable across retries>
 //	webhook-timestamp: <unix seconds>
