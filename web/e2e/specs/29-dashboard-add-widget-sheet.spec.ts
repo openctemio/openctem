@@ -73,7 +73,8 @@ for (const vp of [
 
       const box = await sheet.boundingBox()
       expect(box && box.width).toBeLessThanOrEqual(Math.min(34 * 16, vp.width) + 0.5)
-      if (vp.width < 640) expect(box && box.width).toBeGreaterThanOrEqual(vp.width - 1)
+      // Full screen on a phone (a scroll-lock scrollbar gutter may take a few pixels).
+      if (vp.width < 640) expect(box && box.width).toBeGreaterThanOrEqual(vp.width - 24)
 
       // Let the lazy previews load and scroll through them: a wide one would
       // stretch the whole list.
