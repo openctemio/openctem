@@ -101,7 +101,7 @@ export const importMappingsApi = {
     patch<ImportMapping>(`${BASE}/${encodeURIComponent(id)}`, input),
   /** The API client asks for step-up and retries when the API requires it. */
   remove: (id: string) => del<void>(`${BASE}/${encodeURIComponent(id)}`),
-  validate: (mapping: MappingDocument) => post<ValidateResult>(`${BASE}/validate`, { mapping }),
+  validate: (mapping: MappingDocument) => post<ValidateResult>(`${BASE}/verify`, { mapping }),
 }
 
 /** A preview the API refused; `errors` holds the validation reasons of a 422. */
