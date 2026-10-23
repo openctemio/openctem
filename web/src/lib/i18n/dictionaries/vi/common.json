@@ -132,5 +132,7 @@
   "common.table.hideColumn": "Ẩn",
   "common.table.collapseGroup": "Thu gọn {label}",
   "common.table.expandGroup": "Mở rộng {label}",
-  "common.table.loading": "Đang tải"
+  "common.table.loading": "Đang tải",
+  "common.yes": "Có",
+  "common.no": "Không"
 }
