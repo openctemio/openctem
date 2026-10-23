@@ -82,6 +82,14 @@ export function SSOEnforcementCard({ org, canManage, onChanged }: SSOEnforcement
                 )}
               </p>
             )}
+            {!org.sso_enforced && (
+              <p className="text-muted-foreground">
+                {t(
+                  'admin.ssoEnforcementCard.needsVerifiedDomain',
+                  'Needs at least one domain verified for SSO. If a domain later fails its DNS check, SSO stays required and the owners are alerted.'
+                )}
+              </p>
+            )}
           </div>
           <Switch
             checked={org.sso_enforced}

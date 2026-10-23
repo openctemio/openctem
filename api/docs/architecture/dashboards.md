@@ -477,6 +477,7 @@ scoped read never does (the same rule as the findings list).
 | `dash_asset_rank` (F3) | asset × list kind × partition, top 10 | kinds `fix_next` (priority, severity, newest), `sla_due` (earliest SLA deadline), `oldest` (first detected); `finding_id`, `priority_class`, `severity`, `sort_at` |
 | `dash_dirty_assets` | one row per pending mark | `tenant_id`, `asset_id`, `reasons` (bits), `marked_at` |
 | `dash_fact_status` | tenant | `rebuilt_at` (last full rebuild, NULL = never built), `aged_marked_at` |
+| `dash_ingest_day` | tenant × UTC day × source kind (`sensor`, `import`, `connector`, `ci`) × tool | `reports`, `received`, `created`, `still_detected`, `reopened`, `closed`, `skipped`, `failed`, `suppressed`. Not per asset and not maintained by the facts maintainer: the receipt writer upserts it in the transaction that records each ingest ([ingest-receipts.md](ingest-receipts.md)); kept 13 months; organization-wide only |
 
 What is stored, exactly:
 
@@ -917,7 +918,10 @@ icon and a label.
 palette against its mode's card surface: adjacent-pair separation under
 protanopia and deuteranopia (OKLab ΔE ≥ 8, 6-8 only with secondary encoding),
 normal-vision separation (≥ 15), chroma, lightness band, contrast, monotone
-sequential steps with readable ink, and that the theme tokens equal the JSON.
+sequential steps with readable ink, the accent band (no data colour at OKLCH
+hue 165-200, which belongs to the brand teal that marks where to act), and
+that the theme tokens equal the JSON. The dark card surface is the brand's
+ink-derived `#0F1D33`.
 A unit test (`dashboard-kit/__tests__/palette.test.ts`) runs the same check in
 CI. Two documented relaxations, both covered by the table view and labels:
 some light-mode marks are below 3:1 against white, and the dark severity

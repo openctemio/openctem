@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
@@ -24,7 +25,7 @@ func (f fixedSCIMToken) Authenticate(_ context.Context, plaintext string) (*scim
 // role change made by the identity provider names the token (23b S-H1).
 func TestSCIMAuth_RecordsTokenAsAuditActor(t *testing.T) {
 	tenantID := shared.NewID()
-	tok := scimtoken.New(shared.NewID(), tenantID, "okta", "hash", "scim_abc")
+	tok := scimtoken.New(shared.NewID(), tenantID, "okta", "hash", "scim_abc", time.Now().Add(time.Hour))
 	var gotTenant shared.ID
 	var gotID, gotPrefix string
 	var ok bool

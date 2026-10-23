@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
@@ -46,7 +45,7 @@ func NewTelegramClient(config Config) (*TelegramClient, error) {
 		// SSRF: APIEndpoint is configurable, so the dialer-level blocklist
 		// must reject any tenant-supplied URL that resolves into private
 		// space, even if the create-time check passed (DNS rebinding).
-		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
+		httpClient: newHTTPClient(30*time.Second, false),
 	}, nil
 }
 
