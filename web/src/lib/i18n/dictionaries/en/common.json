@@ -137,5 +137,6 @@
   "common.table.loading": "Loading",
   "common.yes": "Yes",
   "common.no": "No",
-  "common.showingFirstOf": "Showing the first {loaded} of {total}"
+  "common.showingFirstOf": "Showing the first {loaded} of {total}",
+  "common.viewSwitcher.label": "View"
 }

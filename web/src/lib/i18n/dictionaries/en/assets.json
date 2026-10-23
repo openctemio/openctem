@@ -1073,5 +1073,7 @@
   "assets.lensDescription.code": "Source code repositories.",
   "assets.lensDescription.identities": "Users, roles and machine identities.",
   "assets.lensDescription.data": "Databases, data stores and storage buckets.",
-  "assets.lensDescription.network": "Networks, VPCs, subnets, firewalls and load balancers."
+  "assets.lensDescription.network": "Networks, VPCs, subnets, firewalls and load balancers.",
+  "assets.view.list": "List view",
+  "assets.view.categories": "Category view"
 }

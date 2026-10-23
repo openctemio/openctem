@@ -1073,5 +1073,7 @@
   "assets.lensDescription.code": "Kho mã nguồn.",
   "assets.lensDescription.identities": "Người dùng, vai trò và định danh máy.",
   "assets.lensDescription.data": "Cơ sở dữ liệu, kho dữ liệu và bucket lưu trữ.",
-  "assets.lensDescription.network": "Mạng, VPC, subnet, tường lửa và bộ cân bằng tải."
+  "assets.lensDescription.network": "Mạng, VPC, subnet, tường lửa và bộ cân bằng tải.",
+  "assets.view.list": "Xem dạng danh sách",
+  "assets.view.categories": "Xem theo danh mục"
 }

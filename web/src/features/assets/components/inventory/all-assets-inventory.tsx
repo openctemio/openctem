@@ -476,7 +476,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   return (
     <Main>
-      <PageHeader title={t('assets.overview.title', 'Assets')}>
+      <PageHeader title={t('assets.overview.title', 'Assets')} viewSwitcher={viewSwitcher}>
         <Button
           variant="outline"
           size="sm"
@@ -491,7 +491,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         {canWrite && (
           <InventoryAddButton registry={registry} view={typeView} onAdd={forms.openCreate} />
         )}
-        {viewSwitcher}
       </PageHeader>
       <AssetsSectionTabs />
 
