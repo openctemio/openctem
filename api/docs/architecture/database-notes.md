@@ -144,12 +144,12 @@ moved on. See [finding-row-version.md](finding-row-version.md).
 ## Finding decision review functions
 
 - `finding_severity_rank(sev text) RETURNS integer` - severity order (critical 4 ... else 0) for comparisons in triggers.
-- `flag_single_person_fp_review(p_tenant uuid, p_finding uuid, p_change text, p_evidence jsonb) RETURNS void` -
+- `flag_single_person_decision_review(p_tenant uuid, p_finding uuid, p_status text, p_change text, p_evidence jsonb) RETURNS void` -
   raises the `material_change_single_person` review flag (`finding_decision_reviews`) and a `decision_review`
-  timeline entry on a false positive whose latest approved decision was one person's (`single_person` or
+  timeline entry on a false positive or accepted risk (`p_status`) whose latest approved decision of that status was one person's (`single_person` or
   `self_approved`). Called by the triggers `trg_findings_single_person_fp_review` (severity raised, KEV added)
   and `trg_finding_evidence_single_person_fp_review` (new evidence). See
-  [finding status lifecycle](finding-status-lifecycle.md#false-positive-approval-level).
+  [finding status lifecycle](finding-status-lifecycle.md#approval-levels-false-positive-and-risk-acceptance).
 
 ## Dashboard fact functions
 

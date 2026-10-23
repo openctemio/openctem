@@ -198,8 +198,9 @@ func cellKey(k Kind, c Class) string { return string(k) + "." + string(c) }
 //
 //   - false positive: single (the organization's false-positive level may be
 //     off);
-//   - accepted risk: peer, and security from high up (four-eyes on an
-//     accepted risk is never off);
+//   - accepted risk: peer, and security from high up; the organization's
+//     risk acceptance level (high_and_above, off) is the only way below it,
+//     applied by Evaluate, never a policy cell;
 //   - suppression rules decide many findings, including future ones: never
 //     single; an accepted-risk rule follows the accepted-risk floors.
 func Floor(k Kind, c Class) Tier {
