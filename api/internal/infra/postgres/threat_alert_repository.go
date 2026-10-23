@@ -552,7 +552,7 @@ func (r *ThreatAlertRepository) SaveTenantState(ctx context.Context, st threatal
 	}
 	if _, err := r.db.ExecContext(ctx, `
 		INSERT INTO threat_alert_tenant_state (tenant_id, baseline_at, baseline_digest_due, last_digest_on, last_digest_at, last_fold_at)
-		SELECT $1, $2, $3, $4::date, $5, $6 WHERE EXISTS (SELECT 1 FROM tenants WHERE id = $1)
+		SELECT $1, $2, $3, $4::date, $5, $6 WHERE EXISTS (SELECT 1 FROM tenants WHERE id = $1 FOR KEY SHARE)
 		ON CONFLICT (tenant_id) DO UPDATE SET baseline_at = EXCLUDED.baseline_at,
 			baseline_digest_due = EXCLUDED.baseline_digest_due, last_digest_on = EXCLUDED.last_digest_on,
 			last_digest_at = EXCLUDED.last_digest_at, last_fold_at = EXCLUDED.last_fold_at, updated_at = now()`,

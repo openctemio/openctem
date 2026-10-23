@@ -101,6 +101,7 @@
   "confirm.crownJewel.removeDesc": "Việc theo dõi và yêu cầu bảo vệ của tài sản trọng yếu bị gỡ. Bản thân tài sản được giữ lại và bạn có thể chỉ định lại sau.",
   "confirm.crownJewel.removeTitle": "Gỡ \"{name}\" khỏi danh sách tài sản trọng yếu?",
   "confirm.dashboard.deleteDesc": "Bảng điều khiển và bố cục tiện ích của nó bị xóa với mọi người có thể xem. Dữ liệu của bạn không bị ảnh hưởng. Không thể hoàn tác.",
+  "confirm.dashboard.deleteDescPersonal": "Bảng điều khiển của bạn và bố cục của nó bị xóa. Các bản sao bạn đã chia sẻ và dữ liệu của bạn không bị ảnh hưởng. Không thể hoàn tác.",
   "confirm.dashboard.deleteLabel": "Xóa bảng điều khiển {name}",
   "confirm.dashboard.deleteTitle": "Xóa bảng điều khiển \"{name}\"?",
   "confirm.dashboard.deleted": "Đã xóa bảng điều khiển \"{name}\"",
