@@ -38,7 +38,7 @@ func TestMergeDuplicateRepositories(t *testing.T) {
 			t.Fatalf("exchange %s: %d %v", repo, code, ex)
 		}
 		run, tok := ex["run_id"].(string), ex["token"].(string)
-		if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, ciReport("github.com/"+repo, f...)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(run, tok, ciReport("github.com/"+repo, f...)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 		got, err := r.repo.GetRun(ctx, r.tenant, shared.MustIDFromString(run))

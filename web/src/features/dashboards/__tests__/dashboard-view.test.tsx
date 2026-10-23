@@ -162,4 +162,49 @@ describe('DashboardView CTEM widgets without anything to measure', () => {
     expect(screen.getByText(/no asset relationships are known/)).toBeInTheDocument()
     expect(screen.queryByText('0')).toBeNull()
   })
+
+  it('a heatmap cell opens no list: its number has no link to the widget list', () => {
+    const data = {
+      dashboard_id: 'd',
+      scope: 'personal',
+      restricted: true,
+      facts_built_at: 'x',
+      computed_at: new Date().toISOString(),
+      stale: false,
+      widgets: [
+        {
+          id: 'w',
+          index: 0,
+          widget_type: 'metric',
+          state: 'ready',
+          shape: 'matrix',
+          metric: 'findings.age_by_severity',
+          drill: '/findings?state=open',
+          matrix: { rows: ['critical'], cols: ['90+'], cells: [[7]] },
+        },
+      ],
+    } as unknown as DashboardData
+    render(
+      <DashboardView
+        dashboard={{
+          layout: [
+            {
+              ...stat('w', 'findings.age_by_severity'),
+              config: {
+                v: 2,
+                id: 'w',
+                data: { kind: 'metric', metric: 'findings.age_by_severity', filter: {}, time: {} },
+                viz: { type: 'heatmap', options: {} },
+              },
+            },
+          ],
+          columns: 2,
+        }}
+        data={data}
+        loading={false}
+      />
+    )
+    expect(screen.getAllByText('7').length).toBeGreaterThan(0)
+    expect(screen.queryAllByRole('link').filter((l) => l.textContent?.includes('7'))).toEqual([])
+  })
 })

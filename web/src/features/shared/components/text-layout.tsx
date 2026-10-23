@@ -16,7 +16,12 @@ import { cn } from '@/lib/utils'
  *   truncated in the middle with the full value in a tooltip.
  */
 
-/** A line of metadata: items in one size, separated by a middle dot. */
+/**
+ * A line of metadata: items in one size, separated by space, not by a glyph
+ * (research/248). The gap is 12px; an item that is not self-evident carries an
+ * icon or a short label (see MetaItem). Between items there is a visually
+ * hidden ", " so a screen reader pauses and a copied line reads "a, b, c".
+ */
 export function MetaLine({
   items,
   className,
@@ -33,18 +38,56 @@ export function MetaLine({
       className={cn(
         // Children inherit the size: a nested RelativeTime or badge text cannot
         // come out larger than the line it sits in.
-        'flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-meta text-muted-foreground',
+        'flex min-w-0 flex-wrap items-baseline gap-x-3 text-meta text-muted-foreground',
         className
       )}
     >
       {shown.map((item, i) => (
         <React.Fragment key={i}>
-          {i > 0 && <span aria-hidden="true">·</span>}
+          {i > 0 && <span className="sr-only">, </span>}
           {/* An item wraps as a unit when it fits a line, and by words if not. */}
           <span className="min-w-0 break-words">{item}</span>
         </React.Fragment>
       ))}
     </p>
+  )
+}
+
+/**
+ * Two or three parts of ONE label, divided by a 1px rule instead of a glyph
+ * (a scoped tag "env | production", a chip with a qualifier). The parts are
+ * separate spans; a visually hidden separator sits between them so the label
+ * reads and copies as "env: production". Wrap it in an element that carries
+ * the aria-label when the whole label needs a custom announcement.
+ */
+export function LabelSegments({
+  segments,
+  srSeparator = ': ',
+  className,
+}: {
+  /** Null and false segments are skipped. */
+  segments: React.ReactNode[]
+  /** Visually hidden text between segments: ": " for key and value, ", " for a qualifier. */
+  srSeparator?: string
+  className?: string
+}) {
+  const shown = segments.filter((s) => s !== null && s !== undefined && s !== false && s !== '')
+  if (shown.length === 0) return null
+  return (
+    <span
+      data-slot="label-segments"
+      className={cn(
+        'inline-flex min-w-0 items-stretch overflow-hidden rounded-md border text-meta',
+        className
+      )}
+    >
+      {shown.map((segment, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span className="sr-only">{srSeparator}</span>}
+          <span className={cn('min-w-0 px-1.5 py-0.5', i > 0 && 'border-l')}>{segment}</span>
+        </React.Fragment>
+      ))}
+    </span>
   )
 }
 

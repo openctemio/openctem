@@ -119,8 +119,17 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 	if err != nil {
 		return nil, fmt.Errorf("list verified domains: %w", err)
 	}
-	a := &Authority{targets: ts}
-	if hasProgramEntry(ts) {
+	// An entry the platform guardrails refuse (a public suffix, the deny
+	// list, an oversized range) covers nothing, whatever is stored.
+	g := scopedom.DefaultGuardrails()
+	kept := make([]*scopedom.Target, 0, len(ts))
+	for _, t := range ts {
+		if t != nil && g.CheckPattern(t.TargetType(), t.Pattern()) == nil {
+			kept = append(kept, t)
+		}
+	}
+	a := &Authority{targets: kept}
+	if hasProgramEntry(kept) {
 		pe, ok := targets.(ProgramExclusions)
 		if !ok {
 			a.programsOff = true

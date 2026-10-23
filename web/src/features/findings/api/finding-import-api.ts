@@ -30,13 +30,48 @@ export interface FindingImportOptions {
 export class FindingImportError extends Error {
   readonly status: number
   readonly file?: ImportFileResponse
+  /** Fixed code of a stored upload the server could not import (e.g. apply_failed). */
+  readonly code?: string
 
-  constructor(message: string, status: number, file?: ImportFileResponse) {
+  constructor(message: string, status: number, file?: ImportFileResponse, code?: string) {
     super(message)
     this.name = 'FindingImportError'
     this.status = status
     this.file = file
+    this.code = code
   }
+}
+
+/** How long the client waits for a stored upload to be imported. */
+const RESULT_POLLS = 60
+
+/**
+ * A committed upload is stored (202) and imported by the server's ingest
+ * worker: read its result (each read waits up to 10 s on the server) until
+ * it is applied or failed, and return it merged into the first answer.
+ */
+async function waitForResult(accepted: FindingImportResponse): Promise<FindingImportResponse> {
+  const id = accepted.receipt_id
+  if (!id) return accepted
+  for (let i = 0; i < RESULT_POLLS; i++) {
+    const res = await csrfFetch(`/api/v1/findings/imports/${encodeURIComponent(id)}/result?wait=10`)
+    if (!res.ok) {
+      throw new FindingImportError(`Import failed (HTTP ${res.status})`, res.status)
+    }
+    const body = (await res.json()) as FindingImportResponse
+    if (body.status === 'failed') {
+      throw new FindingImportError(
+        body.error_code ?? 'apply_failed',
+        res.status,
+        undefined,
+        body.error_code ?? 'apply_failed'
+      )
+    }
+    if (body.status === 'applied') {
+      return { ...accepted, ...body, dry_run: false }
+    }
+  }
+  throw new FindingImportError('timeout', 504, undefined, 'timeout')
 }
 
 export async function importFindings(opts: FindingImportOptions): Promise<FindingImportResponse> {
@@ -68,5 +103,9 @@ export async function importFindings(opts: FindingImportOptions): Promise<Findin
             : `Import failed (HTTP ${res.status})`
     throw new FindingImportError(message, res.status, err.details)
   }
-  return body as FindingImportResponse
+  const resp = body as FindingImportResponse
+  if (res.status === 202) {
+    return waitForResult(resp)
+  }
+  return resp
 }

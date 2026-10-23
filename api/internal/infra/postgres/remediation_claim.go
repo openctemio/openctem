@@ -108,7 +108,7 @@ type takenRow struct {
 // membership in a task other than except.
 func activePrimaryRowsInTx(ctx context.Context, q rowsQuerier, tenantID shared.ID, ids []shared.ID, except *shared.ID) ([]takenRow, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT m.finding_id, f.title, m.task_id
+		SELECT m.finding_id, `+FindingDisplayTitleSQL+`, m.task_id
 		FROM remediation_task_members m
 		JOIN findings f ON f.tenant_id = m.tenant_id AND f.id = m.finding_id
 		WHERE m.tenant_id = $1 AND m.finding_id = ANY($2::uuid[]) AND m.left_at IS NULL AND m.role = 'primary'
