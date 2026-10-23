@@ -65,13 +65,13 @@ func (r *OutboxRepository) createWithExecutor(ctx context.Context, exec executor
 			title, body, severity, url, metadata,
 			status, retry_count, max_retries, last_error,
 			scheduled_at, locked_at, locked_by,
-			created_at, updated_at, processed_at
+			created_at, updated_at, processed_at, deliveries
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8, $9, $10,
 			$11, $12, $13, $14,
 			$15, $16, $17,
-			$18, $19, $20
+			$18, $19, $20, $21
 		)
 	`
 
@@ -96,6 +96,7 @@ func (r *OutboxRepository) createWithExecutor(ctx context.Context, exec executor
 		entry.CreatedAt(),
 		entry.UpdatedAt(),
 		entry.ProcessedAt(),
+		deliveriesJSON(entry),
 	)
 	if err != nil {
 		return fmt.Errorf("insert notification outbox: %w", err)
@@ -111,7 +112,7 @@ func (r *OutboxRepository) GetByID(ctx context.Context, id outbox.ID) (*outbox.O
 			   title, body, severity, url, metadata,
 			   status, retry_count, max_retries, last_error,
 			   scheduled_at, locked_at, locked_by,
-			   created_at, updated_at, processed_at
+			   created_at, updated_at, processed_at, deliveries
 		FROM notification_outbox
 		WHERE id = $1
 	`
@@ -131,7 +132,8 @@ func (r *OutboxRepository) Update(ctx context.Context, entry *outbox.Outbox) err
 		UPDATE notification_outbox
 		SET status = $2, retry_count = $3, last_error = $4,
 			scheduled_at = $5, locked_at = $6, locked_by = $7,
-			updated_at = $8, processed_at = $9, metadata = $10
+			updated_at = $8, processed_at = $9, metadata = $10,
+			max_retries = $11, deliveries = $12
 		WHERE id = $1
 	`
 
@@ -146,6 +148,8 @@ func (r *OutboxRepository) Update(ctx context.Context, entry *outbox.Outbox) err
 		entry.UpdatedAt(),
 		entry.ProcessedAt(),
 		metadata,
+		entry.MaxRetries(),
+		deliveriesJSON(entry),
 	)
 	if err != nil {
 		return fmt.Errorf("update notification outbox: %w", err)
@@ -212,7 +216,7 @@ func (r *OutboxRepository) FetchPendingBatch(ctx context.Context, workerID strin
 			   title, body, severity, url, metadata,
 			   status, retry_count, max_retries, last_error,
 			   scheduled_at, locked_at, locked_by,
-			   created_at, updated_at, processed_at
+			   created_at, updated_at, processed_at, deliveries
 		FROM notification_outbox
 		WHERE status = 'pending' AND scheduled_at <= $1
 		ORDER BY scheduled_at ASC, created_at ASC
@@ -378,7 +382,7 @@ func (r *OutboxRepository) List(ctx context.Context, filter outbox.OutboxFilter,
 			   title, body, severity, url, metadata,
 			   status, retry_count, max_retries, last_error,
 			   scheduled_at, locked_at, locked_by,
-			   created_at, updated_at, processed_at
+			   created_at, updated_at, processed_at, deliveries
 		FROM notification_outbox
 		%s
 		ORDER BY created_at DESC
@@ -491,7 +495,7 @@ func (r *OutboxRepository) ListByTenant(ctx context.Context, tenantID shared.ID,
 			   title, body, severity, url, metadata,
 			   status, retry_count, max_retries, last_error,
 			   scheduled_at, locked_at, locked_by,
-			   created_at, updated_at, processed_at
+			   created_at, updated_at, processed_at, deliveries
 		FROM notification_outbox
 		%s
 		ORDER BY created_at DESC
@@ -553,7 +557,7 @@ func (r *OutboxRepository) GetByAggregateID(ctx context.Context, aggregateType s
 			   title, body, severity, url, metadata,
 			   status, retry_count, max_retries, last_error,
 			   scheduled_at, locked_at, locked_by,
-			   created_at, updated_at, processed_at
+			   created_at, updated_at, processed_at, deliveries
 		FROM notification_outbox
 		WHERE aggregate_type = $1 AND aggregate_id = $2
 		ORDER BY created_at DESC
@@ -594,6 +598,7 @@ func (r *OutboxRepository) scanOutbox(row *sql.Row) (*outbox.Outbox, error) {
 		createdAt     time.Time
 		updatedAt     time.Time
 		processedAt   sql.NullTime
+		deliveries    []byte
 	)
 
 	err := row.Scan(
@@ -601,7 +606,7 @@ func (r *OutboxRepository) scanOutbox(row *sql.Row) (*outbox.Outbox, error) {
 		&title, &body, &severity, &url, &metadata,
 		&status, &retryCount, &maxRetries, &lastError,
 		&scheduledAt, &lockedAt, &lockedBy,
-		&createdAt, &updatedAt, &processedAt,
+		&createdAt, &updatedAt, &processedAt, &deliveries,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -615,7 +620,7 @@ func (r *OutboxRepository) scanOutbox(row *sql.Row) (*outbox.Outbox, error) {
 		title, body, severity, url, metadata,
 		status, retryCount, maxRetries, lastError,
 		scheduledAt, lockedAt, lockedBy,
-		createdAt, updatedAt, processedAt,
+		createdAt, updatedAt, processedAt, deliveries,
 	)
 }
 
@@ -644,6 +649,7 @@ func (r *OutboxRepository) scanOutboxRows(rows *sql.Rows) ([]*outbox.Outbox, err
 			createdAt     time.Time
 			updatedAt     time.Time
 			processedAt   sql.NullTime
+			deliveries    []byte
 		)
 
 		err := rows.Scan(
@@ -651,7 +657,7 @@ func (r *OutboxRepository) scanOutboxRows(rows *sql.Rows) ([]*outbox.Outbox, err
 			&title, &body, &severity, &url, &metadata,
 			&status, &retryCount, &maxRetries, &lastError,
 			&scheduledAt, &lockedAt, &lockedBy,
-			&createdAt, &updatedAt, &processedAt,
+			&createdAt, &updatedAt, &processedAt, &deliveries,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan notification outbox row: %w", err)
@@ -662,7 +668,7 @@ func (r *OutboxRepository) scanOutboxRows(rows *sql.Rows) ([]*outbox.Outbox, err
 			title, body, severity, url, metadata,
 			status, retryCount, maxRetries, lastError,
 			scheduledAt, lockedAt, lockedBy,
-			createdAt, updatedAt, processedAt,
+			createdAt, updatedAt, processedAt, deliveries,
 		)
 		if err != nil {
 			continue // Skip invalid rows
@@ -685,6 +691,7 @@ func (r *OutboxRepository) mapToOutbox(
 	status string, retryCount, maxRetries int, lastError sql.NullString,
 	scheduledAt time.Time, lockedAt sql.NullTime, lockedBy sql.NullString,
 	createdAt, updatedAt time.Time, processedAt sql.NullTime,
+	deliveriesBytes []byte,
 ) (*outbox.Outbox, error) {
 	id, err := outbox.ParseID(idStr)
 	if err != nil {
@@ -723,7 +730,7 @@ func (r *OutboxRepository) mapToOutbox(
 		processedAtPtr = &processedAt.Time
 	}
 
-	return outbox.Reconstitute(
+	entry := outbox.Reconstitute(
 		id,
 		tenantID,
 		eventType,
@@ -744,5 +751,26 @@ func (r *OutboxRepository) mapToOutbox(
 		createdAt,
 		updatedAt,
 		processedAtPtr,
-	), nil
+	)
+	if len(deliveriesBytes) > 0 {
+		var ds []outbox.ChannelDelivery
+		if err := json.Unmarshal(deliveriesBytes, &ds); err != nil {
+			return nil, fmt.Errorf("parse deliveries: %w", err)
+		}
+		entry.SetDeliveries(ds)
+	}
+	return entry, nil
+}
+
+// deliveriesJSON encodes the per-channel delivery state ('[]' when none).
+func deliveriesJSON(entry *outbox.Outbox) []byte {
+	ds := entry.Deliveries()
+	if len(ds) == 0 {
+		return []byte("[]")
+	}
+	b, err := json.Marshal(ds)
+	if err != nil {
+		return []byte("[]")
+	}
+	return b
 }
