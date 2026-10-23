@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useCanSelfRegister } from '../hooks/use-can-self-register'
 import { LegalNotice } from './legal-notice'
 import { RegisterForm } from './register-form'
@@ -35,6 +36,7 @@ export function RegisterGate({
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('returnTo')
   const { canRegister, isLoading } = useCanSelfRegister(returnTo)
+  const { t } = useTranslation()
 
   if (isLoading) {
     return (
@@ -60,18 +62,20 @@ export function RegisterGate({
             <UserX className="h-10 w-10" />
           </div>
           <CardTitle className="text-center text-lg tracking-tight">
-            Registration is disabled
+            <h1>{t('auth.register.disabledTitle', 'Registration is disabled')}</h1>
           </CardTitle>
           <CardDescription className="text-center">
-            Accounts are created by your administrator. If you were given a setup or invitation
-            link, open it to get started.
+            {t(
+              'auth.register.disabledBody',
+              'Accounts are created by your administrator. If you were given a setup or invitation link, open it to get started.'
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button asChild className="w-full">
             <Link href="/login">
               <ArrowLeft className="h-4 w-4" />
-              Back to sign in
+              {t('auth.common.backToSignIn', 'Back to sign in')}
             </Link>
           </Button>
         </CardContent>
@@ -84,12 +88,14 @@ export function RegisterGate({
   return (
     <Card className="gap-4">
       <CardHeader>
-        <CardTitle className="text-lg tracking-tight">Create an account</CardTitle>
+        <CardTitle className="text-lg tracking-tight">
+          <h1>{t('auth.register.title', 'Create an account')}</h1>
+        </CardTitle>
         <CardDescription>
-          Enter your email and password to create an account. <br />
-          Already have an account?{' '}
+          {t('auth.register.description', 'Enter your email and password to create an account.')}{' '}
+          {t('auth.register.haveAccount', 'Already have an account?')}{' '}
           <Link href={loginHref} className="hover:text-primary underline underline-offset-4">
-            Sign in
+            {t('auth.register.signIn', 'Sign in')}
           </Link>
         </CardDescription>
       </CardHeader>
@@ -97,7 +103,7 @@ export function RegisterGate({
         <RegisterForm />
       </CardContent>
       <CardFooter className="justify-center empty:hidden">
-        <LegalNotice action="creating an account" termsUrl={termsUrl} privacyUrl={privacyUrl} />
+        <LegalNotice kind="register" termsUrl={termsUrl} privacyUrl={privacyUrl} />
       </CardFooter>
     </Card>
   )

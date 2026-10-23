@@ -169,14 +169,6 @@ export const SCANNER_TYPE_LABELS: Record<ScannerType, string> = {
 export type Severity = SeverityLevel
 export { SEVERITY_LABELS }
 
-export const SEVERITY_COLORS: Record<Severity, { bg: string; text: string; border: string }> = {
-  critical: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
-  high: { bg: 'bg-orange-500/15', text: 'text-orange-600', border: 'border-orange-500/30' },
-  medium: { bg: 'bg-yellow-500/15', text: 'text-yellow-600', border: 'border-yellow-500/30' },
-  low: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-  info: { bg: 'bg-gray-500/15', text: 'text-gray-600', border: 'border-gray-500/30' },
-}
-
 // ============================================
 // Findings Summary Types
 // ============================================
@@ -492,14 +484,6 @@ export const SLA_STATUS_LABELS: Record<SLAStatus, string> = {
   overdue: 'Overdue',
   exceeded: 'Exceeded',
   not_applicable: 'N/A',
-}
-
-export const SLA_STATUS_COLORS: Record<SLAStatus, { bg: string; text: string }> = {
-  on_track: { bg: 'bg-green-500/15', text: 'text-green-600' },
-  warning: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
-  overdue: { bg: 'bg-orange-500/15', text: 'text-orange-600' },
-  exceeded: { bg: 'bg-red-500/15', text: 'text-red-600' },
-  not_applicable: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
 }
 
 export interface SLAPolicy {

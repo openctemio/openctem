@@ -3,10 +3,10 @@
 import { cn } from '@/lib/utils'
 
 interface SparklineProps {
+  /** Full accessible name (already translated, e.g. "MTTR trend"). */
+  ariaLabel?: string
   values: number[]
   className?: string
-  /** Accessible label for the series. */
-  label?: string
   width?: number
   height?: number
 }
@@ -17,7 +17,13 @@ interface SparklineProps {
  * per-metric series a pure-SVG polyline is lighter, deterministic and
  * theme-aware (it inherits `currentColor`).
  */
-export function Sparkline({ values, className, label, width = 120, height = 32 }: SparklineProps) {
+export function Sparkline({
+  values,
+  className,
+  ariaLabel,
+  width = 120,
+  height = 32,
+}: SparklineProps) {
   if (values.length === 0) {
     return <span className="text-muted-foreground text-xs">No data</span>
   }
@@ -49,7 +55,7 @@ export function Sparkline({ values, className, label, width = 120, height = 32 }
       height={h}
       className={cn('text-primary overflow-visible', className)}
       role="img"
-      aria-label={label ? `${label} trend` : 'trend'}
+      aria-label={ariaLabel}
       preserveAspectRatio="none"
     >
       {points.length === 1 ? (
