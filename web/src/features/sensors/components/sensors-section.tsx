@@ -345,7 +345,7 @@ export function SensorsSection({
   const { trigger: deleteSensorTrigger, isMutating: isDeleting } = useDeleteSensor()
   const { trigger: bulkDeleteSensorsTrigger, isMutating: isBulkDeleting } = useBulkDeleteSensors()
   const { trigger: activateSensorTrigger } = useActivateSensor()
-  const { trigger: deactivateSensorTrigger } = useDeactivateSensor()
+  const { trigger: deactivateSensorTrigger, isMutating: isDisabling } = useDeactivateSensor()
   const { trigger: revokeSensorTrigger } = useRevokeSensor()
 
   // The tenant's own sensors: the API never lists a platform sensor.
@@ -976,6 +976,7 @@ export function SensorsSection({
           'It stops claiming new jobs until you enable it again. Its key and history are kept.'
         )}
         confirmText={t('confirm.disable', 'Disable')}
+        isLoading={isDisabling}
         handleConfirm={() => (pendingDisable ? handleDeactivateSensor(pendingDisable) : undefined)}
       />
 

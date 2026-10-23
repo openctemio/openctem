@@ -1374,5 +1374,9 @@
   "sensors.pair.getSensor.title": "Don't have the sensor yet?",
   "sensors.pair.getSensor.body": "Install the sensor on the host first. It needs only the platform URL (and the platform CA fingerprint if you use a private CA). No key is copied: the sensor makes its own when it pairs.",
   "sensors.pair.getSensor.pull": "Get the sensor image",
-  "sensors.pair.getSensor.guide": "Open the sensor installation guide"
+  "sensors.pair.getSensor.guide": "Open the sensor installation guide",
+  "sensors.keyGuard.title": "Did you copy the key?",
+  "sensors.keyGuard.desc": "The key is shown once. If you close this window without copying it, you must rotate the key again.",
+  "sensors.keyGuard.confirm": "Close anyway",
+  "sensors.keyGuard.cancel": "Keep open"
 }

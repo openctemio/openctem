@@ -56,6 +56,7 @@ import {
 import type { Sensor, SensorCommand } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { sensorActions } from '../lib/sensor-actions'
 import { redactUrlQueries } from '@/lib/redact-url'
 import { cn } from '@/lib/utils'
 import { useToolAvailability } from '@/lib/api/tool-hooks'
@@ -188,10 +189,12 @@ const CALLOUT: Record<HealthIssueSeverity, { tone: DetailCalloutTone; icon: type
 function toDetailCheck(
   c: HealthCheck,
   canManage: boolean,
+  canZones: boolean,
   onAction: (action: HealthCheckAction) => void,
   t: Tr
 ): DetailCheck {
-  const showAction = !!c.action && (c.action === 'install' || c.action === 'zones' || canManage)
+  const showAction =
+    !!c.action && (c.action === 'install' || (c.action === 'zones' ? canZones : canManage))
   return {
     key: c.key,
     status: c.status,
@@ -258,6 +261,7 @@ function HealthSummary({
   issues,
   checks,
   canManage,
+  canZones,
   onAction,
   onActivity,
 }: {
@@ -265,6 +269,7 @@ function HealthSummary({
   issues: HealthIssue[]
   checks: HealthCheck[]
   canManage: boolean
+  canZones: boolean
   onAction: (action: HealthCheckAction) => void
   onActivity: () => void
 }) {
@@ -274,11 +279,13 @@ function HealthSummary({
 
   // One button per distinct fix the viewer may use.
   const allowed = (a: HealthIssueAction) =>
-    a === 'install' || a === 'zones'
+    a === 'install'
       ? true
-      : a === 'refresh_content'
-        ? canManage && !!sensor.content_refresh_supported
-        : canManage
+      : a === 'zones'
+        ? canZones
+        : a === 'refresh_content'
+          ? canManage && !!sensor.content_refresh_supported
+          : canManage
   const actions = [
     ...new Set(issues.map((i) => i.action).filter((a): a is HealthIssueAction => !!a)),
   ].filter(allowed)
@@ -357,7 +364,7 @@ function HealthSummary({
       )}
 
       <DetailChecklist
-        checks={checks.map((c) => toDetailCheck(c, canManage, onAction, t))}
+        checks={checks.map((c) => toDetailCheck(c, canManage, canZones, onAction, t))}
         passIcon={!worst}
       />
     </div>
@@ -969,6 +976,8 @@ export function SensorDetailSheet({
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.SensorsWrite)
   const canDelete = useHasPermission(Permission.SensorsDelete)
+  const canRevoke = useHasPermission(Permission.SensorsRevoke)
+  const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const [tab, setTab] = useState<DrawerTab>('overview')
   const activityRef = useRef<EntityActivityHandle>(null)
   const [shownId, setShownId] = useState<string | null>(null)
@@ -1008,6 +1017,7 @@ export function SensorDetailSheet({
     }
   }
 
+  const can = sensorActions(sensor, { write: canWrite, revoke: canRevoke, delete: canDelete })
   const oneShot = isOneShotSensor(sensor)
   const role =
     sensorRoleOf(sensor.type) === 'collector'
@@ -1029,45 +1039,44 @@ export function SensorDetailSheet({
   ].filter((p): p is string => !!p)
 
   const menu: DetailMenuItem[] = []
-  if (canWrite) {
+  if (can.rotate)
     menu.push({
       label: t('sensors.detail.action.rotate_key', 'Rotate key'),
       icon: KeyRound,
       onSelect: () => onRegenerateKey(sensor),
     })
-    if (sensor.status === 'active' && onDeactivate)
-      menu.push({
-        label: t('sensors.detail.menu.disable', 'Disable'),
-        icon: PowerOff,
-        onSelect: () => onDeactivate(sensor),
-      })
-    if (sensor.status !== 'active' && onActivate)
-      menu.push({
-        label: t('sensors.detail.menu.enable', 'Enable'),
-        icon: Power,
-        onSelect: () => onActivate(sensor),
-      })
-  }
-  if (canDelete) {
-    if (sensor.status !== 'revoked' && onRevoke)
-      menu.push({
-        label: t('sensors.detail.menu.revoke', 'Revoke access'),
-        icon: ShieldOff,
-        destructive: true,
-        separatorBefore: true,
-        onSelect: () => onRevoke(sensor),
-      })
+  if (can.disable && onDeactivate)
+    menu.push({
+      label: t('sensors.detail.menu.disable', 'Disable'),
+      icon: PowerOff,
+      onSelect: () => onDeactivate(sensor),
+    })
+  if (can.enable && onActivate)
+    menu.push({
+      label: t('sensors.detail.menu.enable', 'Enable'),
+      icon: Power,
+      onSelect: () => onActivate(sensor),
+    })
+  const offerRevoke = can.revoke && !!onRevoke
+  if (offerRevoke)
+    menu.push({
+      label: t('sensors.detail.menu.revoke', 'Revoke access'),
+      icon: ShieldOff,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => onRevoke?.(sensor),
+    })
+  if (can.delete)
     menu.push({
       label: t('sensors.detail.menu.delete', 'Delete'),
       icon: Trash2,
       destructive: true,
-      separatorBefore: !(sensor.status !== 'revoked' && onRevoke),
+      separatorBefore: !offerRevoke,
       onSelect: () => {
         onDelete(sensor)
         onOpenChange(false)
       },
     })
-  }
 
   return (
     <DetailSheet
@@ -1119,6 +1128,7 @@ export function SensorDetailSheet({
             issues={issues}
             checks={checks}
             canManage={canWrite}
+            canZones={canReadZones}
             onAction={handleAction}
             onActivity={() => activityRef.current?.open()}
           />
