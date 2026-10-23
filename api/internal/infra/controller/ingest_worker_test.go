@@ -279,7 +279,7 @@ func TestIngestWorker_LostLeaseStopsAndWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !stopped {
-		t.Fatal("the work was not cancelled")
+		t.Fatal("the work was not canceled")
 	}
 	if len(q.completes) != 0 || len(q.fails) != 0 {
 		t.Fatalf("a worker without the lease wrote: completes=%d fails=%d", len(q.completes), len(q.fails))
