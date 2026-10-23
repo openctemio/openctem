@@ -70,7 +70,10 @@ describe('My work page', () => {
   it('renders the title as a link to the finding and a Priority column first, Created last', () => {
     mockUseFindingsApi.mockReturnValue(ok(1, [finding]))
     render(<MyWorkPage />)
-    expect(screen.getByRole('link', { name: 'SQL injection' })).toHaveAttribute('href', '/findings/f-1')
+    expect(screen.getByRole('link', { name: 'SQL injection' })).toHaveAttribute(
+      'href',
+      '/findings/f-1'
+    )
     expect(screen.getByTestId('prio')).toHaveTextContent('P0')
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
     expect(headers[0]).toBe('Priority')
@@ -79,7 +82,12 @@ describe('My work page', () => {
 
   it('shows an error state with Retry and dashes, not zeros, when the requests fail', () => {
     const mutate = vi.fn()
-    mockUseFindingsApi.mockReturnValue({ data: undefined, error: new Error('boom'), isLoading: false, mutate })
+    mockUseFindingsApi.mockReturnValue({
+      data: undefined,
+      error: new Error('boom'),
+      isLoading: false,
+      mutate,
+    })
     render(<MyWorkPage />)
     expect(screen.queryByText(en['myWork.emptyTitle'])).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry|try again/i })).toBeInTheDocument()
