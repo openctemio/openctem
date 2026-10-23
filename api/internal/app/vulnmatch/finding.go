@@ -11,8 +11,9 @@ import (
 )
 
 // BuildFinding turns a match into a finding: technique va, the reserved
-// tool name, the network identity scanners use for the same CVE on the same
-// asset and port, and the evidence of why it matched.
+// tool name, the identity key (MatchIdentity: the package identity for a
+// package, else the network identity), the matched catalog version as its
+// component, and the evidence of why it matched.
 func BuildFinding(tenantID shared.ID, m softwarematch.Match, confidence int, label vulnmatch.Label,
 	reasons []string, key vulnerability.IdentityKey,
 ) (*vulnerability.Finding, error) {
@@ -41,6 +42,9 @@ func BuildFinding(tenantID shared.ID, m softwarematch.Match, confidence int, lab
 	if m.Port > 0 {
 		f.SetNetwork(vulnerability.NetworkLocation{Port: m.Port, Transport: m.Transport})
 	}
+	// The component makes the finding count on the package and lets the
+	// organization's VEX statements cover it.
+	f.SetComponentID(m.VersionID)
 	f.SetFingerprint(key.Fingerprint())
 	if err := f.SetIdentity(key); err != nil {
 		return nil, err
@@ -48,7 +52,7 @@ func BuildFinding(tenantID shared.ID, m softwarematch.Match, confidence int, lab
 	if reasons == nil {
 		reasons = []string{}
 	}
-	f.SetMetadata("version_match", map[string]any{
+	meta := map[string]any{
 		"label":      string(label),
 		"confidence": confidence,
 		"product":    product,
@@ -62,7 +66,11 @@ func BuildFinding(tenantID shared.ID, m softwarematch.Match, confidence int, lab
 		"range":      m.Result.RangeText,
 		"reasons":    reasons,
 		"source":     "nvd",
-	})
+	}
+	if purl := PackageIdentityPURL(m); purl != "" {
+		meta["purl"] = purl
+	}
+	f.SetMetadata("version_match", meta)
 	return f, nil
 }
 

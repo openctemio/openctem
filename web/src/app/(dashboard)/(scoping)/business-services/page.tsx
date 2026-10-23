@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import useSWR from 'swr'
 import { Main } from '@/components/layout'
 import {
   DataTable,
@@ -15,6 +14,7 @@ import {
   DetailSheet,
   StackedCell,
   type MetricStripItem,
+  CappedNotice,
 } from '@/features/shared'
 import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
 import { Button } from '@/components/ui/button'
@@ -46,7 +46,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Plus, Pencil, Trash2, AlertCircle, RefreshCw, Link2 } from 'lucide-react'
 import { BusinessServiceAssets } from '@/features/business-services/components/business-service-assets'
 import { toast } from 'sonner'
-import { get, post, put, del } from '@/lib/api/client'
+import { post, put, del } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 import { Can, Permission } from '@/lib/permissions'
 import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -77,10 +78,6 @@ interface BusinessService {
   asset_count?: number
   created_at: string
   updated_at: string
-}
-
-interface ListResponse {
-  data?: BusinessService[]
 }
 
 const COMPLIANCE_FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'SOC2', 'GDPR', 'ISO27001', 'NIST'] as const
@@ -119,9 +116,9 @@ const emptyForm: FormState = {
 
 export default function BusinessServicesPage() {
   const { t } = useTranslation()
-  const { data, mutate, isLoading, error } = useSWR<ListResponse>(
-    '/api/v1/business-services',
-    (url: string) => get<ListResponse>(url)
+  // Every service (up to the row cap), so the strip counts equal the list.
+  const { data, mutate, isLoading, error } = useRegisterPages<BusinessService>(
+    '/api/v1/business-services?per_page=100'
   )
 
   const allServices: BusinessService[] = useMemo(() => data?.data ?? [], [data])
@@ -693,6 +690,7 @@ export default function BusinessServicesPage() {
         destructive
         handleConfirm={handleDelete}
       />
+      <CappedNotice loaded={allServices.length} total={data?.total ?? 0} />
     </Main>
   )
 }
