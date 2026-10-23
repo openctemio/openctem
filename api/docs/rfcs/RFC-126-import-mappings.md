@@ -51,9 +51,9 @@ format uses.
 ## 4. API
 
 Base `/api/v1/import-mappings`: `GET /`, `POST /`, `GET /templates`,
-`POST /validate`, `POST /preview` (multipart: `mapping` or `mapping_id` +
+`POST /verify` (validate a document), `POST /preview` (multipart: `mapping` or `mapping_id` +
 `version`, then `file`), `GET /{id}`, `PATCH /{id}`, `DELETE /{id}`,
-`POST /{id}/versions`, `GET /{id}/versions/{version}`. The OpenAPI spec is
+`POST /{id}/versions`, `GET /{id}/versions/{version_id}`. The OpenAPI spec is
 generated from the handlers.
 
 ## 5. Not in scope

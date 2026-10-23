@@ -248,17 +248,17 @@ func (h *ImportMappingHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, d)
 }
 
-// GetVersion handles GET /api/v1/import-mappings/{id}/versions/{version}.
+// GetVersion handles GET /api/v1/import-mappings/{id}/versions/{version_id}.
 //
 //	@Summary		Get one version of an import mapping
 //	@Tags			Imports
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			id		path		string	true	"Mapping id"
-//	@Param			version	path		int		true	"Version"
+//	@Param			version_id	path		int		true	"Version number"
 //	@Success		200		{object}	ImportMappingResponse
 //	@Failure		404		{object}	apierror.Error
-//	@Router			/import-mappings/{id}/versions/{version} [get]
+//	@Router			/import-mappings/{id}/versions/{version_id} [get]
 func (h *ImportMappingHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	tid, ok := h.tenant(w, r)
 	if !ok {
@@ -268,7 +268,7 @@ func (h *ImportMappingHandler) GetVersion(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	n, err := strconv.Atoi(chi.URLParam(r, "version"))
+	n, err := strconv.Atoi(chi.URLParam(r, "version_id"))
 	if err != nil || n <= 0 {
 		apierror.NotFound("import mapping version").WriteJSON(w)
 		return
@@ -395,7 +395,7 @@ func (h *ImportMappingHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Validate handles POST /api/v1/import-mappings/validate.
+// Validate handles POST /api/v1/import-mappings/verify.
 //
 //	@Summary		Validate an import mapping document
 //	@Description	Checks a document against the language and the organization policy; stores nothing. integrations:manage.
@@ -405,7 +405,7 @@ func (h *ImportMappingHandler) Delete(w http.ResponseWriter, r *http.Request) {
 //	@Security		BearerAuth
 //	@Param			body	body		ValidateImportMappingRequest	true	"Request"
 //	@Success		200		{object}	appimportmapping.Validation
-//	@Router			/import-mappings/validate [post]
+//	@Router			/import-mappings/verify [post]
 func (h *ImportMappingHandler) Validate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.tenant(w, r); !ok {
 		return

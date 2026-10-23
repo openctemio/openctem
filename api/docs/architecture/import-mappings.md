@@ -57,8 +57,8 @@ Migration `003360_import_mappings`:
 
 | Route | Gate |
 |---|---|
-| `GET /import-mappings`, `/templates`, `/{id}`, `/{id}/versions/{v}` | `integrations:read` or `assets:import` |
-| `POST /import-mappings`, `/validate`, `/{id}/versions`, `PATCH /{id}` | `integrations:manage` |
+| `GET /import-mappings`, `/templates`, `/{id}`, `/{id}/versions/{version_id}` | `integrations:read` or `assets:import` |
+| `POST /import-mappings`, `/verify`, `/{id}/versions`, `PATCH /{id}` | `integrations:manage` |
 | `POST /import-mappings/preview` | `integrations:manage`, 20 per minute per organization |
 | `DELETE /{id}` | `integrations:manage`, step-up |
 | import with `format=mapping:` | the import route's own gate |
