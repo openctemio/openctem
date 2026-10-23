@@ -91,8 +91,10 @@ export function approvalState(
 ): ApprovalState {
   const pending = workflow.pending_version
   if (!pending) return 'none'
-  if (viewerId && pending.published_by === viewerId) return 'self'
-  if (!canPublish) return 'no_permission'
+  // Until the viewer is known the button stays hidden (the server refuses
+  // the publisher's own approval either way).
+  if (!viewerId || !canPublish) return 'no_permission'
+  if (pending.published_by === viewerId) return 'self'
   return 'can_approve'
 }
 
