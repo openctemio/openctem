@@ -15,7 +15,7 @@ import {
   Upload,
   Send,
 } from 'lucide-react'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -96,6 +96,7 @@ export function MappingEditor({ id }: { id: string }) {
   const canManage = can(Permission.IntegrationsManage)
   const { data: view, error, isLoading, mutate } = useMappingProfile(id)
   const profile = view?.profile
+  useBreadcrumbTitle(profile?.name)
   const { data: catalog } = useMappingCatalog(profile?.object_kind)
   const {
     data: meta,
