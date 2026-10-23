@@ -62,7 +62,14 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
   const active = tabs.filter(matches).sort((a, b) => b.href.length - a.href.length)[0]?.href
 
   return (
-    <nav ref={ref} aria-label={label} className={cn(TAB_STRIP_CLASS, 'mb-5', className)}>
+    // data-slot: a `PageStack` places the strip (16px under the page header,
+    // 20px above the next block) and drops the legacy mb-5.
+    <nav
+      ref={ref}
+      aria-label={label}
+      data-slot="page-tabs"
+      className={cn(TAB_STRIP_CLASS, 'mb-5', className)}
+    >
       {tabs.map((tab) => {
         const Icon = tab.icon
         return (

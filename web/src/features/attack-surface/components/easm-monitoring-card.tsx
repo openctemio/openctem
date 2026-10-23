@@ -38,10 +38,18 @@ import {
 /** Interval choices in hours; 0 is the platform default. */
 export const EASM_INTERVALS = [0, 6, 12, 24, 48, 168]
 
-function intervalLabel(h: number, platformDefault?: number) {
-  if (h === 0) return platformDefault ? `Default (${platformDefault} h)` : 'Default'
-  if (h === 168) return 'Weekly'
-  return `Every ${h} h`
+type TFn = ReturnType<typeof useTranslation>['t']
+
+function intervalLabel(t: TFn, h: number, platformDefault?: number) {
+  if (h === 0) {
+    return platformDefault
+      ? t('attackSurface.monitoring.intervalDefaultHours', 'Default ({hours} h)', {
+          hours: platformDefault,
+        })
+      : t('attackSurface.monitoring.intervalDefault', 'Default')
+  }
+  if (h === 168) return t('attackSurface.monitoring.intervalWeekly', 'Weekly')
+  return t('attackSurface.monitoring.intervalHours', 'Every {hours} h', { hours: h })
 }
 
 function inputOf(s: EASMSettings) {
@@ -74,9 +82,11 @@ export function EASMMonitoringCard() {
     try {
       const next = await saveEASMSettings({ ...inputOf(settings), ...change })
       void mutate(next, { revalidate: false })
-      toast.success('Monitoring settings saved')
+      toast.success(t('attackSurface.monitoring.saved', 'Monitoring settings saved.'))
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Could not save the settings'))
+      toast.error(
+        getErrorMessage(e, t('attackSurface.monitoring.saveFailed', 'Could not save the settings'))
+      )
     } finally {
       setBusy(false)
     }
@@ -86,11 +96,18 @@ export function EASMMonitoringCard() {
     setBusy(true)
     try {
       await runEASMSweep()
-      toast.success('Discovery and DNS checks started. Results appear in a few minutes.')
+      toast.success(
+        t(
+          'attackSurface.monitoring.runStarted',
+          'Discovery and DNS checks started. Results appear in a few minutes.'
+        )
+      )
       setNow(Date.now())
       void mutate()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Could not start the run'))
+      toast.error(
+        getErrorMessage(e, t('attackSurface.monitoring.runFailed', 'Could not start the run'))
+      )
       void mutate()
     } finally {
       setBusy(false)
@@ -104,10 +121,14 @@ export function EASMMonitoringCard() {
     <Card className="lg:col-span-3">
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div>
-          <CardTitle className="text-base">Monitoring</CardTitle>
+          <CardTitle className="text-base">
+            {t('attackSurface.monitoring.title', 'Monitoring')}
+          </CardTitle>
           <CardDescription>
-            Certificate Transparency discovery and DNS checks run on their own; you can also run
-            them now.
+            {t(
+              'attackSurface.monitoring.description',
+              'Certificate Transparency discovery and DNS checks run on their own; you can also run them now.'
+            )}
           </CardDescription>
         </div>
         {canRun && (
@@ -116,18 +137,28 @@ export function EASMMonitoringCard() {
             variant="outline"
             disabled={busy || waiting}
             onClick={() => void runNow()}
-            title={waiting ? 'You can run again 15 minutes after the last run' : undefined}
+            title={
+              waiting
+                ? t(
+                    'attackSurface.monitoring.runWait',
+                    'You can run again 15 minutes after the last run'
+                  )
+                : undefined
+            }
           >
             <Play className="me-2 h-4 w-4" aria-hidden />
-            Run now
+            {t('attackSurface.monitoring.runNow', 'Run now')}
           </Button>
         )}
       </CardHeader>
       <CardContent className="grid gap-6 md:grid-cols-2">
-        <section className="space-y-3" aria-label="Certificate Transparency">
+        <section
+          className="space-y-3"
+          aria-label={t('attackSurface.monitoring.ct', 'Certificate Transparency discovery')}
+        >
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="easm-ct" className="font-medium">
-              Certificate Transparency discovery
+              {t('attackSurface.monitoring.ct', 'Certificate Transparency discovery')}
             </Label>
             <Switch
               id="easm-ct"
@@ -137,11 +168,15 @@ export function EASMMonitoringCard() {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Your domain names are sent to crt.sh and Cert Spotter to find certificates issued for
-            them. Turn this off to keep them private; no new names are then discovered this way.
+            {t(
+              'attackSurface.monitoring.ctDescription',
+              'Your domain names are sent to crt.sh and Cert Spotter to find certificates issued for them. Turn this off to keep them private; no new names are then discovered this way.'
+            )}
           </p>
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground">Last run</span>
+            <span className="text-muted-foreground">
+              {t('attackSurface.monitoring.lastRun', 'Last run')}
+            </span>
             <span>
               {settings.last_ct_sweep_at ? <RelativeTime date={settings.last_ct_sweep_at} /> : '—'}
             </span>
@@ -155,10 +190,10 @@ export function EASMMonitoringCard() {
           />
         </section>
 
-        <section className="space-y-3" aria-label="DNS checks">
+        <section className="space-y-3" aria-label={t('attackSurface.monitoring.dns', 'DNS checks')}>
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="easm-dns" className="font-medium">
-              DNS checks
+              {t('attackSurface.monitoring.dns', 'DNS checks')}
             </Label>
             <Switch
               id="easm-dns"
@@ -168,11 +203,15 @@ export function EASMMonitoringCard() {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Dangling CNAME and NS records, lame delegations and email security (SPF, DMARC), looked
-            up through DNS only.
+            {t(
+              'attackSurface.monitoring.dnsDescription',
+              'Dangling CNAME and NS records, lame delegations and email security (SPF, DMARC), looked up through DNS only.'
+            )}
           </p>
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground">Last run</span>
+            <span className="text-muted-foreground">
+              {t('attackSurface.monitoring.lastRun', 'Last run')}
+            </span>
             <span>
               {settings.last_dns_check_at ? (
                 <RelativeTime date={settings.last_dns_check_at} />
@@ -377,10 +416,11 @@ function IntervalSelect({
   disabled: boolean
   onChange: (hours: number) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
       <Label htmlFor={id} className="font-normal text-muted-foreground">
-        How often
+        {t('attackSurface.monitoring.howOften', 'How often')}
       </Label>
       <Select value={String(value)} disabled={disabled} onValueChange={(v) => onChange(Number(v))}>
         <SelectTrigger id={id} className="h-8 w-40">
@@ -389,7 +429,7 @@ function IntervalSelect({
         <SelectContent>
           {EASM_INTERVALS.map((h) => (
             <SelectItem key={h} value={String(h)}>
-              {intervalLabel(h, h === 0 && value !== 0 ? undefined : platformDefault)}
+              {intervalLabel(t, h, h === 0 && value !== 0 ? undefined : platformDefault)}
             </SelectItem>
           ))}
         </SelectContent>

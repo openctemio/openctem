@@ -5,6 +5,7 @@
 - Go 1.26+
 - Docker & Docker Compose
 - Make (recommended)
+- PostgreSQL 16, 17 or 18 if you do not use Docker (17 recommended; the compose files ship 17)
 
 ## Quick Setup
 
