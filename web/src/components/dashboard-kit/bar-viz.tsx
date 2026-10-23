@@ -109,6 +109,13 @@ export function BarViz({ result, unit = 'count', stacked = false, drill }: BarVi
 
   return (
     <ChartOrTable
+      summary={t('dashboardKit.summary.category', 'Largest: {values}', {
+        values: [...rows]
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 3)
+          .map((r) => `${label(r)} ${formatMetric(r.value, unit, locale)}`)
+          .join(', '),
+      })}
       chart={chart}
       table={<CategoryTable result={{ ...result, rows }} unit={unit} drill={drill} />}
     />
