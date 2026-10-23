@@ -588,11 +588,13 @@ instead).
   decision time, `ScopeActorRepository.IsSoleActiveOwner`) and no member was
   suspended, offboarded, deleted, expired or demoted, and no role changed, in
   the last 7 days (`recentApproverChange`, memberships and audit log), with a fresh
-  authenticator code (`VerifyFreshTOTP`, single use) and a reason. Only a
-  **false positive** can be approved this way: risk acceptance is always
-  four-eyes, so a sole member's accepted-risk request is refused with 403
-  `SELF_APPROVAL_FALSE_POSITIVE_ONLY` (audited as a refusal, no code spent)
-  and stays pending until a second member approves it. The request carries `self_approved` and the
+  authenticator code (`VerifyFreshTOTP`, single use) and a reason. A
+  **false positive** can always be approved this way; an **accepted risk**
+  only when the organization's risk acceptance level is `high_and_above` or
+  `off` (its end is then cut to `vulnerability.SoloAcceptanceLimit`). Under
+  the default level `all` a sole member's accepted-risk request is refused
+  with 403 `SELF_APPROVAL_FALSE_POSITIVE_ONLY` (audited as a refusal, no code
+  spent) and stays pending until a second member approves it. The request carries `self_approved` and the
   reason; the audit row is `finding_approval.self_approved` (high); every
   refusal is `finding_approval.self_approval_refused`; the organization's
   channels get a security alert and the backup contact
@@ -707,36 +709,73 @@ For each, under the organization's policy (`approvalpolicy.MaterialChange`):
 - The triggers of the single-person flag (severity, KEV, new evidence, above)
   stay; the controller adds the other signals and the `revoke` option.
 
-### False-positive approval level
+### Approval levels (false positive and risk acceptance)
 
-`settings.finding_approvals.fp_approval` decides who decides a false positive
-(`internal/app/finding/approval_fp_policy.go`):
+Two settings with the same values decide when one person may close a risk on
+one finding (`internal/app/finding/approval_fp_policy.go`,
+`approvalpolicy.Evaluate`; RFC-111 §15): `settings.finding_approvals.fp_approval`
+for a false positive and `settings.finding_approvals.accept_approval` for an
+accepted risk. Each is set on its own.
 
 | Level | A second person is needed for |
 |---|---|
-| `all` (default) | every false positive |
-| `high_and_above` | a material finding: critical or high, KEV, P0/P1, a validated exploit (`validation_outcome = reproducible`), a crown-jewel or internet-exposed asset (`vulnerability.FPFacts.Material`) |
+| `all` (default) | every decision |
+| `high_and_above` | a material finding: critical or high, KEV, P0/P1, EPSS at or above the threshold, a validated exploit (`validation_outcome = reproducible`), a crown-jewel or internet-exposed asset (`approvalpolicy.MaterialForFalsePositive`, one classifier for both levels) |
 | `off` | none |
 
-An accepted risk always needs a second person. When the level lets one person
-decide (and the approval policy gives the request the `single` tier: the
-requester holds `findings:approve`, has the finding in their data scope and
-does not own its asset), the false positive is applied at once: the request row is
-written approved with `single_person`, the status, closure reason and timeline
-entry in one transaction (`FindingApprovalRepository.CreateApplied`), audited
-`finding_approval.single_person_decided`. A member without `findings:approve`
-still files a pending request. Safeguards: a later severity rise, KEV listing
-or new evidence on a false positive one person decided raises the
+When the level lets one person decide (and the approval policy gives the
+request the `single` tier: the requester holds `findings:approve`, has the
+finding in their data scope and does not own its asset), the decision is
+applied at once: the request row is written approved with `single_person`,
+the status, closure reason (and, for an accepted risk, its end within the
+organization's cap) and timeline entry in one transaction
+(`FindingApprovalRepository.CreateApplied`, which re-reads the level and the
+facts with the finding locked), audited `finding_approval.single_person_decided`.
+A member without `findings:approve` still files a pending request, and so does
+a delegated credential (an API key or an MCP access token) whatever its
+permissions: the one person who decides is a person in their own session. Only a
+person's own request on one finding decides alone: suppression rules, group
+exceptions on remediation tasks, bulk status moves, imports and requests made
+by automation (AI triage, VEX, ticket integrations) keep a second person
+whatever the level. An organization cell above the platform default still
+applies under a relaxing risk acceptance level.
+
+Safeguards: a later severity rise, KEV listing or new evidence on a false
+positive or accepted risk one person decided raises the
 `material_change_single_person` review flag (triggers
 `trg_findings_single_person_fp_review`, `trg_finding_evidence_single_person_fp_review`,
-function `flag_single_person_fp_review`); `second_look_percent` (0-10) flags a
-random share (`second_look_sample`, crypto/rand). Changing the level needs
-`settings:write` and a recent re-authentication, is audited with before/after
-and the approvers are told; a lower level takes effect 24 hours later
-(`pending_fp_approval_at`), a higher one at once.
-`GET /api/v1/findings/{id}/approvals/policy` tells the request dialog how a
-false positive on that finding is decided now. Not built yet: a digest of
-single-person decisions (they are in the audit log and the approvals list).
+function `flag_single_person_decision_review`, migration 003349); the
+material-change controller adds the other signals and ends an acceptance whose
+tier now needs a second person; `second_look_percent` (0-10) flags a random
+share of single-person false positives (`second_look_sample`, crypto/rand); the
+daily approvals digest lists the decisions one person made in the last day to
+every other approver who can see the finding.
+
+Changing a level needs an owner or administrator with `settings:write` and a
+recent re-authentication (`PATCH /api/v1/organization/settings/finding-approvals`;
+`PUT` stays until the web moves), is audited at high severity with before/after,
+and the approvers (every owner and administrator is one) are told; a lower level
+takes effect 24 hours later (`pending_fp_approval_at`,
+`pending_accept_approval_at`), a higher one at once, and `cancel_pending` drops
+a waiting lowering. Raising a level also puts under review every standing
+decision one person made (under a level or as the sole member) that the new
+level gives to a second person: all of them under `all`, the material ones under
+`high_and_above` (`VulnerabilityService.ReviewDecidedAlone`,
+`flag_single_person_decision_review` with change `level_raised`). The decisions
+stand; the flag and a timeline entry ask an approver to look again. `GET /api/v1/findings/{id}/approvals/policy?status=accepted`
+(or the default `false_positive`) tells the request dialog how such a request on
+that finding is decided now (`accept_approval`, `can_decide_alone`).
+
+The sole member's own approval works for false positives and, under a risk
+acceptance level of `high_and_above` or `off`, for accepted risks (the end is
+cut to `vulnerability.SoloAcceptanceLimit`); under `all` an accepted risk waits
+for a second member. The only member never accepts a risk through the
+single-person path, whatever the level: nobody else would see it, so the
+request waits for this self-approval (code, reason, shorter end). The rule is
+checked again inside the write transaction
+(`recheckSoloApproval`: still the only active person and an owner, and for an
+accepted risk the level still `high_and_above` or `off`), so a member who joined
+or a level raised after the service's check refuses it.
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix
