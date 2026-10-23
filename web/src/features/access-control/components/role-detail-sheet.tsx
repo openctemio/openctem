@@ -89,11 +89,26 @@ const TEAM_ROLE_DEMOTION: Record<string, 'member' | 'viewer' | undefined> = {
 // Permission types: a category, told apart by icon and label as well as colour.
 const permissionTypeConfig: Record<
   'read' | 'write' | 'delete',
-  { label: string; chip: string; icon: React.ElementType }
+  { key: string; en: string; chip: string; icon: React.ElementType }
 > = {
-  read: { label: 'Read', chip: 'bg-success/10 text-success', icon: Eye },
-  write: { label: 'Write', chip: 'bg-info/10 text-info', icon: Pencil },
-  delete: { label: 'Delete', chip: 'bg-destructive/10 text-destructive', icon: Trash2 },
+  read: {
+    key: 'org.roleDetail.type.read',
+    en: 'Read',
+    chip: 'bg-success/10 text-success',
+    icon: Eye,
+  },
+  write: {
+    key: 'org.roleDetail.type.write',
+    en: 'Write',
+    chip: 'bg-info/10 text-info',
+    icon: Pencil,
+  },
+  delete: {
+    key: 'org.roleDetail.type.delete',
+    en: 'Delete',
+    chip: 'bg-destructive/10 text-destructive',
+    icon: Trash2,
+  },
 }
 
 function getPermissionType(permissionId: string): 'read' | 'write' | 'delete' {
@@ -236,13 +251,20 @@ export function RoleDetailSheet({
                 name: member.name || member.email || '',
                 role: demoteLabel,
               })
-            : `${member.name || member.email} removed from role`
+            : t('org.roleDetail.removedFromRole', '{name} removed from role', {
+                name: member.name || member.email || '',
+              })
         )
         setPendingRemove(null)
         mutateMembers()
       } catch (error) {
         toast.error(
-          `Failed to remove member: ${error instanceof Error ? error.message : 'Unknown error'}`
+          t('org.roleDetail.removeFailed', 'Failed to remove member: {error}', {
+            error:
+              error instanceof Error
+                ? error.message
+                : t('org.roleDetail.unknownError', 'Unknown error'),
+          })
         )
       } finally {
         setRemovingMemberId(null)
@@ -332,17 +354,17 @@ export function RoleDetailSheet({
 
   const menu: DetailMenuItem[] = [
     {
-      label: 'Copy ID',
+      label: t('org.roleDetail.copyId', 'Copy ID'),
       icon: Hash,
       onSelect: () => {
         copyToClipboard(role.id)
-        toast.success('Role ID copied to clipboard')
+        toast.success(t('org.roleDetail.idCopied', 'Role ID copied'))
       },
     },
   ]
   if (!role.is_system && onDelete) {
     menu.push({
-      label: 'Delete role',
+      label: t('org.roleDetail.deleteRole', 'Delete role'),
       icon: Trash2,
       destructive: true,
       separatorBefore: true,
@@ -355,17 +377,17 @@ export function RoleDetailSheet({
       value: 'permissions',
       label: (
         <>
-          Permissions
+          {t('org.roleDetail.tabPermissions', 'Permissions')}
           <TabsCount value={filteredPermissionCount} />
         </>
       ),
     },
-    { value: 'features', label: 'By feature' },
+    { value: 'features', label: t('org.roleDetail.tabFeatures', 'By feature') },
     {
       value: 'members',
       label: (
         <>
-          Members
+          {t('org.roleDetail.tabMembers', 'Members')}
           {!isLoadingMembers && <TabsCount value={roleMembers.length} />}
         </>
       ),
@@ -387,28 +409,33 @@ export function RoleDetailSheet({
                 {role.is_system ? (
                   <Badge variant="outline" className="gap-1 text-xs font-normal">
                     <Lock className="h-3 w-3" />
-                    System
+                    {t('org.roleDetail.system', 'System')}
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="gap-1 text-xs font-normal">
                     <Key className="h-3 w-3" />
-                    Custom
+                    {t('org.roleDetail.custom', 'Custom')}
                   </Badge>
                 )}
                 {role.has_full_data_access && (
                   <Badge variant="outline" className="gap-1 text-xs font-normal">
                     <Database className="h-3 w-3" />
-                    Full data access
+                    {t('org.roleDetail.fullData', 'Full data access')}
                   </Badge>
                 )}
               </>
             }
-            meta={[`Level ${role.hierarchy_level}`, `Created ${formatDate(role.created_at)}`]}
+            meta={[
+              t('org.roleDetail.metaLevel', 'Level {level}', { level: role.hierarchy_level }),
+              t('org.roleDetail.metaCreated', 'Created {date}', {
+                date: formatDate(role.created_at),
+              }),
+            ]}
             actions={
               !role.is_system && onEdit ? (
                 <Button size="sm" onClick={() => onEdit(role)}>
                   <Pencil className="h-4 w-4" />
-                  Edit role
+                  {t('org.roleDetail.editRole', 'Edit role')}
                 </Button>
               ) : undefined
             }
@@ -431,30 +458,49 @@ export function RoleDetailSheet({
             )}
             <RoleTemplateUpdate role={role} />
 
-            <DetailStatGrid aria-label="Key numbers">
+            <DetailStatGrid aria-label={t('org.roleDetail.keyNumbers', 'Key numbers')}>
               <DetailStat
-                label="Permissions"
+                label={t('org.roleDetail.statPermissions', 'Permissions')}
                 value={filteredPermissionCount}
-                caption={`${permissionStats.read} read · ${permissionStats.write} write · ${permissionStats.delete} delete`}
+                caption={t(
+                  'org.roleDetail.statBreakdown',
+                  '{read} read · {write} write · {del} delete',
+                  {
+                    read: permissionStats.read,
+                    write: permissionStats.write,
+                    del: permissionStats.delete,
+                  }
+                )}
               />
-              <DetailStat label="Hierarchy level" value={role.hierarchy_level} />
               <DetailStat
-                label="Data access"
-                value={role.has_full_data_access ? 'Full' : 'By group'}
-                caption={role.has_full_data_access ? 'Sees every asset' : 'Sees its groups’ assets'}
+                label={t('org.roleDetail.statLevel', 'Hierarchy level')}
+                value={role.hierarchy_level}
+              />
+              <DetailStat
+                label={t('org.roleDetail.statDataAccess', 'Data access')}
+                value={
+                  role.has_full_data_access
+                    ? t('org.roleDetail.dataFull', 'Full')
+                    : t('org.roleDetail.dataByTeam', 'By team')
+                }
+                caption={
+                  role.has_full_data_access
+                    ? t('org.roleDetail.sawEveryAsset', 'Sees every asset')
+                    : t('org.roleDetail.seesTeamAssets', 'Sees its teams’ assets')
+                }
               />
             </DetailStatGrid>
 
             <DetailSection
-              title="Permissions by module"
+              title={t('org.roleDetail.byModule', 'Permissions by module')}
               count={filteredPermissions.length}
               actions={
                 <>
                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={expandAll}>
-                    Expand all
+                    {t('org.roleDetail.expandAll', 'Expand all')}
                   </Button>
                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={collapseAll}>
-                    Collapse
+                    {t('org.roleDetail.collapse', 'Collapse')}
                   </Button>
                 </>
               }
@@ -462,24 +508,24 @@ export function RoleDetailSheet({
               <div className="relative">
                 <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  aria-label="Search permissions"
-                  placeholder="Search permissions..."
+                  aria-label={t('org.roleDetail.searchPermLabel', 'Search permissions')}
+                  placeholder={t('org.roleDetail.searchPermPlaceholder', 'Search permissions...')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="ps-9"
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>Types:</span>
-                {(['read', 'write', 'delete'] as const).map((t) => {
-                  const cfg = permissionTypeConfig[t]
+                <span>{t('org.roleDetail.types', 'Types:')}</span>
+                {(['read', 'write', 'delete'] as const).map((kind) => {
+                  const cfg = permissionTypeConfig[kind]
                   return (
                     <span
-                      key={t}
+                      key={kind}
                       className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5', cfg.chip)}
                     >
                       <cfg.icon className="h-3 w-3" />
-                      {cfg.label}
+                      {t(cfg.key, cfg.en)}
                     </span>
                   )
                 })}
@@ -495,7 +541,9 @@ export function RoleDetailSheet({
                 <EmptyState
                   icon={searchQuery ? Search : Shield}
                   title={
-                    searchQuery ? 'No permissions match your search' : 'No permissions assigned'
+                    searchQuery
+                      ? t('org.roleDetail.noPermMatch', 'No permissions match your search')
+                      : t('org.roleDetail.noPermAssigned', 'No permissions assigned')
                   }
                   card={false}
                 />
@@ -578,13 +626,13 @@ export function RoleDetailSheet({
 
         {activeTab === 'members' && (
           <DetailSection
-            title="Members"
+            title={t('org.roleDetail.membersTitle', 'Members')}
             count={isLoadingMembers ? undefined : roleMembers.length}
             actions={
               isTeamRole ? undefined : (
                 <Button size="sm" onClick={() => setAddMemberDialogOpen(true)}>
                   <UserPlus className="h-4 w-4" />
-                  Add member
+                  {t('org.roleDetail.addMember', 'Add member')}
                 </Button>
               )
             }
@@ -603,8 +651,8 @@ export function RoleDetailSheet({
             <div className="relative">
               <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                aria-label="Search members"
-                placeholder="Search members..."
+                aria-label={t('org.roleDetail.searchMembersLabel', 'Search members')}
+                placeholder={t('org.roleDetail.searchMembersPlaceholder', 'Search members...')}
                 value={memberSearchQuery}
                 onChange={(e) => setMemberSearchQuery(e.target.value)}
                 className="ps-9"
@@ -621,7 +669,9 @@ export function RoleDetailSheet({
               <EmptyState
                 icon={Users}
                 title={
-                  memberSearchQuery ? 'No members match your search' : 'No members with this role'
+                  memberSearchQuery
+                    ? t('org.roleDetail.noMemberMatch', 'No members match your search')
+                    : t('org.roleDetail.noMembers', 'No members with this role')
                 }
                 card={false}
                 action={
@@ -632,7 +682,7 @@ export function RoleDetailSheet({
                       onClick={() => setAddMemberDialogOpen(true)}
                     >
                       <UserPlus className="h-4 w-4" />
-                      Add first member
+                      {t('org.roleDetail.addFirstMember', 'Add first member')}
                     </Button>
                   ) : undefined
                 }
@@ -670,7 +720,9 @@ export function RoleDetailSheet({
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 shrink-0"
-                              aria-label={`Actions for ${label}`}
+                              aria-label={t('org.roleDetail.actionsFor', 'Actions for {name}', {
+                                name: label,
+                              })}
                             >
                               {removingMemberId === member.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -688,7 +740,7 @@ export function RoleDetailSheet({
                               <UserMinus className="h-4 w-4" />
                               {isTeamRole
                                 ? t('org.roles.changeTo', 'Change to {role}', { role: demoteLabel })
-                                : 'Remove from role'}
+                                : t('org.roleDetail.removeFromRole', 'Remove from role')}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
