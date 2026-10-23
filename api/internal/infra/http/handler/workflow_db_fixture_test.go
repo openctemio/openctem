@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -44,6 +45,7 @@ type wfDB struct {
 	versions                  *postgres.AutomationVersionRepository
 	deliveries                *postgres.AutomationDeliveryRepository
 	h                         *WorkflowHandler
+	stepUp                    *wfStepUp
 }
 
 func newWFDB(t *testing.T, extraExecutorOpts ...automationsvc.WorkflowExecutorOption) *wfDB {
@@ -146,15 +148,40 @@ func newWFDB(t *testing.T, extraExecutorOpts ...automationsvc.WorkflowExecutorOp
 		automationsvc.WithWorkflowVersions(f.versions),
 		automationsvc.WithWorkflowRunReaders(enforcer, f.deliveries),
 		automationsvc.WithWorkflowPreview(runRepo, automationsvc.NewSimulateEvaluator(postgres.NewFindingRepository(db)),
-			postgres.NewIntegrationRepository(db)))
+			postgres.NewIntegrationRepository(db)),
+		automationsvc.WithWorkflowUserDirectory(postgres.NewUserRepository(db)))
+	f.stepUp = &wfStepUp{fresh: map[string]bool{}}
+	f.svc.SetStepUpGate(f.stepUp)
 	f.h = NewWorkflowHandler(f.svc, validator.New(), logger.NewNop())
 	return f
 }
 
+// wfStepUp answers step-up from a set of users who just re-authenticated.
+type wfStepUp struct {
+	mu    sync.Mutex
+	fresh map[string]bool
+}
+
+func (g *wfStepUp) set(user string, fresh bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.fresh[user] = fresh
+}
+
+func (g *wfStepUp) RequireRecentAuth(_ context.Context, actorID string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.fresh[actorID] {
+		return nil
+	}
+	return middleware.ErrStepUpRequired
+}
+
 // Permission ids of the automation routes, as the fixture's roles hold them.
 const (
-	wfReadPerm  = "findings:workflows:read"
-	wfWritePerm = "findings:workflows:write"
+	wfReadPerm    = "automations:read"
+	wfWritePerm   = "automations:write"
+	wfPublishPerm = "automations:publish"
 )
 
 func (f *wfDB) exec(q string, args ...any) {

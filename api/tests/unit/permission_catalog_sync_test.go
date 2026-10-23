@@ -48,6 +48,7 @@ var permSeedMigrations = []string{
 	"service_accounts_manage_permission",      // service_accounts:manage
 	"permission_findings_retest_checks",       // findings:retest_checks:write
 	"sensor_proxy_pools",                      // sensors:egress:*
+	"automations_permissions",                 // automations:publish (RFC-125)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
@@ -57,6 +58,7 @@ var permRenameMigrations = []string{
 	"001285_scan_workflow_rename.up.sql",            // integrations:pipelines:* -> scans:workflows:*
 	"001761_scan_window_override_permission.up.sql", // scans:freeze:override -> scans:windows:override
 	"dashboard_ownership",                           // dashboard:aggregate -> dashboards:org:view
+	"automations_permissions",                       // findings:workflows:* -> automations:* (RFC-125)
 }
 
 // permRemoveMigrations delete permission ids. Each lists the removed ids as

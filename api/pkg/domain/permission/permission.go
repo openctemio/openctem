@@ -147,9 +147,14 @@ const (
 	RemediationRead  Permission = "findings:remediation:read"
 	RemediationWrite Permission = "findings:remediation:write"
 
-	// Workflow permissions (findings:workflows:*)
-	WorkflowsRead  Permission = "findings:workflows:read"
-	WorkflowsWrite Permission = "findings:workflows:write"
+	// Automation permissions (RFC-125 D7). Read: automations, runs,
+	// versions, trace. Write: drafts, preview, validate, manual runs (as the
+	// caller). Publish: go live (with step-up for elevated rules and a second
+	// publisher for high-risk ones), approve another person's version, roll
+	// back, change mode, switch on or off, delete, resume a paused run.
+	AutomationsRead    Permission = "automations:read"
+	AutomationsWrite   Permission = "automations:write"
+	AutomationsPublish Permission = "automations:publish"
 )
 
 // =============================================================================
@@ -499,7 +504,7 @@ func AllPermissions() []Permission {
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
-		WorkflowsRead, WorkflowsWrite,
+		AutomationsRead, AutomationsWrite, AutomationsPublish,
 
 		// Scans module
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,

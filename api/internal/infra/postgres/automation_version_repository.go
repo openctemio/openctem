@@ -147,6 +147,16 @@ func (r *AutomationVersionRepository) Publish(ctx context.Context, tenantID, aut
 	return tx.Commit()
 }
 
+// RetirePending implements automation.VersionRepository.
+func (r *AutomationVersionRepository) RetirePending(ctx context.Context, tenantID, automationID shared.ID) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE automation_versions SET status = 'retired'
+		WHERE tenant_id = $1 AND automation_id = $2 AND status = 'pending_approval'`,
+		tenantID.String(), automationID.String()); err != nil {
+		return fmt.Errorf("retire pending versions: %w", err)
+	}
+	return nil
+}
+
 func scanAutomationVersion(row interface{ Scan(dest ...any) error }) (*automation.Version, error) {
 	v := &automation.Version{}
 	var (

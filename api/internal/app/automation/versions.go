@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 )
 
 // WithWorkflowVersions sets the version store (required for publishing and
@@ -28,6 +29,49 @@ func WithExecutorVersions(r automationdom.VersionRepository) WorkflowExecutorOpt
 	return func(e *WorkflowExecutor) { e.versions = r }
 }
 
+// UserDirectory reads accounts by id (the names shown next to a version).
+type UserDirectory interface {
+	GetByIDs(ctx context.Context, ids []shared.ID) ([]*userdom.User, error)
+}
+
+// WithWorkflowUserDirectory sets where version publisher and approver names
+// are read from.
+func WithWorkflowUserDirectory(d UserDirectory) WorkflowServiceOption {
+	return func(s *WorkflowService) { s.users = d }
+}
+
+// VersionNames returns the display names of the people who published or
+// approved the versions (best effort: an unknown id has no name).
+func (s *WorkflowService) VersionNames(ctx context.Context, versions ...*automationdom.Version) map[shared.ID]string {
+	names := map[shared.ID]string{}
+	if s.users == nil {
+		return names
+	}
+	var ids []shared.ID
+	for _, v := range versions {
+		if v == nil {
+			continue
+		}
+		for _, id := range []*shared.ID{v.PublishedBy, v.ApprovedBy} {
+			if id != nil {
+				ids = append(ids, *id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return names
+	}
+	users, err := s.users.GetByIDs(ctx, ids)
+	if err != nil {
+		s.logger.Warn("failed to read version publisher names", "error", err)
+		return names
+	}
+	for _, u := range users {
+		names[u.ID()] = u.Name()
+	}
+	return names
+}
+
 // WorkflowDetail is an automation with its draft graph and the versions
 // that matter to the editor.
 type WorkflowDetail struct {
@@ -40,6 +84,8 @@ type WorkflowDetail struct {
 	DraftChanged bool
 	// RiskClass is the class of the draft.
 	RiskClass automationdom.RiskClass
+	// Names of the people who published or approved Published and Pending.
+	Names map[shared.ID]string
 }
 
 // GetWorkflowDetail returns the automation, its draft graph, its published and
@@ -68,6 +114,7 @@ func (s *WorkflowService) GetWorkflowDetail(ctx context.Context, tenantID, workf
 		}
 	}
 	d.DraftChanged = d.Published == nil || d.Published.Definition.Digest() != def.Digest()
+	d.Names = s.VersionNames(ctx, d.Published, d.Pending)
 	return d, nil
 }
 
@@ -108,13 +155,41 @@ type PublishInput struct {
 // PublishResult is the outcome of a publish.
 type PublishResult struct {
 	Version *automationdom.Version
-	// Live: the version is now the one live runs execute.
+	// Live: the version is now the one live runs execute. False when a
+	// high-risk version waits for a second person's approval.
 	Live bool
 }
 
-// Publish stores the draft as a new version and makes it live. The draft
-// must hold only known types and a valid graph. The publisher becomes the
-// automation's owner: live runs act as the person who published them.
+// ErrCodeWorkflowInvalid is the error code of a publish refused because the
+// draft has blocking validate problems (WorkflowInvalidError).
+const ErrCodeWorkflowInvalid = "WORKFLOW_INVALID"
+
+// WorkflowInvalidError refuses a publish whose draft has blocking problems.
+type WorkflowInvalidError struct {
+	Problems []Problem
+}
+
+func (e *WorkflowInvalidError) Error() string {
+	return fmt.Sprintf("the automation has %d problem(s) to fix before it can go live", len(e.Problems))
+}
+
+// Unwrap makes it a validation error (400).
+func (e *WorkflowInvalidError) Unwrap() error { return shared.ErrValidation }
+
+// SetStepUpGate sets the recent re-authentication check publishing elevated
+// and high-risk automations needs. Without one such publishes are refused
+// (fail closed).
+func (s *WorkflowService) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
+
+// Publish makes the draft live through the go-live gate (RFC-125 D6):
+//   - the draft must hold only known types, a valid graph and no blocking
+//     validate problem;
+//   - low risk: published at once;
+//   - elevated: the caller must have re-authenticated recently;
+//   - high: re-authentication, and the version waits until a second person
+//     with the publish permission approves its digest (ApproveVersion).
+//
+// The publisher becomes the owner live runs act as.
 func (s *WorkflowService) Publish(ctx context.Context, in PublishInput) (*PublishResult, error) {
 	if s.versions == nil {
 		return nil, fmt.Errorf("%w: automation versions are not configured", shared.ErrNotImplemented)
@@ -129,11 +204,18 @@ func (s *WorkflowService) Publish(ctx context.Context, in PublishInput) (*Publis
 	if err := w.ValidateGraph(); err != nil {
 		return nil, err
 	}
+	res, err := s.Validate(ctx, DraftInput{TenantID: in.TenantID, UserID: in.UserID, WorkflowID: in.WorkflowID})
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Problems) > 0 {
+		return nil, &WorkflowInvalidError{Problems: res.Problems}
+	}
 	return s.publishDefinition(ctx, in.TenantID, in.UserID, w, audit.ActionWorkflowPublished, "published")
 }
 
 // Rollback publishes an older version's definition again, as a new version
-// (the history keeps every version).
+// (the history keeps every version), through the same gate as its risk.
 func (s *WorkflowService) Rollback(ctx context.Context, in PublishInput, versionID shared.ID) (*PublishResult, error) {
 	old, err := s.GetVersion(ctx, in.TenantID, in.WorkflowID, versionID)
 	if err != nil {
@@ -151,32 +233,103 @@ func (s *WorkflowService) Rollback(ctx context.Context, in PublishInput, version
 		fmt.Sprintf("rolled back to version %d", old.Version))
 }
 
+// requireStepUp checks the caller re-authenticated recently (fail closed
+// without a gate).
+func (s *WorkflowService) requireStepUp(ctx context.Context, userID shared.ID) error {
+	if s.stepUp == nil {
+		return fmt.Errorf("%w: step-up re-authentication is not configured", shared.ErrForbidden)
+	}
+	return s.stepUp.RequireRecentAuth(ctx, userID.String())
+}
+
 func (s *WorkflowService) publishDefinition(ctx context.Context, tenantID, userID shared.ID, w *automationdom.Workflow, action audit.Action, verb string) (*PublishResult, error) {
+	if userID.IsZero() {
+		// The publisher is the person live runs act as.
+		return nil, fmt.Errorf("%w: an automation is published by a person", shared.ErrForbidden)
+	}
 	v, err := automationdom.NewVersion(w, userID, automationdom.VersionPendingApproval)
 	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if v.RiskClass.NeedsStepUp() {
+		if err := s.requireStepUp(ctx, userID); err != nil {
+			return nil, err
+		}
+		v.StepUpAt = &now
+	}
+	// A new request replaces any version still waiting for approval.
+	if err := s.versions.RetirePending(ctx, tenantID, w.ID); err != nil {
 		return nil, err
 	}
 	if err := s.versions.Create(ctx, v); err != nil {
 		return nil, err
 	}
-	now := time.Now()
+	actx := auditapp.AuditContext{TenantID: tenantID.String(), ActorID: userID.String()}
+	event := func(a audit.Action, msg string) auditapp.AuditEvent {
+		return auditapp.NewSuccessEvent(a, audit.ResourceTypeWorkflow, w.ID.String()).
+			WithResourceName(w.Name).WithMessage(msg).
+			WithMetadata("version", v.Version).WithMetadata("version_id", v.ID.String()).
+			WithMetadata("digest", v.Digest).WithMetadata("risk_class", string(v.RiskClass)).
+			WithSeverity(audit.SeverityMedium)
+	}
+	if v.RiskClass.NeedsSecondApprover() {
+		s.logAudit(ctx, actx, event(audit.ActionWorkflowPublishRequested,
+			fmt.Sprintf("Automation '%s' version %d (%s risk) waits for a second person to approve it", w.Name, v.Version, v.RiskClass)))
+		return &PublishResult{Version: v, Live: false}, nil
+	}
 	if err := s.versions.Publish(ctx, tenantID, w.ID, v.ID, nil, now); err != nil {
 		return nil, err
 	}
-	v.Status = automationdom.VersionPublished
-	v.PublishedAt = &now
+	v.Status, v.PublishedAt = automationdom.VersionPublished, &now
 	if err := s.takeOwnership(ctx, w, userID); err != nil {
 		return nil, err
 	}
-	s.logAudit(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorID: userID.String()},
-		auditapp.NewSuccessEvent(action, audit.ResourceTypeWorkflow, w.ID.String()).
-			WithResourceName(w.Name).
-			WithMessage(fmt.Sprintf("Automation '%s' %s as version %d (%s risk)", w.Name, verb, v.Version, v.RiskClass)).
-			WithMetadata("version", v.Version).
-			WithMetadata("version_id", v.ID.String()).
-			WithMetadata("digest", v.Digest).
-			WithMetadata("risk_class", string(v.RiskClass)))
+	s.logAudit(ctx, actx, event(action, fmt.Sprintf("Automation '%s' %s as version %d (%s risk)", w.Name, verb, v.Version, v.RiskClass)))
 	return &PublishResult{Version: v, Live: true}, nil
+}
+
+// ApproveVersion is the second person's approval of a high-risk version: the
+// approver holds the publish permission (route), re-authenticated recently,
+// is not the publisher, and names the digest they reviewed. The version goes
+// live and its publisher becomes the owner live runs act as.
+func (s *WorkflowService) ApproveVersion(ctx context.Context, tenantID, userID, workflowID, versionID shared.ID, digest string) (*automationdom.Version, error) {
+	v, err := s.GetVersion(ctx, tenantID, workflowID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	if v.Status != automationdom.VersionPendingApproval {
+		return nil, automationdom.ErrVersionNotPending
+	}
+	if userID.IsZero() || v.PublishedBy == nil || *v.PublishedBy == userID {
+		return nil, automationdom.ErrSelfApproval
+	}
+	if digest != v.Digest {
+		return nil, automationdom.ErrVersionDigestChanged
+	}
+	if err := s.requireStepUp(ctx, userID); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if err := s.versions.Publish(ctx, tenantID, workflowID, v.ID, &userID, now); err != nil {
+		return nil, err
+	}
+	w, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.takeOwnership(ctx, w, *v.PublishedBy); err != nil {
+		return nil, err
+	}
+	v.Status, v.ApprovedBy, v.ApprovedAt = automationdom.VersionPublished, &userID, &now
+	s.logAudit(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorID: userID.String()},
+		auditapp.NewSuccessEvent(audit.ActionWorkflowVersionApproved, audit.ResourceTypeWorkflow, workflowID.String()).
+			WithResourceName(w.Name).
+			WithMessage(fmt.Sprintf("Automation '%s' version %d approved and live", w.Name, v.Version)).
+			WithMetadata("version", v.Version).WithMetadata("version_id", v.ID.String()).
+			WithMetadata("digest", v.Digest).WithMetadata("published_by", v.PublishedBy.String()).
+			WithSeverity(audit.SeverityMedium))
+	return v, nil
 }
 
 // ChangeMode switches an automation to simulate. Live is reached only by

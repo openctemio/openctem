@@ -19,7 +19,7 @@ Permissions are included in the access token and checked using `middleware.Requi
 of truth is `permission.AllPermissions()` in
 `pkg/domain/permission/permission.go`; `permission.IsValid()` /
 `ParsePermission()` validate against it. As of this writing it defines
-**166 permissions**, grouped by module. Rather than hand-mirror all 166 (which
+**167 permissions**, grouped by module. Rather than hand-mirror all 167 (which
 would drift), the table below lists the module groups and the count each
 contributes — derive the exact strings from `AllPermissions()`.
 
@@ -27,7 +27,8 @@ contributes — derive the exact strings from `AllPermissions()`.
 |--------------|-------|---------------------|
 | Core (dashboard, audit, settings) | 6 | `dashboard:read`, `dashboards:org:view`, `dashboards:org:manage`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
-| Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
+| Findings | 31 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `policies:*` |
+| Automations | 3 | `automations:read`, `automations:write` (drafts, preview, validate, manual runs), `automations:publish` (go live, approve, roll back, mode, on/off, delete; RFC-125) |
 | Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
 | Sensors | 17 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:egress:read/write/delete` (proxy pools), `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
@@ -2049,6 +2050,23 @@ counts only their in-scope assets and findings (none without a scope row; the
 trend window takes the same scope). A schedule with no recorded creator, or whose creator can no
 longer be resolved (left the organization), is not rendered or sent
 (`failed`).
+
+### Automations: who may edit, publish and approve (RFC-125)
+
+| Route | Permission | Also |
+|---|---|---|
+| `GET /workflows`, `/workflows/catalog`, `/workflows/{id}`, `/{id}/versions[/{versionId}]`, `/{id}/trace`, `GET /workflow-runs[/{id}]` | `automations:read` | runs and trace counts follow the caller's data scope (out of scope: 404, not counted) |
+| `POST /workflows`, `PUT /{id}` (name, description, tags), `PUT /{id}/graph`, nodes, edges, `POST /{id}/preview`, `POST /{id}/validate`, `POST /{id}/runs`, `POST /workflow-runs/{id}/cancel` | `automations:write` | building a step needs its own permission; preview samples only the caller's scope; a manual run acts as the caller |
+| `POST /{id}/publish`, `POST /{id}/versions/{versionId}/rollback` | `automations:publish` | every step's permission; elevated risk: step-up; high risk: the version waits for a second publisher |
+| `POST /{id}/versions/{versionId}/approve` | `automations:publish` | step-up, not the publisher, the reviewed digest, every step's permission |
+| `PUT /{id}/mode` (simulate), `PUT /{id}` with `is_active`, `DELETE /{id}` | `automations:publish` | no step-up: pausing and switching to simulate narrow |
+
+Risk classes: low (tags), elevated (status, assignment, tickets,
+notifications, AI triage), high (scans, false-positive and acceptance
+requests, chaining on, a change cap above the default). Migration
+`automations_permissions` renamed `findings:workflows:{read,write}` one to one
+and gave `automations:publish` to every role that held write, so nobody lost
+a power; owners and administrators hold all three.
 
 ### Automation runs act as one person
 
