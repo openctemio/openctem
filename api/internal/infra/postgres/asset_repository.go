@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1728,11 +1729,40 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	// covers the case where the batch contains two assets with the same
 	// (tenant_id, name) — ON CONFLICT cannot update a row twice in one
 	// statement.
-	created, updated, persistedIDs, err = r.upsertBatchMultiRow(ctx, assets)
+	//
+	// The rows are written in (tenant, name) order, so concurrent uploads of
+	// overlapping assets lock them in one order and queue instead of
+	// deadlocking. A deadlock or serialization failure that still happens
+	// runs the transaction again; it never drops to the per-row path, which
+	// would meet the same conflict one row at a time.
+	sorted := sortedAssetsForWrite(assets)
+	err = retryWriteConflict(ctx, func() error {
+		var txErr error
+		created, updated, persistedIDs, txErr = r.upsertBatchMultiRow(ctx, sorted)
+		return txErr
+	})
+	if isWriteConflict(err) {
+		return 0, 0, nil, err
+	}
 	if err != nil {
-		return r.upsertBatchPerRow(ctx, assets)
+		return r.upsertBatchPerRow(ctx, sorted)
 	}
 	return created, updated, persistedIDs, nil
+}
+
+// sortedAssetsForWrite returns the assets in (tenant, name) order, the
+// order every batched asset write locks rows in. The caller's slice is not
+// reordered.
+func sortedAssetsForWrite(assets []*asset.Asset) []*asset.Asset {
+	out := append([]*asset.Asset(nil), assets...)
+	sort.SliceStable(out, func(i, j int) bool {
+		ti, tj := out[i].TenantID().String(), out[j].TenantID().String()
+		if ti != tj {
+			return ti < tj
+		}
+		return out[i].Name() < out[j].Name()
+	})
+	return out
 }
 
 // checkNewAssets checks the assets of a batch that do not exist yet (by id or
