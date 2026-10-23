@@ -306,7 +306,10 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 		"prefix", prefix,
 	)
 	if s.audit != nil && input.AuditContext != nil {
-		_ = s.audit.LogAPIKeyCreated(ctx, *input.AuditContext, key.ID().String(), key.Name(), key.Scopes())
+		if err := s.audit.LogAPIKeyCreated(ctx, *input.AuditContext, key.ID().String(), key.Name(), key.Scopes()); err != nil {
+			s.logger.Warn("audit event was not recorded", "action", "api_key.created",
+				"resource_id", logger.SanitizeValue(key.ID().String()), "error", logger.SanitizeError(err))
+		}
 	}
 
 	return &CreateResult{
@@ -577,7 +580,10 @@ func (s *Service) Revoke(ctx context.Context, input RevokeInput) (*apikeydom.API
 		"name", key.Name(),
 	)
 	if s.audit != nil && input.AuditContext != nil {
-		_ = s.audit.LogAPIKeyRevoked(ctx, *input.AuditContext, key.ID().String(), key.Name())
+		if err := s.audit.LogAPIKeyRevoked(ctx, *input.AuditContext, key.ID().String(), key.Name()); err != nil {
+			s.logger.Warn("audit event was not recorded", "action", "api_key.revoked",
+				"resource_id", logger.SanitizeValue(key.ID().String()), "error", logger.SanitizeError(err))
+		}
 	}
 
 	return key, nil
@@ -621,7 +627,10 @@ func (s *Service) DeleteOwned(ctx context.Context, id, tenantIDStr, ownerID stri
 
 	s.logger.Info("api key deleted", "id", logger.SanitizeValue(id))
 	if s.audit != nil && len(auditCtx) > 0 && auditCtx[0] != nil {
-		_ = s.audit.LogAPIKeyDeleted(ctx, *auditCtx[0], keyID.String())
+		if err := s.audit.LogAPIKeyDeleted(ctx, *auditCtx[0], keyID.String()); err != nil {
+			s.logger.Warn("audit event was not recorded", "action", "api_key.deleted",
+				"resource_id", logger.SanitizeValue(keyID.String()), "error", logger.SanitizeError(err))
+		}
 	}
 	return nil
 }

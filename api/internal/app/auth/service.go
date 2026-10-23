@@ -685,7 +685,9 @@ func (s *AuthService) authenticatePassword(ctx context.Context, rawEmail, passwo
 			ActorIP:    ipAddress,
 			UserAgent:  userAgent,
 		}
-		_ = s.auditService.LogAuthFailed(ctx, actx, reason)
+		if err := s.auditService.LogAuthFailed(ctx, actx, reason); err != nil {
+			s.logger.Warn("audit event was not recorded", "action", "auth.failed", "error", logger.SanitizeError(err))
+		}
 
 		return nil, ErrInvalidCredentials
 	}
@@ -1341,7 +1343,9 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
 		SessionID: sessionID,
 	}
 	// Try to get user email if possible, or just log ID
-	_ = s.auditService.LogUserLogout(ctx, actx, sess.UserID().String(), "")
+	if err := s.auditService.LogUserLogout(ctx, actx, sess.UserID().String(), ""); err != nil {
+		s.logger.Warn("audit event was not recorded", "action", "auth.logout", "error", logger.SanitizeError(err))
+	}
 
 	return nil
 }

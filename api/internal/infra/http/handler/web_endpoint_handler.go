@@ -429,7 +429,7 @@ func (h *WebEndpointHandler) Update(w http.ResponseWriter, r *http.Request) {
 			WithMetadata("state", string(e.State)).
 			WithMetadata("labels", nonNilStrings(e.Labels)).
 			WithSeverity(auditdom.SeverityLow)
-		_ = h.audit.LogEvent(r.Context(), auditapp.AuditContext{
+		auditapp.RecordOrWarn(r.Context(), h.logger, h.audit, auditapp.AuditContext{
 			TenantID: tenantID.String(), ActorID: middleware.GetUserID(r.Context()), ActorEmail: auditActorEmail(r.Context()),
 			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		}, event)
