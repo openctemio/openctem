@@ -96,6 +96,10 @@ describe('DashboardView', () => {
     expect(cell.style.getPropertyValue('--span')).toBe('span 4 / span 4')
     expect(cell.style.getPropertyValue('--span-sm')).toBe('span 2 / span 2')
     expect(cell.className).toContain('xl:[grid-column:var(--span)]')
+    // The stored height applies from 640px; on a phone rows fit their content.
+    expect(cell.style.gridRow).toBe('')
+    expect(cell.className).toContain('sm:[grid-row:var(--row-span)]')
+    expect((cell.parentElement as HTMLElement).style.gridAutoRows).toBe('')
   })
 })
 
