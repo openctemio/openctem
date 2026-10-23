@@ -7,9 +7,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 
 const csrfFetch = vi.hoisted(() => vi.fn())
+const post = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/api/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/api/client')>()),
   csrfFetch,
+  post,
 }))
 
 globalThis.ResizeObserver ??= class {
@@ -106,8 +108,9 @@ vi.mock('@/features/config/api/finding-source-api', () => ({
   useFindingSourcesApi: () => ({ data: undefined }),
   groupFindingSourcesByCategory: () => [],
 }))
+let denied = new Set<string>()
 vi.mock('@/context/permission-provider', () => ({
-  usePermissions: () => ({ hasPermission: () => true }),
+  usePermissions: () => ({ hasPermission: (p: string) => !denied.has(p) }),
 }))
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: () => true,
@@ -165,9 +168,7 @@ import FindingsPage from '../page'
 
 describe('Findings bulk resolve', () => {
   it('asks before resolving the selected findings', async () => {
-    csrfFetch.mockResolvedValue(
-      new Response(JSON.stringify({ updated: 2, failed: 0 }), { status: 200 })
-    )
+    post.mockResolvedValue({ updated: 2, failed: 0 })
     window.history.replaceState(null, '', '/findings')
     render(<FindingsPage />)
     await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
@@ -176,7 +177,7 @@ describe('Findings bulk resolve', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Resolved' }))
 
     const bulkCalls = () =>
-      csrfFetch.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
+      post.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
     expect(bulkCalls()).toHaveLength(0)
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Resolve 2 findings?')
@@ -188,7 +189,7 @@ describe('Findings bulk resolve', () => {
     })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
     await waitFor(() => expect(bulkCalls()).toHaveLength(1))
-    expect(JSON.parse(String(bulkCalls()[0][1]?.body))).toMatchObject({
+    expect(bulkCalls()[0][1]).toMatchObject({
       finding_ids: ['f1', 'f2'],
       status: 'resolved',
       resolution: 'patched in 4.2',
@@ -196,10 +197,8 @@ describe('Findings bulk resolve', () => {
   })
   it('sends only the findings the dry run allows', async () => {
     allowAll = false
-    csrfFetch.mockClear()
-    csrfFetch.mockResolvedValue(
-      new Response(JSON.stringify({ updated: 1, failed: 0 }), { status: 200 })
-    )
+    post.mockClear()
+    post.mockResolvedValue({ updated: 1, failed: 0 })
     window.history.replaceState(null, '', '/findings')
     render(<FindingsPage />)
     await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
@@ -212,8 +211,51 @@ describe('Findings bulk resolve', () => {
     })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
     const bulkCalls = () =>
-      csrfFetch.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
+      post.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
     await waitFor(() => expect(bulkCalls()).toHaveLength(1))
-    expect(JSON.parse(String(bulkCalls()[0][1]?.body)).finding_ids).toEqual(['f1'])
+    expect(bulkCalls()[0][1].finding_ids).toEqual(['f1'])
+  })
+
+  it('keeps the note and the dialog when the bulk resolve fails', async () => {
+    allowAll = true
+    post.mockClear()
+    post.mockRejectedValue(new Error('Failed to update findings'))
+    window.history.replaceState(null, '', '/findings')
+    render(<FindingsPage />)
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
+    const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
+    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Resolved' }))
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
+      target: { value: 'patched in 4.2' },
+    })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
+    await waitFor(() =>
+      expect(
+        post.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
+      ).toHaveLength(1)
+    )
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.getByLabelText('Note (required)')).toHaveValue('patched in 4.2')
+  })
+
+  it('offers no selection or bulk bar without findings:bulk_update', () => {
+    denied = new Set(['findings:bulk_update', 'findings:remediation:write'])
+    window.history.replaceState(null, '', '/findings')
+    render(<FindingsPage />)
+    expect(screen.queryAllByRole('checkbox', { name: /select all/i })).toHaveLength(0)
+    expect(screen.queryByRole('toolbar', { name: 'Actions for selected rows' })).toBeNull()
+    denied = new Set()
+  })
+
+  it('hides the status menu without findings:status', async () => {
+    denied = new Set(['findings:status'])
+    window.history.replaceState(null, '', '/findings')
+    render(<FindingsPage />)
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
+    const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
+    expect(within(bar).queryByRole('button', { name: 'Status' })).toBeNull()
+    denied = new Set()
   })
 })

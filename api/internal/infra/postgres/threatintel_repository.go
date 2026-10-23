@@ -807,49 +807,30 @@ func (r *KEVRepository) GetRansomwareRelated(ctx context.Context, limit int) ([]
 	return r.scanKEVEntries(rows)
 }
 
-// CountTenantOpenPastDue returns the number of the tenant's OPEN findings that
-// reference a CISA-KEV CVE whose KEV remediation due date has passed. This is a
-// real tenant-scoped COUNT (no LIMIT, no saturation): it joins the tenant's
-// findings to the KEV catalog on the CVE id and uses the authoritative KEV
-// due_date, so it reflects the tenant's actual overdue KEV exposure rather than
-// the global count of past-due catalog entries.
-func (r *KEVRepository) CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error) {
+// CountTenantOpenKEV counts the tenant's OPEN findings that reference a
+// CISA-KEV CVE, with the past-due, ransomware and recently-added splits, in
+// one join of the tenant's findings to the catalog. Real COUNTs (no LIMIT, no
+// saturation) that follow the viewer's data scope and the pentest
+// member-visibility rule: the tenant's exposure, never the catalog's size.
+func (r *KEVRepository) CountTenantOpenKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (threatintel.TenantKEVCounts, error) {
 	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
 	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
 	query := `
-		SELECT COUNT(DISTINCT f.id)
-		FROM findings f
-		JOIN kev_catalog kc ON kc.cve_id = f.cve_id
-		WHERE f.tenant_id = $1
-			AND kc.due_date IS NOT NULL AND kc.due_date < NOW()
-			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
-			AND ` + inScope
-	var count int64
-	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return 0, fmt.Errorf("failed to count tenant open past-due KEV findings: %w", err)
-	}
-	return count, nil
-}
-
-// CountTenantOpenInKEV returns the number of the tenant's OPEN findings that
-// reference a CISA-KEV CVE, past due or not: the tenant's exposure to known
-// exploited vulnerabilities, not the size of the global catalog. It follows
-// the viewer's data scope and the pentest member-visibility rule.
-func (r *KEVRepository) CountTenantOpenInKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error) {
-	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
-	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
-	query := `
-		SELECT COUNT(DISTINCT f.id)
+		SELECT COUNT(*),
+			COUNT(*) FILTER (WHERE kc.due_date IS NOT NULL AND kc.due_date < NOW()),
+			COUNT(*) FILTER (WHERE kc.known_ransomware_campaign_use IS NOT NULL
+				AND kc.known_ransomware_campaign_use <> 'Unknown'),
+			COUNT(*) FILTER (WHERE kc.date_added >= NOW() - INTERVAL '30 days')
 		FROM findings f
 		JOIN kev_catalog kc ON kc.cve_id = f.cve_id
 		WHERE f.tenant_id = $1
 			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
 			AND ` + inScope
-	var count int64
-	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return 0, fmt.Errorf("failed to count tenant open KEV findings: %w", err)
+	var c threatintel.TenantKEVCounts
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&c.Open, &c.PastDue, &c.Ransomware, &c.NewLast30Days); err != nil {
+		return threatintel.TenantKEVCounts{}, fmt.Errorf("failed to count tenant open KEV findings: %w", err)
 	}
-	return count, nil
+	return c, nil
 }
 
 // CountRecentlyAdded returns the true number of KEV catalog entries added within

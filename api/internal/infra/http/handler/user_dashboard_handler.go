@@ -9,6 +9,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
+	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	dashboard "github.com/openctemio/openctem/api/pkg/domain/dashboard"
@@ -23,6 +24,7 @@ import (
 // the authenticated context, never from the request.
 type UserDashboardHandler struct {
 	service *dashboardapp.Service
+	widgets *widgets.Service
 	logger  *logger.Logger
 }
 
@@ -174,7 +176,7 @@ func (h *UserDashboardHandler) caller(w http.ResponseWriter, r *http.Request) (d
 		Has:      func(p string) bool { return middleware.HasPermission(ctx, p) },
 		Audit: auditapp.AuditContext{
 			TenantID: tid.String(), ActorID: uid.String(), ActorEmail: auditActorEmail(ctx),
-			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		},
 	}, true
 }

@@ -1,0 +1,895 @@
+[
+  {
+    "key": "ctem",
+    "columns": 4,
+    "widgets": [
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct1",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.priority_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 0
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct2",
+          "data": {
+            "kind": "metric",
+            "metric": "intel.kev_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct3",
+          "data": {
+            "kind": "metric",
+            "metric": "crown_jewels.exposed",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 0
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct4",
+          "data": {
+            "kind": "metric",
+            "metric": "sla.within",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "progress",
+            "options": {}
+          },
+          "target": {
+            "op": ">=",
+            "value": 95
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct5",
+          "data": {
+            "kind": "metric",
+            "metric": "ctem.loop",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "loop",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_ct6",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.next",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_ct7",
+          "data": {
+            "kind": "metric",
+            "metric": "attack_paths.to_crown_jewels",
+            "filter": {},
+            "time": {},
+            "limit": 5
+          },
+          "viz": {
+            "type": "paths",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct8",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.open_by_priority",
+            "filter": {},
+            "time": {
+              "range": "90d"
+            }
+          },
+          "viz": {
+            "type": "area",
+            "options": {}
+          }
+        }
+      }
+    ]
+  },
+  {
+    "key": "overview",
+    "columns": 4,
+    "widgets": [
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ov1",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.priority_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 0
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ov2",
+          "data": {
+            "kind": "metric",
+            "metric": "intel.kev_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ov3",
+          "data": {
+            "kind": "metric",
+            "metric": "sla.within",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "progress",
+            "options": {}
+          },
+          "target": {
+            "op": ">=",
+            "value": 95
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ov4",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.time_to_fix",
+            "filter": {},
+            "time": {
+              "range": "90d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 168
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov10",
+          "data": {
+            "kind": "metric",
+            "metric": "ctem.loop",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "loop",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov5",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.open_by_priority",
+            "filter": {},
+            "time": {
+              "range": "90d"
+            }
+          },
+          "viz": {
+            "type": "area",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov6",
+          "data": {
+            "kind": "metric",
+            "metric": "flow.new_vs_fixed",
+            "filter": {},
+            "time": {
+              "range": "90d",
+              "bucket": "week"
+            }
+          },
+          "viz": {
+            "type": "diverging",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_ov7",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.next",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_ov8",
+          "data": {
+            "kind": "metric",
+            "metric": "sla.at_risk",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov9",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.age_bands",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "heatmap",
+            "options": {}
+          }
+        }
+      }
+    ]
+  },
+  {
+    "key": "executive",
+    "columns": 4,
+    "widgets": [
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ex1",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.priority_open",
+            "filter": {},
+            "time": {
+              "range": "365d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 0
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ex2",
+          "data": {
+            "kind": "metric",
+            "metric": "intel.kev_open",
+            "filter": {},
+            "time": {
+              "range": "365d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ex3",
+          "data": {
+            "kind": "metric",
+            "metric": "sla.within",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "progress",
+            "options": {}
+          },
+          "target": {
+            "op": ">=",
+            "value": 95
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ex4",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.time_to_fix",
+            "filter": {},
+            "time": {
+              "range": "365d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 168
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ex5",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.open_by_priority",
+            "filter": {},
+            "time": {
+              "range": "365d",
+              "bucket": "month"
+            }
+          },
+          "viz": {
+            "type": "area",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ex6",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.time_to_fix",
+            "filter": {},
+            "time": {
+              "range": "365d"
+            },
+            "group_by": ["priority_class"]
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ex7",
+          "data": {
+            "kind": "metric",
+            "metric": "flow.new_vs_fixed",
+            "filter": {},
+            "time": {
+              "range": "365d",
+              "bucket": "month"
+            }
+          },
+          "viz": {
+            "type": "diverging",
+            "options": {}
+          }
+        }
+      }
+    ]
+  },
+  {
+    "key": "program",
+    "columns": 4,
+    "widgets": [
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_pr1",
+          "data": {
+            "kind": "metric",
+            "metric": "sla.within",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "progress",
+            "options": {}
+          },
+          "target": {
+            "op": ">=",
+            "value": 95
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_pr2",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.priority_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_pr3",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_pr4",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.time_to_fix",
+            "filter": {},
+            "time": {
+              "range": "90d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_pr5",
+          "data": {
+            "kind": "metric",
+            "metric": "sla.at_risk",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_pr6",
+          "data": {
+            "kind": "metric",
+            "metric": "flow.new_vs_fixed",
+            "filter": {},
+            "time": {
+              "range": "90d",
+              "bucket": "week"
+            }
+          },
+          "viz": {
+            "type": "diverging",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_pr7",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.time_to_fix",
+            "filter": {},
+            "time": {
+              "range": "90d"
+            },
+            "group_by": ["priority_class"]
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_pr8",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.age_bands",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "heatmap",
+            "options": {}
+          }
+        }
+      }
+    ]
+  },
+  {
+    "key": "triage",
+    "columns": 4,
+    "widgets": [
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_tr1",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_tr2",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.priority_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_tr3",
+          "data": {
+            "kind": "metric",
+            "metric": "intel.kev_open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_tr4",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.open",
+            "filter": {},
+            "time": {},
+            "group_by": ["sla_state"]
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_tr5",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.open",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            },
+            "group_by": ["severity"]
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_tr6",
+          "data": {
+            "kind": "metric",
+            "metric": "flow.new_vs_fixed",
+            "filter": {},
+            "time": {
+              "range": "30d",
+              "bucket": "day"
+            }
+          },
+          "viz": {
+            "type": "column",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_tr7",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.next",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
+            "options": {}
+          }
+        }
+      }
+    ]
+  }
+]

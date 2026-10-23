@@ -47,10 +47,11 @@ import {
 } from '@/features/shared/components/detail-sheet'
 import { copyToClipboard } from '@/lib/clipboard'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
+import { useTriageResult } from '@/features/ai-triage/api'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
 import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
-import type { Activity, FindingDetail } from '../../types'
+import type { FindingDetail } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
 import { CodeHighlighter } from './code-highlighter'
 import { MetadataViewer } from './source-panels/metadata-viewer'
@@ -65,55 +66,40 @@ import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 
 interface OverviewTabProps {
   finding: FindingDetail
-  /** Activities already loaded for the feed; the latest AI triage is read from them. */
-  activities?: Activity[]
 }
 
-interface AITriageActivityData {
+/** The latest completed AI triage of the finding (its own endpoint). */
+interface AITriageSummaryData {
   riskScore?: number
   riskLevel?: string
   /** 0-1: how likely the model thinks the finding is a false positive. */
   falsePositiveLikelihood?: number
-  /**
-   * Older activity rows carry only the model's confidence that the finding is
-   * real (high / medium / low), the inverse of the false-positive likelihood.
-   */
-  legacyConfidence?: string
   recommendation?: string
   createdAt: string
-}
-
-/** The false-positive likelihood band of an older row's confidence. */
-const LEGACY_CONFIDENCE_TO_FP: Record<string, 'low' | 'medium' | 'high'> = {
-  high: 'low',
-  medium: 'medium',
-  low: 'high',
 }
 
 function Mono({ children }: { children: React.ReactNode }) {
   return <span className="font-mono text-[13px] break-all">{children}</span>
 }
 
-export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
+export function OverviewTab({ finding }: OverviewTabProps) {
   const { t } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
-  const triage: AITriageActivityData | null = useMemo(() => {
-    const latest = activities
-      .filter((a) => a.type === 'ai_triage')
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
-    if (!latest?.metadata) return null
-    const m = latest.metadata as Record<string, unknown>
+  // Read from the AI triage endpoint, not from the first page of activities:
+  // twenty newer comments must not hide the analysis. Not requested without
+  // ai_triage:read (the hook sends no request then).
+  const { data: triageResult } = useTriageResult(finding.id)
+  const triage: AITriageSummaryData | null = useMemo(() => {
+    if (!triageResult || triageResult.status !== 'completed') return null
     return {
-      riskScore: m.risk_score as number | undefined,
-      riskLevel: (m.ai_risk_level as string) || undefined,
-      falsePositiveLikelihood:
-        typeof m.false_positive_likelihood === 'number' ? m.false_positive_likelihood : undefined,
-      legacyConfidence: (m.ai_confidence as string) || undefined,
-      recommendation: (m.ai_recommendation as string) || undefined,
-      createdAt: latest.createdAt,
+      riskScore: triageResult.riskScore,
+      riskLevel: triageResult.severityAssessment,
+      falsePositiveLikelihood: triageResult.falsePositiveLikelihood,
+      recommendation: triageResult.summary,
+      createdAt: triageResult.completedAt ?? triageResult.createdAt,
     }
-  }, [activities])
+  }, [triageResult])
 
   const desc = findingDescription(finding)
   const adv = finding.advisory
@@ -661,17 +647,13 @@ function CodeLocationSection({ finding }: { finding: FindingDetail }) {
 }
 
 /** How likely the model thinks the finding is a false positive (a suggestion). */
-function AIFalsePositiveLikelihood({ data }: { data: AITriageActivityData }) {
-  const { t } = useTranslation()
-  if (data.falsePositiveLikelihood !== undefined) {
-    return <span className="tabular-nums">{Math.round(data.falsePositiveLikelihood * 100)}%</span>
-  }
-  const band = data.legacyConfidence ? LEGACY_CONFIDENCE_TO_FP[data.legacyConfidence] : undefined
-  return band ? <span>{t(`findings.overviewTab.level.${band}`, band)}</span> : null
+function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
+  if (data.falsePositiveLikelihood === undefined) return null
+  return <span className="tabular-nums">{Math.round(data.falsePositiveLikelihood * 100)}%</span>
 }
 
-/** The latest AI triage, read from the activity feed (no extra request). */
-function AITriageSummary({ data }: { data: AITriageActivityData }) {
+/** The latest completed AI triage. */
+function AITriageSummary({ data }: { data: AITriageSummaryData }) {
   const { t } = useTranslation()
   return (
     <DetailSection

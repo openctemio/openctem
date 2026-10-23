@@ -92,7 +92,7 @@ and the result flows back through the same ingest path — no new sensor HTTP
 surface.
 
 ```
-POST /api/v1/findings/{id}/validate  (JWT, findings:write)
+POST /api/v1/findings/{id}/validate  (JWT, findings:verify)
       │  RunService.ValidateFinding: resolve finding → asset → Target,
       │  Selector picks safe-check, build ValidationJob
       ▼

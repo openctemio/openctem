@@ -70,8 +70,6 @@ const REVIEWED = new Set([
   'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.slaBreached}',
   'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p0Open}',
   'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p1Open}',
-  'features/dashboard/components/ctem/exposure-hero.tsx|Link|href={DRILL.p0Open}',
-  'features/dashboards/widgets/registry.tsx|StatShell|href={DRILL.p0Open}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
@@ -111,7 +109,6 @@ const REVIEWED = new Set([
   'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.unownedHref}',
   'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.highRiskHref}',
   'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.reviewHref}',
-  'features/dashboard/components/ctem/ctem-loop.tsx|Link|href={stage.href}',
   'features/scoping/components/scoping-overview.tsx|Link|href={r.href}',
   'app/(dashboard)/(validation)/validation/page.tsx|Link|href={a.href}',
   // Build-time constants (process.env / literals in the module).
@@ -121,9 +118,7 @@ const REVIEWED = new Set([
   // Same-origin paths built in the component from route builders/literals.
   'features/assets/components/linked-assets-panel.tsx|Link|href={viewAllHref}',
   'features/attack-surface/components/path-graph.tsx|Link|href={node.href}',
-  'features/dashboard/components/ctem/fix-next-queue.tsx|Link|href={it.href}',
   'features/auth/components/password-token-form.tsx|Link|href={copy.newLink.href}',
-  'features/dashboards/widgets/registry.tsx|Link|href={href}',
   // Prop passthroughs: every caller passes a literal or route builder.
   'features/shared/components/link-card.tsx|Link|href={href}',
   'features/dashboard/components/activity-item.tsx|Link|href={href}',

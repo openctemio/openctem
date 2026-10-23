@@ -105,15 +105,28 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 		if !sameTransitionBody(t, cmd, in) {
 			return nil, ErrTransitionConflict
 		}
-		if t == TransitionClaim && s.jobs != nil {
-			// The repeat of a claim is handed out signed too. The sensor
+		if t == TransitionClaim {
+			// The repeat of a claim hands out what the first delivery did
+			// (policy, program rules, tool settings, template signatures)
+			// and the sensor's proxy pool (egress.go: a signing sensor runs
+			// this payload), signed when the install signs jobs. The sensor
 			// already holds the command, so a refusal leaves it as it is
 			// (its lease runs out unless the sensor goes on).
-			signed, err := s.signJob(ctx, in.SensorID, cmd, s.enforcesLimitsFor(ctx, cmd.TenantID, in.SensorID))
+			delivered, err := s.deliverStored(ctx, in.SensorID, cmd)
 			if err != nil {
 				return nil, err
 			}
-			cmd = signed
+			if delivered, err = s.egressOne(ctx, in.SensorID, delivered); err != nil {
+				return nil, err
+			}
+			cmd = delivered
+			if s.jobs != nil {
+				signed, err := s.signJob(ctx, in.SensorID, cmd, s.enforcesLimitsFor(ctx, cmd.TenantID, in.SensorID))
+				if err != nil {
+					return nil, err
+				}
+				cmd = signed
+			}
 		}
 		return &TransitionResult{Command: cmd, Replayed: true}, nil
 	}
@@ -124,7 +137,13 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	var out *commanddom.Command
 	switch t {
 	case TransitionClaim:
-		out, err = s.Acknowledge(ctx, in.TenantID, in.SensorID, in.CommandID)
+		// Not claimed at all by a sensor that cannot honor its proxy pool.
+		if _, err = s.egressOne(ctx, in.SensorID, cmd); err != nil {
+			return nil, err
+		}
+		if out, err = s.Acknowledge(ctx, in.TenantID, in.SensorID, in.CommandID); err == nil {
+			out, err = s.egressOne(ctx, in.SensorID, out)
+		}
 	case TransitionStart:
 		out, err = s.Start(ctx, in.TenantID, in.SensorID, in.CommandID)
 	case TransitionComplete:
@@ -135,15 +154,27 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	if err != nil {
 		return nil, s.transitionError(ctx, t, in, err)
 	}
-	if t == TransitionClaim && s.jobs != nil {
-		signed, err := s.signJob(ctx, in.SensorID, out, s.enforcesLimitsFor(ctx, out.TenantID, in.SensorID))
+	if t == TransitionClaim {
+		// Hand out what a poll would have: the stored command plus the
+		// policy, rules, settings and template signatures, signed.
+		stored, err := s.Get(ctx, out.TenantID.String(), out.ID.String())
+		if err == nil {
+			out, err = s.deliverStored(ctx, in.SensorID, stored)
+		}
+		if err == nil {
+			// The proxy pool reference rides the delivered payload like the
+			// one a poll hands out (egress.go).
+			out, err = s.egressOne(ctx, in.SensorID, out)
+		}
+		if err == nil && s.jobs != nil {
+			out, err = s.signJob(ctx, in.SensorID, out, s.enforcesLimitsFor(ctx, stored.TenantID, in.SensorID))
+		}
 		if err != nil {
-			// Not handed out unsigned: back to pending, still addressed to
-			// this sensor only if it was before the claim.
-			s.unclaim(ctx, out.TenantID, out.ID, in.SensorID, cmd.SensorID != nil)
+			// Not handed out unprepared or unsigned: back to pending, still
+			// addressed to this sensor only if it was before the claim.
+			s.unclaim(ctx, cmd.TenantID, cmd.ID, in.SensorID, cmd.SensorID != nil)
 			return nil, err
 		}
-		out = signed
 	}
 	return &TransitionResult{Command: out}, nil
 }

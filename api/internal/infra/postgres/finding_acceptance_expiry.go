@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -155,6 +156,7 @@ func (r *FindingAcceptanceExpiryRepository) endAcceptance(ctx context.Context, d
 				resolved_at = NULL, resolved_by = NULL,
 				sla_deadline = COALESCE($3, sla_deadline),
 				sla_status = CASE WHEN $3::timestamptz IS NULL THEN sla_status ELSE 'on_track' END,
+				sla_started_at = CASE WHEN $3::timestamptz IS NULL THEN sla_started_at ELSE $4 END,
 				updated_at = $4
 			WHERE tenant_id = $1 AND id = $2 AND status = 'accepted'`,
 			due.TenantID.String(), due.FindingID.String(), newDeadline, now); err != nil {
@@ -198,10 +200,15 @@ func (r *FindingAcceptanceExpiryRepository) endAcceptance(ctx context.Context, d
 				return err
 			}
 		}
-		if why.audit != "" {
-			if err := insertDecisionAudit(ctx, tx, due.TenantID, due.FindingID, why.audit, "high", why.message, changes); err != nil {
-				return err
-			}
+		// Every end of an acceptance leaves an audit row (the timeline goes
+		// with the finding): the decision's own action when it has one, else
+		// the system's status change.
+		action, severity := why.audit, "high"
+		if action == "" {
+			action, severity = string(audit.ActionFindingStatusChanged), "medium"
+		}
+		if err := insertDecisionAudit(ctx, tx, due.TenantID, due.FindingID, action, severity, why.message, changes); err != nil {
+			return err
 		}
 		wrote = true
 		return nil

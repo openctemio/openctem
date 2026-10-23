@@ -1,0 +1,5 @@
+### Added: one finding per bug-bounty report
+
+- Findings with source `bug_bounty` can carry a typed report object (`metadata.bounty_report`: intake, report id, researcher handle, submitted time, reported severity, channel state, CWE, endpoint path and parameter, an https back-link, reward and disclosure as data), validated with length caps, an https-only link in printable ASCII without user info (an internationalised host in its xn-- form), ISO 4217 currencies and no control or invisible formatting characters (bidirectional controls, zero-width characters) in single-line fields; a stored object that no longer validates is never returned to a reader (RFC-121).
+- Migration `003275_findings_bounty_report_ref_unique` adds a partial unique index so a tenant holds at most one `bug_bounty` finding per (intake, report id); a second one is a conflict.
+- **Upgrade note:** the index is built with `CREATE INDEX CONCURRENTLY` (no write lock on `findings`); no existing finding carries a report object, so the build cannot fail on duplicates.

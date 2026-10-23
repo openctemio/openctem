@@ -83,7 +83,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "dashboard:read",
-		Jobs:       []string{"DashboardFactsController", "DashboardFactReconcileController"},
+		Jobs:       []string{"DashboardFactsController", "DashboardFactReconcileController", "DashboardSnapshotsController"},
 	},
 	{
 		ID: ModuleAssets, Slug: "assets", Name: "Assets",
@@ -679,7 +679,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "team:read",
-		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "AccessRequestRetentionController", "SignupEventRetentionController", "RoleSyncController", "IdleWorkspaceController"},
+		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "ServiceKeyCreatorController", "AccessRequestRetentionController", "SignupEventRetentionController", "SAMLCertExpiryController", "RoleSyncController", "IdleWorkspaceController"},
 	},
 	{
 		ID: ModuleGroups, Slug: "groups", Name: "Groups",

@@ -55,6 +55,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/assignment"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
+	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/participation"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
@@ -102,6 +103,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
+	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
@@ -682,7 +684,9 @@ type Services struct {
 
 	// Per-user customizable dashboards (RFC-021)
 	UserDashboard *dashboardapp.Service
-	SavedView     *savedviewapp.Service
+	// DashboardWidgets computes widget results and keeps their snapshots.
+	DashboardWidgets *dashwidgets.Service
+	SavedView        *savedviewapp.Service
 
 	// Integrations & Notifications
 	Integration    *integration.IntegrationService
@@ -698,6 +702,7 @@ type Services struct {
 	// SensorGrant manages per-sensor grants (RFC-052 §5).
 	SensorGrant *sensorgrant.Service
 	ScanZone    *scanzoneapp.Service
+	ProxyPool   *proxypoolapp.Service
 	// ScanWindow manages scan window policies and overrides (RFC-067);
 	// ScanWindowResolver finds what governs targets for the claim, the
 	// trigger and the API.
@@ -766,6 +771,8 @@ type Services struct {
 	// Permission Sync
 	PermVersion *accesscontrol.PermissionVersionService
 	PermCache   *accesscontrol.PermissionCacheService
+	// ServiceKeyGate ties service-account keys to their creator's access.
+	ServiceKeyGate apikey.ServiceKeyGate
 
 	// Membership cache (Redis-backed wrapper around tenant.Repository
 	// .GetMembership). Read by RequireMembership +
@@ -1247,6 +1254,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.UserDashboard.SetLimitReader(s.Entitlement)
 	s.UserDashboard.SetMembershipReader(repos.Tenant)
 	s.UserDashboard.SetSettingsStore(s.Tenant)
+	// Widget results from the fact tables, stored as snapshots.
+	s.DashboardWidgets = dashwidgets.NewService(s.UserDashboard, s.DataScope, repos.DashboardWidget, log)
+	s.DashboardWidgets.SetSnapshots(repos.DashboardSnapshot, repos.UserDashboard, repos.Tenant, s.Tenant)
+	s.DashboardWidgets.SetAttackPaths(s.AttackSurface)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
@@ -1738,6 +1749,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// are sealed with the platform key (re-keyed by cmd/rekey).
 	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
 	s.Retest.SetEvidenceStore(s.Evidence)
+	// The finding verification plan asks the retest service whether a
+	// retest would run and why not.
+	s.Vulnerability.SetRetestAvailability(s.Retest)
+	s.Vulnerability.SetCoverageAutoResolveMode(string(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve)))
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
@@ -2136,7 +2151,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			}
 			return t.Slug(), nil
 		}))
+	// Proxy pools for scan traffic: credentials encrypted with the
+	// credentials key, never stored in clear.
+	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
+		// Each scan and retest job carries the claiming sensor's proxy pool.
+		command.WithEgress(s.ProxyPool),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
 		// from sensors without a policy.
@@ -2864,10 +2884,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// API keys, held to the external-member role ceiling.
 	s.ServiceAccount = accesscontrol.NewServiceAccountService(repos.ServiceAccount, s.Audit, log)
 	s.Role.SetServiceAccountReader(repos.ServiceAccount)
+	s.Role.SetServiceKeyRevoker(repos.MemberLifecycle)
 
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {
 		s.APIKey.SetHolderPermissions(apikey.NewHolderPermissions(repos.Tenant, s.PermCache))
+		// A service-account key answers to the person who minted it. The holder
+		// reads the role tables directly (no cache): a team membership ends by
+		// the clock, which no cache invalidation can signal.
+		// No organization gate here: Authenticate already checks the key's
+		// organization, and the sweep must not revoke keys over an organization
+		// suspension that may be lifted.
+		gateMembers := apikey.NewMembershipChecker(repos.Tenant, repos.User, nil)
+		gateHolder := apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role})
+		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
+		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
 	}
 
 	// Wire permission services to tenant service
@@ -3268,6 +3299,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = auth.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
+	// Each assertion is accepted once across every replica; without Redis the
+	// IDs are kept in process (single replica only).
+	if redisClient != nil {
+		s.SAML.SetReplayStore(redisClient)
+	} else {
+		log.Warn("saml: no Redis client; assertion replay cache kept in process (single-replica only)")
+	}
+	s.SAML.SetCertExpiryAlerts(repos.SAMLProvider, repos.Tenant, s.Notification)
 
 	// A platform administrator's SAML / identity-provider change waits for an
 	// owner of the organization; owners are told in-app (and by email, wired
@@ -3282,6 +3321,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so
 	// this is re-applied there too.
 	s.Tenant.SetSSOPathChecker(s.SSO)
+	s.Tenant.SetSessionReader(repos.Session)
 
 	// Member lifecycle (RFC-050): disable / re-enable / offboard / erase run
 	// in one transaction each; administrators are told in-app when a disable
@@ -3732,4 +3772,21 @@ func (a assetRiskGovernor) GovernRisk(ctx context.Context, in asset.RiskGovernIn
 		Actor: in.Actor, CanApprove: in.CanApprove, Reason: in.Reason, Audit: in.Audit,
 	})
 	return asset.RiskGovernOutcome{Held: out.Held}, err
+}
+
+// rolePermissionSource reads a user's effective permissions straight from the
+// role tables (direct roles and active, unexpired team bindings), skipping the
+// permission cache.
+type rolePermissionSource struct{ roles role.Repository }
+
+func (r rolePermissionSource) GetPermissionsWithFallback(ctx context.Context, tenantID, userID string) ([]string, error) {
+	tid, err := role.ParseID(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	uid, err := role.ParseID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return r.roles.GetUserPermissions(ctx, tid, uid)
 }

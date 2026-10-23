@@ -135,6 +135,9 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 	_, err = r.db.ExecContext(ctx, findingCreateSQL, args...)
 
 	if err != nil {
+		if isBountyReportViolation(err) {
+			return vulnerability.ErrBountyReportExists
+		}
 		if isUniqueViolation(err) {
 			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
 		}
@@ -161,6 +164,9 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 	_, err = tx.ExecContext(ctx, findingCreateSQL, args...)
 
 	if err != nil {
+		if isBountyReportViolation(err) {
+			return vulnerability.ErrBountyReportExists
+		}
 		if isUniqueViolation(err) {
 			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
 		}
@@ -1201,6 +1207,9 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	result, err := r.db.execStatusWrite(ctx, query, args...)
 
 	if err != nil {
+		if isBountyReportViolation(err) {
+			return vulnerability.ErrBountyReportExists
+		}
 		return fmt.Errorf("failed to update finding: %w", err)
 	}
 
@@ -1364,7 +1373,7 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 	// then recency) so the list surfaces what to work on next — not created_at.
 	orderBy := vulnerability.DefaultFindingSort
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderBy = opts.Sort.SQLWithDefault(vulnerability.DefaultFindingSort)
+		orderBy = opts.Sort.SQLWithDefaultAndTieBreaker(vulnerability.DefaultFindingSort, "findings.id")
 	}
 	baseQuery := buildFindingPageQuery(r.selectQuery(), whereClause, orderBy, page.Limit(), page.Offset())
 
@@ -3760,8 +3769,9 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 // AutoReopenByFingerprintsBatch reopens, in one statement, every finding a scan
 // re-detected that had been closed as fixed — status resolved or verified,
 // whether auto-resolved (resolution = 'auto_fixed') or resolved by a person.
-// Deliberate dispositions (false_positive, accepted_risk, duplicate, suppressed)
-// are NEVER reopened.
+// Deliberate dispositions (false positive, accepted, duplicate, suppressed) are
+// other statuses and are NEVER reopened; neither is a finding closed as
+// mitigated (closure_reason = 'mitigated'): detection does not reopen it.
 //
 // The reopen clears resolution, the closure and resolved_by on the row, so
 // it returns what they were (read under the row lock, in the same statement):
@@ -3774,7 +3784,6 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 		return result, nil
 	}
 
-	// resolution is a free-text note and may be NULL, so NULL must survive NOT IN.
 	query := `
 		WITH prev AS (
 			SELECT id, status, resolution, closure_reason, verification, resolved_by, resolved_at
@@ -3782,10 +3791,12 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 			WHERE tenant_id = $1
 				AND fingerprint = ANY($2)
 				AND status IN ` + regressionReopenFromSQL + `
-				-- A finding closed as fixed reopens; a deliberate disposition
-				-- recorded in the resolution note does not.
-				AND (status NOT IN ` + fixedReopenFromSQL + `
-					OR resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
+				-- Status decides: only a resolved row reopens (dispositions are
+				-- other statuses). The free-text resolution note is not read.
+				-- A closure recorded as mitigated (a compensating control) is not
+				-- reopened by detection: the scanner still sees the issue behind
+				-- the control. Validation re-checks the control.
+				AND closure_reason IS DISTINCT FROM 'mitigated'
 				-- A finding the organization's VEX statement marks fixed stays
 				-- resolved while the statement stands (it is withdrawn on edit,
 				-- delete or expiry, which reopens it).

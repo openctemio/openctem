@@ -6,7 +6,7 @@
  * not import statically. They were measured on a production build
  * (research/29-ui-performance.md): zod in the root providers (~90 KB gzipped
  * on every page), cmdk in the shell (~25 KB on every dashboard page), and
- * recharts / @dnd-kit in the dashboard's first load (~145 KB). Load them with
+ * @dnd-kit in the dashboard's first load. Load them with
  * next/dynamic (or a narrower import) instead, as the files below do.
  */
 import { readFileSync } from 'node:fs'
@@ -38,23 +38,13 @@ const RULES: { file: string; forbidden: RegExp; why: string }[] = [
   },
   {
     file: 'app/(dashboard)/page.tsx',
-    forbidden: /(classic-dashboard|dashboard-canvas|dashboard-canvas-editor)$/,
-    why: 'dashboard: only the default CTEM view is in the first load',
+    forbidden: /dashboard-editor$|^@dnd-kit\//,
+    why: 'dashboard: the editor and its drag and drop kit load when Customize opens',
   },
   {
-    file: 'features/dashboard/components/ctem-dashboard.tsx',
-    forbidden: /analyst-detail$/,
-    why: 'CTEM dashboard: the analyst charts load after the cards',
-  },
-  {
-    file: 'features/dashboard/components/ctem/exposure-hero.tsx',
-    forbidden: /^@\/components\/charts$|^recharts$/,
-    why: 'CTEM card: its chart comes from trend-charts via next/dynamic',
-  },
-  {
-    file: 'features/dashboard/components/ctem/priority-over-time.tsx',
-    forbidden: /^@\/components\/charts$|^recharts$/,
-    why: 'CTEM card: its chart comes from trend-charts via next/dynamic',
+    file: 'features/dashboards/components/dashboard-home.tsx',
+    forbidden: /dashboard-editor$|^@dnd-kit\//,
+    why: 'dashboard home: the editor and its drag and drop kit load when Customize opens',
   },
 ]
 

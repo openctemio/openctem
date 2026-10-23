@@ -463,9 +463,15 @@ func (s *FindingActivityService) RecordCommentUpdated(
 	actorID *string,
 	commentID string,
 	source string,
+	extra ...map[string]any,
 ) (*vulnerability.FindingActivity, error) {
 	changes := map[string]any{
 		"comment_id": commentID,
+	}
+	for _, e := range extra {
+		for k, v := range e {
+			changes[k] = v
+		}
 	}
 
 	return s.RecordActivity(ctx, RecordActivityInput{
@@ -486,9 +492,15 @@ func (s *FindingActivityService) RecordCommentDeleted(
 	actorID *string,
 	commentID string,
 	source string,
+	extra ...map[string]any,
 ) (*vulnerability.FindingActivity, error) {
 	changes := map[string]any{
 		"comment_id": commentID,
+	}
+	for _, e := range extra {
+		for k, v := range e {
+			changes[k] = v
+		}
 	}
 
 	return s.RecordActivity(ctx, RecordActivityInput{
@@ -502,23 +514,20 @@ func (s *FindingActivityService) RecordCommentDeleted(
 	})
 }
 
-// DeleteActivityByCommentID removes the comment_added activity for a given comment ID.
-// This is called when a user deletes their comment to clean up the activity feed.
-func (s *FindingActivityService) DeleteActivityByCommentID(ctx context.Context, tenantID string, commentID string) error {
+// DeletedCommentIDs reports which of the given comment ids have a
+// comment_deleted entry on the finding. The feed uses it to show a
+// placeholder instead of the text of a deleted comment (the original and
+// revision entries are never removed or rewritten).
+func (s *FindingActivityService) DeletedCommentIDs(ctx context.Context, tenantID, findingID string, commentIDs []string) (map[string]bool, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	return s.activityRepo.DeleteByCommentID(ctx, parsedTenantID, commentID)
-}
-
-// UpdateActivityContentByCommentID updates the content of a comment_added activity.
-func (s *FindingActivityService) UpdateActivityContentByCommentID(ctx context.Context, tenantID string, commentID string, content string) error {
-	parsedTenantID, err := shared.IDFromString(tenantID)
+	parsedFindingID, err := shared.IDFromString(findingID)
 	if err != nil {
-		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid finding id format", shared.ErrValidation)
 	}
-	return s.activityRepo.UpdateContentByCommentID(ctx, parsedTenantID, commentID, content)
+	return s.activityRepo.DeletedCommentIDs(ctx, parsedTenantID, parsedFindingID, commentIDs)
 }
 
 // RecordScanDetected is a convenience method for recording scan detections.

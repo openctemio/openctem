@@ -537,6 +537,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		repos.DashboardFacts, log.With("controller", "dashboard-facts")))
 	w.ControllerManager.Register(controller.NewDashboardFactReconcileController(
 		repos.DashboardFacts, log.With("controller", "dashboard-facts-reconcile")))
+	// Dashboard snapshots: scheduled refreshes, every minute.
+	w.ControllerManager.Register(controller.NewDashboardSnapshotsController(
+		svc.DashboardWidgets, log.With("controller", "dashboard-snapshots")))
 
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
@@ -579,6 +582,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// SAML IdP certificate expiry: owners are alerted 30, 7 and 1 days before
+	// and on expiry, once per level per certificate.
+	if svc.SAML != nil {
+		w.ControllerManager.Register(controller.NewSAMLCertExpiryController(
+			svc.SAML, 6*time.Hour, log.With("controller", "saml-cert-expiry")))
+	}
+
 	// External members' access end dates (RFC-058): an expired membership is
 	// suspended within a minute.
 	if svc.Tenant != nil {
@@ -596,6 +606,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc.IdleWorkspaces != nil {
 		w.ControllerManager.Register(controller.NewIdleWorkspaceController(svc.IdleWorkspaces, 6*time.Hour,
 			log.With("controller", "idle-workspaces")))
+	}
+
+	// Service-account keys whose creator lost service_accounts:manage are marked
+	// revoked (the key-use check already refuses them).
+	if svc.ServiceKeyGate != nil {
+		w.ControllerManager.Register(controller.NewServiceKeyCreatorController(repos.ServiceAccount,
+			svc.ServiceKeyGate, repos.MemberLifecycle, 5*time.Minute, log.With("controller", "service-key-creator")))
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)

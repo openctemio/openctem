@@ -4,7 +4,11 @@ import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
 import { useListParams } from '@/hooks/use-list-params'
-import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
+import {
+  summarizeBulkResult,
+  type BulkFindingResult,
+  type BulkSummary,
+} from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
@@ -165,7 +169,7 @@ import type { Severity } from '@/features/shared/types'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { csrfFetch } from '@/lib/api/client'
+import { csrfFetch, del, post } from '@/lib/api/client'
 import { usePermissions } from '@/context/permission-provider'
 import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { Permission } from '@/lib/permissions'
@@ -403,6 +407,8 @@ const SORTABLE_COLUMNS: Record<string, { api: string; invert?: boolean }> = {
   source: { api: 'source' },
   status: { api: 'status' },
   createdAt: { api: 'created_at' },
+  // Due date: soonest (most overdue) first on ascending.
+  slaStatus: { api: 'sla_deadline' },
 }
 
 /** The URL's API sort (`-created_at`, `severity,-created_at`) → table sorting state. */
@@ -593,6 +599,9 @@ function FindingsContent() {
   const [ownerNullParam] = useUrlFilter('asset_owner_id_null', '')
   // An asset group's links (its findings tab, its severity breakdown).
   const [assetGroupParam] = useUrlFilter('asset_group_id', '')
+  // The dashboard's "crown jewels exposed" (findings on crown jewels).
+  const [crownJewelParam] = useUrlFilter('asset_crown_jewel', '')
+  const crownJewelActive = crownJewelParam === 'true'
   const ownerUnassigned = ownerNullParam === 'true'
   // Bumped after a change, so the grouped view reloads its groups and rows.
   const [groupsReloadKey, setGroupsReloadKey] = useState(0)
@@ -729,6 +738,7 @@ function FindingsContent() {
     ownerParam,
     ownerNullParam,
     assetGroupParam,
+    crownJewelActive,
     groupParam,
     viewParam,
     lens,
@@ -777,6 +787,7 @@ function FindingsContent() {
     if (ownerParam) filters.asset_owner_id = ownerParam
     if (ownerUnassigned) filters.asset_owner_unassigned = true
     if (assetGroupParam) filters.asset_group_id = assetGroupParam
+    if (crownJewelActive) filters.asset_crown_jewel = true
     if (effectiveSeverities.length > 0) filters.severities = effectiveSeverities
     if (savedId) filters.view = savedId
     if (!savedId || rawLens) filters.state = lens
@@ -815,6 +826,7 @@ function FindingsContent() {
     ownerParam,
     ownerUnassigned,
     assetGroupParam,
+    crownJewelActive,
     effectiveSeverities,
     statuses,
     sourceFilter,
@@ -866,6 +878,7 @@ function FindingsContent() {
       asset_owner_id: apiFilters.asset_owner_id,
       asset_owner_unassigned: apiFilters.asset_owner_unassigned,
       asset_group_id: apiFilters.asset_group_id,
+      asset_crown_jewel: apiFilters.asset_crown_jewel,
     }),
     [HIDDEN_STATUSES, apiFilters]
   )
@@ -881,6 +894,7 @@ function FindingsContent() {
     ownerId: ownerParam,
     ownerUnassigned,
     assetGroupId: assetGroupParam,
+    crownJewel: crownJewelActive,
   }
   const hasContextScope = hasFindingContextFilters(contextFilterValues)
   // keepPreviousData: a filter change keeps the numbers on screen until the
@@ -931,6 +945,16 @@ function FindingsContent() {
   }, [findingsResponse])
 
   const selectedCount = selectedFindingIds.length
+  // Bulk actions need findings:bulk_update and the single-item permission of
+  // each action (the API checks both); selection is offered only when at least
+  // one bulk action is.
+  const canBulkUpdate = hasPermission(Permission.FindingsBulkUpdate)
+  const canBulkAssign = canBulkUpdate && hasPermission(Permission.FindingsAssign)
+  const canBulkStatus = canBulkUpdate && hasPermission(Permission.FindingsStatus)
+  const canBulkRemediate = hasPermission('findings:remediation:write') && remediationEnabled
+  const canSelect = canBulkAssign || canBulkStatus || canBulkRemediate
+  // One bulk write at a time (a double click must not send two).
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const handleRefresh = async () => {
     await Promise.all([mutateFindings(), mutateStats()])
@@ -1011,8 +1035,9 @@ function FindingsContent() {
 
   const handleBulkAssign = async (userId: string) => {
     const findingIds = selectedFindingIds
-    if (findingIds.length === 0 || !userId.trim()) return
+    if (findingIds.length === 0 || !userId.trim() || bulkBusy) return
 
+    setBulkBusy(true)
     try {
       const response = await csrfFetch('/api/v1/findings/bulk/assign', {
         method: 'POST',
@@ -1032,12 +1057,16 @@ function FindingsContent() {
       mutateFindings()
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to assign findings'))
+    } finally {
+      setBulkBusy(false)
     }
   }
 
-  const handleBulkStatusChange = async (status: string, resolution?: string) => {
-    if (selectedFindingIds.length === 0) return
+  /** Returns whether the write went through (a failed bulk resolve keeps its note). */
+  const handleBulkStatusChange = async (status: string, resolution?: string): Promise<boolean> => {
+    if (selectedFindingIds.length === 0 || bulkBusy) return false
 
+    setBulkBusy(true)
     try {
       // Dry run first (the API's transition engine): only the findings that
       // may move are sent; the others are reported with the reason.
@@ -1051,7 +1080,7 @@ function FindingsContent() {
         toast.error(t('findings.bulk.noneCanMove', 'None of the selected findings can move'), {
           description: refusedText,
         })
-        return
+        return false
       }
       if (dryRun.refused.length > 0) {
         toast.warning(
@@ -1062,25 +1091,23 @@ function FindingsContent() {
         )
       }
       const findingIds = dryRun.allowed
-      const response = await csrfFetch('/api/v1/findings/bulk/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ finding_ids: findingIds, status, resolution }),
+      // post() answers STEP_UP_REQUIRED (a bulk move to a closing status) with
+      // the shared re-authentication dialog and retries once.
+      const result = await post<BulkFindingResult>('/api/v1/findings/bulk/status', {
+        finding_ids: findingIds,
+        status,
+        resolution,
       })
-      if (!response.ok) throw new Error('Failed to update findings')
-      showBulkResult(
-        summarizeBulkResult(
-          await response.json().catch(() => undefined),
-          findingIds.length,
-          'Updated'
-        )
-      )
+      showBulkResult(summarizeBulkResult(result, findingIds.length, 'Updated'))
       clearSelection()
       mutateFindings()
       mutateStats()
+      return true
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to update findings'))
+      return false
+    } finally {
+      setBulkBusy(false)
     }
   }
 
@@ -1127,14 +1154,8 @@ function FindingsContent() {
 
     setIsDeleting(true)
     try {
-      const response = await csrfFetch(`/api/v1/findings/${findingToDelete.id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete finding')
-      }
+      // del() answers STEP_UP_REQUIRED with the shared re-authentication dialog.
+      await del(`/api/v1/findings/${encodeURIComponent(findingToDelete.id)}`)
 
       toast.success('Finding deleted', {
         description: findingToDelete.title,
@@ -1413,7 +1434,7 @@ function FindingsContent() {
       },
       {
         accessorKey: 'slaStatus',
-        enableSorting: false,
+        enableSorting: true,
         header: ({ column }) => <DataTableColumnHeader column={column} title="Due / SLA" />,
         cell: ({ row }) => {
           const status = row.original.slaStatus
@@ -1510,14 +1531,17 @@ function FindingsContent() {
         },
       },
     ]
+    // No bulk action for this user: no selection checkboxes either.
+    const shown = canSelect ? cols : cols.filter((c) => c.id !== 'select')
     return hasAnyPriority
-      ? cols
-      : cols.filter((c) => !('accessorKey' in c) || c.accessorKey !== 'priorityClass')
+      ? shown
+      : shown.filter((c) => !('accessorKey' in c) || c.accessorKey !== 'priorityClass')
   }, [
     handleRowAction,
     handleRowClick,
     hasPermission,
     hasAnyPriority,
+    canSelect,
     remediationEnabled,
     canCreateTicket,
     t,
@@ -2322,56 +2346,67 @@ function FindingsContent() {
             </div>
           </div>
 
-          <BulkActionBar count={selectedCount} onClear={clearSelection}>
-            <AssigneeSelect
-              placeholder="Assign to…"
+          {canSelect && (
+            <BulkActionBar count={selectedCount} onClear={clearSelection}>
+              {canBulkAssign && (
+                <AssigneeSelect
+                  placeholder={t('findings.bulk.assignTo', 'Assign to…')}
+                  disabled={bulkBusy}
 
-              onChange={(user) => {
-                if (user) void handleBulkAssign(user.id)
-              }}
-            />
+                  onChange={(user) => {
+                    if (user) void handleBulkAssign(user.id)
+                  }}
+                />
+              )}
 
-            {hasPermission('findings:remediation:write') && remediationEnabled && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => openRemediationFor(selectedFindings)}
-              >
-                <Wrench className="me-2 h-4 w-4" />
-                {t('remediationClaim.menu.bulk')}
-              </Button>
-            )}
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <Flag className="me-2 h-4 w-4" />
-                  Status
+              {canBulkRemediate && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => openRemediationFor(selectedFindings)}
+                >
+                  <Wrench className="me-2 h-4 w-4" />
+                  {t('remediationClaim.menu.bulk')}
                 </Button>
-              </DropdownMenuTrigger>
+              )}
 
-              <DropdownMenuContent side="top" align="center">
-                <DropdownMenuItem onClick={() => handleBulkStatusChange('confirmed')}>
-                  Confirmed
-                </DropdownMenuItem>
+              {canBulkStatus && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" disabled={bulkBusy}>
+                      {bulkBusy ? (
+                        <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Flag className="me-2 h-4 w-4" />
+                      )}
+                      {t('findings.bulk.status', 'Status')}
+                    </Button>
+                  </DropdownMenuTrigger>
 
-                <DropdownMenuItem onClick={() => handleBulkStatusChange('in_progress')}>
-                  In Progress
-                </DropdownMenuItem>
+                  <DropdownMenuContent side="top" align="center">
+                    <DropdownMenuItem onClick={() => void handleBulkStatusChange('confirmed')}>
+                      {t('findings.status.confirmed', 'Confirmed')}
+                    </DropdownMenuItem>
 
-                {/* Resolving needs findings:verify; the API refuses it otherwise. */}
-                {hasPermission(Permission.FindingsVerify) && (
-                  <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
-                    Resolved
-                  </DropdownMenuItem>
-                )}
+                    <DropdownMenuItem onClick={() => void handleBulkStatusChange('in_progress')}>
+                      {t('findings.status.in_progress', 'In Progress')}
+                    </DropdownMenuItem>
 
-                {/* false_positive requires the per-finding approval flow, so it is
+                    {/* Resolving needs findings:verify; the API refuses it otherwise. */}
+                    {hasPermission(Permission.FindingsVerify) && (
+                      <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
+                        {t('findings.status.resolved', 'Resolved')}
+                      </DropdownMenuItem>
+                    )}
+
+                    {/* false_positive requires the per-finding approval flow, so it is
 
                     intentionally not offered as a bulk action. */}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </BulkActionBar>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </BulkActionBar>
+          )}
 
           <FilterSheet
             open={filterSheetOpen}
@@ -2493,11 +2528,12 @@ function FindingsContent() {
           'The selected findings are closed as resolved and leave the open work queues and SLA tracking.'
         )}
         confirmText={t('confirm.finding.resolve', 'Resolve')}
-        disabled={!bulkResolveNote.trim()}
+        disabled={!bulkResolveNote.trim() || bulkBusy}
         handleConfirm={async () => {
-          await handleBulkStatusChange('resolved', bulkResolveNote.trim())
-          setBulkResolveNote('')
-          setBulkResolveOpen(false)
+          if (await handleBulkStatusChange('resolved', bulkResolveNote.trim())) {
+            setBulkResolveNote('')
+            setBulkResolveOpen(false)
+          }
         }}
       >
         {/* A bulk resolve reads no verification checklist: it is attested and needs a note. */}

@@ -121,6 +121,7 @@ func (s *VulnerabilityService) AfterStatusMoves(ctx context.Context, tenantID sh
 // none of them undoes the move). A label change inside one status is not a
 // status change and fires nothing.
 func (s *VulnerabilityService) afterStatusChange(ctx context.Context, tenantID shared.ID, actorID string, changes []statusChange) int {
+	s.auditStatusChanges(ctx, tenantID, actorID, changes)
 	fixClaims := make([]shared.ID, 0)
 	for _, c := range changes {
 		newStatus := c.new

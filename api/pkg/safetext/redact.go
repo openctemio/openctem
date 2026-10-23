@@ -39,13 +39,26 @@ var secretShapes = []*regexp.Regexp{
 }
 
 // secretAssignmentRE matches `key = value` / `key: value` where the key
-// names a secret; the key and separator stay, the value goes.
+// names a secret; the key and separator stay, the value goes. A quoted key
+// (a JSON body: `"password": "x"`) and a query parameter
+// (`access_token=x`) count too.
 var secretAssignmentRE = regexp.MustCompile(
-	`(?i)\b(api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|secret|password|passwd|pwd|token|auth)\b(\s*[:=]\s*)(['"]?)([^\s'"]{4,})(['"]?)`,
+	`(?i)\b(api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|(?:access|refresh|id|auth)[_-]?token|secret|password|passwd|pwd|token|auth)\b(["']?\s*[:=]\s*)(['"]?)([^\s'"]{4,})(['"]?)`,
 )
 
-// bearerRE matches an Authorization header value or a "Bearer <token>".
-var bearerRE = regexp.MustCompile(`(?i)\b(authorization\s*[:=]\s*(?:bearer|basic|token)?\s*|bearer\s+)([A-Za-z0-9\-._~+/]{8,}=*)`)
+// cookieRE matches a Cookie / Set-Cookie header line, also as a verbose HTTP
+// client prints it ("> Cookie:", "< Set-Cookie:"); the header name stays, the
+// whole value (session ids, attributes) goes. cookieQuotedRE is the same
+// header as a quoted JSON member ("Cookie": "sid=...").
+var (
+	cookieRE       = regexp.MustCompile(`(?im)^([ \t]*(?:[<>][ \t]*)?(?:set-)?cookie[ \t]*:[ \t]*)[^\r\n]+`)
+	cookieQuotedRE = regexp.MustCompile(`(?i)(["'](?:set-)?cookie["'][ \t]*:[ \t]*["'])[^"'\r\n]+`)
+)
+
+// bearerRE matches an Authorization header value (any of the token schemes,
+// a quoted JSON member too) or a "Bearer <token>". The placeholder is a
+// token too, so a second pass leaves masked text as it is.
+var bearerRE = regexp.MustCompile(`(?i)\b(authorization["']?\s*[:=]\s*["']?(?:bearer|basic|token|negotiate|ntlm)?\s*|bearer\s+)(\[REDACTED\]|[A-Za-z0-9\-._~+/]{8,}=*)`)
 
 // RedactSecrets removes secret material from text before it leaves the
 // platform for a third-party system (Jira, GitHub issues). It is the one
@@ -57,6 +70,8 @@ func RedactSecrets(text string) string {
 	}
 	out := pemBlockRE.ReplaceAllString(text, RedactionPlaceholder)
 	out = pemOpenRE.ReplaceAllString(out, RedactionPlaceholder)
+	out = cookieRE.ReplaceAllString(out, "${1}"+RedactionPlaceholder)
+	out = cookieQuotedRE.ReplaceAllString(out, "${1}"+RedactionPlaceholder)
 	out = bearerRE.ReplaceAllString(out, "${1}"+RedactionPlaceholder)
 	out = secretAssignmentRE.ReplaceAllString(out, "${1}${2}${3}"+RedactionPlaceholder+"${5}")
 	for _, re := range secretShapes {

@@ -38,6 +38,23 @@ in the activity panel.
   labelled as global, and attack paths and combined exposures are shown as the
   reason an issue matters.
 - **A dismissal needs a reason**, and the reason goes into the timeline.
+- **The Evidence tab shows every source.** Tool evidence, re-verify and validation
+  results, the compliance controls card, code, attachments and uploaded files are
+  always rendered when they exist; "No evidence" appears only when all of them are
+  empty. The number on the tab counts all of them. Uploaded files are loaded through
+  the API client; a failure shows a row with Retry instead of an empty section.
+- **A request waiting on someone is visible where you are.** While a
+  false-positive or accepted-risk request is pending, `FindingApprovalBand`
+  (page and drawer) shows the requested status, who asked, when and why, whatever
+  the finding's status is. The requester can cancel it there; approvers get a link
+  to the approvals inbox, where the decision is made; everyone else reads it. The
+  buttons are cosmetic: the API decides who may cancel or approve.
+- **AI triage is opt-in and permission-aware.** The header button shows only to a
+  user who may run it (`ai_triage:trigger`) in an organization that turned AI triage
+  on (Settings > AI). Without `ai_triage:read` the page sends no AI triage request
+  and shows no error. The "AI analysis" section on Overview is read from the finding's
+  own AI triage endpoint (`/findings/{id}/ai-triage`), so it stays after newer
+  comments and activity.
 
 ## Principles
 
@@ -67,11 +84,21 @@ in the activity panel.
    `toFindingDetail`, `useFindingTriage` (including the approval rule),
    `FindingWhyItMatters`, `FindingFixCard`, `FindingProperties` and
    `FindingActivity` (the activity summary and panel, also in the pentest sheet).
+   Status, severity and assignee are locked by one helper, `isTriageLocked`, for
+   findings people wrote (pentest, bug bounty, red team, manual), in the rail and in
+   the drawer header. Undo of a status change asks for the note again when the
+   previous status needs one.
 7. **No extra round trips.** `GET /findings/{id}` embeds the CVE record, the
    package and the asset context (api PR "the finding detail embeds its CVE record
    and affected package"). The priority score breakdown is fetched only when "How
    this was scored" is opened.
-8. **House style.** Theme tokens only (the palette-drift gate). Monospace only for
+8. **Honest states.** A missing or refused finding shows one "not found" copy (no
+   way to tell the two apart), with no error toast and a single request: the
+   activity and comment reads wait for the finding. A server or network error
+   shows "could not load" with a Retry instead. A section whose read fails (the
+   task band, ticket links, the retest check) shows an error row with Retry, never
+   a blank or "—"; a 403/404 on a section keeps it hidden.
+9. **House style.** Theme tokens only (the palette-drift gate). Monospace only for
    identifiers, versions, paths and code. Sentence case. A skeleton shaped like the
    page.
 
@@ -120,6 +147,17 @@ a data flow.
 
 The fix rules live in `lib/fix-guidance.ts`, the signals in `lib/finding-signals.ts`;
 both are unit-tested.
+
+## Scanner-supplied text
+
+Snippets, stack frames, data-flow steps and file paths come from scanner output and
+are untrusted. `CodeHighlighter` and the path/message texts go through
+`lib/untrusted-text.ts`: bidi and other control characters show as visible `\u{XXXX}`
+escapes (a line cannot reorder what the reader sees), and a snippet over 20,000
+characters is cut with "Show more" (the expanded view is capped at 70,000; Copy copies
+the whole text). The Related tab shows only the groups that have data (similar,
+linked, same CVE), or an empty state; the Remediation tab shows no progress header
+because the finding record carries no tracked steps.
 
 ## Known gaps
 

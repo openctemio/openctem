@@ -10,12 +10,17 @@ here as they ship.
 | Ownership: organization and personal dashboards, `dashboards:org:view` / `dashboards:org:manage`, audiences, schedule fields | **Shipped** (migration `002930_dashboard_ownership`) |
 | Fact layer: per-asset fact tables, dirty queue, change triggers, recompute and rebuild functions | **Shipped** (migration `002916_dashboard_fact_tables`) |
 | Facts maintainer: queue controller, full runs (first build, requested rebuild, nightly reconciliation with drift count), age bands, F2 partitions and retention, metrics and alerts, "Rebuild dashboard data" | **Shipped** (migration `002963_dashboard_facts_maintainer`) |
-| Widget registry reading the facts; viewer-scope and organization-wide reads | Planned |
-| Snapshots, the refresher, Refresh now | Planned |
+| Typed widget spec and metric catalog, server-side validation, `GET /me/dashboards/widget-catalog` | **Shipped** |
+| Widget data endpoint reading the facts (personal: viewer scope; organization: whole organization), preview | **Shipped** |
+| Snapshots, the refresher, Refresh now (migration `003260_dashboard_snapshots`) | **Shipped** |
+| Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** |
+| Dashboard home on `/`: one renderer for stored dashboards, Organization / Mine switcher, scope badge, freshness line, Refresh now, schedule picker | **Shipped** |
 
-The facts are built and kept current, but no endpoint reads them yet: the
-dashboard endpoints still aggregate `findings` directly until the widget
-registry ships.
+The typed widget endpoints read the facts, and `/` renders only stored
+dashboards of typed widgets; the built-in CTEM and Classic views are removed.
+The older dashboard endpoints (`/dashboard/*`) still aggregate `findings`
+directly for the Insights pages; `GET /dashboard/overview` no longer has a web
+caller.
 
 ## Current figures and history
 
@@ -25,9 +30,7 @@ scope; stored snapshots are only the history behind a trend line.
 - `GET /dashboard/executive-summary` returns the open counts by priority class
   (`p0_open` .. `p3_open`, the open lens, their sum is `findings_total`) and
   `scoped`: true when the figures are counted over the viewer's data scope.
-  The CTEM view's "Open now" bars read these (each bar opens
-  `/findings?state=open&priority_class=Px`); the P0 line and the open-findings
-  trend end at the live count.
+  The Insights pages read these.
 - `GET /dashboard/risk-trend` reads the daily `risk_snapshots`, which are
   organization-wide. A scoped viewer gets no trend and the web says "Trend not
   available for your scope" instead of zeros. The chart caption names the date
@@ -36,10 +39,16 @@ scope; stored snapshots are only the history behind a trend line.
   `state=open`): `GET /findings/stats` returns `open_count` equal to
   `by_state.open`, and the scheduled report uses it.
 - Time to remediate is read from one place, `GET /dashboard/mttr-analytics`
-  over 90 days (`overall_hours`), on the Classic card and the Executive page.
+  over 90 days (`overall_hours`), on the Executive page.
 - A failed read shows an error with Retry on the card it feeds; a figure with
   no denominator (no scannable asset, nothing to validate, no approval
-  decided, nothing fixed) shows "—" with the reason, never 0.
+  decided, nothing fixed) shows "—" with the reason (the widget's
+  `not_measured` state), never 0, in neutral colours.
+- A widget that throws while rendering shows its own error with Retry (a
+  per-widget error boundary, `WidgetErrorBoundary`); the rest of the
+  dashboard renders.
+- A widget with nothing to count in the viewer's scope shows its empty state,
+  not a big 0.
 
 ## Ownership: organization and personal dashboards
 
@@ -128,24 +137,311 @@ a manager leaves.
 
 ### Planned
 
-- Stored snapshots, the refresher, Refresh now and refresh after the user's own
-  actions (dashboard work package 10). Until then a dashboard's widgets read the
-  existing live endpoints, which follow the viewer.
-- The grouped switcher (Organization / Mine), scope badge, freshness line and
-  schedule picker on `/`, and the organization management section on
-  `/dashboards` (work packages 11 and 12).
-- Typed per-widget config schemas and the widget id migration, with the widget
-  registry over the fact tables.
+- The organization management section on `/dashboards` (create, order,
+  default, audience).
+- Refreshing a person's dashboards soon after their own changes (coalesced,
+  counted against the Refresh now budget).
 
 ### Key files
 
-- `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps
+- `pkg/domain/dashboard/` — model, kinds, schedule, audience, caps;
+  `widget_spec.go` and `metric_catalog.go` (typed widgets)
+- `web/src/features/dashboards/api/widget-spec.ts` — spec types, catalog hook, helpers
+- `web/src/features/dashboards/components/dashboard-home.tsx` — the `/` page (switcher,
+  freshness, actions); `dashboard-view.tsx` and `widget-view.tsx` — the one renderer
+  (a frame and error boundary per widget); `api/widget-adapter.ts` — widget results to
+  kit shapes and states; `landing.ts` — which dashboard `/` opens; `metrics.ts` — names,
+  definitions and units of the catalog metrics (i18n namespace `dashboards`);
+  `editor/` — `dashboard-editor.tsx` (grid, keyboard, undo), `widget-gallery.tsx`,
+  `widget-config-panel.tsx`, `history.ts`, `layout-ops.ts`, `spec-ops.ts`
+- `internal/app/dashboard/widgets/` — widget results, scopes, limits;
+  `snapshot.go` (snapshots, Refresh now, refresher);
+  `internal/infra/postgres/dashboard_snapshot_repository.go`,
+  `internal/infra/controller/dashboard_snapshots.go`,
+  `migrations/003260_dashboard_snapshots.up.sql`;
+  `internal/infra/postgres/dashboard_widget_repository.go` — fact reads;
+  `web/src/features/dashboards/api/widget-data.ts` — result types and hooks
 - `internal/app/dashboard/service.go` — authorization, audit, copies, floor
 - `internal/infra/postgres/user_dashboard_repository.go` — tenant- and owner-bound queries, audience SQL
 - `internal/infra/http/handler/user_dashboard_handler.go`, `internal/infra/http/routes/dashboard.go`
 - `migrations/*_dashboard_ownership.up.sql`
 - Tests: `internal/infra/http/routes/dashboard_ownership_db_test.go`,
   `tests/integration/migration_dashboard_ownership_test.go`
+
+## Widget spec
+
+A widget is a query over the metric catalog plus how to draw it. A typed
+widget has `widget_type` `metric` or `note` and a `config` of this form
+(stored in the layout, at most 4 KB):
+
+```json
+{
+  "v": 2,
+  "id": "w_7f3a",
+  "title": "",
+  "data": {
+    "kind": "metric",
+    "metric": "findings.open",
+    "filter": {"severity": ["critical", "high"], "kev": true, "asset_group_id": ["<id>"]},
+    "group_by": ["severity"],
+    "time": {"range": "inherit", "bucket": "auto", "compare": "previous_period"},
+    "limit": 10
+  },
+  "viz": {"type": "bar", "options": {"orientation": "horizontal", "show_table": false}},
+  "target": {"op": "<=", "value": 0},
+  "drill": "auto"
+}
+```
+
+- **Catalog.** `pkg/domain/dashboard/metric_catalog.go` lists every metric,
+  the fact dimensions it may be filtered and grouped by, its polarity (which
+  direction of a change is good), whether it reads a time window, and the
+  result shape per group-by count. The web reads it from
+  `GET /api/v1/me/dashboards/widget-catalog` (static, the same for every
+  caller, no organization data; any signed-in member).
+
+  | Metric | Shape (no group-by) | Group-by | Facts |
+  |---|---|---|---|
+  | `findings.open` | scalar (1: category, 2: matrix) | severity, priority, source, SLA state, age band, KEV, reachable | F1 |
+  | `exposure.priority_open` | scalar, preset P0+P1 | as above | F1 |
+  | `intel.kev_open` | scalar, preset KEV | as above | F1 |
+  | `findings.age_bands` | matrix severity × age band | as above | F1 |
+  | `sla.within` | ratio | none | F1 |
+  | `exposure.open_by_priority` | time series by priority (P0-P2) | priority or severity | F1 + F2 |
+  | `flow.new_vs_fixed` | time series of flows | none | F2 |
+  | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
+  | `fix.next`, `sla.at_risk` | items (ranked findings) | none | F3 |
+  | `crown_jewels.exposed` | scalar (assets), preset P0+P1, filter priority only | none | F1 + `assets` |
+  | `ctem.loop` | stages (the five CTEM stages) | none | see "CTEM metrics" |
+  | `attack_paths.to_crown_jewels` | paths (reachable crown jewels) | none | attack-path scoring + `assets` |
+
+- **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
+  stat; duration: stat; category: bar, column, table, donut, stat; time
+  series: area, line, column, table (a flow: diverging, column, table, never
+  an area); matrix: heatmap, table, column; items: list, table; stages: loop, table;
+  paths: paths, table. The first is
+  the default; a widget without `viz.type` gets it.
+- **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
+  personal or organization dashboard): the config is decoded with unknown
+  fields refused; the metric must be in the catalog; filter and group-by
+  dimensions must be ones the metric allows, with values from their enums
+  (severity, priority, source, SLA state, age band); asset group filters are
+  ids (at most 10) resolved inside the reader's tenant at read time, so an id
+  of another organization matches nothing; the visualization must fit the
+  result shape; a target applies only to a single figure; `drill` is `auto`
+  or `none` (no URLs); a note takes only text (at most 2,000 characters,
+  rendered as sanitized markdown). Widget ids are unique within a dashboard.
+  The stored config is the normalized spec, so nothing unvalidated is kept.
+- **Legacy tiles.** Any other `widget_type` is a legacy tile drawn by its id;
+  its config is never read. `LegacySpec` maps the legacy ids the facts can
+  answer (open findings, by severity, past SLA, within SLA, time to fix
+  critical, P0 open, KEV) to the equivalent spec for the data endpoint.
+- **Threat model.** A widget config is user input stored in a shared layout
+  (organization dashboards, shared copies). It can name only catalog metrics,
+  fact dimensions and enum values; it carries no SQL, field names outside the
+  catalog, URLs or HTML. Tenant and scope are never part of a spec: the data
+  endpoint takes them from the caller (personal) or the organization
+  (organization dashboards) at read time.
+
+## Widget data
+
+| Route | Who | Numbers |
+|---|---|---|
+| `GET /api/v1/me/dashboards/{id}/data` | the dashboard's owner (another person's dashboard is 404) | the caller's own data scope |
+| `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
+| `POST /api/v1/me/dashboards/widget-preview` | any member | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+Every widget of the layout gets a result: typed widgets, and the legacy
+tiles the facts can answer (`LegacySpec`); other legacy tiles answer
+`unsupported` and keep their live rendering. Each result names its state
+(`ready`, `not_measured` with a reason such as `no_denominator` or
+`too_few_fixed`, `building` while the organization's first fact build runs,
+`unsupported`, `error`), its shape payload, the metric's polarity, the
+widget target and whether it is met, and `drill`: the findings list counted
+with the same filter (absent when the list cannot express the filter
+exactly: age band, "no SLA", KEV or reachable false, several asset groups).
+One failing widget never fails the others.
+
+How each figure is computed (`internal/app/dashboard/widgets`,
+`internal/infra/postgres/dashboard_widget_repository.go`):
+
+- **Counts** (F1, open lens): the sum of `finding_count`, grouped by up to
+  two dimensions. When the filter and group-by use only dimensions the
+  history carries (severity, priority, asset group), the previous period is
+  the open count at the end of the previous window (open now minus the net
+  changes since, from F2) and a scalar gets a sparkline of the open count at
+  each bucket end; otherwise `previous_reason` is `previous_not_in_history`.
+- **Within SLA** (F1): open findings with an SLA not breached over open
+  findings with an SLA; no SLA in scope is `not_measured`, never 0 % or 100 %.
+- **Time to fix** (F2): the fix-hours histograms of the days in the window,
+  summed; the median and p90 are estimated inside the doubling hour buckets
+  (`bucketed: true`); fewer than 5 fixes is `not_measured`.
+- **Open by priority over time** (F1 + F2): the open count per key at each
+  bucket end (day up to 31 days, week up to 90, month beyond), ending at the
+  live count. **New vs fixed** (F2): opened and fixed per bucket, with totals
+  for the window and the previous one.
+- **Fix next, SLA at risk** (F3): the in-scope partitions' top 10 merged
+  (exact for up to 10 rows; only the asset group filter, which does not cut
+  into the rank order); list fields are read from `findings` by id inside
+  the tenant, and a finding no longer open is left out.
+
+### CTEM metrics
+
+The CTEM story on the dashboard is three catalog metrics, drawn by the
+`loop` and `paths` visualizations and the `stat` of a count. They are
+current figures (no time window or comparison) and, like every widget,
+computed for the read's scope and stored in the snapshot.
+
+| Stage of `ctem.loop` | Figure | Second figure | Opens | Not measured when |
+|---|---|---|---|---|
+| Scoping | crown jewels in scope (`assets.is_crown_jewel`) | crown jewels with an open P0/P1 finding | `/assets?is_crown_jewel=true&program_assets=exclude` | never (0 designated is "designate crown jewels") |
+| Discovery | % of assets the coverage ledger tracks (`asset_coverage`, a capability that applies) with a successful run of any capability in the last 30 days | assets not covered | `/assets?coverage=uncovered&program_assets=exclude` | the ledger tracks no asset in scope |
+| Prioritize | open P0 findings (F1) | open KEV findings (F1) | the findings list of the same filter | never |
+| Validate | % of open findings with validation evidence (the Validation overview's coverage) | retests completed in the last 30 days | `/validation` | no open finding in scope |
+| Mobilize | % of open findings with an SLA that is not breached (F1) | breached findings | the breached findings list | no open finding has an SLA |
+
+- Each stage has a state (`good`, `warn`, `crit`, `not_measured`):
+  coverage shares are good from 80 %, need attention from 40 %; open P0 is
+  good at 0, off track from 5; within SLA is good from 90 %, needs attention
+  from 70 %. `focus` is the stage with the largest gap (the first off track,
+  else the first that needs attention); the web marks it as the current step.
+- `crown_jewels.exposed` counts crown jewels with an open finding of the
+  filter's priorities (F1 rows of the asset, with the campaign rule). It
+  opens the findings of those priorities on crown jewels grouped by asset
+  (`asset_crown_jewel=true&group=asset_id`): the number of groups is the
+  figure.
+  With no crown jewel designated in the read's scope it is `not_measured`
+  (`no_crown_jewels`), never a 0 that meets a "0 exposed" target.
+- `attack_paths.to_crown_jewels` reads the attack-path scoring (the whole
+  organization's relationship graph, cached for 5 minutes per organization
+  and API process) and keeps the crown jewels reached from a public entry
+  point, or entry points themselves, that are in the read's scope, not
+  deleted and not program-only (`VisibleAssets`). It returns the reachable
+  count, the designated count (so "none designated" and "none reachable"
+  differ) and the top rows (name, type, criticality, number of entry points
+  reaching it, depth, path score; at most `limit`, 10). Entry points and
+  intermediate hops are never named; the number of entry points reaching a
+  crown jewel is the same figure the attack-path page shows the viewer.
+  It is `not_measured` when no crown jewel is designated in scope
+  (`no_crown_jewels`) and when the organization has no relationship data
+  and nothing is reachable (`no_relationship_data`): "none reachable" is
+  only a figure when there is something to reach and a graph to reach it
+  through.
+- The asset list filter `coverage=covered|uncovered` and the findings
+  filter `asset_crown_jewel` use the same predicates as these figures, so a
+  figure equals its list for the same viewer. Dashboards leave program-only
+  assets out; the lists show them unless `program_assets=exclude` (assets).
+- Tests: `dashboard_ctem_widgets_db_test.go` (a scoped member, a campaign
+  tester, a member without scope rows and an administrator: crown jewels,
+  coverage, validation and attack paths outside the scope, program-only
+  assets and another tenant's assets never count or show; figures equal the
+  asset and findings lists), `internal/app/dashboard/widgets/ctem_test.go`
+  (every stage reads the server-built scope, not-measured stages carry no
+  value, out-of-scope crown jewels never reach the result).
+
+### Scope and isolation
+
+- The tenant comes from the authenticated caller; every statement starts
+  with `tenant_id = $1`. Asset group filters resolve inside the tenant.
+- **Personal** reads (and previews) use the caller's data scope
+  (`datascope.ResolveStrict`: scope rows for a member, hidden private
+  program assets for an unrestricted one, nothing for a member without
+  scope rows) and the pentest campaign rule for the caller unless they are
+  an administrator (an API key never is). A personal dashboard of a holder
+  of `dashboards:org:view` still follows their own scope, so its figures
+  equal their findings list.
+- **Organization** reads compute the whole organization (findings without
+  an asset included), pentest findings counted; list rows (finding titles)
+  apply the viewer's campaign membership.
+- Every read leaves out findings on program-only and soft-deleted assets,
+  like every dashboard read.
+- Results are stored per dashboard (see "Snapshots and refresh"): a
+  personal snapshot only for its owner and only while their scope is
+  unchanged, an organization snapshot for every permitted viewer. Reads are
+  bounded: 2 at a time per user, 6 per organization, 12 per API process
+  (429 with `Retry-After`), 5 s per statement and 20 s per dashboard.
+- A pentest finding without a campaign is stored under the all-f campaign
+  id, which matches no membership: like any campaign finding it counts in
+  flows and time to fix only for organization-wide and administrator reads
+  (F2 has no source column, so the campaign id alone decides).
+- Previews are limited per person: a burst of 24, then one every 2 s (per
+  API process; 429 with `Retry-After`).
+- Tests: `dashboard_widget_data_db_test.go` (figures equal the findings list
+  for a scoped member, a campaign tester, a full-data member, a member
+  without scope rows and an administrator; another tenant's and unpublished
+  findings never show; organization reads, 403 without the permission, 404
+  outside the audience and for another person's dashboard; preview refusals;
+  measured SLA and time to fix), `internal/app/dashboard/widgets` unit tests.
+
+## Snapshots and refresh
+
+Opening a dashboard reads its stored snapshot (`dash_snapshots`, one row per
+dashboard); it does not compute. A snapshot is computed on open only when
+there is none, when the layout changed (`layout_hash`), or, for a personal
+dashboard, when the owner's scope changed since it was computed
+(`scope_key`). The data and preview routes of "Widget data" return the
+snapshot with `computed_at`, the effective `refresh_schedule` (the
+organization default resolved), `next_refresh_at` (absent for manual or
+paused), `stale` (older than twice the schedule, or the last refresh failed)
+and `last_refresh_error`.
+
+| Route | Who | Effect |
+|---|---|---|
+| `POST /api/v1/me/dashboards/{id}/refresh` | the owner (404 for anyone else) | recompute and store now |
+| `POST /api/v1/organization/dashboards/{id}/refresh` | `dashboards:org:view` inside the audience | recompute and store now |
+
+- **Refresh now budget**: once a minute per person and dashboard, 30 an hour
+  per organization whoever asks (`dash_refresh_requests`; the check and the
+  insert run under a per-tenant transaction lock, so concurrent requests
+  cannot both pass). Over budget: 429 with `Retry-After`. A refresh that
+  took the budget and then found no read slot free gives it back; a
+  computation that started and failed (timeout, canceled request) keeps it,
+  so a failing dashboard cannot be recomputed faster than the budget.
+- **One refresh per dashboard at a time**: Refresh now and the refresher take
+  the dashboard's lock (`pg_try_advisory_xact_lock`, held by an open
+  transaction until the recompute ends, so a crashed request frees it). A
+  Refresh now while another runs answers 429 without using the budget; the
+  refresher skips a dashboard that is being refreshed.
+- **Refresher** (`dashboard-snapshots` controller, every minute, one replica):
+  claims the snapshots whose `next_refresh_at` is due with `FOR UPDATE SKIP
+  LOCKED` and a 5-minute lease, recomputes them, and sets the next time from
+  the schedule (also written to `user_dashboards.next_refresh_at`). A failure
+  keeps the last good snapshot, records `last_error` and retries within 15
+  minutes. Manual and paused dashboards are never refreshed on a schedule.
+  Refresh-now records older than a day and personal snapshots nobody opened
+  for 14 days are pruned (recomputed on the next open).
+- **Personal snapshots** are computed for the owner as they are now: in a
+  request from the caller's data scope; in the refresher from the owner's
+  membership (administrator and owner from the role, scope through
+  `datascope.ResolveForStrict`, which fails when the enforcer is not wired).
+  An owner who is no longer an active member has the snapshot removed and
+  nothing computed on their behalf. A trigger on `tenant_members` deletes a
+  member's personal snapshots as soon as the membership is deleted, suspended
+  or offboarded (migration `dashboard_snapshots_member_removal`). `scope_key` fingerprints the kind of
+  scope, the owner's scope rows (restricted) or the private program assets
+  hidden from them (unrestricted), and their pentest campaigns (hashes only);
+  a snapshot whose key differs from the owner's current key is never served,
+  so a narrowed scope takes effect on the next open. A result computed while
+  the scope changed is returned but not stored.
+- **Organization snapshots** (`scope_key` `organization`) hold
+  organization-wide figures once for every permitted viewer. Their lists keep
+  each pentest finding's campaign in the stored data; on every read the rows
+  of campaigns the viewer is not a member of are removed (administrators see
+  all) and the campaign fields are cleared from the response.
+- **Isolation**: a snapshot row carries the tenant and the dashboard; it is
+  written only for a dashboard of that tenant (and, personal, of that owner)
+  in one statement, and read by tenant and dashboard after the dashboard
+  service authorized the caller. Nothing is cached in memory.
+- Tests: `dashboard_snapshot_db_test.go` (served from the snapshot until
+  Refresh now; per-person and per-organization budget; scope widened and
+  narrowed take effect at once; layout change; another person's dashboard
+  404; failed refresh shown as stale; one organization snapshot, per-viewer
+  campaign rows, no campaign fields in responses; the refresher recomputes
+  due snapshots and drops the one of a member who left);
+  `dashboard_snapshot_hardening_db_test.go` (one refresh in flight per
+  dashboard, refund, preview limit, pentest findings without a campaign in
+  the trends); `dashboard_snapshot_migrations_db_test.go` (member removal
+  trigger, the all-f campaign id and the rebuild request, up and down).
 
 ## Fact layer
 
@@ -189,8 +485,11 @@ What is stored, exactly:
   out by default). The lens follows `pkg/domain/vulnerability/finding_lens.go`;
   `dash_finding_lens()` is its SQL form, and a test fails if the two differ.
 - **Pentest findings keep their campaign.** For `source = 'pentest'`,
-  `pentest_campaign_id` is the campaign (the all-zero id when the finding has
-  none); for every other source it is the all-zero id. A viewer-scope read
+  `pentest_campaign_id` is the campaign (the all-f id
+  `ffffffff-ffff-ffff-ffff-ffffffffffff` when the finding has none, which no
+  campaign membership matches; migration
+  `dashboard_facts_pentest_no_campaign`, which also requested a full
+  rebuild); for every other source it is the all-zero id. A viewer-scope read
   applies the campaign membership rule on it
   (`source <> 'pentest' OR pentest_campaign_id IN <the viewer's campaigns>`),
   and a published read can leave pentest findings out or include them.
@@ -423,9 +722,12 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   `web/src/features/dashboard/lib/drill.ts`: open P0 / P1
   (`/findings?state=open&priority_class=…`), SLA breached
   (`/findings?state=open&sla_status=overdue,exceeded`), validation coverage
-  (`/validation`). The CTEM loop, the hero P0 number, the Executive P0, P1 and
-  SLA tiles, Executive top-risk rows (the finding) and the custom dashboard
-  widgets use them.
+  (`/validation`). The Executive P0, P1 and SLA tiles and the Executive
+  top-risk rows (the finding) use them. A stored dashboard's widget gets its
+  link from the server (`drillHref` in
+  `internal/app/dashboard/widgets/compute.go`), built from the widget's own
+  filter; a filter the findings list cannot express exactly gives no link
+  rather than a link to a wider list.
 - A 403 on organization-only figures (`/dashboard/program-metrics`,
   `/ctem-cycles/metrics/trend`) carries
   `details.any_of = ["dashboards:org:view", "dashboards:org:manage"]`. The web
@@ -434,3 +736,195 @@ Key files: `migrations/002963_dashboard_facts_maintainer.up.sql`,
   switched-off module (`MODULE_NOT_ENABLED`) and a failure (message and
   Retry). The shared `ErrorState` does this for every page; the dashboard's
   CTEM maturity card is left out for a viewer without the grant.
+
+## Dashboard home (web)
+
+`/` renders every stored dashboard with one renderer: each widget of the
+layout is drawn from the dashboard's snapshot (`GET …/{id}/data`) in the
+widget kit's frame, with its own error boundary.
+
+- **Landing**: the dashboard the viewer last chose (kept in their browser
+  while it still exists and they can still read it), else their own default,
+  else the organization default, else the first organization dashboard, else
+  their first own dashboard. A person with no dashboard at all (none of their
+  own, none from the organization) gets a personal copy of the CTEM
+  template, created once and computed for their own access, with a hint to
+  customize it or choose another template.
+- **CTEM offer**: a personal dashboard that is a copy of the Overview template
+  (its `w_ov*` widget ids) without the CTEM loop shows a one-time hint: "Add
+  the CTEM loop" (inserts the loop after the leading row of figures and saves
+  the layout), "Switch to the CTEM template" (adds a CTEM dashboard and opens
+  it; the Overview copy is kept), or dismiss. Nothing changes until the viewer
+  chooses; the dismissal is kept in the browser. No request is made for the
+  hint.
+- **Templates** are typed widget configs in
+  `web/src/features/dashboards/templates.json`: CTEM (the first-visit
+  default: active exposure figures, the CTEM loop, fix next, attack paths to
+  crown jewels, priority over time), Overview (with the CTEM loop after its
+  figures), Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
+  dashboard ("Use template"); the copy is a stored dashboard like any other.
+  `api/pkg/domain/dashboard/templates_test.go` parses every template widget
+  with the server's spec validation, so a template is never refused on save.
+  Names and descriptions are in the `dashboards` i18n namespace.
+- **Switcher**: one menu with "Organization" (shown only with
+  `dashboards:org:view` or `dashboards:org:manage`; without them the list is
+  never requested) and "Mine", search above eight entries, New and Manage.
+- **Scope badge**: "Organization-wide" or "Your scope", from the response's
+  `scope`; drill-downs open lists in the viewer's own access.
+- **Freshness line**: when the figures were computed, the next scheduled
+  refresh, stale and failed states, Refresh now (429 answered with a
+  message), and the schedule picker for the owner of a personal dashboard or
+  a manager of an organization dashboard (the server checks both).
+- **Actions**: Customize (personal), Duplicate to mine (organization), Set as
+  default (personal; organization for managers), Delete (personal).
+- **Customize** (owner of a personal dashboard; `dashboards:org:manage` for
+  an organization dashboard, saved through `PUT /organization/dashboards/{id}`):
+  - *Add widget* opens the gallery: the catalog by goal (Exposure,
+    Remediation and SLA, Threat intel) plus Advanced (Note), searchable by
+    name and definition. Each card shows a live preview from
+    `POST /me/dashboards/widget-preview`, in the editor's own scope; at most
+    12 previews load per opening, lazily as cards scroll into view, and the
+    server limits previews per person (burst 24, then one every 2 s).
+  - The config panel edits metric, filters (chips per dimension value; KEV
+    and reachable as any / yes / no), group-by, time range and comparison
+    (not for lists), the visualization (only those valid for the shape, the
+    default marked; a change of group-by keeps a visualization that still
+    fits), a target for single figures, and the title (empty: the
+    translated name). A live preview (debounced) sits on top.
+  - The grid: drag by the handle, or focus a widget and use the arrow keys to
+    move it, Shift and the arrow keys to resize it (whole columns, 1 to 6
+    rows), Enter to configure, D to duplicate and Delete to remove (with
+    Undo). Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo within the session;
+    every change is announced to screen readers. Save stores the layout;
+    Cancel drops the session.
+  - Moved widgets keep their stored figures; new or changed widgets show
+    their preview, or "Figures appear after you save".
+- Widget states map from the server: `building` → no data yet, `not_measured`
+  and `unsupported` → not measured with the reason, an empty list or series →
+  nothing to show, a result without its payload → error; a null figure is
+  never drawn as 0. Names, definitions and dimension values are in the
+  `dashboards` i18n namespace (en and vi).
+
+### Translation and accessibility checks
+
+- `web/src/features/dashboards/__tests__/i18n-completeness.test.tsx`: every
+  `dashboards.*` / `dashboardKit.*` key the dashboard surfaces use exists in
+  en and vi; every metric, dimension value, visualization, range, schedule,
+  reason and template is named; Vietnamese text is not a copy of the English;
+  no display text is hard-coded in the components (JSX text and literal
+  `aria-label` / `placeholder` / `title` / `alt`); every template rendered in
+  Vietnamese shows no English message.
+- `api/pkg/domain/dashboard/templates_test.go`: every catalog metric has a
+  name and definition in both web dictionaries; every template widget passes
+  the server's spec validation.
+- `web/src/features/dashboards/__tests__/a11y.test.tsx`: axe-core on a
+  dashboard with every result shape, on the editor and on the gallery
+  (colour contrast is left to the browser suite).
+- `web/e2e/specs/22-dashboard-home.spec.ts`: `/` at 390 and 1440 px in light
+  and dark: widgets render, no horizontal scroll on a phone, no serious or
+  critical axe violation inside `main` (chart canvases excluded), a
+  screenshot of each combination attached to the report; the editor's
+  keyboard move and undo.
+
+## Widget kit (web)
+
+`web/src/components/dashboard-kit/` is what every dashboard widget renders
+with. No page uses it yet: the dashboard pages move to it together with the
+widget data endpoint.
+
+### Frame and states
+
+`WidgetFrame` is a `<section>` labelled by the widget title, with an optional
+definition popover ("How this is counted") and a freshness footer ("Updated 5
+minutes ago", the absolute time on hover). Each frame is its own React error
+boundary: a render error in one widget shows "Couldn't load these figures"
+with Retry in that widget, and the rest of the dashboard keeps working.
+
+| State | Shows |
+|---|---|
+| `loading` | a skeleton shaped like the visualization (stat, chart, list, grid, stages), fixed height |
+| `ready` | the figures and the freshness footer |
+| `stale` | the figures, "Stale · 2 hr" and Refresh; `isStale()` is true past twice the refresh interval or after a failed refresh |
+| `no_data_yet` | what will appear and a next-step link (same-origin paths only) |
+| `no_results` | "Nothing matches these filters" and Clear filters |
+| `not_measured` | "—" and the reason, grey; never a number and never a good colour |
+| `no_access` | the missing permission named from the 403's `details.any_of`, no Retry |
+| `module_off` | the module's name and, for administrators, a settings link |
+| `error` | "Couldn't load these figures" and Retry for this widget only |
+| `partial` | the figures that loaded and a notice naming what is missing |
+| `scope_changed` | "Your access changed. Updating these figures." while it recomputes |
+
+`stateFromError()` maps an API error to `no_access`, `module_off` or `error`
+with the same rules as the shared error state.
+
+### Result shapes and visualizations
+
+The kit draws the widget result shapes (`types.ts`): `scalar`, `ratio`,
+`duration`, `category`, `time_series`, `matrix`, `items`, `stages`, `paths`. A null
+figure means not measured and is never drawn as 0.
+
+| Visualization | Shapes | Notes |
+|---|---|---|
+| `StatViz` | scalar, ratio, duration | value, change against the previous period, sparkline, target chip |
+| `ProgressViz` | ratio | a meter against the target, with the target tick |
+| `BarViz` | category | one bar per key or one stacked bar with shares; values printed |
+| `ColumnViz` | time_series (flows) | stacked columns per bucket |
+| `AreaLineViz` | time_series (stocks) | stacked area or lines, markers for scoring changes |
+| `DivergingViz` | time_series with `opened` / `fixed` | opened up, fixed down, the net in words |
+| `HeatmapViz` | matrix | every value printed, shaded on the sequential ramp |
+| `LoopViz` | stages | the CTEM loop as an ordered list (`<ol>`); each stage's figure and second figure link to their lists, its state is an icon and words in a pill (never a coloured stripe; cards keep one neutral border), unmeasured stages show "—" with the reason; the focus stage is `aria-current="step"` and marked "Act here" with the brand accent (`--brand`, the only use of it) |
+| `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
+| `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
+
+Rules every visualization follows:
+
+- **Change and target are never colour alone.** The change is signed text
+  with an arrow and "vs previous period"; its colour comes from the figure's
+  polarity (`down_good` for open counts, `up_good` for shares within SLA) and
+  a screen reader hears "better" or "worse". The target chip carries an icon
+  and words (on target, close to target, off target, not measured).
+- **Table view.** Every chart has a "Show table" toggle with the exact figures.
+- **Drill-down.** A mark, row or stage opens its list through a drill builder.
+  The path is reduced to a same-origin path (`safeInternalHref`); anything else
+  renders as plain text, so a server-supplied path cannot leave the app.
+- **One axis, fixed order.** Ordinal keys (severity, priority, age band) keep
+  their order; other categories take the categorical slots in their order and
+  fold past eight into "Other". Colour follows the entity, never its rank.
+- **Motion.** Charts do not animate when the system asks for reduced motion.
+
+`web/src/lib/format-metric.ts` formats the figures in the viewer's locale:
+grouped counts, compact from 10 000, percentages with one decimal below 10 %,
+durations in the largest sensible unit, relative times.
+
+### Chart palettes
+
+`web/src/lib/chart-palette.json` is the source; `src/styles/theme.css`
+carries the same values as `--viz-*` tokens for light and dark (each mode has
+its own validated steps), and components colour marks with those variables.
+
+| Palette | Use |
+|---|---|
+| severity (`--viz-sev-*`) | severities and priority classes (P0 = critical colour) |
+| categorical (`--viz-cat-1` .. `8`, `--viz-cat-other`) | any other series, in fixed order |
+| diverging (`--viz-div-opened`, `--viz-div-fixed`) | flow pairs |
+| sequential (`--viz-seq-1` .. `5`, with `--viz-seq-ink-*`) | heatmap shading and the text printed on it |
+
+Status colours (good, warning, critical, unmeasured) stay the semantic
+`success` / `warning` / `destructive` / muted tokens and always come with an
+icon and a label.
+
+`npm run check:palette` (`web/scripts/check-palette.mjs`) validates every
+palette against its mode's card surface: adjacent-pair separation under
+protanopia and deuteranopia (OKLab ΔE ≥ 8, 6-8 only with secondary encoding),
+normal-vision separation (≥ 15), chroma, lightness band, contrast, monotone
+sequential steps with readable ink, and that the theme tokens equal the JSON.
+A unit test (`dashboard-kit/__tests__/palette.test.ts`) runs the same check in
+CI. Two documented relaxations, both covered by the table view and labels:
+some light-mode marks are below 3:1 against white, and the dark severity
+orange and yellow sit above the dark lightness band (a red-orange-yellow
+ramp cannot separate inside it), so severity is always labelled and kept in
+order.
+
+Key files: `web/src/components/dashboard-kit/`, `web/src/lib/chart-palette.{json,ts}`,
+`web/src/lib/format-metric.ts`, `web/scripts/check-palette.mjs`, translations in
+`web/src/lib/i18n/dictionaries/{en,vi}/dashboardKit.json`.

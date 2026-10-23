@@ -1,0 +1,70 @@
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import type { CatalogMetric } from '../../api/widget-spec'
+import { PREVIEWS_PER_OPEN, WidgetGallery } from '../widget-gallery'
+
+const preview = vi.hoisted(() => vi.fn())
+vi.mock('../../api/widget-data', () => ({ previewWidget: preview }))
+const many = Array.from(
+  { length: PREVIEWS_PER_OPEN + 5 },
+  (_, i) =>
+    ({
+      id: i === 0 ? 'findings.open' : `m.x${i}`,
+      group: i === 0 ? 'exposure' : 'remediation',
+      filters: [],
+      group_bys: [],
+      max_group_by: 0,
+      default_group_by: [],
+      default_filter: {},
+      polarity: 'neutral',
+      timed: false,
+      flow: false,
+      shapes: { '0': { shape: 'scalar', vizzes: ['stat'] } },
+    }) as CatalogMetric
+)
+vi.mock('../../api/widget-spec', async (orig) => ({
+  ...(await orig<typeof import('../../api/widget-spec')>()),
+  useWidgetCatalog: () => ({
+    data: {
+      spec_version: 2,
+      metrics: many,
+      dimensions: {},
+      time_ranges: [],
+      time_buckets: [],
+      comparisons: [],
+      target_ops: [],
+    },
+    isLoading: false,
+  }),
+}))
+
+describe('WidgetGallery', () => {
+  it('loads at most PREVIEWS_PER_OPEN live previews per opening, filters by group and search', async () => {
+    preview.mockResolvedValue({
+      id: 'x',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'scalar',
+      scalar: { value: 1 },
+    })
+    render(
+      <WidgetGallery
+        open
+        onOpenChange={() => {}}
+        taken={new Set()}
+        onAddMetric={() => {}}
+        onAddNote={() => {}}
+      />
+    )
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN))
+    expect(screen.getAllByText('Add it to see your figures.')).toHaveLength(5)
+    await userEvent.click(screen.getByRole('button', { name: 'Exposure' }))
+    expect(screen.getAllByTestId(/^gallery-card-/)).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'All' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Search widgets' }), 'open findings')
+    expect(screen.getAllByTestId(/^gallery-card-/)).toHaveLength(1)
+    expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN)
+  })
+})
