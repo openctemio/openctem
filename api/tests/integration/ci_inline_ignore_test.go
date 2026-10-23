@@ -40,7 +40,7 @@ func TestCIInlineIgnores_BecomePendingRequests(t *testing.T) {
 			Tool:     &ctis.Tool{Name: "semgrep"},
 			Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: repoName}},
 			Findings: []ctis.Finding{ignored}}
-		if resp, out := r.post("/api/v1/ci/runs/"+id+"/results", tok, map[string]any{"report": rep}); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(id, tok, map[string]any{"report": rep}); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 		_, v := r.post("/api/v1/ci/runs/"+id+"/evaluate", tok, nil)

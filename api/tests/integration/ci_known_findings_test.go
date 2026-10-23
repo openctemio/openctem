@@ -62,8 +62,8 @@ func TestCIKnownFindings_DecisionsHoldOnTheNextRun(t *testing.T) {
 		if id == "" {
 			t.Fatalf("exchange: %v", ex)
 		}
-		resp, up := r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, findings...))
-		if resp.StatusCode != http.StatusCreated {
+		resp, up := r.upload(id, tok, ciReport(repoName, findings...))
+		if resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, up)
 		}
 		body := map[string]any{}

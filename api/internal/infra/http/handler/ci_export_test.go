@@ -1,18 +1,15 @@
 package handler
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -32,136 +29,104 @@ func exportRun() *cirun.Run {
 		Repository: "github.com/acme/api", Branch: "main", CommitSHA: strings.Repeat("a", 40)}
 }
 
-// A DefectDojo export names hosts and domains: none of them is the run's
-// repository, so every finding is dropped and counted, nothing ingested.
 const ddExport = `{"findings": [
  {"title": "SQLi", "severity": "High", "description": "d", "endpoints": [{"host": "shop.example.com", "protocol": "https"}]},
  {"title": "In code", "severity": "Medium", "description": "d", "file_path": "src/app.py", "line": 3}
 ]}`
 
-func TestCIExport_FindingsOffTheRepositoryAreDropped(t *testing.T) {
-	svc := &fakeCIService{}
-	h := NewCIRunnerHandler(svc, logger.NewNop())
-	run := exportRun()
-	w := postRunResults(t, h, run, []byte(ddExport))
-	if w.Code != http.StatusCreated {
-		t.Fatalf("status %d: %s", w.Code, w.Body.String())
-	}
-	var resp CIExportResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if svc.ctisPath != 0 || len(resp.Files) != 1 || resp.Files[0].Format != "defectdojo" {
-		t.Fatalf("response %+v, ctis path %d", resp, svc.ctisPath)
-	}
-	if resp.FindingsDroppedOutOfScope == 0 {
-		t.Fatal("findings on hosts were not dropped")
-	}
-	for _, rep := range svc.imported {
-		if len(rep.Assets) != 1 || rep.Assets[0].Value != run.Repository {
-			t.Fatalf("assets %+v", rep.Assets)
-		}
-		if rep.Metadata.Branch == nil || rep.Metadata.Branch.CommitSHA != run.CommitSHA || rep.Metadata.Branch.Name != "main" {
-			t.Fatalf("branch not from the run: %+v", rep.Metadata.Branch)
-		}
-	}
-}
-
-// A CTIS report keeps the CTIS path, even though a detector sees its
-// top-level "findings".
-func TestCIExport_CTISStaysOnTheCTISPath(t *testing.T) {
-	svc := &fakeCIService{}
-	h := NewCIRunnerHandler(svc, logger.NewNop())
-	body := `{"version":"1.4","metadata":{"timestamp":"2026-10-05T00:00:00Z"},"assets":[{"id":"r","type":"repository","value":"github.com/acme/api"}],"findings":[]}`
-	w := postRunResults(t, h, exportRun(), []byte(body))
-	if w.Code != http.StatusCreated || svc.ctisPath != 1 || len(svc.imported) != 0 {
-		t.Fatalf("status %d ctis %d imported %d", w.Code, svc.ctisPath, len(svc.imported))
-	}
-}
-
-func TestCIExport_HostileInputRefused(t *testing.T) {
-	var zbuf bytes.Buffer
-	zw := zip.NewWriter(&zbuf)
-	f, _ := zw.Create("../../etc/x.json")
-	_, _ = f.Write([]byte(ddExport))
-	_ = zw.Close()
-	cases := map[string][]byte{
-		"xxe":           []byte(`<?xml version="1.0"?><!DOCTYPE NessusClientData_v2 [<!ENTITY x SYSTEM "file:///etc/passwd">]><NessusClientData_v2>&x;</NessusClientData_v2>`),
-		"deep":          []byte(`{"findings": ` + strings.Repeat("[", 5000) + strings.Repeat("]", 5000) + `}`),
-		"zip traversal": zbuf.Bytes(),
-		"deep sarif":    []byte(`{"version": "2.1.0", "runs": ` + strings.Repeat("[", 5000) + strings.Repeat("]", 5000) + `}`),
-		"old sarif":     []byte(`{"version": "2.0.0", "$schema": "https://json.schemastore.org/sarif-2.0.0.json", "runs": []}`),
-	}
-	for name, body := range cases {
+// An upload is stored and answered 202 with its id and Location; a tool
+// export and a CTIS report are told apart before they are queued (the
+// worker converts an export).
+func TestCIUpload_AcceptedWithLocation(t *testing.T) {
+	ctisBody := `{"version":"1.4","metadata":{"timestamp":"2026-10-05T00:00:00Z"},"assets":[{"id":"r","type":"repository","value":"github.com/acme/api"}],"findings":[]}`
+	for name, tc := range map[string]struct {
+		body   string
+		export bool
+	}{
+		"ctis report": {ctisBody, false},
+		"tool export": {ddExport, true},
+	} {
 		t.Run(name, func(t *testing.T) {
 			svc := &fakeCIService{}
-			w := postRunResults(t, NewCIRunnerHandler(svc, logger.NewNop()), exportRun(), body)
-			if w.Code != http.StatusBadRequest && w.Code != http.StatusRequestEntityTooLarge {
-				t.Fatalf("status %d: %s", w.Code, w.Body.String())
-			}
-			if len(svc.imported) != 0 || svc.ctisPath != 0 || strings.Contains(w.Body.String(), "root:") {
-				t.Fatal("a refused upload was ingested or echoed")
-			}
-		})
-	}
-}
-
-// ctisImporterFixtures is the testdata of the pinned ctis importer.
-func ctisImporterFixtures(t *testing.T) string {
-	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis").Output()
-	if err != nil {
-		t.Skipf("ctis module dir: %v", err)
-	}
-	return filepath.Join(strings.TrimSpace(string(out)), "testdata", "importers")
-}
-
-// SARIF from CodeQL, semgrep and trivy, semgrep and trivy JSON and a
-// gitleaks report: every finding lands on the run's repository, none is
-// dropped, and the branch and commit are the run's. codeql-provenance names
-// another repository in versionControlProvenance; the run's wins.
-func TestCIExport_CodeScannerFormatsLandOnTheRunRepository(t *testing.T) {
-	root := ctisImporterFixtures(t)
-	for _, fx := range []string{
-		"sarif/codeql.sarif", "sarif/codeql-provenance.sarif.json", "sarif/semgrep.sarif", "sarif/trivy.sarif",
-		"semgrep/semgrep.json", "trivy/fs.json", "gitleaks/leaks.json",
-	} {
-		t.Run(fx, func(t *testing.T) {
-			body, err := os.ReadFile(filepath.Join(root, fx))
-			if err != nil {
-				t.Fatal(err)
-			}
-			svc := &fakeCIService{}
 			run := exportRun()
-			w := postRunResults(t, NewCIRunnerHandler(svc, logger.NewNop()), run, body)
-			if w.Code != http.StatusCreated {
+			w := postRunResults(t, NewCIRunnerHandler(svc, logger.NewNop()), run, []byte(tc.body))
+			if w.Code != http.StatusAccepted {
 				t.Fatalf("status %d: %s", w.Code, w.Body.String())
 			}
-			var resp CIExportResponse
+			var resp CIUploadAccepted
 			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 				t.Fatal(err)
 			}
-			if resp.FindingsDroppedOutOfScope != 0 || svc.ctisPath != 0 {
-				t.Fatalf("dropped %d, ctis path %d: %s", resp.FindingsDroppedOutOfScope, svc.ctisPath, w.Body.String())
+			want := "/api/v1/ci/runs/" + run.ID.String() + "/results/" + resp.UploadID
+			if resp.Status != "queued" || resp.Location != want || w.Header().Get("Location") != want {
+				t.Fatalf("response %+v, Location %q", resp, w.Header().Get("Location"))
 			}
-			findings := 0
-			for _, rep := range svc.imported {
-				findings += len(rep.Findings)
-				if len(rep.Assets) != 1 || rep.Assets[0].Value != run.Repository {
-					t.Fatalf("assets %+v", rep.Assets)
-				}
-				if b := rep.Metadata.Branch; b == nil || b.CommitSHA != run.CommitSHA || b.Name != run.Branch {
-					t.Fatalf("branch not the run's: %+v", b)
-				}
-				for _, f := range rep.Findings {
-					if f.AssetRef != rep.Assets[0].ID {
-						t.Fatalf("finding %q not on the run's repository", f.Title)
-					}
-				}
-			}
-			if findings == 0 {
-				t.Fatal("no finding ingested")
+			if len(svc.exports) != 1 || svc.exports[0] != tc.export {
+				t.Fatalf("export flags %v, want [%v]", svc.exports, tc.export)
 			}
 		})
+	}
+}
+
+// Refusals the service decides at accept keep their status.
+func TestCIUpload_AcceptRefusals(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		want int
+	}{
+		"invalid report":   {cirunapp.ErrInvalidReport, http.StatusBadRequest},
+		"out of scope":     {cirunapp.ErrReportOutOfScope, http.StatusBadRequest},
+		"run judged":       {cirun.ErrRunEvaluated, http.StatusConflict},
+		"report cap":       {cirun.ErrRunReportCap, http.StatusConflict},
+		"queue not wired":  {cirunapp.ErrUploadsUnavailable, http.StatusServiceUnavailable},
+		"store failed (5)": {context.DeadlineExceeded, http.StatusInternalServerError},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := &fakeCIService{acceptErr: tc.err}
+			w := postRunResults(t, NewCIRunnerHandler(svc, logger.NewNop()), exportRun(), []byte(ddExport))
+			if w.Code != tc.want {
+				t.Fatalf("status %d, want %d: %s", w.Code, tc.want, w.Body.String())
+			}
+		})
+	}
+}
+
+// A run's Idempotency-Key needs the durable store: without one the request
+// is refused (fail closed), never accepted twice.
+func TestCIUpload_IdempotencyKeyWithoutStoreRefused(t *testing.T) {
+	svc := &fakeCIService{}
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs/x/results", strings.NewReader(ddExport))
+	run := exportRun()
+	r = r.WithContext(context.WithValue(r.Context(), ciRunContextKey{}, run))
+	r.Header.Set("Idempotency-Key", "k-1")
+	w := httptest.NewRecorder()
+	NewCIRunnerHandler(svc, logger.NewNop()).UploadResults(w, r)
+	if w.Code != http.StatusServiceUnavailable || len(svc.accepted) != 0 {
+		t.Fatalf("status %d, accepted %d", w.Code, len(svc.accepted))
+	}
+}
+
+// The verdict answers 503 with Retry-After while the run's uploads are
+// being applied.
+func TestCIEvaluate_UploadsPendingIs503(t *testing.T) {
+	h := NewCIRunnerHandler(&fakeCIService{}, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.writeErr(w, "evaluate CI run", cirunapp.ErrUploadsPending)
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" || !strings.Contains(w.Body.String(), "INGEST_PENDING") {
+		t.Fatalf("%d %v %s", w.Code, w.Header(), w.Body.String())
+	}
+}
+
+// The state of an upload of another run (or tenant) is 404.
+func TestCIUploadStatus_OtherRunIs404(t *testing.T) {
+	h := NewCIRunnerHandler(&fakeCIService{}, logger.NewNop())
+	run := exportRun()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/ci/runs/x/results/y", nil)
+	r.SetPathValue("report_id", shared.NewID().String())
+	r = r.WithContext(context.WithValue(r.Context(), ciRunContextKey{}, run))
+	w := httptest.NewRecorder()
+	h.UploadStatus(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status %d", w.Code)
 	}
 }

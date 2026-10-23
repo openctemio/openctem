@@ -1700,6 +1700,7 @@
   "findings.identity.reason.dastRepair": "sửa khóa phát hiện web",
   "findings.identity.reason.other": "đã gộp",
   "findings.detail.section.identity": "giải thích danh tính",
+  "findings.importResults.notApplied": "Tệp đã được lưu nhưng không thể nhập ({code}). Không có gì thay đổi; hãy thử lại.",
   "findings.importResults.format": "Định dạng",
   "findings.importResults.formatDetect": "Nhận biết từ tệp",
   "findings.importResults.formatMapping": "Ánh xạ nhập dữ liệu: {name}",
