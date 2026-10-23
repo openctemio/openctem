@@ -91,7 +91,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   },
   {
     id: 'add-filter',
-    label: 'Add a filter (findings list)',
+    label: 'Add a filter (findings and assets lists)',
     keys: ['F'],
     group: 'lists',
     shells: ['app'],
