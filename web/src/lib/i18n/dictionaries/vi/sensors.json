@@ -1374,5 +1374,9 @@
   "sensors.pair.getSensor.title": "Chưa có sensor?",
   "sensors.pair.getSensor.body": "Hãy cài sensor lên máy chủ trước. Sensor chỉ cần URL của nền tảng (và dấu vân tay CA của nền tảng nếu bạn dùng CA riêng). Không cần sao chép khóa: sensor tự tạo khóa khi ghép cặp.",
   "sensors.pair.getSensor.pull": "Lấy image của sensor",
-  "sensors.pair.getSensor.guide": "Mở hướng dẫn cài đặt sensor"
+  "sensors.pair.getSensor.guide": "Mở hướng dẫn cài đặt sensor",
+  "sensors.keyGuard.title": "Bạn đã sao chép khóa chưa?",
+  "sensors.keyGuard.desc": "Khóa chỉ hiển thị một lần. Nếu đóng cửa sổ này khi chưa sao chép, bạn phải đổi khóa lần nữa.",
+  "sensors.keyGuard.confirm": "Vẫn đóng",
+  "sensors.keyGuard.cancel": "Giữ mở"
 }
