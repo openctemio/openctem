@@ -86,6 +86,11 @@ type Config struct {
 	Index      string // For Splunk HEC (optional target index)
 	Sourcetype string // For Splunk HEC (optional sourcetype; defaults to openctem:notification)
 
+	// SigningSecrets sign every generic webhook delivery (pkg/webhooksig):
+	// the current secret first, then one still in its rotation overlap.
+	// Empty: the delivery is unsigned.
+	SigningSecrets []string
+
 	// AllowLoopback disables the SSRF guard's private-IP block. Only
 	// set true in unit tests that target httptest.NewServer (binds to
 	// 127.0.0.1). Production tenants MUST NOT set this — WebhookURL

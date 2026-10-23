@@ -1,4 +1,4 @@
-.PHONY: all build run test test-db lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs
+.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs
 
 # Variables
 APP_NAME := openctem
@@ -73,6 +73,12 @@ test:
 test-db:
 	@if [ -z "$(TEST_DATABASE_URL)" ]; then echo "TEST_DATABASE_URL is required, e.g. postgres://postgres@localhost:55432/app_test?sslmode=disable"; exit 1; fi
 	DATABASE_URL="$(TEST_DATABASE_URL)" OPENCTEM_TEST_DB_REQUIRED=1 $(GOTEST) -race -timeout 20m ./...
+
+## budgets-update: Rewrite the SQL statement budget of the ingest test (tests/integration/testdata/ingest_budget.json) from a measured run
+budgets-update:
+	@if [ -z "$(TEST_DATABASE_URL)" ]; then echo "TEST_DATABASE_URL is required, e.g. postgres://postgres@localhost:55432/app_test?sslmode=disable"; exit 1; fi
+	DATABASE_URL="$(TEST_DATABASE_URL)" OPENCTEM_TEST_DB_REQUIRED=1 $(GOTEST) -count=1 -run '^TestIngestQueryBudget$$' ./tests/integration -update-budgets
+	@git diff --stat -- tests/integration/testdata/ingest_budget.json || true
 
 ## test-coverage: Run tests with coverage report
 test-coverage:
