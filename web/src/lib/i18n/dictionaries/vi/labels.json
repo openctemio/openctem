@@ -19,5 +19,14 @@
   "labels.due.today": "Hạn hôm nay",
   "labels.due.overdue": "Quá hạn {days} ngày",
   "labels.tag.remove": "Xóa {label}",
-  "labels.more": "+{count} mục nữa"
+  "labels.more": "+{count} mục nữa",
+  "labels.status.active": "Đang hoạt động",
+  "labels.status.stale": "Cũ",
+  "labels.status.inactive": "Không hoạt động",
+  "labels.status.archived": "Đã lưu trữ",
+  "labels.status.pending": "Đang chờ",
+  "labels.status.completed": "Hoàn tất",
+  "labels.status.failed": "Thất bại",
+  "labels.pendingSetup.label": "Chờ thiết lập",
+  "labels.pendingSetup.hint": "Tài khoản do quản trị viên tạo; người dùng chưa đặt mật khẩu"
 }

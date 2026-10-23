@@ -5,6 +5,8 @@ import { AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { HealthStatus } from '@/components/ui/health-status'
+import { Tag } from '@/components/ui/tag'
 import { DetailChipList } from '@/features/shared/components/detail-sheet'
 import type { Sensor, SensorSdkStatus, SensorVersionStatus } from '@/lib/api/sensor-types'
 
@@ -29,7 +31,12 @@ import {
 
 const muted = 'text-muted-foreground'
 
-/** Small tag next to a value ("update", "unsupported", "Platform", ...). */
+/**
+ * Small tag next to a value ("update", "unsupported", "Platform", ...). A
+ * classification (muted, info) is a neutral Tag; a state that needs a person
+ * or is down, or that is fine, is a HealthStatus (warning, destructive,
+ * success), so the sensor tags share the one label look.
+ */
 export function SensorTag({
   tone = 'muted',
   children,
@@ -39,24 +46,11 @@ export function SensorTag({
   children: React.ReactNode
   title?: string
 }) {
-  const tones = {
-    muted: 'border text-muted-foreground',
-    info: 'bg-info/15 text-info',
-    warning: 'bg-warning/15 text-warning',
-    destructive: 'bg-destructive/15 text-destructive',
-    success: 'text-success ps-0',
+  if (tone === 'warning' || tone === 'destructive' || tone === 'success') {
+    const state = tone === 'warning' ? 'warn' : tone === 'destructive' ? 'down' : 'ok'
+    return <HealthStatus state={state} label={children} title={title} />
   }
-  return (
-    <span
-      title={title}
-      className={cn(
-        'inline-flex shrink-0 items-center whitespace-nowrap rounded px-1.5 py-px text-meta font-medium',
-        tones[tone]
-      )}
-    >
-      {children}
-    </span>
-  )
+  return <Tag label={children} title={title} />
 }
 
 /**

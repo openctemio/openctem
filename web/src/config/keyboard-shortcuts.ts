@@ -62,13 +62,6 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     shells: ['app'],
   },
   {
-    id: 'toggle-comment',
-    label: 'Add a comment (when no text is selected)',
-    keys: ['mod', 'C'],
-    group: 'findings',
-    shells: ['app'],
-  },
-  {
     id: 'open-activity',
     label: 'Open activity and write a comment',
     keys: ['C'],
@@ -98,7 +91,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   },
   {
     id: 'add-filter',
-    label: 'Add a filter (findings list)',
+    label: 'Add a filter (findings and assets lists)',
     keys: ['F'],
     group: 'lists',
     shells: ['app'],
