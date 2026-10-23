@@ -1928,9 +1928,20 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 // ensureRepositoryExtensions inserts the asset_repositories rows required by the
 // repository_branches FK for any repository-type assets in the batch. Idempotent
 // (ON CONFLICT DO NOTHING). Runs in the same tx as the asset upsert.
-func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sql.Tx, assets []*asset.Asset) error {
+//
+// The row is keyed by the id the upsert stored (persistedIDs, name -> id from
+// its RETURNING), never by the in-memory a.ID(): when two uploads create the
+// same new repository at once, the one that loses the insert race keeps the
+// winner's row, and its own fresh id names no asset. Using it failed the
+// foreign key and rolled back every asset and finding of that upload.
+func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sql.Tx, assets []*asset.Asset, persistedIDs map[string]shared.ID) error {
 	for _, a := range assets {
 		if !a.Type().IsRepository() {
+			continue
+		}
+		id, ok := persistedIDs[a.Name()]
+		if !ok || id.IsZero() {
+			// The upsert did not store this row (refused); nothing to extend.
 			continue
 		}
 		const repoQuery = `
@@ -1938,7 +1949,7 @@ func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sq
 			VALUES ($1, $2, 'main', 'private')
 			ON CONFLICT (asset_id) DO NOTHING
 		`
-		if _, err := tx.ExecContext(ctx, repoQuery, a.ID().String(), a.Name()); err != nil {
+		if _, err := tx.ExecContext(ctx, repoQuery, id.String(), a.Name()); err != nil {
 			return fmt.Errorf("failed to ensure repository extension for %s: %w", a.Name(), err)
 		}
 	}
@@ -2033,7 +2044,7 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 		return 0, 0, nil, err
 	}
 
-	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
+	if err := r.ensureRepositoryExtensions(ctx, tx, assets, persistedIDs); err != nil {
 		return 0, 0, nil, err
 	}
 
@@ -2164,7 +2175,7 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 		}
 	}
 
-	if err := r.ensureRepositoryExtensions(ctx, tx, stored); err != nil {
+	if err := r.ensureRepositoryExtensions(ctx, tx, stored, persistedIDs); err != nil {
 		return created, updated, nil, err
 	}
 
