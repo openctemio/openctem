@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -116,8 +116,10 @@ const emptyForm: FormState = {
 
 export default function BusinessServicesPage() {
   const { t } = useTranslation()
-  const criticalityLabel = (level: Criticality) =>
-    t(`criticality.${level}`, CRITICALITY_LABELS[level])
+  const criticalityLabel = useCallback(
+    (level: Criticality) => t(`criticality.${level}`, CRITICALITY_LABELS[level]),
+    [t]
+  )
   // Every service (up to the row cap), so the strip counts equal the list.
   const { data, mutate, isLoading, error } = useRegisterPages<BusinessService>(
     '/api/v1/business-services?per_page=100'
@@ -373,8 +375,8 @@ export default function BusinessServicesPage() {
         ),
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable per locale; openEdit only sets state
-    [t]
+
+    [t, criticalityLabel]
   )
 
   function toggleCompliance(framework: string) {
