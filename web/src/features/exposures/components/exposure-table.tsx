@@ -1,12 +1,12 @@
 'use client'
 
 import type { ColumnDef } from '@tanstack/react-table'
-import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DataTableRowActions, RelativeTime, SeverityBadge } from '@/features/shared'
 import { ExposureThreatPills } from './exposure-enrichment'
 import { APPROVE_REQUIRED_REASON } from './exposure-state-actions'
+import { ExposureStateBadge } from './exposure-state-badge'
 import { PendingDispositionBadge } from './pending-disposition'
 import {
   Check,
@@ -27,7 +27,7 @@ import {
   HelpCircle,
 } from 'lucide-react'
 import { EVENT_TYPE_CONFIG } from '@/lib/api/exposure-types'
-import type { ExposureEvent, ExposureEventType, ExposureState } from '@/lib/api/exposure-types'
+import type { ExposureEvent, ExposureEventType } from '@/lib/api/exposure-types'
 
 // Icon mapping for event types
 const eventTypeIcons: Record<string, typeof Network> = {
@@ -48,17 +48,6 @@ const eventTypeIcons: Record<string, typeof Network> = {
 function getEventTypeIcon(eventType: ExposureEventType): typeof Network {
   const category = EVENT_TYPE_CONFIG[eventType]?.category
   return (category && eventTypeIcons[category as keyof typeof eventTypeIcons]) || HelpCircle
-}
-
-/** Lifecycle state → badge. Only the open ("active") state draws attention. */
-export const EXPOSURE_STATE_BADGE: Record<
-  ExposureState,
-  { label: string; variant: 'destructive' | 'secondary' | 'outline' }
-> = {
-  active: { label: 'Active', variant: 'destructive' },
-  resolved: { label: 'Resolved', variant: 'secondary' },
-  accepted: { label: 'Accepted', variant: 'outline' },
-  false_positive: { label: 'False positive', variant: 'outline' },
 }
 
 export const EXPOSURE_EVENT_TYPE_LABELS: Record<ExposureEventType, string> = {
@@ -180,10 +169,9 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
       header: 'State',
       enableSorting: false,
       cell: ({ row }) => {
-        const state = EXPOSURE_STATE_BADGE[row.original.state]
         return (
           <div className="flex flex-wrap items-center gap-1">
-            {state && <Badge variant={state.variant}>{state.label}</Badge>}
+            <ExposureStateBadge state={row.original.state} />
             <PendingDispositionBadge exposure={row.original} />
           </div>
         )
