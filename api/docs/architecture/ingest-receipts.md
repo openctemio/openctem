@@ -66,7 +66,45 @@ command of another tenant is refused.
 5. upsert the day's `dash_ingest_day` row with the same counts.
 
 A failed write is logged and counted in
-`openctem_ingest_receipt_write_failures_total{origin}`; the ingest stands.
+`openctem_ingest_receipt_write_failures_total{origin}`. The ingest stands and its
+output says so (`Output.ReceiptFailed`). A segment of a command's run is
+retried instead (`IngestV2Segment`), because that run's receipt decides absence
+(below), and re-ingesting a segment is idempotent.
+
+## Absence
+
+A covered run closes the open findings of its scope that it did not report.
+"Did not report" is decided from the run's receipt
+(`internal/infra/postgres/finding_absence_receipt.go`): a finding counts as seen
+when it has an action row on the receipt (`created`, `still_detected`,
+`reopened` or `closed`). The writer records every finding the report named,
+before and whatever the outcome of the finding writes.
+
+`findings.scan_id` is not used as proof of absence. It names the report that
+wrote the finding last. A concurrent run of the same tool and profile
+overwrites it with its own report id, and a sighting write that lost a
+deadlock leaves the previous one. Either made a finding the run did report look
+unreported, and the run closed it. A finding whose `scan_id` is one of the
+run's reports still counts as seen. The like-for-like guards are unchanged:
+same tool, same scan profile, a clean command, the blinding guard.
+
+A receipt that cannot prove absence closes nothing. The evaluation ends with the
+reason `receipt_incomplete` (`ingestreport.ErrReceiptIncomplete`) when:
+
+- the run has no receipt in the tenant (none was written, or the command
+  belongs to another tenant);
+- the receipt passed its action cap (`actions_truncated`), so it no longer
+  lists everything the run reported.
+
+`CoverageStaleFindings`, `RepoCoverageStaleFindings`, the secret variants and
+`CoverageUntouched` read the receipt of the query's `CommandID`, which is the
+scan run's receipt for a command of a run. Tested by
+`tests/integration/absence_receipt_test.go`: a concurrent run overwriting
+`scan_id`, a lost sighting, and 8 concurrent runs of one profile, none of which
+closes what it reported. Also by
+`internal/infra/postgres/finding_coverage_autoresolve_db_test.go`
+(`TestCoverageAbsence_ReceiptDecides`): no receipt, another tenant's receipt, a
+truncated receipt.
 
 ## Coverage decisions
 
@@ -156,6 +194,7 @@ receipts are kept.
 - `api/migrations/003308_ingest_receipts.up.sql`
 - `api/pkg/domain/ingestreceipt/receipt.go`
 - `api/internal/infra/postgres/ingest_receipt_repository.go`
+- `api/internal/infra/postgres/finding_absence_receipt.go`
 - `api/internal/app/ingest/receipt.go`, `coverage_autoresolve.go`
 - `api/internal/app/findingimport/service.go`
 - `api/internal/infra/controller/ingest_receipt_retention.go`
