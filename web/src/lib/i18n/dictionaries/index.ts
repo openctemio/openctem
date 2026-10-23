@@ -17,6 +17,7 @@ import en_assetFreshness from './en/assetFreshness.json'
 import en_assetCoverage from './en/assetCoverage.json'
 import en_assetSources from './en/assetSources.json'
 import en_assets from './en/assets.json'
+import en_assetDetail from './en/assetDetail.json'
 import en_assetGroups from './en/assetGroups.json'
 import en_assetTimeline from './en/assetTimeline.json'
 import en_attackSurface from './en/attackSurface.json'
@@ -66,6 +67,7 @@ import en_siemIntegration from './en/siemIntegration.json'
 import en_sla from './en/sla.json'
 import en_integrationsHub from './en/integrationsHub.json'
 import en_ticketMapping from './en/ticketMapping.json'
+import en_importMappings from './en/importMappings.json'
 import en_ticketPolicy from './en/ticketPolicy.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
 import en_proxyPools from './en/proxyPools.json'
@@ -88,6 +90,9 @@ import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
+import en_threatModel from './en/threatModel.json'
+import en_attackerProfiles from './en/attackerProfiles.json'
+import en_letters from './en/letters.json'
 import vi_account from './vi/account.json'
 import en_crownJewels from './en/crownJewels.json'
 import vi_activity from './vi/activity.json'
@@ -99,6 +104,7 @@ import vi_assetFreshness from './vi/assetFreshness.json'
 import vi_assetCoverage from './vi/assetCoverage.json'
 import vi_assetSources from './vi/assetSources.json'
 import vi_assets from './vi/assets.json'
+import vi_assetDetail from './vi/assetDetail.json'
 import vi_assetGroups from './vi/assetGroups.json'
 import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_attackSurface from './vi/attackSurface.json'
@@ -148,6 +154,7 @@ import vi_siemIntegration from './vi/siemIntegration.json'
 import vi_sla from './vi/sla.json'
 import vi_integrationsHub from './vi/integrationsHub.json'
 import vi_ticketMapping from './vi/ticketMapping.json'
+import vi_importMappings from './vi/importMappings.json'
 import vi_ticketPolicy from './vi/ticketPolicy.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
 import vi_proxyPools from './vi/proxyPools.json'
@@ -170,6 +177,9 @@ import vi_remediationClaim from './vi/remediationClaim.json'
 import vi_remediationCampaigns from './vi/remediationCampaigns.json'
 import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
+import vi_threatModel from './vi/threatModel.json'
+import vi_attackerProfiles from './vi/attackerProfiles.json'
+import vi_letters from './vi/letters.json'
 import vi_crownJewels from './vi/crownJewels.json'
 
 export type Dictionary = Record<string, string>
@@ -186,6 +196,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   assetCoverage: en_assetCoverage,
   assetSources: en_assetSources,
   assets: en_assets,
+  assetDetail: en_assetDetail,
   assetGroups: en_assetGroups,
   assetTimeline: en_assetTimeline,
   attackSurface: en_attackSurface,
@@ -236,6 +247,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   sla: en_sla,
   integrationsHub: en_integrationsHub,
   ticketMapping: en_ticketMapping,
+  importMappings: en_importMappings,
   ticketPolicy: en_ticketPolicy,
   ticketingIntegration: en_ticketingIntegration,
   proxyPools: en_proxyPools,
@@ -257,6 +269,9 @@ export const enNamespaces: Record<string, Dictionary> = {
   remediationCampaigns: en_remediationCampaigns,
   remediationQuery: en_remediationQuery,
   myWork: en_myWork,
+  threatModel: en_threatModel,
+  attackerProfiles: en_attackerProfiles,
+  letters: en_letters,
   crownJewels: en_crownJewels,
 }
 
@@ -271,6 +286,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   assetCoverage: vi_assetCoverage,
   assetSources: vi_assetSources,
   assets: vi_assets,
+  assetDetail: vi_assetDetail,
   assetGroups: vi_assetGroups,
   assetTimeline: vi_assetTimeline,
   attackSurface: vi_attackSurface,
@@ -321,6 +337,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   sla: vi_sla,
   integrationsHub: vi_integrationsHub,
   ticketMapping: vi_ticketMapping,
+  importMappings: vi_importMappings,
   ticketPolicy: vi_ticketPolicy,
   ticketingIntegration: vi_ticketingIntegration,
   proxyPools: vi_proxyPools,
@@ -342,6 +359,9 @@ export const viNamespaces: Record<string, Dictionary> = {
   remediationCampaigns: vi_remediationCampaigns,
   remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
+  threatModel: vi_threatModel,
+  attackerProfiles: vi_attackerProfiles,
+  letters: vi_letters,
   crownJewels: vi_crownJewels,
 }
 
