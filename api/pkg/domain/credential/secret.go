@@ -238,6 +238,20 @@ var sensitiveKeyExact = map[string]bool{
 	"token": true, "access_token": true, "refresh_token": true,
 	"private_key": true, "privatekey": true, "secret": true,
 	"client_secret": true, "credential": true, "credentials": true,
+	"secret_access_key": true, "aws_secret_access_key": true,
+	"connection_string": true, "dsn": true,
+}
+
+// secretMetadataSuffixes are the `secret_<x>` keys that describe a secret
+// (its type, validity, rotation state) without carrying it. They stay verbatim.
+var secretMetadataSuffixes = map[string]bool{
+	"type": true, "valid": true, "revoked": true, "entropy": true,
+	"needs_rotation": true, "expires_at": true, "masked": true,
+	"masked_value": true, "fingerprint": true, "fingerprint_prefix": true,
+	"id": true, "set": true, "changed": true, "service": true,
+	"pre_existing": true, "not_observed": true, "detection": true,
+	"scan": true, "source": true, "provider": true, "kind": true,
+	"status": true, "name": true, "length": true, "count": true,
 }
 
 var sensitiveKeySuffixes = []string{"_password", "_passwd", "_token", "_api_key", "_secret", "_private_key"}
@@ -249,8 +263,11 @@ func isSensitiveDetailKey(key string) bool {
 	if k == DetailSecretMasked || k == DetailSecretFingerprint {
 		return false
 	}
-	if sensitiveKeyExact[k] || strings.HasPrefix(k, "secret_") {
+	if sensitiveKeyExact[k] {
 		return true
+	}
+	if rest, ok := strings.CutPrefix(k, "secret_"); ok {
+		return !secretMetadataSuffixes[rest]
 	}
 	for _, suf := range sensitiveKeySuffixes {
 		if strings.HasSuffix(k, suf) {
