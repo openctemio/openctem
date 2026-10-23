@@ -88,7 +88,6 @@ import {
   SensorVersionCell,
 } from './sensor-cells'
 import { SensorInstallSnippets } from './sensor-install-snippets'
-import { SENSOR_TYPE_LABELS } from './sensor-type-icon'
 import {
   capacityLabel,
   hasReportedTools,
@@ -762,7 +761,7 @@ function ConnectionAndIdentity({
       <DetailDisclosure summary={t('sensors.detail.moreDetails', 'More details')}>
         <DetailFieldGrid className="mt-3">
           <DetailField label={t('sensors.detail.f.typeLegacy', 'Type (legacy)')}>
-            {t(`sensors.table.type.${sensor.type}`, SENSOR_TYPE_LABELS[sensor.type] ?? sensor.type)}
+            {t(`sensors.table.type.${sensor.type}`, sensor.type)}
           </DetailField>
           {sensor.started_at && (
             <DetailField label={t('sensors.detail.f.processStarted', 'Process started')}>

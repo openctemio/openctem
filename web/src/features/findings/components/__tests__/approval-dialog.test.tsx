@@ -192,6 +192,62 @@ describe('ApprovalDialog', () => {
   })
 
   // ============================================
+  // ORGANIZATION'S RISK ACCEPTANCE LEVEL
+  // ============================================
+
+  describe('risk acceptance level', () => {
+    it('accepts the risk at once, with its end, when the caller may decide alone', async () => {
+      mockPolicy = {
+        fp_approval: 'all',
+        accept_approval: 'off',
+        single_person: true,
+        can_decide_alone: true,
+        material: false,
+      }
+      mockRequestApproval.mockResolvedValue({ status: 'approved', single_person: true })
+      const user = userEvent.setup()
+      render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
+      expect(screen.getByRole('status')).toHaveTextContent(/the risk is accepted at once/)
+      expect(screen.getByRole('heading', { name: 'Accept the risk' })).toBeInTheDocument()
+      expect(screen.queryByText('Request Status Approval')).not.toBeInTheDocument()
+      await user.type(screen.getByLabelText('Justification'), 'Compensating control')
+      await chooseReason(user, 'Compensating control')
+      await user.click(screen.getByText('Review'))
+      expect(screen.getByRole('heading', { name: 'Confirm risk acceptance' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Accept the risk' }))
+      const body = mockRequestApproval.mock.calls[0][0]
+      expect(body.requested_status).toBe('accepted')
+      expect(body.expires_at).toBeTruthy()
+    })
+
+    it('says a person with approval permission could accept it alone', () => {
+      mockPolicy = {
+        fp_approval: 'all',
+        accept_approval: 'high_and_above',
+        single_person: true,
+        can_decide_alone: false,
+        material: false,
+      }
+      render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.getByText(/could accept this risk alone/)).toBeInTheDocument()
+    })
+
+    it('keeps the request when the level needs a second person', () => {
+      mockPolicy = {
+        fp_approval: 'off',
+        accept_approval: 'all',
+        single_person: false,
+        can_decide_alone: false,
+        material: false,
+      }
+      render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Request Status Approval' })).toBeInTheDocument()
+    })
+  })
+
+  // ============================================
   // RENDERING
   // ============================================
 

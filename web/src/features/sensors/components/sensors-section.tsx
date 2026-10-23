@@ -418,9 +418,7 @@ export function SensorsSection({
   // Handlers
   const handleRefresh = useCallback(async () => {
     await invalidateSensorsCache()
-    await mutate()
-    toast.success(t('sensors.list.toast.refreshed'))
-  }, [mutate, t])
+  }, [])
 
   const handleViewSensor = useCallback((sensor: Sensor) => {
     setSelectedSensor(sensor)
@@ -494,13 +492,12 @@ export function SensorsSection({
         const updatedSensor = await activateSensorTrigger(sensor.id)
         toast.success(t('sensors.list.toast.enabled', undefined, { name: sensor.name }))
         await invalidateSensorsCache()
-        await mutate()
         if (updatedSensor) setSelectedSensor(updatedSensor)
       } catch (err) {
         toast.error(getErrorMessage(err, t('sensors.list.toast.enableFailed')))
       }
     },
-    [activateSensorTrigger, mutate, t]
+    [activateSensorTrigger, t]
   )
 
   const handleDeactivateSensor = useCallback(
@@ -511,13 +508,12 @@ export function SensorsSection({
         toast.success(t('sensors.list.toast.disabled', undefined, { name: sensor.name }))
         setPendingDisable(null)
         await invalidateSensorsCache()
-        await mutate()
         if (updatedSensor) setSelectedSensor(updatedSensor)
       } catch (err) {
         toast.error(getErrorMessage(err, t('sensors.list.toast.disableFailed')))
       }
     },
-    [deactivateSensorTrigger, mutate, t]
+    [deactivateSensorTrigger, t]
   )
 
   const requestDeactivateSensor = useCallback((sensor: Sensor) => {
@@ -540,7 +536,6 @@ export function SensorsSection({
       const updatedSensor = await revokeSensorTrigger(selectedSensor.id)
       toast.success(t('sensors.list.toast.revoked', undefined, { name: selectedSensor.name }))
       await invalidateSensorsCache()
-      await mutate()
       setRevokeDialogOpen(false)
       if (updatedSensor) setSelectedSensor(updatedSensor)
     } catch (err) {
@@ -548,7 +543,7 @@ export function SensorsSection({
     } finally {
       setIsRevoking(false)
     }
-  }, [selectedSensor, revokeSensorTrigger, mutate, t])
+  }, [selectedSensor, revokeSensorTrigger, t])
 
   const handleExport = useCallback(() => {
     exportToCsv(
