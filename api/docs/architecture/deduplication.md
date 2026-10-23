@@ -204,7 +204,7 @@ How it runs:
   the field names it compared; a member on an asset outside the caller's
   scope is neither listed nor counted.
 - **Dashboard facts.** `dash_recompute_asset` (migration
-  `003350_finding_issue_links`) skips a linked member when another finding
+  `003353_finding_issue_links`) skips a linked member when another finding
   of its group on the same asset, in the same state, is at least as severe
   and as urgent (the primary first, then the earliest), so counting once
   never hides a higher severity or priority. A link or unlink marks both
