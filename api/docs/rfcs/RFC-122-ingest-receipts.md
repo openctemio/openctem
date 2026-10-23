@@ -173,8 +173,14 @@ Threat model additions: the raw report is stored before secrets are masked,
 hence sealed per tenant, never served back, and deleted once applied; a
 hostile file is parsed only in the worker, with the importers' caps, and
 its failure surfaces as a fixed code (never its text); the uploader's rights
-are re-resolved when the job runs, never widened; the gate fails closed on
-a pending or failed upload.
+are re-resolved when the job runs, never widened: the worker re-reads the
+uploader's membership (a member who left or was suspended meanwhile is
+refused with `uploader_not_permitted`, a demoted administrator imports with
+the member's data scope); the gate fails closed on a pending or failed
+upload. A job's stored report is deleted in the statement that records it
+completed (a crash before that re-applies the upload), and at once when it
+fails for good with a fixed code (only `apply_failed` keeps it, for a retry
+of the same upload).
 
 ## 6b. Fairness and limits
 

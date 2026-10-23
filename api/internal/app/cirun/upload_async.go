@@ -31,7 +31,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -327,10 +326,9 @@ func (s *Service) ProcessUploadJob(ctx context.Context, job *ingestjob.Job) ([]b
 	if err != nil {
 		return nil, err
 	}
-	if err := s.uploads.Done(ctx, job); err != nil {
-		s.log.Warn("ci upload: raw report not deleted (the janitor will)", "job_id", job.ID().String(),
-			"error", logger.SanitizeError(err))
-	}
+	// The raw report is deleted when the worker records the job completed
+	// (IngestJobRepository.Complete), not here: a crash before that
+	// re-applies the upload instead of failing an applied one.
 	return out, nil
 }
 
