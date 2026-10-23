@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -21,7 +22,7 @@ export function FilterSheet({
   open,
   onOpenChange,
   title,
-  resultLabel = 'Show results',
+  resultLabel,
   children,
 }: {
   open: boolean
@@ -33,6 +34,7 @@ export function FilterSheet({
   /** A `FacetPanel`. */
   children: ReactNode
 }) {
+  const { t } = useTranslation()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-full" data-slot="filter-sheet">
@@ -42,7 +44,7 @@ export function FilterSheet({
         <SheetBody>{children}</SheetBody>
         <SheetFooter>
           <Button className="w-full" onClick={() => onOpenChange(false)}>
-            {resultLabel}
+            {resultLabel ?? t('common.filterSheet.showResults', 'Show results')}
           </Button>
         </SheetFooter>
       </SheetContent>

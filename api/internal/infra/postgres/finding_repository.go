@@ -3291,7 +3291,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		query += " AND " + vulnerability.FindingMemberVisibilitySQL("findings", "$1", fmt.Sprintf("$%d::uuid", len(args)))
 	}
 
-	return r.queryFindingStats(ctx, query, args)
+	return r.queryFindingStats(ctx, r.db, query, args)
 }
 
 // findingStatsSelect is the one aggregate behind every findings stats read:
@@ -3348,7 +3348,7 @@ var findingStatsSelect = `
 `
 
 // queryFindingStats runs a findingStatsSelect query and maps its row.
-func (r *FindingRepository) queryFindingStats(ctx context.Context, query string, args []any) (*vulnerability.FindingStats, error) {
+func (r *FindingRepository) queryFindingStats(ctx context.Context, q findingRowQuerier, query string, args []any) (*vulnerability.FindingStats, error) {
 	stats := vulnerability.NewFindingStats()
 
 	var (
@@ -3365,7 +3365,7 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 		stateOpen, stateFixed, stateDispositioned                    int64
 	)
 
-	err := r.db.QueryRowContext(ctx, query, args...).Scan(
+	err := q.QueryRowContext(ctx, query, args...).Scan(
 		&total,
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
