@@ -1,38 +1,31 @@
 # zizmor configuration for the Workflow Lint job (.github/workflows/repo-security.yml).
-# Every entry states why it is safe; add a new one only with a reason, and
-# prefer fixing the workflow. Findings that cannot be fixed stay listed here
-# so a new occurrence elsewhere still fails the job.
+#
+# Prefer fixing the workflow. A finding that cannot be fixed is suppressed on
+# its exact line, with the reason: inline (`# zizmor: ignore[<audit>]`) where
+# the line can carry a comment, otherwise below as `file:line`. Never per file:
+# a per-file ignore would also hide a new occurrence in the same file. A
+# `file:line` entry fails closed: when the line moves, the finding is reported
+# again and the entry is updated in review.
+#
+# Inline today: cla.yml, dangerous-triggers on pull_request_target and
+# issue_comment (see the safety notes at the top of that file).
 rules:
-  dangerous-triggers:
-    ignore:
-      # pull_request_target and issue_comment are what the CLA check needs
-      # (it writes a status and a signature file). No pull request code is
-      # checked out or run, the job reads only API data, and the file already
-      # carries the safety notes and the security-gate allow marker.
-      - cla.yml
-  artipacked:
-    ignore:
-      # These jobs push a branch or a tag with the release token on purpose
-      # (cut-release.sh, tag-release.sh, the helm-charts bump), so the
-      # checkout must keep its credentials. They run only on dispatch or on
-      # the protected main/develop branches, never on pull request code.
-      - release-train.yml
-      - release-publish.yml
+  self-repository:
+    # A style suggestion (help level): use the newer `$/...` spelling for a
+    # same-repository action. actionlint and older runners do not understand
+    # it yet; `./.github/actions/...` is the long-standing form and carries no
+    # risk.
+    disable: true
   archived-uses:
     ignore:
-      # contributor-assistant/github-action is pinned by commit SHA and is the
-      # CLA check; the upstream repository is archived, with no fixed
-      # replacement. Tracked for replacement; the SHA pin means the code
-      # cannot change under us.
-      - cla.yml
-  self-repository:
-    # The `$/...` spelling of a same-repository action is new and not yet
-    # understood by actionlint or older runners; `./.github/actions/...`
-    # is the long-standing form and carries no risk.
-    disable: true
+      # The CLA action. Its repository is archived with no maintained
+      # replacement yet; it is pinned by full commit SHA, so its code cannot
+      # change under us. The `uses:` line keeps only the `# vX.Y.Z` comment
+      # that check-action-pins.sh and Dependabot read.
+      - cla.yml:122
   adhoc-packages:
     ignore:
-      # One version-pinned dev tool installed without touching the lockfile
-      # (the SARIF formatter for the eslint upload); it runs on the code
-      # scanner job only, with no secrets.
-      - web-security.yml
+      # Inside a run: block, where an inline comment is not seen. One
+      # exact-version dev tool (the SARIF formatter for the eslint upload) on
+      # the code-scanning job, which holds no secrets.
+      - web-security.yml:106
