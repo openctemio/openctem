@@ -4,6 +4,7 @@ import { get } from './client'
 
 interface PagedResponse<T> {
   data?: T[]
+  items?: T[]
   total_pages?: number
 }
 
@@ -22,20 +23,24 @@ export async function fetchAllPages<T>(
   opts?: {
     perPage?: number
     maxPages?: number
+    /** Which field holds the rows: `data` (default) or `items`. */
+    rowsKey?: 'data' | 'items'
     /** Called when the maxPages cap truncated the result (loaded rows, cap rows). */
     onTruncated?: (loaded: number, cap: number) => void
   }
 ): Promise<T[]> {
   const perPage = opts?.perPage ?? 100
   const maxPages = opts?.maxPages ?? 500
+  const rowsKey = opts?.rowsKey ?? 'data'
   const all: T[] = []
   let page = 1
   let hasMore = true
 
   while (hasMore && page <= maxPages) {
     const resp = await get<PagedResponse<T>>(buildUrl(page, perPage))
-    if (resp?.data?.length) {
-      all.push(...resp.data)
+    const rows = resp?.[rowsKey]
+    if (rows?.length) {
+      all.push(...rows)
     }
     hasMore = page < (resp?.total_pages ?? 1)
     page++
