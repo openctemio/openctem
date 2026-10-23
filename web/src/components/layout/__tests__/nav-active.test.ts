@@ -42,7 +42,7 @@ describe('Discovery: one row per section', () => {
     expect(sectionHasActiveRoute(path, group('Discovery').items)).toBe(true)
   })
 
-  it('Assets covers its tabs (What changed, Groups, Suggestions)', () => {
+  it('Assets covers its tabs (Activity, Groups, Suggestions)', () => {
     expect(discoveryActive('/assets')).toBe('/assets')
     expect(discoveryActive('/assets/abc')).toBe('/assets')
     expect(discoveryActive('/assets/changes')).toBe('/assets')

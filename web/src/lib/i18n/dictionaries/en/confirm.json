@@ -395,8 +395,20 @@
   "confirm.savedView.clear": "Clear view",
   "confirm.savedView.saveCurrent": "Save current filters as a view",
   "confirm.savedView.saveTitle": "Save view",
-  "confirm.savedView.saveDesc": "Saves the current filters, sort and grouping. A shared view shares the filters, not the results: everyone sees the findings they are allowed to see.",
+  "confirm.savedView.saveDesc": "Saves the current filters, sort, grouping, columns and density. A shared view shares the filters, not the results: everyone sees the findings they are allowed to see.",
   "confirm.savedView.name": "Name",
   "confirm.savedView.visibleTo": "Visible to",
-  "confirm.savedView.onlyMe": "Only me"
+  "confirm.savedView.onlyMe": "Only me",
+  "confirm.savedView.change.filters": "{count, plural, one {# filter added} other {# filters added}}",
+  "confirm.savedView.change.search": "search changed",
+  "confirm.savedView.change.sort": "sort changed",
+  "confirm.savedView.change.group": "grouping changed",
+  "confirm.savedView.change.columns": "columns changed",
+  "confirm.savedView.change.density": "density changed",
+  "confirm.savedView.triggerDirty": "{name}, unsaved changes",
+  "confirm.savedView.unsaved": "Unsaved changes to “{name}”: {changes}",
+  "confirm.savedView.saveChanges": "Save changes",
+  "confirm.savedView.saveAsNew": "Save as new view…",
+  "confirm.savedView.discard": "Discard changes",
+  "confirm.savedView.updated": "Updated view \"{name}\""
 }

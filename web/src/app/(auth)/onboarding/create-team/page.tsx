@@ -17,12 +17,11 @@
  * notice to ask the administrator for access, with sign-out (TeamOnboarding).
  */
 
-import Link from '@/components/link'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
 import { env } from '@/lib/env'
 import { OnboardingLogout, TeamOnboarding } from '@/features/tenant'
+import { BackToTeamsLink } from '@/features/auth/components/back-to-teams-link'
 
 export default async function CreateFirstTeamPage() {
   // Check if user is authenticated (has refresh token)
@@ -58,13 +57,7 @@ export default async function CreateFirstTeamPage() {
           onboarding there's nowhere to go back to. */}
       {hasPendingTenants && (
         <div className="mb-4">
-          <Link
-            href="/select-tenant"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to team selection
-          </Link>
+          <BackToTeamsLink />
         </div>
       )}
 
