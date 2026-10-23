@@ -39,6 +39,14 @@ var (
 	// Pattern errors
 	ErrInvalidPattern = fmt.Errorf("%w: invalid pattern", shared.ErrValidation)
 	ErrPatternTooLong = fmt.Errorf("%w: pattern too long", shared.ErrValidation)
+	// ErrWildcardNotAllowed: a "*" in a pattern of a type that has no
+	// wildcard matcher (or in the host of a URL entry).
+	ErrWildcardNotAllowed = shared.NewDomainError("SCOPE_WILDCARD_NOT_ALLOWED",
+		"this kind of scope entry takes no wildcard: name one exact value, or use a domain such as *.example.com", shared.ErrValidation)
+	// ErrTargetTypeRetired: a new entry of a type that names no network
+	// location.
+	ErrTargetTypeRetired = shared.NewDomainError("SCOPE_TARGET_TYPE_RETIRED",
+		"this type cannot be a scope entry: add the domain, address or network that serves it", shared.ErrValidation)
 )
 
 // Existing is the entry or exclusion a new one collides with: its id and
