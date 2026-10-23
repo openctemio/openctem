@@ -217,7 +217,9 @@ func registerVulnerabilityRoutes(
 	// Finding routes - tenant from JWT token
 	router.Group("/api/v1/findings", func(r Router) {
 		// Read operations
-		r.GET("/", h.ListFindings, middleware.Require(permission.FindingsRead))
+		// Under the heavy-read limiter like stats and groups: every page runs
+		// an exact count and may run a search.
+		r.GET("/", h.ListFindings, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
@@ -244,6 +246,13 @@ func registerVulnerabilityRoutes(
 		// reach of a move, it does not replace the right to make it.
 		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus), requireStepUpWhenClosing())
 		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsAssign))
+		// "Select all matching": the same gates, the filter recompiled in the
+		// caller's scope, an expected-count guard, a cap of 10,000 and an
+		// operation above 1,000 (docs/architecture/findings-bulk-by-filter.md).
+		r.POST("/bulk/by-filter/status", h.BulkUpdateFindingsStatusByFilter,
+			middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus), requireStepUpWhenClosing())
+		r.POST("/bulk/by-filter/assignee", h.BulkAssignFindingsByFilter,
+			middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsAssign))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
 		if remediationGroupHandler != nil {
@@ -297,6 +306,9 @@ func registerVulnerabilityRoutes(
 		// Mark duplicate (RFC-043 §9): a triage decision that folds the finding
 		// in the body into this one; merging with an approval disposition
 		// also needs findings:approve (checked in the service).
+		// Duplicate candidates (RFC-121): suggestions for that decision,
+		// computed inside the caller's data scope; nothing is merged.
+		r.GET("/{id}/duplicate-candidates", h.GetFindingDuplicateCandidates, middleware.Require(permission.FindingsTriage))
 		r.POST("/{id}/duplicates", h.AddFindingDuplicate, middleware.Require(permission.FindingsTriage))
 		// Bug-bounty report fields (RFC-121): an edit of the finding; a
 		// reward or disclosure change also needs findings:triage (checked in
@@ -355,6 +367,14 @@ func registerVulnerabilityRoutes(
 
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete), requireStepUp())
+	}, tenantMiddlewares...)
+
+	// Operations (docs/architecture/operations.md): long-running work a person
+	// started, read back by its creator only (404 for anyone else). The only
+	// kinds today are bulk changes of findings, so reading one needs
+	// findings:read.
+	router.Group("/api/v1/operations", func(r Router) {
+		r.GET("/{id}", h.GetOperation, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 
 	// The findings filter contract (RFC-048): fields, operators, limits.

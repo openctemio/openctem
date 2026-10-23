@@ -325,7 +325,7 @@ EPSS, exploit and exposure, which ends the acceptance when the tier needed now i
 `accepted.standard: security`) still applies under a relaxing level; a cell at or below the default does
 not. A cell can never be `single` for `accepted`: the level is the only switch.
 
-**No bypass.** Suppression rules (`rule_accepted`), group exceptions on remediation tasks, bulk status moves,
+**No bypass.** Suppression rules (`rule_accepted`), group exceptions on remediation tasks, bulk status moves (by id or by filter),
 imports and requests made by automation (AI triage, VEX, ticket integrations: `ActorMade`) never decide
 alone, whatever the level. Only `POST /findings/{id}/approvals` by a person with the approve permission does.
 

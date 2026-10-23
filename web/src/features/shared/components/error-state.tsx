@@ -1,6 +1,8 @@
 'use client'
 
-import { AlertCircle, Lock, RefreshCw } from 'lucide-react'
+import { AlertCircle, Copy, Lock, RefreshCw } from 'lucide-react'
+import { toast } from 'sonner'
+import { copyToClipboard } from '@/lib/clipboard'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
@@ -32,6 +34,7 @@ interface ErrorStateProps {
 export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
   const { t } = useTranslation()
   const access = accessStateOf(error)
+  const requestId = (error as { requestId?: unknown } | undefined)?.requestId
   if (access === 'no_access' || access === 'module_off') {
     return (
       <Alert>
@@ -64,12 +67,28 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
             ? error.message
             : t('common.unexpectedError', 'An unexpected error occurred')}
         </p>
-        {onRetry && (
-          <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
-            <RefreshCw className="me-2 h-4 w-4" />
-            {t('common.retry', 'Retry')}
-          </Button>
-        )}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {onRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <RefreshCw className="me-2 h-4 w-4" />
+              {t('common.retry', 'Retry')}
+            </Button>
+          )}
+          {typeof requestId === 'string' && requestId && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                copyToClipboard(requestId)
+                toast.success(t('common.requestIdCopied', 'Request ID copied'))
+              }}
+            >
+              <Copy className="me-2 h-4 w-4" />
+              {t('common.copyRequestId', 'Copy request ID')}
+              <span className="ms-2 font-mono text-xs text-muted-foreground">{requestId}</span>
+            </Button>
+          )}
+        </div>
       </AlertDescription>
     </Alert>
   )

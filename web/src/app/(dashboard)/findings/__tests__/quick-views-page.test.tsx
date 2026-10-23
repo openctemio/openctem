@@ -1,7 +1,7 @@
 /**
- * The Findings state lens (research 24 P0-4, owner decision C2): Open, the
- * default, Fixed, Dispositioned, All. One URL param the API compiles to a
- * status set; counts come from by_state of the same filter.
+ * The Findings list with quick views (research 234 D1): the metric strip and
+ * the state tabs are gone; the sidebar carries the views and their counts, and
+ * the page loads one stats response and one quick-views response.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
@@ -48,6 +48,7 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
         by_status: {},
         open_count: 12,
         by_state: { open: 12, fixed: 4, dispositioned: 2, all: 18 },
+        awaiting_verification: 3,
       },
       isLoading: false,
       mutate: vi.fn(),
@@ -57,8 +58,19 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
   invalidateFindingsCache: vi.fn(),
 }))
 
+const sourcesCalls: boolean[] = []
+const quickViewsState: { views: Array<{ key: string; count: number; params: string }> } = {
+  views: [],
+}
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: { views: quickViewsState.views } }),
+  refreshFindingQuickViews: vi.fn(),
+}))
 vi.mock('@/features/config/api/finding-source-api', () => ({
-  useFindingSourcesApi: () => ({ data: undefined }),
+  useFindingSourcesApi: (_config?: unknown, enabled = true) => {
+    sourcesCalls.push(enabled)
+    return { data: undefined }
+  },
   groupFindingSourcesByCategory: () => [],
 }))
 
@@ -107,55 +119,91 @@ const lastListFilters = () => listCalls[listCalls.length - 1]
 beforeEach(() => {
   listCalls.length = 0
   statsCalls.length = 0
+  sourcesCalls.length = 0
+  quickViewsState.views = []
 })
 
-describe('Findings state lens', () => {
-  it('lands on Open and asks the API for the open lens', () => {
+describe('Findings list with quick views', () => {
+  it('has no metric strip and no state tabs', () => {
     openAt('')
     render(<FindingsPage />)
-    expect(screen.getByRole('radio', { name: /^Open/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.queryByText('Critical open')).toBeNull()
+    expect(screen.queryByText('Overdue SLA')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Total/ })).toBeNull()
+  })
+
+  it('lands on the Open lens', () => {
+    openAt('')
+    render(<FindingsPage />)
     expect(lastListFilters().state).toBe('open')
-    // Stats are asked under every lens at once (by_state), never per lens:
-    // the overview strip is page-level (research/81).
+  })
+
+  it('asks for one stats response whatever the filters are', () => {
+    openAt('?severity=critical&q=login')
+    render(<FindingsPage />)
     expect(statsCalls.every((f) => f?.state === 'all')).toBe(true)
+    const keys = new Set(statsCalls.map((f) => JSON.stringify(f)))
+    expect(keys.size).toBe(1)
+    expect(JSON.stringify(statsCalls[0])).not.toContain('critical')
   })
 
-  it('shows honest lens counts from by_state of the same filter', () => {
-    openAt('?severity=critical')
+  it('names the view in the header: the quick view the URL is', () => {
+    quickViewsState.views = [
+      { key: 'active', count: 12, params: 'state=open' },
+      { key: 'needs_triage', count: 3, params: 'status=new' },
+    ]
+    openAt('?status=new&state=all')
     render(<FindingsPage />)
-    // The counts call carries the other filters, under every lens at once.
-    expect(statsCalls.some((f) => f?.state === 'all')).toBe(true)
-    expect(screen.getByRole('radio', { name: /^Fixed/ })).toHaveTextContent('4')
-    expect(screen.getByRole('radio', { name: /^Dispositioned/ })).toHaveTextContent('2')
-    expect(screen.getByRole('radio', { name: /^Open/ })).toHaveTextContent('12')
+    expect(screen.getByTestId('findings-view-title')).toHaveTextContent('Needs triage')
   })
 
-  it('switching to Fixed puts state=fixed in the URL and the request, keeping other filters', () => {
-    openAt('?severity=critical')
-    render(<FindingsPage />)
-    act(() => {
-      fireEvent.click(screen.getByRole('radio', { name: /^Fixed/ }))
-    })
-    expect(params().get('state')).toBe('fixed')
-    expect(params().get('severity')).toBe('critical')
-    expect(lastListFilters().state).toBe('fixed')
-    expect(screen.getByRole('radio', { name: /^Fixed/ })).toHaveAttribute('aria-checked', 'true')
-  })
-
-  it('keyboard arrows move the lens', () => {
+  it('a plain list is the Active view, and an unmatched combination is a custom view', () => {
+    quickViewsState.views = [{ key: 'active', count: 12, params: 'state=open' }]
     openAt('')
+    const { unmount } = render(<FindingsPage />)
+    expect(screen.getByTestId('findings-view-title')).toHaveTextContent('Active')
+    unmount()
+    openAt('?severity=high')
     render(<FindingsPage />)
-    const open = screen.getByRole('radio', { name: /^Open/ })
-    act(() => {
-      fireEvent.keyDown(open, { key: 'ArrowRight' })
-    })
-    expect(params().get('state')).toBe('fixed')
+    expect(screen.getByTestId('findings-view-title')).toHaveTextContent('Custom view')
   })
 
-  it('an unknown lens in the URL falls back to Open', () => {
+  it('opens the Closed quick view with state=closed', () => {
     openAt('?state=closed')
     render(<FindingsPage />)
-    expect(lastListFilters().state).toBe('open')
+    expect(lastListFilters().state).toBe('closed')
+  })
+
+  it('runs the Pending approval and Accepted · expiring params', () => {
+    openAt('?pending_approval=true&state=all')
+    const { unmount } = render(<FindingsPage />)
+    expect(lastListFilters().pending_approval).toBe(true)
+    expect(lastListFilters().state).toBe('all')
+    unmount()
+    openAt('?status=accepted&acceptance_expires_at_lte=P30D&state=all')
+    render(<FindingsPage />)
+    expect(lastListFilters().acceptance_expires_at_lte).toBe('P30D')
+    expect(lastListFilters().statuses).toEqual(['accepted'])
+  })
+
+  it('offers the verification queue where the old card was, only when something awaits', () => {
+    openAt('')
+    render(<FindingsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /awaiting verification/i }))
+    expect(params().get('view')).toBe('verify')
+  })
+
+  it('does not load the source catalog until the Source filter is opened', () => {
+    openAt('')
+    render(<FindingsPage />)
+    expect(sourcesCalls.every((enabled) => enabled === false)).toBe(true)
+  })
+
+  it('loads the source catalog at once when a source is already picked', () => {
+    openAt('?source=sast')
+    render(<FindingsPage />)
+    expect(sourcesCalls.every((enabled) => enabled === true)).toBe(true)
   })
 
   it('does not lay the default lens over a saved view, but does an explicit one', () => {
@@ -174,10 +222,11 @@ describe('Findings state lens', () => {
     expect(lastListFilters().page).toBe(3)
     listCalls.length = 0
     act(() => {
-      fireEvent.click(screen.getByRole('radio', { name: /^Fixed/ }))
+      window.history.pushState(null, '', '/findings?page=3&state=closed')
+      window.dispatchEvent(new PopStateEvent('popstate'))
     })
-    const fixed = listCalls.filter((f) => f.state === 'fixed')
-    expect(fixed.length).toBeGreaterThan(0)
-    expect(fixed.every((f) => f.page === 1)).toBe(true)
+    const closed = listCalls.filter((f) => f.state === 'closed')
+    expect(closed.length).toBeGreaterThan(0)
+    expect(closed.every((f) => f.page === 1)).toBe(true)
   })
 })

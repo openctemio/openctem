@@ -151,7 +151,8 @@ func (c *compiler) search(q string) string {
 	if c.reg.Search.Pattern {
 		v = "%" + EscapeLike(v) + "%"
 	}
-	return c.render(c.reg.Search.Template, c.bind(v))
+	tpl := c.bindUpper(c.reg.Search.Template, q)
+	return c.render(tpl, c.bind(v))
 }
 
 // CompileFacets compiles base like Compile (the tenant predicate first, the
@@ -435,11 +436,23 @@ func (c *compiler) template(f *Field, l *Leaf, tpl string) string {
 		ph = c.bindArray(f, l.Values)
 	case OpContains:
 		s, _ := l.Values[0].(string)
+		// A search template reused as a contains field (the query
+		// language's text term) also takes the exact value.
+		tpl = c.bindUpper(tpl, s)
 		ph = c.bind("%" + EscapeLike(s) + "%")
 	default:
 		ph = c.bindValue(f, l.Values[0])
 	}
 	return "(" + c.render(tpl, ph) + ")"
+}
+
+// bindUpper replaces UpperToken in tpl with one placeholder bound to text
+// trimmed and upper-cased (an exact identifier match, never a pattern).
+func (c *compiler) bindUpper(tpl, text string) string {
+	if !strings.Contains(tpl, UpperToken) {
+		return tpl
+	}
+	return strings.ReplaceAll(tpl, UpperToken, c.bind(strings.ToUpper(strings.TrimSpace(text))))
 }
 
 func (c *compiler) bindValue(f *Field, v any) string {
