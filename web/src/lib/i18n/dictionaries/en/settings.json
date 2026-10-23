@@ -903,5 +903,7 @@
   "settings.vulnMatching.panel.unknown": "unknown",
   "settings.vulnMatching.panel.lowered": "Confidence lowered because:",
   "settings.vulnMatching.panel.reported": "What the scan reported",
-  "settings.vulnMatching.panel.footer": "Upgrading out of the range resolves this finding on the next scan; a scanner or a validation that confirms it replaces this evidence."
+  "settings.vulnMatching.panel.footer": "Upgrading out of the range resolves this finding on the next scan; a scanner or a validation that confirms it replaces this evidence.",
+  "settings.item.import-mappings": "Import mappings",
+  "settings.desc.import-mappings": "Turn CSV, JSON or XML exports into findings and assets."
 }
