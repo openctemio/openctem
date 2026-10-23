@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"net/http"
 	"testing"
 	"time"
@@ -376,5 +377,48 @@ func TestBackChannelLogout_MarksSessionRevoked(t *testing.T) {
 	}
 	if len(store.marked) != 1 || store.marked[0] != sess.ID().String() {
 		t.Fatalf("marked revoked = %v, want only %s", store.marked, sess.ID())
+	}
+}
+
+// A logout token gets the id_token algorithm allow-list: RS384/RS512 (valid
+// under the shared list), HS256 keyed with the public key and "none" are
+// refused and revoke nothing.
+func TestBackChannelLogout_AlgorithmOutsideAllowList_Rejected(t *testing.T) {
+	h := newBCHarness(t)
+	sess := h.seedSession(t, "sid-1", "subject-1")
+	claims := h.validLogoutClaims("sid-1", "subject-1")
+
+	tokens := map[string]string{}
+	for name, m := range map[string]jwtv5.SigningMethod{"RS384": jwtv5.SigningMethodRS384, "RS512": jwtv5.SigningMethodRS512} {
+		tok := jwtv5.NewWithClaims(m, claims)
+		tok.Header["kid"] = testKID
+		s, err := tok.SignedString(h.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tokens[name] = s
+	}
+	pub, err := x509.MarshalPKIXPublicKey(&h.key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hs := jwtv5.NewWithClaims(jwtv5.SigningMethodHS256, claims)
+	hs.Header["kid"] = testKID
+	if tokens["HS256"], err = hs.SignedString(pub); err != nil {
+		t.Fatal(err)
+	}
+	none := jwtv5.NewWithClaims(jwtv5.SigningMethodNone, claims)
+	none.Header["kid"] = testKID
+	if tokens["none"], err = none.SignedString(jwtv5.UnsafeAllowNoneSignatureType); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, tok := range tokens {
+		if n, err := h.svc.BackChannelLogout(context.Background(), tok); err == nil || n != 0 {
+			t.Fatalf("%s logout_token accepted (n=%d)", name, n)
+		}
+	}
+	if h.sessRepo.updated[sess.ID().String()] {
+		t.Fatal("a refused logout_token revoked a session")
 	}
 }

@@ -28,14 +28,14 @@ func TestMintRefusedWithoutSCIMFeature(t *testing.T) {
 	tid := shared.NewID()
 
 	svc.SetFeatureGate(scimGate{})
-	_, err := svc.Mint(context.Background(), tid, "idp", nil)
+	_, err := svc.Mint(context.Background(), tid, "idp", nil, 30)
 	var fd *limits.ErrFeatureDenied
 	if !errors.As(err, &fd) || fd.Feature != limits.FeatureSCIM || fd.Unavailable {
 		t.Fatalf("got %v, want the scim refusal", err)
 	}
 
 	svc.SetFeatureGate(scimGate{err: errors.New("db down")})
-	if _, err := svc.Mint(context.Background(), tid, "idp", nil); !errors.As(err, &fd) || !fd.Unavailable {
+	if _, err := svc.Mint(context.Background(), tid, "idp", nil, 30); !errors.As(err, &fd) || !fd.Unavailable {
 		t.Fatalf("got %v, want a fail-closed refusal", err)
 	}
 	if got, _ := repo.ListByTenant(context.Background(), tid); len(got) != 0 {
@@ -43,7 +43,7 @@ func TestMintRefusedWithoutSCIMFeature(t *testing.T) {
 	}
 
 	svc.SetFeatureGate(scimGate{allowed: map[shared.ID]bool{tid: true}})
-	if _, err := svc.Mint(context.Background(), tid, "idp", nil); err != nil {
+	if _, err := svc.Mint(context.Background(), tid, "idp", nil, 30); err != nil {
 		t.Fatalf("an organization with scim must mint: %v", err)
 	}
 }

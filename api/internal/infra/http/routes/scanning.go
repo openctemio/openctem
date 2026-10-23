@@ -723,13 +723,16 @@ func registerSecretStoreRoutes(
 		r.GET("/", h.List, middleware.Require(permission.SecretStoreRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SecretStoreRead))
 
-		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
-		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
-		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
+		// Write operations. A stored secret authenticates the organization
+		// to an outside system (Git tokens, cloud keys), so every change
+		// needs a fresh step-up: a stolen session cannot plant, swap or
+		// remove one.
+		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
+		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
 
 		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 }
 

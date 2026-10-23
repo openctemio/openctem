@@ -361,6 +361,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// when it changes).
 	w.ControllerManager.Register(controller.NewSensorLegacyKeysController(repos.Sensor, log.With("controller", "sensor-legacy-keys")))
 
+	// Ingest receipts (RFC-122): action rows after 90 days, run receipts
+	// and daily ingest facts after 400 days; upload receipts stay.
+	if repos.IngestReceipt != nil {
+		w.ControllerManager.Register(controller.NewIngestReceiptRetentionController(repos.IngestReceipt, 0))
+	}
+
 	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
 	// default branches and outdated runners, once each while they hold; and
 	// findings only a stale CI pipeline reported become not observed.

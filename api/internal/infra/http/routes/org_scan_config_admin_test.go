@@ -19,6 +19,9 @@ import (
 )
 
 func TestOrgScanConfigRoutes_AdminOnly(t *testing.T) {
+	// The secret-store delete also needs step-up (step_up_routes_test.go);
+	// this test is about the role check, so every session has stepped up.
+	withStepUpChecker(t, alwaysSteppedUp{})
 	saved := []Middleware{csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware,
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware, idleReadOnlyMiddleware, dataScopeGuardMiddleware}
 	t.Cleanup(func() {
@@ -35,6 +38,9 @@ func TestOrgScanConfigRoutes_AdminOnly(t *testing.T) {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				ctx := context.WithValue(r.Context(), middleware.TenantIDKey, "tenant-1")
 				ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
+				// A signed-in session, so step-up can admit it.
+				ctx = context.WithValue(ctx, middleware.UserIDKey, "user-1")
+				ctx = context.WithValue(ctx, middleware.SessionIDKey, "session-1")
 				ctx = context.WithValue(ctx, middleware.PermissionsKey, []string{
 					permission.ScanProfilesWrite.String(), permission.TenantToolsWrite.String(), permission.SecretStoreDelete.String(),
 				})
