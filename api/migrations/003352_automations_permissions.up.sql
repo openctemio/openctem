@@ -17,14 +17,10 @@ INSERT INTO permission_renames_003352 (old_id, new_id, name, description) VALUES
     ('findings:workflows:write', 'automations:write', 'Edit Automations', 'Edit automation drafts, preview, validate and start manual runs');
 
 INSERT INTO permissions (id, module_id, name, description, is_active, created_at)
-SELECT r.new_id, 'workflows', r.name, r.description, true, now()
-  FROM permission_renames_003352 r
-ON CONFLICT (id) DO NOTHING;
-INSERT INTO permissions (id, module_id, name, description, is_active, created_at)
 VALUES
-    ('automations:publish', 'workflows', 'Publish Automations',
-        'Make an automation live (with step-up, and a second publisher for high-risk rules), approve versions, roll back, change mode, switch on or off and delete automations',
-        true, now())
+    ('automations:read', 'workflows', 'View Automations', 'View automations, their versions, runs and trace', true, now()),
+    ('automations:write', 'workflows', 'Edit Automations', 'Edit automation drafts, preview, validate and start manual runs', true, now()),
+    ('automations:publish', 'workflows', 'Publish Automations', 'Make an automation live (with step-up, and a second publisher for high-risk rules), approve versions, roll back, change mode, switch on or off and delete automations', true, now())
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE role_permissions rp SET permission_id = r.new_id
