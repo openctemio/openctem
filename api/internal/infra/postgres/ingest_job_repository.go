@@ -27,7 +27,8 @@ const ingestJobColumns = `
 	id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
 	status, attempts, max_attempts, priority, result, error, locked_by, locked_at,
 	available_at, created_at, updated_at,
-	protocol, ingest_report_id, segment_seq, content_digest, media_type`
+	protocol, ingest_report_id, segment_seq, content_digest, media_type,
+	kind, source_ref, submitted_by, public_error`
 
 // Enqueue inserts a pending job, or returns the existing one on idempotency
 // conflict (tenant_id, report_id, payload_sha).
@@ -177,9 +178,12 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 
 // Complete marks a job completed with its result counts.
 func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, result []byte) error {
+	// An upload's envelope (who uploaded, from where) is not kept once it
+	// is applied.
 	const query = `
 		UPDATE ingest_jobs
 		SET status = 'completed', result = $2, error = NULL,
+			payload = CASE WHEN kind <> 'sensor' THEN convert_to('{}', 'UTF8') ELSE payload END,
 			locked_by = NULL, locked_at = NULL, updated_at = NOW()
 		WHERE id = $1`
 	_, err := r.db.ExecContext(ctx, query, id.String(), result)
@@ -191,17 +195,17 @@ func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, res
 
 // Fail reschedules a job for retry (status pending, gated by availableAt) or
 // marks it dead when retries are exhausted.
-func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, errMsg string, availableAt time.Time, dead bool) error {
+func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, errMsg, publicErr string, availableAt time.Time, dead bool) error {
 	status := ingestjob.StatusPending
 	if dead {
 		status = ingestjob.StatusDead
 	}
 	const query = `
 		UPDATE ingest_jobs
-		SET status = $2, error = $3, available_at = $4,
+		SET status = $2, error = $3, available_at = $4, public_error = NULLIF($5, ''),
 			locked_by = NULL, locked_at = NULL, updated_at = NOW()
 		WHERE id = $1`
-	_, err := r.db.ExecContext(ctx, query, id.String(), status.String(), errMsg, availableAt)
+	_, err := r.db.ExecContext(ctx, query, id.String(), status.String(), errMsg, availableAt, publicErr)
 	if err != nil {
 		return fmt.Errorf("fail ingest job: %w", err)
 	}
@@ -282,12 +286,16 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		protocol, segmentSeq       sql.NullInt64
 		reportRef                  sql.NullString
 		contentDigest, mediaType   sql.NullString
+		kind                       string
+		sourceRef, submittedBy     sql.NullString
+		publicError                sql.NullString
 	)
 	if err := s.Scan(
 		&idStr, &tenantStr, &sensorStr, &reportID, &sourceType, &payload, &payloadSHA,
 		&statusStr, &attempts, &maxAttempts, &pri, &result, &lastError, &lockedBy, &lockedAt,
 		&availableAt, &createdAt, &updatedAt,
 		&protocol, &reportRef, &segmentSeq, &contentDigest, &mediaType,
+		&kind, &sourceRef, &submittedBy, &publicError,
 	); err != nil {
 		return nil, err
 	}
@@ -319,6 +327,7 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		lastError.String, lockedBy.String, lockedAtPtr,
 		availableAt, createdAt, updatedAt,
 	)
+	job.SetUpload(ingestjob.Kind(kind), sourceRef.String, submittedBy.String, publicError.String)
 	if protocol.Valid && protocol.Int64 == ingestjob.ProtocolV2 && reportRef.Valid {
 		ref, err := shared.IDFromString(reportRef.String)
 		if err != nil {
@@ -484,6 +493,124 @@ func (r *IngestJobRepository) GetV2Commit(ctx context.Context, reportRef shared.
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get v2 commit job: %w", err)
+	}
+	return job, nil
+}
+
+// --- CI results and file imports (RFC-122) ---
+
+var _ ingestjob.UploadRepository = (*IngestJobRepository)(nil)
+
+// EnqueueUpload inserts a pending upload job, or returns the job the tenant
+// already has for the same report id and digest (created=false).
+func (r *IngestJobRepository) EnqueueUpload(ctx context.Context, job *ingestjob.Job) (*ingestjob.Job, bool, error) {
+	if !job.Kind().IsUpload() {
+		return nil, false, errors.New("enqueue upload job: not an upload kind")
+	}
+	query := `
+		INSERT INTO ingest_jobs (
+			id, tenant_id, report_id, source_type, payload, payload_sha,
+			status, attempts, max_attempts, priority, available_at, created_at, updated_at,
+			kind, source_ref, submitted_by
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15, ''), NULLIF($16, ''))
+		ON CONFLICT (tenant_id, report_id, payload_sha) DO NOTHING
+		RETURNING ` + ingestJobColumns
+	row := r.db.QueryRowContext(ctx, query,
+		job.ID().String(), job.TenantID().String(), job.ReportID(), job.SourceType(),
+		job.Payload(), job.PayloadSHA(), job.Status().String(), job.Attempts(), job.MaxAttempts(),
+		job.Priority(), job.AvailableAt(), job.CreatedAt(), job.UpdatedAt(),
+		string(job.Kind()), job.SourceRef(), job.SubmittedBy(),
+	)
+	stored, err := scanIngestJobRow(row)
+	if err == nil {
+		return stored, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, false, fmt.Errorf("enqueue upload job: %w", err)
+	}
+	existing, err := r.getByIdempotencyKey(ctx, job.TenantID(), job.ReportID(), job.PayloadSHA())
+	if err != nil {
+		return nil, false, fmt.Errorf("fetch existing upload job: %w", err)
+	}
+	return existing, false, nil
+}
+
+// FindRecentUpload returns the newest upload job of kind the principal sent
+// with this digest since the given time, unless it failed for good.
+func (r *IngestJobRepository) FindRecentUpload(ctx context.Context, tenantID shared.ID, kind ingestjob.Kind,
+	submittedBy string, digest []byte, since time.Time) (*ingestjob.Job, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+ingestJobColumns+`
+		FROM ingest_jobs
+		WHERE tenant_id = $1 AND kind = $2 AND submitted_by = $3 AND payload_sha = $4
+		  AND created_at >= $5 AND status <> 'dead'
+		ORDER BY created_at DESC
+		LIMIT 1`, tenantID.String(), string(kind), submittedBy, digest, since)
+	job, err := scanIngestJobRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find recent upload job: %w", err)
+	}
+	return job, nil
+}
+
+// SourceState counts a source's unfinished and dead jobs.
+func (r *IngestJobRepository) SourceState(ctx context.Context, tenantID shared.ID, kind ingestjob.Kind, sourceRef string) (int, int, error) {
+	var pending, dead int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FILTER (WHERE status IN ('pending', 'processing')),
+		       COUNT(*) FILTER (WHERE status = 'dead')
+		FROM ingest_jobs
+		WHERE tenant_id = $1 AND kind = $2 AND source_ref = $3`,
+		tenantID.String(), string(kind), sourceRef).Scan(&pending, &dead)
+	if err != nil {
+		return 0, 0, fmt.Errorf("upload source state: %w", err)
+	}
+	return pending, dead, nil
+}
+
+// GetUploadByKey returns the tenant's job with this report id and digest.
+func (r *IngestJobRepository) GetUploadByKey(ctx context.Context, tenantID shared.ID, reportID string, digest []byte) (*ingestjob.Job, error) {
+	job, err := r.getByIdempotencyKey(ctx, tenantID, reportID, digest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get upload job by key: %w", err)
+	}
+	return job, nil
+}
+
+// RequeueDeadUpload returns a dead upload job to pending with a fresh retry
+// budget when its stored report is still there.
+func (r *IngestJobRepository) RequeueDeadUpload(ctx context.Context, tenantID, id shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE ingest_jobs
+		SET status = 'pending', attempts = 0, error = NULL, public_error = NULL, result = NULL,
+			available_at = NOW(), locked_by = NULL, locked_at = NULL, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND status = 'dead' AND kind <> 'sensor'
+		  AND EXISTS (SELECT 1 FROM ingest_payloads p WHERE p.tenant_id = $1 AND p.job_id = $2)`,
+		tenantID.String(), id.String())
+	if err != nil {
+		return false, fmt.Errorf("requeue dead upload job: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// BySource returns the newest job of kind for sourceRef of the tenant.
+func (r *IngestJobRepository) BySource(ctx context.Context, tenantID shared.ID, kind ingestjob.Kind, sourceRef string) (*ingestjob.Job, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+ingestJobColumns+`
+		FROM ingest_jobs WHERE tenant_id = $1 AND kind = $2 AND source_ref = $3
+		ORDER BY created_at DESC LIMIT 1`, tenantID.String(), string(kind), sourceRef)
+	job, err := scanIngestJobRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get upload job by source: %w", err)
 	}
 	return job, nil
 }

@@ -58,8 +58,35 @@ graph TD
 |---|---|
 | `POST /api/v1/ci/oidc/exchange` | per-address backstop (600/min) → per pipeline identity limit (60/min per organization + token issuer at one address; claims read unverified, only to pick the bucket) → handler (32 KB body, unknown fields refused). Both in the shared store; see "Exchange rate limit" below |
 | `POST /api/v1/ci/trust-configs/preview` | session tenant chain → `scans` module → `scans:ci:write` → per-person limit (10/min) |
-| `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression |
+| `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression → stored sealed, `202` (see "Uploads are applied by the ingest worker") |
+| `GET /api/v1/ci/runs/{id}/results/{upload_id}` | per-IP limit → `AuthenticateRun` → per-run limit |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
+
+### Uploads are applied by the ingest worker
+
+An upload is stored and answered `202` with `upload_id` and
+`Location: /api/v1/ci/runs/{id}/results/{upload_id}`; the ingest worker applies
+it from the `ingest_jobs` queue (kind `ci_results`), exactly as the request
+used to ([RFC-122 §6a](../rfcs/RFC-122-ingest-receipts.md)). At accept a CTIS
+report is decoded (bounded) and must name only the run's repository (400
+`REPORT_OUT_OF_SCOPE`), and the run takes a report slot (409 after the verdict
+or past 200 reports); a tool export is converted by the worker. The raw body
+is stored sealed per tenant in `ingest_payloads` and deleted once applied.
+The same body sent to the run again is the same upload
+(`Idempotent-Replayed: true`); `Idempotency-Key` uses the durable store
+(24 hours, 503 when the store is down).
+
+`GET .../results/{upload_id}?wait=10` answers `queued`, `processing`,
+`applied` (with the counts and `known`) or `failed` with a fixed
+`error_code` (`unreadable`, `too_large`, `report_out_of_scope`,
+`run_evaluated`, `payload_unavailable`, `apply_failed`).
+
+The verdict waits for the run's uploads: `POST .../evaluate` waits up to 10 s
+(`cirunapp.Config.GateUploadWait`) and answers `503 INGEST_PENDING` with
+`Retry-After` while one is still being applied; the runner asks again. Saving
+a verdict is refused while any upload of the run is pending (the update
+checks `ingest_jobs`), so a verdict never covers part of the results. An
+upload that failed for good fails the run with `upload_not_applied`.
 
 ### Exchange rate limit
 
@@ -286,8 +313,8 @@ A decision made on the platform holds on the next run of the same repository:
   request) covers it; ingest only stamps findings created after approval. A
   pending request never counts. With the suppressions module off, rules do
   not apply.
-- **Job output.** The response to `POST /ci/runs/{id}/results` (CTIS report)
-  carries `known`: the indexes, in that report, of the results that carry such
+- **Job output.** The state of an applied CTIS upload
+  (`GET /ci/runs/{id}/results/{upload_id}`) carries `known`: the indexes, in that report, of the results that carry such
   a decision, with the decision and the finding id. The job leaves them out of
   its console summary, SARIF and merge request report and says how many it
   hid. It learns nothing about findings it did not report, and nothing about
@@ -375,7 +402,7 @@ A decision made on the platform holds on the next run of the same repository:
   setting is read only for one-shot sensors, and an unreadable setting
   refuses.
 - A run token (`octci_`) authenticates only `/ci/runs/{its id}/{results,
-  baseline-diff,evaluate}`: every session, API-key, console and MCP route
+  results/{upload_id},baseline-diff,evaluate}`: every session, API-key, console and MCP route
   refuses it, and the run routes refuse every other credential
   (`routes/ci_run_token_scope_db_test.go`). Another run's id answers 404.
 - Refusals before a trust configuration admitted the token are uniform to the

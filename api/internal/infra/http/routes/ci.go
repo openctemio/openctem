@@ -8,7 +8,7 @@ package routes
 //   - POST /oidc/exchange: public. A CI job's OIDC token is the credential;
 //     a budget per organization + issuer at each address, under a wide
 //     per-address backstop (middleware/ci_exchange_ratelimit.go), 32 KB body.
-//   - /runs/{id}/{results,baseline-diff,evaluate}: a run upload token
+//   - /runs/{id}/{results,results/{upload_id},baseline-diff,evaluate}: a run upload token
 //     (octci_..., 15 minutes, one run on one repository). Per-run rate
 //     limit; results add the ingest per-tenant limit and concurrency cap.
 //   - everything else: the console session (token-tenant chain), the scans
@@ -78,6 +78,7 @@ func registerCIRoutes(
 	if runner != nil {
 		router.POST("/api/v1/ci/oidc/exchange", runner.Exchange, exchangeRL)
 		router.POST("/api/v1/ci/runs/{id}/results", runner.UploadResults, resultsChain...)
+		router.GET("/api/v1/ci/runs/{id}/results/{upload_id}", runner.UploadStatus, runChain...)
 		router.POST("/api/v1/ci/runs/{id}/baseline-diff", runner.BaselineDiff, runChain...)
 		router.POST("/api/v1/ci/runs/{id}/evaluate", runner.Evaluate, runChain...)
 	}

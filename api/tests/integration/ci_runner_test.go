@@ -19,11 +19,16 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -90,11 +95,15 @@ type ciRig struct {
 	t      *testing.T
 	db     *postgres.DB
 	svc    *cirunapp.Service
-	repo   *postgres.CIRunRepository
-	srv    *httptest.Server
-	idp    *ciIdP
-	tenant shared.ID
-	other  shared.ID
+	worker *controller.IngestWorkerController
+	runner *handler.CIRunnerHandler
+	// asyncTrust is the trust asyncRun opens runs under (made once).
+	asyncTrust *cirun.TrustConfig
+	repo       *postgres.CIRunRepository
+	srv        *httptest.Server
+	idp        *ciIdP
+	tenant     shared.ID
+	other      shared.ID
 }
 
 // ciSecretFingerprinter keys secret identities in the CI rig.
@@ -129,24 +138,78 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 	}
 	svc := cirunapp.NewService(d, cfg, log)
 	svc.SetStepUpGate(recentAuth{})
+	// Uploads are stored sealed and applied by the ingest worker; the rig
+	// drains the queue itself (drain).
+	sealer, err := ingestpayload.NewSealer(bytes.Repeat([]byte{7}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobsRepo := postgres.NewIngestJobRepository(db)
+	queue := ingestqueue.New(jobsRepo, postgres.NewIngestPayloadRepository(db), sealer)
+	svc.SetUploadQueue(queue, findingimport.NewService(ing, postgres.NewFindingRepository(db), postgres.NewIngestReceiptRepository(db),
+		ingest.SourceResolveDryRun, log))
+	jp := ingest.NewJobProcessor(ing)
+	jp.SetKind(ingestjob.KindCIResults, ingest.KindFuncs{ProcessFn: svc.ProcessUploadJob, DeadLetterFn: svc.DeadLetter})
+	worker := controller.NewIngestWorkerController(jobsRepo, jp, &controller.IngestWorkerControllerConfig{MaxPerTick: 500})
 
 	h := handler.NewCIRunnerHandler(svc, log)
 	h.SetSecretKeys(ciSecretFingerprinter)
 	router := infrahttp.NewChiRouter()
 	router.POST("/api/v1/ci/oidc/exchange", h.Exchange)
 	router.POST("/api/v1/ci/runs/{id}/results", h.UploadResults, h.AuthenticateRun)
+	router.GET("/api/v1/ci/runs/{id}/results/{upload_id}", h.UploadStatus, h.AuthenticateRun)
 	router.POST("/api/v1/ci/runs/{id}/baseline-diff", h.BaselineDiff, h.AuthenticateRun)
 	router.POST("/api/v1/ci/runs/{id}/evaluate", h.Evaluate, h.AuthenticateRun)
 	srv := httptest.NewServer(router.Handler())
 	t.Cleanup(srv.Close)
 
-	r := &ciRig{t: t, db: db, svc: svc, repo: repo, srv: srv, idp: idp}
+	r := &ciRig{t: t, db: db, svc: svc, repo: repo, srv: srv, idp: idp, worker: worker, runner: h}
 	r.tenant, r.other = r.newTenant(), r.newTenant()
 	return r
 }
 
 // recentAuth is a step-up gate whose caller signed in recently (err nil) or
 // not (err set).
+// drain applies every queued upload, as the ingest worker does.
+func (r *ciRig) drain() {
+	r.t.Helper()
+	if _, err := r.worker.Reconcile(context.Background()); err != nil {
+		r.t.Fatalf("drain the ingest queue: %v", err)
+	}
+}
+
+// upload posts a report to the run and applies it: 202, then the worker.
+func (r *ciRig) upload(runID, token string, body any) (*http.Response, map[string]any) {
+	r.t.Helper()
+	resp, out := r.post("/api/v1/ci/runs/"+runID+"/results", token, body)
+	if resp.StatusCode != http.StatusAccepted {
+		return resp, out
+	}
+	r.drain()
+	uid, _ := out["upload_id"].(string)
+	st, status := r.get("/api/v1/ci/runs/"+runID+"/results/"+uid, token)
+	if st.StatusCode != http.StatusOK {
+		r.t.Fatalf("upload status %d: %v", st.StatusCode, status)
+	}
+	return resp, status
+}
+
+func (r *ciRig) get(path, bearer string) (*http.Response, map[string]any) {
+	r.t.Helper()
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, r.srv.URL+path, nil)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out := map[string]any{}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp, out
+}
+
 type recentAuth struct{ err error }
 
 func (g recentAuth) RequireRecentAuth(context.Context, string) error { return g.err }
@@ -315,8 +378,8 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 	// default-branch run (secrets always block).
 	medium := ciFinding("Weak hash", "go.weak-hash", "medium", ctis.FindingTypeVulnerability, "hash.go", 10)
 	secret := ciFinding("AWS key", "aws-access-key", "high", ctis.FindingTypeSecret, "config.go", 3)
-	resp, out := r.post("/api/v1/ci/runs/"+runID+"/results", token, ciReport(repoName, medium, secret))
-	if resp.StatusCode != http.StatusCreated {
+	resp, out := r.upload(runID, token, ciReport(repoName, medium, secret))
+	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
 	if r.auditCount(r.tenant, "ci_run.results_uploaded", "semgrep") != 1 {
@@ -342,7 +405,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatalf("feature exchange: %d %v", code, ex2)
 	}
 	prToken, prRun := ex2["token"].(string), ex2["run_id"].(string)
-	if resp, out := r.post("/api/v1/ci/runs/"+prRun+"/results", prToken, ciReport("github.com/someone/else", medium)); resp.StatusCode != http.StatusBadRequest {
+	if resp, out := r.upload(prRun, prToken, ciReport("github.com/someone/else", medium)); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("foreign repository report: %d %v", resp.StatusCode, out)
 	}
 	// One run's token cannot act on another run.
@@ -389,7 +452,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 	// The feature branch reports the old medium and a new high: the new
 	// high fails (new findings only); the old medium is pre-existing.
 	high := ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 42)
-	if resp, out := r.post("/api/v1/ci/runs/"+prRun+"/results", prToken, ciReport(repoName, medium, high)); resp.StatusCode != http.StatusCreated {
+	if resp, out := r.upload(prRun, prToken, ciReport(repoName, medium, high)); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("feature upload: %d %v", resp.StatusCode, out)
 	}
 	resp, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil)

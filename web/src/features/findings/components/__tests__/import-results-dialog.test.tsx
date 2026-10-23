@@ -99,10 +99,21 @@ describe('ImportResultsDialog', () => {
     expect(screen.getByText('<img src=x onerror=alert(1)>.nessus')).toBeInTheDocument()
     expect(document.querySelector('img')).toBeNull()
 
+    // A committed upload is stored (202), then its result is read once the
+    // server's worker imported it.
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(201, {
+      jsonResponse(202, {
         ...previewBody,
         dry_run: false,
+        receipt_id: 'r1',
+        status: 'queued',
+        files: [],
+      })
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        receipt_id: 'r1',
+        status: 'applied',
         receipt: {
           id: 'r1',
           status: 'completed',
@@ -138,6 +149,7 @@ describe('ImportResultsDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Import$/ }))
     await waitFor(() => expect(onImported).toHaveBeenCalled())
     expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/findings/imports')
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/v1/findings/imports/r1/result?wait=10')
     expect(screen.getByText(/2 findings created/)).toBeInTheDocument()
     // The upload's receipt: partial coverage closes nothing.
     expect(screen.getByTestId('receipt-summary')).toHaveTextContent(/Partial coverage/)
@@ -191,5 +203,34 @@ describe('ImportResultsDialog', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('The file is too large')
     )
+  })
+
+  it('says when a stored upload could not be imported', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, previewBody))
+    const onImported = vi.fn()
+    render(<ImportResultsDialog open onOpenChange={vi.fn()} onImported={onImported} />)
+    await chooseFile()
+    await userEvent.click(screen.getByRole('button', { name: /Preview/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Import$/ })).toBeEnabled())
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(202, {
+        ...previewBody,
+        dry_run: false,
+        receipt_id: 'r2',
+        status: 'queued',
+        files: [],
+      })
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        receipt_id: 'r2',
+        status: 'failed',
+        error_code: 'apply_failed',
+        files: [],
+      })
+    )
+    await userEvent.click(screen.getByRole('button', { name: /^Import$/ }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/apply_failed/))
+    expect(onImported).not.toHaveBeenCalled()
   })
 })
