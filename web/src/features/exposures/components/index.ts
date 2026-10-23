@@ -1,11 +1,9 @@
 // Exposure Event Components
 export { ExposureSeverityBreakdown, ExposureStateBreakdown } from './exposure-stats-cards'
 
-export {
-  getExposureColumns,
-  EXPOSURE_STATE_BADGE,
-  EXPOSURE_EVENT_TYPE_LABELS,
-} from './exposure-table'
+export { ExposureStateBadge } from './exposure-state-badge'
+
+export { getExposureColumns, EXPOSURE_EVENT_TYPE_LABELS } from './exposure-table'
 
 export {
   ExposureThreatPills,

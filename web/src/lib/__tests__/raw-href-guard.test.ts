@@ -64,8 +64,8 @@ const REVIEWED = new Set([
   'app/(dashboard)/my-work/page.tsx|Link|href={findingsDrillUrl(MY_WORK_METRIC_FILTERS.open)}',
   // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
-  // StatLink only forwards the page's own constant routes (INTERNET_FACING_HREF and siblings).
-  'app/(dashboard)/(scoping)/attack-surface/page.tsx|Link|href={href}',
+  // StatsCard href only receives the callers' own constant routes (attack surface tiles).
+  'features/shared/components/stats-card.tsx|Link|href={href}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
