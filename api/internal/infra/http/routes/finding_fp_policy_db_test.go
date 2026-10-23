@@ -66,8 +66,9 @@ func findingStatusOf(h *findingApprovalHarness, id string) string {
 // person; high_and_above lets one person decide medium and low but never
 // critical or high (nor KEV, P0/P1, a validated exploit, a crown-jewel or
 // internet-exposed asset); off lets one person decide any. Only a holder of
-// findings:approve may decide alone; an accepted risk always needs a second
-// person; another organization's level never applies.
+// findings:approve may decide alone; an accepted risk follows the separate
+// risk acceptance level (default: a second person); another organization's
+// level never applies.
 func TestFindingFPPolicy_LevelsBySeverity_DB(t *testing.T) {
 	h := newFPPolicyHarness(t)
 	org, other := h.tenantWithFindings(), h.tenantWithFindings()
@@ -137,7 +138,7 @@ func TestFindingFPPolicy_LevelsBySeverity_DB(t *testing.T) {
 	if status, _, _ := requestFP(h, writer, f); status != "pending" {
 		t.Fatal("a member without findings:approve decided a false positive alone")
 	}
-	// off: an accepted risk is still four-eyes.
+	// off: an accepted risk is still four-eyes under the default risk acceptance level.
 	fa := h.newFinding(org, "low")
 	var acc struct {
 		Status string `json:"status"`

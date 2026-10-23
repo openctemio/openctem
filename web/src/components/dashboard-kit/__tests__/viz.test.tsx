@@ -317,4 +317,21 @@ describe('grid visualizations', () => {
       '/findings?state=open'
     )
   })
+
+  it('a finding stored without a title shows a named placeholder, still linked', () => {
+    render(
+      <ItemsViz
+        result={{
+          shape: 'items',
+          total: 2,
+          rows: [
+            { id: 'f1', title: '', href: '/findings/f1' },
+            { id: 'f2', title: '   ', href: '/findings/f2' },
+          ],
+        }}
+      />
+    )
+    const links = screen.getAllByRole('link', { name: /Untitled finding/ })
+    expect(links.map((l) => l.getAttribute('href'))).toEqual(['/findings/f1', '/findings/f2'])
+  })
 })
