@@ -54,6 +54,15 @@ describe('hoursToDays / remediationTimeState', () => {
   })
 })
 
+describe('owner coverage has a single definition', () => {
+  it('program health reuses the data-quality state function and target', async () => {
+    const dq = await import('../data-quality')
+    expect(ownerCoverageState).toBe(dq.ownershipState)
+    expect(dq.OWNER_COVERAGE_TARGET_PCT).toBe(95)
+    expect(ownerCoverageState(dq.OWNER_COVERAGE_TARGET_PCT)).toBe('good')
+  })
+})
+
 describe('ownerCoverageState', () => {
   it('is good at/above 95, warn 75-94, crit below 75', () => {
     expect(ownerCoverageState(100)).toBe('good')

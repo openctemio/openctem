@@ -16,7 +16,7 @@
   "dashboardMetrics.program.rediscoveredMeasures": "Findings that came back after being fixed, in the period",
   "dashboardMetrics.program.slaMeasures": "Open findings with an SLA that are not past it",
   "dashboardMetrics.program.exposureTrend": "Open findings trend",
-  "dashboardMetrics.program.exposureTrendMeasures": "Open findings now vs {window} ago — should fall after ramp-up",
+  "dashboardMetrics.program.exposureTrendMeasures": "Open findings now vs {window} ago, which should fall after ramp-up",
   "dashboardMetrics.state.loadFailed": "Couldn't load these figures",
   "dashboardMetrics.state.retry": "Retry"
 }

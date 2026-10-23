@@ -11,7 +11,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
 import {
-  ASSET_ATTENTION_TABS,
+  ASSET_ATTENTION_REASONS,
   BUSINESS_CONTEXT_SECTION_TABS,
   SCOPE_SECTION_TABS,
   THREAT_MODEL_SECTION_TABS,
@@ -132,7 +132,7 @@ describe('moves out of Scoping', () => {
     expect(assetTabs).toContain('/assets/groups')
     // Relationship suggestions are a reason of Needs attention.
     expect(assetTabs).toContain('/assets/attention')
-    expect(ASSET_ATTENTION_TABS.map((t) => t.href)).toContain('/assets/suggestions')
+    expect(ASSET_ATTENTION_REASONS.map((t) => t.href)).toContain('/assets/suggestions')
   })
 
   it('Compliance is an Insights row', () => {

@@ -3,7 +3,7 @@ import { STATUS_TONE_CLASS, type StatusTone } from '@/lib/status-colors'
 import type { StatusGlyph } from '@/components/ui/status-glyphs'
 
 export interface StatusLozengeProps {
-  /** Workflow category: triage, open, progress, resolved, accepted, closed. */
+  /** Workflow category: triage, open, progress, waiting, resolved, accepted, closed. */
   tone: StatusTone
   /** A glyph component (status-glyphs or a lucide icon); decorative. */
   icon?: StatusGlyph
