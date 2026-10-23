@@ -80,7 +80,7 @@ export function AssetNameCell({
             {subLine && (
               <span
                 dir="auto"
-                className="truncate font-mono text-[11px] text-muted-foreground [unicode-bidi:isolate]"
+                className="truncate font-mono text-xs text-muted-foreground [unicode-bidi:isolate]"
               >
                 {middleEllipsis(subLine, NAME_MAX)}
               </span>
@@ -119,7 +119,7 @@ export function AssetNameCell({
               })}
             </p>
           )}
-          {subLine && <p className="font-mono text-[11px] break-all opacity-80">{subLine}</p>}
+          {subLine && <p className="font-mono text-xs break-all opacity-80">{subLine}</p>}
         </TooltipContent>
       </Tooltip>
       <button
