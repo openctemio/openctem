@@ -7,7 +7,9 @@ import { useTranslation } from '@/context/i18n-provider'
 import {
   ColumnDef,
   ColumnFiltersState,
+  type Column,
   type Header,
+  type Table as TanstackTable,
   type Row,
   SortingState,
   VisibilityState,
@@ -359,6 +361,17 @@ const INTERACTIVE_SELECTOR =
   'button, a[href], input, select, textarea, label, [role="checkbox"], [role="switch"], [role="menuitem"], [data-radix-collection-item]'
 
 const NO_ROWS: never[] = []
+
+/**
+ * A column whose definition gives no header (TanStack fills in its default,
+ * which renders nothing for a column without an accessor): row actions and
+ * similar. Its header cell still needs a name for screen readers.
+ */
+function isHeaderless<TData>(table: TanstackTable<TData>, column: Column<TData, unknown>): boolean {
+  const def = column.columnDef as { header?: unknown; accessorKey?: unknown }
+  if (def.accessorKey !== undefined) return false
+  return def.header === undefined || def.header === table._getDefaultColumnDef().header
+}
 
 export function DataTable<TData, TValue>({
   columns,
@@ -901,9 +914,17 @@ export function DataTable<TData, TValue>({
                         compact && COMPACT_HEAD_CLASS
                       )}
                     >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
+                        flexRender(header.column.columnDef.header, header.getContext())
+                      ) : (
+                        // A column with no visible header (row actions, the
+                        // selection box) still names itself to screen readers.
+                        <span className="sr-only">
+                          {header.column.id === 'select'
+                            ? t('common.table.selectColumn', 'Select')
+                            : t('common.table.actionsColumn', 'Actions')}
+                        </span>
+                      )}
                     </TableHead>
                   )
                 })}
@@ -1094,7 +1115,10 @@ export function DataTable<TData, TValue>({
                   table.setPageSize(Number(value))
                 }}
               >
-                <SelectTrigger className="h-8 w-[70px]">
+                <SelectTrigger
+                  className="h-8 w-[70px]"
+                  aria-label={`${pageSizeLabel}: ${table.getState().pagination.pageSize}`}
+                >
                   <SelectValue placeholder={table.getState().pagination.pageSize} />
                 </SelectTrigger>
                 <SelectContent side="top">

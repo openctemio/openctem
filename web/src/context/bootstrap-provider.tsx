@@ -21,6 +21,7 @@ import { mutate as globalMutate } from 'swr'
 import { get } from '@/lib/api/client'
 import { devLog } from '@/lib/logger'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from './tenant-provider'
 import type { TenantModulesResponse } from '@/features/integrations/api/use-tenant-modules'
 import type { RiskLevelThresholds } from '@/features/shared/types/common.types'
@@ -251,24 +252,58 @@ export function BootstrapProvider({ children }: BootstrapProviderProps) {
  * permissions bug during a real outage.) The gate turns a backend failure into
  * an honest, actionable message.
  */
-function ConnectionErrorScreen({ retrying, onRetry }: { retrying: boolean; onRetry: () => void }) {
+/** How long to wait before retrying on our own after the server said "slow down". */
+export const RATE_LIMIT_RETRY_MS = 15_000
+
+export function ConnectionErrorScreen({
+  retrying,
+  onRetry,
+  rateLimited = false,
+}: {
+  retrying: boolean
+  onRetry: () => void
+  /** The server answered 429: it is reachable, it asked us to wait. */
+  rateLimited?: boolean
+}) {
+  const { t } = useTranslation()
+  // A rate limit clears by itself: try again once after a pause, so the
+  // person is not stuck on an error page for a busy server.
+  React.useEffect(() => {
+    if (!rateLimited || retrying) return
+    const timer = window.setTimeout(onRetry, RATE_LIMIT_RETRY_MS)
+    return () => window.clearTimeout(timer)
+  }, [rateLimited, retrying, onRetry])
+
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-4 p-6 text-center">
+    <main className="flex min-h-svh flex-col items-center justify-center gap-4 p-6 text-center">
       <div className="bg-destructive/10 text-destructive flex h-14 w-14 items-center justify-center rounded-full">
-        <ServerCrash className="h-7 w-7" />
+        <ServerCrash className="h-7 w-7" aria-hidden />
       </div>
       <div className="space-y-1">
-        <h1 className="text-lg font-semibold">Can’t reach the server</h1>
+        <h1 className="text-lg font-semibold">
+          {rateLimited
+            ? t('common.bootstrap.busyTitle', 'The server is busy')
+            : t('common.bootstrap.unreachableTitle', 'Can’t reach the server')}
+        </h1>
         <p className="text-muted-foreground max-w-sm text-sm">
-          We couldn’t load your workspace. This is usually a temporary connection or server issue —
-          not a problem with your account.
+          {rateLimited
+            ? t(
+                'common.bootstrap.busyBody',
+                'It asked us to slow down. We try again in a few seconds, or retry now.'
+              )
+            : t(
+                'common.bootstrap.unreachableBody',
+                'We couldn’t load your workspace. This is usually a temporary connection or server problem. Your account is fine.'
+              )}
         </p>
       </div>
       <Button onClick={onRetry} disabled={retrying}>
-        {retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-        {retrying ? 'Retrying…' : 'Retry'}
+        {retrying ? <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden /> : null}
+        {retrying
+          ? t('common.bootstrap.retrying', 'Retrying…')
+          : t('common.bootstrap.retry', 'Retry')}
       </Button>
-    </div>
+    </main>
   )
 }
 
@@ -280,19 +315,18 @@ function ConnectionErrorScreen({ retrying, onRetry }: { retrying: boolean; onRet
 export function BootstrapGate({ children }: { children: React.ReactNode }) {
   const { error, isBootstrapped, isLoading, refresh } = useBootstrapContext()
   const [retrying, setRetrying] = React.useState(false)
+  // Stable, so the rate-limit auto-retry timer is not reset on every render.
+  const retry = React.useCallback(() => {
+    setRetrying(true)
+    void Promise.resolve(refresh()).finally(() => setRetrying(false))
+  }, [refresh])
 
   if (error && isBootstrapped && !isLoading) {
     return (
       <ConnectionErrorScreen
+        rateLimited={(error as { statusCode?: number }).statusCode === 429}
         retrying={retrying}
-        onRetry={async () => {
-          setRetrying(true)
-          try {
-            await refresh()
-          } finally {
-            setRetrying(false)
-          }
-        }}
+        onRetry={retry}
       />
     )
   }

@@ -136,5 +136,13 @@
   "common.table.expandGroup": "Expand {label}",
   "common.table.loading": "Loading",
   "common.yes": "Yes",
-  "common.no": "No"
+  "common.no": "No",
+  "common.bootstrap.busyTitle": "The server is busy",
+  "common.bootstrap.busyBody": "It asked us to slow down. We try again in a few seconds, or retry now.",
+  "common.bootstrap.unreachableTitle": "Can’t reach the server",
+  "common.bootstrap.unreachableBody": "We couldn’t load your workspace. This is usually a temporary connection or server problem. Your account is fine.",
+  "common.bootstrap.retry": "Retry",
+  "common.bootstrap.retrying": "Retrying…",
+  "common.table.selectColumn": "Select",
+  "common.table.actionsColumn": "Actions"
 }

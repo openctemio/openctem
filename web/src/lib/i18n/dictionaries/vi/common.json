@@ -136,5 +136,13 @@
   "common.table.expandGroup": "Mở rộng {label}",
   "common.table.loading": "Đang tải",
   "common.yes": "Có",
-  "common.no": "Không"
+  "common.no": "Không",
+  "common.bootstrap.busyTitle": "Máy chủ đang bận",
+  "common.bootstrap.busyBody": "Máy chủ yêu cầu giảm tần suất. Hệ thống sẽ thử lại sau vài giây, hoặc bạn có thể thử lại ngay.",
+  "common.bootstrap.unreachableTitle": "Không kết nối được máy chủ",
+  "common.bootstrap.unreachableBody": "Không tải được không gian làm việc. Thường đây là sự cố kết nối hoặc máy chủ tạm thời. Tài khoản của bạn không có vấn đề.",
+  "common.bootstrap.retry": "Thử lại",
+  "common.bootstrap.retrying": "Đang thử lại…",
+  "common.table.selectColumn": "Chọn",
+  "common.table.actionsColumn": "Thao tác"
 }
