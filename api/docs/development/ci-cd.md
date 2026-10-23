@@ -313,6 +313,7 @@ day, with the commit range in the run history. A migration that needs a newer ma
 column) fails the 16 job: write it so 16 can run it, or raise the supported floor in the same pull request, in this section
 and in the install documentation. The images are pinned by digest in `.github/ci-images.txt` and mirrored; bump the
 digest in `api-ci.yml` (18) and `api-pg-compat.yml` (16 and 18) together with it.
+
 ### Release-note labels
 
 `pr-labels.yml` runs `.github/scripts/pr-labels.py` on every same-repository pull request and
