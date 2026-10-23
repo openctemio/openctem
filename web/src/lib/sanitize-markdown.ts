@@ -287,6 +287,11 @@ export function sanitiseNode(node: HastNode, _index?: number, _parent?: HastNode
     node.children = [{ type: 'text', value: src }]
     return
   }
+  // Any other element that fetches its src on render (video, audio, source,
+  // track) gets the same rule: a remote source is never loaded.
+  if (tag !== 'img' && isRemoteImageSource(props.src)) {
+    props.src = '#'
+  }
   // Same origin test as images: absolute http(s) on another origin.
   if (tag === 'a' && isRemoteImageSource(props.href)) {
     Object.assign(props, externalLinkProps())
