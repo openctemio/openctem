@@ -721,7 +721,7 @@ export function RoleDetailSheet({
                               size="icon"
                               className="h-8 w-8 shrink-0"
                               aria-label={t('org.roleDetail.actionsFor', 'Actions for {name}', {
-                                name: label,
+                                name: label ?? '',
                               })}
                             >
                               {removingMemberId === member.id ? (
