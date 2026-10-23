@@ -24,10 +24,17 @@ interface FindingTenableRescanProps {
 }
 
 export function FindingTenableRescanSection({ finding, className }: FindingTenableRescanProps) {
+  const assetId = finding.assets?.[0]?.id
+  // Only a Tenable.sc finding with an asset can be rescanned: any other
+  // finding never asks for the connector list (one request saved per load).
+  if (!isTenableSCFinding(finding) || !assetId) return null
+  return <TenableRescan assetId={assetId} className={className} />
+}
+
+function TenableRescan({ assetId, className }: { assetId: string; className?: string }) {
   const { t } = useTranslation()
   const connectors = useScanNowConnectors()
-  const assetId = finding.assets?.[0]?.id
-  if (!isTenableSCFinding(finding) || !assetId || connectors.length === 0) return null
+  if (connectors.length === 0) return null
 
   return (
     <DetailSection
