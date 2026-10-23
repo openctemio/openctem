@@ -147,6 +147,43 @@ func TestIngestClaim_TenantRunningCap_DB(t *testing.T) {
 	}
 }
 
+// The share counts running jobs: a tenant already holding a worker comes
+// after a tenant holding none, even with an older backlog in the same lane,
+// and a flood of urgent jobs takes the urgent lane for one job at a time.
+func TestIngestClaim_ShareCountsRunningJobs_DB(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	a, b := newIngestJobTestTenant(t, db), newIngestJobTestTenant(t, db)
+	repo := NewIngestJobRepository(&DB{DB: db})
+	repo.SetMaxRunningPerTenant(100)
+	running := enqueueRouted(t, repo, a, "a-running", ingestjob.LaneUrgent, "")
+	if _, err := db.ExecContext(ctx, `UPDATE ingest_jobs SET status = 'processing', locked_at = now(), attempts = 1 WHERE id = $1`,
+		running.ID().String()); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		enqueueRouted(t, repo, a, "a-urgent-"+string(rune('0'+i)), ingestjob.LaneUrgent, "")
+	}
+	time.Sleep(5 * time.Millisecond)
+	bJob := enqueueRouted(t, repo, b, "b-interactive", ingestjob.LaneInteractive, "")
+	got, err := repo.ClaimBatch(ctx, "w", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	posB, posA := -1, -1
+	for i, j := range got {
+		switch {
+		case j.ID() == bJob.ID():
+			posB = i
+		case j.TenantID() == a && posA < 0:
+			posA = i
+		}
+	}
+	if posB < 0 || posA < 0 || posB > posA {
+		t.Fatalf("B's job at %d, A's first at %d: a tenant holding a worker went first", posB, posA)
+	}
+}
+
 // A job whose attempts ran out is never claimed; a lease that expires on
 // the last attempt makes the job dead (returned once), an earlier one
 // returns it to pending.

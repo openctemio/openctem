@@ -88,7 +88,7 @@ func (r *IngestJobRepository) getByIdempotencyKey(ctx context.Context, tenantID 
 
 // DefaultMaxRunningPerTenant bounds a tenant's processing jobs when no cap
 // is configured.
-const DefaultMaxRunningPerTenant = 4
+const DefaultMaxRunningPerTenant = 2
 
 // SetMaxRunningPerTenant caps how many jobs of one tenant are processing at
 // once (<= 0 keeps DefaultMaxRunningPerTenant).
@@ -106,7 +106,14 @@ func (r *IngestJobRepository) runningCap() int {
 //
 // Order: lane first (urgent, interactive, bulk), then round-robin across
 // tenants within a lane (each tenant's oldest due job before any tenant's
-// second), then age. Guards:
+// second), then age. The tenant's share counts its running jobs too
+// (tenant_running + rn): a tenant already holding workers comes after one
+// holding fewer, so a tenant with an older backlog cannot keep every freed
+// worker. The urgent lane goes ahead of other tenants for one job of a
+// tenant at a time (its first, with nothing of it running); further urgent
+// jobs of that tenant queue as interactive. The lane is derived from the
+// report, which the tenant writes, so it orders a tenant's own work but
+// cannot buy one tenant the whole worker pool. Guards:
 //   - attempts < max_attempts: a job whose attempts ran out is never claimed
 //     again (a payload that kills the worker, its lease expired);
 //   - one processing job per scope_key: a candidate whose scope has a
@@ -151,7 +158,8 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 		)
 		SELECT id FROM ranked
 		WHERE sn = 1 AND rn <= $3 - tenant_running
-		ORDER BY lane, rn, available_at
+		ORDER BY CASE WHEN lane = 0 AND tenant_running + rn > 1 THEN 1 ELSE lane END,
+			tenant_running + rn, lane, available_at
 		LIMIT $2`
 
 	rows, err := tx.QueryContext(ctx, candidateQuery, now, limit, r.runningCap())
