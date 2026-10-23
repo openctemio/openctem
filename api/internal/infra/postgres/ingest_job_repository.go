@@ -691,3 +691,54 @@ func (r *IngestJobRepository) BySource(ctx context.Context, tenantID shared.ID, 
 	}
 	return job, nil
 }
+
+// --- retention (RFC-122 "Queue hygiene") ---
+
+// PurgePayloadsForPlatform deletes stored upload parts nobody will open:
+// expired ones, those of a finished (completed) job, and those an upload
+// staged without ever getting a job (older than an hour). At most limit
+// rows. Platform-wide (the retention job).
+func (r *IngestJobRepository) PurgePayloadsForPlatform(ctx context.Context, now time.Time, limit int) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM ingest_payloads WHERE (job_id, part) IN (
+			SELECT p.job_id, p.part FROM ingest_payloads p
+			LEFT JOIN ingest_jobs j ON j.id = p.job_id
+			WHERE p.expires_at < $1
+			   OR j.status = 'completed'
+			   OR (j.id IS NULL AND p.created_at < $1 - interval '1 hour')
+			LIMIT $2)`, now, limit)
+	if err != nil {
+		return 0, fmt.Errorf("purge ingest payloads: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// PurgeFinishedJobsForPlatform deletes finished jobs (completed or dead)
+// last updated before the cutoff that belong to no report (the jobs of a
+// report go with it). At most limit rows.
+func (r *IngestJobRepository) PurgeFinishedJobsForPlatform(ctx context.Context, before time.Time, limit int) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM ingest_jobs WHERE id IN (
+			SELECT id FROM ingest_jobs
+			WHERE status IN ('completed', 'dead') AND updated_at < $1 AND ingest_report_id IS NULL
+			LIMIT $2)`, before, limit)
+	if err != nil {
+		return 0, fmt.Errorf("purge ingest jobs: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// PurgeFinishedReportsForPlatform deletes finished protocol v2 reports
+// (completed, failed, expired) last updated before the cutoff, with their
+// jobs (ON DELETE CASCADE). At most limit rows.
+func (r *IngestJobRepository) PurgeFinishedReportsForPlatform(ctx context.Context, before time.Time, limit int) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM ingest_reports WHERE id IN (
+			SELECT id FROM ingest_reports
+			WHERE state IN ('completed', 'failed', 'expired') AND updated_at < $1
+			LIMIT $2)`, before, limit)
+	if err != nil {
+		return 0, fmt.Errorf("purge ingest reports: %w", err)
+	}
+	return res.RowsAffected()
+}
