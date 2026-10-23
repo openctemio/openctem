@@ -63,7 +63,7 @@ export function AttentionQueueHeader({ reason, count, inventoryHref }: Attention
     <div className="flex flex-col gap-2" data-testid="attention-queue-header">
       <Link
         href={ATTENTION_HREF}
-        className="inline-flex w-fit items-center gap-1 rounded-sm text-[13px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex w-fit items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronLeft className="size-3.5 rtl:rotate-180" aria-hidden />
         {t('assets.attention.back', 'Needs attention')}
