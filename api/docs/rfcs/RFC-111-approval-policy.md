@@ -346,6 +346,6 @@ second member, as before. The sole member's acceptance never applies through the
 else would see it): under `off` too it waits for this self-approval. Membership and the level are checked again
 in the write transaction.
 
-Migration `003344_single_person_acceptance_review` extends the single-person review triggers to accepted
+Migration `003349_single_person_acceptance_review` extends the single-person review triggers to accepted
 risks and indexes the decisions one person made for the digest.
 

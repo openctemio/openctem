@@ -744,7 +744,7 @@ Safeguards: a later severity rise, KEV listing or new evidence on a false
 positive or accepted risk one person decided raises the
 `material_change_single_person` review flag (triggers
 `trg_findings_single_person_fp_review`, `trg_finding_evidence_single_person_fp_review`,
-function `flag_single_person_decision_review`, migration 003344); the
+function `flag_single_person_decision_review`, migration 003349); the
 material-change controller adds the other signals and ends an acceptance whose
 tier now needs a second person; `second_look_percent` (0-10) flags a random
 share of single-person false positives (`second_look_sample`, crypto/rand); the
