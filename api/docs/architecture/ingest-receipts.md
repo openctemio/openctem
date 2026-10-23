@@ -15,7 +15,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | Receipts table, per-finding action log, coverage decisions, daily ingest fact (migration `003308_ingest_receipts`) | shipped |
 | Writer in ingest (every report), in coverage decisions, and for uploads (one receipt per request) | shipped |
 | Retention job (`ingest-receipt-retention`) | shipped |
-| Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003320_idempotency_keys`) | shipped |
+| Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003325_idempotency_keys`) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | planned (RFC-122 §5) |
 | Web: import page, scan run page, finding "last seen in" | planned |
 
