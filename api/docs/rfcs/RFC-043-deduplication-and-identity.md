@@ -1,6 +1,6 @@
 # RFC-043 — Deduplication and identity
 
-> Status: **Accepted — decisions D1–D15 approved** (2026-10-03; #892).
+> Status: **Accepted — decisions D1–D25 approved** (D1–D15 2026-10-03, #892; D16–D25 2026-10-23, §17).
 > Progress: P0 merged; P1 item 10 implemented, item 11 implemented: v2 recipes at ingest and the re-fingerprint job with dry run (see §12).
 > Scope: api (ingest, finding and asset repositories, merge, tickets,
 > notifications, migrations) + sensor/sdk-go (fingerprint hints only) + web
@@ -562,3 +562,101 @@ Open questions the research leaves (added to the decisions): file-rename
 identity (D12), the PURL qualifier allowlist per type and epoch/version
 normalization across Syft/Trivy (D13), and rebuilding an alias class when a feed
 corrects a bad alias without corrupting attached triage (D14).
+
+## 17. Cross-tool deduplication (amendment 2026-10-23)
+
+The version-2 recipes merge two tools' reports only when their identity keys
+are equal: SCA, network and DAST when both name the same CVE, secrets by the
+keyed hash of the value and the path. A GHSA-only report never meets a CVE
+report, a SAST finding from two engines never meets (the rule id is in the
+key), and the same secret in two files stays two unrelated findings. This
+amendment adds the cases between "one finding" and "unrelated" without
+weakening identity.
+
+### 17.1 Three outcomes
+
+| Outcome | When | Effect |
+|---|---|---|
+| Merge | the server-computed identity keys are equal after canonicalisation (§17.2) | one finding; a canonicalisation change never merges two **existing** findings on its own (D14): it links them |
+| Same issue (link) | a strong signal that is not an identity (§17.3) | the findings form a group: shown together, counted once in the dashboard facts; each keeps its own status, severity, SLA, ticket, task and approvals; a person can take a finding out of the group (audited) or merge it with "mark duplicate" |
+| Possible duplicate | a weak signal | a suggestion for a person (duplicate candidates; DAST correlation suggestions) |
+
+### 17.2 Canonicalisation before keying
+
+- **Vulnerability ids:** the key names one canonical id per finding. A
+  report's own CVEs come first (a multi-CVE SCA advisory splits per CVE, as
+  network findings do under D3). Otherwise each GHSA or OSV id goes through
+  the alias map of the signed vulnerability feed; it is replaced only when
+  every alias leads to the same single CVE, so an over-broad advisory never
+  fuses two CVEs. Otherwise the preferred id (GHSA, then OSV, then a vendor
+  id) is kept, so two tools naming the same advisory agree. A report's ids
+  decide only that report's key: an alias a report asserts is never applied
+  to another finding. Distro advisories (DSA, RHSA, USN, ALAS) are upstream
+  relations, never aliases.
+- **Stored findings:** when the alias map changes a finding's canonical id,
+  only the `vuln` field of its stored tuple changes (lossless, like the asset
+  merge rewrites `asset`). A free key re-keys the finding in place, its old
+  key stays an alias; a key another live finding holds links the two as the
+  same issue instead of merging them.
+- **CWE** (`CWE-89`, `cwe-089`, `89`) is normalised for linking; it is never
+  an identity input.
+
+### 17.3 Same-issue rules
+
+| Rule | Signal | Never |
+|---|---|---|
+| `sast_overlap` | same asset and repository path, different rule ids, overlapping line ranges, at least one shared normalised CWE | across assets; the same rule (those are occurrences); a different CWE on the same line; disjoint lines |
+| `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository of the tenant | a secret known only by its mask (masks are shared by unrelated secrets); across tenants (the key is per tenant). A CI job's producer key is per repository, so secrets a CI job hashed link within one repository only |
+| `vuln_alias` | a re-key collision after an alias change (§17.2) | — |
+
+Candidates come only from server-computed keys stored in `finding_link_keys`
+(one indexed lookup per ingest batch, no scan of a tenant's findings). A key
+held by more than 200 findings creates no link (a test fixture secret), and a
+group never exceeds 50 members. A group is a star around its primary, the
+earliest-created finding when it formed; two groups are never fused
+automatically. A pair a person unlinked is never linked again automatically;
+a pair whose signal no longer holds (the code moved) is released.
+
+### 17.4 Effects
+
+| Concern | Same-issue group |
+|---|---|
+| Dashboard facts | counted once per asset and state (the primary, else the earliest member in that state); a group across repositories counts once per repository, since each repository has its own clean-up |
+| Status, severity, SLA, tickets, tasks, approvals | per finding; a decision on one member is never applied to the others |
+| Visibility | a member on an asset outside the caller's data scope is never listed or counted; a group with no other visible member is shown as none |
+| Timeline and audit | a link writes `issue_linked` on the member; an unlink writes `issue_unlinked` on both and the audit event `finding.issue_unlinked` |
+| Finding merge | links and keys stay on the tombstone; the survivor's are derived again on its next sighting or by the backfill |
+
+### 17.5 Threat model
+
+| Threat | Mitigation |
+|---|---|
+| A crafted report forces a merge that hides a finding | merge only on server identity equality; aliases only from the signed feed; a report's ids decide only its own key; a link never changes a status |
+| Out-of-scope oracle through a group | members filtered by the caller's data scope; no count or id of hidden members |
+| Cross-tenant link | keys and links are tenant-scoped (composite foreign keys to `findings (id, tenant_id)`); secret keys use a per-tenant key |
+| Secret confirmation through link keys | a link key is a hash of the keyed hash, never returned by any API |
+| Link flooding | caps per key and per group |
+
+### 17.6 Decisions (2026-10-23)
+
+| # | Decision | Adopted |
+|---|---|---|
+| D16 | Outcome tiers | merge, same issue, possible duplicate (§17.1) |
+| D17 | Vulnerability id choice | report CVEs, else feed aliases to one CVE, else GHSA, OSV, vendor |
+| D18 | Alias source | the signed feed only; report-asserted aliases never apply to other findings |
+| D19 | Alias store | a platform table filled by the bundle importer; RFC-044's `definition_identifiers` takes a definition's aliases from it when the definition exists (it holds only definitions tenants met) |
+| D20 | Multi-CVE SCA advisories | one finding per CVE |
+| D21 | Stored findings after an alias change | rewrite `vuln`; free key re-keys, held key links |
+| D22 | Explanation | the recipe and field names stored at keying, shown on the finding; never values |
+| D23 | Group model | its own table (a link never changes a finding, unlike the DAST correlation, which makes the member a duplicate) |
+| D24 | Metrics | a group counts once per asset and state |
+| D25 | Unlink | `findings:triage` and both findings in scope; audited; never re-linked automatically |
+
+### 17.7 Status
+
+| Item | State |
+|---|---|
+| Same-issue links (`sast_overlap`, `secret_value`), API, dashboard facts, finding page, `refingerprint -links` | implemented |
+| Identity explanation (recipe and field names, reporting tools, merged duplicates) | in progress (P0) |
+| Alias canonicalisation, multi-CVE SCA split, `vuln_alias` links | in progress (P0); the alias map fills once the feed publishes it |
+| CWE parent/child, SAST source-to-sink via data flow, code-to-image, host vs port, IaC policy equivalence, group severity/SLA/ticket offers, technique groups (§7.1) | planned |

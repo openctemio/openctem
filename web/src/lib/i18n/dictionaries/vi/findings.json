@@ -1394,5 +1394,18 @@
   "findings.list.selectRow": "Chọn phát hiện {title}",
   "findings.list.kev": "KEV",
   "findings.bulk.assignFailed": "Không thể giao các phát hiện",
-  "findings.contextChips.crownJewels": "Tài sản trọng yếu"
+  "findings.contextChips.crownJewels": "Tài sản trọng yếu",
+  "findings.issueGroup.heading": "Cùng một vấn đề ở công cụ khác",
+  "findings.issueGroup.explainer": "Các phát hiện này cùng báo một vấn đề. Chúng được liên kết, không gộp: mỗi phát hiện giữ trạng thái riêng, và bảng điều khiển chỉ đếm nhóm một lần.",
+  "findings.issueGroup.whyLinked": "Lý do liên kết",
+  "findings.issueGroup.rule.sastOverlap": "Cùng tệp và tài sản, các dòng chồng lên nhau, cùng điểm yếu (CWE)",
+  "findings.issueGroup.rule.secretValue": "Cùng giá trị bí mật",
+  "findings.issueGroup.rule.vulnAlias": "Cùng lỗ hổng dưới mã định danh khác, cùng tài sản",
+  "findings.issueGroup.primary": "Báo cáo đầu tiên",
+  "findings.issueGroup.thisFinding": "Phát hiện này",
+  "findings.issueGroup.unlink": "Bỏ liên kết",
+  "findings.issueGroup.unlinked": "Đã đưa ra khỏi nhóm",
+  "findings.issueGroup.unlinkFailed": "Không thể bỏ liên kết",
+  "findings.issueGroup.confirmTitle": "Bỏ liên kết phát hiện này?",
+  "findings.issueGroup.confirmDesc": "Phát hiện sẽ rời nhóm và được đếm riêng trở lại. Hệ thống sẽ không tự động liên kết nó vào nhóm này nữa. Ngoài ra, không phát hiện nào bị thay đổi."
 }
