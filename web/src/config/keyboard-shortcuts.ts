@@ -90,6 +90,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     shells: ['app'],
   },
   {
+    id: 'triage',
+    label: 'Open the findings to triage',
+    keys: ['T'],
+    group: 'lists',
+    shells: ['app'],
+  },
+  {
     id: 'add-filter',
     label: 'Add a filter (findings and assets lists)',
     keys: ['F'],

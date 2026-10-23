@@ -2,6 +2,7 @@
 
 import useSWR from 'swr'
 import { del, get, post } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 
 /**
  * Asset links of a business service (`business_service_assets`). These links
@@ -54,12 +55,10 @@ export function useBusinessServiceAssets(serviceId: string | null) {
   )
 }
 
-/** Services for pickers (the list endpoint is tenant-scoped and small). */
+/** Every service for pickers (up to the register row cap). */
 export function useBusinessServiceOptions(enabled = true) {
-  return useSWR<{ data?: BusinessServiceOption[] }>(
-    enabled ? '/api/v1/business-services?per_page=100' : null,
-    (url: string) => get<{ data?: BusinessServiceOption[] }>(url),
-    { revalidateOnFocus: false }
+  return useRegisterPages<BusinessServiceOption>(
+    enabled ? '/api/v1/business-services?per_page=100' : null
   )
 }
 

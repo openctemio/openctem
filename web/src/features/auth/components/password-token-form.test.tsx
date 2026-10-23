@@ -51,12 +51,10 @@ describe('PasswordTokenForm', () => {
     mockReset.mockResolvedValue({ success: true, data: null, message: 'ok' })
     render(<PasswordTokenForm mode="reset" token="tok-2" />)
 
-    expect(
-      screen.getByText('Reset password', { selector: '[data-slot="card-title"]' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Reset password' })).toBeInTheDocument()
     await fillAndSubmit(/^reset password$/i)
     await waitFor(() => expect(mockReset).toHaveBeenCalledWith('tok-2', PASSWORD))
-    expect(await screen.findByText('Password reset successful')).toBeInTheDocument()
+    expect(await screen.findByText('Password reset')).toBeInTheDocument()
   })
 
   // The page reads the token from the URL after hydration, so the first render

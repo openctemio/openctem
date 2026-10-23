@@ -1,5 +1,5 @@
 import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import { extendTailwindMerge } from 'tailwind-merge'
 import { nanoid, customAlphabet } from 'nanoid'
 import { safeHref } from './safe-href'
 
@@ -8,6 +8,14 @@ const stepKeyId = customAlphabet(
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_',
   8
 )
+
+/**
+ * tailwind-merge that knows the type-scale sizes in src/styles/theme.css
+ * (text-title, text-meta, ...). Without this it reads `text-meta` as a colour
+ * and drops it next to `text-muted-foreground`.
+ */
+export const TYPE_SCALE = ['title', 'section', 'body', 'meta', 'data', 'kpi'] as const
+const twMerge = extendTailwindMerge({ extend: { theme: { text: [...TYPE_SCALE] } } })
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

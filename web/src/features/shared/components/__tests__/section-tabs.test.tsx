@@ -42,7 +42,10 @@ describe('SectionTabs', () => {
   it.each([
     ['/assets/groups', 'Groups'],
     ['/assets/groups/abc', 'Groups'],
-    ['/assets/suggestions', 'Suggestions'],
+    ['/assets/attention/context', 'Needs attention'],
+    // Relationships and duplicates are reasons of Needs attention at their own URLs.
+    ['/assets/suggestions', 'Needs attention'],
+    ['/assets/duplicates', 'Needs attention'],
   ])('Assets: %s marks %s current, not Inventory', (path, tab) => {
     pathname = path
     render(<SectionTabs tabs={ASSETS_SECTION_TABS} />)
