@@ -397,7 +397,7 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 			TenantID: tenant, ActorID: userID, ActorEmail: auditActorEmail(ctx),
 			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		}
-		_ = h.audit.LogEvent(ctx, actx, event)
+		auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, event)
 		auditConfirmEntries(ctx, h.audit, actx, added, "ownership_tab")
 	}
 	view, found, err := h.attribution.Get(ctx, tenantID, assetID)

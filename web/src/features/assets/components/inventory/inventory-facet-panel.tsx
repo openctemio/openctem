@@ -120,16 +120,19 @@ export function InventoryFacetPanel({
   )
 }
 
-function MultiFacetSection({
+export function MultiFacetSection({
   facet,
   filters,
   stats,
   onChange,
+  defaultOpen,
 }: {
   facet: MultiFacetDef
   filters: InventoryFilters
   stats: AssetStatsData
   onChange: (next: InventoryFilters) => void
+  /** Unfold it regardless of the panel's defaults (the Add filter editor). */
+  defaultOpen?: boolean
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -172,7 +175,7 @@ function MultiFacetSection({
     <FacetSection
       title={facet.label}
       selectedCount={selected.length}
-      defaultOpen={OPEN_BY_DEFAULT.has(facet.filterKey)}
+      defaultOpen={defaultOpen ?? OPEN_BY_DEFAULT.has(facet.filterKey)}
     >
       {facet.searchable && long && (
         <div className="relative mb-1.5">
@@ -221,14 +224,16 @@ function MultiFacetSection({
   )
 }
 
-function AttributeFacetSection({
+export function AttributeFacetSection({
   facet,
   filters,
   onChange,
+  defaultOpen,
 }: {
   facet: AttributeFacet
   filters: InventoryFilters
   onChange: (next: InventoryFilters) => void
+  defaultOpen?: boolean
 }) {
   const { t } = useTranslation()
   const { attribute, label, counts } = facet
@@ -253,7 +258,11 @@ function AttributeFacetSection({
     if (!options.some((o) => o.value === v)) options.push({ value: v, label: v })
 
   return (
-    <FacetSection title={label} selectedCount={selected.length} defaultOpen={selected.length > 0}>
+    <FacetSection
+      title={label}
+      selectedCount={selected.length}
+      defaultOpen={defaultOpen ?? selected.length > 0}
+    >
       {options.length === 0 ? (
         <p className="py-1 text-xs text-muted-foreground">
           {t('assets.facetPanel.noneRecorded', 'None recorded yet.')}
@@ -272,14 +281,16 @@ function AttributeFacetSection({
   )
 }
 
-function BoolFacetSection({
+export function BoolFacetSection({
   facet,
   filters,
   onChange,
+  defaultOpen,
 }: {
   facet: BoolFacetDef
   filters: InventoryFilters
   onChange: (next: InventoryFilters) => void
+  defaultOpen?: boolean
 }) {
   const current = filters[facet.filterKey]
   // Ticking an option selects that value; unticking the selected one returns
@@ -291,7 +302,7 @@ function BoolFacetSection({
     <FacetSection
       title={facet.label}
       selectedCount={current === undefined ? 0 : 1}
-      defaultOpen={OPEN_BY_DEFAULT.has(facet.filterKey)}
+      defaultOpen={defaultOpen ?? OPEN_BY_DEFAULT.has(facet.filterKey)}
     >
       <FacetOption
         label={facet.trueLabel}
@@ -308,12 +319,14 @@ function BoolFacetSection({
 }
 
 /** Filters that are not facets but that the views and metrics can turn on. */
-function SignalsSection({
+export function SignalsSection({
   filters,
   onChange,
+  defaultOpen = false,
 }: {
   filters: InventoryFilters
   onChange: (next: InventoryFilters) => void
+  defaultOpen?: boolean
 }) {
   const { t } = useTranslation()
   const patch = (p: Partial<InventoryFilters>) => onChange({ ...filters, ...p, page: 1 })
@@ -329,7 +342,7 @@ function SignalsSection({
     <FacetSection
       title={t('assets.facetPanel.signals', 'Signals')}
       selectedCount={selectedCount}
-      defaultOpen={false}
+      defaultOpen={defaultOpen}
     >
       <FacetOption
         label={t('assets.facetPanel.crown', 'Crown jewels')}

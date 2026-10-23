@@ -43,7 +43,9 @@ vi.mock('@/features/relationships/api/use-relationship-suggestions', () => ({
 }))
 vi.mock('@/features/assets/components/assets-section-tabs', () => ({
   AssetsSectionTabs: () => null,
-  AssetAttentionTabs: () => null,
+}))
+vi.mock('@/features/assets/components/attention/attention-queue-header', () => ({
+  AttentionQueueHeader: () => null,
 }))
 vi.mock('@/hooks/use-url-param', () => ({ useUrlFilter: () => ['', vi.fn()] }))
 vi.mock('@/hooks/use-list-params', () => ({

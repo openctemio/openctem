@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
@@ -22,7 +21,7 @@ interface ThreatIntelOverviewProps {
 /**
  * The threat landscape in two parts that never mix:
  *  - the organization's open findings that EPSS or CISA KEV flag (each number
- *    opens the findings list it counts);
+ *    is a link to the findings list it counts);
  *  - the size of the two global catalogs, as plain text, since they say
  *    nothing about this organization.
  */
@@ -33,7 +32,6 @@ export function ThreatIntelOverview({
   className,
 }: ThreatIntelOverviewProps) {
   const { t } = useTranslation()
-  const router = useRouter()
   const loading = isLoading || !epssStats || !kevStats
 
   const kevOpen = kevStats?.tenant_open_count ?? 0
@@ -44,7 +42,7 @@ export function ThreatIntelOverview({
       value: epssStats?.critical_risk_count ?? 0,
       tone: 'danger',
       description: t('threatIntel.landscape.epssCriticalHint'),
-      onClick: () => router.push(`/findings?epss_score_gte=${EPSS_CRITICAL}`),
+      href: `/findings?epss_score_gte=${EPSS_CRITICAL}`,
     },
     {
       key: 'epss-high',
@@ -52,7 +50,7 @@ export function ThreatIntelOverview({
       value: epssStats?.high_risk_count ?? 0,
       tone: 'warning',
       description: t('threatIntel.landscape.epssHighHint'),
-      onClick: () => router.push(`/findings?epss_score_gte=${EPSS_HIGH}`),
+      href: `/findings?epss_score_gte=${EPSS_HIGH}`,
     },
     {
       key: 'kev-open',
@@ -67,7 +65,7 @@ export function ThreatIntelOverview({
             })
           : undefined,
       description: t('threatIntel.landscape.kevOpenHint'),
-      onClick: () => router.push('/findings?is_in_kev=true'),
+      href: '/findings?is_in_kev=true',
     },
     {
       key: 'kev-past-due',
@@ -75,7 +73,7 @@ export function ThreatIntelOverview({
       value: kevStats?.past_due_count ?? 0,
       tone: 'danger',
       description: t('threatIntel.landscape.kevPastDueHint'),
-      onClick: () => router.push('/findings?is_in_kev=true'),
+      href: '/findings?is_in_kev=true',
     },
   ]
 

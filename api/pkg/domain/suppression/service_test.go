@@ -16,6 +16,7 @@ type mockRepository struct {
 	findErr    error
 	deleteErr  error
 	auditCalls []auditCall
+	auditErr   error
 	// matching is what CountMatchingOpenFindings and Approve see: the number
 	// of open findings the rule matches.
 	matching   int
@@ -175,6 +176,9 @@ func (m *mockRepository) RecordSuppression(_ context.Context, findingID, ruleID 
 }
 
 func (m *mockRepository) RecordAudit(_ context.Context, ruleID shared.ID, action string, userID *shared.ID, details map[string]any) error {
+	if m.auditErr != nil {
+		return m.auditErr
+	}
 	m.auditCalls = append(m.auditCalls, auditCall{ruleID, action, userID, details})
 	return nil
 }
@@ -491,6 +495,35 @@ func TestService_ListActiveRules(t *testing.T) {
 
 	if len(active) != 2 {
 		t.Errorf("ListActiveRules() returned %d rules, want 2", len(active))
+	}
+}
+
+func TestService_DeleteRule_FailsClosedWhenAuditCannotBeWritten(t *testing.T) {
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+	repo := newMockRepository()
+	svc := NewService(repo, nil)
+	rule, err := svc.CreateRule(ctx, CreateRuleInput{
+		TenantID: tenantID, Name: "Test Rule",
+		SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID: "test-rule", RequestedBy: userID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repo.auditErr = errors.New("audit store down")
+	if err := svc.DeleteRule(ctx, tenantID, rule.ID(), userID); err == nil || !errors.Is(err, repo.auditErr) {
+		t.Fatalf("DeleteRule() = %v, want the audit error", err)
+	}
+	if _, err := svc.GetRule(ctx, tenantID, rule.ID()); err != nil {
+		t.Fatalf("rule must still exist when its deletion could not be audited: %v", err)
+	}
+
+	repo.auditErr = nil
+	if err := svc.DeleteRule(ctx, tenantID, rule.ID(), userID); err != nil {
+		t.Fatalf("DeleteRule() with audit healthy = %v", err)
 	}
 }
 

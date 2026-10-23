@@ -113,3 +113,51 @@ func TestMemberSearch_ServerSidePagingAndFilters(t *testing.T) {
 		}
 	})
 }
+
+// TestMemberSearch_UserIDsFilter backs the people chip: it resolves the
+// handful of ids on screen, however large the organization, and never answers
+// for a user who is not a member of the listed organization.
+func TestMemberSearch_UserIDsFilter(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	tenantA := createTestTenant(t, db, "member-ids-a")
+	tenantB := createTestTenant(t, db, "member-ids-b")
+	defer cleanupTestData(db, tenantA, tenantB)
+
+	stamp := time.Now().UnixNano()
+	var users []shared.ID
+	defer func() {
+		for _, id := range users {
+			_, _ = db.Exec("DELETE FROM tenant_members WHERE user_id = $1", id.String())
+			_, _ = db.Exec("DELETE FROM users WHERE id = $1", id.String())
+		}
+	}()
+	for i := 0; i < 5; i++ {
+		uid := createTestUser(t, db, fmt.Sprintf("ids-%d-%d@example.com", stamp, i), fmt.Sprintf("Ids %d", i))
+		users = append(users, uid)
+		createTestMembership(t, db, tenantA, uid, "member")
+	}
+	outsider := createTestUser(t, db, fmt.Sprintf("ids-%d-out@example.com", stamp), "Outsider")
+	users = append(users, outsider)
+	createTestMembership(t, db, tenantB, outsider, "member")
+
+	repo := postgres.NewTenantRepository(&postgres.DB{DB: db})
+	// Page size 1 would hide members 2..5 if the filter relied on the first page.
+	r, err := repo.SearchMembersWithUserInfo(ctx, tenantA, tenant.MemberSearchFilters{
+		Limit:   100,
+		UserIDs: []string{users[4].String(), users[0].String(), outsider.String()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Total != 2 || len(r.Members) != 2 {
+		t.Fatalf("got %d/%d members, want exactly the two members asked for (the other tenant's user must be absent)", len(r.Members), r.Total)
+	}
+	for _, m := range r.Members {
+		if m.UserID == outsider {
+			t.Fatal("a user of another organization was returned")
+		}
+	}
+}
