@@ -113,8 +113,9 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
     skip: !open,
   })
 
-  // Fetch finding sources from API (dynamic configuration) only once the
-  // dialog opens: the page mounts this dialog closed on every load.
+  // Fetch finding sources from API (dynamic configuration). The dialog stays
+  // mounted on the findings page, so the catalog loads when it opens, not with
+  // every page load (request budget, web/e2e/request-budget.json).
   const { data: findingSourcesData, isLoading: sourcesLoading } = useFindingSourcesApi(
     undefined,
     open

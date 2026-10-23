@@ -154,10 +154,11 @@ func (r *FindingRekeyRepository) repairDASTGroup(ctx context.Context, tenant str
 		}
 	}
 	if survivor.fingerprint != fp {
-		if _, err := tx.ExecContext(ctx, `UPDATE findings SET fingerprint = $1, identity_key = $2::jsonb, updated_at = NOW()
+		if _, err := tx.ExecContext(ctx, `UPDATE findings SET fingerprint = $1, identity_key = $2::jsonb, updated_at = NOW(),
+			       identity_algo = $5, identity_fields = $6
 			WHERE tenant_id = $3 AND id = $4 AND status <> 'duplicate'
 			  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $3 AND c.fingerprint = $1 AND c.id <> $4)`,
-			fp, string(raw), tenant, survivor.id); err != nil {
+			append([]any{fp, string(raw), tenant, survivor.id}, identityKeyRecipeArgs(raw)...)...); err != nil {
 			return fmt.Errorf("re-key repaired dast finding: %w", err)
 		}
 	}

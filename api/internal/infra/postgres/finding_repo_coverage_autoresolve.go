@@ -54,6 +54,10 @@ func (r *FindingRepository) repoCoverageStale(ctx context.Context, tenantID shar
 	for i, a := range q.AssetIDs {
 		assets[i] = a.String()
 	}
+	receipt, err := r.commandAbsenceReceipt(ctx, tenantID, q)
+	if err != nil {
+		return nil, 0, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		WITH open_findings AS (
 			SELECT f.id, f.tenant_id, f.scan_id
@@ -71,6 +75,8 @@ func (r *FindingRepository) repoCoverageStale(ctx context.Context, tenantID shar
 		SELECT o.id::text, COUNT(*) OVER () AS open_total,
 			(
 				NOT (COALESCE(o.scan_id, '') = ANY($4))
+				-- Reported by this run: an action row on its receipt.
+				AND NOT `+receiptSeenSQL("o", "$7")+`
 				AND EXISTS (
 					SELECT 1
 					FROM ingest_reports ir
@@ -83,7 +89,7 @@ func (r *FindingRepository) repoCoverageStale(ctx context.Context, tenantID shar
 				)
 			) AS stale
 		FROM open_findings o`,
-		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(q.SeenScanIDs), q.ProfileID, secrets)
+		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(q.SeenScanIDs), q.ProfileID, secrets, receipt.String())
 	if err != nil {
 		return nil, 0, fmt.Errorf("repository coverage stale findings: %w", err)
 	}

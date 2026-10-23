@@ -1,0 +1,31 @@
+# zizmor configuration for the Workflow Lint job (.github/workflows/repo-security.yml).
+#
+# Prefer fixing the workflow. A finding that cannot be fixed is suppressed on
+# its exact line, with the reason: inline (`# zizmor: ignore[<audit>]`) where
+# the line can carry a comment, otherwise below as `file:line`. Never per file:
+# a per-file ignore would also hide a new occurrence in the same file. A
+# `file:line` entry fails closed: when the line moves, the finding is reported
+# again and the entry is updated in review.
+#
+# Inline today: cla.yml, dangerous-triggers on pull_request_target and
+# issue_comment (see the safety notes at the top of that file).
+rules:
+  self-repository:
+    # A style suggestion (help level): use the newer `$/...` spelling for a
+    # same-repository action. actionlint and older runners do not understand
+    # it yet; `./.github/actions/...` is the long-standing form and carries no
+    # risk.
+    disable: true
+  archived-uses:
+    ignore:
+      # The CLA action. Its repository is archived with no maintained
+      # replacement yet; it is pinned by full commit SHA, so its code cannot
+      # change under us. The `uses:` line keeps only the `# vX.Y.Z` comment
+      # that check-action-pins.sh and Dependabot read.
+      - cla.yml:122
+  adhoc-packages:
+    ignore:
+      # Inside a run: block, where an inline comment is not seen. One
+      # exact-version dev tool (the SARIF formatter for the eslint upload) on
+      # the code-scanning job, which holds no secrets.
+      - web-security.yml:106

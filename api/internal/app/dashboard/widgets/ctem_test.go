@@ -278,3 +278,40 @@ func TestAttackPaths_NoRelationshipDataIsNotMeasured(t *testing.T) {
 		t.Errorf("attack paths with a graph: %+v", v)
 	}
 }
+
+func TestDiscoveryCoverage_ShareOfTrackedAssetsInTheReadScope(t *testing.T) {
+	facts := &ctemFacts{disc: dashboard.DiscoveryCounts{Tracked: 8, Covered: 6}}
+	s := NewService(nil, nil, facts, nil)
+	scope := restrictedScope()
+	v := s.widget(context.Background(), 0, ctemWidget("coverage.discovery", "progress", 0), true, scope)
+	if v.State != StateReady || v.Shape != dashboard.ShapeRatio || v.Ratio == nil {
+		t.Fatalf("%+v", v)
+	}
+	if v.Ratio.Num != 6 || v.Ratio.Den != 8 || v.Ratio.ValuePct == nil || *v.Ratio.ValuePct != 75 {
+		t.Errorf("ratio %+v", v.Ratio)
+	}
+	// The figure opens the uncovered assets.
+	if v.Drill != drillUncovered {
+		t.Errorf("drill %s", v.Drill)
+	}
+	// Read in exactly the scope the server built, never wider.
+	if len(facts.scopes) != 1 {
+		t.Fatalf("reads %d", len(facts.scopes))
+	}
+	got := facts.scopes[0]
+	if got.TenantID != scope.TenantID || got.Assets != scope.Assets {
+		t.Fatalf("coverage read another scope: %+v", got)
+	}
+}
+
+func TestDiscoveryCoverage_NothingTrackedIsNotMeasuredNeverZero(t *testing.T) {
+	facts := &ctemFacts{}
+	s := NewService(nil, nil, facts, nil)
+	v := s.widget(context.Background(), 0, ctemWidget("coverage.discovery", "progress", 0), true, restrictedScope())
+	if v.State != StateNotMeasured || v.Reason != ReasonNoTrackedAssets {
+		t.Fatalf("state %s reason %s", v.State, v.Reason)
+	}
+	if v.Ratio == nil || v.Ratio.ValuePct != nil {
+		t.Errorf("a not-measured share has no value: %+v", v.Ratio)
+	}
+}

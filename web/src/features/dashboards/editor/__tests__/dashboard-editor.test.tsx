@@ -122,6 +122,50 @@ describe('DashboardEditor', () => {
     expect(onExit).toHaveBeenCalledWith(true)
   })
 
+  it('a widget header holds only the handle, the title, Configure and More; the rest is in the menu', async () => {
+    render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={() => {}} />)
+    const chrome = screen.getAllByTestId('editor-chrome')[0]
+    // The title truncates and keeps its full name on hover.
+    expect(within(chrome).getByTitle('Open findings')).toHaveClass('truncate', 'min-w-0')
+    expect(chrome).toHaveClass('overflow-hidden', 'min-w-0')
+    // No row of move and resize buttons in the header.
+    for (const name of ['Move earlier', 'Move later', 'Narrower', 'Wider', 'Shorter', 'Taller'])
+      expect(within(chrome).queryByRole('button', { name })).toBeNull()
+    expect(
+      within(chrome).getByRole('button', { name: 'Configure Open findings' })
+    ).toBeInTheDocument()
+    // Duplicate and Remove show inline only on a wide widget (container query).
+    expect(within(chrome).getByRole('button', { name: 'Remove Open findings' })).toHaveClass(
+      'hidden',
+      '@[22rem]:inline-flex'
+    )
+    await userEvent.click(
+      within(chrome).getByRole('button', { name: 'More actions for Open findings' })
+    )
+    const menu = screen.getByRole('menu')
+    const items = within(menu).getAllByRole('menuitem')
+    expect(items.map((i) => i.textContent?.replace(/[←→↑↓⇧]|Del$|D$/g, '').trim())).toEqual([
+      'Move earlier',
+      'Move later',
+      'Narrower',
+      'Wider',
+      'Shorter',
+      'Taller',
+      'Duplicate',
+      'Remove',
+    ])
+    // Remove is last, after a separator, in the destructive colour.
+    expect(items.at(-1)).toHaveClass('text-destructive')
+    expect(items.at(-1)?.previousElementSibling).toHaveAttribute('role', 'separator')
+    expect(within(menu).getByRole('menuitem', { name: /Move earlier/ })).toHaveAttribute(
+      'data-disabled'
+    )
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /Move later/ }))
+    expect(screen.getAllByTestId('editor-card')[1]).toHaveAccessibleName(
+      'Open findings, position 2 of 2'
+    )
+  })
+
   it('Ctrl+Z and Ctrl+Shift+Z undo and redo; Save is off without changes', () => {
     render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={() => {}} />)
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
