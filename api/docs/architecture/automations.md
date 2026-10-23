@@ -18,7 +18,7 @@ each type is built from them.
 | Kind | Types |
 |---|---|
 | Trigger | `manual`, `finding_created`, `finding_status_changed`, `asset_discovered`, `scan_completed`, `ai_triage_completed`, `ai_triage_failed` |
-| Action | `assign_user`, `update_status`, `add_tags`, `remove_tags`, `create_ticket`, `update_ticket`, `trigger_scan`, `trigger_ai_triage` |
+| Action | `assign_user`, `update_status` (to `confirmed` or `in_progress` only), `add_tags`, `remove_tags`, `create_ticket`, `update_ticket`, `trigger_scan`, `trigger_ai_triage`, `request_false_positive`, `request_risk_acceptance` |
 | Notification | `slack`, `teams`, `email`, `webhook` (a registered integration) |
 
 **Removed types.** The `schedule`, `finding_age`, `finding_updated` and
@@ -155,6 +155,32 @@ class is the highest of its steps.
 - Audit: `workflow.published`, `workflow.publish_requested`,
   `workflow.version_approved`, `workflow.rolled_back`, `workflow.mode_changed`
   with the version, digest and risk class.
+
+## Guardrails: no rule closes risk, and no run makes unlimited changes
+
+- **Requests only.** No action writes false positive, accepted, resolved or
+  duplicate. `update_status` may set only `confirmed` or `in_progress`
+  (400 `AUTOMATION_STATUS_NOT_ALLOWED` on save; a stored node is refused at
+  run time; validate reports `STATUS_NOT_ALLOWED`). `request_false_positive`
+  (`closure_reason`, `justification`) and `request_risk_acceptance` (plus
+  `expires_in_days`, 1-365) create a request through the approvals service on
+  behalf of the run's owner, marked as an automation's (`ByAutomation`,
+  activity `by_automation: true`). The approval policy never lets one person
+  decide such a request (`approvalpolicy.Request.AutomationMade`, reason
+  `automation_cannot_decide`), even when the organization's false-positive or
+  acceptance level is `off`: the level lets a *person* decide alone, never a
+  rule. The request actions are high risk, so going live needs a second
+  publisher.
+- **Change cap.** A live run makes at most `max_changes_per_run` changes (an
+  action or notification step is one change; default 250, at most 1,000; set
+  on the automation, pinned by the version; above 250 the automation is high
+  risk). The step past the cap does not start: the run becomes `paused`
+  (`pause_reason: blast_radius`) and `POST /workflow-runs/{id}/resume`
+  (`automations:publish`) lets it continue past the cap, keeping the steps it
+  finished; cancel ends it.
+- Migration `automation_guardrails` switched off (and back to simulate) every
+  automation whose draft or published version set another status
+  (`disabled_reason = status_not_allowed`); nothing was deleted.
 
 ## One run per subject
 

@@ -46,6 +46,7 @@ type wfDB struct {
 	deliveries                *postgres.AutomationDeliveryRepository
 	h                         *WorkflowHandler
 	stepUp                    *wfStepUp
+	vuln                      *findingapp.VulnerabilityService
 }
 
 func newWFDB(t *testing.T, extraExecutorOpts ...automationsvc.WorkflowExecutorOption) *wfDB {
@@ -140,6 +141,11 @@ func newWFDB(t *testing.T, extraExecutorOpts ...automationsvc.WorkflowExecutorOp
 	}, extraExecutorOpts...)
 	f.executor = automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, logger.NewNop(), opts...)
 	f.executor.RegisterActionHandler(automationdom.ActionTypeAddTags, automationsvc.NewFindingActionHandler(vuln, logger.NewNop()))
+	f.executor.RegisterActionHandler(automationdom.ActionTypeUpdateStatus, automationsvc.NewFindingActionHandler(vuln, logger.NewNop()))
+	reqHandler := automationsvc.NewRequestActionHandler(vuln)
+	f.executor.RegisterActionHandler(automationdom.ActionTypeRequestFalsePositive, reqHandler)
+	f.executor.RegisterActionHandler(automationdom.ActionTypeRequestRiskAcceptance, reqHandler)
+	f.vuln = vuln
 	// No executor on the service: each run executes synchronously in the test.
 	f.svc = automationsvc.NewWorkflowService(wfRepo, nodeRepo, postgres.NewAutomationEdgeRepository(db), runRepo, nodeRunRepo,
 		logger.NewNop(),

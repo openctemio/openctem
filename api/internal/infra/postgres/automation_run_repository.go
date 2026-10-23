@@ -178,7 +178,7 @@ func (r *AutomationRunRepository) Update(ctx context.Context, run *automation.Ru
 		UPDATE automation_runs
 		SET status = $2, error_message = $3, context = $4,
 		    total_nodes = $5, completed_nodes = $6, failed_nodes = $7,
-		    started_at = $8, completed_at = $9
+		    started_at = $8, completed_at = $9, pause_reason = $10
 		WHERE id = $1
 		  AND status NOT IN ('completed', 'failed', 'canceled')
 	`
@@ -193,6 +193,7 @@ func (r *AutomationRunRepository) Update(ctx context.Context, run *automation.Ru
 		run.FailedNodes,
 		run.StartedAt,
 		run.CompletedAt,
+		nullString(run.PauseReason),
 	)
 
 	if err != nil {
@@ -627,6 +628,19 @@ func (r *AutomationRunRepository) traceSkips(ctx context.Context, runsCTE string
 	return rows.Err()
 }
 
+// ResumePaused implements automation.PausedRunResumer.
+func (r *AutomationRunRepository) ResumePaused(ctx context.Context, tenantID, runID shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `UPDATE automation_runs
+		SET status = 'pending', pause_reason = NULL,
+		    context = COALESCE(context, '{}'::jsonb) || '{"change_cap_confirmed": true}'::jsonb
+		WHERE tenant_id = $1 AND id = $2 AND status = 'paused'`, tenantID.String(), runID.String())
+	if err != nil {
+		return false, fmt.Errorf("resume paused run: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
 // CountActiveDraftRuns implements automation.DraftRunCounter.
 func (r *AutomationRunRepository) CountActiveDraftRuns(ctx context.Context, tenantID, workflowID shared.ID) (int, error) {
 	var n int
@@ -737,7 +751,7 @@ const automationRunColumns = `id, automation_id, tenant_id, trigger_type, trigge
 		       status, error_message, context,
 		       total_nodes, completed_nodes, failed_nodes,
 		       started_at, completed_at, triggered_by, created_at,
-		       subject_id, mode, version_id`
+		       subject_id, mode, version_id, pause_reason`
 
 // scanAutomationRun reads one row selected with automationRunColumns.
 func scanAutomationRun(row interface{ Scan(dest ...any) error }) (*automation.Run, error) {
@@ -746,13 +760,14 @@ func scanAutomationRun(row interface{ Scan(dest ...any) error }) (*automation.Ru
 		id, workflowID, tenantID, triggerType, status, mode string
 		triggerData, runContext                             []byte
 		errorMessage, triggeredBy, subjectID, versionID     sql.NullString
+		pauseReason                                         sql.NullString
 	)
 	if err := row.Scan(
 		&id, &workflowID, &tenantID, &triggerType, &triggerData,
 		&status, &errorMessage, &runContext,
 		&run.TotalNodes, &run.CompletedNodes, &run.FailedNodes,
 		&run.StartedAt, &run.CompletedAt, &triggeredBy, &run.CreatedAt,
-		&subjectID, &mode, &versionID,
+		&subjectID, &mode, &versionID, &pauseReason,
 	); err != nil {
 		return nil, err
 	}
@@ -763,6 +778,7 @@ func scanAutomationRun(row interface{ Scan(dest ...any) error }) (*automation.Ru
 	run.Status = automation.RunStatus(status)
 	run.ErrorMessage = errorMessage.String
 	run.Mode = automation.Mode(mode)
+	run.PauseReason = pauseReason.String
 	if len(triggerData) > 0 {
 		_ = json.Unmarshal(triggerData, &run.TriggerData)
 	}
