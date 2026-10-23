@@ -132,5 +132,7 @@
   "common.table.hideColumn": "Hide",
   "common.table.collapseGroup": "Collapse {label}",
   "common.table.expandGroup": "Expand {label}",
-  "common.table.loading": "Loading"
+  "common.table.loading": "Loading",
+  "common.yes": "Yes",
+  "common.no": "No"
 }

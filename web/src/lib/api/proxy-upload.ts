@@ -27,7 +27,7 @@ const UUID = '[0-9a-fA-F-]{36}'
 /** POST routes whose bodies are streamed, with the API's limit for each. */
 const STREAMED_ROUTES: readonly StreamedRoute[] = [
   // handler.MaxFindingImportBody
-  { pattern: /^findings\/import\/?$/, limit: 110 * MiB },
+  { pattern: /^findings\/imports\/?$/, limit: 110 * MiB },
   // handler.MaxSBOMImportBody (the 50 MiB SBOM limit plus one byte)
   { pattern: /^components\/import\/?$/, limit: 50 * MiB + 1 },
   // handler.MaxAssetCSVImportBody

@@ -4,7 +4,7 @@
  * down, and its X cleared every filter).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -85,6 +85,20 @@ vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: (id: string | null) => useAsset(id),
 }))
 
+vi.mock('@/features/findings/filters/contract', async (orig) => ({
+  ...(await orig<typeof import('@/features/findings/filters/contract')>()),
+  useFindingFilterContract: () => ({ contract: undefined, isLoading: false, error: undefined }),
+}))
+vi.mock('@/features/saved-views/api/use-saved-views', async (orig) => ({
+  ...(await orig<typeof import('@/features/saved-views/api/use-saved-views')>()),
+  useSavedViews: () => ({ views: [], error: undefined, isLoading: false, mutate: vi.fn() }),
+}))
+
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
+
 import FindingsPage from '../page'
 
 function openAt(search: string) {
@@ -110,20 +124,23 @@ describe('Findings context chips', () => {
     const search = screen.getByLabelText('Search findings')
     const below = screen.getByTestId('data-table-toolbar-below')
     expect(below.contains(chip)).toBe(true)
-    // Neither toolbar row (search + views + group; state lens + actions)
+    // Neither toolbar row (search + views + group; view title + actions)
     // holds a chip, so a chip can never make one taller or shift its controls.
     const toolbarRow = below.previousElementSibling as HTMLElement
     expect(toolbarRow.contains(search)).toBe(true)
     expect(toolbarRow.querySelector('[data-testid="context-filter-chips"]')).toBeNull()
     const primaryRow = screen.getByTestId('findings-toolbar-primary')
-    expect(primaryRow.contains(screen.getByRole('radiogroup'))).toBe(true)
+    expect(primaryRow.contains(screen.getByTestId('findings-view-title'))).toBe(true)
     expect(primaryRow.querySelector('[data-testid="context-filter-chips"]')).toBeNull()
   })
 
-  it('renders no row under the toolbar without a context filter', () => {
+  it('the row under the toolbar holds the filter chips and Add filter, with no context chips', () => {
     openAt('?status=new')
     render(<FindingsPage />)
-    expect(screen.queryByTestId('data-table-toolbar-below')).toBeNull()
+    const below = screen.getByTestId('data-table-toolbar-below')
+    expect(below.querySelector('[data-testid="context-filter-chips"]')).toBeNull()
+    expect(within(below).getByText('Status is New')).toBeInTheDocument()
+    expect(within(below).getByRole('button', { name: /add filter/i })).toBeInTheDocument()
   })
 
   it('shows the asset name, not the raw id', () => {
