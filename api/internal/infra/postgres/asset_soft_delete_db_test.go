@@ -135,7 +135,7 @@ func TestAssetDelete_SoftDeleteHidesDetachesAndFreesName(t *testing.T) {
 	if stats.Total != 2 {
 		t.Errorf("aggregate stats total = %d, want 2", stats.Total)
 	}
-	breakdown, err := repo.GetAssetTypeBreakdown(ctx, tenant, nil)
+	breakdown, err := repo.GetAssetTypeBreakdown(ctx, tenant, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
