@@ -472,7 +472,7 @@ closed):
 | Path | Effect of a match |
 |------|-------------------|
 | Scan trigger (direct targets and asset-group members) | Target dropped from the run; a run whose every target is excluded is refused (`ALL_TARGETS_EXCLUDED`) |
-| `POST /api/v1/scan-workflows/runs`, the `trigger_pipeline` workflow action | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
+| `POST /api/v1/scan-workflows/runs` | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
 | Tenable rolling coverage dispatcher | Asset skipped this rotation (its cursor still moves, so it does not hold the top of every batch); same for a target the validator or zone routing refuses. A batch stays in one zone and the command is stamped with it |
 | Certificate Transparency discovery | An excluded watched domain is not queried; an excluded host gets no exposure |
 | Ingest | A NEW asset matching by name, repository URL or address (and a root domain or resolved IP derived from one) is not added: counted as `assets_skipped_excluded`, named in the warnings, its findings skipped and never attached to another asset. An asset already in the inventory is not changed or deleted |
@@ -2068,8 +2068,7 @@ Before every action and notification step the principal is checked again,
 live (`workflow.PrincipalAuthorizer`): an active member with an active
 account, holding the step's permission (`workflow.NodePermission`: the
 direct route's permission, e.g. `findings:write` for a status change,
-`scans:write` to start a scan, `integrations:manage` for outbound HTTP,
-`integrations:read` for a notification), with the run's subject and any
+`scans:write` to start a scan, `integrations:read` for a notification), with the run's subject and any
 finding the step names in its config inside their data scope. A failed check
 fails the step with `AUTOMATION_RUN_NOT_AUTHORIZED` and changes nothing. The
 step then runs with the principal in its context, so the services it calls
@@ -2087,10 +2086,12 @@ own schedule.
 Editing needs the same permissions: building a node needs its permission,
 and any change to what an existing automation does (an edge, deleting a
 node, a node edit, switching it on) needs the permission of every step it
-has. The `http_request` action is retired: new nodes are refused, a stored
-one no longer runs (its step fails), its header values are never returned by
-the API, and no response body or header is stored with a run. Building one
-needed `integrations:manage`.
+has. There is no free-form outbound HTTP action: the `http_request` action
+is removed (migration `automations_removed_types` switched off every
+automation that held one and dropped its stored headers), and outbound calls
+go through a registered notification integration. A stored node of any
+removed type runs nothing; a step naming an unknown type needs
+`integrations:manage` (administrators) and is refused before it runs.
 
 ### Tenant-wide aggregates still to scope (counts only, no row data)
 

@@ -132,6 +132,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-121](RFC-121-bug-bounty-reports.md) | Bug-bounty and disclosure reports as findings | Accepted (2026-10-22). |
 | [RFC-122](RFC-122-ingest-receipts.md) | Import and run receipts | Accepted (2026-10-22). |
 | [RFC-123](RFC-123-identity-providers-and-sign-in-policy.md) | Identity provider catalogue and sign-in policy | Accepted (2026-10-22). |
+| [RFC-125](RFC-125-automation-simulate-and-go-live.md) | Automations: catalog, versions, simulate and the go-live gate | Accepted (2026-10-23). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

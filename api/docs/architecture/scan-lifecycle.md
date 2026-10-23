@@ -96,11 +96,12 @@ cannot reopen one, recount its findings or record its outcome twice.
 - **Interactsh** is off on the sensor unless the sensor-local policy and the
   job both allow it (RFC-040, RFC-046 D6).
 - **Adaptive chunk sizing** is deferred (RFC-046 D9, RFC-030 Phase 2).
-- **Automations refuse what they cannot run.** The schedule and finding_age
-  triggers and the assign_team, update_priority and run_script actions
-  (no sandbox for a tenant script) are refused on create, graph save, node
-  edit and activation with 400 `UNSUPPORTED_WORKFLOW_FEATURE`; stored ones
-  stay readable and flagged. A graph save is also refused, before anything
+- **Automations offer only what they run.** The removed types (the schedule,
+  finding_age, finding_updated and webhook triggers, the assign_team,
+  update_priority, run_script, http_request and trigger_pipeline actions and
+  the pagerduty notification) are refused on create, graph save, node edit
+  and activation with 400 `UNSUPPORTED_WORKFLOW_FEATURE`; stored ones stay
+  readable, flagged and switched off ([automations.md](automations.md)). A graph save is also refused, before anything
   is written, when the graph has a cycle (`WORKFLOW_GRAPH_CYCLE`), a node no
   trigger reaches (`WORKFLOW_GRAPH_UNREACHABLE`), an edge into a trigger or
   a condition edge without a yes/no handle (`WORKFLOW_GRAPH_EDGE`). Adding
