@@ -867,7 +867,7 @@
   "findings.signals.publicExploit": "Public exploit",
   "findings.signals.noExploit": "No known exploit",
   "findings.signals.epss": "EPSS {score}",
-  "findings.signals.epssWithPercentile": "EPSS {score} · {percentile} percentile",
+  "findings.signals.epssWithPercentile": "EPSS {score}, {percentile} percentile",
   "findings.signals.epssDetail": "Probability of exploitation in the next 30 days (FIRST EPSS)",
   "findings.signals.internetFacing": "Internet-facing",
   "findings.signals.networkReachable": "Network-reachable",
@@ -1700,6 +1700,7 @@
   "findings.identity.reason.dastRepair": "web finding key repaired",
   "findings.identity.reason.other": "merged",
   "findings.detail.section.identity": "the identity explanation",
+  "findings.importResults.notApplied": "The upload was stored but could not be imported ({code}). Nothing was changed; try again.",
   "findings.importResults.format": "Format",
   "findings.importResults.formatDetect": "Detect from the file",
   "findings.importResults.formatMapping": "Import mapping: {name}",
@@ -1747,5 +1748,6 @@
   "findings.epss.bandHint.moderate": "10% to 40%.",
   "findings.epss.bandHint.low": "Up to 10%.",
   "findings.epss.chipHint": "Shown in lists from 10%. The detail page always shows it.",
-  "findings.epss.label": "EPSS"
+  "findings.epss.label": "EPSS",
+  "findings.columns.exploitSignals": "Exploit signals"
 }

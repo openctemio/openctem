@@ -96,6 +96,7 @@ func TestFindingAssign_AssigneeMustBeActiveMember_DB(t *testing.T) {
 	svc.SetUserRepository(userRepo)
 	svc.SetActivityService(activity.NewFindingActivityService(postgres.NewFindingActivityRepository(db), postgres.NewFindingRepository(db), logger.NewNop()))
 	svc.SetAssigneeChecker(postgres.NewAccessControlRepository(db))
+	svc.SetAssigneeProfileReader(postgres.NewAccessControlRepository(db))
 	h := NewVulnerabilityHandler(svc, validator.New(), logger.NewNop())
 	h.SetUserService(tenant.NewUserService(userRepo, logger.NewNop()))
 
@@ -175,5 +176,54 @@ func TestFindingAssign_AssigneeMustBeActiveMember_DB(t *testing.T) {
 	_ = json.Unmarshal([]byte(body), &resp)
 	if resp.AssignedToUser != nil {
 		t.Errorf("assigned_to_user = %s for a foreign assignee, want absent", resp.AssignedToUser)
+	}
+
+	// The findings LIST carries the member's name and email for each row (one
+	// batched lookup for the page) but, as the single read does, never a
+	// foreign tenant's user, a suspended member or an unknown id.
+	exec(`UPDATE findings SET assigned_to = $1 WHERE id = $2`, member, finding)
+	suspendedFinding := shared.NewID().String()
+	exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, severity, message, fingerprint, assigned_to)
+	      VALUES ($1, $2, $3, 'manual', 'fam', 'high', 'fam', $4, $5)`, suspendedFinding, tenantA, asset, "fam-"+suspendedFinding, suspended)
+	lr := httptest.NewRequest(http.MethodGet, "/?per_page=50", nil)
+	lc := context.WithValue(lr.Context(), middleware.TenantIDKey, tenantA)
+	lc = context.WithValue(lc, middleware.UserIDKey, admin)
+	lc = context.WithValue(lc, middleware.IsAdminKey, true)
+	lw := httptest.NewRecorder()
+	h.ListFindings(lw, lr.WithContext(lc))
+	if lw.Code != http.StatusOK {
+		t.Fatalf("list = %d (%s)", lw.Code, lw.Body.String())
+	}
+	if strings.Contains(lw.Body.String(), "secret-"+outsider) || strings.Contains(lw.Body.String(), "secret-"+suspended) {
+		t.Errorf("list discloses a profile outside the tenant's active members: %s", lw.Body.String())
+	}
+	var list struct {
+		Data []struct {
+			ID             string `json:"id"`
+			AssignedTo     string `json:"assigned_to"`
+			AssignedToUser *struct {
+				ID, Name, Email string
+			} `json:"assigned_to_user"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(lw.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, row := range list.Data {
+		seen[row.ID] = true
+		switch row.ID {
+		case finding:
+			if row.AssignedToUser == nil || row.AssignedToUser.Name != "Secret Name "+member || row.AssignedToUser.ID != member {
+				t.Errorf("list row of a member-assigned finding = %+v, want the member's name", row.AssignedToUser)
+			}
+		case legacy, suspendedFinding:
+			if row.AssignedTo == "" || row.AssignedToUser != nil {
+				t.Errorf("list row %s: assigned_to=%q user=%+v, want id kept and no profile", row.ID, row.AssignedTo, row.AssignedToUser)
+			}
+		}
+	}
+	if !seen[finding] || !seen[legacy] || !seen[suspendedFinding] {
+		t.Fatalf("list lacks the seeded findings: %v", seen)
 	}
 }

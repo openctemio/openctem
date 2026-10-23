@@ -542,7 +542,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                       </div>
                       <div className="flex items-center gap-2">
                         <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-[10px]">
+                          <AvatarFallback className="text-meta">
                             {getInitials(item.createdBy.name)}
                           </AvatarFallback>
                         </Avatar>

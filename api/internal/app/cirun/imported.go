@@ -1,13 +1,11 @@
 package cirun
 
 import (
-	"context"
 	"regexp"
 	"strings"
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 )
@@ -71,18 +69,4 @@ func ScopeImported(report *ctis.Report, run *cirun.Run) (dropped int, err error)
 		return dropped, err
 	}
 	return dropped, nil
-}
-
-// UploadImported ingests a converted report for the run, like UploadReport,
-// after cutting it to the run's repository.
-func (s *Service) UploadImported(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error) {
-	if report == nil {
-		return nil, 0, nil
-	}
-	dropped, err := ScopeImported(report, run)
-	if err != nil {
-		return nil, dropped, err
-	}
-	out, err := s.UploadReport(ctx, run, report)
-	return out, dropped, err
 }

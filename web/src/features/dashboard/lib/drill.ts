@@ -4,6 +4,8 @@
  * a figure and its list cannot drift apart.
  */
 export const DRILL = {
+  /** All open findings (`findings_total` is the open count). */
+  open: '/findings?state=open',
   /** Open P0 findings (executive summary `p0_open`). */
   p0Open: '/findings?state=open&priority_class=P0',
   /** Open P1 findings (`p1_open`). */

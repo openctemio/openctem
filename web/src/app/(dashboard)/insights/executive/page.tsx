@@ -2,15 +2,15 @@
 
 import { KevBadge } from '@/components/ui/kev-badge'
 import { formatEpssScore } from '@/lib/epss'
-import { useState } from 'react'
-import useSWR from 'swr'
+import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from '@/components/link'
 import { DRILL } from '@/features/dashboard/lib/drill'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
-  StatsCard,
+  MetricStrip,
   EmptyState,
   DataTable,
   SeverityBadge,
@@ -30,106 +30,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { get } from '@/lib/api/client'
 import type { Severity } from '@/features/shared/types'
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  ShieldAlert,
-  ShieldCheck,
-  Timer,
-  Users,
-  FileWarning,
-  CalendarClock,
-  Activity,
-  Target,
-} from 'lucide-react'
+import { ShieldCheck, Timer, Users } from 'lucide-react'
 import { compareSeverity } from '@/lib/severity'
 import { WidgetError } from '@/features/dashboard/components/widget-error'
-import { MTTR_WINDOW_DAYS } from '@/features/dashboard/hooks/use-ctem-dashboard'
+import {
+  MTTR_WINDOW_DAYS,
+  useExecutiveSummary,
+  useMttrAnalytics,
+  useProcessMetrics,
+  type ExecTopRisk,
+} from '@/features/dashboard/hooks/use-ctem-dashboard'
 import { formatHours } from '@/features/dashboard/lib/format-hours'
+import {
+  PERIOD_OPTIONS,
+  formatPct,
+  formatCount,
+  type Period,
+} from '@/features/dashboard/lib/format'
 
-// ============================================
-// TYPES
-// ============================================
-
-interface TopRisk {
-  title: string
-  severity: string
-  priority_class: string
-  asset_name: string
-  epss_score?: number
-  is_in_kev: boolean
-  finding_id?: string
-}
-
-interface ExecutiveSummary {
-  period: string
-  risk_score_current: number
-  risk_score_change: number
-  findings_total: number
-  findings_resolved_period: number
-  findings_new_period: number
-  p0_open: number
-  p0_resolved_period: number
-  p1_open: number
-  p1_resolved_period: number
-  sla_compliance_pct: number | null
-  sla_breached: number
-  mttr_critical_hours: number | null
-  mttr_critical_median_hours?: number | null
-  mttr_critical_p90_hours?: number | null
-  mttr_critical_sample?: number
-  mttr_high_hours: number | null
-  mttr_high_median_hours?: number | null
-  mttr_high_p90_hours?: number | null
-  mttr_high_sample?: number
-  crown_jewels_at_risk: number
-  top_risks: TopRisk[]
-}
-
-interface MTTRAnalytics {
-  by_severity: Record<string, number>
-  by_priority_class: Record<string, number>
-  overall_hours: number | null
-  sample_size: number
-}
-
-interface ProcessMetrics {
-  approval_avg_hours: number
-  approval_count: number
-  stale_assets: number
-  stale_assets_pct: number
-  findings_without_owner: number
-  avg_time_to_assign_hours: number
-}
-
-type Period = '30' | '90' | '365'
-
-const PERIOD_OPTIONS: { value: Period; label: string }[] = [
-  { value: '30', label: 'Last 30 days' },
-  { value: '90', label: 'Last 90 days' },
-  { value: '365', label: 'Last year' },
-]
+type TopRiskRow = ExecTopRisk & { rowId: string }
 
 const PRIORITY_CLASSES = ['P0', 'P1', 'P2', 'P3']
-
-// ============================================
-// HELPERS
-// ============================================
-
-/** A headline tile that opens the list it counts. */
-function DrillCard({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="block rounded-xl transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {children}
-    </Link>
-  )
-}
 
 function PriorityChip({ value }: { value: string }) {
   const pc = value.toUpperCase()
@@ -137,166 +59,239 @@ function PriorityChip({ value }: { value: string }) {
   return <PriorityClassBadge priorityClass={pc as PriorityClass} />
 }
 
-function formatPercent(pct: number | undefined | null): string {
-  if (pct === undefined || pct === null || Number.isNaN(pct)) return '—'
-  return `${pct.toFixed(1)}%`
+function StripSkeleton() {
+  return <Skeleton className="h-20 w-full rounded-lg" />
 }
 
-function formatEpss(score: number | undefined | null): string {
-  return formatEpssScore(score, 2, 'N/A')
-}
-
-// ============================================
-// SKELETONS
-// ============================================
-
-function StatsRowSkeleton({ count = 4 }: { count?: number }) {
-  return (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {Array.from({ length: count }).map((_, i) => (
-        <Card key={i}>
-          <CardHeader className="pb-2">
-            <Skeleton className="h-4 w-24" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="mb-2 h-8 w-16" />
-            <Skeleton className="h-3 w-20" />
-          </CardContent>
-        </Card>
-      ))}
-    </section>
+function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
+  const { t } = useTranslation()
+  return useMemo(
+    () => [
+      {
+        accessorKey: 'title',
+        enableSorting: false,
+        header: t('insights.executive.colTitle', 'Title'),
+        // A top risk opens its finding.
+        cell: ({ row }) =>
+          row.original.finding_id ? (
+            <Link
+              href={`/findings/${encodeURIComponent(row.original.finding_id)}`}
+              className="block max-w-md truncate text-sm font-medium hover:underline focus-visible:underline"
+            >
+              {row.original.title}
+            </Link>
+          ) : (
+            <span className="block max-w-md truncate text-sm font-medium">
+              {row.original.title}
+            </span>
+          ),
+      },
+      {
+        accessorKey: 'severity',
+        enableSorting: false,
+        header: t('insights.executive.colSeverity', 'Severity'),
+        cell: ({ row }) => (
+          <SeverityBadge severity={row.original.severity.toLowerCase() as Severity} />
+        ),
+      },
+      {
+        accessorKey: 'priority_class',
+        enableSorting: false,
+        header: t('insights.executive.colPriority', 'Priority'),
+        cell: ({ row }) => <PriorityChip value={row.original.priority_class} />,
+      },
+      {
+        accessorKey: 'asset_name',
+        enableSorting: false,
+        header: t('insights.executive.colAsset', 'Asset'),
+        cell: ({ row }) => (
+          <span className="block max-w-xs truncate text-sm text-muted-foreground">
+            {row.original.asset_name}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'epss_score',
+        enableSorting: false,
+        header: t('insights.executive.colEpss', 'EPSS'),
+        cell: ({ row }) => (
+          <span className="text-sm tabular-nums">
+            {formatEpssScore(row.original.epss_score, 2, t('insights.executive.na', 'N/A'))}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'is_in_kev',
+        enableSorting: false,
+        header: t('insights.executive.colKev', 'KEV'),
+        cell: ({ row }) =>
+          row.original.is_in_kev ? (
+            <KevBadge />
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          ),
+      },
+    ],
+    [t]
   )
 }
 
-const TOP_RISK_COLUMNS: ColumnDef<TopRisk>[] = [
-  {
-    accessorKey: 'title',
-    enableSorting: false,
-    header: 'Title',
-    // A top risk opens its finding.
-    cell: ({ row }) =>
-      row.original.finding_id ? (
-        <Link
-          href={`/findings/${row.original.finding_id}`}
-          className="block max-w-md truncate text-sm font-medium hover:underline focus-visible:underline"
-        >
-          {row.original.title}
-        </Link>
-      ) : (
-        <span className="block max-w-md truncate text-sm font-medium">{row.original.title}</span>
-      ),
-  },
-  {
-    accessorKey: 'severity',
-    enableSorting: false,
-    header: 'Severity',
-    cell: ({ row }) => <SeverityBadge severity={row.original.severity.toLowerCase() as Severity} />,
-  },
-  {
-    accessorKey: 'priority_class',
-    enableSorting: false,
-    header: 'Priority',
-    cell: ({ row }) => <PriorityChip value={row.original.priority_class} />,
-  },
-  {
-    accessorKey: 'asset_name',
-    enableSorting: false,
-    header: 'Asset',
-    cell: ({ row }) => (
-      <span className="block max-w-xs truncate text-sm text-muted-foreground">
-        {row.original.asset_name}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'epss_score',
-    enableSorting: false,
-    header: 'EPSS',
-    cell: ({ row }) => (
-      <span className="text-sm tabular-nums">{formatEpss(row.original.epss_score)}</span>
-    ),
-  },
-  {
-    accessorKey: 'is_in_kev',
-    enableSorting: false,
-    header: 'KEV',
-    cell: ({ row }) =>
-      row.original.is_in_kev ? (
-        <KevBadge />
-      ) : (
-        <span className="text-xs text-muted-foreground">—</span>
-      ),
-  },
-]
-
-// ============================================
-// PAGE COMPONENT
-// ============================================
-
 export default function ExecutiveSummaryPage() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  const router = useRouter()
   const { currentTenant } = useTenant()
   const [period, setPeriod] = useState<Period>('30')
+  const tenantId = currentTenant?.id ?? null
+  const columns = useTopRiskColumns()
 
-  const tenantReady = !!currentTenant?.id
-
+  // The period reaches the summary. Time to fix and process health are measured
+  // over a fixed 90 days (a stable trend) and say so in their headers.
   const {
     data: summary,
     isLoading: summaryLoading,
     error: summaryError,
     mutate: retrySummary,
-  } = useSWR<ExecutiveSummary>(
-    tenantReady ? `/api/v1/dashboard/executive-summary?days=${period}` : null,
-    get,
-    { revalidateOnFocus: false }
-  )
-
-  // MTTR is fixed at 90 days for trend stability
+  } = useExecutiveSummary(tenantId, Number(period))
   const {
     data: mttr,
     isLoading: mttrLoading,
     error: mttrError,
     mutate: retryMttr,
-  } = useSWR<MTTRAnalytics>(
-    tenantReady ? `/api/v1/dashboard/mttr-analytics?days=${MTTR_WINDOW_DAYS}` : null,
-    get,
-    { revalidateOnFocus: false }
-  )
-
-  // Process metrics fixed at 90 days
+  } = useMttrAnalytics(tenantId)
   const {
     data: processMetrics,
     isLoading: processLoading,
     error: processError,
     mutate: retryProcess,
-  } = useSWR<ProcessMetrics>(
-    tenantReady ? '/api/v1/dashboard/process-metrics?days=90' : null,
-    get,
-    { revalidateOnFocus: false }
+  } = useProcessMetrics(tenantId)
+
+  const topRisks = useMemo<TopRiskRow[]>(
+    () =>
+      (summary?.top_risks ?? []).map((r, i) => ({
+        ...r,
+        // The same CVE on several assets shares a title: key by the finding.
+        rowId: r.finding_id ?? `${r.title}-${r.asset_name}-${i}`,
+      })),
+    [summary]
   )
 
-  const riskChangeType: 'positive' | 'negative' | 'neutral' = !summary
-    ? 'neutral'
-    : summary.risk_score_change > 0
-      ? 'negative'
-      : summary.risk_score_change < 0
-        ? 'positive'
-        : 'neutral'
+  const window90 = t('insights.executive.last90', 'Last {days} days', { days: MTTR_WINDOW_DAYS })
+  const mttrSub = (
+    mean: number | null | undefined,
+    p90: number | null | undefined,
+    n: number | undefined
+  ) =>
+    t('dashboardMetrics.executive.mttrSub', undefined, {
+      mean: formatHours(mean),
+      p90: formatHours(p90),
+      n: n ?? 0,
+    })
+
+  const riskChange = summary?.risk_score_change ?? 0
+  const headline = summary
+    ? [
+        {
+          key: 'risk',
+          label: t('insights.executive.risk', 'Risk score'),
+          value: formatRiskScore(summary.risk_score_current),
+          hint:
+            riskChange !== 0
+              ? t('insights.executive.vsPrevious', '{change} vs previous period', {
+                  change: `${riskChange > 0 ? '+' : ''}${riskChange.toFixed(1)}`,
+                })
+              : undefined,
+        },
+        {
+          key: 'resolved',
+          label: t('insights.executive.resolved', 'Findings resolved'),
+          value: summary.findings_resolved_period,
+          hint: t('insights.executive.newInPeriod', '{count} new in period', {
+            count: formatCount(summary.findings_new_period ?? 0, locale),
+          }),
+        },
+        {
+          key: 'sla',
+          label: t('dashboardMetrics.executive.sla'),
+          value: formatPct(summary.sla_compliance_pct, { n: summary.findings_total, locale }),
+          hint: t('insights.executive.breached', '{count} breached', {
+            count: formatCount(summary.sla_breached, locale),
+          }),
+          onClick: () => router.push(DRILL.slaBreached),
+        },
+        {
+          key: 'p0',
+          label: t('insights.executive.p0', 'P0 open'),
+          value: summary.p0_open,
+          tone: 'danger' as const,
+          hint: t('insights.executive.resolvedThisPeriod', '{count} resolved this period', {
+            count: formatCount(summary.p0_resolved_period, locale),
+          }),
+          onClick: () => router.push(DRILL.p0Open),
+        },
+      ]
+    : []
+  const headline2 = summary
+    ? [
+        {
+          key: 'p1',
+          label: t('insights.executive.p1', 'P1 open'),
+          value: summary.p1_open,
+          hint: t('insights.executive.resolvedThisPeriod', '{count} resolved this period', {
+            count: formatCount(summary.p1_resolved_period ?? 0, locale),
+          }),
+          onClick: () => router.push(DRILL.p1Open),
+        },
+        {
+          // No link: the figure counts assets, the findings list counts findings.
+          key: 'crown',
+          label: t('dashboardMetrics.hero.crownJewels'),
+          value: summary.crown_jewels_at_risk,
+          tone: 'danger' as const,
+          hint: t('insights.executive.crownHint', 'High-value assets exposed'),
+        },
+        {
+          key: 'mttr-critical',
+          label: t('dashboardMetrics.executive.mttrCritical'),
+          value: formatHours(summary.mttr_critical_median_hours),
+          hint: mttrSub(
+            summary.mttr_critical_hours,
+            summary.mttr_critical_p90_hours,
+            summary.mttr_critical_sample
+          ),
+        },
+        {
+          key: 'mttr-high',
+          label: t('dashboardMetrics.executive.mttrHigh'),
+          value: formatHours(summary.mttr_high_median_hours),
+          hint: mttrSub(
+            summary.mttr_high_hours,
+            summary.mttr_high_p90_hours,
+            summary.mttr_high_sample
+          ),
+        },
+      ]
+    : []
 
   return (
     <Main>
       <PageHeader
-        title="Executive summary"
-        description="Risk posture, remediation performance and process health at a glance."
+        title={t('insights.executive.title', 'Executive summary')}
+        description={t(
+          'insights.executive.description',
+          'Risk posture, remediation performance and process health at a glance.'
+        )}
       >
         <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-          <SelectTrigger className="h-9 w-[150px]" aria-label="Period">
+          <SelectTrigger
+            className="h-9 w-[150px]"
+            aria-label={t('insights.period.label', 'Period')}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {PERIOD_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
+                {t(opt.labelKey, opt.fallback)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -304,130 +299,69 @@ export default function ExecutiveSummaryPage() {
       </PageHeader>
 
       {/* Headline numbers */}
-      <div className="mt-5">
+      <div className="mt-5 space-y-4">
         {summaryLoading ? (
-          <StatsRowSkeleton count={8} />
+          <>
+            <StripSkeleton />
+            <StripSkeleton />
+          </>
         ) : !summary && summaryError ? (
-          <WidgetError onRetry={() => void retrySummary()} className="rounded-xl border py-8" />
+          <WidgetError onRetry={() => void retrySummary()} className="rounded-lg border py-8" />
         ) : (
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatsCard
-              title="Risk score"
-              value={summary ? formatRiskScore(summary.risk_score_current) : 'N/A'}
-              change={
-                summary && summary.risk_score_change !== 0
-                  ? `${summary.risk_score_change > 0 ? '+' : ''}${summary.risk_score_change.toFixed(1)}`
-                  : undefined
-              }
-              changeType={riskChangeType}
-              description={summary ? 'vs previous period' : undefined}
-              icon={Activity}
-            />
-            <StatsCard
-              title="Findings resolved"
-              value={summary?.findings_resolved_period ?? 0}
-              description={summary ? `${summary.findings_new_period} new in period` : undefined}
-              icon={CheckCircle2}
-            />
-            <DrillCard href={DRILL.slaBreached}>
-              <StatsCard
-                title={t('dashboardMetrics.executive.sla')}
-                value={formatPercent(summary?.sla_compliance_pct)}
-                description={summary ? `${summary.sla_breached} breached` : undefined}
-                icon={ShieldCheck}
-              />
-            </DrillCard>
-            <DrillCard href={DRILL.p0Open}>
-              <StatsCard
-                title="P0 open"
-                value={summary?.p0_open ?? 0}
-                valueClassName={summary && summary.p0_open > 0 ? 'text-destructive' : undefined}
-                description={
-                  summary ? `${summary.p0_resolved_period} resolved this period` : undefined
-                }
-                icon={ShieldAlert}
-              />
-            </DrillCard>
-            {summary && (
-              <>
-                <DrillCard href={DRILL.p1Open}>
-                  <StatsCard
-                    title="P1 open"
-                    value={summary.p1_open}
-                    description={`${summary.p1_resolved_period} resolved this period`}
-                    icon={AlertTriangle}
-                  />
-                </DrillCard>
-                <StatsCard
-                  title={t('dashboardMetrics.hero.crownJewels')}
-                  value={summary.crown_jewels_at_risk}
-                  valueClassName={summary.crown_jewels_at_risk > 0 ? 'text-destructive' : undefined}
-                  description="High-value assets exposed"
-                  icon={Target}
-                />
-                <StatsCard
-                  title={t('dashboardMetrics.executive.mttrCritical')}
-                  value={formatHours(summary.mttr_critical_median_hours)}
-                  description={t('dashboardMetrics.executive.mttrSub', undefined, {
-                    mean: formatHours(summary.mttr_critical_hours),
-                    p90: formatHours(summary.mttr_critical_p90_hours),
-                    n: summary.mttr_critical_sample ?? 0,
-                  })}
-                  icon={Timer}
-                />
-                <StatsCard
-                  title={t('dashboardMetrics.executive.mttrHigh')}
-                  value={formatHours(summary.mttr_high_median_hours)}
-                  description={t('dashboardMetrics.executive.mttrSub', undefined, {
-                    mean: formatHours(summary.mttr_high_hours),
-                    p90: formatHours(summary.mttr_high_p90_hours),
-                    n: summary.mttr_high_sample ?? 0,
-                  })}
-                  icon={Clock}
-                />
-              </>
-            )}
-          </section>
+          <>
+            <MetricStrip items={headline} />
+            <MetricStrip items={headline2} />
+          </>
         )}
       </div>
 
       {/* Top risks */}
       <section className="mt-5 space-y-3">
         <div>
-          <h2 className="text-base font-semibold">Top risks</h2>
+          <h2 className="text-base font-semibold">
+            {t('insights.executive.topRisks', 'Top risks')}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Highest-priority findings that need executive attention.
+            {t(
+              'insights.executive.topRisksHint',
+              'Highest-priority findings that need executive attention.'
+            )}
           </p>
         </div>
         {summaryLoading ? (
-          <div className="space-y-px overflow-hidden rounded-xl border">
+          <div className="space-y-px overflow-hidden rounded-lg border">
             {[1, 2, 3, 4, 5].map((i) => (
               <Skeleton key={i} className="h-11 w-full rounded-none" />
             ))}
           </div>
-        ) : summary && summary.top_risks.length > 0 ? (
+        ) : topRisks.length > 0 ? (
           <DataTable
-            columns={TOP_RISK_COLUMNS}
-            data={summary.top_risks}
+            columns={columns}
+            data={topRisks}
             showSearch={false}
             showColumnToggle={false}
             showPagination={false}
-            pageSize={summary.top_risks.length}
-            getRowId={(r) => r.title}
+            pageSize={topRisks.length}
+            getRowId={(r) => r.rowId}
           />
-        ) : (
-          <EmptyState icon={ShieldCheck} title="No top risks for the selected period" />
+        ) : !summary && summaryError ? null : (
+          <EmptyState
+            icon={ShieldCheck}
+            title={t('insights.executive.noTopRisks', 'No top risks for the selected period')}
+          />
         )}
       </section>
 
-      {/* MTTR breakdown */}
+      {/* MTTR breakdown: a fixed 90-day window */}
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>MTTR by severity</CardTitle>
+            <CardTitle>{t('insights.executive.mttrSeverity', 'MTTR by severity')}</CardTitle>
             <CardDescription>
-              Average remediation time over the last 90 days
-              {mttr && mttr.sample_size > 0 ? ` (n=${mttr.sample_size})` : ''}
+              {t('insights.executive.mttrSeverityHint', 'Average remediation time, {window}', {
+                window: window90.toLowerCase(),
+              })}
+              {mttr?.sample_size ? ` (n=${formatCount(mttr.sample_size, locale)})` : ''}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -438,6 +372,9 @@ export default function ExecutiveSummaryPage() {
             ) : mttr && Object.keys(mttr.by_severity).length > 0 ? (
               <div className="divide-y">
                 {Object.entries(mttr.by_severity)
+                  // Critical is the headline tile above (median, with n), so it is
+                  // not repeated here with a different definition.
+                  .filter(([severity]) => severity.toLowerCase() !== 'critical')
                   .sort(([a], [b]) => compareSeverity(a, b))
                   .map(([severity, hours]) => (
                     <div key={severity} className="flex items-center justify-between py-2.5">
@@ -446,7 +383,9 @@ export default function ExecutiveSummaryPage() {
                     </div>
                   ))}
                 <div className="flex items-center justify-between py-2.5">
-                  <span className="text-sm font-medium">Overall</span>
+                  <span className="text-sm font-medium">
+                    {t('insights.executive.overall', 'Overall')}
+                  </span>
                   <span className="text-sm font-semibold tabular-nums">
                     {formatHours(mttr.overall_hours)}
                   </span>
@@ -457,8 +396,11 @@ export default function ExecutiveSummaryPage() {
                 card={false}
                 className="py-8"
                 icon={Timer}
-                title="Not enough data yet"
-                description="MTTR appears once enough findings have been resolved."
+                title={t('insights.executive.mttrEmptyTitle', 'Not enough data yet')}
+                description={t(
+                  'insights.executive.mttrEmptyDescription',
+                  'MTTR appears once enough findings have been resolved.'
+                )}
               />
             )}
           </CardContent>
@@ -466,8 +408,14 @@ export default function ExecutiveSummaryPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>MTTR by priority class</CardTitle>
-            <CardDescription>Average remediation time per priority class (P0–P3)</CardDescription>
+            <CardTitle>{t('insights.executive.mttrPriority', 'MTTR by priority class')}</CardTitle>
+            <CardDescription>
+              {t(
+                'insights.executive.mttrPriorityHint',
+                'Average remediation time per priority class (P0 to P3), {window}',
+                { window: window90.toLowerCase() }
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {mttrLoading ? (
@@ -476,72 +424,85 @@ export default function ExecutiveSummaryPage() {
               <WidgetError onRetry={() => void retryMttr()} className="h-40" />
             ) : mttr && Object.keys(mttr.by_priority_class).length > 0 ? (
               <div className="divide-y">
-                {Object.entries(mttr.by_priority_class).map(([priority, hours]) => (
-                  <div key={priority} className="flex items-center justify-between py-2.5">
-                    <PriorityChip value={priority} />
-                    <span className="text-sm font-medium tabular-nums">{formatHours(hours)}</span>
-                  </div>
-                ))}
+                {Object.entries(mttr.by_priority_class)
+                  .sort(([a], [b]) => PRIORITY_CLASSES.indexOf(a) - PRIORITY_CLASSES.indexOf(b))
+                  .map(([priority, hours]) => (
+                    <div key={priority} className="flex items-center justify-between py-2.5">
+                      <PriorityChip value={priority} />
+                      <span className="text-sm font-medium tabular-nums">{formatHours(hours)}</span>
+                    </div>
+                  ))}
               </div>
             ) : (
               <EmptyState
                 card={false}
                 className="py-8"
                 icon={Timer}
-                title="No priority class data yet"
+                title={t('insights.executive.priorityEmpty', 'No priority class data yet')}
               />
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Process metrics */}
+      {/* Process metrics: a fixed 90-day window */}
       <section className="mt-5 space-y-3">
-        <h2 className="text-base font-semibold">Process health</h2>
+        <h2 className="text-base font-semibold">
+          {t('insights.executive.process', 'Process health')}
+          <span className="ms-2 text-sm font-normal text-muted-foreground">{window90}</span>
+        </h2>
         {processLoading ? (
-          <StatsRowSkeleton />
+          <StripSkeleton />
         ) : !processMetrics && processError ? (
-          <WidgetError onRetry={() => void retryProcess()} className="rounded-xl border py-8" />
+          <WidgetError onRetry={() => void retryProcess()} className="rounded-lg border py-8" />
         ) : processMetrics ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatsCard
-              title="Approval avg time"
-              value={
-                processMetrics.approval_count > 0
-                  ? formatHours(processMetrics.approval_avg_hours)
-                  : '—'
-              }
-              description={
-                processMetrics.approval_count > 0
-                  ? `${processMetrics.approval_count} approvals tracked`
-                  : t('dashboardMetrics.executive.noApprovals', 'No approvals decided yet')
-              }
-              icon={Clock}
-            />
-            <StatsCard
-              title="Stale assets"
-              value={processMetrics.stale_assets.toLocaleString()}
-              description={`${formatPercent(processMetrics.stale_assets_pct)} of inventory`}
-              icon={CalendarClock}
-            />
-            <StatsCard
-              title="Findings without owner"
-              value={processMetrics.findings_without_owner.toLocaleString()}
-              valueClassName={
-                processMetrics.findings_without_owner > 0 ? 'text-destructive' : undefined
-              }
-              description="Need triage assignment"
-              icon={FileWarning}
-            />
-            <StatsCard
-              title="Avg time to assign"
-              value={formatHours(processMetrics.avg_time_to_assign_hours)}
-              description="From finding creation to owner assignment"
-              icon={Users}
-            />
-          </div>
+          <MetricStrip
+            items={[
+              {
+                key: 'approval',
+                label: t('insights.executive.approvalAvg', 'Approval avg time'),
+                value:
+                  processMetrics.approval_count > 0
+                    ? formatHours(processMetrics.approval_avg_hours)
+                    : '—',
+                hint:
+                  processMetrics.approval_count > 0
+                    ? t('insights.executive.approvalsTracked', '{count} approvals tracked', {
+                        count: formatCount(processMetrics.approval_count, locale),
+                      })
+                    : t('dashboardMetrics.executive.noApprovals', 'No approvals decided yet'),
+              },
+              {
+                key: 'stale',
+                label: t('insights.executive.stale', 'Stale assets'),
+                value: formatCount(processMetrics.stale_assets, locale),
+                hint: t('insights.executive.ofInventory', '{pct} of inventory', {
+                  pct: formatPct(processMetrics.stale_assets_pct, { locale }),
+                }),
+              },
+              {
+                key: 'no-owner',
+                label: t('insights.executive.noOwner', 'Findings without owner'),
+                value: processMetrics.findings_without_owner,
+                tone: 'danger',
+                hint: t('insights.executive.needTriage', 'Need triage assignment'),
+              },
+              {
+                key: 'assign',
+                label: t('insights.executive.timeToAssign', 'Avg time to assign'),
+                value: formatHours(processMetrics.avg_time_to_assign_hours),
+                hint: t(
+                  'insights.executive.timeToAssignHint',
+                  'From finding creation to owner assignment'
+                ),
+              },
+            ]}
+          />
         ) : (
-          <EmptyState icon={Users} title="No process metrics yet" />
+          <EmptyState
+            icon={Users}
+            title={t('insights.executive.processEmpty', 'No process metrics yet')}
+          />
         )}
       </section>
     </Main>

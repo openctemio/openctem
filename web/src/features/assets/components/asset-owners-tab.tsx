@@ -777,7 +777,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                                 already an owner". Otherwise the empty
                                 state looks like a bug. */}
                               {totalTaken > 0 && !debouncedSearch && (
-                                <p className="text-[11px]">
+                                <p className="text-meta">
                                   {totalTaken} owner
                                   {totalTaken === 1 ? ' is' : 's are'} already assigned to this
                                   asset and therefore hidden.
@@ -829,7 +829,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                               — encourages user to refine their search */}
                             {(userOptions.length >= PICKER_PAGE_SIZE ||
                               groupOptions.length >= PICKER_PAGE_SIZE) && (
-                              <div className="border-t px-3 py-2 text-[11px] text-muted-foreground text-center">
+                              <div className="border-t px-3 py-2 text-meta text-muted-foreground text-center">
                                 {t(
                                   'assets.ownersTab.capped',
                                   'Showing first {count} per section — type to refine',
