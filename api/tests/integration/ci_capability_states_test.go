@@ -34,7 +34,7 @@ func TestCIGateFailsOnCapabilityStates(t *testing.T) {
 			t.Fatalf("exchange: %d %v", resp.StatusCode, ex)
 		}
 		id, tok := ex["run_id"].(string), ex["token"].(string)
-		if resp, up := r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, low)); resp.StatusCode != http.StatusCreated {
+		if resp, up := r.upload(id, tok, ciReport(repoName, low)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, up)
 		}
 		resp, v := r.post("/api/v1/ci/runs/"+id+"/evaluate", tok, map[string]any{"scan_failures": 0, "capabilities": caps})

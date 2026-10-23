@@ -771,11 +771,12 @@ func TestMatchesPatternWildcard(t *testing.T) {
 
 		// Default wildcard matching (host, container, etc.)
 		{"HostExact", scope.TargetTypeHost, "server-01", "server-01", true},
-		{"HostWildcard", scope.TargetTypeHost, "server-*", "server-01", true},
+		{"HostWildcard", scope.TargetTypeHost, "*.example.com", "server-01.example.com", true},
+		{"HostPrefixWildcardIsNotAMatcher", scope.TargetTypeHost, "server-*", "server-01", false},
 		{"HostNoMatch", scope.TargetTypeHost, "server-01", "server-02", false},
 
 		// Middle wildcard
-		{"MiddleWildcard", scope.TargetTypeHost, "prod-*-web", "prod-east-web", true},
+		{"MiddleWildcardIsNotAMatcher", scope.TargetTypeHost, "prod-*-web", "prod-east-web", false},
 		{"MiddleWildcardNoMatch", scope.TargetTypeHost, "prod-*-web", "prod-east-api", false},
 	}
 

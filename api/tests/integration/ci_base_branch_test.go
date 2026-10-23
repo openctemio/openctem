@@ -78,7 +78,7 @@ func TestCIBaselineIsVerifiedNeverJobChosen(t *testing.T) {
 		t.Helper()
 		run, tok := exchange(ref, baseRef, job)
 		if len(f) > 0 {
-			if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, ciReport(repoName, f...)); resp.StatusCode != http.StatusCreated {
+			if resp, out := r.upload(run, tok, ciReport(repoName, f...)); resp.StatusCode != http.StatusAccepted {
 				t.Fatalf("upload: %d %v", resp.StatusCode, out)
 			}
 		}
@@ -171,7 +171,7 @@ func TestCIGitHubSignedBaseNeedsAProtectedBranch(t *testing.T) {
 		}
 		run, tok := ex["run_id"].(string), ex["token"].(string)
 		if len(f) > 0 {
-			if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, ciReport("github.com/acme/api", f...)); resp.StatusCode != http.StatusCreated {
+			if resp, out := r.upload(run, tok, ciReport("github.com/acme/api", f...)); resp.StatusCode != http.StatusAccepted {
 				t.Fatalf("upload: %d %v", resp.StatusCode, out)
 			}
 		}

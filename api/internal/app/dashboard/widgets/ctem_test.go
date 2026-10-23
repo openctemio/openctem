@@ -142,7 +142,13 @@ func TestCTEMLoop_StagesFromTheReadScope(t *testing.T) {
 		if st[i].Key != k {
 			t.Fatalf("stage %d is %s, want %s", i, st[i].Key, k)
 		}
-		if st[i].Drill == "" {
+		// A percentage opens no list: no list's total equals it. The
+		// validate and mobilize stages drill only through their counts.
+		pct := k == StageValidate || k == StageMobilize
+		if pct && st[i].Drill != "" {
+			t.Errorf("stage %s percent links to %s", k, st[i].Drill)
+		}
+		if !pct && st[i].Drill == "" {
 			t.Errorf("stage %s has no list", k)
 		}
 	}
