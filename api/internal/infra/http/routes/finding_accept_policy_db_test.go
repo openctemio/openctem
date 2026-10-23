@@ -419,6 +419,13 @@ func TestFindingAcceptPolicy_SoleMemberNotBlocked_DB(t *testing.T) {
 	if r.Status != "pending" || r.SinglePerson {
 		t.Fatalf("sole member under off accepted a risk alone without an authenticator code: %+v", r)
 	}
+	var pol struct {
+		CanDecideAlone bool `json:"can_decide_alone"`
+	}
+	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodGet, "/api/v1/findings/"+h.newFinding(org, "low")+"/approvals/policy?status=accepted", "", http.StatusOK)), &pol)
+	if pol.CanDecideAlone {
+		t.Fatal("the policy endpoint tells the only member an acceptance applies at once")
+	}
 	if findingStatusOf(h.findingApprovalHarness, f2) != "confirmed" {
 		t.Fatal("the sole member's acceptance applied before the self-approval")
 	}
