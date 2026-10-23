@@ -5,7 +5,7 @@ import { ListOrdered } from 'lucide-react'
 import { useHasPermission, Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useId } from 'react'
 import { Main } from '@/components/layout'
 import { PageHeader } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
@@ -194,13 +194,15 @@ function NumberInput({
   step?: number
   tooltip?: string
 }) {
+  const id = useId()
   return (
     <div className="space-y-1">
-      <Label className="flex items-center text-xs">
+      <Label htmlFor={id} className="flex items-center text-xs">
         {label}
         {tooltip && <InfoTip text={tooltip} />}
       </Label>
       <Input
+        id={id}
         type="number"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
