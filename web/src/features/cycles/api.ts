@@ -2,6 +2,7 @@
 
 import useSWR from 'swr'
 import { del, get, post } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 import type { CtemCycle } from './types'
 
 /**
@@ -71,10 +72,8 @@ export function useCycleProfiles(id: string | null) {
 
 /** Every attacker profile of the tenant, for pickers. */
 export function useAttackerProfiles(enabled = true) {
-  return useSWR<{ data: AttackerProfile[] }>(
-    enabled ? '/api/v1/attacker-profiles?per_page=100' : null,
-    (url: string) => get<{ data: AttackerProfile[] }>(url),
-    { revalidateOnFocus: false }
+  return useRegisterPages<AttackerProfile>(
+    enabled ? '/api/v1/attacker-profiles?per_page=100' : null
   )
 }
 

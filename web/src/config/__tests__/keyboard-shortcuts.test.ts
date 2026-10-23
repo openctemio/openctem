@@ -46,6 +46,10 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/findings/hooks/use-drawer-navigation.ts',
     /e\.key !== 'j' && e\.key !== 'k'/,
   ],
+  triage: [
+    'app/(dashboard)/findings/page.tsx',
+    /e\.key !== 't' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
+  ],
   'add-filter': [
     'features/findings/filters/add-filter-popover.tsx',
     /e\.key !== 'f' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,

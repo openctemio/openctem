@@ -8,7 +8,7 @@ workflow triggers, and the throttled new-internet-facing-asset notification.
 ## 1. The record: `asset_state_history`
 
 Append-only (UPDATE is blocked, DELETE of rows under 30 days is blocked). The
-"What changed" UI page (Discovery > What changed, `/assets/changes`) reads it
+Activity page (Discovery > Assets > Activity, `/assets/changes`) reads it
 through the `/api/v1/state-history/*` endpoints.
 
 | View | Endpoint | Rows | Written by |
