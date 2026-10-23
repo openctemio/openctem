@@ -35,6 +35,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -57,6 +58,46 @@ type decisionReviewRaiser interface {
 // DecisionReviewSecondLook is the review reason of a single-person false
 // positive picked for a second look.
 const DecisionReviewSecondLook = "second_look_sample"
+
+// decidedAloneReviewer flags the standing decisions one person made
+// (*postgres.FindingApprovalRepository).
+type decidedAloneReviewer interface {
+	FlagDecidedAlone(ctx context.Context, tenantID shared.ID, status vulnerability.FindingStatus, level string,
+		needsSecond func(approvalpolicy.Facts) bool) (int, error)
+}
+
+// ReviewDecidedAlone flags for review every standing decision of status
+// (false positive or accepted risk) in the tenant that one person made,
+// under a level or as the sole member, and that level now gives to a second
+// person: all of them under all, the material ones under high_and_above,
+// none under off. It runs when a level is raised. The decisions stand (a
+// legitimate decision is not undone by a later setting); the review flag
+// and a timeline entry ask a person with the approve permission to look
+// again. It answers how many decisions are now under review.
+func (s *VulnerabilityService) ReviewDecidedAlone(ctx context.Context, tenantID string, status vulnerability.FindingStatus, level string) (int, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	if status != vulnerability.FindingStatusFalsePositive && status != vulnerability.FindingStatusAccepted {
+		return 0, fmt.Errorf("%w: only false positives and accepted risks are decided alone", shared.ErrValidation)
+	}
+	if !approvalpolicy.LevelNeedsSecond(level, true) {
+		return 0, nil // off: nothing needs a second person
+	}
+	store, ok := s.approvalRepo.(decidedAloneReviewer)
+	if !ok {
+		return 0, fmt.Errorf("%w: reviewing decisions made alone is not available", shared.ErrNotImplemented)
+	}
+	op, err := s.orgApprovalPolicy(ctx, tid)
+	if err != nil {
+		return 0, err
+	}
+	threshold := op.policy.EPSS()
+	return store.FlagDecidedAlone(ctx, tid, status, level, func(f approvalpolicy.Facts) bool {
+		return approvalpolicy.LevelNeedsSecond(level, approvalpolicy.MaterialForFalsePositive(f, threshold))
+	})
+}
 
 // FPPolicyDecision is how a false positive (or, for applySinglePerson, an
 // accepted risk) on one finding is decided now.

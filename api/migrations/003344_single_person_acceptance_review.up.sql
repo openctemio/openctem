@@ -7,7 +7,9 @@
 -- material_change_single_person, decision_status accepted) and a
 -- decision_review timeline entry ask a person with the approve permission to
 -- look again. The material-change controller still ends an acceptance whose
--- tier now needs a second person. Design: api/docs/rfcs/RFC-111-approval-policy.md.
+-- tier now needs a second person. Raising an approval level calls the same
+-- function (change level_raised) for the standing decisions one person made
+-- that the new level gives to a second person. Design: api/docs/rfcs/RFC-111-approval-policy.md.
 --
 -- Live impact: replaces three functions and one trigger on findings (a short
 -- lock, nothing scanned); one partial index on finding_status_approvals (a
@@ -44,8 +46,12 @@ BEGIN
            jsonb_build_object('decision_status', p_status, 'reason', 'material_change_single_person',
                               'evidence', p_evidence || jsonb_build_object('change', p_change)),
            'auto',
-           'One person decided this ' || CASE p_status WHEN 'accepted' THEN 'risk acceptance' ELSE 'false positive' END
-               || ' and the finding changed (' || p_change || '); it stands until a person reviews it'
+           CASE WHEN p_change = 'level_raised'
+               THEN 'One person decided this ' || CASE p_status WHEN 'accepted' THEN 'risk acceptance' ELSE 'false positive' END
+                    || ' and the organization has since raised its approval level; it stands until a person reviews it'
+               ELSE 'One person decided this ' || CASE p_status WHEN 'accepted' THEN 'risk acceptance' ELSE 'false positive' END
+                    || ' and the finding changed (' || p_change || '); it stands until a person reviews it'
+           END
     FROM flag;
 END $$;
 
