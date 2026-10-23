@@ -10,11 +10,13 @@ import (
 	"net"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
+	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
@@ -894,6 +896,9 @@ type Services struct {
 	Encryptor crypto.Encryptor
 	// CredentialSecrets seals leaked-credential secrets (built on Encryptor).
 	CredentialSecrets *credential.SecretProtector
+	// IngestQueue stores CI results and file imports, sealed, for the
+	// ingest worker (RFC-122).
+	IngestQueue *ingestqueue.Queue
 
 	// JWT
 	JWTGenerator *jwt.Generator
@@ -1044,6 +1049,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PlatformEmail = platformemail.NewService(repos.PlatformSetting, s.Encryptor, repos.AdminAuditLog, log)
 	}
 	s.initConsoleSettings(cfg, repos, log)
+	if s.IngestQueue, err = initIngestQueue(cfg, repos); err != nil {
+		return nil, err
+	}
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
@@ -1286,7 +1294,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
-	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
+	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
+	s.Vulnerability.SetAssigneeChecker(repos.AccessControl)       // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
 	s.Vulnerability.SetMemberSearcher(repos.Tenant)        // the assignee picker lists only members who can read the finding
 	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
@@ -3519,6 +3528,32 @@ func initContentSigner(cfg *config.Config, log *logger.Logger) *contentpackdom.S
 	}
 	log.Warn("no content signing key (APP_CONTENT_SIGNING_KEY / APP_ENCRYPTION_KEY); content pack uploads are refused")
 	return nil
+}
+
+// initIngestQueue builds the queue of CI results and file imports. Raw
+// reports are sealed under a key derived per tenant from APP_ENCRYPTION_KEY
+// (previous keys still open what they sealed).
+func initIngestQueue(cfg *config.Config, repos *Repositories) (*ingestqueue.Queue, error) {
+	if repos.IngestJob == nil || repos.IngestPayload == nil {
+		return nil, nil
+	}
+	current, err := crypto.ParseKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)
+	if err != nil {
+		return nil, fmt.Errorf("ingest queue key: %w", err)
+	}
+	previous := make([][]byte, 0, len(cfg.Encryption.PreviousKeys))
+	for i, k := range cfg.Encryption.PreviousKeys {
+		b, perr := crypto.ParseKey(k, "")
+		if perr != nil {
+			return nil, fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d: %w", i+1, perr)
+		}
+		previous = append(previous, b)
+	}
+	sealer, err := ingestpayload.NewSealer(current, previous...)
+	if err != nil {
+		return nil, err
+	}
+	return ingestqueue.New(repos.IngestJob, repos.IngestPayload, sealer), nil
 }
 
 // initEncryptor initializes the credentials encryptor.

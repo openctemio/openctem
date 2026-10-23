@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-const state = vi.hoisted(() => ({ connectors: [] as { id: string }[] }))
+const state = vi.hoisted(() => ({ connectors: [] as { id: string }[], connectorReads: 0 }))
 
 vi.mock('@/features/integrations/components/scanners/tenable-scan-now', () => ({
-  useScanNowConnectors: () => state.connectors,
+  useScanNowConnectors: () => {
+    state.connectorReads += 1
+    return state.connectors
+  },
   TenableScanNowButton: ({ label, assetIds }: { label: string; assetIds: string[] }) => (
     <button type="button" data-asset-ids={assetIds.join(',')}>
       {label}
@@ -18,6 +21,7 @@ const tenableFinding = { toolName: 'tenable_sc', assets: [{ id: 'asset-1' }] }
 
 beforeEach(() => {
   state.connectors = [{ id: 'c1' }]
+  state.connectorReads = 0
 })
 
 describe('FindingTenableRescanSection', () => {
@@ -35,6 +39,8 @@ describe('FindingTenableRescanSection', () => {
       <FindingTenableRescanSection finding={{ toolName: 'nuclei', assets: [{ id: 'a' }] }} />
     )
     expect(container).toBeEmptyDOMElement()
+    // Another tool's finding never asks for the connector list.
+    expect(state.connectorReads).toBe(0)
   })
 
   it('is hidden without an asset or without a connector the caller may use', () => {

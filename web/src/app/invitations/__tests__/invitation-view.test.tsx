@@ -104,7 +104,7 @@ describe('InvitationView', () => {
   it('accepts with the token in the body and forgets it', async () => {
     render(<InvitationView hasSession />)
     fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/'))
 
     const accept = (fetchFn.mock.calls as FetchCall[]).find(([u]) => String(u).endsWith('/accept'))
     expect(accept).toBeDefined()

@@ -8,7 +8,10 @@ import { PRIORITY_CLASS_CONFIG } from '../types/finding.types'
 import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
 
 interface PriorityClassBadgeProps {
-  priorityClass: PriorityClass
+  /** The finding's class; null or missing renders the "not prioritised" dash. */
+  priorityClass: PriorityClass | null | undefined
+  /** Add the class name ("P0 Immediate"). */
+  showWord?: boolean
   showTooltip?: boolean
   /** The finding's asset, so the tooltip states that asset's SLA window. */
   assetId?: string | null
@@ -19,15 +22,17 @@ interface PriorityClassBadgeProps {
 export function PriorityClassBadge({
   priorityClass,
   showTooltip = true,
+  showWord,
   assetId,
   className,
 }: PriorityClassBadgeProps) {
   const { t } = useTranslation()
+  const badge = (
+    <PriorityBadge priorityClass={priorityClass} showWord={showWord} className={className} />
+  )
+
+  if (!priorityClass || !showTooltip) return badge
   const config = PRIORITY_CLASS_CONFIG[priorityClass]
-
-  const badge = <PriorityBadge priorityClass={priorityClass} className={className} />
-
-  if (!showTooltip) return badge
 
   return (
     <Tooltip>

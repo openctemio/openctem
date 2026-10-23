@@ -11,6 +11,7 @@ import Link from '@/components/link'
 import { Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SeverityBadge } from '@/features/shared'
+import { EpssChip } from '@/components/ui/epss-chip'
 import type { Severity } from '@/features/shared/types'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetRisk } from '../hooks/use-asset-risk'
@@ -181,13 +182,7 @@ export function AssetRiskExplanation({ assetId }: AssetRiskExplanationProps) {
                 {c.exploit_available && (
                   <Badge variant="outline">{t('riskScore.why.exploit', 'Exploit')}</Badge>
                 )}
-                {c.epss_score !== undefined && c.epss_score > 0 && (
-                  <Badge variant="outline" className="tabular-nums">
-                    {t('riskScore.why.epss', 'EPSS {value}%', {
-                      value: Math.round(c.epss_score * 1000) / 10,
-                    })}
-                  </Badge>
-                )}
+                <EpssChip score={c.epss_score} />
               </li>
             ))}
           </ul>

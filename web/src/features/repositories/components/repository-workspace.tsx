@@ -619,7 +619,7 @@ export function BranchStatusBadge({ status }: { status: BranchStatus }) {
 
 function SeverityCountBadge({ severity, count }: { severity: Severity; count?: number }) {
   return (
-    <SeverityBadge severity={severity}>
+    <SeverityBadge severity={severity} variant="soft">
       {count !== undefined ? `${count} ${SEVERITY_LABELS[severity]}` : undefined}
     </SeverityBadge>
   )

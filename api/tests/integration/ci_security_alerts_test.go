@@ -63,7 +63,7 @@ func TestCISecurityAlerts(t *testing.T) {
 	}
 	token, runID := ex["token"].(string), ex["run_id"].(string)
 	secret := ciFinding("AWS key", "aws-access-key", "high", ctis.FindingTypeSecret, "config.go", 3)
-	if resp, out := r.post("/api/v1/ci/runs/"+runID+"/results", token, ciReport(repoName, secret)); resp.StatusCode != http.StatusCreated {
+	if resp, out := r.upload(runID, token, ciReport(repoName, secret)); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
 	assetID, _ := shared.IDFromString(ex["repository_asset_id"].(string))

@@ -1,8 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader, StatsCard, EmptyState } from '@/features/shared'
+import { PageHeader, StatsCard, EmptyState, ErrorState } from '@/features/shared'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
 import {
@@ -10,48 +9,44 @@ import {
   OverviewSkeleton,
   OVERVIEW_CHARTS_GRID,
   OVERVIEW_STATS_GRID,
-  RankedBarList,
   SeverityDonut,
   SeverityTrend,
-  humanize,
   TypeBreakdownUnavailable,
   ExposuresTabs,
   ViewFindingsButton,
 } from '@/features/exposures/components'
+import { CODE_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
-import type { FindingSource } from '@/lib/api/finding-types'
-import { FileCode, AlertTriangle, Flame, GitBranch } from 'lucide-react'
-
-const CODE_SOURCES: FindingSource[] = ['sast']
+import { useTranslation } from '@/context/i18n-provider'
+import { FileCode, AlertTriangle, Flame, Clock } from 'lucide-react'
 
 export default function CodeWeaknessesPage() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id || null
-  // Org-wide context (repository coverage, asset mix, trend) has no per-type variant.
+  // Org-wide finding trend has no per-type variant.
   const { stats, isLoading: dashboardLoading } = useDashboardStats(tenantId)
   // Type-scoped finding stats: code weaknesses come from static analysis.
-  const { stats: typeStats, isLoading: typeLoading } = useFindingTypeStats(tenantId, CODE_SOURCES)
+  const {
+    stats: typeStats,
+    isLoading: typeLoading,
+    error: typeError,
+    mutate: retryTypeStats,
+  } = useFindingTypeStats(tenantId, CODE_SOURCES)
   const isLoading = dashboardLoading || typeLoading
 
   const criticalCount = typeStats.bySeverity.critical || 0
   const highCount = typeStats.bySeverity.high || 0
-
-  // The dashboard stats only break assets down by type (there is no per-repository
-  // finding count), so this is labelled as the asset mix it really is.
-  const assetTypes = useMemo(
-    () =>
-      Object.entries(stats.assets.byType || {})
-        .map(([type, count]) => ({ name: humanize(type), count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 10),
-    [stats.assets.byType]
-  )
+  const openCount = typeStats.openCount
 
   return (
     <Main>
       <PageHeader
-        title="Code weaknesses"
-        description="Weaknesses in your source code found by static analysis (SAST), by severity and over time."
+        title={t('exposures.code.title', 'Code weaknesses')}
+        description={t(
+          'exposures.code.description',
+          'Weaknesses in your source code found by static analysis (SAST), by severity and over time.'
+        )}
       >
         <ViewFindingsButton stats={typeStats} sources={CODE_SOURCES} isLoading={typeLoading} />
       </PageHeader>
@@ -59,74 +54,99 @@ export default function CodeWeaknessesPage() {
       <ExposuresTabs />
 
       <div className="mt-5">
-        {isLoading ? (
+        {typeError ? (
+          <ErrorState
+            title={t('exposures.code.errorTitle', 'code weakness statistics')}
+            error={typeError}
+            onRetry={() => retryTypeStats()}
+          />
+        ) : isLoading ? (
           <OverviewSkeleton />
         ) : typeStats.total === 0 ? (
           <EmptyState
             icon={FileCode}
-            title="No code weaknesses yet"
-            description="Configure static analysis (SAST) scanners to detect security weaknesses in your code."
+            title={t('exposures.code.emptyTitle', 'No code weaknesses yet')}
+            description={t(
+              'exposures.code.emptyDescription',
+              'Configure static analysis (SAST) scanners to detect security weaknesses in your code.'
+            )}
           />
         ) : !typeStats.scoped ? (
           <TypeBreakdownUnavailable
             icon={FileCode}
             total={typeStats.total}
-            noun={['code finding', 'code findings']}
+            noun={[
+              t('exposures.code.nounOne', 'code finding'),
+              t('exposures.code.nounMany', 'code findings'),
+            ]}
             sources={CODE_SOURCES}
           />
         ) : (
           <div className="space-y-5">
             <div className={OVERVIEW_STATS_GRID}>
-              <StatsCard title="Total code findings" value={typeStats.total} icon={FileCode} />
               <StatsCard
-                title="Critical"
+                title={t('exposures.code.total', 'Total code findings')}
+                value={typeStats.total}
+                icon={FileCode}
+              />
+              <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
+                title={t('exposures.type.critical', 'Critical')}
                 value={criticalCount}
                 valueClassName={criticalCount > 0 ? 'text-destructive' : undefined}
-                description={criticalCount > 0 ? 'Fix immediately' : 'No critical findings'}
+                description={
+                  criticalCount > 0
+                    ? t('exposures.code.criticalAction', 'Fix immediately')
+                    : t('exposures.code.criticalNone', 'No critical findings')
+                }
                 icon={AlertTriangle}
               />
               <StatsCard
-                title="High"
+                title={t('exposures.type.high', 'High')}
                 value={highCount}
-                description={`${((highCount / typeStats.total) * 100).toFixed(0)}% of total`}
+                description={t('exposures.type.shareOfTotal', '{percent}% of total', {
+                  percent: ((highCount / typeStats.total) * 100).toFixed(0),
+                })}
                 icon={Flame}
               />
               <StatsCard
-                title="Repositories with findings"
-                value={stats.repositories.withFindings}
+                title={t('exposures.type.open', 'Open')}
+                value={openCount}
                 description={
-                  stats.repositories.total > 0
-                    ? `of ${stats.repositories.total.toLocaleString()} repositories`
-                    : undefined
+                  openCount > 0
+                    ? t('exposures.type.openAction', 'Awaiting remediation')
+                    : t('exposures.type.openNone', 'None open')
                 }
-                icon={GitBranch}
+                icon={Clock}
               />
             </div>
 
             <div className={OVERVIEW_CHARTS_GRID}>
               <ChartCard
-                title="Severity distribution"
-                description={`${typeStats.total.toLocaleString()} code findings by severity`}
+                title={t('exposures.type.severityDistribution', 'Severity distribution')}
+                description={t(
+                  'exposures.code.severityDescription',
+                  '{count} code findings by severity',
+                  { count: typeStats.total.toLocaleString() }
+                )}
               >
                 <SeverityDonut bySeverity={typeStats.bySeverity} />
               </ChartCard>
               <ChartCard
-                title="Finding trend"
-                description="Severity over time across all findings (a per-type trend is not available yet)"
+                title={t('exposures.type.findingTrend', 'Finding trend')}
+                description={t(
+                  'exposures.type.trendDescription',
+                  'Severity over time across all findings (a per-type trend is not available yet)'
+                )}
               >
                 <SeverityTrend
                   data={stats.findingTrend}
-                  emptyDescription="Run SAST scans to start tracking trends."
+                  emptyDescription={t(
+                    'exposures.code.trendEmpty',
+                    'Run SAST scans to start tracking trends.'
+                  )}
                 />
               </ChartCard>
             </div>
-
-            <ChartCard
-              title="Assets by type"
-              description="Your asset mix across all findings (a per-repository breakdown is not available yet)"
-            >
-              <RankedBarList rows={assetTypes} unit={['asset', 'assets']} />
-            </ChartCard>
           </div>
         )}
       </div>

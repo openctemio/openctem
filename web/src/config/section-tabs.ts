@@ -28,8 +28,11 @@ import {
   ShieldCheck,
   Swords,
   Trophy,
+  UserX,
+  Gauge,
   Wrench,
 } from 'lucide-react'
+import type { ElementType } from 'react'
 import type { SectionTab } from '@/features/shared/components/section-tabs'
 import { Permission } from '@/lib/permissions'
 
@@ -224,43 +227,98 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
 ]
 
 /**
- * The reasons of Assets › Needs attention, as route tabs under it. The asset
- * reasons are filters of the inventory; Relationships is its own module.
+ * A reason on Assets › Needs attention (research/249). The landing lists them
+ * as a queue list and each queue page keeps its own route; this registry is
+ * the one source of order, gate, label, why line and unit for both, and for
+ * the switch menu. The order is fixed (by kind), never sorted by count.
  */
-export const ASSET_ATTENTION_TABS: readonly SectionTab[] = [
+export interface AttentionReasonDef {
+  id: 'no_owner' | 'context' | 'unscanned' | 'relationships' | 'duplicates'
+  /** "Fix on the asset" reasons are filters of the inventory; "Review" ones have their own rows. */
+  group: 'fix' | 'review'
+  label: string
+  labelKey: string
+  whyKey: string
+  why: string
+  /** Unit after the count: an ICU plural of `count`. */
+  unitKey: string
+  unit: string
+  href: string
+  icon: ElementType
+  module: string
+  permission: string
+}
+
+const ASSETS_UNIT = '{count, plural, one {asset} other {assets}}'
+
+export const ASSET_ATTENTION_REASONS: readonly AttentionReasonDef[] = [
   {
+    id: 'no_owner',
+    group: 'fix',
     label: 'No owner',
     labelKey: 'assets.attention.tab.noOwner',
-    href: '/assets/attention',
+    whyKey: 'assets.attention.why.noOwner',
+    why: 'Findings on these assets have nobody to assign to.',
+    unitKey: 'assets.attention.unit.assets',
+    unit: ASSETS_UNIT,
+    href: '/assets/attention/no-owner',
+    icon: UserX,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
   {
+    id: 'context',
+    group: 'fix',
     label: 'Criticality not set',
     labelKey: 'assets.attention.tab.context',
+    whyKey: 'assets.attention.why.context',
+    why: 'Priority uses the default weight for them.',
+    unitKey: 'assets.attention.unit.assets',
+    unit: ASSETS_UNIT,
     href: '/assets/attention/context',
+    icon: Gauge,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
   {
-    label: 'Not scanned',
+    id: 'unscanned',
+    group: 'fix',
+    label: 'Not scanned in 30 days',
     labelKey: 'assets.attention.tab.unscanned',
+    whyKey: 'assets.attention.why.unscanned',
+    why: 'No successful scan, so new exposures on them go unseen.',
+    unitKey: 'assets.attention.unit.assets',
+    unit: ASSETS_UNIT,
     href: '/assets/attention/unscanned',
+    icon: Radar,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
   {
+    id: 'relationships',
+    group: 'review',
     label: 'Relationships',
     labelKey: 'assets.attention.tab.relationships',
+    whyKey: 'assets.attention.why.relationships',
+    why: 'Links found between assets that wait for a yes or no.',
+    unitKey: 'assets.attention.unit.toReview',
+    unit: 'to review',
     href: '/assets/suggestions',
     icon: Link2,
     module: 'relationships',
     permission: Permission.AssetsRead,
   },
   {
+    id: 'duplicates',
+    group: 'review',
     label: 'Possible duplicates',
     labelKey: 'assets.attention.tab.duplicates',
+    whyKey: 'assets.attention.why.duplicates',
+    why: 'Assets that look like one thing under two names.',
+    unitKey: 'assets.attention.unit.pairs',
+    unit: '{count, plural, one {pair} other {pairs}}',
     href: '/assets/duplicates',
+    icon: Copy,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
